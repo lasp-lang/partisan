@@ -135,8 +135,10 @@ handle_info(Msg, State) ->
 
 %% @private
 -spec terminate(term(), #state{}) -> term().
-terminate(_Reason, _State) ->
-    %% @todo: Disconnect!
+terminate(_Reason, #state{connections=Connections}=_State) ->
+    dict:map(fun(_K, Pid) ->
+                     gen_server:stop(Pid, normal, infinity)
+             end, Connections),
     ok.
 
 %% @private
