@@ -43,9 +43,11 @@
 
 -type actor() :: binary().
 -type membership() :: ?SET:orswot().
+-type connections() :: dict:dict(node(), port()).
 
 -record(state, {actor :: actor(),
-                membership :: membership() }).
+                membership :: membership(),
+                connections :: connections() }).
 
 %%%===================================================================
 %%% API
@@ -85,20 +87,28 @@ delete_state() ->
 init([]) ->
     Actor = gen_actor(),
     Membership = maybe_load_state_from_disk(Actor),
-    {ok, #state{actor=Actor, membership=Membership}}.
+    Connections = dict:new(),
+    {ok, #state{actor=Actor,
+                membership=Membership,
+                connections=Connections}}.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) -> {reply, term(), #state{}}.
 handle_call(members, _From, #state{membership=Membership}=State) ->
-    {reply, {ok, ?SET:value(Membership)}, State};
+    Members = members(Membership),
+    lager:info("Membership requested: ~p", [Members]),
+    {reply, {ok, Members}, State};
 handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
     {reply, {ok, Membership}, State};
 handle_call(get_actor, _From, #state{actor=Actor}=State) ->
     {reply, {ok, Actor}, State};
-handle_call({update_state, NewState}, _From, #state{membership=Membership}=State) ->
+handle_call({update_state, NewState}, _From,
+            #state{membership=Membership, connections=Connections0}=State) ->
+    lager:info("Update state triggered: ~p", [NewState]),
     Merged = ?SET:merge(Membership, NewState),
     persist_state(Merged),
-    {reply, ok, State#state{membership=Merged}};
+    Connections = establish_connections(Membership, Connections0),
+    {reply, ok, State#state{membership=Merged, connections=Connections}};
 handle_call(delete_state, _From, State) ->
     delete_state_from_disk(),
     {reply, ok, State};
@@ -202,3 +212,46 @@ maybe_load_state_from_disk(Actor) ->
 %% @private
 persist_state(State) ->
     write_state_to_disk(State).
+
+%% @private
+members(Membership) ->
+    ?SET:value(Membership).
+
+%% @private
+establish_connections(Membership, Connections) ->
+    Members = members(Membership),
+    lists:foldl(fun maybe_connect/2, Connections, Members).
+
+%% @private
+%% Function should enforce the invariant that all cluster members are
+%% keys in the dict pointing to undefined if they are disconnected or a
+%% socket pid if they are connected.
+%%
+maybe_connect(Node, Connections0) ->
+    Connections = case dict:find(Node, Connections0) of
+        %% Found in dict, and disconnected.
+        {ok, undefined} ->
+            case connect(Node) of
+                {ok, Pid} ->
+                    dict:store(Node, Pid, Connections0);
+                _ ->
+                    dict:store(Node, undefined, Connections0)
+            end;
+        %% Found in dict and connected.
+        {ok, _Pid} ->
+            Connections0;
+        %% Not present; disconnected.
+        error ->
+            case connect(Node) of
+                {ok, Pid} ->
+                    dict:store(Node, Pid, Connections0);
+                _ ->
+                    dict:store(Node, undefined, Connections0)
+            end
+    end,
+    lager:info("Connections updated: ~p", [Connections]),
+    Connections.
+
+connect(Node) ->
+    lager:info("Connecting via TCP..."),
+    partisan_peer_service_client:start_link(Node).

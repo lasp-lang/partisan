@@ -35,6 +35,15 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
+    %% Initialize the listener for the peer protocol.
+    PeerConfig = partisan_config:peer_config(),
+    ranch:start_listener(partisan_peer_service_server,
+                         10,
+                         ranch_tcp,
+                         PeerConfig,
+                         partisan_peer_service_server,
+                         []),
+
     Children = lists:flatten(
                  [
                  ?CHILD(partisan_peer_service_manager, worker),
