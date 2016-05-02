@@ -38,10 +38,10 @@ start_link() ->
 
 init([]) ->
     %% Initialize the listener for the peer protocol.
-    case listen() of
-        {ok, _Pid} ->
+    {ok, Pid} = case listen() of
+        {ok, NewPid} ->
             lager:info("Listener started!"),
-            ok;
+            {ok, NewPid};
         {error, {already_started, _OldPid}} ->
             %% Weird interaction here.
             %%
@@ -59,6 +59,7 @@ init([]) ->
             ranch:stop_listener(?PEER_SERVICE_SERVER),
             listen()
     end,
+    link(Pid),
 
     Children = lists:flatten(
                  [
