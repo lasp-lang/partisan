@@ -99,8 +99,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
--ifdef(TEST).
-
 %% @doc If we're running a local test, we have to use the same IP
 %%      address for every bind operation, but a different port instead
 %%      of the standard port.
@@ -117,20 +115,6 @@ connect(Peer) ->
     {ok, Socket} = gen_tcp:connect({127, 0, 0, 1},
                                    PeerPort, [binary, {packet, 2}]),
     {ok, Socket}.
-
--else.
-
-%% @doc Assume that under normal circumstances, we are running on the
-%%      proper ports and have been supplied an IP address of a peer to
-%%      connect to; avoid disterl.
-%%
-connect(Peer) ->
-    {ok, Socket} = gen_tcp:connect(Peer,
-                                   ?PEER_PORT,
-                                   [binary, {packet, 2}]),
-    {ok, Socket}.
-
--endif.
 
 %% @private
 decode(Message) ->
