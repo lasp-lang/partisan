@@ -23,14 +23,14 @@
 
 -behaviour(application).
 
+-include("partisan.hrl").
+
 -export([start/2, stop/1]).
 
 %% @doc Initialize the application.
 start(_StartType, _StartArgs) ->
     case partisan_sup:start_link() of
         {ok, Pid} ->
-            %% do nothing for now
-            %% TODO partisan_broadcast hooks
             {ok, Pid};
         Other ->
             {error, Other}
@@ -38,4 +38,7 @@ start(_StartType, _StartArgs) ->
 
 %% @doc Stop the application.
 stop(_State) ->
+    %% Ensure all ranch instances are stopped.
+    lager:info("Stopping peer protocol listener."),
+    ranch:stop_listener(?PEER_SERVICE_SERVER),
     ok.

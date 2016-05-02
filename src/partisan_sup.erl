@@ -23,6 +23,8 @@
 
 -behaviour(supervisor).
 
+-include("partisan.hrl").
+
 -export([start_link/0]).
 
 -export([init/1]).
@@ -36,13 +38,27 @@ start_link() ->
 
 init([]) ->
     %% Initialize the listener for the peer protocol.
-    PeerConfig = partisan_config:peer_config(),
-    ranch:start_listener(partisan_peer_service_server,
-                         10,
-                         ranch_tcp,
-                         PeerConfig,
-                         partisan_peer_service_server,
-                         []),
+    case listen() of
+        {ok, _Pid} ->
+            lager:info("Listener started!"),
+            ok;
+        {error, {already_started, _OldPid}} ->
+            %% Weird interaction here.
+            %%
+            %% Lasp supervises Partisan which launches the ranch
+            %% listener through Partisan's supervisor.  However, when CT
+            %% is running the test suite and it restarts Lasp, it
+            %% restarts Partisan as part of this, but ranch stays
+            %% running.
+            %%
+            %% @todo Figure out how to properly supervise ranch from
+            %% Partisan, so when ranch restarts, Partisan also
+            %% restarts as well.
+            %%
+            lager:info("Listener already running; restarting on new port!"),
+            ranch:stop_listener(?PEER_SERVICE_SERVER),
+            listen()
+    end,
 
     Children = lists:flatten(
                  [
@@ -50,6 +66,18 @@ init([]) ->
                  ?CHILD(partisan_peer_service_gossip, worker),
                  ?CHILD(partisan_peer_service_events, worker)
                  ]),
+
     RestartStrategy = {one_for_one, 10, 10},
     {ok, {RestartStrategy, Children}}.
 
+%% @private
+listen() ->
+    PeerConfig = partisan_config:peer_config(),
+    lager:info("Initializing listener for peer protocol; config: ~p",
+               [PeerConfig]),
+    ranch:start_listener(?PEER_SERVICE_SERVER,
+                         10,
+                         ranch_tcp,
+                         PeerConfig,
+                         ?PEER_SERVICE_SERVER,
+                         []).
