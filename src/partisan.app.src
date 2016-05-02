@@ -1,0 +1,17 @@
+{application, partisan,
+ [
+  {description, "Scalable peer service for Lasp"},
+  {vsn, "0.0.1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib,
+                  crypto,
+                  lager,
+                  riak_dt
+                 ]},
+  {mod, {partisan, []}},
+  {modules, []},
+  {env, [
+         {partisan, "data"}]}
+ ]}.
