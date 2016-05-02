@@ -59,27 +59,36 @@ add_sup_callback(Function) ->
     partisan_peer_service_events:add_sup_callback(Function).
 
 %% @private
-attempt_join(Node) ->
+attempt_join({Name, _IPAddress, _Port} = Node) ->
     lager:info("Sent join request to: ~p~n", [Node]),
-    case net_kernel:connect(Node) of
+    case net_kernel:connect(Name) of
         false ->
             lager:info("Unable to connect to ~p~n", [Node]),
             {error, not_reachable};
         true ->
             {ok, Local} = partisan_peer_service_manager:get_local_state(),
             attempt_join(Node, Local)
-    end.
+    end;
+attempt_join(Node) ->
+    %% Bootstrap with disterl if necessary.
+    PeerPort = rpc:call(Node,
+                        partisan_config,
+                        get,
+                        [peer_port, ?PEER_PORT]),
+    attempt_join({Node, {127,0,0,1}, PeerPort}).
 
 %% @private
-attempt_join(Node, Local) ->
-    {ok, Remote} = gen_server:call({partisan_peer_service_gossip, Node}, send_state),
+attempt_join({Name, _, _}, Local) ->
+    {ok, Remote} = gen_server:call({partisan_peer_service_gossip, Name},
+                                   send_state),
     Merged = ?SET:merge(Remote, Local),
     _ = partisan_peer_service_manager:update_state(Merged),
     partisan_peer_service_events:update(Merged),
     %% broadcast to all nodes
     %% get peer list
     Members = ?SET:value(Merged),
-    _ = [gen_server:cast({partisan_peer_service_gossip, P}, {receive_state, Merged}) || P <- Members, P /= node()],
+    _ = [gen_server:cast({partisan_peer_service_gossip, P},
+                         {receive_state, Merged}) || P <- Members, P /= node()],
     ok.
 
 %% @doc Attempt to leave the cluster.
