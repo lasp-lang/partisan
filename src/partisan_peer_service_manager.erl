@@ -104,7 +104,6 @@ handle_call(get_actor, _From, #state{actor=Actor}=State) ->
     {reply, {ok, Actor}, State};
 handle_call({update_state, NewState}, _From,
             #state{membership=Membership, connections=Connections0}=State) ->
-    lager:info("Update state triggered: ~p", [NewState]),
     Merged = ?SET:merge(Membership, NewState),
     persist_state(Merged),
     Connections = establish_connections(Membership, Connections0),
@@ -249,9 +248,8 @@ maybe_connect(Node, Connections0) ->
                     dict:store(Node, undefined, Connections0)
             end
     end,
-    lager:info("Connections updated: ~p", [Connections]),
     Connections.
 
 connect(Node) ->
-    lager:info("Connecting via TCP..."),
+    lager:info("Connecting to ~p via TCP...", [Node]),
     partisan_peer_service_client:start_link(Node).
