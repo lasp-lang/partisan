@@ -89,9 +89,9 @@ handle_info(_Info, State) ->
     lager:info("Unexpected: ~p,~p.~n", [_Info, State]),
     {noreply, State}.
 
-terminate(_Reason, _State) ->
-    lager:info("terminate ~p, ~p.~n", [_Reason, _State]),
-    {ok, _State}.
+terminate(Reason, State) ->
+    lager:info("Terminate ~p, ~p.~n", [Reason, State]),
+    {ok, State}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.

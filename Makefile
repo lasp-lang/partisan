@@ -1,26 +1,51 @@
-REBAR = $(shell pwd)/rebar3
-.PHONY: deps compile rel test
+PACKAGE         ?= partisan
+VERSION         ?= $(shell git describe --tags)
+BASE_DIR         = $(shell pwd)
+ERLANG_BIN       = $(shell dirname $(shell which erl))
+REBAR            = $(shell pwd)/rebar3
+MAKE						 = make
 
-DIALYZER_APPS = kernel stdlib erts sasl eunit syntax_tools compiler crypto
-DEP_DIR="_build/lib"
+.PHONY: rel deps test eqc plots
 
 all: compile
 
-include tools.mk
-
-test: common_test
-
-common_test:
-	$(REBAR) ct
+##
+## Compilation targets
+##
 
 compile:
 	$(REBAR) compile
 
-rel:
-	$(REBAR) release
+clean: packageclean
+	$(REBAR) clean
 
-stage:
-	$(REBAR) release -d
+packageclean:
+	rm -fr *.deb
+	rm -fr *.tar.gz
 
-dialyzer:
-	$(REBAR) dialyzer
+##
+## Test targets
+##
+
+check: test xref dialyzer lint
+
+test: ct eunit
+
+lint:
+	${REBAR} as lint lint
+
+eqc:
+	${REBAR} as test eqc
+
+eunit:
+	${REBAR} as test eunit
+
+ct:
+	${REBAR} as test ct
+
+shell:
+	${REBAR} shell --apps partisan
+
+DIALYZER_APPS = kernel stdlib erts sasl eunit syntax_tools compiler crypto
+
+include tools.mk
