@@ -125,7 +125,7 @@ handle_cast(Msg, State) ->
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
 handle_info(connect,
-            #state{membership=Membership,connections=Connections0}=State) ->
+            #state{membership=Membership, connections=Connections0}=State) ->
     lager:info("Refreshing connections."),
     Connections = establish_connections(Membership, Connections0),
     {noreply, State#state{connections=Connections}};
