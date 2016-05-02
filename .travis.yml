@@ -1,0 +1,16 @@
+language: erlang
+otp_release:
+  - 18.1
+install:
+  - make
+  - ./rebar3 update
+script:
+  - make test
+  - make xref
+  - make dialyzer
+  - make lint
+notifications:
+  email: christopher.meiklejohn@gmail.com
+  slack: lasp-lang:hiPRNnbUa3zdGrrXZfGRAF7D
+  irc: "irc.freenode.org#lasp-lang"
+sudo: false
