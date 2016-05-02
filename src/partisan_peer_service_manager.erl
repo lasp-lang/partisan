@@ -85,6 +85,7 @@ delete_state() ->
 %% @private
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
+    schedule_connections(),
     Actor = gen_actor(),
     Membership = maybe_load_state_from_disk(Actor),
     Connections = dict:new(),
@@ -123,6 +124,11 @@ handle_cast(Msg, State) ->
 
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
+handle_info(connect,
+            #state{membership=Membership,connections=Connections0}=State) ->
+    lager:info("Refreshing connections."),
+    Connections = establish_connections(Membership, Connections0),
+    {noreply, State#state{connections=Connections}};
 handle_info(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
     {noreply, State}.
@@ -130,6 +136,7 @@ handle_info(Msg, State) ->
 %% @private
 -spec terminate(term(), #state{}) -> term().
 terminate(_Reason, _State) ->
+    %% @todo: Disconnect!
     ok.
 
 %% @private
@@ -250,6 +257,11 @@ maybe_connect(Node, Connections0) ->
     end,
     Connections.
 
+%% @private
 connect(Node) ->
     lager:info("Connecting to ~p via TCP...", [Node]),
     partisan_peer_service_client:start_link(Node).
+
+%% @private
+schedule_connections() ->
+    erlang:send_after(15000, self(), connect).
