@@ -114,7 +114,7 @@ do_gossip() ->
 %% @doc returns a list of peer nodes
 get_peers(Local) ->
     Members = ?SET:value(Local),
-    Peers = [X || X <- Members, X /= node()],
+    Peers = [X || {X, _, _} <- Members, X /= node()],
     Peers.
 
 %% @doc return random peer from nodelist

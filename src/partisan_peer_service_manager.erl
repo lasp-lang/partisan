@@ -96,8 +96,7 @@ init([]) ->
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) -> {reply, term(), #state{}}.
 handle_call(members, _From, #state{membership=Membership}=State) ->
-    Members = members(Membership),
-    lager:info("Membership requested: ~p", [Members]),
+    Members = [P || {P, _, _} <- members(Membership)],
     {reply, {ok, Members}, State};
 handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
     {reply, {ok, Membership}, State};
@@ -126,7 +125,6 @@ handle_cast(Msg, State) ->
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
 handle_info(connect,
             #state{membership=Membership, connections=Connections0}=State) ->
-    lager:info("Refreshing connections."),
     Connections = establish_connections(Membership, Connections0),
     {noreply, State#state{connections=Connections}};
 handle_info(Msg, State) ->
@@ -152,8 +150,10 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private
 empty_membership(Actor) ->
-    Initial = ?SET:new(),
-    {ok, LocalState} = ?SET:update({add, node()}, Actor, Initial),
+    Port = partisan_config:get(peer_port, ?PEER_PORT),
+    IPAddress = partisan_config:get(peer_ip, ?PEER_IP),
+    Self = {node(), IPAddress, Port},
+    {ok, LocalState} = ?SET:update({add, Self}, Actor, ?SET:new()),
     persist_state(LocalState),
     LocalState.
 
@@ -235,15 +235,15 @@ establish_connections(Membership, Connections) ->
 %% keys in the dict pointing to undefined if they are disconnected or a
 %% socket pid if they are connected.
 %%
-maybe_connect(Node, Connections0) ->
-    Connections = case dict:find(Node, Connections0) of
+maybe_connect({Name, _, _} = Node, Connections0) ->
+    Connections = case dict:find(Name, Connections0) of
         %% Found in dict, and disconnected.
         {ok, undefined} ->
             case connect(Node) of
                 {ok, Pid} ->
-                    dict:store(Node, Pid, Connections0);
+                    dict:store(Name, Pid, Connections0);
                 _ ->
-                    dict:store(Node, undefined, Connections0)
+                    dict:store(Name, undefined, Connections0)
             end;
         %% Found in dict and connected.
         {ok, _Pid} ->
@@ -252,16 +252,15 @@ maybe_connect(Node, Connections0) ->
         error ->
             case connect(Node) of
                 {ok, Pid} ->
-                    dict:store(Node, Pid, Connections0);
+                    dict:store(Name, Pid, Connections0);
                 _ ->
-                    dict:store(Node, undefined, Connections0)
+                    dict:store(Name, undefined, Connections0)
             end
     end,
     Connections.
 
 %% @private
 connect(Node) ->
-    lager:info("Connecting to ~p via TCP...", [Node]),
     partisan_peer_service_client:start_link(Node).
 
 %% @private

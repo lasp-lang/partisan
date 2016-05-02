@@ -115,9 +115,11 @@ connect(Peer) when is_atom(Peer) ->
     connect({Peer, {127, 0, 0, 1}, PeerPort});
 
 %% @doc Connect to remote peer.
-connect({_Name, {_, _, _, _}=IPAddress, Port}) ->
+connect({Name, {_, _, _, _}=IPAddress, Port}) ->
     Options = [binary, {packet, 2}, {keepalive, true}],
+    lager:info("Connecting to ~p ~p ~p", [Name, IPAddress, Port]),
     {ok, Socket} = gen_tcp:connect(IPAddress, Port, Options),
+    lager:info("Connected!"),
     {ok, Socket}.
 
 %% @private
