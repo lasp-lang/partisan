@@ -99,21 +99,24 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-%% @doc If we're running a local test, we have to use the same IP
-%%      address for every bind operation, but a different port instead
-%%      of the standard port.
+%% @doc Test harness specific.
 %%
-connect(Peer) ->
+%% If we're running a local test, we have to use the same IP address for
+%% every bind operation, but a different port instead of the standard
+%% port.
+%%
+connect(Peer) when is_atom(Peer) ->
     %% Bootstrap with disterl.
     PeerPort = rpc:call(Peer,
                         partisan_config,
                         get,
                         [peer_port, ?PEER_PORT]),
-
     lager:info("Peer ~p running on port ~p", [Peer, PeerPort]),
+    connect({Peer, {127, 0, 0, 1}, PeerPort});
 
-    {ok, Socket} = gen_tcp:connect({127, 0, 0, 1},
-                                   PeerPort, [binary, {packet, 2}]),
+%% @doc Connect to remote peer.
+connect({_Name, {_, _, _, _}=IPAddress, Port}) ->
+    {ok, Socket} = gen_tcp:connect(IPAddress, Port, [binary, {packet, 2}]),
     {ok, Socket}.
 
 %% @private
