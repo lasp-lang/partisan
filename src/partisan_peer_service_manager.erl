@@ -392,11 +392,13 @@ schedule_gossip() ->
 
 %% @private
 do_gossip(Membership, Connections) ->
+    Fanout = partisan_config:get(fanout, ?FANOUT),
+
     case get_peers(Membership) of
         [] ->
             ok;
         Peers ->
-            {ok, Peer} = random_peer(Peers),
+            {ok, Peer} = random_peers(Peers, Fanout),
             do_send_message(Peer, {receive_state, Membership}, Connections),
             ok
     end.
@@ -408,9 +410,9 @@ get_peers(Local) ->
     Peers.
 
 %% @private
-random_peer(Peers) ->
-    Idx = random:uniform(length(Peers)),
-    Peer = lists:nth(Idx, Peers),
+random_peers(Peers, Fanout) ->
+    Shuffled = shuffle(Peers),
+    Peer = lists:sublist(Shuffled, Fanout),
     {ok, Peer}.
 
 %% @private
@@ -424,3 +426,7 @@ do_send_message(Name, Message, Connections) ->
             %% Return error for now; node is not connected.
             {error, disconnected}
     end.
+
+%% @reference %% http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
+shuffle(L) ->
+    [X || {_, X} <- lists:sort([{random:uniform(), N} || N <- L])].
