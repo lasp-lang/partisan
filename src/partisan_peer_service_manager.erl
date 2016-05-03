@@ -85,6 +85,7 @@ delete_state() ->
 %% @private
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
+    process_flag(trap_exit, true),
     schedule_connections(),
     Actor = gen_actor(),
     Membership = maybe_load_state_from_disk(Actor),
@@ -126,6 +127,19 @@ handle_cast(Msg, State) ->
 handle_info(connect,
             #state{membership=Membership, connections=Connections0}=State) ->
     Connections = establish_connections(Membership, Connections0),
+    {noreply, State#state{connections=Connections}};
+handle_info({'EXIT', From, Reason},
+            #state{connections=Connections0}=State) when Reason =/= normal ->
+    lager:info("Process ~p terminated; removing connection.", [From]),
+    FoldFun = fun(K, V, AccIn) ->
+                      case V =:= From of
+                          true ->
+                              dict:erase(K, AccIn);
+                          false ->
+                              AccIn
+                      end
+              end,
+    Connections = dict:fold(FoldFun, Connections0, Connections0),
     {noreply, State#state{connections=Connections}};
 handle_info(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),

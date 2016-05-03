@@ -67,6 +67,7 @@ init([]) ->
 
 handle_call(stop, _From, State) ->
     {stop, normal, State};
+
 handle_call(send_state, _From, State) ->
     {ok, LocalState} = partisan_peer_service_manager:get_local_state(),
     {reply, {ok, LocalState}, State}.
