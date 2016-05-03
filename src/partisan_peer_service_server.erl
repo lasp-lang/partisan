@@ -136,10 +136,8 @@ handle_message({hello, Node},
             send_message(Socket, Transport, {error, pang}),
             {noreply, State}
     end;
-handle_message(Message, #state{socket=Socket, transport=Transport}=State) ->
-    lager:info("Invalid message: ~p", [Message]),
-    send_message(Socket, Transport,
-                 {error, {invalid_response, Message}}),
+handle_message(Message, State) ->
+    partisan_peer_service_manager:receive_message(Message),
     {stop, normal, State}.
 
 %% @private

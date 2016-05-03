@@ -23,8 +23,6 @@
 
 -behavior(gen_server).
 
--define(GOSSIP_INTERVAL, 15000).
-
 -export([start_link/0,
          stop/0]).
 

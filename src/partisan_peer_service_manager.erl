@@ -29,7 +29,9 @@
          get_local_state/0,
          get_actor/0,
          update_state/1,
-         delete_state/0]).
+         delete_state/0,
+         send_message/2,
+         receive_message/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -78,6 +80,14 @@ update_state(State) ->
 delete_state() ->
     gen_server:call(?MODULE, delete_state, infinity).
 
+%% @doc Send message to a remote manager.
+send_message(Name, Message) ->
+    gen_server:call(?MODULE, {send_message, Name, Message}, infinity).
+
+%% @doc Receive message from a remote manager.
+receive_message(Message) ->
+    gen_server:call(?MODULE, {receive_message, Message}, infinity).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -85,33 +95,62 @@ delete_state() ->
 %% @private
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
+    %% Seed the process at initialization.
+    random:seed(erlang:phash2([node()]),
+                erlang:monotonic_time(),
+                erlang:unique_integer()),
+
+    %% Process connection exits.
     process_flag(trap_exit, true),
+
+    %% Schedule connection keepalive.
     schedule_connections(),
+
+    %% Schedule periodic gossip.
+    schedule_gossip(),
+
     Actor = gen_actor(),
     Membership = maybe_load_state_from_disk(Actor),
     Connections = dict:new(),
+
     {ok, #state{actor=Actor,
                 membership=Membership,
                 connections=Connections}}.
 
 %% @private
--spec handle_call(term(), {pid(), term()}, #state{}) -> {reply, term(), #state{}}.
+-spec handle_call(term(), {pid(), term()}, #state{}) ->
+    {reply, term(), #state{}}.
+
+handle_call({send_message, Name, Message}, _From,
+            #state{connections=Connections}=State) ->
+    Result = do_send_message(Name, Message, Connections),
+    {reply, Result, State};
+
+handle_call({receive_message, Message}, _From, State) ->
+    lager:info("Received message at manager: ~p", [Message]),
+    handle_message(Message, State);
+
 handle_call(members, _From, #state{membership=Membership}=State) ->
     Members = [P || {P, _, _} <- members(Membership)],
     {reply, {ok, Members}, State};
+
 handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
     {reply, {ok, Membership}, State};
+
 handle_call(get_actor, _From, #state{actor=Actor}=State) ->
     {reply, {ok, Actor}, State};
+
 handle_call({update_state, NewState}, _From,
             #state{membership=Membership, connections=Connections0}=State) ->
     Merged = ?SET:merge(Membership, NewState),
     persist_state(Merged),
     Connections = establish_connections(Membership, Connections0),
     {reply, ok, State#state{membership=Merged, connections=Connections}};
+
 handle_call(delete_state, _From, State) ->
     delete_state_from_disk(),
     {reply, ok, State};
+
 handle_call(Msg, _From, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
     {reply, ok, State}.
@@ -129,9 +168,16 @@ handle_info(connect,
     Connections = establish_connections(Membership, Connections0),
     schedule_connections(),
     {noreply, State#state{connections=Connections}};
-handle_info({'EXIT', From, Reason},
-            #state{connections=Connections0}=State) when Reason =/= normal ->
-    lager:info("Process ~p terminated; removing connection.", [From]),
+
+handle_info(gossip, #state{membership=Membership,
+                           connections=Connections}=State) ->
+    do_gossip(Membership, Connections),
+    schedule_gossip(),
+    {noreply, State};
+
+handle_info({'EXIT', From, Reason}, #state{connections=Connections0}=State) ->
+    lager:info("Process ~p terminated for ~p; removing connection.",
+               [From, Reason]),
     FoldFun = fun(K, V, AccIn) ->
                       case V =:= From of
                           true ->
@@ -142,6 +188,7 @@ handle_info({'EXIT', From, Reason},
               end,
     Connections = dict:fold(FoldFun, Connections0, Connections0),
     {noreply, State#state{connections=Connections}};
+
 handle_info(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
     {noreply, State}.
@@ -281,3 +328,56 @@ connect(Node) ->
 %% @private
 schedule_connections() ->
     erlang:send_after(15000, self(), connect).
+
+%% @private
+handle_message({receive_state, PeerMembership},
+               #state{membership=Membership}=State) ->
+    NewMembership = case ?SET:equal(PeerMembership, Membership) of
+        true ->
+            %% do nothing
+            Membership;
+        false ->
+            Merged = ?SET:merge(PeerMembership, Membership),
+            partisan_peer_service_events:update(Merged),
+            Merged
+    end,
+    {reply, ok, State#state{membership=NewMembership}}.
+
+%% @private
+schedule_gossip() ->
+    erlang:send_after(?GOSSIP_INTERVAL, ?MODULE, gossip).
+
+%% @private
+do_gossip(Membership, Connections) ->
+    case get_peers(Membership) of
+        [] ->
+            ok;
+        Peers ->
+            {ok, Peer} = random_peer(Peers),
+            do_send_message(Peer, {receive_state, Membership}, Connections),
+            ok
+    end.
+
+%% @private
+get_peers(Local) ->
+    Members = ?SET:value(Local),
+    Peers = [X || {X, _, _} <- Members, X /= node()],
+    Peers.
+
+%% @private
+random_peer(Peers) ->
+    Idx = random:uniform(length(Peers)),
+    Peer = lists:nth(Idx, Peers),
+    {ok, Peer}.
+
+%% @private
+do_send_message(Name, Message, Connections) ->
+    %% Find a connection for the remote node, if we have one.
+    case dict:find(Name, Connections) of
+        {ok, Pid} ->
+            %% Message client connection with message.
+            gen_server:call(Pid, {send_message, Message}, infinity);
+        error ->
+            %% Return error for now; node is not connected.
+            {error, disconnected}
+    end.
