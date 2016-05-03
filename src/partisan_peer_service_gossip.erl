@@ -52,12 +52,16 @@ stop() ->
 receive_state(PeerState) ->
     gen_server:cast(?MODULE, {receive_state, PeerState}).
 
-
 %%%===============================================================
 %%% gen_server callbacks
 %%%===============================================================
 
 init([]) ->
+    %% Seed the process at initialization.
+    random:seed(erlang:phash2([node()]),
+                erlang:monotonic_time(),
+                erlang:unique_integer()),
+
     erlang:send_after(?GOSSIP_INTERVAL, ?MODULE, gossip),
     {ok, []}.
 
