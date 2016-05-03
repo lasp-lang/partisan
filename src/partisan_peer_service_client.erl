@@ -23,7 +23,7 @@
 
 -behaviour(gen_server).
 
--export([start_link/1]).
+-export([start_link/2]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -33,7 +33,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, {socket}).
+-record(state, {socket, from, peer}).
 
 -include("partisan.hrl").
 
@@ -42,9 +42,10 @@
 %%%===================================================================
 
 %% @doc Start and link to calling process.
--spec start_link(list())-> {ok, pid()} | ignore | {error, term()}.
-start_link(Peer) ->
-    gen_server:start_link(?MODULE, [Peer], []).
+-spec start_link(node_spec(), pid()) ->
+    {ok, pid()} | ignore | {error, term()}.
+start_link(Peer, From) ->
+    gen_server:start_link(?MODULE, [Peer, From], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -52,9 +53,9 @@ start_link(Peer) ->
 
 %% @private
 -spec init([iolist()]) -> {ok, #state{}}.
-init([Peer]) ->
+init([Peer, From]) ->
     {ok, Socket} = connect(Peer),
-    {ok, #state{socket=Socket}}.
+    {ok, #state{from=From, socket=Socket, peer=Peer}}.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
@@ -132,6 +133,11 @@ decode(Message) ->
     binary_to_term(Message).
 
 %% @private
+handle_message({hello, finished},
+               #state{peer=Peer, from=From}=State) ->
+    {ok, LocalState} = partisan_peer_service_manager:get_local_state(),
+    From ! {connected, Peer, LocalState},
+    {noreply, State};
 handle_message({hello, _Node}, #state{socket=Socket}=State) ->
     ok = gen_tcp:send(Socket, encode({hello, node()})),
     {noreply, State};

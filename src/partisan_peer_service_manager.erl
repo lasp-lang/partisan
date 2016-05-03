@@ -28,6 +28,7 @@
          members/0,
          get_local_state/0,
          get_actor/0,
+         join/1,
          update_state/1,
          delete_state/0,
          send_message/2,
@@ -44,10 +45,12 @@
 -include("partisan.hrl").
 
 -type actor() :: binary().
+-type pending() :: [node_spec()].
 -type membership() :: ?SET:orswot().
 -type connections() :: dict:dict(node(), port()).
 
 -record(state, {actor :: actor(),
+                pending :: pending(),
                 membership :: membership(),
                 connections :: connections() }).
 
@@ -88,6 +91,10 @@ send_message(Name, Message) ->
 receive_message(Message) ->
     gen_server:call(?MODULE, {receive_message, Message}, infinity).
 
+%% @doc Attempt to join a remote node.
+join(Node) ->
+    gen_server:call(?MODULE, {join, Node}, infinity).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -114,6 +121,7 @@ init([]) ->
     Connections = dict:new(),
 
     {ok, #state{actor=Actor,
+                pending=[],
                 membership=Membership,
                 connections=Connections}}.
 
@@ -121,13 +129,24 @@ init([]) ->
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
 
+handle_call({join, Node}, _From, #state{pending=Pending0}=State) ->
+    lager:info("Attempting to join node: ~p", [Node]),
+
+    %% Add to list of pending connections.
+    Pending = [Node|Pending0],
+
+    %% Trigger connection.
+    connect(Node),
+
+    %% Return.
+    {reply, ok, State#state{pending=Pending}};
+
 handle_call({send_message, Name, Message}, _From,
             #state{connections=Connections}=State) ->
     Result = do_send_message(Name, Message, Connections),
     {reply, Result, State};
 
 handle_call({receive_message, Message}, _From, State) ->
-    lager:info("Received message at manager: ~p", [Message]),
     handle_message(Message, State);
 
 handle_call(members, _From, #state{membership=Membership}=State) ->
@@ -175,9 +194,7 @@ handle_info(gossip, #state{membership=Membership,
     schedule_gossip(),
     {noreply, State};
 
-handle_info({'EXIT', From, Reason}, #state{connections=Connections0}=State) ->
-    lager:info("Process ~p terminated for ~p; removing connection.",
-               [From, Reason]),
+handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
     FoldFun = fun(K, V, AccIn) ->
                       case V =:= From of
                           true ->
@@ -188,6 +205,31 @@ handle_info({'EXIT', From, Reason}, #state{connections=Connections0}=State) ->
               end,
     Connections = dict:fold(FoldFun, Connections0, Connections0),
     {noreply, State#state{connections=Connections}};
+
+handle_info({connected, Node, RemoteState},
+               #state{pending=Pending0,
+                      membership=Membership0,
+                      connections=Connections}=State) ->
+    case lists:member(Node, Pending0) of
+        true ->
+            %% Move out of pending.
+            Pending = Pending0 -- [Node],
+
+            %% Update membership by joining with remote membership.
+            Membership = ?SET:merge(RemoteState, Membership0),
+
+            %% Announce to the peer service.
+            partisan_peer_service_events:update(Membership),
+
+            %% Gossip the new membership.
+            do_gossip(Membership, Connections),
+
+            %% Return.
+            {noreply, State#state{pending=Pending,
+                                  membership=Membership}};
+        false ->
+            {noreply, State}
+    end;
 
 handle_info(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
@@ -323,7 +365,8 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
 
 %% @private
 connect(Node) ->
-    partisan_peer_service_client:start_link(Node).
+    Self = self(),
+    partisan_peer_service_client:start_link(Node, Self).
 
 %% @private
 schedule_connections() ->

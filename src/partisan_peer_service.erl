@@ -78,7 +78,8 @@ attempt_join({Name, _IPAddress, _Port} = Node) ->
     end.
 
 %% @private
-attempt_join({Name, _, _}, Local) ->
+attempt_join({Name, _, _}=Node, Local) ->
+    partisan_peer_service_manager:join(Node),
     {ok, Remote} = gen_server:call({partisan_peer_service_gossip, Name},
                                    send_state),
     Merged = ?SET:merge(Remote, Local),

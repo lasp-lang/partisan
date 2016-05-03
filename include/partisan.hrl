@@ -5,3 +5,6 @@
 -define(PEER_SERVICE_SERVER, partisan_peer_service_server).
 -define(FANOUT, 5).
 -define(GOSSIP_INTERVAL, 300).
+
+-type node_spec() :: {node(), inet:ip_address(), non_neg_integer()}.
+

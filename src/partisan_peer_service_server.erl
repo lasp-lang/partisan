@@ -122,6 +122,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
+handle_message({connected, Node, _RemoteState} = Message, State) ->
+    lager:info("Node connected: ~p", [Node]),
+    partisan_peer_service_manager:receive_message(Message),
+    {noreply, State};
 handle_message({hello, Node},
                #state{socket=Socket, transport=Transport}=State) ->
     %% Connect the node with Distributed Erlang, just for now for
@@ -130,10 +134,11 @@ handle_message({hello, Node},
         pong ->
             lager:info("Node ~p connected to ~p via disterl.",
                        [Node, node()]),
+            send_message(Socket, Transport, {hello, finished}),
             {noreply, State};
         pang ->
             lager:info("Node could not be connected."),
-            send_message(Socket, Transport, {error, pang}),
+            send_message(Socket, Transport, {hello, {error, pang}}),
             {noreply, State}
     end;
 handle_message(Message, State) ->
