@@ -78,19 +78,8 @@ attempt_join({Name, _IPAddress, _Port} = Node) ->
     end.
 
 %% @private
-attempt_join({Name, _, _}=Node, Local) ->
-    partisan_peer_service_manager:join(Node),
-    {ok, Remote} = gen_server:call({partisan_peer_service_gossip, Name},
-                                   send_state),
-    Merged = ?SET:merge(Remote, Local),
-    _ = partisan_peer_service_manager:update_state(Merged),
-    partisan_peer_service_events:update(Merged),
-    %% broadcast to all nodes
-    %% get peer list
-    Members = ?SET:value(Merged),
-    _ = [gen_server:cast({partisan_peer_service_gossip, P},
-                         {receive_state, Merged}) || {P, _, _} <- Members, P /= node()],
-    ok.
+attempt_join({_Name, _, _}=Node, _Local) ->
+    partisan_peer_service_manager:join(Node).
 
 %% @doc Attempt to leave the cluster.
 leave(_Args) when is_list(_Args) ->
