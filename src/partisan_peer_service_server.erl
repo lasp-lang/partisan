@@ -134,7 +134,8 @@ handle_message({hello, Node},
         pong ->
             lager:info("Node ~p connected to ~p via disterl.",
                        [Node, node()]),
-            send_message(Socket, Transport, {hello, finished}),
+            {ok, LocalState} = partisan_peer_service_manager:get_local_state(),
+            send_message(Socket, Transport, {merge, LocalState}),
             {noreply, State};
         pang ->
             lager:info("Node could not be connected."),

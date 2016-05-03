@@ -133,9 +133,8 @@ decode(Message) ->
     binary_to_term(Message).
 
 %% @private
-handle_message({hello, finished},
+handle_message({merge, LocalState},
                #state{peer=Peer, from=From}=State) ->
-    {ok, LocalState} = partisan_peer_service_manager:get_local_state(),
     From ! {connected, Peer, LocalState},
     {noreply, State};
 handle_message({hello, _Node}, #state{socket=Socket}=State) ->
