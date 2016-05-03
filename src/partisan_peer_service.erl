@@ -75,14 +75,7 @@ attempt_join({Name, _IPAddress, _Port} = Node) ->
         true ->
             {ok, Local} = partisan_peer_service_manager:get_local_state(),
             attempt_join(Node, Local)
-    end;
-attempt_join(Node) ->
-    %% Bootstrap with disterl if necessary.
-    PeerPort = rpc:call(Node,
-                        partisan_config,
-                        get,
-                        [peer_port, ?PEER_PORT]),
-    attempt_join({Node, {127, 0, 0, 1}, PeerPort}).
+    end.
 
 %% @private
 attempt_join({Name, _, _}, Local) ->
