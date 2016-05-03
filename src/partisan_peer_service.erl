@@ -43,7 +43,9 @@ join(Node) ->
 join(NodeStr, Auto) when is_list(NodeStr) ->
     join(erlang:list_to_atom(lists:flatten(NodeStr)), Auto);
 join(Node, Auto) when is_atom(Node) ->
-    join(node(), Node, Auto).
+    join(node(), Node, Auto);
+join({_Name, _IPAddress, _Port} = Node, _Auto) ->
+    attempt_join(Node).
 
 %% @doc Initiate join. Nodes cannot join themselves.
 join(Node, Node, _) ->
