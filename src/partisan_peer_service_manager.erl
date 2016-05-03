@@ -127,6 +127,7 @@ handle_cast(Msg, State) ->
 handle_info(connect,
             #state{membership=Membership, connections=Connections0}=State) ->
     Connections = establish_connections(Membership, Connections0),
+    schedule_connections(),
     {noreply, State#state{connections=Connections}};
 handle_info({'EXIT', From, Reason},
             #state{connections=Connections0}=State) when Reason =/= normal ->
