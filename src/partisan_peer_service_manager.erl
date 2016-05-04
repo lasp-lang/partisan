@@ -413,7 +413,7 @@ connect(Node) ->
 
 %% @private
 handle_message({receive_state, PeerMembership},
-               #state{membership=Membership}=State) ->
+               #state{pending=Pending, membership=Membership, connections=Connections0}=State) ->
     NewMembership = case ?SET:equal(PeerMembership, Membership) of
         true ->
             %% do nothing
@@ -421,6 +421,13 @@ handle_message({receive_state, PeerMembership},
         false ->
             Merged = ?SET:merge(PeerMembership, Membership),
             partisan_peer_service_events:update(Merged),
+
+            %% Establish any new connections.
+            Connections = establish_connections(Pending, Membership, Connections0),
+
+            %% Gossip.
+            do_gossip(Membership, Connections),
+
             Merged
     end,
     {reply, ok, State#state{membership=NewMembership}}.
