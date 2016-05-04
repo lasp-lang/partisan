@@ -54,8 +54,14 @@ start_link(Peer, From) ->
 %% @private
 -spec init([iolist()]) -> {ok, #state{}}.
 init([Peer, From]) ->
-    {ok, Socket} = connect(Peer),
-    {ok, #state{from=From, socket=Socket, peer=Peer}}.
+    case connect(Peer) of
+        {ok, Socket} ->
+            {ok, #state{from=From, socket=Socket, peer=Peer}};
+        Error ->
+            lager:info("Connection refused to ~p for ~p; will retry!",
+                       [Peer, Error]),
+            {stop, normal}
+    end.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
@@ -64,7 +70,12 @@ init([Peer, From]) ->
 %% @private
 handle_call({send_message, Message}, _From,
             #state{socket=Socket}=State) ->
-    ok = gen_tcp:send(Socket, encode(Message)),
+    case gen_tcp:send(Socket, encode(Message)) of
+        ok ->
+            ok;
+        Error ->
+            lager:info("Message failed to send: ~p", [Error])
+    end,
     {reply, ok, State};
 
 handle_call(Msg, _From, State) ->
@@ -84,6 +95,7 @@ handle_cast(Msg, State) ->
 handle_info({tcp, _Socket, Data}, State0) ->
     handle_message(decode(Data), State0);
 handle_info({tcp_closed, _Socket}, State) ->
+    lager:info("TCP connection closed for pid: ~p", [self()]),
     {stop, normal, State};
 handle_info(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
@@ -117,16 +129,17 @@ connect(Peer) when is_atom(Peer) ->
                         partisan_config,
                         get,
                         [peer_port, ?PEER_PORT]),
-    lager:info("Peer ~p running on port ~p", [Peer, PeerPort]),
     connect({Peer, {127, 0, 0, 1}, PeerPort});
 
 %% @doc Connect to remote peer.
-connect({Name, {_, _, _, _}=IPAddress, Port}) ->
+connect({_Name, {_, _, _, _}=IPAddress, Port}) ->
     Options = [binary, {packet, 2}, {keepalive, true}],
-    lager:info("Connecting to ~p ~p ~p", [Name, IPAddress, Port]),
-    {ok, Socket} = gen_tcp:connect(IPAddress, Port, Options),
-    lager:info("Connected!"),
-    {ok, Socket}.
+    case gen_tcp:connect(IPAddress, Port, Options) of
+        {ok, Socket} ->
+            {ok, Socket};
+        {error, Error} ->
+            {error, Error}
+    end.
 
 %% @private
 decode(Message) ->

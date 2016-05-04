@@ -62,7 +62,7 @@ init(ListenerPid, Socket, Transport, _Options) ->
     link(Socket),
 
     %% Set the socket modes.
-    ok = inet:setopts(Socket, [{packet, 2}, {active, true}]),
+    ok = inet:setopts(Socket, [{packet, 2}, {active, true}, {keepalive, true}]),
 
     %% Generate the welcome message, encode it and transmit the message.
     send_message(Socket, Transport, {hello, node()}),
@@ -83,15 +83,11 @@ init([ListenerPid, Socket, Transport, Options]) ->
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
-
-%% @private
 handle_call(Msg, _From, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
     {reply, ok, State}.
 
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
-
-%% @private
 handle_cast(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
     {noreply, State}.
@@ -122,8 +118,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-handle_message({connected, Node, _RemoteState} = Message, State) ->
-    lager:info("Node connected: ~p", [Node]),
+handle_message({connected, _Node, _RemoteState} = Message, State) ->
     partisan_peer_service_manager:receive_message(Message),
     {noreply, State};
 handle_message({hello, Node},
@@ -144,7 +139,7 @@ handle_message({hello, Node},
     end;
 handle_message(Message, State) ->
     partisan_peer_service_manager:receive_message(Message),
-    {stop, normal, State}.
+    {noreply, State}.
 
 %% @private
 send_message(Socket, Transport, Message) ->
