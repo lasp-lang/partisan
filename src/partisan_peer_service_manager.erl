@@ -181,7 +181,7 @@ handle_call({send_message, Name, Message}, _From,
     {reply, Result, State};
 
 handle_call({receive_message, Message}, _From, State) ->
-    lager:info("Received message from TCP: ~p", [Message]),
+    % lager:info("Received message from TCP: ~p", [Message]),
     handle_message(Message, State);
 
 handle_call(members, _From, #state{membership=Membership}=State) ->
@@ -231,7 +231,8 @@ handle_info(gossip, #state{pending=Pending,
     schedule_gossip(),
     {noreply, State#state{connections=Connections}};
 
-handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
+handle_info({'EXIT', From, Reason}, #state{connections=Connections0}=State) ->
+    lager:info("Process ~p exited: ~p", [From, Reason]),
     FoldFun = fun(K, V, AccIn) ->
                       case V =:= From of
                           true ->
@@ -386,14 +387,15 @@ establish_connections(Pending, Membership, Connections) ->
 %% socket pid if they are connected.
 %%
 maybe_connect({Name, _, _} = Node, Connections0) ->
-    lager:info("Attempting connection to ~p", [Node]),
-    lager:info("Connections: ~p", [Connections0]),
+    % lager:info("Attempting connection to ~p", [Node]),
+    % lager:info("Connections: ~p", [Connections0]),
     Connections = case dict:find(Name, Connections0) of
         %% Found in dict, and disconnected.
         {ok, undefined} ->
             lager:info("Not connected; ~p", [Node]),
             case connect(Node) of
                 {ok, Pid} ->
+                    lager:info("Connected!; ~p", [Pid]),
                     dict:store(Name, Pid, Connections0);
                 Other ->
                     lager:info("Failed; ~p ~p", [Node, Other]),
@@ -411,8 +413,8 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
                     dict:store(Name, undefined, Connections0)
             end
     end,
-    lager:info("Connection were: ~p", [Connections0]),
-    lager:info("Connections are now: ~p", [Connections]),
+    % lager:info("Connection were: ~p", [Connections0]),
+    % lager:info("Connections are now: ~p", [Connections]),
     Connections.
 
 %% @private
@@ -423,9 +425,9 @@ connect(Node) ->
 %% @private
 handle_message({receive_state, PeerMembership},
                #state{membership=Membership}=State) ->
-    lager:info("Receive state from TCP!"),
-    lager:info("Incoming membership: ~p", [PeerMembership]),
-    lager:info("Our membership: ~p", [Membership]),
+    % lager:info("Receive state from TCP!"),
+    % lager:info("Incoming membership: ~p", [PeerMembership]),
+    % lager:info("Our membership: ~p", [Membership]),
     NewMembership = case ?SET:equal(PeerMembership, Membership) of
         true ->
             %% do nothing
@@ -474,8 +476,8 @@ random_peers(Peers, Fanout) ->
 %% @private
 do_send_message(Name, Message, Connections) ->
     %% Find a connection for the remote node, if we have one.
-    lager:info("Attempting send to ~p from connections: ~p",
-               [Name, Connections]),
+    % lager:info("Attempting send to ~p from connections: ~p",
+    %            [Name, Connections]),
     case dict:find(Name, Connections) of
         {ok, undefined} ->
             %% Node was connected but is now disconnected.
@@ -483,8 +485,6 @@ do_send_message(Name, Message, Connections) ->
             {error, disconnected};
         {ok, Pid} ->
             %% Message client connection with message.
-            lager:info("Pid found for TCP send: ~p => ~p",
-                       [Name, Pid]),
             gen_server:call(Pid, {send_message, Message}, infinity);
         error ->
             %% Node has not been connected yet.

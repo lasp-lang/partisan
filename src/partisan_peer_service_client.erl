@@ -70,7 +70,12 @@ init([Peer, From]) ->
 %% @private
 handle_call({send_message, Message}, _From,
             #state{socket=Socket}=State) ->
-    ok = gen_tcp:send(Socket, encode(Message)),
+    case gen_tcp:send(Socket, encode(Message)) of
+        ok ->
+            ok;
+        Error ->
+            lager:info("Message failed to send: ~p", [Error])
+    end,
     {reply, ok, State};
 
 handle_call(Msg, _From, State) ->
@@ -90,6 +95,7 @@ handle_cast(Msg, State) ->
 handle_info({tcp, _Socket, Data}, State0) ->
     handle_message(decode(Data), State0);
 handle_info({tcp_closed, _Socket}, State) ->
+    lager:info("TCP connection closed for pid: ~p", [self()]),
     {stop, normal, State};
 handle_info(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
@@ -123,19 +129,15 @@ connect(Peer) when is_atom(Peer) ->
                         partisan_config,
                         get,
                         [peer_port, ?PEER_PORT]),
-    lager:info("Peer ~p running on port ~p", [Peer, PeerPort]),
     connect({Peer, {127, 0, 0, 1}, PeerPort});
 
 %% @doc Connect to remote peer.
-connect({Name, {_, _, _, _}=IPAddress, Port}) ->
+connect({_Name, {_, _, _, _}=IPAddress, Port}) ->
     Options = [binary, {packet, 2}, {keepalive, true}],
-    lager:info("Connecting to ~p ~p ~p", [Name, IPAddress, Port]),
     case gen_tcp:connect(IPAddress, Port, Options) of
         {ok, Socket} ->
-            lager:info("Connected!"),
             {ok, Socket};
         {error, Error} ->
-            lager:info("Connection refused!"),
             {error, Error}
     end.
 
