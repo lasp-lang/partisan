@@ -127,8 +127,6 @@ handle_message({hello, Node},
     %% control messaging in the test suite execution.
     case net_adm:ping(Node) of
         pong ->
-            lager:info("Node ~p connected to ~p via disterl.",
-                       [Node, node()]),
             {ok, LocalState} = partisan_peer_service_manager:get_local_state(),
             send_message(Socket, Transport, {merge, LocalState}),
             {noreply, State};
