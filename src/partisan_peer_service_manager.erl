@@ -181,7 +181,6 @@ handle_call({send_message, Name, Message}, _From,
     {reply, Result, State};
 
 handle_call({receive_message, Message}, _From, State) ->
-    % lager:info("Received message from TCP: ~p", [Message]),
     handle_message(Message, State);
 
 handle_call(members, _From, #state{membership=Membership}=State) ->
@@ -223,10 +222,6 @@ handle_info(gossip, #state{pending=Pending,
                            membership=Membership,
                            connections=Connections0}=State) ->
     Connections = establish_connections(Pending, Membership, Connections0),
-    % lager:info("Gossip interval triggered!"),
-    % lager:info("Pending: ~p", [Pending]),
-    % lager:info("Membership: ~p", [Membership]),
-    % lager:info("Connections: ~p", [Connections]),
     do_gossip(Membership, Connections),
     schedule_gossip(),
     {noreply, State#state{connections=Connections}};
@@ -385,8 +380,6 @@ establish_connections(Pending, Membership, Connections) ->
 %% socket pid if they are connected.
 %%
 maybe_connect({Name, _, _} = Node, Connections0) ->
-    % lager:info("Attempting connection to ~p", [Node]),
-    % lager:info("Connections: ~p", [Connections0]),
     Connections = case dict:find(Name, Connections0) of
         %% Found in dict, and disconnected.
         {ok, undefined} ->
