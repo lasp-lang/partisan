@@ -223,8 +223,7 @@ handle_info(gossip, #state{pending=Pending,
     schedule_gossip(),
     {noreply, State#state{connections=Connections}};
 
-handle_info({'EXIT', From, Reason}, #state{connections=Connections0}=State) ->
-    lager:info("Process ~p exited: ~p", [From, Reason]),
+handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
     FoldFun = fun(K, V, AccIn) ->
                       case V =:= From of
                           true ->
@@ -380,13 +379,10 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
     Connections = case dict:find(Name, Connections0) of
         %% Found in dict, and disconnected.
         {ok, undefined} ->
-            lager:info("Not connected; ~p", [Node]),
             case connect(Node) of
                 {ok, Pid} ->
-                    lager:info("Connected!; ~p", [Pid]),
                     dict:store(Name, Pid, Connections0);
-                Other ->
-                    lager:info("Failed; ~p ~p", [Node, Other]),
+                _ ->
                     dict:store(Name, undefined, Connections0)
             end;
         %% Found in dict and connected.
@@ -468,14 +464,22 @@ do_send_message(Name, Message, Connections) ->
     case dict:find(Name, Connections) of
         {ok, undefined} ->
             %% Node was connected but is now disconnected.
-            lager:warning("Node disconnected: ~p", [Name]),
             {error, disconnected};
         {ok, Pid} ->
-            %% Message client connection with message.
-            gen_server:call(Pid, {send_message, Message}, infinity);
+            %% Message client connection with message; this could race
+            %% with the TCP connetion closing and the process shuttng
+            %% down, so catch any noproc exceptions.
+            %%
+            %% Ignore, because it will get retried eventually.
+            %%
+            try
+                gen_server:call(Pid, {send_message, Message}, infinity)
+            catch
+                _:_ ->
+                    ok
+            end;
         error ->
             %% Node has not been connected yet.
-            lager:info("Node has not been connected: ~p", [Name]),
             {error, not_yet_connected}
     end.
 
