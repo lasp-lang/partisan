@@ -57,9 +57,7 @@ init([Peer, From]) ->
     case connect(Peer) of
         {ok, Socket} ->
             {ok, #state{from=From, socket=Socket, peer=Peer}};
-        Error ->
-            lager:info("Connection refused to ~p for ~p; will retry!",
-                       [Peer, Error]),
+        _Error ->
             {stop, normal}
     end.
 
@@ -95,7 +93,6 @@ handle_cast(Msg, State) ->
 handle_info({tcp, _Socket, Data}, State0) ->
     handle_message(decode(Data), State0);
 handle_info({tcp_closed, _Socket}, State) ->
-    lager:info("TCP connection closed for pid: ~p", [self()]),
     {stop, normal, State};
 handle_info(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
