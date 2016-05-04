@@ -15,3 +15,8 @@ Partisan is still full membership and under active development (for now!).
 * Connections are verified at each gossip round.
 * Configurable fanout.
 * On join, gossip is performed immediately, instead of having to wait for the next gossip round.
+
+Next steps:
+
+* Augment protocol to support partial views via HyParView
+* Investigate optimizations from X-BOT paper for better clustering coefficients and degree distribution
