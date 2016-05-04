@@ -26,8 +26,6 @@
 -export([start_link/0,
          stop/0]).
 
--export([receive_state/1]).
-
 -export([init/1,
          handle_call/3,
          handle_cast/2,
@@ -46,9 +44,6 @@ start_link() ->
 
 stop() ->
     gen_server:call(?MODULE, stop).
-
-receive_state(PeerState) ->
-    gen_server:cast(?MODULE, {receive_state, PeerState}).
 
 %%%===============================================================
 %%% gen_server callbacks
