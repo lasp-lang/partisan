@@ -25,7 +25,6 @@
          join/2,
          join/3,
          attempt_join/1,
-         attempt_join/2,
          leave/1,
          decode/1,
          stop/0,
@@ -66,19 +65,7 @@ decode(State) ->
     [P || {P, _, _} <- ?SET:value(State)].
 
 %% @private
-attempt_join({Name, _IPAddress, _Port} = Node) ->
-    lager:info("Sent join request to: ~p~n", [Node]),
-    case net_kernel:connect(Name) of
-        false ->
-            lager:info("Unable to connect to ~p~n", [Node]),
-            {error, not_reachable};
-        true ->
-            {ok, Local} = partisan_peer_service_manager:get_local_state(),
-            attempt_join(Node, Local)
-    end.
-
-%% @private
-attempt_join({_Name, _, _}=Node, _Local) ->
+attempt_join({_Name, _, _}=Node) ->
     partisan_peer_service_manager:join(Node).
 
 %% @doc Attempt to leave the cluster.

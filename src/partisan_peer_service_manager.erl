@@ -159,8 +159,14 @@ handle_call(leave, _From,
     %% Shutdown; connections terminated on shutdown.
     {stop, normal, State#state{membership=Membership}};
 
-handle_call({join, Node}, _From, #state{pending=Pending0}=State) ->
+handle_call({join, {Name, _, _}=Node},
+            _From,
+            #state{pending=Pending0}=State) ->
     lager:info("Attempting to join node: ~p", [Node]),
+
+    %% Attempt to join via disterl for control messages during testing.
+    %% @todo Eventually remove this, when we outgrow disterl.
+    net_kernel:connect(Name),
 
     %% Add to list of pending connections.
     Pending = [Node|Pending0],
