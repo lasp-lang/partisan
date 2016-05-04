@@ -18,5 +18,5 @@ Partisan is still full membership and under active development (for now!).
 
 Next steps:
 
-* Augment protocol to support partial views via HyParView
-* Investigate optimizations from X-BOT paper for better clustering coefficients and degree distribution
+* Augment protocol to support partial views via HyParView.
+* Investigate optimizations from X-BOT paper for better clustering coefficients and degree distribution.
