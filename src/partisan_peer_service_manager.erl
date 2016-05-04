@@ -377,8 +377,6 @@ establish_connections(Pending, Membership, Connections) ->
     %% Reconnect disconnected members and members waiting to join.
     Members = members(Membership),
     AllPeers = lists:keydelete(node(), 1, Members ++ Pending),
-    % lager:info("~p ensuring connections to all peers: ~p",
-    %            [node(), AllPeers]),
     lists:foldl(fun maybe_connect/2, Connections, AllPeers).
 
 %% @private
@@ -413,8 +411,6 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
                     dict:store(Name, undefined, Connections0)
             end
     end,
-    % lager:info("Connection were: ~p", [Connections0]),
-    % lager:info("Connections are now: ~p", [Connections]),
     Connections.
 
 %% @private
@@ -425,9 +421,6 @@ connect(Node) ->
 %% @private
 handle_message({receive_state, PeerMembership},
                #state{membership=Membership}=State) ->
-    % lager:info("Receive state from TCP!"),
-    % lager:info("Incoming membership: ~p", [PeerMembership]),
-    % lager:info("Our membership: ~p", [Membership]),
     NewMembership = case ?SET:equal(PeerMembership, Membership) of
         true ->
             %% do nothing
@@ -452,7 +445,6 @@ do_gossip(Membership, Connections) ->
             ok;
         AllPeers ->
             {ok, Peers} = random_peers(AllPeers, Fanout),
-            lager:info("Peers: ~p", [Peers]),
             lists:foreach(fun(Peer) ->
                         do_send_message(Peer,
                                         {receive_state, Membership},
@@ -476,8 +468,6 @@ random_peers(Peers, Fanout) ->
 %% @private
 do_send_message(Name, Message, Connections) ->
     %% Find a connection for the remote node, if we have one.
-    % lager:info("Attempting send to ~p from connections: ~p",
-    %            [Name, Connections]),
     case dict:find(Name, Connections) of
         {ok, undefined} ->
             %% Node was connected but is now disconnected.
