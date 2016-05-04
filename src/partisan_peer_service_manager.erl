@@ -29,6 +29,7 @@
          get_local_state/0,
          get_actor/0,
          join/1,
+         leave/0,
          update_state/1,
          delete_state/0,
          send_message/2,
@@ -95,6 +96,10 @@ receive_message(Message) ->
 join(Node) ->
     gen_server:call(?MODULE, {join, Node}, infinity).
 
+%% @doc Leave the cluster.
+leave() ->
+    gen_server:call(?MODULE, leave, infinity).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -128,6 +133,31 @@ init([]) ->
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
+
+handle_call(leave, _From,
+            #state{actor=Actor,
+                   connections=Connections,
+                   membership=Membership0}=State) ->
+    %% We may exist in the membership on multiple ports, so we need to
+    %% remove all.
+    Membership = lists:foldl(fun({Node, _, _}, L0) ->
+                        case node() of
+                            Node ->
+                                {ok, L} = ?SET:update({remove, node()}, Actor, L0),
+                                L;
+                            _ ->
+                                L0
+                        end
+                end, Membership0, ?SET:value(Membership0)),
+
+    %% Gossip.
+    do_gossip(Membership, Connections),
+
+    %% Remove state.
+    delete_state_from_disk(),
+
+    %% Shutdown; connections terminated on shutdown.
+    {stop, normal, State#state{membership=Membership}};
 
 handle_call({join, Node}, _From, #state{pending=Pending0}=State) ->
     lager:info("Attempting to join node: ~p", [Node]),

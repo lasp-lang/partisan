@@ -83,37 +83,7 @@ attempt_join({_Name, _, _}=Node, _Local) ->
 
 %% @doc Attempt to leave the cluster.
 leave(_Args) when is_list(_Args) ->
-    {ok, Local} = partisan_peer_service_manager:get_local_state(),
-    {ok, Actor} = partisan_peer_service_manager:get_actor(),
-    Leave = lists:foldl(fun({Node, _, _}, L0) ->
-                        case node() of
-                            Node ->
-                                {ok, L} = ?SET:update({remove, node()}, Actor, L0),
-                                L;
-                            _ ->
-                                L0
-                        end
-                end, Local, ?SET:value(Local)),
-    case random_peer(Leave) of
-        {ok, Peer} ->
-            {ok, Remote} = gen_server:call({partisan_peer_service_gossip, Peer}, send_state),
-            Merged = ?SET:merge(Leave, Remote),
-            _ = gen_server:cast({partisan_peer_service_gossip, Peer}, {receive_state, Merged}),
-            {ok, Remote2} = gen_server:call({partisan_peer_service_gossip, Peer}, send_state),
-            Remote2List = ?SET:value(Remote2),
-            case [P || {P, _, _} <- Remote2List, P =:= node()] of
-                [] ->
-                    %% leaving the cluster shuts down the node
-                    partisan_peer_service_manager:delete_state(),
-                    stop("Leaving cluster");
-                _ ->
-                    leave([])
-            end;
-        {error, singleton} ->
-            lager:warning("Cannot leave, not a member of a cluster.")
-    end;
-leave(_Args) ->
-    leave([]).
+    partisan_peer_service_manager:leave().
 
 %% @doc Stop.
 stop() ->
@@ -123,16 +93,3 @@ stop() ->
 stop(Reason) ->
     lager:notice("~p", [Reason]),
     init:stop().
-
-%% @private
-random_peer(Leave) ->
-    Members = ?SET:value(Leave),
-    Peers = [P || {P, _, _} <- Members],
-    case Peers of
-        [] ->
-            {error, singleton};
-        _ ->
-            Idx = random:uniform(length(Peers)),
-            Peer = lists:nth(Idx, Peers),
-            {ok, Peer}
-    end.
