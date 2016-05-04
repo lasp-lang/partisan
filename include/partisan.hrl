@@ -4,9 +4,7 @@
 -define(PEER_PORT, 9000).
 -define(PEER_SERVICE_SERVER, partisan_peer_service_server).
 -define(FANOUT, 5).
-
-%% @todo Reduce me.
--define(GOSSIP_INTERVAL, 300).
+-define(GOSSIP_INTERVAL, 1000).
 
 -type node_spec() :: {node(), inet:ip_address(), non_neg_integer()}.
 

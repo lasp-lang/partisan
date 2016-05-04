@@ -54,8 +54,14 @@ start_link(Peer, From) ->
 %% @private
 -spec init([iolist()]) -> {ok, #state{}}.
 init([Peer, From]) ->
-    {ok, Socket} = connect(Peer),
-    {ok, #state{from=From, socket=Socket, peer=Peer}}.
+    case connect(Peer) of
+        {ok, Socket} ->
+            {ok, #state{from=From, socket=Socket, peer=Peer}};
+        Error ->
+            lager:info("Connection refused to ~p for ~p; will retry!",
+                       [Peer, Error]),
+            {stop, normal}
+    end.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
@@ -124,9 +130,14 @@ connect(Peer) when is_atom(Peer) ->
 connect({Name, {_, _, _, _}=IPAddress, Port}) ->
     Options = [binary, {packet, 2}, {keepalive, true}],
     lager:info("Connecting to ~p ~p ~p", [Name, IPAddress, Port]),
-    {ok, Socket} = gen_tcp:connect(IPAddress, Port, Options),
-    lager:info("Connected!"),
-    {ok, Socket}.
+    case gen_tcp:connect(IPAddress, Port, Options) of
+        {ok, Socket} ->
+            lager:info("Connected!"),
+            {ok, Socket};
+        {error, Error} ->
+            lager:info("Connection refused!"),
+            {error, Error}
+    end.
 
 %% @private
 decode(Message) ->

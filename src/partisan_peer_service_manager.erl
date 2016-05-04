@@ -115,9 +115,6 @@ init([]) ->
     %% Process connection exits.
     process_flag(trap_exit, true),
 
-    %% Schedule connection keepalive.
-    schedule_connections(),
-
     %% Schedule periodic gossip.
     schedule_gossip(),
 
@@ -161,7 +158,7 @@ handle_call(leave, _From,
 
 handle_call({join, {Name, _, _}=Node},
             _From,
-            #state{pending=Pending0}=State) ->
+            #state{pending=Pending0, connections=Connections0}=State) ->
     lager:info("Attempting to join node: ~p", [Node]),
 
     %% Attempt to join via disterl for control messages during testing.
@@ -172,10 +169,11 @@ handle_call({join, {Name, _, _}=Node},
     Pending = [Node|Pending0],
 
     %% Trigger connection.
-    connect(Node),
+    Connections = maybe_connect(Node, Connections0),
 
     %% Return.
-    {reply, ok, State#state{pending=Pending}};
+    {reply, ok, State#state{pending=Pending,
+                            connections=Connections}};
 
 handle_call({send_message, Name, Message}, _From,
             #state{connections=Connections}=State) ->
@@ -183,6 +181,7 @@ handle_call({send_message, Name, Message}, _From,
     {reply, Result, State};
 
 handle_call({receive_message, Message}, _From, State) ->
+    lager:info("Received message from TCP: ~p", [Message]),
     handle_message(Message, State);
 
 handle_call(members, _From, #state{membership=Membership}=State) ->
@@ -196,10 +195,12 @@ handle_call(get_actor, _From, #state{actor=Actor}=State) ->
     {reply, {ok, Actor}, State};
 
 handle_call({update_state, NewState}, _From,
-            #state{membership=Membership, connections=Connections0}=State) ->
+            #state{pending=Pending,
+                   membership=Membership,
+                   connections=Connections0}=State) ->
     Merged = ?SET:merge(Membership, NewState),
     persist_state(Merged),
-    Connections = establish_connections(Membership, Connections0),
+    Connections = establish_connections(Pending, Membership, Connections0),
     {reply, ok, State#state{membership=Merged, connections=Connections}};
 
 handle_call(delete_state, _From, State) ->
@@ -218,17 +219,17 @@ handle_cast(Msg, State) ->
 
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
-handle_info(connect,
-            #state{membership=Membership, connections=Connections0}=State) ->
-    Connections = establish_connections(Membership, Connections0),
-    schedule_connections(),
-    {noreply, State#state{connections=Connections}};
-
-handle_info(gossip, #state{membership=Membership,
-                           connections=Connections}=State) ->
+handle_info(gossip, #state{pending=Pending,
+                           membership=Membership,
+                           connections=Connections0}=State) ->
+    Connections = establish_connections(Pending, Membership, Connections0),
+    % lager:info("Gossip interval triggered!"),
+    % lager:info("Pending: ~p", [Pending]),
+    % lager:info("Membership: ~p", [Membership]),
+    % lager:info("Connections: ~p", [Connections]),
     do_gossip(Membership, Connections),
     schedule_gossip(),
-    {noreply, State};
+    {noreply, State#state{connections=Connections}};
 
 handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
     FoldFun = fun(K, V, AccIn) ->
@@ -275,7 +276,12 @@ handle_info(Msg, State) ->
 -spec terminate(term(), #state{}) -> term().
 terminate(_Reason, #state{connections=Connections}=_State) ->
     dict:map(fun(_K, Pid) ->
-                     gen_server:stop(Pid, normal, infinity)
+                     try
+                         gen_server:stop(Pid, normal, infinity)
+                     catch
+                         _:_ ->
+                             ok
+                     end
              end, Connections),
     ok.
 
@@ -366,9 +372,13 @@ members(Membership) ->
     ?SET:value(Membership).
 
 %% @private
-establish_connections(Membership, Connections) ->
+establish_connections(Pending, Membership, Connections) ->
+    %% Reconnect disconnected members and members waiting to join.
     Members = members(Membership),
-    lists:foldl(fun maybe_connect/2, Connections, Members).
+    AllPeers = lists:keydelete(node(), 1, Members ++ Pending),
+    % lager:info("~p ensuring connections to all peers: ~p",
+    %            [node(), AllPeers]),
+    lists:foldl(fun maybe_connect/2, Connections, AllPeers).
 
 %% @private
 %% Function should enforce the invariant that all cluster members are
@@ -376,13 +386,17 @@ establish_connections(Membership, Connections) ->
 %% socket pid if they are connected.
 %%
 maybe_connect({Name, _, _} = Node, Connections0) ->
+    lager:info("Attempting connection to ~p", [Node]),
+    lager:info("Connections: ~p", [Connections0]),
     Connections = case dict:find(Name, Connections0) of
         %% Found in dict, and disconnected.
         {ok, undefined} ->
+            lager:info("Not connected; ~p", [Node]),
             case connect(Node) of
                 {ok, Pid} ->
                     dict:store(Name, Pid, Connections0);
-                _ ->
+                Other ->
+                    lager:info("Failed; ~p ~p", [Node, Other]),
                     dict:store(Name, undefined, Connections0)
             end;
         %% Found in dict and connected.
@@ -397,6 +411,8 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
                     dict:store(Name, undefined, Connections0)
             end
     end,
+    lager:info("Connection were: ~p", [Connections0]),
+    lager:info("Connections are now: ~p", [Connections]),
     Connections.
 
 %% @private
@@ -405,12 +421,11 @@ connect(Node) ->
     partisan_peer_service_client:start_link(Node, Self).
 
 %% @private
-schedule_connections() ->
-    erlang:send_after(15000, self(), connect).
-
-%% @private
 handle_message({receive_state, PeerMembership},
                #state{membership=Membership}=State) ->
+    lager:info("Receive state from TCP!"),
+    lager:info("Incoming membership: ~p", [PeerMembership]),
+    lager:info("Our membership: ~p", [Membership]),
     NewMembership = case ?SET:equal(PeerMembership, Membership) of
         true ->
             %% do nothing
@@ -433,9 +448,14 @@ do_gossip(Membership, Connections) ->
     case get_peers(Membership) of
         [] ->
             ok;
-        Peers ->
-            {ok, Peer} = random_peers(Peers, Fanout),
-            do_send_message(Peer, {receive_state, Membership}, Connections),
+        AllPeers ->
+            {ok, Peers} = random_peers(AllPeers, Fanout),
+            lager:info("Peers: ~p", [Peers]),
+            lists:foreach(fun(Peer) ->
+                        do_send_message(Peer,
+                                        {receive_state, Membership},
+                                        Connections)
+                end, Peers),
             ok
     end.
 
@@ -454,13 +474,22 @@ random_peers(Peers, Fanout) ->
 %% @private
 do_send_message(Name, Message, Connections) ->
     %% Find a connection for the remote node, if we have one.
+    lager:info("Attempting send to ~p from connections: ~p",
+               [Name, Connections]),
     case dict:find(Name, Connections) of
+        {ok, undefined} ->
+            %% Node was connected but is now disconnected.
+            lager:warning("Node disconnected: ~p", [Name]),
+            {error, disconnected};
         {ok, Pid} ->
             %% Message client connection with message.
+            lager:info("Pid found for TCP send: ~p => ~p",
+                       [Name, Pid]),
             gen_server:call(Pid, {send_message, Message}, infinity);
         error ->
-            %% Return error for now; node is not connected.
-            {error, disconnected}
+            %% Node has not been connected yet.
+            lager:info("Node has not been connected: ~p", [Name]),
+            {error, not_yet_connected}
     end.
 
 %% @reference %% http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
