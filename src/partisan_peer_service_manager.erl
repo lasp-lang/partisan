@@ -33,6 +33,7 @@
          update_state/1,
          delete_state/0,
          send_message/2,
+         forward_message/3,
          receive_message/1]).
 
 %% gen_server callbacks
@@ -87,6 +88,10 @@ delete_state() ->
 %% @doc Send message to a remote manager.
 send_message(Name, Message) ->
     gen_server:call(?MODULE, {send_message, Name, Message}, infinity).
+
+%% @doc Forward message to registered process on the remote side.
+forward_message(Name, ServerRef, Message) ->
+    gen_server:call(?MODULE, {forward_message, Name, ServerRef, Message}, infinity).
 
 %% @doc Receive message from a remote manager.
 receive_message(Message) ->
@@ -175,6 +180,13 @@ handle_call({join, {Name, _, _}=Node},
 handle_call({send_message, Name, Message}, _From,
             #state{connections=Connections}=State) ->
     Result = do_send_message(Name, Message, Connections),
+    {reply, Result, State};
+
+handle_call({forward_message, Name, ServerRef, Message}, _From,
+            #state{connections=Connections}=State) ->
+    Result = do_send_message(Name,
+                             {forward_message, ServerRef, Message},
+                             Connections),
     {reply, Result, State};
 
 handle_call({receive_message, Message}, _From, State) ->
@@ -409,9 +421,10 @@ handle_message({receive_state, PeerMembership},
                #state{pending=Pending, membership=Membership, connections=Connections0}=State) ->
     NewMembership = case ?SET:equal(PeerMembership, Membership) of
         true ->
-            %% do nothing
+            %% No change.
             Membership;
         false ->
+            %% Merge data items.
             Merged = ?SET:merge(PeerMembership, Membership),
             partisan_peer_service_events:update(Merged),
 
@@ -423,7 +436,10 @@ handle_message({receive_state, PeerMembership},
 
             Merged
     end,
-    {reply, ok, State#state{membership=NewMembership}}.
+    {reply, ok, State#state{membership=NewMembership}};
+handle_message({forward_message, ServerRef, Message}, State) ->
+    gen_server:cast(ServerRef, Message),
+    {reply, ok, State}.
 
 %% @private
 schedule_gossip() ->
