@@ -53,6 +53,4 @@ peer_config() ->
     %% Make sure configuration has current peer port.
     partisan_config:set(peer_port, PeerPort),
 
-    Config = [{port, PeerPort}],
-    lager:info("Peer Protocol Configuration: ~p", [Config]),
-    Config.
+    [{port, PeerPort}].
