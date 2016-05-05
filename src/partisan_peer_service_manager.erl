@@ -482,18 +482,7 @@ do_send_message(Name, Message, Connections) ->
             %% Node was connected but is now disconnected.
             {error, disconnected};
         {ok, Pid} ->
-            %% Message client connection with message; this could race
-            %% with the TCP connetion closing and the process shuttng
-            %% down, so catch any noproc exceptions.
-            %%
-            %% Ignore, because it will get retried eventually.
-            %%
-            try
-                gen_server:call(Pid, {send_message, Message}, infinity)
-            catch
-                _:_ ->
-                    ok
-            end;
+            gen_server:cast(Pid, {send_message, Message});
         error ->
             %% Node has not been connected yet.
             {error, not_yet_connected}
