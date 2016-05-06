@@ -30,9 +30,14 @@
          stop/0,
          stop/1,
          members/0,
+         manager/0,
          add_sup_callback/1]).
 
 -include("partisan.hrl").
+
+%% @doc Return current peer service manager.
+manager() ->
+    ?PEER_SERVICE_MANAGER.
 
 %% @doc prepare node to join a cluster
 join(Node) ->
