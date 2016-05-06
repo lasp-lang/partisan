@@ -28,7 +28,6 @@
 -export([start_link/0,
          members/0,
          get_local_state/0,
-         get_actor/0,
          join/1,
          leave/0,
          leave/1,
@@ -70,10 +69,6 @@ members() ->
 %% @doc Return local node's view of cluster membership.
 get_local_state() ->
     gen_server:call(?MODULE, get_local_state, infinity).
-
-%% @doc Return local node's current actor.
-get_actor() ->
-    gen_server:call(?MODULE, get_actor, infinity).
 
 %% @doc Send message to a remote manager.
 send_message(Name, Message) ->
@@ -197,9 +192,6 @@ handle_call(members, _From, #state{membership=Membership}=State) ->
 
 handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
     {reply, {ok, Membership}, State};
-
-handle_call(get_actor, _From, #state{actor=Actor}=State) ->
-    {reply, {ok, Actor}, State};
 
 handle_call(Msg, _From, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),

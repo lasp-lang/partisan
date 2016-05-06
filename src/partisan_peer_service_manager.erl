@@ -27,7 +27,6 @@
 -callback members() -> [node()].
 
 -callback get_local_state() -> term().
--callback get_actor() -> actor().
 
 -callback join(node_spec()) -> ok.
 -callback leave() -> ok.
