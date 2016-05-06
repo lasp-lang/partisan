@@ -427,6 +427,7 @@ handle_message({receive_state, PeerMembership},
             %% Merge data items.
             Merged = ?SET:merge(PeerMembership, Membership),
             partisan_peer_service_events:update(Merged),
+            persist_state(Merged),
 
             %% Establish any new connections.
             Connections = establish_connections(Pending, Membership, Connections0),
