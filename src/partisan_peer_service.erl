@@ -54,7 +54,7 @@ join(_, Node, _Auto) ->
 
 %% @doc Return cluster members.
 members() ->
-    partisan_peer_service_manager:members().
+    ?PEER_SERVICE_MANAGER:members().
 
 %% @doc Add callback.
 add_sup_callback(Function) ->
@@ -66,11 +66,11 @@ decode(State) ->
 
 %% @private
 attempt_join({_Name, _, _}=Node) ->
-    partisan_peer_service_manager:join(Node).
+    ?PEER_SERVICE_MANAGER:join(Node).
 
 %% @doc Attempt to leave the cluster.
 leave(_Args) when is_list(_Args) ->
-    partisan_peer_service_manager:leave().
+    ?PEER_SERVICE_MANAGER:leave().
 
 %% @doc Stop.
 stop() ->

@@ -119,7 +119,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 handle_message({connected, _Node, _RemoteState} = Message, State) ->
-    partisan_peer_service_manager:receive_message(Message),
+    ?PEER_SERVICE_MANAGER:receive_message(Message),
     {noreply, State};
 handle_message({hello, Node},
                #state{socket=Socket, transport=Transport}=State) ->
@@ -127,7 +127,7 @@ handle_message({hello, Node},
     %% control messaging in the test suite execution.
     case net_adm:ping(Node) of
         pong ->
-            {ok, LocalState} = partisan_peer_service_manager:get_local_state(),
+            {ok, LocalState} = ?PEER_SERVICE_MANAGER:get_local_state(),
             send_message(Socket, Transport, {merge, LocalState}),
             {noreply, State};
         pang ->
@@ -136,7 +136,7 @@ handle_message({hello, Node},
             {noreply, State}
     end;
 handle_message(Message, State) ->
-    partisan_peer_service_manager:receive_message(Message),
+    ?PEER_SERVICE_MANAGER:receive_message(Message),
     {noreply, State}.
 
 %% @private

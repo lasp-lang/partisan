@@ -26,7 +26,7 @@
 -include("partisan.hrl").
 
 members([]) ->
-    {ok, Members} = partisan_peer_service_manager:members(),
+    {ok, Members} = ?PEER_SERVICE_MANAGER:members(),
     print_members(Members).
 
 print_members(Members) ->

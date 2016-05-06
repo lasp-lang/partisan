@@ -5,6 +5,10 @@
 -define(PEER_SERVICE_SERVER, partisan_peer_service_server).
 -define(FANOUT, 5).
 -define(GOSSIP_INTERVAL, 1000).
+-define(PEER_SERVICE_MANAGER, partisan_default_peer_service_manager).
 
+-type actor() :: binary().
+-type connections() :: dict:dict(node(), port()).
 -type node_spec() :: {node(), inet:ip_address(), non_neg_integer()}.
-
+-type message() :: term().
+-type name() :: node().

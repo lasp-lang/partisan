@@ -29,12 +29,17 @@
          add_sup_handler/2,
          add_callback/1,
          add_sup_callback/1,
-         update/1
-        ]).
+         update/1]).
+
+-include("partisan.hrl").
 
 %% gen_event callbacks
--export([init/1, handle_event/2, handle_call/2,
-         handle_info/2, terminate/2, code_change/3]).
+-export([init/1,
+         handle_event/2,
+         handle_call/2,
+         handle_info/2,
+         terminate/2,
+         code_change/3]).
 
 -record(state, { callback }).
 
@@ -65,7 +70,7 @@ update(LocalState) ->
 %% ===================================================================
 
 init([Fn]) ->
-    {ok, LocalState} = partisan_peer_service_manager:get_local_state(),
+    {ok, LocalState} = ?PEER_SERVICE_MANAGER:get_local_state(),
     Fn(LocalState),
     {ok, #state {callback = Fn}}.
 
