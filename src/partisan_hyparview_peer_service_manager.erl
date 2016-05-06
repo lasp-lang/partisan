@@ -1,0 +1,506 @@
+%% -------------------------------------------------------------------
+%%
+%% Copyright (c) 2016 Christopher Meiklejohn.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% -------------------------------------------------------------------
+
+%% @doc *** THIS IS NOT COMPLETE YET. ***
+
+-module(partisan_hyparview_peer_service_manager).
+-author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
+
+-behaviour(gen_server).
+-behaviour(partisan_peer_service_manager).
+
+-define(ACTIVE_SIZE, 5).
+-define(PASSIVE_SIZE, 30).
+-define(ARWL, 6).
+-define(PRWL, 3).
+
+-include("partisan.hrl").
+
+%% partisan_peer_service_manager callbacks
+-export([start_link/0,
+         members/0,
+         get_local_state/0,
+         join/1,
+         leave/0,
+         leave/1,
+         send_message/2,
+         forward_message/3,
+         receive_message/1]).
+
+%% gen_server callbacks
+-export([init/1,
+         handle_call/3,
+         handle_cast/2,
+         handle_info/2,
+         terminate/2,
+         code_change/3]).
+
+%% @todo Remove me.
+-compile([export_all]).
+
+-type active() :: [node_spec()].
+-type passive() :: [node_spec()].
+-type pending() :: [node_spec()].
+
+-record(state, {actor :: actor(),
+                active :: active(),
+                passive :: passive(),
+                pending :: pending(),
+                connections :: connections()}).
+
+%%%===================================================================
+%%% partisan_peer_service_manager callbacks
+%%%===================================================================
+
+%% @doc Same as start_link([]).
+-spec start_link() -> {ok, pid()} | ignore | {error, term()}.
+start_link() ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+%% @doc Return membership list.
+members() ->
+    gen_server:call(?MODULE, members, infinity).
+
+%% @doc Return local node's view of cluster membership.
+get_local_state() ->
+    gen_server:call(?MODULE, get_local_state, infinity).
+
+%% @doc Send message to a remote manager.
+send_message(Name, Message) ->
+    gen_server:call(?MODULE, {send_message, Name, Message}, infinity).
+
+%% @doc Forward message to registered process on the remote side.
+forward_message(Name, ServerRef, Message) ->
+    gen_server:call(?MODULE, {forward_message, Name, ServerRef, Message}, infinity).
+
+%% @doc Receive message from a remote manager.
+receive_message(Message) ->
+    gen_server:call(?MODULE, {receive_message, Message}, infinity).
+
+%% @doc Attempt to join a remote node.
+join(Node) ->
+    gen_server:call(?MODULE, {join, Node}, infinity).
+
+%% @doc Leave the cluster.
+leave() ->
+    gen_server:call(?MODULE, {leave, node()}, infinity).
+
+%% @doc Remove another node from the cluster.
+leave(Node) ->
+    gen_server:call(?MODULE, {leave, Node}, infinity).
+
+%%%===================================================================
+%%% gen_server callbacks
+%%%===================================================================
+
+%% @private
+-spec init([]) -> {ok, #state{}}.
+init([]) ->
+    %% Seed the process at initialization.
+    random:seed(erlang:phash2([node()]),
+                erlang:monotonic_time(),
+                erlang:unique_integer()),
+
+    %% Process connection exits.
+    process_flag(trap_exit, true),
+
+    Actor = gen_actor(),
+    {Active, Passive} = maybe_load_state_from_disk(Actor),
+    Connections = dict:new(),
+
+    {ok, #state{pending=[],
+                active=Active,
+                passive=Passive,
+                connections=Connections}}.
+
+%% @private
+-spec handle_call(term(), {pid(), term()}, #state{}) ->
+    {reply, term(), #state{}}.
+
+handle_call({leave, _Node}, _From, State) ->
+    {reply, error, State};
+
+handle_call({join, {_Name, _, _}=Node}, _From, State) ->
+    gen_server:cast(?MODULE, {join, Node}),
+    {reply, ok, State};
+
+handle_call({send_message, Name, Message}, _From,
+            #state{connections=Connections}=State) ->
+    Result = do_send_message(Name, Message, Connections),
+    {reply, Result, State};
+
+handle_call({forward_message, Name, ServerRef, Message}, _From,
+            #state{connections=Connections}=State) ->
+    Result = do_send_message(Name,
+                             {forward_message, ServerRef, Message},
+                             Connections),
+    {reply, Result, State};
+
+handle_call({receive_message, Message}, _From, State) ->
+    handle_message(Message, State);
+
+handle_call(members, _From, #state{active=Active, passive=Passive}=State) ->
+    ActiveMembers = [P || {P, _, _} <- members(Active)],
+    PassiveMembers = [P || {P, _, _} <- members(Passive)],
+    {reply, {ok, {ActiveMembers, PassiveMembers}}, State};
+
+handle_call(get_local_state, _From, #state{active=Active, passive=Passive}=State) ->
+    {reply, {ok, {Active, Passive}}, State};
+
+handle_call(Msg, _From, State) ->
+    lager:warning("Unhandled messages: ~p", [Msg]),
+    {reply, ok, State}.
+
+%% @private
+-spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
+
+handle_cast({join, Peer},
+            #state{active=Active0,
+                   pending=Pending,
+                   connections=Connections0}=State0) ->
+    %% Add to active view.
+    State = add_to_active_view(Peer, State0),
+
+    %% Establish any new connections.
+    Connections = establish_connections(Pending,
+                                        Active0,
+                                        Connections0),
+
+    %% Random walk for forward join.
+    Peers = members(Active0),
+    lists:foreach(fun(P) ->
+                do_send_message(P,
+                                {forward_join, Peer, arwl(), myself()},
+                                Connections)
+        end, Peers),
+
+    {noreply, State};
+
+%% @doc Handle disconnect messages.
+handle_cast({disconnect, Peer}, #state{active=Active0}=State0) ->
+    case sets:is_element(Peer, Active0) of
+        true ->
+            %% If a member of the active view, remove it.
+            Active = sets:del_element(Peer, Active0),
+            State = add_to_passive_view(Peer,
+                                        State0#state{active=Active}),
+            {noreply, State};
+        false ->
+            {noreply, State0}
+    end;
+
+handle_cast(Msg, State) ->
+    lager:warning("Unhandled messages: ~p", [Msg]),
+    {noreply, State}.
+
+%% @private
+-spec handle_info(term(), #state{}) -> {noreply, #state{}}.
+handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
+    FoldFun = fun(K, V, AccIn) ->
+                      case V =:= From of
+                          true ->
+                              dict:erase(K, AccIn);
+                          false ->
+                              AccIn
+                      end
+              end,
+    Connections = dict:fold(FoldFun, Connections0, Connections0),
+    {noreply, State#state{connections=Connections}};
+
+handle_info({connected, Node, _RemoteState}, State) ->
+    %% When a node is connected, cast join and handle it then.
+    gen_server:cast(?MODULE, {join, Node}),
+    {noreply, State};
+
+handle_info(Msg, State) ->
+    lager:warning("Unhandled messages: ~p", [Msg]),
+    {noreply, State}.
+
+%% @private
+-spec terminate(term(), #state{}) -> term().
+terminate(_Reason, #state{connections=Connections}=_State) ->
+    dict:map(fun(_K, Pid) ->
+                     try
+                         gen_server:stop(Pid, normal, infinity)
+                     catch
+                         _:_ ->
+                             ok
+                     end
+             end, Connections),
+    ok.
+
+%% @private
+-spec code_change(term() | {down, term()}, #state{}, term()) -> {ok, #state{}}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================
+
+%% @private
+handle_message({forward_join, Peer, TTL, Sender},
+               #state{active=Active0,
+                      pending=Pending,
+                      connections=Connections0}=State0) ->
+    State = case TTL =:= 0 orelse sets:size(Active0) =:= 1 of
+        true ->
+            add_to_active_view(Peer, State0);
+        false ->
+            State1 = case TTL =:= prwl() of
+                true ->
+                    add_to_passive_view(Peer, State0);
+                false ->
+                    State0
+            end,
+            Random = select_random(Active0, Sender),
+
+            %% Establish any new connections.
+            Connections = establish_connections(Pending,
+                                                Active0,
+                                                Connections0),
+
+            %% Forward join.
+            do_send_message(Random,
+                            {forward_join, Peer, TTL - 1, myself()},
+                            Connections),
+            State1
+    end,
+    {reply, ok, State};
+handle_message({forward_message, ServerRef, Message}, State) ->
+    gen_server:cast(ServerRef, Message),
+    {reply, ok, State}.
+
+%% @private
+empty_membership(_Actor) ->
+    Active = sets:new(),
+    Passive = sets:new(),
+    LocalState = {Active, Passive},
+    persist_state(LocalState),
+    LocalState.
+
+%% @private
+gen_actor() ->
+    Node = atom_to_list(node()),
+    Unique = time_compat:unique_integer([positive]),
+    TS = integer_to_list(Unique),
+    Term = Node ++ TS,
+    crypto:hash(sha, Term).
+
+%% @private
+data_root() ->
+    case application:get_env(partisan, partisan_data_dir) of
+        {ok, PRoot} ->
+            filename:join(PRoot, "peer_service");
+        undefined ->
+            undefined
+    end.
+
+%% @private
+write_state_to_disk(State) ->
+    case data_root() of
+        undefined ->
+            ok;
+        Dir ->
+            File = filename:join(Dir, "cluster_state"),
+            ok = filelib:ensure_dir(File),
+            ok = file:write_file(File, term_to_binary(State))
+    end.
+
+%% @private
+delete_state_from_disk() ->
+    case data_root() of
+        undefined ->
+            ok;
+        Dir ->
+            File = filename:join(Dir, "cluster_state"),
+            ok = filelib:ensure_dir(File),
+            case file:delete(File) of
+                ok ->
+                    lager:info("Leaving cluster, removed cluster_state");
+                {error, Reason} ->
+                    lager:info("Unable to remove cluster_state for reason ~p", [Reason])
+            end
+    end.
+
+%% @private
+maybe_load_state_from_disk(Actor) ->
+    case data_root() of
+        undefined ->
+            empty_membership(Actor);
+        Dir ->
+            case filelib:is_regular(filename:join(Dir, "cluster_state")) of
+                true ->
+                    {ok, Bin} = file:read_file(filename:join(Dir, "cluster_state")),
+                    {ok, State} = binary_to_term(Bin),
+                    State;
+                false ->
+                    empty_membership(Actor)
+            end
+    end.
+
+%% @private
+persist_state(State) ->
+    write_state_to_disk(State).
+
+%% @private
+members(Set) ->
+    sets:to_list(Set).
+
+%% @private
+establish_connections(Pending, Set, Connections) ->
+    %% Reconnect disconnected members and members waiting to join.
+    Members = members(Set),
+    AllPeers = lists:keydelete(node(), 1, Members ++ Pending),
+    lists:foldl(fun maybe_connect/2, Connections, AllPeers).
+
+%% @private
+%% Function should enforce the invariant that all cluster members are
+%% keys in the dict pointing to undefined if they are disconnected or a
+%% socket pid if they are connected.
+%%
+maybe_connect({Name, _, _} = Node, Connections0) ->
+    Connections = case dict:find(Name, Connections0) of
+        %% Found in dict, and disconnected.
+        {ok, undefined} ->
+            case connect(Node) of
+                {ok, Pid} ->
+                    dict:store(Name, Pid, Connections0);
+                _ ->
+                    dict:store(Name, undefined, Connections0)
+            end;
+        %% Found in dict and connected.
+        {ok, _Pid} ->
+            Connections0;
+        %% Not present; disconnected.
+        error ->
+            case connect(Node) of
+                {ok, Pid} ->
+                    dict:store(Name, Pid, Connections0);
+                _ ->
+                    dict:store(Name, undefined, Connections0)
+            end
+    end,
+    Connections.
+
+%% @private
+connect(Node) ->
+    Self = self(),
+    partisan_peer_service_client:start_link(Node, Self).
+
+%% @private
+do_send_message(Name, Message, Connections) ->
+    %% Find a connection for the remote node, if we have one.
+    case dict:find(Name, Connections) of
+        {ok, undefined} ->
+            %% Node was connected but is now disconnected.
+            {error, disconnected};
+        {ok, Pid} ->
+            gen_server:cast(Pid, {send_message, Message});
+        error ->
+            %% Node has not been connected yet.
+            {error, not_yet_connected}
+    end.
+
+%% @private
+select_random(View) ->
+    select_random(View, undefined).
+
+%% @private
+select_random(View, Omit) ->
+    List = members(View) -- [Omit],
+    Index = random:uniform(length(List)),
+    lists:nth(Index, List).
+
+%% @doc Add to the active view.
+add_to_active_view({Name, _, _}=Peer, #state{active=Active0}=State0) ->
+    IsNotMyself = not Name =/= node(),
+    NotInActiveView = not sets:is_element(Peer, Active0),
+    case IsNotMyself andalso NotInActiveView of
+        true ->
+            #state{active=Active1} = State1 = case is_full({active, Active0}) of
+                true ->
+                    drop_random_element_from_active_view(State0);
+                false ->
+                    State0
+            end,
+            Active = sets:add_element(Peer, Active1),
+            State1#state{active=Active};
+        false ->
+            State0
+    end.
+
+%% @doc Add to the passive view.
+add_to_passive_view({Name, _, _}=Peer,
+                    #state{active=Active0, passive=Passive0}=State) ->
+    IsNotMyself = not Name =/= node(),
+    NotInActiveView = not sets:is_element(Peer, Active0),
+    NotInPassiveView = not sets:is_element(Peer, Passive0),
+    Passive = case IsNotMyself andalso NotInActiveView andalso NotInPassiveView of
+        true ->
+            Passive1 = case is_full({active, Active0}) of
+                true ->
+                    Random = select_random(Passive0),
+                    sets:del_element(Random, Passive0);
+                false ->
+                    Passive0
+            end,
+            sets:add_element(Peer, Passive1);
+        false ->
+            Passive0
+    end,
+    State#state{passive=Passive}.
+
+%% @private
+is_full({active, Active}) ->
+    sets:size(Active) >= ?ACTIVE_SIZE;
+is_full({passive, Passive}) ->
+    sets:size(Passive) >= ?PASSIVE_SIZE.
+
+%% @doc Process of removing a random element from the active view.
+drop_random_element_from_active_view(#state{active=Active0,
+                                            passive=Passive0}=State) ->
+    %% Select random from the active view.
+    Peer = select_random(Active0),
+
+    %% Trigger disconnect message.
+    gen_server:cast(?MODULE, {disconnect, Peer}),
+
+    %% Remove from the active view.
+    Active = sets:del_element(Peer, Active0),
+
+    %% Add to the passive view.
+    Passive = sets:del_element(Peer, Passive0),
+
+    State#state{active=Active, passive=Passive}.
+
+%% @private
+myself() ->
+    Port = partisan_config:get(peer_port, ?PEER_PORT),
+    IPAddress = partisan_config:get(peer_ip, ?PEER_IP),
+    {node(), IPAddress, Port}.
+
+%% @private
+arwl() ->
+    ?ARWL.
+
+%% @private
+prwl() ->
+    ?PRWL.
