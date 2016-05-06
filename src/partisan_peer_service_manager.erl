@@ -33,7 +33,6 @@
 -callback leave() -> ok.
 -callback leave(node_spec()) -> ok.
 
--callback update_state(term()) -> ok.
 -callback delete_state()-> ok.
 
 -callback send_message(name(), message()) -> ok.

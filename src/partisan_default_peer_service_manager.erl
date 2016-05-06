@@ -32,7 +32,6 @@
          join/1,
          leave/0,
          leave/1,
-         update_state/1,
          delete_state/0,
          send_message/2,
          forward_message/3,
@@ -76,10 +75,6 @@ get_local_state() ->
 %% @doc Return local node's current actor.
 get_actor() ->
     gen_server:call(?MODULE, get_actor, infinity).
-
-%% @doc Update cluster state.
-update_state(State) ->
-    gen_server:call(?MODULE, {update_state, State}, infinity).
 
 %% @doc Delete state.
 delete_state() ->
@@ -210,15 +205,6 @@ handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
 
 handle_call(get_actor, _From, #state{actor=Actor}=State) ->
     {reply, {ok, Actor}, State};
-
-handle_call({update_state, NewState}, _From,
-            #state{pending=Pending,
-                   membership=Membership,
-                   connections=Connections0}=State) ->
-    Merged = ?SET:merge(Membership, NewState),
-    persist_state(Merged),
-    Connections = establish_connections(Pending, Membership, Connections0),
-    {reply, ok, State#state{membership=Merged, connections=Connections}};
 
 handle_call(delete_state, _From, State) ->
     delete_state_from_disk(),
