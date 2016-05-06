@@ -30,6 +30,7 @@
          get_actor/0,
          join/1,
          leave/0,
+         leave/1,
          update_state/1,
          delete_state/0,
          send_message/2,
@@ -103,7 +104,11 @@ join(Node) ->
 
 %% @doc Leave the cluster.
 leave() ->
-    gen_server:call(?MODULE, leave, infinity).
+    gen_server:call(?MODULE, {leave, node()}, infinity).
+
+%% @doc Remove another node from the cluster.
+leave(Node) ->
+    gen_server:call(?MODULE, {leave, Node}, infinity).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -136,16 +141,16 @@ init([]) ->
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
 
-handle_call(leave, _From,
+handle_call({leave, Node}, _From,
             #state{actor=Actor,
                    connections=Connections,
                    membership=Membership0}=State) ->
-    %% We may exist in the membership on multiple ports, so we need to
+    %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
-    Membership = lists:foldl(fun({Node, _, _}, L0) ->
-                        case node() of
-                            Node ->
-                                {ok, L} = ?SET:update({remove, node()}, Actor, L0),
+    Membership = lists:foldl(fun({N, _, _}, L0) ->
+                        case Node of
+                            N ->
+                                {ok, L} = ?SET:update({remove, Node}, Actor, L0),
                                 L;
                             _ ->
                                 L0
@@ -155,11 +160,16 @@ handle_call(leave, _From,
     %% Gossip.
     do_gossip(Membership, Connections),
 
-    %% Remove state.
-    delete_state_from_disk(),
+    %% Remove state and shutdown if we are removing ourselves.
+    case node() of
+        Node ->
+            delete_state_from_disk(),
 
-    %% Shutdown; connections terminated on shutdown.
-    {stop, normal, State#state{membership=Membership}};
+            %% Shutdown; connections terminated on shutdown.
+            {stop, normal, State#state{membership=Membership}};
+        _ ->
+            {reply, ok, State}
+    end;
 
 handle_call({join, {Name, _, _}=Node},
             _From,
@@ -418,26 +428,47 @@ connect(Node) ->
 
 %% @private
 handle_message({receive_state, PeerMembership},
-               #state{pending=Pending, membership=Membership, connections=Connections0}=State) ->
-    NewMembership = case ?SET:equal(PeerMembership, Membership) of
+               #state{pending=Pending,
+                      membership=Membership,
+                      connections=Connections0}=State) ->
+    case ?SET:equal(PeerMembership, Membership) of
         true ->
             %% No change.
-            Membership;
+            {reply, ok, State};
         false ->
             %% Merge data items.
             Merged = ?SET:merge(PeerMembership, Membership),
-            partisan_peer_service_events:update(Merged),
+
+            %% Persist state.
             persist_state(Merged),
 
-            %% Establish any new connections.
-            Connections = establish_connections(Pending, Membership, Connections0),
+            %% Update users of the peer service.
+            partisan_peer_service_events:update(Merged),
 
-            %% Gossip.
-            do_gossip(Membership, Connections),
+            %% Compute members.
+            Members = [N || {N, _, _} <- members(Merged)],
 
-            Merged
-    end,
-    {reply, ok, State#state{membership=NewMembership}};
+            %% Shutdown if we've been removed from the cluster.
+            case lists:member(node(), Members) of
+                true ->
+                    %% Establish any new connections.
+                    Connections = establish_connections(Pending,
+                                                        Membership,
+                                                        Connections0),
+
+                    %% Gossip.
+                    do_gossip(Membership, Connections),
+
+                    {reply, ok, State#state{membership=Merged,
+                                            connections=Connections}};
+                false ->
+                    %% Remove state.
+                    delete_state_from_disk(),
+
+                    %% Shutdown; connections terminated on shutdown.
+                    {stop, normal, State#state{membership=Membership}}
+            end
+    end;
 handle_message({forward_message, ServerRef, Message}, State) ->
     gen_server:cast(ServerRef, Message),
     {reply, ok, State}.
