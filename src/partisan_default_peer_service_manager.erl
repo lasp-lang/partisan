@@ -24,7 +24,7 @@
 -behaviour(gen_server).
 -behaviour(partisan_peer_service_manager).
 
-%% API
+%% partisan_peer_service_manager callbacks
 -export([start_link/0,
          members/0,
          get_local_state/0,
@@ -54,7 +54,7 @@
                 connections :: connections()}).
 
 %%%===================================================================
-%%% API
+%%% partisan_peer_service_manager callbacks
 %%%===================================================================
 
 %% @doc Same as start_link([]).
