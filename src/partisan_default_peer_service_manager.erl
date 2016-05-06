@@ -32,7 +32,6 @@
          join/1,
          leave/0,
          leave/1,
-         delete_state/0,
          send_message/2,
          forward_message/3,
          receive_message/1]).
@@ -75,10 +74,6 @@ get_local_state() ->
 %% @doc Return local node's current actor.
 get_actor() ->
     gen_server:call(?MODULE, get_actor, infinity).
-
-%% @doc Delete state.
-delete_state() ->
-    gen_server:call(?MODULE, delete_state, infinity).
 
 %% @doc Send message to a remote manager.
 send_message(Name, Message) ->
@@ -205,10 +200,6 @@ handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
 
 handle_call(get_actor, _From, #state{actor=Actor}=State) ->
     {reply, {ok, Actor}, State};
-
-handle_call(delete_state, _From, State) ->
-    delete_state_from_disk(),
-    {reply, ok, State};
 
 handle_call(Msg, _From, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
