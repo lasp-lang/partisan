@@ -37,47 +37,24 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-    %% Initialize the listener for the peer protocol.
-    {ok, Pid} = case listen() of
-        {ok, NewPid} ->
-            lager:info("Listener started!"),
-            {ok, NewPid};
-        {error, {already_started, _OldPid}} ->
-            %% Weird interaction here.
-            %%
-            %% Lasp supervises Partisan which launches the ranch
-            %% listener through Partisan's supervisor.  However, when CT
-            %% is running the test suite and it restarts Lasp, it
-            %% restarts Partisan as part of this, but ranch stays
-            %% running.
-            %%
-            %% @todo Figure out how to properly supervise ranch from
-            %% Partisan, so when ranch restarts, Partisan also
-            %% restarts as well.
-            %%
-            lager:info("Listener already running; restarting on new port!"),
-            ranch:stop_listener(?PEER_SERVICE_SERVER),
-            listen()
-    end,
-    link(Pid),
-
     Children = lists:flatten(
                  [
                  ?CHILD(partisan_peer_service_manager, worker),
-                 ?CHILD(partisan_peer_service_events, worker)
+                 ?CHILD(partisan_peer_service_events, worker),
+                 ?CHILD(ranch_sup, supervisor)
                  ]),
 
-    RestartStrategy = {one_for_one, 10, 10},
-    {ok, {RestartStrategy, Children}}.
-
-%% @private
-listen() ->
     PeerConfig = partisan_config:peer_config(),
     lager:info("Initializing listener for peer protocol; config: ~p",
                [PeerConfig]),
-    ranch:start_listener(?PEER_SERVICE_SERVER,
-                         10,
-                         ranch_tcp,
-                         PeerConfig,
-                         ?PEER_SERVICE_SERVER,
-                         []).
+
+    ListenerSpec = ranch:child_spec(?PEER_SERVICE_SERVER,
+                                    10,
+                                    ranch_tcp,
+                                    PeerConfig,
+                                    ?PEER_SERVICE_SERVER,
+                                    []),
+    Listeners = [ListenerSpec],
+
+    RestartStrategy = {one_for_one, 10, 10},
+    {ok, {RestartStrategy, Children ++ Listeners}}.
