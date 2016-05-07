@@ -306,7 +306,7 @@ handle_info({connected, Peer, _RemoteState},
                    suspected=Suspected0,
                    connections=Connections}=State0) ->
     %% When a node actually connects, perform the join steps.
-    case lists:member(Peer, Pending0) of
+    case is_pending(Peer, Pending0) of
         true ->
             %% Move out of pending.
             Pending = remove_from_pending(Peer, Pending0),
@@ -617,12 +617,12 @@ remove_from_passive_view(Peer, Passive) ->
     sets:del_element(Peer, Passive).
 
 %% @private
-is_pending(Peer, Pending) ->
-    lists:member(Peer, Pending).
-
-%% @private
 is_in_passive_view(Peer, Passive) ->
     sets:is_element(Peer, Passive).
+
+%% @private
+is_pending(Peer, Pending) ->
+    sets:is_element(Peer, Pending).
 
 %% @private
 add_to_pending(Peer, Pending) ->
