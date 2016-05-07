@@ -29,6 +29,7 @@
 %% @todo Remove me.
 -compile([export_all]).
 
+-define(PASSIVE_VIEW_MAINTENANCE_INTERVAL, 10000).
 -define(ACTIVE_SIZE, 5).
 -define(PASSIVE_SIZE, 30).
 -define(ARWL, 6).
@@ -129,6 +130,9 @@ init([]) ->
     Suspected = sets:new(),
     Connections = dict:new(),
 
+    %% Schedule periodic maintenance of the passive view.
+    schedule_passive_view_maintenance(),
+
     {ok, #state{pending=Pending,
                 active=Active,
                 passive=Passive,
@@ -228,6 +232,30 @@ handle_cast(Msg, State) ->
 
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
+
+handle_info(passive_view_maintenance,
+            #state{active=Active,
+                   passive=Passive,
+                   connections=Connections}=State) ->
+
+    Exchange = %% Myself.
+               [myself()] ++
+
+               % Random members of the active list.
+               select_random_sublist(Active, k_active()) ++
+
+               %% Random members of the passive list.
+               select_random_sublist(Passive, k_passive()),
+
+    %% Select random member of the active list.
+    Random = select_random(Active),
+
+    %% Forward shuffle request.
+    do_send_message(Random,
+                    {shuffle, Exchange, arwl(), myself()},
+                    Connections),
+
+    {noreply, State};
 
 handle_info({'EXIT', From, _Reason},
             #state{active=Active0,
@@ -392,6 +420,38 @@ handle_message({neighbor, Peer, Priority, Sender},
             State0
     end,
     {reply, ok, State};
+
+handle_message({shuffle_reply, Exchange, _Sender}, State0) ->
+    State = merge_exchange(Exchange, State0),
+    {noreply, State};
+
+handle_message({shuffle, Exchange, TTL, Sender},
+               #state{active=Active0,
+                      passive=Passive0,
+                      connections=Connections}=State0) ->
+    %% Forward to random member of the active view.
+    State = case TTL > 0 andalso sets:size(Active0) > 1 of
+        true ->
+            Random = select_random(Active0, Sender),
+
+            %% Forward shuffle until random walk complete.
+            do_send_message(Random,
+                            {shuffle, Exchange, TTL - 1, myself()},
+                            Connections),
+
+            State0;
+        false ->
+            %% Randomly select nodes from the passive view and respond.
+            ResponseExchange = select_random_sublist(Passive0,
+                                                     length(Exchange)),
+
+            do_send_message(Sender,
+                            {shuffle_reply, ResponseExchange, myself()},
+                            Connections),
+
+            merge_exchange(Exchange, State0)
+    end,
+    {noreply, State};
 
 handle_message({forward_join, Peer, TTL, Sender},
                #state{active=Active0,
@@ -583,6 +643,11 @@ select_random(View, Omit) ->
     Index = random:uniform(length(List)),
     lists:nth(Index, List).
 
+%% @private
+select_random_sublist(View, K) ->
+    List = members(View),
+    lists:sublist(shuffle(List), K).
+
 %% @doc Add to the active view.
 add_to_active_view({Name, _, _}=Peer, #state{active=Active0}=State0) ->
     lager:info("Adding ~p to active view on ~p", [Peer, myself()]),
@@ -744,3 +809,34 @@ send_neighbor(Peer, #state{active=Active0, connections=Connections}=State) ->
 %% @private
 neighbor_acceptable(Priority, #state{active=Active}) ->
     Priority =:= high orelse not is_full({active, Active}).
+
+%% @private
+k_active() ->
+    3.
+
+%% @private
+k_passive() ->
+    4.
+
+%% @private
+schedule_passive_view_maintenance() ->
+    erlang:send_after(?PASSIVE_VIEW_MAINTENANCE_INTERVAL,
+                      ?MODULE,
+                      passive_view_maintenance).
+
+%% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
+shuffle(L) ->
+    [X || {_, X} <- lists:sort([{random:uniform(), N} || N <- L])].
+
+%% @private
+merge_exchange(Exchange, #state{active=Active, passive=Passive0}=State) ->
+    %% Remove ourself and active set members from the exchange.
+    ToAdd = Exchange -- ([myself()] ++ members(Active)),
+
+    %% Add to passive set.
+    Passive = lists:foldl(fun(X, P) ->
+        add_to_passive_view(X, P)
+                end, Passive0, ToAdd),
+
+    %% Return new state.
+    State#state{passive=Passive}.
