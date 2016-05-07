@@ -193,6 +193,7 @@ handle_cast({join, Peer},
     {noreply, State};
 
 %% @doc Handle disconnect messages.
+%% @todo Do we force disconnection?
 handle_cast({disconnect, Peer}, #state{active=Active0}=State0) ->
     case sets:is_element(Peer, Active0) of
         true ->
