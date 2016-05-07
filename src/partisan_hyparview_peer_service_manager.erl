@@ -125,10 +125,11 @@ init([]) ->
 
     Actor = gen_actor(),
     {Active, Passive} = maybe_load_state_from_disk(Actor),
-    Connections = dict:new(),
+    Pending = sets:new(),
     Suspected = sets:new(),
+    Connections = dict:new(),
 
-    {ok, #state{pending=[],
+    {ok, #state{pending=Pending,
                 active=Active,
                 passive=Passive,
                 suspected=Suspected,
@@ -178,7 +179,7 @@ handle_cast({join, Peer},
             #state{pending=Pending0,
                    connections=Connections0}=State) ->
     %% Add to list of pending connections.
-    Pending = [Peer|Pending0],
+    Pending = add_to_pending(Peer, Pending0),
 
     %% Trigger connection.
     Connections = maybe_connect(Peer, Connections0),
@@ -213,7 +214,7 @@ handle_cast({suspected, Peer}, #state{passive=Passive0,
     Random = select_random(Passive0),
 
     %% Add to list of pending connections.
-    Pending = [Random|Pending0],
+    Pending = add_to_pending(Random, Pending0),
 
     %% Trigger connection.
     Connections = maybe_connect(Random, Connections0),
@@ -308,7 +309,7 @@ handle_info({connected, Peer, _RemoteState},
     case lists:member(Peer, Pending0) of
         true ->
             %% Move out of pending.
-            Pending = Pending0 -- [Peer],
+            Pending = remove_from_pending(Peer, Pending0),
 
             %% Add to active view.
             #state{active=Active} = State = add_to_active_view(Peer, State0),
@@ -468,10 +469,11 @@ members(Set) ->
     sets:to_list(Set).
 
 %% @private
-establish_connections(Pending, Set, Connections) ->
+establish_connections(Pending0, Set0, Connections) ->
     %% Reconnect disconnected members and members waiting to join.
-    Members = members(Set),
-    AllPeers = lists:keydelete(node(), 1, Members ++ Pending),
+    Set = members(Set0),
+    Pending = members(Pending0),
+    AllPeers = lists:keydelete(node(), 1, Set ++ Pending),
     lists:foldl(fun maybe_connect/2, Connections, AllPeers).
 
 %% @private
@@ -623,8 +625,12 @@ is_in_passive_view(Peer, Passive) ->
     sets:is_element(Peer, Passive).
 
 %% @private
+add_to_pending(Peer, Pending) ->
+    sets:add_element(Peer, Pending).
+
+%% @private
 remove_from_pending(Peer, Pending) ->
-    lists:delete(Peer, Pending).
+    sets:del_element(Peer, Pending).
 
 %% @private
 is_in_active_view(Peer, Active) ->
