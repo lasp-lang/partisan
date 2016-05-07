@@ -171,26 +171,16 @@ handle_call(Msg, _From, State) ->
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
 
 handle_cast({join, Peer},
-            #state{pending=Pending,
-                   connections=Connections0}=State0) ->
-    %% Add to active view.
-    #state{active=Active} = State = add_to_active_view(Peer, State0),
+            #state{pending=Pending0,
+                   connections=Connections0}=State) ->
+    %% Add to list of pending connections.
+    Pending = [Peer|Pending0],
 
-    %% Establish any new connections.
-    Connections = establish_connections(Pending,
-                                        Active,
-                                        Connections0),
+    %% Trigger connection.
+    Connections = maybe_connect(Peer, Connections0),
 
-    %% Random walk for forward join.
-    Peers = members(Active) -- [myself()],
-
-    lists:foreach(fun(P) ->
-                do_send_message(P,
-                                {forward_join, Peer, arwl(), myself()},
-                                Connections)
-        end, Peers),
-
-    {noreply, State};
+    %% Return.
+    {noreply, State#state{pending=Pending, connections=Connections}};
 
 %% @doc Handle disconnect messages.
 %% @todo Do we force disconnection?
