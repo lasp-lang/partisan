@@ -205,25 +205,52 @@ handle_cast(Msg, State) ->
 
 handle_info({'EXIT', From, _Reason},
             #state{active=_Active0,
-                   passive=_Passive0,
-                   pending=_Pending0,
+                   passive=Passive0,
+                   pending=Pending0,
                    connections=Connections0}=State) ->
     %% Prune active connections from dictionary.
-    FoldFun = fun(K, V, AccIn) ->
+    FoldFun = fun(K, V, {Peer, AccIn}) ->
                       case V =:= From of
                           true ->
-                              dict:store(K, undefined, AccIn);
+                              %% This *should* only ever match one.
+                              AccOut = dict:store(K, undefined, AccIn),
+                              {K, AccOut};
                           false ->
-                              AccIn
+                              {Peer, AccIn}
                       end
               end,
-    Connections = dict:fold(FoldFun, Connections0, Connections0),
+    {Peer, Connections} = dict:fold(FoldFun,
+                                    {undefined, Connections0},
+                                    Connections0),
 
     %% If the connection was pending, and it exists in the passive view,
     %% that means we were attemping to use it as a replacement in the
     %% active view.
+    %%
+    %% We do the following:
+    %%
+    %% If pending, remove from pending.
+    %%
+    Pending = case is_pending(Peer, Pending0) of
+        true ->
+            remove_from_pending(Peer, Pending0);
+        false ->
+            Pending0
+    end,
 
-    {noreply, State#state{connections=Connections}};
+    %% If it was in the passive view and our connection attempt failed,
+    %% remove from the passive view altogether.
+    %%
+    Passive = case is_in_passive_view(Peer, Passive0) of
+        true ->
+            remove_from_passive_view(Peer, Passive0);
+        false ->
+            Passive0
+    end,
+
+    {noreply, State#state{pending=Pending,
+                          passive=Passive,
+                          connections=Connections}};
 
 handle_info({connected, Peer, _RemoteState},
             #state{pending=Pending0, connections=Connections}=State0) ->
@@ -529,3 +556,19 @@ arwl() ->
 %% @private
 prwl() ->
     ?PRWL.
+
+%% @private
+remove_from_passive_view(Peer, Passive) ->
+    sets:del_element(Peer, Passive).
+
+%% @private
+is_pending(Peer, Pending) ->
+    lists:member(Peer, Pending).
+
+%% @private
+is_in_passive_view(Peer, Passive) ->
+    sets:is_element(Peer, Passive).
+
+%% @private
+remove_from_pending(Peer, Pending) ->
+    lists:delete(Peer, Pending).
