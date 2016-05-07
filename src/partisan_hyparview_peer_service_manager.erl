@@ -280,10 +280,19 @@ handle_info({'EXIT', From, _Reason},
     %%
     Suspected = case is_in_active_view(Peer, Active0) of
         true ->
-            add_to_suspected(Peer, Suspected0),
-            gen_server:cast(?MODULE, {suspected, Peer});
+            add_to_suspected(Peer, Suspected0);
         false ->
             Suspected0
+    end,
+
+    %% If there are nodes still suspected of failure, schedule
+    %% asynchronous message to find a replacement for these nodes.
+    %%
+    case is_empty(Suspected) of
+        true ->
+            ok;
+        false ->
+            gen_server:cast(?MODULE, {suspected, Peer})
     end,
 
     {noreply, State#state{pending=Pending,
@@ -628,3 +637,7 @@ add_to_suspected(Peer, Suspected) ->
 %% @private
 remove_from_suspected(Peer, Suspected) ->
     sets:del_element(Peer, Suspected).
+
+%% @private
+is_empty(View) ->
+    sets:size(View) =/= 0.
