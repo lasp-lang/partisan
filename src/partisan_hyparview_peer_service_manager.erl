@@ -26,6 +26,9 @@
 -behaviour(gen_server).
 -behaviour(partisan_peer_service_manager).
 
+%% @todo Remove me.
+-compile([export_all]).
+
 -define(ACTIVE_SIZE, 5).
 -define(PASSIVE_SIZE, 30).
 -define(ARWL, 6).
@@ -51,9 +54,6 @@
          handle_info/2,
          terminate/2,
          code_change/3]).
-
-%% @todo Remove me.
--compile([export_all]).
 
 -type active() :: [node_spec()].
 -type passive() :: [node_spec()].
