@@ -40,6 +40,7 @@ init([]) ->
     Children = lists:flatten(
                  [
                  ?CHILD(partisan_default_peer_service_manager, worker),
+                 ?CHILD(partisan_hyparview_peer_service_manager, worker),
                  ?CHILD(partisan_peer_service_events, worker),
                  ?CHILD(ranch_sup, supervisor)
                  ]),
