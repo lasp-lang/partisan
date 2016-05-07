@@ -363,6 +363,36 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private
+handle_message({neighbor_accepted, Peer, _Sender}, State0) ->
+    State = add_to_active_view(Peer, State0),
+    {reply, ok, State};
+
+handle_message({neighbor_rejected, Peer, _Sender}, State) ->
+    %% Trigger disconnect message.
+    gen_server:cast(?MODULE, {disconnect, Peer}),
+
+    {reply, ok, State};
+
+handle_message({neighbor, Peer, Priority, Sender},
+               #state{connections=Connections}=State0) ->
+    State = case neighbor_acceptable(Priority, State0) of
+        true ->
+            %% Reply to acknowledge the neighbor was accepted.
+            do_send_message(Sender,
+                            {neighbor_accepted, Peer, myself()},
+                            Connections),
+
+            add_to_active_view(Peer, State0);
+        false ->
+            %% Reply to acknowledge the neighbor was rejected.
+            do_send_message(Sender,
+                            {neighbor_rejected, Peer, myself()},
+                            Connections),
+
+            State0
+    end,
+    {reply, ok, State};
+
 handle_message({forward_join, Peer, TTL, Sender},
                #state{active=Active0,
                       pending=Pending,
@@ -388,6 +418,7 @@ handle_message({forward_join, Peer, TTL, Sender},
             do_send_message(Random,
                             {forward_join, Peer, TTL - 1, myself()},
                             Connections),
+
             State1
     end,
     {reply, ok, State};
@@ -709,3 +740,7 @@ send_neighbor(Peer, #state{active=Active0, connections=Connections}=State) ->
                     Connections),
 
     State.
+
+%% @private
+neighbor_acceptable(Priority, #state{active=Active}) ->
+    Priority =:= high orelse not is_full({active, Active}).
