@@ -171,19 +171,19 @@ handle_call(Msg, _From, State) ->
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
 
 handle_cast({join, Peer},
-            #state{active=Active0,
-                   pending=Pending,
+            #state{pending=Pending,
                    connections=Connections0}=State0) ->
     %% Add to active view.
-    State = add_to_active_view(Peer, State0),
+    #state{active=Active} = State = add_to_active_view(Peer, State0),
 
     %% Establish any new connections.
     Connections = establish_connections(Pending,
-                                        Active0,
+                                        Active,
                                         Connections0),
 
     %% Random walk for forward join.
-    Peers = members(Active0),
+    Peers = members(Active) -- [myself()],
+
     lists:foreach(fun(P) ->
                 do_send_message(P,
                                 {forward_join, Peer, arwl(), myself()},
