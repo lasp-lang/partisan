@@ -202,7 +202,13 @@ handle_cast(Msg, State) ->
 
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
-handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
+
+handle_info({'EXIT', From, _Reason},
+            #state{active=_Active0,
+                   passive=_Passive0,
+                   pending=_Pending0,
+                   connections=Connections0}=State) ->
+    %% Prune active connections from dictionary.
     FoldFun = fun(K, V, AccIn) ->
                       case V =:= From of
                           true ->
@@ -212,11 +218,38 @@ handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
                       end
               end,
     Connections = dict:fold(FoldFun, Connections0, Connections0),
+
+    %% If the connection was pending, and it exists in the passive view,
+    %% that means we were attemping to use it as a replacement in the
+    %% active view.
+
     {noreply, State#state{connections=Connections}};
 
-handle_info({connected, _Node, _RemoteState}, State) ->
-    %% When a node actually connects, do nothing.
-    {noreply, State};
+handle_info({connected, Peer, _RemoteState},
+            #state{pending=Pending0, connections=Connections}=State0) ->
+    %% When a node actually connects, perform the join steps.
+    case lists:member(Peer, Pending0) of
+        true ->
+            %% Move out of pending.
+            Pending = Pending0 -- [Peer],
+
+            %% Add to active view.
+            #state{active=Active} = State = add_to_active_view(Peer, State0),
+
+            %% Random walk for forward join.
+            Peers = members(Active) -- [myself()],
+
+            lists:foreach(fun(P) ->
+                        do_send_message(P,
+                                        {forward_join, Peer, arwl(), myself()},
+                                        Connections)
+                end, Peers),
+
+            %% Return.
+            {noreply, State#state{pending=Pending}};
+        false ->
+            {noreply, State0}
+    end;
 
 handle_info(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
