@@ -303,31 +303,34 @@ handle_info({'EXIT', From, _Reason},
 
 handle_info({connected, Peer, _RemoteState},
             #state{pending=Pending0,
-                   suspected=Suspected0,
-                   connections=Connections}=State0) ->
+                   passive=Passive0,
+                   suspected=Suspected0}=State0) ->
     %% When a node actually connects, perform the join steps.
     case is_pending(Peer, Pending0) of
         true ->
             %% Move out of pending.
             Pending = remove_from_pending(Peer, Pending0),
 
-            %% Add to active view.
-            #state{active=Active} = State = add_to_active_view(Peer, State0),
-
-            %% Remove from suspected.
-            Suspected = remove_from_suspected(Peer, Suspected0),
-
-            %% Random walk for forward join.
-            Peers = members(Active) -- [myself()],
-
-            lists:foreach(fun(P) ->
-                        do_send_message(P,
-                                        {forward_join, Peer, arwl(), myself()},
-                                        Connections)
-                end, Peers),
-
-            %% Return.
-            {noreply, State#state{pending=Pending, suspected=Suspected}};
+            %% If node is in the passive view, and we have a suspected
+            %% node, that means it was
+            %% contacted to be a potential node for replacement in the
+            %% active view.
+            %%
+            case is_replacement_candidate(Peer, Passive0, Suspected0) of
+                true ->
+                    %% Send neighbor request to peer asking it to
+                    %% replace a suspected node.
+                    %%
+                    State = send_neighbor(Peer,
+                                          State0#state{pending=Pending}),
+                    {noreply, State};
+                false ->
+                    %% Normal join.
+                    %%
+                    State = perform_join(Peer,
+                                         State0#state{pending=Pending}),
+                    {noreply, State}
+            end;
         false ->
             {noreply, State0}
     end;
@@ -646,4 +649,48 @@ remove_from_suspected(Peer, Suspected) ->
 
 %% @private
 is_empty(View) ->
-    sets:size(View) =/= 0.
+    sets:size(View) =:= 0.
+
+%% @private
+is_not_empty(View) ->
+    sets:size(View) > 0.
+
+%% @private
+is_replacement_candidate(Peer, Passive, Suspected) ->
+    is_in_passive_view(Peer, Passive) andalso is_not_empty(Suspected).
+
+%% @private
+perform_join(Peer, #state{suspected=Suspected0,
+                          connections=Connections}=State0) ->
+    %% Add to active view.
+    #state{active=Active} = State = add_to_active_view(Peer, State0),
+
+    %% Remove from suspected.
+    Suspected = remove_from_suspected(Peer, Suspected0),
+
+    %% Random walk for forward join.
+    Peers = members(Active) -- [myself()],
+
+    lists:foreach(fun(P) ->
+                do_send_message(P,
+                                {forward_join, Peer, arwl(), myself()},
+                                Connections)
+        end, Peers),
+
+    %% Return.
+    State#state{suspected=Suspected}.
+
+%% @private
+send_neighbor(Peer, #state{active=Active0, connections=Connections}=State) ->
+    Priority = case sets:size(Active0) of
+        0 ->
+            high;
+        _ ->
+            low
+    end,
+
+    do_send_message(Peer,
+                    {neighbor, Peer, Priority, myself()},
+                    Connections),
+
+    State.
