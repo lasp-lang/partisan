@@ -288,7 +288,8 @@ handle_message({forward_message, ServerRef, Message}, State) ->
 
 %% @private
 empty_membership(_Actor) ->
-    Active = sets:new(),
+    %% Each cluster starts with only itself.
+    Active = sets:add_element(myself(), sets:new()),
     Passive = sets:new(),
     LocalState = {Active, Passive},
     persist_state(LocalState),
