@@ -188,15 +188,16 @@ handle_cast({join, Peer},
     {noreply, State#state{pending=Pending, connections=Connections}};
 
 %% @doc Handle disconnect messages.
-%% @todo Do we force disconnection?
-handle_cast({disconnect, Peer}, #state{active=Active0}=State0) ->
+handle_cast({disconnect, Peer}, #state{active=Active0,
+                                       connections=Connections0}=State0) ->
     case sets:is_element(Peer, Active0) of
         true ->
             %% If a member of the active view, remove it.
             Active = sets:del_element(Peer, Active0),
             State = add_to_passive_view(Peer,
                                         State0#state{active=Active}),
-            {noreply, State};
+            Connections = disconnect(Peer, Connections0),
+            {noreply, State#state{connections=Connections}};
         false ->
             {noreply, State0}
     end;
@@ -512,6 +513,20 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
 connect(Node) ->
     Self = self(),
     partisan_peer_service_client:start_link(Node, Self).
+
+%% @private
+disconnect(Name, Connections) ->
+    %% Find a connection for the remote node, if we have one.
+    case dict:find(Name, Connections) of
+        {ok, undefined} ->
+            %% Node was connected but is now disconnected.
+            {error, disconnected};
+        {ok, Pid} ->
+            gen_server:stop(Pid);
+        error ->
+            %% Node has not been connected yet.
+            {error, not_yet_connected}
+    end.
 
 %% @private
 do_send_message(Name, Message, Connections) ->
