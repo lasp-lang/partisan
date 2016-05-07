@@ -156,13 +156,12 @@ handle_call({forward_message, Name, ServerRef, Message}, _From,
 handle_call({receive_message, Message}, _From, State) ->
     handle_message(Message, State);
 
-handle_call(members, _From, #state{active=Active, passive=Passive}=State) ->
+handle_call(members, _From, #state{active=Active}=State) ->
     ActiveMembers = [P || {P, _, _} <- members(Active)],
-    PassiveMembers = [P || {P, _, _} <- members(Passive)],
-    {reply, {ok, {ActiveMembers, PassiveMembers}}, State};
+    {reply, {ok, ActiveMembers}, State};
 
-handle_call(get_local_state, _From, #state{active=Active, passive=Passive}=State) ->
-    {reply, {ok, {Active, Passive}}, State};
+handle_call(get_local_state, _From, #state{active=Active}=State) ->
+    {reply, {ok, Active}, State};
 
 handle_call(Msg, _From, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
@@ -224,9 +223,8 @@ handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
     Connections = dict:fold(FoldFun, Connections0, Connections0),
     {noreply, State#state{connections=Connections}};
 
-handle_info({connected, Node, _RemoteState}, State) ->
-    %% When a node is connected, cast join and handle it then.
-    gen_server:cast(?MODULE, {join, Node}),
+handle_info({connected, _Node, _RemoteState}, State) ->
+    %% When a node actually connects, do nothing.
     {noreply, State};
 
 handle_info(Msg, State) ->
