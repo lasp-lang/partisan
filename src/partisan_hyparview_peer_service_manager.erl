@@ -58,11 +58,13 @@
 -type active() :: [node_spec()].
 -type passive() :: [node_spec()].
 -type pending() :: [node_spec()].
+-type suspected() :: [node_spec()].
 
 -record(state, {actor :: actor(),
                 active :: active(),
                 passive :: passive(),
                 pending :: pending(),
+                suspected :: suspected(),
                 connections :: connections()}).
 
 %%%===================================================================
@@ -124,10 +126,12 @@ init([]) ->
     Actor = gen_actor(),
     {Active, Passive} = maybe_load_state_from_disk(Actor),
     Connections = dict:new(),
+    Suspected = sets:new(),
 
     {ok, #state{pending=[],
                 active=Active,
                 passive=Passive,
+                suspected=Suspected,
                 connections=Connections}}.
 
 %% @private
@@ -196,6 +200,26 @@ handle_cast({disconnect, Peer}, #state{active=Active0}=State0) ->
             {noreply, State0}
     end;
 
+handle_cast({suspected, Peer}, #state{passive=Passive0,
+                                      pending=Pending0,
+                                      connections=Connections0}=State) ->
+    lager:info("Node ~p suspected of failure.", [Peer]),
+
+    %% Select random peer from passive view, and attempt to connect it.
+    %%
+    %% If it successfully connects, it will replace the failed node in
+    %% the active view.
+    %%
+    Random = select_random(Passive0),
+
+    %% Add to list of pending connections.
+    Pending = [Random|Pending0],
+
+    %% Trigger connection.
+    Connections = maybe_connect(Random, Connections0),
+
+    {noreply, State#state{pending=Pending, connections=Connections}};
+
 handle_cast(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
     {noreply, State}.
@@ -204,9 +228,10 @@ handle_cast(Msg, State) ->
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
 
 handle_info({'EXIT', From, _Reason},
-            #state{active=_Active0,
+            #state{active=Active0,
                    passive=Passive0,
                    pending=Pending0,
+                   suspected=Suspected0,
                    connections=Connections0}=State) ->
     %% Prune active connections from dictionary.
     FoldFun = fun(K, V, {Peer, AccIn}) ->
@@ -248,12 +273,28 @@ handle_info({'EXIT', From, _Reason},
             Passive0
     end,
 
+    %% If this node was a member of the active view, add it to a list of
+    %% suspected active nodes that have failed and asynchronously fire
+    %% off a message to schedule a connection to a random member of the
+    %% passive set.
+    %%
+    Suspected = case is_in_active_view(Peer, Active0) of
+        true ->
+            add_to_suspected(Peer, Suspected0),
+            gen_server:cast(?MODULE, {suspected, Peer});
+        false ->
+            Suspected0
+    end,
+
     {noreply, State#state{pending=Pending,
                           passive=Passive,
+                          suspected=Suspected,
                           connections=Connections}};
 
 handle_info({connected, Peer, _RemoteState},
-            #state{pending=Pending0, connections=Connections}=State0) ->
+            #state{pending=Pending0,
+                   suspected=Suspected0,
+                   connections=Connections}=State0) ->
     %% When a node actually connects, perform the join steps.
     case lists:member(Peer, Pending0) of
         true ->
@@ -262,6 +303,9 @@ handle_info({connected, Peer, _RemoteState},
 
             %% Add to active view.
             #state{active=Active} = State = add_to_active_view(Peer, State0),
+
+            %% Remove from suspected.
+            Suspected = remove_from_suspected(Peer, Suspected0),
 
             %% Random walk for forward join.
             Peers = members(Active) -- [myself()],
@@ -273,7 +317,7 @@ handle_info({connected, Peer, _RemoteState},
                 end, Peers),
 
             %% Return.
-            {noreply, State#state{pending=Pending}};
+            {noreply, State#state{pending=Pending, suspected=Suspected}};
         false ->
             {noreply, State0}
     end;
@@ -572,3 +616,15 @@ is_in_passive_view(Peer, Passive) ->
 %% @private
 remove_from_pending(Peer, Pending) ->
     lists:delete(Peer, Pending).
+
+%% @private
+is_in_active_view(Peer, Active) ->
+    sets:is_element(Peer, Active).
+
+%% @private
+add_to_suspected(Peer, Suspected) ->
+    sets:add_element(Peer, Suspected).
+
+%% @private
+remove_from_suspected(Peer, Suspected) ->
+    sets:del_element(Peer, Suspected).
