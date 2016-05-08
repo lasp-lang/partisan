@@ -217,7 +217,7 @@ handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
     FoldFun = fun(K, V, AccIn) ->
                       case V =:= From of
                           true ->
-                              dict:erase(K, AccIn);
+                              dict:store(K, undefined, AccIn);
                           false ->
                               AccIn
                       end
