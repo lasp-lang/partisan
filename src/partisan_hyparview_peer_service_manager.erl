@@ -556,8 +556,10 @@ maybe_load_state_from_disk(Actor) ->
     end.
 
 %% @private
-persist_state(State) ->
-    write_state_to_disk(State).
+persist_state({Active, Passive}) ->
+    write_state_to_disk({Active, Passive});
+persist_state(#state{active=Active, passive=Passive}) ->
+    persist_state({Active, Passive}).
 
 %% @private
 members(Set) ->
@@ -662,14 +664,16 @@ add_to_active_view({Name, _, _}=Peer, #state{active=Active0}=State0) ->
                     State0
             end,
             Active = sets:add_element(Peer, Active1),
-            State1#state{active=Active};
+            State2 = State1#state{active=Active},
+            persist_state(State2),
+            State2;
         false ->
             State0
     end.
 
 %% @doc Add to the passive view.
 add_to_passive_view({Name, _, _}=Peer,
-                    #state{active=Active0, passive=Passive0}=State) ->
+                    #state{active=Active0, passive=Passive0}=State0) ->
     lager:info("Adding ~p to passive view on ~p", [Peer, myself()]),
     IsNotMyself = not (Name =:= node()),
     NotInActiveView = not sets:is_element(Peer, Active0),
@@ -687,7 +691,9 @@ add_to_passive_view({Name, _, _}=Peer,
         false ->
             Passive0
     end,
-    State#state{passive=Passive}.
+    State = State0#state{passive=Passive},
+    persist_state(State),
+    State.
 
 %% @private
 is_full({active, Active}) ->
