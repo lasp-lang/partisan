@@ -23,7 +23,6 @@
 
 -include("partisan.hrl").
 
--behaviour(ranch_protocol).
 -behaviour(gen_server).
 
 %% ranch_protocol callbacks.
