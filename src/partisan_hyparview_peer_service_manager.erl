@@ -18,16 +18,11 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc *** THIS IS NOT COMPLETE YET. ***
-
 -module(partisan_hyparview_peer_service_manager).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -behaviour(gen_server).
 -behaviour(partisan_peer_service_manager).
-
-%% @todo Remove me.
--compile([export_all]).
 
 -define(PASSIVE_VIEW_MAINTENANCE_INTERVAL, 10000).
 -define(ACTIVE_SIZE, 5).
@@ -56,10 +51,8 @@
          terminate/2,
          code_change/3]).
 
--type active() :: [node_spec()].
--type passive() :: [node_spec()].
--type pending() :: [node_spec()].
--type suspected() :: [node_spec()].
+%% temporary exceptions
+-export([delete_state_from_disk/0]).
 
 -type active() :: sets:set(node_spec()).
 -type passive() :: sets:set(node_spec()).
