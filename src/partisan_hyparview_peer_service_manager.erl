@@ -617,13 +617,17 @@ disconnect(Name, Connections) ->
     %% Find a connection for the remote node, if we have one.
     case dict:find(Name, Connections) of
         {ok, undefined} ->
-            %% Node was connected but is now disconnected.
-            {error, disconnected};
+            %% Return original set.
+            Connections;
         {ok, Pid} ->
-            gen_server:stop(Pid);
+            %% Stop;
+            gen_server:stop(Pid),
+
+            %% Null out in the dictionary.
+            dict:store(Name, undefined, Connections);
         error ->
-            %% Node has not been connected yet.
-            {error, not_yet_connected}
+            %% Return original set.
+            Connections
     end.
 
 %% @private
