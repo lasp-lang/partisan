@@ -61,6 +61,11 @@
 -type pending() :: [node_spec()].
 -type suspected() :: [node_spec()].
 
+-type active() :: sets:set(node_spec()).
+-type passive() :: sets:set(node_spec()).
+-type pending() :: sets:set(node_spec()).
+-type suspected() :: sets:set(node_spec()).
+
 -record(state, {actor :: actor(),
                 active :: active(),
                 passive :: passive(),
