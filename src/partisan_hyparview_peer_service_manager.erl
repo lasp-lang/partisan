@@ -682,7 +682,7 @@ add_to_passive_view({Name, _, _}=Peer,
     NotInPassiveView = not sets:is_element(Peer, Passive0),
     Passive = case IsNotMyself andalso NotInActiveView andalso NotInPassiveView of
         true ->
-            Passive1 = case is_full({active, Active0}) of
+            Passive1 = case is_full({passive, Passive0}) of
                 true ->
                     Random = select_random(Passive0),
                     sets:del_element(Random, Passive0);
