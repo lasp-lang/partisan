@@ -3,14 +3,17 @@
   {description, "Scalable peer service for Lasp"},
   {vsn, "0.0.1"},
   {registered, []},
+  {included_applications,[ranch]},
   {applications, [
                   kernel,
                   stdlib,
                   crypto,
                   lager,
-                  riak_dt
+                  riak_dt,
+                  mochiweb,
+                  time_compat
                  ]},
-  {mod, {partisan, []}},
+  {mod, {partisan_app, []}},
   {modules, []},
   {env, [
          {partisan, "data"}]}

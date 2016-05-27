@@ -46,6 +46,16 @@ ct:
 shell:
 	${REBAR} shell --apps partisan
 
+##
+## Release targets
+##
+
+rel:
+	${REBAR} release
+
+stage:
+	${REBAR} release -d
+
 DIALYZER_APPS = kernel stdlib erts sasl eunit syntax_tools compiler crypto
 
 include tools.mk
