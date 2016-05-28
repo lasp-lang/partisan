@@ -35,22 +35,31 @@ set(Key, Value) ->
     mochiglobal:put(Key, Value).
 
 peer_config() ->
-    %% Generate a random peer port.
-    random:seed(erlang:phash2([node()]),
-                erlang:monotonic_time(),
-                erlang:unique_integer()),
-    RandomPeerPort = random:uniform(1000) + 10000,
+    Port = case partisan_config:get(peer_port, undefined) of
+        undefined ->
+            %% Generate a random peer port.
+            random:seed(erlang:phash2([node()]),
+                        erlang:monotonic_time(),
+                        erlang:unique_integer()),
+            RandomPeerPort = random:uniform(1000) + 10000,
 
-    %% Choose either static port or fall back to random peer port.
-    DCOS = os:getenv("DCOS", "false"),
-    PeerPort = case DCOS of
-        "false" ->
-            RandomPeerPort;
-        _ ->
-            application:get_env(?APP, peer_port, RandomPeerPort)
+            %% Choose either static port or fall back to random peer port.
+            DCOS = os:getenv("DCOS", "false"),
+            PeerPort = case DCOS of
+                "false" ->
+                    RandomPeerPort;
+                _ ->
+                    application:get_env(?APP, peer_port, RandomPeerPort)
+            end,
+
+            %% Make sure configuration has current peer port.
+            partisan_config:set(peer_port, PeerPort),
+
+            PeerPort;
+        PeerPort ->
+            PeerPort
     end,
 
-    %% Make sure configuration has current peer port.
-    partisan_config:set(peer_port, PeerPort),
-
-    [{port, PeerPort}].
+    Config = [{port, Port}],
+    lager:info("Partisan configuration: ~p", [Config]),
+    Config.
