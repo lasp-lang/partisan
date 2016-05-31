@@ -191,7 +191,7 @@ handle_cast({join, Peer},
     Pending = add_to_pending(Peer, Pending0),
 
     %% Trigger connection.
-    Connections = maybe_connect(Peer, Connections0, Pending),
+    Connections = maybe_connect(Peer, Connections0),
 
     %% Return.
     {noreply, State#state{pending=Pending, connections=Connections}};
@@ -227,7 +227,7 @@ handle_cast({suspected, Peer}, #state{passive=Passive0,
     Pending = add_to_pending(Random, Pending0),
 
     %% Trigger connection.
-    Connections = maybe_connect(Random, Connections0, Pending),
+    Connections = maybe_connect(Random, Connections0),
 
     {noreply, State#state{pending=Pending, connections=Connections}};
 
@@ -586,14 +586,14 @@ establish_connections(Pending0, Set0, Connections) ->
     Set = members(Set0),
     Pending = members(Pending0),
     AllPeers = lists:keydelete(node(), 1, Set ++ Pending),
-    lists:foldl(fun maybe_connect/3, Connections, AllPeers).
+    lists:foldl(fun maybe_connect/2, Connections, AllPeers).
 
 %% @private
 %% Function should enforce the invariant that all cluster members are
 %% keys in the dict pointing to undefined if they are disconnected or a
 %% socket pid if they are connected.
 %%
-maybe_connect({Name, _, _} = Node, Connections0, Pending) ->
+maybe_connect({Name, _, _} = Node, Connections0) ->
     Connections = case dict:find(Name, Connections0) of
         %% Found in dict, and disconnected.
         {ok, undefined} ->
@@ -604,21 +604,8 @@ maybe_connect({Name, _, _} = Node, Connections0, Pending) ->
                     dict:store(Name, undefined, Connections0)
             end;
         %% Found in dict and connected.
-        {ok, Pid} ->
-            case is_pending(Node, Pending) of
-                true ->
-                    lager:info("Node is still pending, not connected: ~p", [Node]),
-                    exit(Pid, stalled),
-                    case connect(Node) of
-                        {ok, Pid} ->
-                            dict:store(Name, Pid, Connections0);
-                        _ ->
-                            dict:store(Name, undefined, Connections0)
-                    end;
-                false ->
-                    lager:info("Node ~p has registered pid.", [Node]),
-                    Connections0
-            end;
+        {ok, _Pid} ->
+            Connections0;
         %% Not present; disconnected.
         error ->
             lager:info("Node is not connected: ~p", [Node]),

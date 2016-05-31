@@ -36,7 +36,7 @@
 -record(state, {socket, from, peer}).
 
 %% Macros.
--define(TIMEOUT, 60000).
+-define(TIMEOUT, 1000).
 
 -include("partisan.hrl").
 
