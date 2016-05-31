@@ -339,6 +339,8 @@ handle_info({connected, Peer, _RemoteState},
             #state{pending=Pending0,
                    passive=Passive0,
                    suspected=Suspected0}=State0) ->
+    lager:info("Peer ~p connected.", []),
+
     %% When a node actually connects, perform the join steps.
     case is_pending(Peer, Pending0) of
         true ->
