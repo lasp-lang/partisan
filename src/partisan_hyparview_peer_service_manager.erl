@@ -597,6 +597,7 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
     Connections = case dict:find(Name, Connections0) of
         %% Found in dict, and disconnected.
         {ok, undefined} ->
+            lager:info("Node is not connected ~p; trying again...", [Node]),
             case connect(Node) of
                 {ok, Pid} ->
                     dict:store(Name, Pid, Connections0);
