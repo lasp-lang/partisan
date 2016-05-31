@@ -355,12 +355,20 @@ handle_info({connected, Peer, _RemoteState},
                     %%
                     State = send_neighbor(Peer,
                                           State0#state{pending=Pending}),
+
+                    %% Notify with event.
+                    notify(State),
+
                     {noreply, State};
                 false ->
                     %% Normal join.
                     %%
                     State = perform_join(Peer,
                                          State0#state{pending=Pending}),
+
+                    %% Notify with event.
+                    notify(State),
+
                     {noreply, State}
             end;
         false ->
@@ -853,3 +861,7 @@ merge_exchange(Exchange, #state{active=Active, passive=Passive0}=State) ->
 
     %% Return new state.
     State#state{passive=Passive}.
+
+%% @private
+notify(#state{active=Active}) ->
+    partisan_peer_service_events:update(Active).
