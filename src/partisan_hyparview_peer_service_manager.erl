@@ -616,7 +616,6 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
             end;
         %% Found in dict and connected.
         {ok, _Pid} ->
-            lager:info("Node ~p is already connected.", [Node]),
             Connections0;
         %% Not present; disconnected.
         error ->
