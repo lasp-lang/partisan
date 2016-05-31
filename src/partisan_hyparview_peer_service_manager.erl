@@ -417,6 +417,10 @@ code_change(_OldVsn, State, _Extra) ->
 %% @private
 handle_message({neighbor_accepted, Peer, _Sender}, State0) ->
     State = add_to_active_view(Peer, State0),
+
+    %% Notify with event.
+    notify(State),
+
     {reply, ok, State};
 
 handle_message({neighbor_rejected, Peer, _Sender}, State) ->
@@ -443,6 +447,10 @@ handle_message({neighbor, Peer, Priority, Sender},
 
             State0
     end,
+
+    %% Notify with event.
+    notify(State),
+
     {reply, ok, State};
 
 handle_message({shuffle_reply, Exchange, _Sender}, State0) ->
@@ -505,6 +513,10 @@ handle_message({forward_join, Peer, TTL, Sender},
 
             State1
     end,
+
+    %% Notify with event.
+    notify(State),
+
     {reply, ok, State};
 handle_message({forward_message, ServerRef, Message}, State) ->
     gen_server:cast(ServerRef, Message),
@@ -811,6 +823,9 @@ perform_join(Peer, #state{suspected=Suspected0,
                           connections=Connections}=State0) ->
     %% Add to active view.
     #state{active=Active} = State = add_to_active_view(Peer, State0),
+
+    %% Notify with event.
+    notify(State),
 
     %% Remove from suspected.
     Suspected = remove_from_suspected(Peer, Suspected0),
