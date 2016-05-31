@@ -591,7 +591,6 @@ members(Set) ->
 
 %% @private
 establish_connections(Pending0, Set0, Connections) ->
-    lager:info("Reestablishing connections..."),
     %% Reconnect disconnected members and members waiting to join.
     Set = members(Set0),
     Pending = members(Pending0),
