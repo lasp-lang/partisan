@@ -616,10 +616,12 @@ maybe_connect({Name, _, _} = Node, Connections0, Pending) ->
                             dict:store(Name, undefined, Connections0)
                     end;
                 false ->
+                    lager:info("Node ~p has registered pid.", [Node]),
                     Connections0
             end;
         %% Not present; disconnected.
         error ->
+            lager:info("Node is not connected: ~p", [Node]),
             case connect(Node) of
                 {ok, Pid} ->
                     dict:store(Name, Pid, Connections0);
