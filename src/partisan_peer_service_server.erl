@@ -61,7 +61,7 @@ init(ListenerPid, Socket, Transport, _Options) ->
     link(Socket),
 
     %% Set the socket modes.
-    ok = inet:setopts(Socket, [{packet, 2}, {active, true}, {keepalive, true}]),
+    ok = inet:setopts(Socket, [{packet, 4}, {active, true}, {keepalive, true}]),
 
     %% Generate the welcome message, encode it and transmit the message.
     send_message(Socket, Transport, {hello, node()}),
