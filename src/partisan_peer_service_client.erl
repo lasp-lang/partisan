@@ -35,6 +35,9 @@
 
 -record(state, {socket, from, peer}).
 
+%% Macros.
+-define(TIMEOUT, 60000).
+
 -include("partisan.hrl").
 
 %%%===================================================================
@@ -129,7 +132,7 @@ connect(Peer) when is_atom(Peer) ->
 %% @doc Connect to remote peer.
 connect({_Name, {_, _, _, _}=IPAddress, Port}) ->
     Options = [binary, {packet, 4}, {keepalive, true}],
-    case gen_tcp:connect(IPAddress, Port, Options) of
+    case gen_tcp:connect(IPAddress, Port, Options, ?TIMEOUT) of
         {ok, Socket} ->
             {ok, Socket};
         {error, Error} ->
