@@ -41,7 +41,8 @@
          leave/1,
          send_message/2,
          forward_message/3,
-         receive_message/1]).
+         receive_message/1,
+         decode/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -106,6 +107,10 @@ leave() ->
 %% @doc Remove another node from the cluster.
 leave(Node) ->
     gen_server:call(?MODULE, {leave, Node}, infinity).
+
+%% @doc Decode state.
+decode(Active) ->
+    sets:to_list(Active).
 
 %%%===================================================================
 %%% gen_server callbacks

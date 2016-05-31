@@ -35,3 +35,5 @@
 -callback send_message(name(), message()) -> ok.
 -callback receive_message(message()) -> ok.
 -callback forward_message(name(), pid(), message()) -> ok.
+
+-callback decode(term()) -> term().

@@ -67,7 +67,7 @@ add_sup_callback(Function) ->
 
 %% @private
 decode(State) ->
-    [P || {P, _, _} <- ?SET:value(State)].
+    [P || {P, _, _} <- ?PEER_SERVICE_MANAGER:decode(State)].
 
 %% @private
 attempt_join({_Name, _, _}=Node) ->
