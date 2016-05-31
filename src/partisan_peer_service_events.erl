@@ -41,7 +41,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, { callback }).
+-record(state, {callback}).
 
 %% ===================================================================
 %% API functions
@@ -62,8 +62,9 @@ add_callback(Fn) when is_function(Fn) ->
 add_sup_callback(Fn) when is_function(Fn) ->
     gen_event:add_sup_handler(?MODULE, {?MODULE, make_ref()}, [Fn]).
 
+%% @todo Change back to non.
 update(LocalState) ->
-    gen_event:notify(?MODULE, {update, LocalState}).
+    gen_event:sync_notify(?MODULE, {update, LocalState}).
 
 %% ===================================================================
 %% gen_event callbacks
@@ -71,17 +72,27 @@ update(LocalState) ->
 
 init([Fn]) ->
     {ok, LocalState} = ?PEER_SERVICE_MANAGER:get_local_state(),
-    Fn(LocalState),
-    {ok, #state {callback = Fn}}.
+    try
+        Fn(LocalState)
+    catch
+        _:Error ->
+            lager:error("Error with callback: ~p", [Error])
+    end,
+    {ok, #state{callback=Fn}}.
 
 handle_event({update, LocalState}, State) ->
     (State#state.callback)(LocalState),
+    {ok, State};
+handle_event(Event, State) ->
+    lager:info("Unhandled event: ~p", [Event]),
     {ok, State}.
 
-handle_call(_Request, State) ->
+handle_call(Request, State) ->
+    lager:info("Unhandled message: ~p", [Request]),
     {ok, ok, State}.
 
-handle_info(_Info, State) ->
+handle_info(Info, State) ->
+    lager:info("Unhandled message: ~p", [Info]),
     {ok, State}.
 
 terminate(_Reason, _State) ->
