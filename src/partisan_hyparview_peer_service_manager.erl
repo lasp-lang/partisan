@@ -86,6 +86,7 @@ get_local_state() ->
 
 %% @doc Send message to a remote manager.
 send_message(Name, Message) ->
+    lager:info("Sending message to ~p, ~p", [Name, Message]),
     gen_server:call(?MODULE, {send_message, Name, Message}, infinity).
 
 %% @doc Forward message to registered process on the remote side.
@@ -94,6 +95,7 @@ forward_message(Name, ServerRef, Message) ->
 
 %% @doc Receive message from a remote manager.
 receive_message(Message) ->
+    lager:info("Receiving message ~p", [Message]),
     gen_server:call(?MODULE, {receive_message, Message}, infinity).
 
 %% @doc Attempt to join a remote node.
