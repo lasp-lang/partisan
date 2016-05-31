@@ -241,7 +241,13 @@ handle_cast(Msg, State) ->
 handle_info(passive_view_maintenance,
             #state{active=Active,
                    passive=Passive,
-                   connections=Connections}=State) ->
+                   pending=Pending,
+                   connections=Connections0}=State) ->
+
+    %% Establish any new connections.
+    Connections = establish_connections(Pending,
+                                        Active,
+                                        Connections0),
 
     Exchange = %% Myself.
                [myself()] ++
@@ -260,7 +266,7 @@ handle_info(passive_view_maintenance,
                     {shuffle, Exchange, arwl(), myself()},
                     Connections),
 
-    {noreply, State};
+    {noreply, State#state{connections=Connections}};
 
 handle_info({'EXIT', From, _Reason},
             #state{active=Active0,
