@@ -266,6 +266,9 @@ handle_info(passive_view_maintenance,
                     {shuffle, Exchange, arwl(), myself()},
                     Connections),
 
+    %% Schedule periodic maintenance of the passive view.
+    schedule_passive_view_maintenance(),
+
     {noreply, State#state{connections=Connections}};
 
 handle_info({'EXIT', From, _Reason},
