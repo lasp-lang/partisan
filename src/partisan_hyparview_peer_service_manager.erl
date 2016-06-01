@@ -25,6 +25,7 @@
 -behaviour(partisan_peer_service_manager).
 
 -define(PASSIVE_VIEW_MAINTENANCE_INTERVAL, 10000).
+-define(MEMORY_REPORT_INTERVAL, 1000).
 -define(ACTIVE_SIZE, 5).
 -define(PASSIVE_SIZE, 30).
 -define(ARWL, 6).
@@ -138,6 +139,9 @@ init([]) ->
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
 
+    %% Schedule memory report.
+    schedule_memory_report(),
+
     {ok, #state{pending=Pending,
                 active=Active,
                 passive=Passive,
@@ -238,14 +242,21 @@ handle_cast(Msg, State) ->
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
 
+handle_info(memory_report, State) ->
+
+    %% Run memory report.
+    memory_report(),
+
+    %% Schedule memory report.
+    schedule_memory_report(),
+
+    {noreply, State};
+
 handle_info(passive_view_maintenance,
             #state{active=Active,
                    passive=Passive,
                    pending=Pending,
                    connections=Connections0}=State) ->
-
-    %% Run memory report.
-    memory_report(),
 
     %% Establish any new connections.
     Connections = establish_connections(Pending,
@@ -874,6 +885,12 @@ k_active() ->
 %% @private
 k_passive() ->
     4.
+
+%% @private
+schedule_memory_report() ->
+    erlang:send_after(?MEMORY_REPORT_INTERVAL,
+                      ?MODULE,
+                      memory_report).
 
 %% @private
 schedule_passive_view_maintenance() ->
