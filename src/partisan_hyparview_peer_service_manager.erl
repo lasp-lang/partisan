@@ -242,10 +242,10 @@ handle_cast(Msg, State) ->
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
 
-handle_info(memory_report, State) ->
+handle_info(memory_report, #state{connections=Connections}=State) ->
 
     %% Run memory report.
-    memory_report(),
+    memory_report(Connections),
 
     %% Schedule memory report.
     schedule_memory_report(),
@@ -920,10 +920,12 @@ notify(#state{active=Active}) ->
     partisan_peer_service_events:update(Active).
 
 %% @private
-memory_report() ->
+memory_report(Connections) ->
     MemoryData = {_, _, {BadPid, _}} = memsup:get_memory_data(),
     _ = lager:info(""),
     _ = lager:info("-----------------------------------------------------------", []),
+    %% Output dictionary statistics.
+    lager:info("Connections: ~p", [Connections]),
     _ = lager:info("Allocated areas: ~p", [erlang:system_info(allocated_areas)]),
     try
         _ = lager:info("Worst: ~p", [process_info(BadPid)]),
