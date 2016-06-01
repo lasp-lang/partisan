@@ -746,11 +746,14 @@ is_full({passive, Passive}) ->
 %% @doc Process of removing a random element from the active view.
 drop_random_element_from_active_view(#state{active=Active0,
                                             passive=Passive0}=State) ->
-    %% Select random from the active view.
-    Peer = select_random(Active0),
+    %% Select random from the active view, but excluse ourselves.
+    Myself = myself(),
+    Peer = select_random(sets:del_element(Myself, Active0)),
 
     %% Trigger disconnect message.
     gen_server:cast(?MODULE, {disconnect, Peer}),
+
+    lager:info("Removing and disconnecting peer: ~p", [Peer]),
 
     %% Remove from the active view.
     Active = sets:del_element(Peer, Active0),
