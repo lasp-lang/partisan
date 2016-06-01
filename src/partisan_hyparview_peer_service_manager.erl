@@ -25,7 +25,6 @@
 -behaviour(partisan_peer_service_manager).
 
 -define(PASSIVE_VIEW_MAINTENANCE_INTERVAL, 10000).
--define(MEMORY_REPORT_INTERVAL, 5000).
 -define(ACTIVE_SIZE, 5).
 -define(PASSIVE_SIZE, 30).
 -define(ARWL, 6).
@@ -87,7 +86,6 @@ get_local_state() ->
 
 %% @doc Send message to a remote manager.
 send_message(Name, Message) ->
-    % lager:info("Sending message to ~p, ~p", [Name, Message]),
     gen_server:call(?MODULE, {send_message, Name, Message}, infinity).
 
 %% @doc Forward message to registered process on the remote side.
@@ -96,7 +94,6 @@ forward_message(Name, ServerRef, Message) ->
 
 %% @doc Receive message from a remote manager.
 receive_message(Message) ->
-    % lager:info("Receiving message ~p", [Message]),
     gen_server:call(?MODULE, {receive_message, Message}, infinity).
 
 %% @doc Attempt to join a remote node.
@@ -138,9 +135,6 @@ init([]) ->
 
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
-
-    %% Schedule memory report.
-    schedule_memory_report(),
 
     {ok, #state{pending=Pending,
                 active=Active,
@@ -241,16 +235,6 @@ handle_cast(Msg, State) ->
 
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
-
-handle_info(memory_report, #state{connections=Connections}=State) ->
-
-    %% Run memory report.
-    memory_report(Connections),
-
-    %% Schedule memory report.
-    schedule_memory_report(),
-
-    {noreply, State};
 
 handle_info(passive_view_maintenance,
             #state{active=Active,
@@ -887,12 +871,6 @@ k_passive() ->
     4.
 
 %% @private
-schedule_memory_report() ->
-    erlang:send_after(?MEMORY_REPORT_INTERVAL,
-                      ?MODULE,
-                      memory_report).
-
-%% @private
 schedule_passive_view_maintenance() ->
     erlang:send_after(?PASSIVE_VIEW_MAINTENANCE_INTERVAL,
                       ?MODULE,
@@ -918,24 +896,3 @@ merge_exchange(Exchange, #state{active=Active, passive=Passive0}=State) ->
 %% @private
 notify(#state{active=Active}) ->
     partisan_peer_service_events:update(Active).
-
-%% @private
-memory_report(Connections) ->
-    MemoryData = {_, _, {BadPid, _}} = memsup:get_memory_data(),
-    _ = lager:info(""),
-    _ = lager:info("-----------------------------------------------------------", []),
-    %% Output dictionary statistics.
-    lager:info("Connections: ~p", [Connections]),
-    _ = lager:info("Allocated areas: ~p", [erlang:system_info(allocated_areas)]),
-    try
-        _ = lager:info("Worst: ~p", [process_info(BadPid)]),
-        ok
-    catch
-        _:_ ->
-            %% Process might die while trying to get info.
-            ok
-    end,
-    _ = lager:info("Memory Data: ~p", [MemoryData]),
-    _ = lager:info("System memory data: ~p", [memsup:get_system_memory_data()]),
-    _ = lager:info("-----------------------------------------------------------", []),
-    _ = lager:info("").
