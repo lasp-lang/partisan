@@ -25,7 +25,7 @@
 -behaviour(partisan_peer_service_manager).
 
 -define(PASSIVE_VIEW_MAINTENANCE_INTERVAL, 10000).
--define(MEMORY_REPORT_INTERVAL, 1000).
+-define(MEMORY_REPORT_INTERVAL, 5000).
 -define(ACTIVE_SIZE, 5).
 -define(PASSIVE_SIZE, 30).
 -define(ARWL, 6).
