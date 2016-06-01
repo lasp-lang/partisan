@@ -32,6 +32,9 @@
 
 -include("partisan.hrl").
 
+%% API callbacks
+-export([myself/0]).
+
 %% partisan_peer_service_manager callbacks
 -export([start_link/0,
          members/0,
@@ -66,6 +69,16 @@
                 pending :: pending(),
                 suspected :: suspected(),
                 connections :: connections()}).
+
+%%%===================================================================
+%%% API
+%%%===================================================================
+
+%% @doc Return my nodename.
+myself() ->
+    Port = partisan_config:get(peer_port, ?PEER_PORT),
+    IPAddress = partisan_config:get(peer_ip, ?PEER_IP),
+    {node(), IPAddress, Port}.
 
 %%%===================================================================
 %%% partisan_peer_service_manager callbacks
@@ -760,12 +773,6 @@ drop_random_element_from_active_view(#state{active=Active0,
     Passive = sets:del_element(Peer, Passive0),
 
     State#state{active=Active, passive=Passive}.
-
-%% @private
-myself() ->
-    Port = partisan_config:get(peer_port, ?PEER_PORT),
-    IPAddress = partisan_config:get(peer_ip, ?PEER_IP),
-    {node(), IPAddress, Port}.
 
 %% @private
 arwl() ->
