@@ -222,10 +222,10 @@ handle_cast({disconnect, Peer}, #state{active=Active0,
             {noreply, State0}
     end;
 
-handle_cast({suspected, Peer}, #state{passive=Passive0,
+handle_cast({suspected, _Peer}, #state{passive=Passive0,
                                       pending=Pending0,
                                       connections=Connections0}=State) ->
-    lager:info("Node ~p suspected of failure.", [Peer]),
+    % lager:info("Node ~p suspected of failure.", [Peer]),
 
     %% Select random peer from passive view, and attempt to connect it.
     %%
@@ -359,7 +359,7 @@ handle_info({connected, Peer, _RemoteState},
             #state{pending=Pending0,
                    passive=Passive0,
                    suspected=Suspected0}=State0) ->
-    lager:info("Peer ~p connected.", [Peer]),
+    % lager:info("Peer ~p connected.", [Peer]),
 
     %% When a node actually connects, perform the join steps.
     case is_pending(Peer, Pending0) of
@@ -629,7 +629,7 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
     Connections = case dict:find(Name, Connections0) of
         %% Found in dict, and disconnected.
         {ok, undefined} ->
-            lager:info("Node is not connected ~p; trying again...", [Node]),
+            % lager:info("Node is not connected ~p; trying again...", [Node]),
             case connect(Node) of
                 {ok, Pid} ->
                     dict:store(Name, Pid, Connections0);
@@ -641,7 +641,7 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
             Connections0;
         %% Not present; disconnected.
         error ->
-            lager:info("Node is not connected: ~p", [Node]),
+            % lager:info("Node is not connected: ~p", [Node]),
             case connect(Node) of
                 {ok, Pid} ->
                     dict:store(Name, Pid, Connections0);
@@ -705,7 +705,7 @@ select_random_sublist(View, K) ->
 
 %% @doc Add to the active view.
 add_to_active_view({Name, _, _}=Peer, #state{active=Active0}=State0) ->
-    lager:info("Adding ~p to active view on ~p", [Peer, myself()]),
+    % lager:info("Adding ~p to active view on ~p", [Peer, myself()]),
     IsNotMyself = not (Name =:= node()),
     NotInActiveView = not sets:is_element(Peer, Active0),
     case IsNotMyself andalso NotInActiveView of
@@ -727,7 +727,7 @@ add_to_active_view({Name, _, _}=Peer, #state{active=Active0}=State0) ->
 %% @doc Add to the passive view.
 add_to_passive_view({Name, _, _}=Peer,
                     #state{active=Active0, passive=Passive0}=State0) ->
-    lager:info("Adding ~p to passive view on ~p", [Peer, myself()]),
+    % lager:info("Adding ~p to passive view on ~p", [Peer, myself()]),
     IsNotMyself = not (Name =:= node()),
     NotInActiveView = not sets:is_element(Peer, Active0),
     NotInPassiveView = not sets:is_element(Peer, Passive0),
@@ -764,7 +764,7 @@ drop_random_element_from_active_view(#state{active=Active0,
     %% Trigger disconnect message.
     gen_server:cast(?MODULE, {disconnect, Peer}),
 
-    lager:info("Removing and disconnecting peer: ~p", [Peer]),
+    % lager:info("Removing and disconnecting peer: ~p", [Peer]),
 
     %% Remove from the active view.
     Active = sets:del_element(Peer, Active0),
