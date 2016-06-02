@@ -530,7 +530,7 @@ handle_message({forward_join, Peer, TTL, Sender},
 
     {reply, ok, State};
 handle_message({forward_message, ServerRef, Message}, State) ->
-    % lager:info("Forwarding message: ~p", [Message]),
+    lager:info("Forwarding to ~p message: ~p", [ServerRef, Message]),
     gen_server:cast(ServerRef, Message),
     {reply, ok, State}.
 
