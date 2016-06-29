@@ -539,9 +539,8 @@ handle_message({forward_join, Peer, TTL, Sender},
             %%
             case select_random(Active0, [Sender, Myself, Peer]) of
                 undefined ->
-                    lager:error("Forward: no peers to forward to!"),
-
-                    State1;
+                    lager:error("Forward: no peers to forward to; adding ~p to active view on node ~p.", [Peer, Myself]),
+                    add_to_active_view(Peer, State1);
                 Random ->
                     lager:info("Forward: forwarding join from ~p to ~p",
                                [Myself, Random]),
