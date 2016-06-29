@@ -917,12 +917,23 @@ is_replacement_candidate(Peer, Passive, Suspected) ->
 %% @private
 perform_join(Peer, #state{myself=Myself,
                           active=Active0,
+                          pending=Pending,
                           suspected=Suspected0,
-                          connections=Connections}=State0) ->
+                          connections=Connections0}=State0) ->
     %% Add to active view.
-    State = add_to_active_view(Peer, State0),
+    State = #state{active=Active} = add_to_active_view(Peer, State0),
 
-    %% Notify the other nodes it's been add
+    %% Establish connections.
+    Connections = establish_connections(Pending,
+                                        Active,
+                                        Connections0),
+
+    %% Send neighbor_accapted message to origin, that will
+    %% update it's view.
+    %%
+    do_send_message(Peer,
+                    {neighbor_accepted, Myself, Peer},
+                    Connections),
 
     %% Notify with event.
     notify(State),
