@@ -273,7 +273,7 @@ handle_info(passive_view_maintenance,
                                         Connections0),
 
     Exchange = %% Myself.
-               [myself()] ++
+               [Myself] ++
 
                % Random members of the active list.
                select_random_sublist(Active, k_active()) ++
@@ -288,7 +288,7 @@ handle_info(passive_view_maintenance,
         Random ->
             %% Forward shuffle request.
             do_send_message(Random,
-                            {shuffle, Exchange, arwl(), myself()},
+                            {shuffle, Exchange, arwl(), Myself},
                             Connections)
     end,
 
@@ -456,19 +456,20 @@ handle_message({neighbor_rejected, Peer, _Sender}, State) ->
     {reply, ok, State};
 
 handle_message({neighbor, Peer, Priority, Sender},
-               #state{connections=Connections}=State0) ->
+               #state{myself=Myself,
+                      connections=Connections}=State0) ->
     State = case neighbor_acceptable(Priority, State0) of
         true ->
             %% Reply to acknowledge the neighbor was accepted.
             do_send_message(Sender,
-                            {neighbor_accepted, Peer, myself()},
+                            {neighbor_accepted, Peer, Myself},
                             Connections),
 
             add_to_active_view(Peer, State0);
         false ->
             %% Reply to acknowledge the neighbor was rejected.
             do_send_message(Sender,
-                            {neighbor_rejected, Peer, myself()},
+                            {neighbor_rejected, Peer, Myself},
                             Connections),
 
             State0
@@ -484,7 +485,8 @@ handle_message({shuffle_reply, Exchange, _Sender}, State0) ->
     {noreply, State};
 
 handle_message({shuffle, Exchange, TTL, Sender},
-               #state{active=Active0,
+               #state{myself=Myself,
+                      active=Active0,
                       passive=Passive0,
                       connections=Connections}=State0) ->
     %% Forward to random member of the active view.
@@ -494,7 +496,7 @@ handle_message({shuffle, Exchange, TTL, Sender},
 
             %% Forward shuffle until random walk complete.
             do_send_message(Random,
-                            {shuffle, Exchange, TTL - 1, myself()},
+                            {shuffle, Exchange, TTL - 1, Myself},
                             Connections),
 
             State0;
@@ -504,7 +506,7 @@ handle_message({shuffle, Exchange, TTL, Sender},
                                                      length(Exchange)),
 
             do_send_message(Sender,
-                            {shuffle_reply, ResponseExchange, myself()},
+                            {shuffle_reply, ResponseExchange, Myself},
                             Connections),
 
             merge_exchange(Exchange, State0)
@@ -770,10 +772,10 @@ is_full({passive, Passive}) ->
     sets:size(Passive) >= ?PASSIVE_SIZE.
 
 %% @doc Process of removing a random element from the active view.
-drop_random_element_from_active_view(#state{active=Active0,
+drop_random_element_from_active_view(#state{myself=Myself,
+                                            active=Active0,
                                             passive=Passive0}=State) ->
     %% Select random from the active view, but excluse ourselves.
-    Myself = myself(),
     case select_random(sets:del_element(Myself, Active0)) of
         undefined ->
             State;
@@ -865,7 +867,7 @@ perform_join(Peer, #state{myself=Myself,
 
     lists:foreach(fun(P) ->
                 do_send_message(P,
-                                {forward_join, Peer, arwl(), myself()},
+                                {forward_join, Peer, arwl(), Myself},
                                 Connections)
         end, Peers),
 
@@ -873,7 +875,9 @@ perform_join(Peer, #state{myself=Myself,
     State#state{suspected=Suspected}.
 
 %% @private
-send_neighbor(Peer, #state{active=Active0, connections=Connections}=State) ->
+send_neighbor(Peer, #state{myself=Myself,
+                           active=Active0,
+                           connections=Connections}=State) ->
     Priority = case sets:size(Active0) of
         0 ->
             high;
@@ -882,7 +886,7 @@ send_neighbor(Peer, #state{active=Active0, connections=Connections}=State) ->
     end,
 
     do_send_message(Peer,
-                    {neighbor, Peer, Priority, myself()},
+                    {neighbor, Peer, Priority, Myself},
                     Connections),
 
     State.
@@ -910,9 +914,9 @@ shuffle(L) ->
     [X || {_, X} <- lists:sort([{random:uniform(), N} || N <- L])].
 
 %% @private
-merge_exchange(Exchange, #state{active=Active, passive=Passive0}=State) ->
+merge_exchange(Exchange, #state{myself=Myself, active=Active, passive=Passive0}=State) ->
     %% Remove ourself and active set members from the exchange.
-    ToAdd = Exchange -- ([myself()] ++ members(Active)),
+    ToAdd = Exchange -- ([Myself] ++ members(Active)),
 
     %% Add to passive set.
     Passive = lists:foldl(fun(X, P) ->
