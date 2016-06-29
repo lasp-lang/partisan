@@ -261,7 +261,8 @@ handle_cast(Msg, State) ->
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
 
 handle_info(passive_view_maintenance,
-            #state{active=Active,
+            #state{myself=Myself,
+                   active=Active,
                    passive=Passive,
                    pending=Pending,
                    connections=Connections0}=State) ->
@@ -281,12 +282,15 @@ handle_info(passive_view_maintenance,
                select_random_sublist(Passive, k_passive()),
 
     %% Select random member of the active list.
-    Random = select_random(Active),
-
-    %% Forward shuffle request.
-    do_send_message(Random,
-                    {shuffle, Exchange, arwl(), myself()},
-                    Connections),
+    case select_random(Active, [Myself]) of
+        undefined ->
+            ok;
+        Random ->
+            %% Forward shuffle request.
+            do_send_message(Random,
+                            {shuffle, Exchange, arwl(), myself()},
+                            Connections)
+    end,
 
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
