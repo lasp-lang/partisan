@@ -47,6 +47,9 @@
          receive_message/1,
          decode/1]).
 
+%% debug.
+-export([state/0]).
+
 %% gen_server callbacks
 -export([init/1,
          handle_call/3,
@@ -121,6 +124,10 @@ leave() ->
 leave(Node) ->
     gen_server:call(?MODULE, {leave, Node}, infinity).
 
+%% @doc Debugging.
+state() ->
+    gen_server:call(?MODULE, state, infinity).
+
 %% @doc Decode state.
 decode(Active) ->
     sets:to_list(Active).
@@ -165,6 +172,9 @@ handle_call({leave, _Node}, _From, State) ->
 handle_call({join, {_Name, _, _}=Node}, _From, State) ->
     gen_server:cast(?MODULE, {join, Node}),
     {reply, ok, State};
+
+handle_call(state, _From, State) ->
+    {reply, {ok, State}, State};
 
 handle_call({send_message, Name, Message}, _From,
             #state{connections=Connections}=State) ->
