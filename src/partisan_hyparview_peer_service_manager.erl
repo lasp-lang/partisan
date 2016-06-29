@@ -714,10 +714,10 @@ select_random(View) ->
 %% @private
 select_random(View, Omit) ->
     List = members(View) -- lists:flatten([Omit]),
-    Index = random:uniform(length(List)),
 
     %% Catch exceptions where there may not be enough members.
     try
+        Index = random:uniform(length(List)),
         lists:nth(Index, List)
     catch
         _:_ ->
