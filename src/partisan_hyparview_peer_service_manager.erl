@@ -771,20 +771,23 @@ drop_random_element_from_active_view(#state{active=Active0,
                                             passive=Passive0}=State) ->
     %% Select random from the active view, but excluse ourselves.
     Myself = myself(),
-    Peer = select_random(sets:del_element(Myself, Active0)),
+    case select_random(sets:del_element(Myself, Active0)) of
+        undefined ->
+            State;
+        Peer ->
+            %% Trigger disconnect message.
+            gen_server:cast(?MODULE, {disconnect, Peer}),
 
-    %% Trigger disconnect message.
-    gen_server:cast(?MODULE, {disconnect, Peer}),
+            lager:info("Removing and disconnecting peer: ~p", [Peer]),
 
-    % lager:info("Removing and disconnecting peer: ~p", [Peer]),
+            %% Remove from the active view.
+            Active = sets:del_element(Peer, Active0),
 
-    %% Remove from the active view.
-    Active = sets:del_element(Peer, Active0),
+            %% Add to the passive view.
+            Passive = sets:del_element(Peer, Passive0),
 
-    %% Add to the passive view.
-    Passive = sets:del_element(Peer, Passive0),
-
-    State#state{active=Active, passive=Passive}.
+            State#state{active=Active, passive=Passive}
+    end.
 
 %% @private
 arwl() ->
