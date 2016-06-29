@@ -830,10 +830,14 @@ is_replacement_candidate(Peer, Passive, Suspected) ->
     is_in_passive_view(Peer, Passive) andalso is_not_empty(Suspected).
 
 %% @private
-perform_join(Peer, #state{suspected=Suspected0,
+perform_join(Peer, #state{myself=Myself,
+                          active=Active0,
+                          suspected=Suspected0,
                           connections=Connections}=State0) ->
     %% Add to active view.
-    #state{active=Active} = State = add_to_active_view(Peer, State0),
+    State = add_to_active_view(Peer, State0),
+
+    %% Notify the other nodes it's been add
 
     %% Notify with event.
     notify(State),
@@ -842,7 +846,7 @@ perform_join(Peer, #state{suspected=Suspected0,
     Suspected = remove_from_suspected(Peer, Suspected0),
 
     %% Random walk for forward join.
-    Peers = members(Active) -- [myself()],
+    Peers = members(Active0) -- [Myself],
 
     lists:foreach(fun(P) ->
                 do_send_message(P,
