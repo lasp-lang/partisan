@@ -745,8 +745,10 @@ select_random_sublist(View, K) ->
     lists:sublist(shuffle(List), K).
 
 %% @doc Add to the active view.
-add_to_active_view({Name, _, _}=Peer, #state{active=Active0}=State0) ->
-    % lager:info("Adding ~p to active view on ~p", [Peer, myself()]),
+add_to_active_view({Name, _, _}=Peer,
+                   #state{myself=Myself, active=Active0}=State0) ->
+    lager:info("Adding ~p to active view on ~p", [Peer, Myself]),
+
     IsNotMyself = not (Name =:= node()),
     NotInActiveView = not sets:is_element(Peer, Active0),
     case IsNotMyself andalso NotInActiveView of
@@ -767,8 +769,11 @@ add_to_active_view({Name, _, _}=Peer, #state{active=Active0}=State0) ->
 
 %% @doc Add to the passive view.
 add_to_passive_view({Name, _, _}=Peer,
-                    #state{active=Active0, passive=Passive0}=State0) ->
-    % lager:info("Adding ~p to passive view on ~p", [Peer, myself()]),
+                    #state{myself=Myself,
+                           active=Active0,
+                           passive=Passive0}=State0) ->
+    lager:info("Adding ~p to passive view on ~p", [Peer, Myself]),
+
     IsNotMyself = not (Name =:= node()),
     NotInActiveView = not sets:is_element(Peer, Active0),
     NotInPassiveView = not sets:is_element(Peer, Passive0),
