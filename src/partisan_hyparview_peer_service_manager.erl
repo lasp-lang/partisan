@@ -527,6 +527,11 @@ handle_message({forward_join, Peer, TTL, Sender},
             add_to_active_view(Peer, State0);
         false ->
             lager:info("Forward: ttl not expired!", []),
+
+            %% If we run out of peers before we hit the PRWL, that's
+            %% fine, because exchanges between peers will eventually
+            %% repair the passive view during shuffles.
+            %%
             State1 = case TTL =:= prwl() of
                 true ->
                     add_to_passive_view(Peer, State0);
