@@ -551,6 +551,7 @@ handle_message({forward_join, Peer, TTL, Sender},
             %%
             State1 = case TTL =:= prwl() of
                 true ->
+                    lager:info("Passive walk ttl expired!"),
                     add_to_passive_view(Peer, State0);
                 false ->
                     State0
@@ -784,24 +785,36 @@ select_random_sublist(View, K) ->
     lists:sublist(shuffle(List), K).
 
 %% @doc Add to the active view.
+%%
+%% However, interesting race condition here: if the passive random walk
+%% timer exceeded and the node was added to the passive view, we might
+%% also have the active random walk timer exceed *after* because of a
+%% network delay; if so, we have to remove this element from the passive
+%% view, otherwise it will exist in both places.
+%%
 add_to_active_view({Name, _, _}=Peer,
-                   #state{myself=Myself, active=Active0}=State0) ->
+                   #state{myself=Myself,
+                          active=Active0,
+                          passive=Passive0}=State0) ->
     lager:info("Adding ~p to active view on ~p", [Peer, Myself]),
 
     IsNotMyself = not (Name =:= node()),
     NotInActiveView = not sets:is_element(Peer, Active0),
     case IsNotMyself andalso NotInActiveView of
         true ->
+            %% See above for more information.
+            Passive = remove_from_passive_view(Peer, Passive0),
+
             #state{active=Active1} = State1 = case is_full({active, Active0}) of
                 true ->
-                    drop_random_element_from_active_view(State0);
+                    drop_random_element_from_active_view(State0#state{passive=Passive});
                 false ->
-                    State0
+                    State0#state{passive=Passive}
             end,
             Active = sets:add_element(Peer, Active1),
             State2 = State1#state{active=Active},
             persist_state(State2),
-            State2;
+            State2#state{passive=Passive};
         false ->
             State0
     end.
