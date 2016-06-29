@@ -699,9 +699,16 @@ select_random(View) ->
 
 %% @private
 select_random(View, Omit) ->
-    List = members(View) -- [Omit],
+    List = members(View) -- lists:flatten([Omit]),
     Index = random:uniform(length(List)),
-    lists:nth(Index, List).
+
+    %% Catch exceptions where there may not be enough members.
+    try
+        lists:nth(Index, List)
+    catch
+        _:_ ->
+            undefined
+    end.
 
 %% @private
 select_random_sublist(View, K) ->
