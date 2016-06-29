@@ -441,6 +441,8 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private
 handle_message({neighbor_accepted, Peer, _Sender}, State0) ->
+    lager:info("Neighbor request accepted: ~p", [Peer]),
+
     State = add_to_active_view(Peer, State0),
 
     %% Notify with event.
@@ -523,7 +525,23 @@ handle_message({forward_join, Peer, TTL, Sender},
         true ->
             lager:info("Forward: ttl expired; adding ~p to view on ~p",
                        [Peer, Myself]),
-            add_to_active_view(Peer, State0);
+
+            %% Add to our active view.
+            State1 = #state{active=Active} = add_to_active_view(Peer, State0),
+
+            %% Establish connections.
+            Connections = establish_connections(Pending,
+                                                Active,
+                                                Connections0),
+
+            %% Send neighbor_accapted message to origin, that will
+            %% update it's view.
+            %%
+            do_send_message(Peer,
+                            {neighbor_accepted, Myself, Peer},
+                            Connections),
+
+            State1#state{connections=Connections};
         false ->
             lager:info("Forward: ttl not expired!", []),
 
@@ -543,8 +561,25 @@ handle_message({forward_join, Peer, TTL, Sender},
             %%
             case select_random(Active0, [Sender, Myself, Peer]) of
                 undefined ->
-                    lager:error("Forward: no peers to forward to; adding ~p to active view on node ~p.", [Peer, Myself]),
-                    add_to_active_view(Peer, State1);
+                    lager:error("Forward: no peers to forward to; adding ~p to active view on node ~p.",
+                                [Peer, Myself]),
+
+                    %% Add to our active view.
+                    State2 = #state{active=Active} = add_to_active_view(Peer, State1),
+
+                    %% Establish connections.
+                    Connections = establish_connections(Pending,
+                                                        Active,
+                                                        Connections0),
+
+                    %% Send neighbor_accapted message to origin, that will
+                    %% update it's view.
+                    %%
+                    do_send_message(Peer,
+                                    {neighbor_accepted, Myself, Peer},
+                                    Connections),
+
+                    State2#state{connections=Connections};
                 Random ->
                     lager:info("Forward: forwarding join from ~p to ~p",
                                [Myself, Random]),
