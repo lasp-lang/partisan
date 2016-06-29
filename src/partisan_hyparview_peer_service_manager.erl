@@ -684,7 +684,13 @@ disconnect(Name, Connections) ->
     end.
 
 %% @private
-do_send_message({Name, _, _}, Message, Connections) ->
+do_send_message(Name, Message, Connections) when is_atom(Name) ->
+    %% Who is calling this?  No one should be...
+    %%
+    %% {partisan_hyparview_peer_service_manager,handle_call,3,
+    %% [{file, "/Users/cmeiklejohn/Documents/lasp/_checkouts/partisan/src/partisan_hyparview_peer_service_manager.erl"},
+    %%   {line,187}]},
+    %%
     %% Find a connection for the remote node, if we have one.
     case dict:find(Name, Connections) of
         {ok, undefined} ->
@@ -697,7 +703,9 @@ do_send_message({Name, _, _}, Message, Connections) ->
             %% Node has not been connected yet.
             lager:error("Node ~p not yet connected.", [Name]),
             {error, not_yet_connected}
-    end.
+    end;
+do_send_message({Name, _, _}, Message, Connections) ->
+    do_send_message(Name, Message, Connections).
 
 %% @private
 select_random(View) ->
