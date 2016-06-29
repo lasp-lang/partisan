@@ -781,6 +781,7 @@ add_to_passive_view({Name, _, _}=Peer,
         true ->
             Passive1 = case is_full({passive, Passive0}) of
                 true ->
+                    Random = select_random(Passive0, [Myself]),
                     sets:del_element(Random, Passive0);
                 false ->
                     Passive0
