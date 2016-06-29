@@ -678,16 +678,18 @@ disconnect(Name, Connections) ->
     end.
 
 %% @private
-do_send_message(Name, Message, Connections) ->
+do_send_message({Name, _, _}, Message, Connections) ->
     %% Find a connection for the remote node, if we have one.
     case dict:find(Name, Connections) of
         {ok, undefined} ->
             %% Node was connected but is now disconnected.
+            lager:error("Node ~p disconnected.", [Name]),
             {error, disconnected};
         {ok, Pid} ->
             gen_server:cast(Pid, {send_message, Message});
         error ->
             %% Node has not been connected yet.
+            lager:error("Node ~p not yet connected.", [Name]),
             {error, not_yet_connected}
     end.
 
