@@ -392,8 +392,7 @@ handle_info({connected, Peer, _RemoteState},
                     %% Send neighbor request to peer asking it to
                     %% replace a suspected node.
                     %%
-                    State = send_neighbor(Peer,
-                                          State0#state{pending=Pending}),
+                    State = send_neighbor_request(Peer, State0#state{pending=Pending}),
 
                     %% Notify with event.
                     notify(State),
@@ -455,7 +454,7 @@ handle_message({neighbor_rejected, Peer, _Sender}, State) ->
 
     {reply, ok, State};
 
-handle_message({neighbor, Peer, Priority, Sender},
+handle_message({neighbor_request, Peer, Priority, Sender},
                #state{myself=Myself,
                       connections=Connections}=State0) ->
     State = case neighbor_acceptable(Priority, State0) of
@@ -909,9 +908,9 @@ perform_join(Peer, #state{myself=Myself,
     State#state{suspected=Suspected}.
 
 %% @private
-send_neighbor(Peer, #state{myself=Myself,
-                           active=Active0,
-                           connections=Connections}=State) ->
+send_neighbor_request(Peer, #state{myself=Myself,
+                                   active=Active0,
+                                   connections=Connections}=State) ->
     Priority = case sets:size(Active0) of
         0 ->
             high;
@@ -920,7 +919,7 @@ send_neighbor(Peer, #state{myself=Myself,
     end,
 
     do_send_message(Peer,
-                    {neighbor, Peer, Priority, Myself},
+                    {neighbor_request, Peer, Priority, Myself},
                     Connections),
 
     State.
