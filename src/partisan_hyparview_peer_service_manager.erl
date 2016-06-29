@@ -534,7 +534,10 @@ handle_message({forward_join, Peer, TTL, Sender},
                     State0
             end,
 
-            case select_random(Active0, [Sender, Myself]) of
+            %% Don't forward the join to the sender, ourself, or the
+            %% joining peer.
+            %%
+            case select_random(Active0, [Sender, Myself, Peer]) of
                 undefined ->
                     lager:error("Forward: no peers to forward to!"),
 
