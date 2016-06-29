@@ -66,7 +66,7 @@
 -type pending() :: sets:set(node_spec()).
 -type suspected() :: sets:set(node_spec()).
 
--record(state, {actor :: actor(),
+-record(state, {myself :: node_spec(),
                 active :: active(),
                 passive :: passive(),
                 pending :: pending(),
@@ -147,16 +147,17 @@ init([]) ->
     %% Process connection exits.
     process_flag(trap_exit, true),
 
-    Actor = gen_actor(),
-    {Active, Passive} = maybe_load_state_from_disk(Actor),
+    {Active, Passive} = maybe_load_state_from_disk(),
     Pending = sets:new(),
     Suspected = sets:new(),
     Connections = dict:new(),
+    Myself = myself(),
 
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
 
-    {ok, #state{pending=Pending,
+    {ok, #state{myself=Myself,
+                pending=Pending,
                 active=Active,
                 passive=Passive,
                 suspected=Suspected,
@@ -544,21 +545,13 @@ handle_message({forward_message, ServerRef, Message}, State) ->
     {reply, ok, State}.
 
 %% @private
-empty_membership(_Actor) ->
+empty_membership() ->
     %% Each cluster starts with only itself.
     Active = sets:add_element(myself(), sets:new()),
     Passive = sets:new(),
     LocalState = {Active, Passive},
     persist_state(LocalState),
     LocalState.
-
-%% @private
-gen_actor() ->
-    Node = atom_to_list(node()),
-    Unique = time_compat:unique_integer([positive]),
-    TS = integer_to_list(Unique),
-    Term = Node ++ TS,
-    crypto:hash(sha, Term).
 
 %% @private
 data_root() ->
@@ -597,10 +590,10 @@ delete_state_from_disk() ->
     end.
 
 %% @private
-maybe_load_state_from_disk(Actor) ->
+maybe_load_state_from_disk() ->
     case data_root() of
         undefined ->
-            empty_membership(Actor);
+            empty_membership();
         Dir ->
             case filelib:is_regular(filename:join(Dir, "cluster_state")) of
                 true ->
@@ -608,7 +601,7 @@ maybe_load_state_from_disk(Actor) ->
                     {ok, State} = binary_to_term(Bin),
                     State;
                 false ->
-                    empty_membership(Actor)
+                    empty_membership()
             end
     end.
 
