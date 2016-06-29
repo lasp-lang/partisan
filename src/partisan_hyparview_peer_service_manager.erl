@@ -943,17 +943,12 @@ shuffle(L) ->
     [X || {_, X} <- lists:sort([{random:uniform(), N} || N <- L])].
 
 %% @private
-merge_exchange(Exchange, #state{myself=Myself, active=Active, passive=Passive0}=State) ->
+merge_exchange(Exchange, #state{myself=Myself, active=Active}=State0) ->
     %% Remove ourself and active set members from the exchange.
     ToAdd = Exchange -- ([Myself] ++ members(Active)),
 
     %% Add to passive set.
-    Passive = lists:foldl(fun(X, P) ->
-        add_to_passive_view(X, P)
-                end, Passive0, ToAdd),
-
-    %% Return new state.
-    State#state{passive=Passive}.
+    lists:foldl(fun(X, P) -> add_to_passive_view(X, P) end, State0, ToAdd).
 
 %% @private
 notify(#state{active=Active}) ->
