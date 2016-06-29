@@ -514,32 +514,47 @@ handle_message({shuffle, Exchange, TTL, Sender},
     {noreply, State};
 
 handle_message({forward_join, Peer, TTL, Sender},
-               #state{active=Active0,
+               #state{myself=Myself,
+                      active=Active0,
                       pending=Pending,
                       connections=Connections0}=State0) ->
+    lager:info("Received forward join for ~p at ~p", [Peer, Myself]),
+
     State = case TTL =:= 0 orelse sets:size(Active0) =:= 1 of
         true ->
+            lager:info("Forward: ttl expired; adding ~p to view on ~p",
+                       [Peer, Myself]),
             add_to_active_view(Peer, State0);
         false ->
+            lager:info("Forward: ttl not expired!", []),
             State1 = case TTL =:= prwl() of
                 true ->
                     add_to_passive_view(Peer, State0);
                 false ->
                     State0
             end,
-            Random = select_random(Active0, Sender),
 
-            %% Establish any new connections.
-            Connections = establish_connections(Pending,
-                                                Active0,
-                                                Connections0),
+            case select_random(Active0, [Sender, Myself]) of
+                undefined ->
+                    lager:error("Forward: no peers to forward to!"),
 
-            %% Forward join.
-            do_send_message(Random,
-                            {forward_join, Peer, TTL - 1, myself()},
-                            Connections),
+                    State1;
+                Random ->
+                    lager:info("Forward: forwarding join from ~p to ~p",
+                               [Myself, Random]),
 
-            State1
+                    %% Establish any new connections.
+                    Connections = establish_connections(Pending,
+                                                        Active0,
+                                                        Connections0),
+
+                    %% Forward join.
+                    do_send_message(Random,
+                                    {forward_join, Peer, TTL - 1, Myself},
+                                    Connections),
+
+                    State1#state{connections=Connections}
+            end
     end,
 
     %% Notify with event.
