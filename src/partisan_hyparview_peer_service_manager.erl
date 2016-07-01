@@ -290,14 +290,16 @@ handle_info(passive_view_maintenance,
                                         Active,
                                         Connections0),
 
-    Exchange = %% Myself.
-               [Myself] ++
+    Exchange0 = %% Myself.
+                [Myself] ++
 
-               % Random members of the active list.
-               select_random_sublist(Active, k_active()) ++
+                % Random members of the active list.
+                select_random_sublist(Active, k_active()) ++
 
-               %% Random members of the passive list.
-               select_random_sublist(Passive, k_passive()),
+                %% Random members of the passive list.
+                select_random_sublist(Passive, k_passive()),
+
+    Exchange = lists:usort(Exchange0),
 
     %% Select random member of the active list.
     case select_random(Active, [Myself]) of
@@ -1026,7 +1028,7 @@ shuffle(L) ->
 %% @private
 merge_exchange(Exchange, #state{myself=Myself, active=Active}=State0) ->
     %% Remove ourself and active set members from the exchange.
-    ToAdd = Exchange -- ([Myself] ++ members(Active)),
+    ToAdd = lists:usort(Exchange -- ([Myself] ++ members(Active))),
 
     %% Add to passive set.
     lists:foldl(fun(X, P) -> add_to_passive_view(X, P) end, State0, ToAdd).
