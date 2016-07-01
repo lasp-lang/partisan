@@ -513,12 +513,15 @@ handle_message({shuffle, Exchange, TTL, Sender},
     %% Forward to random member of the active view.
     State = case TTL > 0 andalso sets:size(Active0) > 1 of
         true ->
-            Random = select_random(Active0, Sender),
-
-            %% Forward shuffle until random walk complete.
-            do_send_message(Random,
-                            {shuffle, Exchange, TTL - 1, Myself},
-                            Connections),
+            case select_random(Active0, [Sender, Myself]) of
+                undefined ->
+                    ok;
+                Random ->
+                    %% Forward shuffle until random walk complete.
+                    do_send_message(Random,
+                                    {shuffle, Exchange, TTL - 1, Myself},
+                                    Connections)
+            end,
 
             State0;
         false ->
