@@ -148,7 +148,8 @@ handle_message({merge, LocalState},
     From ! {connected, Peer, LocalState},
     {noreply, State};
 handle_message({hello, _Node}, #state{socket=Socket}=State) ->
-    ok = gen_tcp:send(Socket, encode({hello, node()})),
+    Message = {hello, node()},
+    ok = gen_tcp:send(Socket, encode(Message)),
     {noreply, State};
 handle_message(Message, State) ->
     lager:info("Invalid message: ~p", [Message]),
