@@ -503,7 +503,7 @@ handle_message({neighbor_request, Peer, Priority, Sender},
 
 handle_message({shuffle_reply, Exchange, _Sender}, State0) ->
     State = merge_exchange(Exchange, State0),
-    {noreply, State};
+    {reply, ok, State};
 
 handle_message({shuffle, Exchange, TTL, Sender},
                #state{myself=Myself,
@@ -532,7 +532,7 @@ handle_message({shuffle, Exchange, TTL, Sender},
 
             merge_exchange(Exchange, State0)
     end,
-    {noreply, State};
+    {reply, ok, State};
 
 handle_message({forward_join, Peer, TTL, Sender},
                #state{myself=Myself,
