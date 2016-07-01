@@ -178,15 +178,33 @@ handle_call(state, _From, State) ->
     {reply, {ok, State}, State};
 
 handle_call({send_message, Name, Message}, _From,
-            #state{connections=Connections}=State) ->
+            #state{active=Active,
+                   pending=Pending,
+                   connections=Connections0}=State) ->
+
+    %% Establish any new connections.
+    Connections = establish_connections(Pending,
+                                        Active,
+                                        Connections0),
+
     Result = do_send_message(Name, Message, Connections),
+
     {reply, Result, State};
 
 handle_call({forward_message, Name, ServerRef, Message}, _From,
-            #state{connections=Connections}=State) ->
+            #state{active=Active,
+                   pending=Pending,
+                   connections=Connections0}=State) ->
+
+    %% Establish any new connections.
+    Connections = establish_connections(Pending,
+                                        Active,
+                                        Connections0),
+
     Result = do_send_message(Name,
                              {forward_message, ServerRef, Message},
                              Connections),
+
     {reply, Result, State};
 
 handle_call({receive_message, Message}, _From, State) ->
