@@ -73,7 +73,6 @@ handle_call(Msg, _From, State) ->
     {reply, ok, State}.
 
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
-
 %% @private
 handle_cast({send_message, Message}, #state{socket=Socket}=State) ->
     case gen_tcp:send(Socket, encode(Message)) of
@@ -130,7 +129,7 @@ connect(Peer) when is_atom(Peer) ->
 
 %% @doc Connect to remote peer.
 connect({_Name, {_, _, _, _}=IPAddress, Port}) ->
-    Options = [binary, {packet, 4}, {keepalive, true}],
+    Options = [binary, {active, true}, {packet, 4}, {keepalive, true}],
     case gen_tcp:connect(IPAddress, Port, Options, ?TIMEOUT) of
         {ok, Socket} ->
             {ok, Socket};
