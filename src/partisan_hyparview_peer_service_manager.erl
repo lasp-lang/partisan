@@ -140,9 +140,9 @@ decode(Active) ->
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
     %% Seed the process at initialization.
-    random:seed(erlang:phash2([node()]),
-                erlang:monotonic_time(),
-                erlang:unique_integer()),
+    rand_compat:random_seed(erlang:phash2([node()]),
+                            erlang:monotonic_time(),
+                            erlang:unique_integer()),
 
     %% Process connection exits.
     process_flag(trap_exit, true),
@@ -795,7 +795,7 @@ select_random(View, Omit) ->
 
     %% Catch exceptions where there may not be enough members.
     try
-        Index = random:uniform(length(List)),
+        Index = rand_compat:uniform(length(List)),
         lists:nth(Index, List)
     catch
         _:_ ->
@@ -1026,7 +1026,7 @@ schedule_passive_view_maintenance() ->
 
 %% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
 shuffle(L) ->
-    [X || {_, X} <- lists:sort([{random:uniform(), N} || N <- L])].
+    [X || {_, X} <- lists:sort([{rand_compat:uniform(), N} || N <- L])].
 
 %% @private
 merge_exchange(Exchange, #state{myself=Myself, active=Active}=State0) ->

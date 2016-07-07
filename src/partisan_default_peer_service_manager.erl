@@ -107,9 +107,9 @@ decode(State) ->
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
     %% Seed the process at initialization.
-    random:seed(erlang:phash2([node()]),
-                erlang:monotonic_time(),
-                erlang:unique_integer()),
+    rand_compat:seed(erlang:phash2([node()]),
+                     erlang:monotonic_time(),
+                     erlang:unique_integer()),
 
     %% Process connection exits.
     process_flag(trap_exit, true),
@@ -495,4 +495,4 @@ do_send_message(Name, Message, Connections) ->
 
 %% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
 shuffle(L) ->
-    [X || {_, X} <- lists:sort([{random:uniform(), N} || N <- L])].
+    [X || {_, X} <- lists:sort([{rand_compat:uniform(), N} || N <- L])].

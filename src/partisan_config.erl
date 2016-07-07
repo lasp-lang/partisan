@@ -38,10 +38,10 @@ peer_config() ->
     Port = case partisan_config:get(peer_port, undefined) of
         undefined ->
             %% Generate a random peer port.
-            random:seed(erlang:phash2([node()]),
-                        erlang:monotonic_time(),
-                        erlang:unique_integer()),
-            RandomPeerPort = random:uniform(1000) + 10000,
+            rand_compat:seed(erlang:phash2([node()]),
+                             erlang:monotonic_time(),
+                             erlang:unique_integer()),
+            RandomPeerPort = rand_compat:uniform(1000) + 10000,
 
             %% Choose either static port or fall back to random peer port.
             DCOS = os:getenv("DCOS", "false"),
