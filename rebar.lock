@@ -20,7 +20,7 @@
   0},
  {<<"rand_compat">>,
   {git,"https://github.com/lasp-lang/rand_compat",
-       {ref,"f9138791f8d024cc17754007e1d73787d13c943c"}},
+       {ref,"feb819bac97f631dd4a95e6093500d5b87fa0d4c"}},
   0},
  {<<"riak_dt">>,
   {git,"git://github.com/basho/riak_dt.git",
