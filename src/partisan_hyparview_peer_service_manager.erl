@@ -140,9 +140,9 @@ decode(Active) ->
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
     %% Seed the process at initialization.
-    rand_compat:random_seed(erlang:phash2([node()]),
-                            erlang:monotonic_time(),
-                            erlang:unique_integer()),
+    rand_compat:seed(erlang:phash2([node()]),
+                     erlang:monotonic_time(),
+                     erlang:unique_integer()),
 
     %% Process connection exits.
     process_flag(trap_exit, true),
