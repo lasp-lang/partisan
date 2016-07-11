@@ -25,10 +25,6 @@
 -behaviour(partisan_peer_service_manager).
 
 -define(PASSIVE_VIEW_MAINTENANCE_INTERVAL, 10000).
--define(ACTIVE_SIZE, 5).
--define(PASSIVE_SIZE, 30).
--define(ARWL, 6).
--define(PRWL, 3).
 
 -include("partisan.hrl").
 
@@ -48,7 +44,8 @@
          decode/1]).
 
 %% debug.
--export([state/0]).
+-export([active/0,
+         passive/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -71,7 +68,9 @@
                 passive :: passive(),
                 pending :: pending(),
                 suspected :: suspected(),
-                connections :: connections()}).
+                connections :: connections(),
+                max_active_size :: non_neg_integer(),
+                max_passive_size :: non_neg_integer()}).
 
 %%%===================================================================
 %%% API
@@ -125,8 +124,12 @@ leave(Node) ->
     gen_server:call(?MODULE, {leave, Node}, infinity).
 
 %% @doc Debugging.
-state() ->
-    gen_server:call(?MODULE, state, infinity).
+active() ->
+    gen_server:call(?MODULE, active, infinity).
+
+%% @doc Debugging.
+passive() ->
+    gen_server:call(?MODULE, passive, infinity).
 
 %% @doc Decode state.
 decode(Active) ->
@@ -153,6 +156,10 @@ init([]) ->
     Connections = dict:new(),
     Myself = myself(),
 
+    %% Get the default configuration.
+    MaxActiveSize = partisan_config:get(max_active_size, 5),
+    MaxPassiveSize = partisan_config:get(max_passive_size, 30),
+
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
 
@@ -161,7 +168,9 @@ init([]) ->
                 active=Active,
                 passive=Passive,
                 suspected=Suspected,
-                connections=Connections}}.
+                connections=Connections,
+                max_active_size=MaxActiveSize,
+                max_passive_size=MaxPassiveSize}}.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
@@ -174,8 +183,11 @@ handle_call({join, {_Name, _, _}=Node}, _From, State) ->
     gen_server:cast(?MODULE, {join, Node}),
     {reply, ok, State};
 
-handle_call(state, _From, State) ->
-    {reply, {ok, State}, State};
+handle_call(active, _From, #state{active=Active}=State) ->
+    {reply, {ok, Active}, State};
+
+handle_call(passive, _From, #state{passive=Passive}=State) ->
+    {reply, {ok, Passive}, State};
 
 handle_call({send_message, Name, Message}, _From,
             #state{active=Active,
@@ -818,7 +830,8 @@ select_random_sublist(View, K) ->
 add_to_active_view({Name, _, _}=Peer,
                    #state{myself=Myself,
                           active=Active0,
-                          passive=Passive0}=State0) ->
+                          passive=Passive0,
+                          max_active_size=MaxActiveSize}=State0) ->
     lager:info("Adding ~p to active view on ~p", [Peer, Myself]),
 
     IsNotMyself = not (Name =:= node()),
@@ -828,7 +841,7 @@ add_to_active_view({Name, _, _}=Peer,
             %% See above for more information.
             Passive = remove_from_passive_view(Peer, Passive0),
 
-            #state{active=Active1} = State1 = case is_full({active, Active0}) of
+            #state{active=Active1} = State1 = case is_full({active, Active0}, MaxActiveSize) of
                 true ->
                     drop_random_element_from_active_view(State0#state{passive=Passive});
                 false ->
@@ -846,7 +859,8 @@ add_to_active_view({Name, _, _}=Peer,
 add_to_passive_view({Name, _, _}=Peer,
                     #state{myself=Myself,
                            active=Active0,
-                           passive=Passive0}=State0) ->
+                           passive=Passive0,
+                           max_passive_size=MaxPassiveSize}=State0) ->
     lager:info("Adding ~p to passive view on ~p", [Peer, Myself]),
 
     IsNotMyself = not (Name =:= node()),
@@ -854,7 +868,7 @@ add_to_passive_view({Name, _, _}=Peer,
     NotInPassiveView = not sets:is_element(Peer, Passive0),
     Passive = case IsNotMyself andalso NotInActiveView andalso NotInPassiveView of
         true ->
-            Passive1 = case is_full({passive, Passive0}) of
+            Passive1 = case is_full({passive, Passive0}, MaxPassiveSize) of
                 true ->
                     Random = select_random(Passive0, [Myself]),
                     sets:del_element(Random, Passive0);
@@ -870,10 +884,10 @@ add_to_passive_view({Name, _, _}=Peer,
     State.
 
 %% @private
-is_full({active, Active}) ->
-    sets:size(Active) >= ?ACTIVE_SIZE;
-is_full({passive, Passive}) ->
-    sets:size(Passive) >= ?PASSIVE_SIZE.
+is_full({active, Active}, MaxActiveSize) ->
+    sets:size(Active) >= MaxActiveSize;
+is_full({passive, Passive}, MaxPassiveSize) ->
+    sets:size(Passive) >= MaxPassiveSize.
 
 %% @doc Process of removing a random element from the active view.
 drop_random_element_from_active_view(#state{myself=Myself,
@@ -900,11 +914,11 @@ drop_random_element_from_active_view(#state{myself=Myself,
 
 %% @private
 arwl() ->
-    ?ARWL.
+    partisan_config:get(arwl, 6).
 
 %% @private
 prwl() ->
-    ?PRWL.
+    partisan_config:get(prwl, 6).
 
 %% @private
 remove_from_passive_view(Peer, Passive) ->
@@ -1007,8 +1021,9 @@ send_neighbor_request(Peer, #state{myself=Myself,
     State.
 
 %% @private
-neighbor_acceptable(Priority, #state{active=Active}) ->
-    Priority =:= high orelse not is_full({active, Active}).
+neighbor_acceptable(Priority, #state{active=Active,
+                                     max_active_size=MaxActiveSize}) ->
+    Priority =:= high orelse not is_full({active, Active}, MaxActiveSize).
 
 %% @private
 k_active() ->
