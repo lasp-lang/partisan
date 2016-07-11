@@ -104,7 +104,12 @@ handle_info(Msg, State) ->
 %% @private
 -spec terminate(term(), #state{}) -> term().
 terminate(Reason, #state{socket=Socket, transport=Transport}) ->
-    lager:info("Terminating server: ~p", [Reason]),
+    case Reason of
+        normal ->
+            ok;
+        Reason ->
+            lager:info("Terminating server: ~p", [Reason])
+    end,
     Transport:close(Socket),
     ok.
 
