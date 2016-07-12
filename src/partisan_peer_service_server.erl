@@ -123,9 +123,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-handle_message({connected, _Node, _RemoteState} = Message, State) ->
-    ?PEER_SERVICE_MANAGER:receive_message(Message),
-    {noreply, State};
 handle_message({hello, Node},
                #state{socket=Socket, transport=Transport}=State) ->
     %% Connect the node with Distributed Erlang, just for now for
