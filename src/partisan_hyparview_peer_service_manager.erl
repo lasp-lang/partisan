@@ -902,9 +902,14 @@ is_full({passive, Passive}, MaxPassiveSize) ->
 %% @doc Process of removing a random element from the active view.
 drop_random_element_from_active_view(#state{myself=Myself,
                                             active=Active0,
+                                            reserved=Reserved,
                                             passive=Passive0}=State) ->
-    %% Select random from the active view, but excluse ourselves.
-    case select_random(sets:del_element(Myself, Active0)) of
+    ReservedPeers = dict:fold(fun(_K, V, Acc) -> [V | Acc] end,
+                              [],
+                              Reserved),
+    %% Select random peer, but omit the peers in reserved slots and omit
+    %% ourself from the active view.
+    case select_random(Active0, [Myself, ReservedPeers]) of
         undefined ->
             State;
         Peer ->
