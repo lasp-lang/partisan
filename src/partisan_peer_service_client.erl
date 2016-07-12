@@ -90,8 +90,7 @@ handle_cast(Msg, State) ->
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
 handle_info({tcp, _Socket, Data}, State0) ->
     handle_message(decode(Data), State0);
-handle_info({tcp_closed, _Socket}, #state{peer=Peer}=State) ->
-    lager:info("Socket closed: ~p!", [Peer]),
+handle_info({tcp_closed, _Socket}, State) ->
     {stop, normal, State};
 handle_info(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
@@ -142,9 +141,9 @@ decode(Message) ->
     binary_to_term(Message).
 
 %% @private
-handle_message({merge, LocalState},
+handle_message({state, Tag, LocalState},
                #state{peer=Peer, from=From}=State) ->
-    From ! {connected, Peer, LocalState},
+    From ! {connected, Peer, Tag, LocalState},
     {noreply, State};
 handle_message({hello, _Node}, #state{socket=Socket}=State) ->
     Message = {hello, node()},
