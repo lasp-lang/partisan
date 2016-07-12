@@ -469,10 +469,38 @@ handle_message({neighbor, Peer, Tag, _Sender}, State0) ->
     {reply, ok, State};
 
 %% @private
-handle_message({neighbor_accepted, Peer, Tag, _Sender}, State0) ->
-    lager:info("Neighbor request accepted: ~p", [Peer]),
+handle_message({neighbor_accepted, Peer, Tag, Sender},
+               #state{active=Active0,
+                      myself=Myself,
+                      suspected=Suspected0,
+                      reserved=Reserved0} = State0) ->
+    lager:info("Neighbor request accepted by peer: ~p", [Peer]),
 
-    State = add_to_active_view(Peer, Tag, State0),
+    %% Select one of the suspected peers to replace: it can't be the
+    %% node we are peering with nor the node we are on.
+    State = case select_random(Suspected0, [Sender, Myself]) of
+        undefined ->
+            %% No more peers are suspected; no change.
+            State0;
+        Random ->
+            %% Remove from suspected.
+            Suspected = remove_from_suspected(Random, Suspected0),
+
+            %% Remove from reserved.
+            Reserved = remove_from_reserved(Random, Reserved0),
+
+            %% Remove from active view.
+            Active = remove_from_active_view(Random, Active0),
+
+            %% Add to passive.
+            State1 = add_to_passive_view(
+                       Random, State0#state{suspected=Suspected,
+                                            reserved=Reserved,
+                                            active=Active}),
+
+            %% Add to active view.
+            add_to_active_view(Peer, Tag, State1)
+    end,
 
     %% Notify with event.
     notify(State),
@@ -976,6 +1004,10 @@ remove_from_pending(Peer, Pending) ->
     sets:del_element(Peer, Pending).
 
 %% @private
+remove_from_active_view(Peer, Active) ->
+    sets:del_element(Peer, Active).
+
+%% @private
 is_in_active_view(Peer, Active) ->
     sets:is_element(Peer, Active).
 
@@ -1159,3 +1191,14 @@ handle_connect(Peer, Tag, #state{pending=Pending0,
         false ->
             {noreply, State0}
     end.
+
+%% @private
+remove_from_reserved(Peer, Reserved) ->
+    dict:fold(fun(K, V, Acc) ->
+                      case V of
+                          Peer ->
+                              Acc;
+                          _ ->
+                              dict:store(K, V, Acc)
+                      end
+              end, dict:new(), Reserved).
