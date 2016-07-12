@@ -457,6 +457,18 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private
+handle_message({neighbor, Peer, Tag, _Sender}, State0) ->
+    lager:info("Neighboring with ~p from random walk.", [Peer]),
+
+    %% Add node into the active view.
+    State = add_to_active_view(Peer, Tag, State0),
+
+    %% Notify with event.
+    notify(State),
+
+    {reply, ok, State};
+
+%% @private
 handle_message({neighbor_accepted, Peer, Tag, _Sender}, State0) ->
     lager:info("Neighbor request accepted: ~p", [Peer]),
 
@@ -573,7 +585,7 @@ handle_message({forward_join, Peer, Tag, TTL, Sender},
             %% update it's view.
             %%
             do_send_message(Peer,
-                            {neighbor_accepted, Myself, Tag, Peer},
+                            {neighbor, Myself, Tag, Peer},
                             Connections),
 
             State1#state{connections=Connections};
@@ -608,11 +620,11 @@ handle_message({forward_join, Peer, Tag, TTL, Sender},
                                                         Active,
                                                         Connections0),
 
-                    %% Send neighbor_accapted message to origin, that will
+                    %% Send neighbor message to origin, that will
                     %% update it's view.
                     %%
                     do_send_message(Peer,
-                                    {neighbor_accepted, Myself, Tag, Peer},
+                                    {neighbor, Myself, Tag, Peer},
                                     Connections),
 
                     State2#state{connections=Connections};
@@ -1007,7 +1019,7 @@ perform_join(Peer, Tag,
     %% update it's view.
     %%
     do_send_message(Peer,
-                    {neighbor_accepted, Myself, Tag, Peer},
+                    {neighbor, Myself, Tag, Peer},
                     Connections),
 
     %% Notify with event.
