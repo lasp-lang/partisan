@@ -465,7 +465,14 @@ handle_message({neighbor_rejected, Peer, _Sender}, State) ->
 
 handle_message({neighbor_request, Peer, Priority, Tag, Sender},
                #state{myself=Myself,
-                      connections=Connections}=State0) ->
+                      pending=Pending,
+                      active=Active,
+                      connections=Connections0}=State0) ->
+    %% Establish connections.
+    Connections = establish_connections(Pending,
+                                        Active,
+                                        Connections0),
+
     State = case neighbor_acceptable(Priority, Tag, State0) of
         true ->
             %% Reply to acknowledge the neighbor was accepted.
@@ -473,14 +480,15 @@ handle_message({neighbor_request, Peer, Priority, Tag, Sender},
                             {neighbor_accepted, Peer, Tag, Myself},
                             Connections),
 
-            add_to_active_view(Peer, Tag, State0);
+            State1 = add_to_active_view(Peer, Tag, State0),
+            State1#state{connections=Connections};
         false ->
             %% Reply to acknowledge the neighbor was rejected.
             do_send_message(Sender,
                             {neighbor_rejected, Peer, Myself},
                             Connections),
 
-            State0
+            State0#state{connections=Connections}
     end,
 
     %% Notify with event.
@@ -494,9 +502,15 @@ handle_message({shuffle_reply, Exchange, _Sender}, State0) ->
 
 handle_message({shuffle, Exchange, TTL, Sender},
                #state{myself=Myself,
+                      pending=Pending0,
                       active=Active0,
                       passive=Passive0,
-                      connections=Connections}=State0) ->
+                      connections=Connections0}=State0) ->
+    %% Establish connections.
+    Connections = establish_connections(Pending0,
+                                        Active0,
+                                        Connections0),
+
     %% Forward to random member of the active view.
     State = case TTL > 0 andalso sets:size(Active0) > 1 of
         true ->
@@ -510,7 +524,7 @@ handle_message({shuffle, Exchange, TTL, Sender},
                                     Connections)
             end,
 
-            State0;
+            State0#state{connections=Connections};
         false ->
             %% Randomly select nodes from the passive view and respond.
             ResponseExchange = select_random_sublist(Passive0,
@@ -520,7 +534,8 @@ handle_message({shuffle, Exchange, TTL, Sender},
                             {shuffle_reply, ResponseExchange, Myself},
                             Connections),
 
-            merge_exchange(Exchange, State0)
+            State1 = merge_exchange(Exchange, State0),
+            State1#state{connections=Connections}
     end,
     {reply, ok, State};
 
