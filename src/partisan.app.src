@@ -11,7 +11,8 @@
                   lager,
                   riak_dt,
                   mochiweb,
-                  time_compat
+                  time_compat,
+                  rand_compat
                  ]},
   {mod, {partisan_app, []}},
   {modules, []},
