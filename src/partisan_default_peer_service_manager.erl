@@ -230,7 +230,7 @@ handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
     Connections = dict:fold(FoldFun, Connections0, Connections0),
     {noreply, State#state{connections=Connections}};
 
-handle_info({connected, Node, RemoteState},
+handle_info({connected, Node, _Tag, RemoteState},
                #state{pending=Pending0,
                       membership=Membership0,
                       connections=Connections}=State) ->

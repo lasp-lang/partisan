@@ -125,12 +125,17 @@ code_change(_OldVsn, State, _Extra) ->
 
 handle_message({hello, Node},
                #state{socket=Socket, transport=Transport}=State) ->
+    %% Get our tag, if set.
+    Tag = partisan_config:get(tag, undefined),
+
     %% Connect the node with Distributed Erlang, just for now for
     %% control messaging in the test suite execution.
     case net_adm:ping(Node) of
         pong ->
+            %% Send our state to the remote service, incase they want
+            %% it to bootstrap.
             {ok, LocalState} = ?PEER_SERVICE_MANAGER:get_local_state(),
-            send_message(Socket, Transport, {merge, LocalState}),
+            send_message(Socket, Transport, {state, Tag, LocalState}),
             {noreply, State};
         pang ->
             lager:info("Node could not be connected."),

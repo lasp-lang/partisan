@@ -142,9 +142,9 @@ decode(Message) ->
     binary_to_term(Message).
 
 %% @private
-handle_message({merge, LocalState},
+handle_message({state, Tag, LocalState},
                #state{peer=Peer, from=From}=State) ->
-    From ! {connected, Peer, LocalState},
+    From ! {connected, Peer, Tag, LocalState},
     {noreply, State};
 handle_message({hello, _Node}, #state{socket=Socket}=State) ->
     Message = {hello, node()},
