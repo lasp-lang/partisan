@@ -275,17 +275,18 @@ handle_cast({disconnect, Peer}, #state{active=Active0,
             {noreply, State0}
     end;
 
-handle_cast({suspected, _Peer}, #state{passive=Passive0,
+handle_cast({suspected, Peer}, #state{myself=Myself,
+                                      active=Active0,
+                                      passive=Passive0,
                                       pending=Pending0,
+                                      suspected=Suspected0,
                                       connections=Connections0}=State) ->
-    % lager:info("Node ~p suspected of failure.", [Peer]),
+    lager:info("Node ~p suspected of failure.", [Peer]),
 
     %% Select random peer from passive view, and attempt to connect it.
-    %%
     %% If it successfully connects, it will replace the failed node in
     %% the active view.
-    %%
-    Random = select_random(Passive0),
+    Random = select_random(Passive0, [Myself]),
 
     %% Add to list of pending connections.
     Pending = add_to_pending(Random, Pending0),
@@ -293,7 +294,19 @@ handle_cast({suspected, _Peer}, #state{passive=Passive0,
     %% Trigger connection.
     Connections = maybe_connect(Random, Connections0),
 
-    {noreply, State#state{pending=Pending, connections=Connections}};
+    %% NOTE: The failed process should automatically cause the node to
+    %% be added to the suspected list when the 'EXIT' is received,
+    %% therefore, this code is superfluous.
+    Suspected = case is_in_active_view(Peer, Active0) of
+        true ->
+            add_to_suspected(Peer, Suspected0);
+        false ->
+            Suspected0
+    end,
+
+    {noreply, State#state{pending=Pending,
+                          suspected=Suspected,
+                          connections=Connections}};
 
 handle_cast(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
@@ -777,10 +790,6 @@ do_send_message(Name, Message, Connections) when is_atom(Name) ->
     end;
 do_send_message({Name, _, _}, Message, Connections) ->
     do_send_message(Name, Message, Connections).
-
-%% @private
-select_random(View) ->
-    select_random(View, undefined).
 
 %% @private
 select_random(View, Omit) ->
