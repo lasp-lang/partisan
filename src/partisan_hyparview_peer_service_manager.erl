@@ -581,9 +581,8 @@ handle_message({forward_join, Peer, Tag, TTL, Sender},
                                                 Active,
                                                 Connections0),
 
-            %% Send neighbor_accapted message to origin, that will
-            %% update it's view.
-            %%
+            %% Send neighbor message to origin, that will update it's
+            %% view.
             do_send_message(Peer,
                             {neighbor, Myself, Tag, Peer},
                             Connections),
