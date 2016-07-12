@@ -414,9 +414,6 @@ handle_info({'EXIT', From, _Reason},
                           suspected=Suspected,
                           connections=Connections}};
 
-handle_info({connected, Peer, _RemoteState}, State) ->
-    handle_connect(Peer, undefined, State);
-
 handle_info({connected, Peer, Tag, _RemoteState}, State) ->
     handle_connect(Peer, Tag, State);
 
