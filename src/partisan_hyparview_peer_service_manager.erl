@@ -62,11 +62,15 @@
 -type passive() :: sets:set(node_spec()).
 -type pending() :: sets:set(node_spec()).
 -type suspected() :: sets:set(node_spec()).
+-type reserved() :: dict:dict(atom(), node_spec()).
+-type tag() :: atom().
 
 -record(state, {myself :: node_spec(),
                 active :: active(),
                 passive :: passive(),
                 pending :: pending(),
+                reserved :: reserved(),
+                tag :: tag(),
                 suspected :: suspected(),
                 connections :: connections(),
                 max_active_size :: non_neg_integer(),
@@ -160,6 +164,12 @@ init([]) ->
     MaxActiveSize = partisan_config:get(max_active_size, 5),
     MaxPassiveSize = partisan_config:get(max_passive_size, 30),
 
+    %% Get tag, if set.
+    Tag = partisan_config:get(tag, undefined),
+
+    %% Reserved server slots.
+    Reserved = dict:new(),
+
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
 
@@ -167,6 +177,8 @@ init([]) ->
                 pending=Pending,
                 active=Active,
                 passive=Passive,
+                reserved=Reserved,
+                tag=Tag,
                 suspected=Suspected,
                 connections=Connections,
                 max_active_size=MaxActiveSize,
@@ -402,48 +414,11 @@ handle_info({'EXIT', From, _Reason},
                           suspected=Suspected,
                           connections=Connections}};
 
-handle_info({connected, Peer, _RemoteState},
-            #state{pending=Pending0,
-                   passive=Passive0,
-                   suspected=Suspected0}=State0) ->
-    % lager:info("Peer ~p connected.", [Peer]),
+handle_info({connected, Peer, _RemoteState}, State) ->
+    handle_connect(Peer, undefined, State);
 
-    %% When a node actually connects, perform the join steps.
-    case is_pending(Peer, Pending0) of
-        true ->
-            %% Move out of pending.
-            Pending = remove_from_pending(Peer, Pending0),
-
-            %% If node is in the passive view, and we have a suspected
-            %% node, that means it was
-            %% contacted to be a potential node for replacement in the
-            %% active view.
-            %%
-            case is_replacement_candidate(Peer, Passive0, Suspected0) of
-                true ->
-                    %% Send neighbor request to peer asking it to
-                    %% replace a suspected node.
-                    %%
-                    State = send_neighbor_request(Peer, State0#state{pending=Pending}),
-
-                    %% Notify with event.
-                    notify(State),
-
-                    {noreply, State};
-                false ->
-                    %% Normal join.
-                    %%
-                    State = perform_join(Peer,
-                                         State0#state{pending=Pending}),
-
-                    %% Notify with event.
-                    notify(State),
-
-                    {noreply, State}
-            end;
-        false ->
-            {noreply, State0}
-    end;
+handle_info({connected, Peer, Tag, _RemoteState}, State) ->
+    handle_connect(Peer, Tag, State);
 
 handle_info(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
@@ -472,10 +447,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private
-handle_message({neighbor_accepted, Peer, _Sender}, State0) ->
+handle_message({neighbor_accepted, Peer, Tag, _Sender}, State0) ->
     lager:info("Neighbor request accepted: ~p", [Peer]),
 
-    State = add_to_active_view(Peer, State0),
+    State = add_to_active_view(Peer, Tag, State0),
 
     %% Notify with event.
     notify(State),
@@ -488,17 +463,17 @@ handle_message({neighbor_rejected, Peer, _Sender}, State) ->
 
     {reply, ok, State};
 
-handle_message({neighbor_request, Peer, Priority, Sender},
+handle_message({neighbor_request, Peer, Priority, Tag, Sender},
                #state{myself=Myself,
                       connections=Connections}=State0) ->
-    State = case neighbor_acceptable(Priority, State0) of
+    State = case neighbor_acceptable(Priority, Tag, State0) of
         true ->
             %% Reply to acknowledge the neighbor was accepted.
             do_send_message(Sender,
-                            {neighbor_accepted, Peer, Myself},
+                            {neighbor_accepted, Peer, Tag, Myself},
                             Connections),
 
-            add_to_active_view(Peer, State0);
+            add_to_active_view(Peer, Tag, State0);
         false ->
             %% Reply to acknowledge the neighbor was rejected.
             do_send_message(Sender,
@@ -549,7 +524,7 @@ handle_message({shuffle, Exchange, TTL, Sender},
     end,
     {reply, ok, State};
 
-handle_message({forward_join, Peer, TTL, Sender},
+handle_message({forward_join, Peer, Tag, TTL, Sender},
                #state{myself=Myself,
                       active=Active0,
                       pending=Pending,
@@ -562,7 +537,7 @@ handle_message({forward_join, Peer, TTL, Sender},
                        [Peer, Myself]),
 
             %% Add to our active view.
-            State1 = #state{active=Active} = add_to_active_view(Peer, State0),
+            State1 = #state{active=Active} = add_to_active_view(Peer, Tag, State0),
 
             %% Establish connections.
             Connections = establish_connections(Pending,
@@ -573,7 +548,7 @@ handle_message({forward_join, Peer, TTL, Sender},
             %% update it's view.
             %%
             do_send_message(Peer,
-                            {neighbor_accepted, Myself, Peer},
+                            {neighbor_accepted, Myself, Tag, Peer},
                             Connections),
 
             State1#state{connections=Connections};
@@ -601,7 +576,7 @@ handle_message({forward_join, Peer, TTL, Sender},
                                 [Peer, Myself]),
 
                     %% Add to our active view.
-                    State2 = #state{active=Active} = add_to_active_view(Peer, State1),
+                    State2 = #state{active=Active} = add_to_active_view(Peer, Tag, State1),
 
                     %% Establish connections.
                     Connections = establish_connections(Pending,
@@ -612,7 +587,7 @@ handle_message({forward_join, Peer, TTL, Sender},
                     %% update it's view.
                     %%
                     do_send_message(Peer,
-                                    {neighbor_accepted, Myself, Peer},
+                                    {neighbor_accepted, Myself, Tag, Peer},
                                     Connections),
 
                     State2#state{connections=Connections};
@@ -627,7 +602,7 @@ handle_message({forward_join, Peer, TTL, Sender},
 
                     %% Forward join.
                     do_send_message(Random,
-                                    {forward_join, Peer, TTL - 1, Myself},
+                                    {forward_join, Peer, Tag, TTL - 1, Myself},
                                     Connections),
 
                     State1#state{connections=Connections}
@@ -777,12 +752,6 @@ disconnect(Name, Connections) ->
 
 %% @private
 do_send_message(Name, Message, Connections) when is_atom(Name) ->
-    %% Who is calling this?  No one should be...
-    %%
-    %% {partisan_hyparview_peer_service_manager,handle_call,3,
-    %% [{file, "/Users/cmeiklejohn/Documents/lasp/_checkouts/partisan/src/partisan_hyparview_peer_service_manager.erl"},
-    %%   {line,187}]},
-    %%
     %% Find a connection for the remote node, if we have one.
     case dict:find(Name, Connections) of
         {ok, undefined} ->
@@ -827,10 +796,11 @@ select_random_sublist(View, K) ->
 %% network delay; if so, we have to remove this element from the passive
 %% view, otherwise it will exist in both places.
 %%
-add_to_active_view({Name, _, _}=Peer,
+add_to_active_view({Name, _, _}=Peer, Tag,
                    #state{myself=Myself,
                           active=Active0,
                           passive=Passive0,
+                          reserved=Reserved0,
                           max_active_size=MaxActiveSize}=State0) ->
     lager:info("Adding ~p to active view on ~p", [Peer, Myself]),
 
@@ -841,16 +811,34 @@ add_to_active_view({Name, _, _}=Peer,
             %% See above for more information.
             Passive = remove_from_passive_view(Peer, Passive0),
 
-            #state{active=Active1} = State1 = case is_full({active, Active0}, MaxActiveSize) of
+            #state{active=Active1} = State1 = case is_full({active, Active0, Reserved0}, MaxActiveSize) of
                 true ->
                     drop_random_element_from_active_view(State0#state{passive=Passive});
                 false ->
                     State0#state{passive=Passive}
             end,
+
+            %% Add to the active view.
             Active = sets:add_element(Peer, Active1),
-            State2 = State1#state{active=Active},
+
+            %% Fill reserved slot if necessary.
+            Reserved = case dict:find(Tag, Reserved0) of
+                {ok, undefined} ->
+                    dict:store(Tag, Peer, Reserved0);
+                {ok, _} ->
+                    %% Slot already filled, treat this as a normal peer.
+                    Reserved0;
+                error ->
+                    Reserved0
+            end,
+
+            State2 = State1#state{active=Active,
+                                  passive=Passive,
+                                  reserved=Reserved},
+
             persist_state(State2),
-            State2#state{passive=Passive};
+
+            State2;
         false ->
             State0
     end.
@@ -884,8 +872,18 @@ add_to_passive_view({Name, _, _}=Peer,
     State.
 
 %% @private
-is_full({active, Active}, MaxActiveSize) ->
-    sets:size(Active) >= MaxActiveSize;
+is_full({active, Active, Reserved}, MaxActiveSize) ->
+    %% Find the slots that are reserved, but not filled.
+    Open = dict:fold(fun(Key, Value, Acc) ->
+                      case Value of
+                          undefined ->
+                              [Key | Acc];
+                          _ ->
+                              Acc
+                      end
+              end, [], Reserved),
+    sets:size(Active) + length(Open) >= MaxActiveSize;
+
 is_full({passive, Passive}, MaxPassiveSize) ->
     sets:size(Passive) >= MaxPassiveSize.
 
@@ -965,24 +963,25 @@ is_replacement_candidate(Peer, Passive, Suspected) ->
     is_in_passive_view(Peer, Passive) andalso is_not_empty(Suspected).
 
 %% @private
-perform_join(Peer, #state{myself=Myself,
-                          active=Active0,
-                          pending=Pending,
-                          suspected=Suspected0,
-                          connections=Connections0}=State0) ->
+perform_join(Peer, Tag,
+             #state{myself=Myself,
+                    active=Active0,
+                    pending=Pending,
+                    suspected=Suspected0,
+                    connections=Connections0}=State0) ->
     %% Add to active view.
-    State = #state{active=Active} = add_to_active_view(Peer, State0),
+    State = #state{active=Active} = add_to_active_view(Peer, Tag, State0),
 
     %% Establish connections.
     Connections = establish_connections(Pending,
                                         Active,
                                         Connections0),
 
-    %% Send neighbor_accapted message to origin, that will
+    %% Send neighbor_accepted message to origin, that will
     %% update it's view.
     %%
     do_send_message(Peer,
-                    {neighbor_accepted, Myself, Peer},
+                    {neighbor_accepted, Myself, Tag, Peer},
                     Connections),
 
     %% Notify with event.
@@ -996,7 +995,7 @@ perform_join(Peer, #state{myself=Myself,
 
     lists:foreach(fun(P) ->
                 do_send_message(P,
-                                {forward_join, Peer, arwl(), Myself},
+                                {forward_join, Peer, Tag, arwl(), Myself},
                                 Connections)
         end, Peers),
 
@@ -1006,6 +1005,7 @@ perform_join(Peer, #state{myself=Myself,
 %% @private
 send_neighbor_request(Peer, #state{myself=Myself,
                                    active=Active0,
+                                   tag=Tag,
                                    connections=Connections}=State) ->
     Priority = case sets:size(Active0) of
         0 ->
@@ -1015,15 +1015,31 @@ send_neighbor_request(Peer, #state{myself=Myself,
     end,
 
     do_send_message(Peer,
-                    {neighbor_request, Peer, Priority, Myself},
+                    {neighbor_request, Peer, Priority, Tag, Myself},
                     Connections),
 
     State.
 
 %% @private
-neighbor_acceptable(Priority, #state{active=Active,
-                                     max_active_size=MaxActiveSize}) ->
-    Priority =:= high orelse not is_full({active, Active}, MaxActiveSize).
+neighbor_acceptable(Priority, Tag,
+                    #state{active=Active,
+                           reserved=Reserved,
+                           max_active_size=MaxActiveSize}) ->
+    %% Broken down for readability.
+    case Priority of
+        high ->
+            %% Always true.
+            true;
+        _ ->
+            case reserved_slot_available(Tag, Reserved) of
+                true ->
+                    %% Always take.
+                    true;
+                _ ->
+                    %% Otherwise, only if we have a slot available.
+                    not is_full({active, Active, Reserved}, MaxActiveSize)
+            end
+    end.
 
 %% @private
 k_active() ->
@@ -1054,3 +1070,55 @@ merge_exchange(Exchange, #state{myself=Myself, active=Active}=State0) ->
 %% @private
 notify(#state{active=Active}) ->
     partisan_peer_service_events:update(Active).
+
+%% @private
+reserved_slot_available(Tag, Reserved) ->
+    case dict:find(Tag, Reserved) of
+        {ok, undefined} ->
+            true;
+        _ ->
+            false
+    end.
+
+%% @private
+handle_connect(Peer, Tag, #state{pending=Pending0,
+                                 passive=Passive0,
+                                 suspected=Suspected0}=State0) ->
+    lager:info("Peer ~p connected.", [Peer]),
+
+    %% When a node actually connects, perform the join steps.
+    case is_pending(Peer, Pending0) of
+        true ->
+            %% Move out of pending.
+            Pending = remove_from_pending(Peer, Pending0),
+
+            %% If node is in the passive view, and we have a suspected
+            %% node, that means it was contacted to be a potential node
+            %% for replacement in the active view.
+            %%
+            case is_replacement_candidate(Peer, Passive0, Suspected0) of
+                true ->
+                    %% Send neighbor request to peer asking it to
+                    %% replace a suspected node.
+                    %%
+                    State = send_neighbor_request(Peer, State0#state{pending=Pending}),
+
+                    %% Notify with event.
+                    notify(State),
+
+                    {noreply, State};
+                false ->
+                    %% Normal join.
+                    %%
+                    State = perform_join(Peer,
+                                         Tag,
+                                         State0#state{pending=Pending}),
+
+                    %% Notify with event.
+                    notify(State),
+
+                    {noreply, State}
+            end;
+        false ->
+            {noreply, State0}
+    end.
