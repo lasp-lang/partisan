@@ -190,16 +190,22 @@ init([]) ->
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
 
-    {ok, #state{myself=Myself,
-                pending=Pending,
-                active=Active,
-                passive=Passive,
-                reserved=Reserved,
-                tag=Tag,
-                suspected=Suspected,
-                connections=Connections,
-                max_active_size=MaxActiveSize,
-                max_passive_size=MaxPassiveSize}}.
+    %% Verify we don't have too many reservations.
+    case length(Reservations) > MaxActiveSize of
+        true ->
+            {stop, reservation_limit_exceeded};
+        false ->
+            {ok, #state{myself=Myself,
+                        pending=Pending,
+                        active=Active,
+                        passive=Passive,
+                        reserved=Reserved,
+                        tag=Tag,
+                        suspected=Suspected,
+                        connections=Connections,
+                        max_active_size=MaxActiveSize,
+                        max_passive_size=MaxPassiveSize}}
+    end.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
@@ -212,15 +218,22 @@ handle_call({join, {_Name, _, _}=Node}, _From, State) ->
     gen_server:cast(?MODULE, {join, Node}),
     {reply, ok, State};
 
-handle_call({reserve, Tag}, _From, #state{reserved=Reserved0}=State) ->
-    Present = lists:member(Tag, dict:fetch_keys(Reserved0)),
-    Reserved = case Present of
+handle_call({reserve, Tag}, _From,
+            #state{reserved=Reserved0,
+                   max_active_size=MaxActiveSize}=State) ->
+    Present = dict:fetch_keys(Reserved0),
+    case length(Present) < MaxActiveSize of
         true ->
-            Reserved0;
+            Reserved = case lists:member(Tag, Present) of
+                true ->
+                    Reserved0;
+                false ->
+                    dict:store(Tag, undefined, Reserved0)
+            end,
+            {reply, ok, State#state{reserved=Reserved}};
         false ->
-            dict:store(Tag, undefined, Reserved0)
-    end,
-    {reply, ok, State#state{reserved=Reserved}};
+            {reply, {error, no_available_slots}, State}
+    end;
 
 handle_call(active, _From, #state{active=Active}=State) ->
     {reply, {ok, Active}, State};
