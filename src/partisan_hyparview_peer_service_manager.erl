@@ -43,6 +43,9 @@
          receive_message/1,
          decode/1]).
 
+%% reservation specific API.
+-export([reserve/1]).
+
 %% debug.
 -export([active/0,
          passive/0]).
@@ -127,6 +130,10 @@ leave() ->
 leave(Node) ->
     gen_server:call(?MODULE, {leave, Node}, infinity).
 
+%%%===================================================================
+%%% debugging callbacks
+%%%===================================================================
+
 %% @doc Debugging.
 active() ->
     gen_server:call(?MODULE, active, infinity).
@@ -138,6 +145,14 @@ passive() ->
 %% @doc Decode state.
 decode(Active) ->
     sets:to_list(Active).
+
+%%%===================================================================
+%%% reservation callbacks
+%%%===================================================================
+
+%% @doc Reserve a slot for the particular tag.
+reserve(Tag) ->
+    gen_server:call(?MODULE, {reserve, Tag}, infinity).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -168,7 +183,9 @@ init([]) ->
     Tag = partisan_config:get(tag, undefined),
 
     %% Reserved server slots.
-    Reserved = dict:new(),
+    Reservations = partisan_config:get(reservations, []),
+    Reserved = dict:from_list([{T, undefined} || T <- Reservations]),
+    lager:info("Reserving slots for ~p", [Reservations]),
 
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
@@ -194,6 +211,16 @@ handle_call({leave, _Node}, _From, State) ->
 handle_call({join, {_Name, _, _}=Node}, _From, State) ->
     gen_server:cast(?MODULE, {join, Node}),
     {reply, ok, State};
+
+handle_call({reserve, Tag}, _From, #state{reserved=Reserved0}=State) ->
+    Present = lists:member(Tag, dict:fetch_keys(Reserved0)),
+    Reserved = case Present of
+        true ->
+            Reserved0;
+        false ->
+            dict:store(Tag, undefined, Reserved0)
+    end,
+    {reply, ok, State#state{reserved=Reserved}};
 
 handle_call(active, _From, #state{active=Active}=State) ->
     {reply, {ok, Active}, State};
