@@ -47,6 +47,8 @@
 
 -include("partisan.hrl").
 
+-define(SET, state_orset).
+
 -type pending() :: [node_spec()].
 -type membership() :: ?SET:orswot().
 
@@ -98,7 +100,7 @@ leave(Node) ->
 
 %% @doc Decode state.
 decode(State) ->
-    ?SET:value(State).
+    ?SET:query(State).
 
 %% @doc Reserve a slot for the particular tag.
 reserve(Tag) ->
@@ -147,12 +149,12 @@ handle_call({leave, Node}, _From,
     Membership = lists:foldl(fun({N, _, _}, L0) ->
                         case Node of
                             N ->
-                                {ok, L} = ?SET:update({remove, Node}, Actor, L0),
+                                {ok, L} = ?SET:mutate({rmv, Node}, Actor, L0),
                                 L;
                             _ ->
                                 L0
                         end
-                end, Membership0, ?SET:value(Membership0)),
+                end, Membership0, ?SET:query(Membership0)),
 
     %% Gossip.
     do_gossip(Membership, Connections),
@@ -294,7 +296,7 @@ empty_membership(Actor) ->
     Port = partisan_config:get(peer_port, ?PEER_PORT),
     IPAddress = partisan_config:get(peer_ip, ?PEER_IP),
     Self = {node(), IPAddress, Port},
-    {ok, LocalState} = ?SET:update({add, Self}, Actor, ?SET:new()),
+    {ok, LocalState} = ?SET:mutate({add, Self}, Actor, ?SET:new()),
     persist_state(LocalState),
     LocalState.
 
@@ -364,7 +366,7 @@ persist_state(State) ->
 
 %% @private
 members(Membership) ->
-    ?SET:value(Membership).
+    sets:to_list(?SET:query(Membership)).
 
 %% @private
 establish_connections(Pending, Membership, Connections) ->
@@ -479,7 +481,7 @@ do_gossip(Membership, Connections) ->
 
 %% @private
 get_peers(Local) ->
-    Members = ?SET:value(Local),
+    Members = members(Local),
     Peers = [X || {X, _, _} <- Members, X /= node()],
     Peers.
 

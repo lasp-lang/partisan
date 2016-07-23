@@ -9,8 +9,7 @@
                   stdlib,
                   crypto,
                   lager,
-                  riak_dt,
-                  mochiweb,
+                  types,
                   time_compat,
                   rand_compat
                  ]},
