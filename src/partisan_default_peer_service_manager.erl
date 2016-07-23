@@ -100,7 +100,7 @@ leave(Node) ->
 
 %% @doc Decode state.
 decode(State) ->
-    ?SET:query(State).
+    sets:to_list(?SET:query(State)).
 
 %% @doc Reserve a slot for the particular tag.
 reserve(Tag) ->
