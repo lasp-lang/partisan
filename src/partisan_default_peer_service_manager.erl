@@ -34,7 +34,8 @@
          send_message/2,
          forward_message/3,
          receive_message/1,
-         decode/1]).
+         decode/1,
+         reserve/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -99,6 +100,10 @@ leave(Node) ->
 decode(State) ->
     ?SET:value(State).
 
+%% @doc Reserve a slot for the particular tag.
+reserve(Tag) ->
+    gen_server:call(?MODULE, {reserve, Tag}, infinity).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -129,6 +134,9 @@ init([]) ->
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
+
+handle_call({reserve, _Tag}, _From, State) ->
+    {reply, {error, no_available_slots}, State};
 
 handle_call({leave, Node}, _From,
             #state{actor=Actor,
@@ -366,6 +374,7 @@ establish_connections(Pending, Membership, Connections) ->
     lists:foldl(fun maybe_connect/2, Connections, AllPeers).
 
 %% @private
+%%
 %% Function should enforce the invariant that all cluster members are
 %% keys in the dict pointing to undefined if they are disconnected or a
 %% socket pid if they are connected.

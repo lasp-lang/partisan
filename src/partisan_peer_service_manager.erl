@@ -37,3 +37,5 @@
 -callback forward_message(name(), pid(), message()) -> ok.
 
 -callback decode(term()) -> term().
+
+-callback reserve(atom()) -> ok | {error, no_available_slots}.

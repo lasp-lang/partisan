@@ -41,10 +41,8 @@
          send_message/2,
          forward_message/3,
          receive_message/1,
-         decode/1]).
-
-%% reservation specific API.
--export([reserve/1]).
+         decode/1,
+         reserve/1]).
 
 %% debug.
 -export([active/0,
@@ -130,6 +128,10 @@ leave() ->
 leave(Node) ->
     gen_server:call(?MODULE, {leave, Node}, infinity).
 
+%% @doc Reserve a slot for the particular tag.
+reserve(Tag) ->
+    gen_server:call(?MODULE, {reserve, Tag}, infinity).
+
 %%%===================================================================
 %%% debugging callbacks
 %%%===================================================================
@@ -145,14 +147,6 @@ passive() ->
 %% @doc Decode state.
 decode(Active) ->
     sets:to_list(Active).
-
-%%%===================================================================
-%%% reservation callbacks
-%%%===================================================================
-
-%% @doc Reserve a slot for the particular tag.
-reserve(Tag) ->
-    gen_server:call(?MODULE, {reserve, Tag}, infinity).
 
 %%%===================================================================
 %%% gen_server callbacks
