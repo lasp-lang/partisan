@@ -26,7 +26,8 @@
 -include("partisan.hrl").
 
 members([]) ->
-    {ok, Members} = ?PEER_SERVICE_MANAGER:members(),
+    Manager = manager(),
+    {ok, Members} = Manager:members(),
     print_members(Members).
 
 print_members(Members) ->
@@ -35,3 +36,8 @@ print_members(Members) ->
     _ = [io:format("~p~n", [Node]) || Node <- Members],
     _ = io:format("~79..=s~n", [""]),
     ok.
+
+%% @private
+manager() ->
+    partisan_config:get(partisan_peer_service_manager,
+                        partisan_default_peer_service_manager).

@@ -37,7 +37,8 @@
 
 %% @doc Return current peer service manager.
 manager() ->
-    ?PEER_SERVICE_MANAGER.
+    partisan_config:get(partisan_peer_service_manager,
+                        partisan_default_peer_service_manager).
 
 %% @doc prepare node to join a cluster
 join(Node) ->
@@ -59,7 +60,8 @@ join(_, Node, _Auto) ->
 
 %% @doc Return cluster members.
 members() ->
-    ?PEER_SERVICE_MANAGER:members().
+    Manager = manager(),
+    Manager:members().
 
 %% @doc Add callback.
 add_sup_callback(Function) ->
@@ -67,15 +69,18 @@ add_sup_callback(Function) ->
 
 %% @private
 decode(State) ->
-    [P || {P, _, _} <- ?PEER_SERVICE_MANAGER:decode(State)].
+    Manager = manager(),
+    [P || {P, _, _} <- Manager:decode(State)].
 
 %% @private
 attempt_join({_Name, _, _}=Node) ->
-    ?PEER_SERVICE_MANAGER:join(Node).
+    Manager = manager(),
+    Manager:join(Node).
 
 %% @doc Attempt to leave the cluster.
 leave(_Args) when is_list(_Args) ->
-    ?PEER_SERVICE_MANAGER:leave().
+    Manager = manager(),
+    Manager:leave().
 
 %% @doc Stop.
 stop() ->

@@ -45,6 +45,16 @@ init([]) ->
                  ?CHILD(ranch_sup, supervisor)
                  ]),
 
+    %% Configure peer service manager.
+    case partisan_config:get(partisan_peer_service_manager, undefined) of
+        undefined ->
+            partisan_config:set(partisan_peer_service_manager,
+                                partisan_default_peer_service_manager);
+        _ ->
+            %% Use previously configured settings.
+            ok
+    end,
+
     PeerConfig = partisan_config:peer_config(),
     lager:info("Initializing listener for peer protocol; config: ~p",
                [PeerConfig]),

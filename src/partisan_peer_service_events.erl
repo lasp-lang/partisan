@@ -71,7 +71,8 @@ update(LocalState) ->
 %% ===================================================================
 
 init([Fn]) ->
-    {ok, LocalState} = ?PEER_SERVICE_MANAGER:get_local_state(),
+    Manager = manager(),
+    {ok, LocalState} = Manager:get_local_state(),
     try
         Fn(LocalState)
     catch
@@ -100,3 +101,8 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+%% @private
+manager() ->
+    partisan_config:get(partisan_peer_service_manager,
+                        partisan_default_peer_service_manager).

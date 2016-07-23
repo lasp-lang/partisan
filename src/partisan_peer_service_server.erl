@@ -134,7 +134,8 @@ handle_message({hello, Node},
         ok ->
             %% Send our state to the remote service, incase they want
             %% it to bootstrap.
-            {ok, LocalState} = ?PEER_SERVICE_MANAGER:get_local_state(),
+            Manager = manager(),
+            {ok, LocalState} = Manager:get_local_state(),
             send_message(Socket, Transport, {state, Tag, LocalState}),
             {noreply, State};
         error ->
@@ -143,7 +144,8 @@ handle_message({hello, Node},
             {noreply, State}
     end;
 handle_message(Message, State) ->
-    ?PEER_SERVICE_MANAGER:receive_message(Message),
+    Manager = manager(),
+    Manager:receive_message(Message),
     {noreply, State}.
 
 %% @private
@@ -172,3 +174,8 @@ maybe_connect_disterl(Node) ->
         false ->
             ok
     end.
+
+%% @private
+manager() ->
+    partisan_config:get(partisan_peer_service_manager,
+                        partisan_default_peer_service_manager).
