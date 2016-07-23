@@ -325,7 +325,7 @@ write_state_to_disk(State) ->
         Dir ->
             File = filename:join(Dir, "cluster_state"),
             ok = filelib:ensure_dir(File),
-            ok = file:write_file(File, ?SET:to_binary(State))
+            ok = file:write_file(File, ?SET:encode(erlang, State))
     end.
 
 %% @private
@@ -353,7 +353,7 @@ maybe_load_state_from_disk(Actor) ->
             case filelib:is_regular(filename:join(Dir, "cluster_state")) of
                 true ->
                     {ok, Bin} = file:read_file(filename:join(Dir, "cluster_state")),
-                    {ok, State} = ?SET:from_binary(Bin),
+                    {ok, State} = ?SET:decode(erlang, Bin),
                     State;
                 false ->
                     empty_membership(Actor)
