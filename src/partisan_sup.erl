@@ -55,6 +55,12 @@ init([]) ->
             ok
     end,
 
+    %% Configure fanout.
+    partisan_config:set(fanout, 5),
+
+    %% Configure interval.
+    partisan_config:set(gossip_interval, 10000),
+
     PeerConfig = partisan_config:peer_config(),
     lager:info("Initializing listener for peer protocol; config: ~p",
                [PeerConfig]),

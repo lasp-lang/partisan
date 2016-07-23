@@ -19,7 +19,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(partisan_default_peer_service_manager).
+-module(partisan_client_server_peer_service_manager).
 
 -behaviour(gen_server).
 -behaviour(partisan_peer_service_manager).
@@ -310,7 +310,7 @@ gen_actor() ->
 data_root() ->
     case application:get_env(partisan, partisan_data_dir) of
         {ok, PRoot} ->
-            filename:join(PRoot, "default_peer_service");
+            filename:join(PRoot, "client_server_peer_service");
         undefined ->
             undefined
     end.
