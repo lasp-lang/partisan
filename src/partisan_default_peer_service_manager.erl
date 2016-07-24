@@ -353,8 +353,7 @@ maybe_load_state_from_disk(Actor) ->
             case filelib:is_regular(filename:join(Dir, "cluster_state")) of
                 true ->
                     {ok, Bin} = file:read_file(filename:join(Dir, "cluster_state")),
-                    {ok, State} = ?SET:decode(erlang, Bin),
-                    State;
+                    ?SET:decode(erlang, Bin);
                 false ->
                     empty_membership(Actor)
             end
