@@ -154,7 +154,7 @@ handle_call({leave, Node}, _From,
                             _ ->
                                 L0
                         end
-                end, Membership0, ?SET:query(Membership0)),
+                end, Membership0, decode(Membership0)),
 
     %% Gossip.
     do_gossip(Membership, Connections),
