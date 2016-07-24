@@ -270,12 +270,18 @@ handle_info({connected, Node, TheirTag, _RemoteState},
                     %% Gossip the new membership.
                     do_gossip(OurTag, Membership, Connections),
 
+                    lager:info("Join ACCEPTED with ~p; node is ~p and we are ~p",
+                               [Node, TheirTag, OurTag]),
+                    lager:info("New membership: ~p", [Membership]),
+
                     %% Return.
                     {noreply, State#state{pending=Pending,
                                           membership=Membership}};
                 false ->
-                    lager:info("Join refused with ~p; node is ~p and we are ~p",
+                    lager:info("Join REFUSED with ~p; node is ~p and we are ~p",
                                [Node, TheirTag, OurTag]),
+                    lager:info("Keeping membership: ~p", [Membership0]),
+
                     {noreply, State}
             end;
         false ->
