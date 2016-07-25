@@ -254,7 +254,6 @@ handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
 handle_info({connected, Node, TheirTag, _RemoteState},
                #state{pending=Pending0,
                       actor=Actor,
-                      myself=Myself,
                       tag=OurTag,
                       membership=Membership0,
                       connections=Connections0}=State) ->
