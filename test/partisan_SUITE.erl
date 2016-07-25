@@ -63,7 +63,8 @@ end_per_testcase(Case, _Config) ->
 
 all() ->
     [
-     default_manager_test
+     default_manager_test,
+     client_server_manager_test
     ].
 
 %% ===================================================================
@@ -71,11 +72,12 @@ all() ->
 %% ===================================================================
 
 default_manager_test(Config) ->
-    %% Start nodes.
-    Nodes = start(default_manager_test, Config, []),
-
     %% Use the default peer service manager.
     Manager = partisan_default_peer_service_manager,
+
+    %% Start nodes.
+    Nodes = start(default_manager_test, Config,
+                  [{partisan_peer_service_manager, Manager}]),
 
     %% Pause for clustering.
     timer:sleep(1000),
@@ -84,9 +86,46 @@ default_manager_test(Config) ->
     %%
     %% Every node should know about every other node in this topology.
     %%
-    VerifyFun = fun(Node) ->
+    VerifyFun = fun({_, Node}) ->
             {ok, Members} = rpc:call(Node, Manager, members, []),
-            SortedNodes = lists:usort(Nodes),
+            SortedNodes = lists:usort([N || {_, N} <- Nodes]),
+            SortedMembers = lists:usort(Members),
+            case SortedMembers =:= SortedNodes of
+                true ->
+                    ok;
+                false ->
+                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Nodes, Members])
+            end
+    end,
+
+    %% Verify the membership is correct.
+    lists:foreach(VerifyFun, Nodes),
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
+client_server_manager_test(Config) ->
+    %% Use the client/server peer service manager.
+    Manager = partisan_client_server_peer_service_manager,
+
+    %% Start nodes.
+    Nodes = start(default_manager_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, [rita]},
+                   {clients, [bob, sue, jerome]}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Verify membership.
+    %%
+    %% Every node should know about every other node in this topology.
+    %%
+    VerifyFun = fun({_, Node}) ->
+            {ok, Members} = rpc:call(Node, Manager, members, []),
+            SortedNodes = lists:usort([N || {_, N} <- Nodes]),
             SortedMembers = lists:usort(Members),
             case SortedMembers =:= SortedNodes of
                 true ->
@@ -141,15 +180,15 @@ start(_Case, _Config, Options) ->
 
                             case ct_slave:start(Name, NodeConfig) of
                                 {ok, Node} ->
-                                    Node;
+                                    {Name, Node};
                                 Error ->
                                     ct:fail(Error)
                             end
                      end,
-    [_First|_] = Nodes = lists:map(InitializerFun, ?CT_SLAVES),
+    Nodes = lists:map(InitializerFun, ?CT_SLAVES),
 
     %% Load applications on all of the nodes.
-    LoaderFun = fun(Node) ->
+    LoaderFun = fun({_Name, Node}) ->
                             ct:pal("Loading applications on node: ~p", [Node]),
 
                             PrivDir = code:priv_dir(?APP),
@@ -173,9 +212,10 @@ start(_Case, _Config, Options) ->
     lists:map(LoaderFun, Nodes),
 
     %% Configure settings.
-    ConfigureFun = fun(Node) ->
+    ConfigureFun = fun({_Name, Node}) ->
                         %% Configure the peer service.
                         PeerService = proplists:get_value(partisan_peer_service_manager, Options),
+                        ct:pal("Setting peer service maanger on node ~p to ~p", [Node, PeerService]),
                         ok = rpc:call(Node, partisan_config, set,
                                       [partisan_peer_service_manager, PeerService])
                    end,
@@ -183,13 +223,13 @@ start(_Case, _Config, Options) ->
 
     ct:pal("Starting nodes."),
 
-    StartFun = fun(Node) ->
+    StartFun = fun({_Name, Node}) ->
                         %% Start partisan.
                         {ok, _} = rpc:call(Node, application, ensure_all_started, [partisan])
                    end,
     lists:map(StartFun, Nodes),
 
-    ct:pal("Custering nodes..."),
+    ct:pal("Clustering nodes."),
     lists:map(fun(Node) -> cluster(Node, Nodes) end, Nodes),
 
     ct:pal("Partisan fully initialized."),
@@ -209,7 +249,7 @@ codepath() ->
 %%
 cluster(Node, Nodes) when is_list(Nodes) ->
     lists:map(fun(OtherNode) -> cluster(Node, OtherNode) end, Nodes -- [Node]);
-cluster(Node, OtherNode) ->
+cluster({_, Node}, {_, OtherNode}) ->
     PeerPort = rpc:call(OtherNode,
                         partisan_config,
                         get,
@@ -221,15 +261,15 @@ cluster(Node, OtherNode) ->
                   [{OtherNode, {127, 0, 0, 1}, PeerPort}]).
 
 %% @private
-stop(_Nodes) ->
-    StopFun = fun(Node) ->
-        case ct_slave:stop(Node) of
+stop(Nodes) ->
+    StopFun = fun({Name, _Node}) ->
+        case ct_slave:stop(Name) of
             {ok, _} ->
                 ok;
             Error ->
                 ct:fail(Error)
         end
     end,
-    lists:map(StopFun, ?CT_SLAVES),
+    lists:map(StopFun, Nodes),
     ok.
 
