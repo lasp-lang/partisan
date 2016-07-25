@@ -628,12 +628,12 @@ handle_message({forward_join, Peer, Tag, TTL, Sender},
                       active=Active0,
                       pending=Pending,
                       connections=Connections0}=State0) ->
-    lager:info("Received forward join for ~p at ~p", [Peer, Myself]),
+    % lager:info("Received forward join for ~p at ~p", [Peer, Myself]),
 
     State = case TTL =:= 0 orelse sets:size(Active0) =:= 1 of
         true ->
-            lager:info("Forward: ttl expired; adding ~p to view on ~p",
-                       [Peer, Myself]),
+            % lager:info("Forward: ttl expired; adding ~p to view on ~p",
+            %            [Peer, Myself]),
 
             %% Add to our active view.
             State1 = #state{active=Active} = add_to_active_view(Peer, Tag, State0),
@@ -651,7 +651,7 @@ handle_message({forward_join, Peer, Tag, TTL, Sender},
 
             State1#state{connections=Connections};
         false ->
-            lager:info("Forward: ttl not expired!", []),
+            % lager:info("Forward: ttl not expired!", []),
 
             %% If we run out of peers before we hit the PRWL, that's
             %% fine, because exchanges between peers will eventually
@@ -659,7 +659,7 @@ handle_message({forward_join, Peer, Tag, TTL, Sender},
             %%
             State1 = case TTL =:= prwl() of
                 true ->
-                    lager:info("Passive walk ttl expired!"),
+                    % lager:info("Passive walk ttl expired!"),
                     add_to_passive_view(Peer, State0);
                 false ->
                     State0
@@ -690,8 +690,8 @@ handle_message({forward_join, Peer, Tag, TTL, Sender},
 
                     State2#state{connections=Connections};
                 Random ->
-                    lager:info("Forward: forwarding join from ~p to ~p",
-                               [Myself, Random]),
+                    % lager:info("Forward: forwarding join from ~p to ~p",
+                    %            [Myself, Random]),
 
                     %% Establish any new connections.
                     Connections = establish_connections(Pending,
