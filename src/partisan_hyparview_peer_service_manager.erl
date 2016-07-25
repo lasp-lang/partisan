@@ -492,7 +492,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private
 handle_message({neighbor, Peer, Tag, _Sender}, State0) ->
-    lager:info("Neighboring with ~p from random walk.", [Peer]),
+    % lager:info("Neighboring with ~p from random walk.", [Peer]),
 
     %% Add node into the active view.
     State = add_to_active_view(Peer, Tag, State0),
@@ -670,8 +670,8 @@ handle_message({forward_join, Peer, Tag, TTL, Sender},
             %%
             case select_random(Active0, [Sender, Myself, Peer]) of
                 undefined ->
-                    lager:error("Forward: no peers to forward to; adding ~p to active view on node ~p.",
-                                [Peer, Myself]),
+                    % lager:error("Forward: no peers to forward to; adding ~p to active view on node ~p.",
+                    %             [Peer, Myself]),
 
                     %% Add to our active view.
                     State2 = #state{active=Active} = add_to_active_view(Peer, Tag, State1),
@@ -891,12 +891,11 @@ select_random_sublist(View, K) ->
 %% view, otherwise it will exist in both places.
 %%
 add_to_active_view({Name, _, _}=Peer, Tag,
-                   #state{myself=Myself,
-                          active=Active0,
+                   #state{active=Active0,
                           passive=Passive0,
                           reserved=Reserved0,
                           max_active_size=MaxActiveSize}=State0) ->
-    lager:info("Adding ~p to active view on ~p", [Peer, Myself]),
+    % lager:info("Adding ~p to active view on ~p", [Peer, Myself]),
 
     IsNotMyself = not (Name =:= node()),
     NotInActiveView = not sets:is_element(Peer, Active0),
