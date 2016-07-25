@@ -223,41 +223,52 @@ hyparview_manager_low_active_test(Config) ->
     %% Every node should know about every other node in this topology
     %% when the active setting is high.
     %%
-    VerifyFun = fun({_, Node}) ->
+    ConnectFun = fun({_, Node}) ->
             {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
             Active = sets:to_list(ActiveSet),
-
-            case length(Active) of
-                MaxActiveSize ->
-                    ok;
-                _ ->
-                    ct:fail("Active size is too small!")
-            end,
 
             %% Add vertexes and edges.
             [connect(Graph, Node, N) || {N, _, _} <- Active]
     end,
 
     %% Verify the membership is correct.
-    lists:foreach(VerifyFun, Nodes),
-
-    Edges = digraph:edges(Graph),
-    ct:pal("Edges: ~p", [Edges]),
+    lists:foreach(ConnectFun, Nodes),
 
     %% Verify connectedness.
-    ConnectedFun = fun({_, Node}) ->
+    ConnectedFun = fun({_Name, Node}=Myself) ->
                         lists:foreach(fun({_, N}) ->
                                            Path = digraph:get_short_path(Graph, Node, N),
-                                           ct:pal("Path from ~p to ~p: ~p", [Node, N, Path]),
                                            case Path of
                                                false ->
                                                    ct:fail("Graph is not connected!");
                                                _ ->
                                                    ok
                                            end
-                                      end, Nodes)
+                                      end, Nodes -- [Myself])
                  end,
     lists:foreach(ConnectedFun, Nodes),
+
+    %% Verify symmetry.
+    SymmetryFun = fun({_, Node1}) ->
+                          %% Get first nodes active set.
+                          {ok, ActiveSet1} = rpc:call(Node1, Manager, active, []),
+                          Active1 = sets:to_list(ActiveSet1),
+
+                          lists:foreach(fun({Node2, _, _}) ->
+                                                %% Get second nodes active set.
+                                                {ok, ActiveSet2} = rpc:call(Node2, Manager, active, []),
+                                                Active2 = sets:to_list(ActiveSet2),
+
+                                                case lists:member(Node1, [N || {N, _, _} <- Active2]) of
+                                                    true ->
+                                                        ok;
+                                                    false ->
+                                                        ct:fail("~p has ~p in it's view but ~p does not have ~p in its view",
+                                                                [Node1, Node2, Node2, Node1])
+                                                end
+                                        end, Active1)
+                  end,
+    lists:foreach(SymmetryFun, Nodes),
 
     %% Stop nodes.
     stop(Nodes),
@@ -422,14 +433,14 @@ stop(Nodes) ->
 connect(G, N1, N2) ->
     %% Add vertex for neighboring node.
     digraph:add_vertex(G, N1),
-    ct:pal("Adding vertex: ~p", [N1]),
+    % ct:pal("Adding vertex: ~p", [N1]),
 
     %% Add vertex for neighboring node.
     digraph:add_vertex(G, N2),
-    ct:pal("Adding vertex: ~p", [N2]),
+    % ct:pal("Adding vertex: ~p", [N2]),
 
     %% Add edge to that node.
     digraph:add_edge(G, N1, N2),
-    ct:pal("Adding edge from ~p to ~p", [N1, N2]),
+    % ct:pal("Adding edge from ~p to ~p", [N1, N2]),
 
     ok.
