@@ -234,19 +234,8 @@ hyparview_manager_low_active_test(Config) ->
                     ct:fail("Active size is too small!")
             end,
 
-            %% Add ourself to the digraph.
-            ct:pal("Adding vertex: ~p", [Node]),
-            digraph:add_vertex(Graph, Node),
-
-            lists:foreach(fun({N, _, _}) ->
-                                  %% Add vertex for neighboring node.
-                                  digraph:add_vertex(Graph, N),
-                                  ct:pal("Adding vertex: ~p", [N]),
-
-                                  %% Add edge to that node.
-                                  digraph:add_edge(Graph, Node, N),
-                                  ct:pal("Adding edge from ~p to ~p", [Node, N])
-                          end, Active)
+            %% Add vertexes and edges.
+            [connect(Graph, Node, N) || {N, _, _} <- Active]
     end,
 
     %% Verify the membership is correct.
@@ -427,4 +416,20 @@ stop(Nodes) ->
         end
     end,
     lists:map(StopFun, Nodes),
+    ok.
+
+%% @private
+connect(G, N1, N2) ->
+    %% Add vertex for neighboring node.
+    digraph:add_vertex(G, N1),
+    ct:pal("Adding vertex: ~p", [N1]),
+
+    %% Add vertex for neighboring node.
+    digraph:add_vertex(G, N2),
+    ct:pal("Adding vertex: ~p", [N2]),
+
+    %% Add edge to that node.
+    digraph:add_edge(G, N1, N2),
+    ct:pal("Adding edge from ~p to ~p", [N1, N2]),
+
     ok.
