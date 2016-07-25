@@ -491,6 +491,20 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private
+handle_message({disconnect, Peer}, #state{myself=Myself,
+                                          active=Active0}=State0) ->
+    lager:info("Node ~p received disconnect from ~p", [Myself, Peer]),
+
+    %% Remove from active
+    Active = sets:del_element(Peer, Active0),
+    lager:info("Node ~p active view: ~p", [Myself, sets:to_list(Active)]),
+
+    %% Add to passive view.
+    State = add_to_passive_view(Peer,
+                                State0#state{active=Active}),
+
+    {reply, ok, State#state{active=Active}};
+
 handle_message({neighbor, Peer, Tag, _Sender}, State0) ->
     % lager:info("Neighboring with ~p from random walk.", [Peer]),
 
@@ -985,6 +999,7 @@ is_full({passive, Passive}, MaxPassiveSize) ->
 drop_random_element_from_active_view(#state{myself=Myself,
                                             active=Active0,
                                             reserved=Reserved,
+                                            connections=Connections,
                                             passive=Passive0}=State) ->
     ReservedPeers = dict:fold(fun(_K, V, Acc) -> [V | Acc] end,
                               [],
@@ -1005,6 +1020,11 @@ drop_random_element_from_active_view(#state{myself=Myself,
 
             %% Add to the passive view.
             Passive = sets:del_element(Peer, Passive0),
+
+            %% Let peer know we are disconnecting them.
+            do_send_message(Peer,
+                            {disconnect, Myself},
+                            Connections),
 
             State#state{active=Active, passive=Passive}
     end.
