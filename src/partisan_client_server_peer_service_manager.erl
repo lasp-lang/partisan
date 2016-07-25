@@ -54,6 +54,7 @@
 -type tag() :: atom().
 
 -record(state, {actor :: actor(),
+                myself :: node_spec(),
                 tag :: tag(),
                 pending :: pending(),
                 membership :: membership(),
@@ -129,12 +130,14 @@ init([]) ->
     Actor = gen_actor(),
     Membership = maybe_load_state_from_disk(Actor),
     Connections = dict:new(),
+    Myself = myself(),
 
     %% Get tag, if set.
     Tag = partisan_config:get(tag, undefined),
 
     {ok, #state{actor=Actor,
                 tag=Tag,
+                myself=Myself,
                 pending=[],
                 membership=Membership,
                 connections=Connections}}.
@@ -251,9 +254,10 @@ handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
 handle_info({connected, Node, TheirTag, _RemoteState},
                #state{pending=Pending0,
                       actor=Actor,
+                      myself=Myself,
                       tag=OurTag,
                       membership=Membership0,
-                      connections=Connections}=State) ->
+                      connections=Connections0}=State) ->
     case lists:member(Node, Pending0) of
         true ->
             case accept_join_with_tag(OurTag, TheirTag) of
@@ -266,6 +270,11 @@ handle_info({connected, Node, TheirTag, _RemoteState},
 
                     %% Announce to the peer service.
                     partisan_peer_service_events:update(Membership),
+
+                    %% Establish any new connections.
+                    Connections = establish_connections(Pending,
+                                                        Membership,
+                                                        Connections0),
 
                     %% Gossip the new membership.
                     do_gossip(OurTag, Membership, Connections),
@@ -571,3 +580,9 @@ accept_join_with_tag(OurTag, TheirTag) ->
 add_to_membership(Actor, Node, Membership0) ->
     {ok, Membership} = ?SET:mutate({add, Node}, Actor, Membership0),
     Membership.
+
+%% @private
+myself() ->
+    Port = partisan_config:get(peer_port, ?PEER_PORT),
+    IPAddress = partisan_config:get(peer_ip, ?PEER_IP),
+    {node(), IPAddress, Port}.
