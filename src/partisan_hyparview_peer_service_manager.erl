@@ -892,11 +892,10 @@ select_random_sublist(View, K) ->
 %%
 add_to_active_view({Name, _, _}=Peer, Tag,
                    #state{active=Active0,
+                          myself=Myself,
                           passive=Passive0,
                           reserved=Reserved0,
                           max_active_size=MaxActiveSize}=State0) ->
-    % lager:info("Adding ~p to active view on ~p", [Peer, Myself]),
-
     IsNotMyself = not (Name =:= node()),
     NotInActiveView = not sets:is_element(Peer, Active0),
     case IsNotMyself andalso NotInActiveView of
@@ -910,6 +909,8 @@ add_to_active_view({Name, _, _}=Peer, Tag,
                 false ->
                     State0#state{passive=Passive}
             end,
+
+            lager:info("Node ~p adds ~p to active view.", [Myself, Peer]),
 
             %% Add to the active view.
             Active = sets:add_element(Peer, Active1),
@@ -942,7 +943,7 @@ add_to_passive_view({Name, _, _}=Peer,
                            active=Active0,
                            passive=Passive0,
                            max_passive_size=MaxPassiveSize}=State0) ->
-    lager:info("Adding ~p to passive view on ~p", [Peer, Myself]),
+    % lager:info("Adding ~p to passive view on ~p", [Peer, Myself]),
 
     IsNotMyself = not (Name =:= node()),
     NotInActiveView = not sets:is_element(Peer, Active0),
@@ -1186,7 +1187,7 @@ reserved_slot_available(Tag, Reserved) ->
 handle_connect(Peer, Tag, #state{pending=Pending0,
                                  passive=Passive0,
                                  suspected=Suspected0}=State0) ->
-    lager:info("Peer ~p connected.", [Peer]),
+    % lager:info("Peer ~p connected.", [Peer]),
 
     %% When a node actually connects, perform the join steps.
     case is_pending(Peer, Pending0) of
