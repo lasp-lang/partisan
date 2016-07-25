@@ -5,7 +5,7 @@ ERLANG_BIN       = $(shell dirname $(shell which erl))
 REBAR            = $(shell pwd)/rebar3
 MAKE						 = make
 
-.PHONY: rel deps test eqc plots
+.PHONY: rel deps test plots
 
 all: compile
 
@@ -33,9 +33,6 @@ test: ct eunit
 
 lint:
 	${REBAR} as lint lint
-
-eqc:
-	${REBAR} as test eqc
 
 eunit:
 	${REBAR} as test eunit
