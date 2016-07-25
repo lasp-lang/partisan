@@ -110,11 +110,17 @@ client_server_manager_test(Config) ->
     %% Use the client/server peer service manager.
     Manager = partisan_client_server_peer_service_manager,
 
+    %% Specify servers.
+    Servers = [rita],
+
+    %% Specify clients.
+    Clients = [bob, sue, jerome],
+
     %% Start nodes.
     Nodes = start(default_manager_test, Config,
                   [{partisan_peer_service_manager, Manager},
-                   {servers, [rita]},
-                   {clients, [bob, sue, jerome]}]),
+                   {servers, Servers},
+                   {clients, Clients}]),
 
     %% Pause for clustering.
     timer:sleep(1000),
@@ -123,9 +129,22 @@ client_server_manager_test(Config) ->
     %%
     %% Every node should know about every other node in this topology.
     %%
-    VerifyFun = fun({_, Node}) ->
+    VerifyFun = fun({Name, Node}) ->
             {ok, Members} = rpc:call(Node, Manager, members, []),
-            SortedNodes = lists:usort([N || {_, N} <- Nodes]),
+
+            %% If this node is a server, it should know about all nodes.
+            SortedNodes = case lists:member(Name, Servers) of
+                true ->
+                    lists:usort([N || {_, N} <- Nodes]);
+                false ->
+                    %% Otherwise, it should only know about the server
+                    %% and itself.
+                    lists:usort(
+                        lists:map(fun(S) ->
+                                    proplists:get_value(S, Nodes)
+                            end, Servers) ++ [Node])
+            end,
+
             SortedMembers = lists:usort(Members),
             case SortedMembers =:= SortedNodes of
                 true ->
@@ -212,13 +231,32 @@ start(_Case, _Config, Options) ->
     lists:map(LoaderFun, Nodes),
 
     %% Configure settings.
-    ConfigureFun = fun({_Name, Node}) ->
-                        %% Configure the peer service.
-                        PeerService = proplists:get_value(partisan_peer_service_manager, Options),
-                        ct:pal("Setting peer service maanger on node ~p to ~p", [Node, PeerService]),
-                        ok = rpc:call(Node, partisan_config, set,
-                                      [partisan_peer_service_manager, PeerService])
-                   end,
+    ConfigureFun = fun({Name, Node}) ->
+            %% Configure the peer service.
+            PeerService = proplists:get_value(partisan_peer_service_manager, Options),
+            ct:pal("Setting peer service maanger on node ~p to ~p", [Node, PeerService]),
+            ok = rpc:call(Node, partisan_config, set,
+                          [partisan_peer_service_manager, PeerService]),
+
+            Servers = proplists:get_value(servers, Options, []),
+            Clients = proplists:get_value(clients, Options, []),
+
+            %% Configure servers.
+            case lists:member(Name, Servers) of
+                true ->
+                    ok = rpc:call(Node, partisan_config, set, [tag, server]);
+                false ->
+                    ok
+            end,
+
+            %% Configure clients.
+            case lists:member(Name, Clients) of
+                true ->
+                    ok = rpc:call(Node, partisan_config, set, [tag, client]);
+                false ->
+                    ok
+            end
+    end,
     lists:map(ConfigureFun, Nodes),
 
     ct:pal("Starting nodes."),
