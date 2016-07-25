@@ -43,6 +43,9 @@ ct:
 shell:
 	${REBAR} shell --apps partisan
 
+logs:
+	tail -F priv/lager/*/log/*.log
+
 ##
 ## Release targets
 ##
