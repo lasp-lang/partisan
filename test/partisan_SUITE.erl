@@ -64,7 +64,9 @@ end_per_testcase(Case, _Config) ->
 all() ->
     [
      default_manager_test,
-     client_server_manager_test
+     client_server_manager_test,
+     hyparview_manager_high_active_test,
+     hyparview_manager_low_active_test
     ].
 
 %% ===================================================================
@@ -117,7 +119,7 @@ client_server_manager_test(Config) ->
     Clients = [bob, sue, jerome],
 
     %% Start nodes.
-    Nodes = start(default_manager_test, Config,
+    Nodes = start(client_server_manager_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -161,6 +163,118 @@ client_server_manager_test(Config) ->
     stop(Nodes),
 
     ok.
+
+hyparview_manager_high_active_test(Config) ->
+    %% Use hyparview.
+    Manager = partisan_hyparview_peer_service_manager,
+
+    %% Start nodes.
+    Nodes = start(hyparview_manager_high_active_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {max_active_size, 5}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Verify membership.
+    %%
+    %% Every node should know about every other node in this topology
+    %% when the active setting is high.
+    %%
+    VerifyFun = fun({_, Node}) ->
+            {ok, Members} = rpc:call(Node, Manager, members, []),
+            SortedNodes = lists:usort([N || {_, N} <- Nodes]),
+            SortedMembers = lists:usort(Members),
+            case SortedMembers =:= SortedNodes of
+                true ->
+                    ok;
+                false ->
+                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Nodes, Members])
+            end
+    end,
+
+    %% Verify the membership is correct.
+    lists:foreach(VerifyFun, Nodes),
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
+hyparview_manager_low_active_test(Config) ->
+    %% Use hyparview.
+    Manager = partisan_hyparview_peer_service_manager,
+
+    %% Start nodes.
+    MaxActiveSize = 3,
+
+    Nodes = start(hyparview_manager_low_active_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {max_active_size, MaxActiveSize}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Create new digraph.
+    Graph = digraph:new(),
+
+    %% Verify membership.
+    %%
+    %% Every node should know about every other node in this topology
+    %% when the active setting is high.
+    %%
+    VerifyFun = fun({_, Node}) ->
+            {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
+            Active = sets:to_list(ActiveSet),
+
+            case length(Active) of
+                MaxActiveSize ->
+                    ok;
+                _ ->
+                    ct:fail("Active size is too small!")
+            end,
+
+            %% Add ourself to the digraph.
+            ct:pal("Adding vertex: ~p", [Node]),
+            digraph:add_vertex(Graph, Node),
+
+            lists:foreach(fun({N, _, _}) ->
+                                  %% Add vertex for neighboring node.
+                                  digraph:add_vertex(Graph, N),
+                                  ct:pal("Adding vertex: ~p", [N]),
+
+                                  %% Add edge to that node.
+                                  digraph:add_edge(Graph, Node, N),
+                                  ct:pal("Adding edge from ~p to ~p", [Node, N])
+                          end, Active)
+    end,
+
+    %% Verify the membership is correct.
+    lists:foreach(VerifyFun, Nodes),
+
+    Edges = digraph:edges(Graph),
+    ct:pal("Edges: ~p", [Edges]),
+
+    %% Verify connectedness.
+    ConnectedFun = fun({_, Node}) ->
+                        lists:foreach(fun({_, N}) ->
+                                           Path = digraph:get_short_path(Graph, Node, N),
+                                           ct:pal("Path from ~p to ~p: ~p", [Node, N, Path]),
+                                           case Path of
+                                               false ->
+                                                   ct:fail("Graph is not connected!");
+                                               _ ->
+                                                   ok
+                                           end
+                                      end, Nodes)
+                 end,
+    lists:foreach(ConnectedFun, Nodes),
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
 
 %% ===================================================================
 %% Internal functions.
@@ -238,6 +352,10 @@ start(_Case, _Config, Options) ->
             ok = rpc:call(Node, partisan_config, set,
                           [partisan_peer_service_manager, PeerService]),
 
+            MaxActiveSize = proplists:get_value(max_active_size, Options, 5),
+            ok = rpc:call(Node, partisan_config, set,
+                          [max_active_size, MaxActiveSize]),
+
             Servers = proplists:get_value(servers, Options, []),
             Clients = proplists:get_value(clients, Options, []),
 
@@ -310,4 +428,3 @@ stop(Nodes) ->
     end,
     lists:map(StopFun, Nodes),
     ok.
-
