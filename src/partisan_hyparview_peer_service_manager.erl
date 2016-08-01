@@ -46,6 +46,7 @@
 
 %% debug.
 -export([active/0,
+         active/1,
          passive/0]).
 
 %% gen_server callbacks
@@ -141,6 +142,10 @@ active() ->
     gen_server:call(?MODULE, active, infinity).
 
 %% @doc Debugging.
+active(Tag) ->
+    gen_server:call(?MODULE, {active, Tag}, infinity).
+
+%% @doc Debugging.
 passive() ->
     gen_server:call(?MODULE, passive, infinity).
 
@@ -229,8 +234,19 @@ handle_call({reserve, Tag}, _From,
             {reply, {error, no_available_slots}, State}
     end;
 
-handle_call(active, _From, #state{active=Active}=State) ->
-    {reply, {ok, Active}, State};
+handle_call({active, Tag},
+            _From,
+            #state{reserved=Reserved}=State) ->
+    lager:info("Reserved dictionary: ~p", [Reserved]),
+    Result = case dict:find(Tag, Reserved) of
+        {ok, {Peer, _, _}} ->
+            {ok, Peer};
+        {ok, undefined} ->
+            {ok, undefined};
+        error ->
+            error
+    end,
+    {reply, Result, State};
 
 handle_call(passive, _From, #state{passive=Passive}=State) ->
     {reply, {ok, Passive}, State};
