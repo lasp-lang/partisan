@@ -521,11 +521,11 @@ handle_message({disconnect, Peer}, #state{myself=Myself,
 
     {reply, ok, State#state{active=Active}};
 
-handle_message({neighbor, Peer, Tag, _Sender}, State0) ->
-    % lager:info("Neighboring with ~p from random walk.", [Peer]),
+handle_message({neighbor, Peer, TheirTag, _Sender}, State0) ->
+    lager:info("Neighboring with ~p tagged ~p from random walk", [Peer, TheirTag]),
 
     %% Add node into the active view.
-    State = add_to_active_view(Peer, Tag, State0),
+    State = add_to_active_view(Peer, TheirTag, State0),
 
     %% Notify with event.
     notify(State),
@@ -538,7 +538,7 @@ handle_message({neighbor_accepted, Peer, Tag, Sender},
                       myself=Myself,
                       suspected=Suspected0,
                       reserved=Reserved0} = State0) ->
-    lager:info("Neighbor request accepted by peer: ~p", [Peer]),
+    lager:info("Neighbor request accepted for peer ~p with tag: ~p", [Peer, Tag]),
 
     %% Select one of the suspected peers to replace: it can't be the
     %% node we are peering with nor the node we are on.
@@ -656,14 +656,15 @@ handle_message({shuffle, Exchange, TTL, Sender},
 handle_message({forward_join, Peer, Tag, TTL, Sender},
                #state{myself=Myself,
                       active=Active0,
+                      tag=OurTag,
                       pending=Pending,
                       connections=Connections0}=State0) ->
-    % lager:info("Received forward join for ~p at ~p", [Peer, Myself]),
+    lager:info("Received forward join for ~p tagged ~p at ~p", [Peer, Tag, Myself]),
 
     State = case TTL =:= 0 orelse sets:size(Active0) =:= 1 of
         true ->
-            % lager:info("Forward: ttl expired; adding ~p to view on ~p",
-            %            [Peer, Myself]),
+            lager:info("Forward: ttl expired; adding ~p tagged ~p to view on ~p",
+                       [Peer, Tag, Myself]),
 
             %% Add to our active view.
             State1 = #state{active=Active} = add_to_active_view(Peer, Tag, State0),
@@ -676,7 +677,7 @@ handle_message({forward_join, Peer, Tag, TTL, Sender},
             %% Send neighbor message to origin, that will update it's
             %% view.
             do_send_message(Peer,
-                            {neighbor, Myself, Tag, Peer},
+                            {neighbor, Myself, OurTag, Peer},
                             Connections),
 
             State1#state{connections=Connections};
@@ -715,7 +716,7 @@ handle_message({forward_join, Peer, Tag, TTL, Sender},
                     %% update it's view.
                     %%
                     do_send_message(Peer,
-                                    {neighbor, Myself, Tag, Peer},
+                                    {neighbor, Myself, OurTag, Peer},
                                     Connections),
 
                     State2#state{connections=Connections};
@@ -940,7 +941,8 @@ add_to_active_view({Name, _, _}=Peer, Tag,
                     State0#state{passive=Passive}
             end,
 
-            lager:info("Node ~p adds ~p to active view.", [Myself, Peer]),
+            lager:info("Node ~p adds ~p to active view with tag ~p",
+                       [Myself, Peer, Tag]),
 
             %% Add to the active view.
             Active = sets:add_element(Peer, Active1),
@@ -948,11 +950,14 @@ add_to_active_view({Name, _, _}=Peer, Tag,
             %% Fill reserved slot if necessary.
             Reserved = case dict:find(Tag, Reserved0) of
                 {ok, undefined} ->
+                    lager:info("Node added to reserved slot!"),
                     dict:store(Tag, Peer, Reserved0);
                 {ok, _} ->
                     %% Slot already filled, treat this as a normal peer.
+                    lager:info("Node added to active view, but reserved slot already full!"),
                     Reserved0;
                 error ->
+                    lager:info("Tag is not reserved: ~p ~p", [Tag, Reserved0]),
                     Reserved0
             end,
 
@@ -1105,9 +1110,12 @@ is_replacement_candidate(Peer, Passive, Suspected) ->
 perform_join(Peer, Tag,
              #state{myself=Myself,
                     active=Active0,
+                    tag=OurTag,
                     pending=Pending,
                     suspected=Suspected0,
                     connections=Connections0}=State0) ->
+    lager:info("Performing join of peer: ~p with tag ~p", [Peer, Tag]),
+
     %% Add to active view.
     State = #state{active=Active} = add_to_active_view(Peer, Tag, State0),
 
@@ -1119,8 +1127,9 @@ perform_join(Peer, Tag,
     %% Send neighbor_accepted message to origin, that will
     %% update it's view.
     %%
+    lager:info("Sending neightbor message to ~p with ~p ~p ~p", [Peer, Myself, Tag, Peer]),
     do_send_message(Peer,
-                    {neighbor, Myself, Tag, Peer},
+                    {neighbor, Myself, OurTag, Peer},
                     Connections),
 
     %% Notify with event.
@@ -1223,7 +1232,7 @@ reserved_slot_available(Tag, Reserved) ->
 handle_connect(Peer, Tag, #state{pending=Pending0,
                                  passive=Passive0,
                                  suspected=Suspected0}=State0) ->
-    % lager:info("Peer ~p connected.", [Peer]),
+    lager:info("Peer ~p tagged ~p connected.", [Peer, Tag]),
 
     %% When a node actually connects, perform the join steps.
     case is_pending(Peer, Pending0) of
