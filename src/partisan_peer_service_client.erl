@@ -143,7 +143,12 @@ decode(Message) ->
 %% @private
 handle_message({state, Tag, LocalState},
                #state{peer=Peer, from=From}=State) ->
-    From ! {connected, Peer, Tag, LocalState},
+    case LocalState of
+        [_Active, Epoch] ->
+            From ! {connected, Peer, Tag, Epoch, LocalState};
+        _ ->
+            From ! {connected, Peer, Tag, LocalState}
+    end,
     {noreply, State};
 handle_message({hello, _Node}, #state{socket=Socket}=State) ->
     Message = {hello, node()},

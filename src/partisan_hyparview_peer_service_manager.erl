@@ -57,8 +57,7 @@
          code_change/3]).
 
 %% temporary exceptions
--export([delete_state_from_disk/0,
-         delete_epoch_from_disk/0]).
+-export([delete_state_from_disk/0]).
 
 -type active() :: sets:set(node_spec()).
 -type passive() :: sets:set(node_spec()).
@@ -66,7 +65,9 @@
 -type suspected() :: sets:set(node_spec()).
 -type reserved() :: dict:dict(atom(), node_spec()).
 -type tag() :: atom().
+%% The epoch indicates how many times the node is restarted.
 -type epoch() :: non_neg_integer().
+%% The epoch_count indicates how many disconnect messages are generated.
 -type epoch_count() :: non_neg_integer().
 -type message_id() :: {epoch(), epoch_count()}.
 -type message_id_store() :: dict:dict(node_spec(), message_id()).
@@ -171,16 +172,14 @@ init([]) ->
     %% Process connection exits.
     process_flag(trap_exit, true),
 
-    {Active, Passive} = maybe_load_state_from_disk(),
+    {Active, Passive, Epoch} = maybe_load_state_from_disk(),
     Pending = sets:new(),
     Suspected = sets:new(),
     Connections = dict:new(),
     Myself = myself(),
 
-    Epoch = maybe_load_epoch_from_disk(),
     SentMessageMap = dict:new(),
     AckMessageMap = dict:new(),
-    write_epoch_to_disk(Epoch + 1),
 
     %% Get the default configuration.
     MaxActiveSize = partisan_config:get(max_active_size, 5),
@@ -212,7 +211,7 @@ init([]) ->
                         connections=Connections,
                         max_active_size=MaxActiveSize,
                         max_passive_size=MaxPassiveSize,
-                        epoch=Epoch,
+                        epoch=Epoch + 1,
                         sent_message_map=SentMessageMap,
                         ack_message_map=AckMessageMap}}
     end.
@@ -288,8 +287,9 @@ handle_call(members, _From, #state{active=Active}=State) ->
     ActiveMembers = [P || {P, _, _} <- members(Active)],
     {reply, {ok, ActiveMembers}, State};
 
-handle_call(get_local_state, _From, #state{active=Active}=State) ->
-    {reply, {ok, Active}, State};
+handle_call(get_local_state, _From, #state{active=Active,
+                                           epoch=Epoch}=State) ->
+    {reply, {ok, [Active, Epoch]}, State};
 
 handle_call(Msg, _From, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
@@ -477,9 +477,7 @@ handle_info({'EXIT', From, _Reason},
                           suspected=Suspected,
                           connections=Connections}};
 
-handle_info({connected, Peer, Tag, _RemoteState}, State) ->
-    %% @todo retreive the PeerEpoch from the Peer.
-    PeerEpoch = 0,
+handle_info({connected, Peer, Tag, PeerEpoch, _RemoteState}, State) ->
     handle_connect(Peer, Tag, PeerEpoch, State);
 
 handle_info(Msg, State) ->
@@ -810,7 +808,7 @@ empty_membership() ->
     %% Each cluster starts with only itself.
     Active = sets:add_element(myself(), sets:new()),
     Passive = sets:new(),
-    LocalState = {Active, Passive},
+    LocalState = {Active, Passive, 0},
     persist_state(LocalState),
     LocalState.
 
@@ -867,10 +865,10 @@ maybe_load_state_from_disk() ->
     end.
 
 %% @private
-persist_state({Active, Passive}) ->
-    write_state_to_disk({Active, Passive});
-persist_state(#state{active=Active, passive=Passive}) ->
-    persist_state({Active, Passive}).
+persist_state({Active, Passive, Epoch}) ->
+    write_state_to_disk({Active, Passive, Epoch});
+persist_state(#state{active=Active, passive=Passive, epoch=Epoch}) ->
+    persist_state({Active, Passive, Epoch}).
 
 %% @private
 members(Set) ->
@@ -1356,55 +1354,14 @@ remove_from_reserved(Peer, Reserved) ->
               end, dict:new(), Reserved).
 
 %% @private
-write_epoch_to_disk(Epoch) ->
-    case data_root() of
-        undefined ->
-            ok;
-        Dir ->
-            File = filename:join(Dir, "node_epoch"),
-            ok = filelib:ensure_dir(File),
-            ok = file:write_file(File, term_to_binary(Epoch))
-    end.
-
-%% @private
-delete_epoch_from_disk() ->
-    case data_root() of
-        undefined ->
-            ok;
-        Dir ->
-            File = filename:join(Dir, "node_epoch"),
-            ok = filelib:ensure_dir(File),
-            case file:delete(File) of
-                ok ->
-                    lager:info("Leaving cluster, removed node_epoch");
-                {error, Reason} ->
-                    lager:info("Unable to remove node_epoch for reason ~p", [Reason])
-            end
-    end.
-
-%% @private
-maybe_load_epoch_from_disk() ->
-    case data_root() of
-        undefined ->
-            0;
-        Dir ->
-            case filelib:is_regular(filename:join(Dir, "node_epoch")) of
-                true ->
-                    {ok, Bin} = file:read_file(filename:join(Dir, "node_epoch")),
-                    {ok, Epoch} = binary_to_term(Bin),
-                    Epoch;
-                false ->
-                    0
-            end
-    end.
-
-%% @private
 get_current_id(Peer, MessageMap) ->
     case dict:find(Peer, MessageMap) of
         {ok, Id} ->
             Id;
         error ->
-            {0, 0}
+            %% Default value for the messageId:
+            %% {First start, No disconnect}
+            {1, 0}
     end.
 
 %% @private
