@@ -38,7 +38,7 @@
 -include_lib("kernel/include/inet.hrl").
 
 -define(APP, partisan).
--define(CT_SLAVES, [rita, sue, bob, jerome]).
+-define(CLIENT_NUMBER, 3).
 -define(PEER_PORT, 9000).
 
 %% ===================================================================
@@ -113,14 +113,15 @@ client_server_manager_test(Config) ->
     Manager = partisan_client_server_peer_service_manager,
 
     %% Specify servers.
-    Servers = [rita],
+    Servers = [server],
 
     %% Specify clients.
-    Clients = [bob, sue, jerome],
+    Clients = client_list(?CLIENT_NUMBER),
 
     %% Start nodes.
     Nodes = start(client_server_manager_test, Config,
                   [{partisan_peer_service_manager, Manager},
+                   {client_number, ?CLIENT_NUMBER},
                    {servers, Servers},
                    {clients, Clients}]),
 
@@ -210,10 +211,11 @@ hyparview_manager_low_active_test(Config) ->
 
     Nodes = start(hyparview_manager_low_active_test, Config,
                   [{partisan_peer_service_manager, Manager},
-                   {max_active_size, MaxActiveSize}]),
+                   {max_active_size, MaxActiveSize},
+                   {client_number, ?CLIENT_NUMBER}]),
 
     %% Pause for clustering.
-    timer:sleep(1000),
+    timer:sleep(2000),
 
     %% Create new digraph.
     Graph = digraph:new(),
@@ -304,7 +306,9 @@ start(_Case, _Config, Options) ->
     %% Load lager.
     {ok, _} = application:ensure_all_started(lager),
 
-    %% Start all three nodes.
+    ClientNumber = proplists:get_value(client_number, Options, 3),
+    NodeNames = node_list(ClientNumber),
+    %% Start all nodes.
     InitializerFun = fun(Name) ->
                             ct:pal("Starting node: ~p", [Name]),
 
@@ -318,7 +322,7 @@ start(_Case, _Config, Options) ->
                                     ct:fail(Error)
                             end
                      end,
-    Nodes = lists:map(InitializerFun, ?CT_SLAVES),
+    Nodes = lists:map(InitializerFun, NodeNames),
 
     %% Load applications on all of the nodes.
     LoaderFun = fun({_Name, Node}) ->
@@ -444,3 +448,13 @@ connect(G, N1, N2) ->
     % ct:pal("Adding edge from ~p to ~p", [N1, N2]),
 
     ok.
+
+%% @private
+node_list(ClientNumber) ->
+    Clients = client_list(ClientNumber),
+    [server | Clients].
+
+%% @private
+client_list(0) -> [];
+client_list(N) -> lists:append(client_list(N - 1),
+                               [list_to_atom("client_" ++ integer_to_list(N))]).
