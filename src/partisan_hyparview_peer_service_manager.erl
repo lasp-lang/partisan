@@ -249,6 +249,9 @@ handle_call({reserve, Tag}, _From,
             {reply, {error, no_available_slots}, State}
     end;
 
+handle_call(active, _From, #state{active=Active}=State) ->
+    {reply, {ok, Active}, State};
+
 handle_call({active, Tag},
             _From,
             #state{reserved=Reserved}=State) ->
