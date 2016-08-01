@@ -1407,5 +1407,5 @@ is_addable(PeerEpoch, Peer, SentMessageMap) ->
         error ->
             true;
         {ok, {Epoch, _Cnt}} ->
-            PeerEpoch > Epoch
+            PeerEpoch >= Epoch
     end.
