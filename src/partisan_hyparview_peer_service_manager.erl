@@ -750,7 +750,9 @@ handle_message({forward_join, Peer, Tag, PeerEpoch, TTL, Sender},
             lager:info("Forward: ttl expired; adding ~p tagged ~p to view on ~p",
                        [Peer, Tag, Myself]),
 
-            case is_addable(PeerEpoch, Peer, SentMessageMap) of
+            IsAddable0 = is_addable(PeerEpoch, Peer, SentMessageMap),
+            NotInActiveView0 = not sets:is_element(Peer, Active0),
+            case IsAddable0 andalso NotInActiveView0 of
                 true ->
                     %% Add to our active view.
                     State1 = #state{active=Active} =
@@ -792,7 +794,9 @@ handle_message({forward_join, Peer, Tag, PeerEpoch, TTL, Sender},
             %%
             case select_random(Active0, [Sender, Myself, Peer]) of
                 undefined ->
-                    case  is_addable(PeerEpoch, Peer, SentMessageMap) of
+                    IsAddable1 = is_addable(PeerEpoch, Peer, SentMessageMap),
+                    NotInActiveView1 = not sets:is_element(Peer, Active0),
+                    case IsAddable1 andalso NotInActiveView1 of
                         true ->
                             % lager:error("Forward: no peers to forward to; adding ~p to active view on node ~p.",
                             %             [Peer, Myself]),
