@@ -553,16 +553,28 @@ handle_message({disconnect, Peer, DisconnectId},
     end;
 
 handle_message({neighbor, Peer, TheirTag, DisconnectId, _Sender},
-               #state{sent_message_map=SentMessageMap}=State0) ->
+               #state{myself=Myself,
+                      connections=Connections,
+                      epoch=Epoch,
+                      sent_message_map=SentMessageMap0}=State0) ->
     lager:info("Neighboring with ~p tagged ~p from random walk", [Peer, TheirTag]),
 
-    State = case is_addable(DisconnectId, Peer, SentMessageMap) of
+    State = case is_addable(DisconnectId, Peer, SentMessageMap0) of
                 true ->
                     %% Add node into the active view.
                     add_to_active_view(Peer, TheirTag, State0);
                 false ->
-                    %% @todo Need to send the disconnect message here?
-                    State0
+                    %% Get next disconnect id for the peer.
+                    NextId = get_next_id(Peer, Epoch, SentMessageMap0),
+                    %% Update the SentMessageMap.
+                    SentMessageMap = dict:store(Peer, NextId, SentMessageMap0),
+
+                    %% Let peer know we did not add them into the active view.
+                    do_send_message(Peer,
+                                    {disconnect, Myself, NextId},
+                                    Connections),
+
+                    State0#state{sent_message_map=SentMessageMap}
             end,
 
     %% Notify with event.
@@ -576,7 +588,9 @@ handle_message({neighbor_accepted, Peer, Tag, DisconnectId, Sender},
                       myself=Myself,
                       suspected=Suspected0,
                       reserved=Reserved0,
-                      sent_message_map=SentMessageMap} = State0) ->
+                      connections=Connections,
+                      epoch=Epoch,
+                      sent_message_map=SentMessageMap0} = State0) ->
     lager:info("Neighbor request accepted for peer ~p with tag: ~p", [Peer, Tag]),
 
     %% Select one of the suspected peers to replace: it can't be the
@@ -586,7 +600,7 @@ handle_message({neighbor_accepted, Peer, Tag, DisconnectId, Sender},
             %% No more peers are suspected; no change.
             State0;
         Random ->
-            case is_addable(DisconnectId, Peer, SentMessageMap) of
+            case is_addable(DisconnectId, Peer, SentMessageMap0) of
                 true ->
                     %% Remove from suspected.
                     Suspected = remove_from_suspected(Random, Suspected0),
@@ -606,8 +620,17 @@ handle_message({neighbor_accepted, Peer, Tag, DisconnectId, Sender},
                     %% Add to active view.
                     add_to_active_view(Peer, Tag, State1);
                 false ->
-                    %% @todo Need to send the disconnect message here?
-                    State0
+                    %% Get next disconnect id for the peer.
+                    NextId = get_next_id(Peer, Epoch, SentMessageMap0),
+                    %% Update the SentMessageMap.
+                    SentMessageMap = dict:store(Peer, NextId, SentMessageMap0),
+
+                    %% Let peer know we did not add them into the active view.
+                    do_send_message(Peer,
+                                    {disconnect, Myself, NextId},
+                                    Connections),
+
+                    State0#state{sent_message_map=SentMessageMap}
             end
     end,
 
@@ -617,7 +640,6 @@ handle_message({neighbor_accepted, Peer, Tag, DisconnectId, Sender},
     {reply, ok, State};
 
 handle_message({neighbor_rejected, Peer, _Sender}, State) ->
-    %% @todo Is this necessary?
     %% Trigger disconnect message.
     gen_server:cast(?MODULE, {disconnect, Peer}),
 
