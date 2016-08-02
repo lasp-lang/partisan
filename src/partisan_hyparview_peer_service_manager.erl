@@ -308,7 +308,7 @@ handle_call(members, _From, #state{active=Active}=State) ->
 
 handle_call(get_local_state, _From, #state{active=Active,
                                            epoch=Epoch}=State) ->
-    {reply, {ok, [Active, Epoch]}, State};
+    {reply, {ok, {state, Active, Epoch}}, State};
 
 handle_call(Msg, _From, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),

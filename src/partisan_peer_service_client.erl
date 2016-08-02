@@ -144,7 +144,7 @@ decode(Message) ->
 handle_message({state, Tag, LocalState},
                #state{peer=Peer, from=From}=State) ->
     case LocalState of
-        [_Active, Epoch] ->
+        {state, _Active, Epoch} ->
             From ! {connected, Peer, Tag, Epoch, LocalState};
         _ ->
             From ! {connected, Peer, Tag, LocalState}
