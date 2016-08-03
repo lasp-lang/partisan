@@ -534,9 +534,15 @@ code_change(_OldVsn, State, _Extra) ->
 handle_message({disconnect, Peer, DisconnectId},
                #state{myself=Myself,
                       active=Active0,
+                      connections=Connections0,
                       ack_message_map=AckMessageMap0}=State0) ->
     lager:info("Node ~p received disconnect from ~p with ~p",
                [Myself, Peer, DisconnectId]),
+
+    %% Let peer know we received the disconnect message.
+    do_send_message(Peer,
+                    {disconnect_ack, Myself, DisconnectId},
+                    Connections0),
 
     case is_valid_disconnect(Peer, DisconnectId, AckMessageMap0) of
         false ->
@@ -556,6 +562,19 @@ handle_message({disconnect, Peer, DisconnectId},
 
             {reply, ok, State#state{ack_message_map=AckMessageMap}}
     end;
+
+%% @private
+handle_message({disconnect_ack, Peer, DisconnectId},
+               #state{myself=Myself,
+                      connections=Connections0}=State0) ->
+    lager:info("Node ~p received disconnect_ack from ~p with ~p",
+               [Myself, Peer, DisconnectId]),
+
+    Connections = enable_disconnect_trigger(Peer, Connections0),
+    %% Trigger disconnect message.
+    gen_server:cast(?MODULE, {disconnect, Peer}),
+
+    {reply, ok, State0#state{connections=Connections}};
 
 handle_message({neighbor, Peer, TheirTag, DisconnectId, _Sender},
                #state{sent_message_map=SentMessageMap0}=State0) ->
@@ -1136,12 +1155,7 @@ drop_random_element_from_active_view(#state{myself=Myself,
                             {disconnect, Myself, NextId},
                             Connections0),
 
-            Connections = enable_disconnect_trigger(Peer, Connections0),
-            %% Trigger disconnect message.
-            gen_server:cast(?MODULE, {disconnect, Peer}),
-
-            State#state{sent_message_map=SentMessageMap,
-                        connections=Connections}
+            State#state{sent_message_map=SentMessageMap}
     end.
 
 %% @private
