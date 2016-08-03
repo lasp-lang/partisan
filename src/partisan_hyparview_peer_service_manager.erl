@@ -1117,10 +1117,6 @@ drop_random_element_from_active_view(#state{myself=Myself,
         undefined ->
             State0;
         Peer ->
-            Connections = enable_disconnect_trigger(Peer, Connections0),
-            %% Trigger disconnect message.
-            gen_server:cast(?MODULE, {disconnect, Peer}),
-
             lager:info("Removing and disconnecting peer: ~p", [Peer]),
 
             %% Remove from the active view.
@@ -1138,9 +1134,14 @@ drop_random_element_from_active_view(#state{myself=Myself,
             %% Let peer know we are disconnecting them.
             do_send_message(Peer,
                             {disconnect, Myself, NextId},
-                            Connections),
+                            Connections0),
 
-            State#state{sent_message_map=SentMessageMap}
+            Connections = enable_disconnect_trigger(Peer, Connections0),
+            %% Trigger disconnect message.
+            gen_server:cast(?MODULE, {disconnect, Peer}),
+
+            State#state{sent_message_map=SentMessageMap,
+                        connections=Connections}
     end.
 
 %% @private
