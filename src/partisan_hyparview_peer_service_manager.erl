@@ -25,6 +25,7 @@
 -behaviour(partisan_peer_service_manager).
 
 -define(PASSIVE_VIEW_MAINTENANCE_INTERVAL, 10000).
+-define(RANDOM_PROMOTION_INTERVAL, 5000).
 
 -include("partisan.hrl").
 
@@ -196,6 +197,9 @@ init([]) ->
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
 
+    %% Schedule periodic random promotion.
+    schedule_random_promotion(),
+
     %% Verify we don't have too many reservations.
     case length(Reservations) > MaxActiveSize of
         true ->
@@ -344,6 +348,15 @@ handle_cast(Msg, State) ->
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
 
+handle_info(random_promotion, #state{myself=Myself0}=State0) ->
+    lager:info("Random promotion for node ~p", [Myself0]),
+    State = move_random_peer_from_passive_to_active(State0),
+
+    %% Schedule periodic random promotion.
+    schedule_random_promotion(),
+
+    {noreply, State};
+
 handle_info(passive_view_maintenance,
             #state{myself=Myself,
                    active=Active,
@@ -379,7 +392,7 @@ handle_info(passive_view_maintenance,
 handle_info({'EXIT', From, _Reason},
             #state{active=Active0,
                    passive=Passive0,
-                   connections=Connections0}=State) ->
+                   connections=Connections0}=State0) ->
     %% Prune active connections from dictionary.
     FoldFun = fun(K, V, {Peer, AccIn}) ->
                       case V =:= From of
@@ -406,16 +419,27 @@ handle_info({'EXIT', From, _Reason},
 
     %% If it was in the active view and our connection attempt failed,
     %% remove from the active view altogether.
-    Active = case is_in_active_view(Peer, Active0) of
-                 true ->
-                     remove_from_active_view(Peer, Active0);
-                 false ->
-                     Active0
-             end,
+    {Active, RemovedFromActive} =
+        case is_in_active_view(Peer, Active0) of
+            true ->
+                {remove_from_active_view(Peer, Active0), true};
+            false ->
+                {Active0, false}
+        end,
 
-    {noreply, State#state{active=Active,
-                          passive=Passive,
-                          connections=Connections}};
+    State = case RemovedFromActive of
+                true ->
+                    move_random_peer_from_passive_to_active(
+                        State0#state{active=Active,
+                                     passive=Passive,
+                                     connections=Connections});
+                false ->
+                    State0#state{active=Active,
+                                 passive=Passive,
+                                 connections=Connections}
+            end,
+
+    {noreply, State};
 
 handle_info({connected, Peer, _Tag, _PeerEpoch, _RemoteState}, State) ->
     lager:info("Node ~p is connected", [Peer]),
@@ -1248,17 +1272,26 @@ move_random_peer_from_passive_to_active(
                connections=Connections0,
                recv_message_map=RecvMessageMap0}=State0) ->
     %% Select random peer from passive view, and attempt to connect it.
-    Random = select_random(Passive0, [Myself0]),
+    case select_random(Passive0, [Myself0]) of
+        undefined ->
+            State0;
+        Random ->
+            lager:info("Node ~p sends the NEIGHBOR_REQUEST to ~p", [Myself0, Random]),
 
-    lager:info("Node ~p sends the NEIGHBOR_REQUEST to ~p", [Myself0, Random]),
+            %% Trigger connection.
+            Connections = maybe_connect(Random, Connections0),
 
-    %% Trigger connection.
-    Connections = maybe_connect(Random, Connections0),
+            LastDisconnectId = get_current_id(Random, RecvMessageMap0),
+            do_send_message(
+                Random,
+                {neighbor_request, Myself0, high, Tag0, LastDisconnectId},
+                Connections),
 
-    LastDisconnectId = get_current_id(Random, RecvMessageMap0),
-    do_send_message(
-        Random,
-        {neighbor_request, Myself0, high, Tag0, LastDisconnectId},
-        Connections),
+            State0#state{connections=Connections}
+    end.
 
-    State0#state{connections=Connections}.
+%% @private
+schedule_random_promotion() ->
+    erlang:send_after(?RANDOM_PROMOTION_INTERVAL,
+                      ?MODULE,
+                      random_promotion).
