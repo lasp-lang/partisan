@@ -267,21 +267,15 @@ handle_call(passive, _From, #state{passive=Passive}=State) ->
 
 handle_call({send_message, Name, Message}, _From,
             #state{connections=Connections0}=State) ->
-    %% Establish any new connections.
-    Connections = maybe_connect(Name, Connections0),
-
-    Result = do_send_message(Name, Message, Connections),
+    Result = do_send_message(Name, Message, Connections0),
 
     {reply, Result, State};
 
 handle_call({forward_message, Name, ServerRef, Message}, _From,
             #state{connections=Connections0}=State) ->
-    %% Establish any new connections.
-    Connections = maybe_connect(Name, Connections0),
-
     Result = do_send_message(Name,
                              {forward_message, ServerRef, Message},
-                             Connections),
+                             Connections0),
 
     {reply, Result, State};
 
