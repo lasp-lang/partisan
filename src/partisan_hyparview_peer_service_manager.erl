@@ -157,6 +157,8 @@ passive() ->
 
 %% @doc Decode state.
 decode({state, Active, _Epoch}) ->
+    sets:to_list(Active);
+decode(Active) ->
     sets:to_list(Active).
 
 %%%===================================================================
