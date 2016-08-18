@@ -632,7 +632,6 @@ handle_message({disconnect, Peer, DisconnectId},
                #state{myself=Myself0,
                       active=Active0,
                       connections=Connections0,
-                      max_active_size=MaxActiveSize0,
                       recv_message_map=RecvMessageMap0}=State0) ->
     lager:info("Node ~p received the DISCONNECT message from ~p with ~p",
                [Myself0, Peer, DisconnectId]),
@@ -656,19 +655,8 @@ handle_message({disconnect, Peer, DisconnectId},
             %% Trigger disconnection.
             Connections = disconnect(Peer, Connections0),
 
-            State = case sets:size(Active) =< (MaxActiveSize0 div 2) of
-                        true ->
-                            lager:info("Node ~p has small active size: ~p.",
-                                       [Myself0, sets:size(Active)]),
-                            move_random_peer_from_passive_to_active(
-                                State1#state{connections=Connections,
-                                             recv_message_map=RecvMessageMap});
-                        false ->
-                            State1#state{connections=Connections,
-                                        recv_message_map=RecvMessageMap}
-                    end,
-
-            {noreply, State}
+            {noreply, State1#state{connections=Connections,
+                                   recv_message_map=RecvMessageMap}}
     end;
 
 %% @private
