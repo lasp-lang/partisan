@@ -941,7 +941,6 @@ establish_connections(Pending0, Set0, Connections) ->
 %% socket pid if they are connected.
 %%
 maybe_connect({Name, _, _} = Node, Connections0) ->
-    lager:info("Attempting connection to: ~p", [Name]),
     Connections = case dict:find(Name, Connections0) of
         %% Found in dict, and disconnected.
         {ok, undefined} ->
@@ -956,9 +955,7 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
                     dict:store(Name, undefined, Connections0)
             end;
         %% Found in dict and connected.
-        {ok, {Pid, DisconnectTriggered}} ->
-            lager:info("Node ~p connected; disconnected triggered ~p.",
-                       [Node, DisconnectTriggered]),
+        {ok, {Pid, _DisconnectTriggered}} ->
             dict:store(Name, {Pid, false}, Connections0);
         %% Not present; disconnected.
         error ->
