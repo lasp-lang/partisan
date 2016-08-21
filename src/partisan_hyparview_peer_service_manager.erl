@@ -198,7 +198,6 @@ init([]) ->
     %% Reserved server slots.
     Reservations = partisan_config:get(reservations, []),
     Reserved = dict:from_list([{T, undefined} || T <- Reservations]),
-    lager:info("Reserving slots for ~p", [Reservations]),
 
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
@@ -257,7 +256,6 @@ handle_call(active, _From, #state{active=Active}=State) ->
 handle_call({active, Tag},
             _From,
             #state{reserved=Reserved}=State) ->
-    lager:info("Reserved dictionary: ~p", [Reserved]),
     Result = case dict:find(Tag, Reserved) of
         {ok, {Peer, _, _}} ->
             {ok, Peer};
@@ -329,12 +327,8 @@ handle_cast({join, Peer},
     %% Add to list of pending connections.
     Pending = add_to_pending(Peer, Pending0),
 
-    lager:info("Pending was ~p now is ~p", [Pending0, Pending]),
-
     %% Trigger connection.
     Connections = maybe_connect(Peer, Connections0),
-
-    lager:info("Connections was ~p now is ~p", [Connections0, Connections]),
 
     %% Return.
     {noreply, State#state{pending=Pending, connections=Connections}};
