@@ -128,6 +128,7 @@ receive_message(Message) ->
 
 %% @doc Attempt to join a remote node.
 join(Node) ->
+    lager:info("JOIN issued for ~p", [Node]),
     gen_server:call(?MODULE, {join, Node}, infinity).
 
 %% @doc Leave the cluster.
@@ -324,6 +325,8 @@ handle_call(Msg, _From, State) ->
 handle_cast({join, Peer},
             #state{pending=Pending0,
                    connections=Connections0}=State) ->
+    lager:info("JOIN issued for ~p", [Peer]),
+
     %% Add to list of pending connections.
     Pending = add_to_pending(Peer, Pending0),
 
