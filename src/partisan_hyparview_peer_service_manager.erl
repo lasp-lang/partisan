@@ -329,8 +329,12 @@ handle_cast({join, Peer},
     %% Add to list of pending connections.
     Pending = add_to_pending(Peer, Pending0),
 
+    lager:info("Pending was ~p now is ~p", [Pending0, Pending]),
+
     %% Trigger connection.
     Connections = maybe_connect(Peer, Connections0),
+
+    lager:info("Connections was ~p now is ~p", [Connections0, Connections]),
 
     %% Return.
     {noreply, State#state{pending=Pending, connections=Connections}};
