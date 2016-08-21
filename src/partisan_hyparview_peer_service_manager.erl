@@ -305,9 +305,9 @@ handle_call({forward_message, Name, ServerRef, Message}, _From,
 handle_call({receive_message, Message}, _From, State) ->
     handle_message(Message, State);
 
-handle_call(members, _From, #state{myself=Myself,
+handle_call(members, _From, #state{myself=_Myself,
                                    active=Active}=State) ->
-    lager:info("Node ~p active view: ~p", [Myself, members(Active)]),
+    % lager:info("Node ~p active view: ~p", [Myself, members(Active)]),
     ActiveMembers = [P || {P, _, _} <- members(Active)],
     {reply, {ok, ActiveMembers}, State};
 
