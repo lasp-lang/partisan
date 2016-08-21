@@ -189,7 +189,7 @@ init([]) ->
     AckMessageMap = dict:new(),
 
     %% Get the default configuration.
-    MaxActiveSize = partisan_config:get(max_active_size, 5),
+    MaxActiveSize = partisan_config:get(max_active_size, 6),
     MaxPassiveSize = partisan_config:get(max_passive_size, 30),
 
     %% Get tag, if set.
