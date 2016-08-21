@@ -128,7 +128,6 @@ receive_message(Message) ->
 
 %% @doc Attempt to join a remote node.
 join(Node) ->
-    lager:info("JOIN issued for ~p", [Node]),
     gen_server:call(?MODULE, {join, Node}, infinity).
 
 %% @doc Leave the cluster.
@@ -942,26 +941,35 @@ establish_connections(Pending0, Set0, Connections) ->
 %% socket pid if they are connected.
 %%
 maybe_connect({Name, _, _} = Node, Connections0) ->
+    lager:info("Attempting connection to: ~p", [Name]),
     Connections = case dict:find(Name, Connections0) of
         %% Found in dict, and disconnected.
         {ok, undefined} ->
-            % lager:info("Node is not connected ~p; trying again...", [Node]),
+            lager:info("Node ~p is not connected; initiating.", [Node]),
+
             case connect(Node) of
                 {ok, Pid} ->
+                    lager:info("Node ~p connected.", [Node]),
                     dict:store(Name, {Pid, false}, Connections0);
-                _ ->
+                Error ->
+                    lager:info("Node ~p failed connection: ~p.", [Node, Error]),
                     dict:store(Name, undefined, Connections0)
             end;
         %% Found in dict and connected.
-        {ok, {Pid, _DisconnectTriggered}} ->
+        {ok, {Pid, DisconnectTriggered}} ->
+            lager:info("Node ~p connected; disconnected triggered ~p.",
+                       [Node, DisconnectTriggered]),
             dict:store(Name, {Pid, false}, Connections0);
         %% Not present; disconnected.
         error ->
-            % lager:info("Node is not connected: ~p", [Node]),
+            lager:info("Node ~p never was connected; initiating.", [Node]),
+
             case connect(Node) of
                 {ok, Pid} ->
+                    lager:info("Node ~p connected.", [Node]),
                     dict:store(Name, {Pid, false}, Connections0);
-                _ ->
+                Error ->
+                    lager:info("Node ~p failed connection: ~p.", [Node, Error]),
                     dict:store(Name, undefined, Connections0)
             end
     end,
