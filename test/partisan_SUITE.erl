@@ -178,25 +178,57 @@ hyparview_manager_high_active_test(Config) ->
     %% Pause for clustering.
     timer:sleep(1000),
 
-    %% Verify membership.
+    %% Create new digraph.
+    Graph = digraph:new(),
+
+    %% Verify connectedness.
     %%
-    %% Every node should know about every other node in this topology
-    %% when the active setting is high.
-    %%
-    VerifyFun = fun({_, Node}) ->
-            {ok, Members} = rpc:call(Node, Manager, members, []),
-            SortedNodes = lists:usort([N || {_, N} <- Nodes]),
-            SortedMembers = lists:usort(Members),
-            case SortedMembers =:= SortedNodes of
+    ConnectFun = fun({_, Node}) ->
+        {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
+        Active = sets:to_list(ActiveSet),
+
+        %% Add vertexes and edges.
+        [connect(Graph, Node, N) || {N, _, _} <- Active]
+                 end,
+
+    %% Build the graph.
+    lists:foreach(ConnectFun, Nodes),
+
+    %% Verify connectedness.
+    ConnectedFun = fun({_Name, Node}=Myself) ->
+        lists:foreach(fun({_, N}) ->
+            Path = digraph:get_short_path(Graph, Node, N),
+            case Path of
+                false ->
+                    ct:fail("Graph is not connected!");
+                _ ->
+                    ok
+            end
+                      end, Nodes -- [Myself])
+                   end,
+    lists:foreach(ConnectedFun, Nodes),
+
+    %% Verify symmetry.
+    SymmetryFun = fun({_, Node1}) ->
+        %% Get first nodes active set.
+        {ok, ActiveSet1} = rpc:call(Node1, Manager, active, []),
+        Active1 = sets:to_list(ActiveSet1),
+
+        lists:foreach(fun({Node2, _, _}) ->
+            %% Get second nodes active set.
+            {ok, ActiveSet2} = rpc:call(Node2, Manager, active, []),
+            Active2 = sets:to_list(ActiveSet2),
+
+            case lists:member(Node1, [N || {N, _, _} <- Active2]) of
                 true ->
                     ok;
                 false ->
-                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Nodes, Members])
+                    ct:fail("~p has ~p in it's view but ~p does not have ~p in its view",
+                            [Node1, Node2, Node2, Node1])
             end
-    end,
-
-    %% Verify the membership is correct.
-    lists:foreach(VerifyFun, Nodes),
+                      end, Active1)
+                  end,
+    lists:foreach(SymmetryFun, Nodes),
 
     %% Stop nodes.
     stop(Nodes),
@@ -216,7 +248,7 @@ hyparview_manager_low_active_test(Config) ->
                    {client_number, ?CLIENT_NUMBER}]),
 
     %% Pause for clustering.
-    timer:sleep(3000),
+    timer:sleep(4000),
 
     %% Create new digraph.
     Graph = digraph:new(),
@@ -465,7 +497,8 @@ start(_Case, _Config, Options) ->
     lists:map(StartFun, Nodes),
 
     ct:pal("Clustering nodes."),
-    lists:map(fun(Node) -> cluster(Node, Nodes) end, Nodes),
+    Manager = proplists:get_value(partisan_peer_service_manager, Options),
+    lists:map(fun(Node) -> cluster(Node, Nodes, Manager) end, Nodes),
 
     ct:pal("Partisan fully initialized."),
 
@@ -482,8 +515,28 @@ codepath() ->
 %% client/server topology, which requires all nodes talk to every other
 %% node to correctly compute the overlay.
 %%
-cluster(Node, Nodes) when is_list(Nodes) ->
-    lists:map(fun(OtherNode) -> cluster(Node, OtherNode) end, Nodes -- [Node]);
+cluster(Node, Nodes, Manager) when is_list(Nodes) ->
+    OtherNodes = case Manager of
+                     partisan_default_peer_service_manager ->
+                         Nodes -- [Node];
+                     partisan_client_server_peer_service_manager ->
+                         case Node of
+                             {server, _} ->
+                                 Nodes -- [Node];
+                             _ ->
+                                 Server = lists:keyfind(server, 1, Nodes),
+                                 [Server]
+                         end;
+                     partisan_hyparview_peer_service_manager ->
+                         case Node of
+                             {server, _} ->
+                                 [];
+                             _ ->
+                                 Server = lists:keyfind(server, 1, Nodes),
+                                 [Server]
+                         end
+                 end,
+    lists:map(fun(OtherNode) -> cluster(Node, OtherNode) end, OtherNodes).
 cluster({_, Node}, {_, OtherNode}) ->
     PeerPort = rpc:call(OtherNode,
                         partisan_config,
