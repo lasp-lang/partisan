@@ -184,7 +184,7 @@ init([]) ->
     RecvMessageMap = dict:new(),
 
     %% Get the default configuration.
-    MaxActiveSize = partisan_config:get(max_active_size, 5),
+    MaxActiveSize = partisan_config:get(max_active_size, 6),
     MaxPassiveSize = partisan_config:get(max_passive_size, 30),
 
     %% Get tag, if set.
@@ -344,9 +344,18 @@ handle_cast(Msg, State) ->
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
 
-handle_info(random_promotion, #state{myself=Myself0}=State0) ->
-    lager:info("Random promotion for node ~p", [Myself0]),
-    State = move_random_peer_from_passive_to_active(State0),
+handle_info(random_promotion, #state{myself=Myself0,
+                                     active=Active0,
+                                     reserved=Reserved0,
+                                     max_active_size=MaxActiveSize0}=State0) ->
+    State = case is_full({active, Active0, Reserved0}, MaxActiveSize0) of
+                true ->
+                    %% Do nothing if the active view is full.
+                    State0;
+                false ->
+                    lager:info("Random promotion for node ~p", [Myself0]),
+                    move_random_peer_from_passive_to_active(State0)
+            end,
 
     %% Schedule periodic random promotion.
     schedule_random_promotion(),
@@ -357,7 +366,7 @@ handle_info(passive_view_maintenance,
             #state{myself=Myself,
                    active=Active,
                    passive=Passive,
-                   connections=Connections}=State) ->
+                   connections=Connections0}=State0) ->
     Exchange0 = %% Myself.
                 [Myself] ++
 
@@ -370,15 +379,20 @@ handle_info(passive_view_maintenance,
     Exchange = lists:usort(Exchange0),
 
     %% Select random member of the active list.
-    case select_random(Active, [Myself]) of
-        undefined ->
-            ok;
-        Random ->
-            %% Forward shuffle request.
-            do_send_message(Random,
-                            {shuffle, Exchange, arwl(), Myself},
-                            Connections)
-    end,
+    State = case select_random(Active, [Myself]) of
+                undefined ->
+                    State0;
+                Random ->
+                    %% Trigger connection.
+                    Connections = maybe_connect(Random, Connections0),
+
+                    %% Forward shuffle request.
+                    do_send_message(Random,
+                                    {shuffle, Exchange, arwl(), Myself},
+                                    Connections),
+
+                    State0#state{connections=Connections}
+            end,
 
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
@@ -486,27 +500,32 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
             State1 = add_to_active_view(Peer, PeerTag, State0),
 
             %% Establish connections.
-            Connections = maybe_connect(Peer, Connections0),
+            Connections1 = maybe_connect(Peer, Connections0),
 
             LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
             %% Send the NEIGHBOR message to origin, that will update it's view.
             do_send_message(Peer,
                             {neighbor, Myself0, Tag0, LastDisconnectId, Peer},
-                            Connections),
-
-            %% Notify with event.
-            notify(State1#state{connections=Connections}),
+                            Connections1),
 
             %% Random walk for forward join.
             Peers = members(Active0) -- [Myself0],
 
-            lists:foreach(
-              fun(P) ->
-                      do_send_message(
-                        P,
-                        {forward_join, Peer, PeerTag, PeerEpoch, arwl(), Myself0},
-                        Connections)
-              end, Peers),
+            Connections = lists:foldl(
+              fun(P, AccConnections0) ->
+                  %% Establish connections.
+                  AccConnections = maybe_connect(Peer, AccConnections0),
+
+                  do_send_message(
+                      P,
+                      {forward_join, Peer, PeerTag, PeerEpoch, arwl(), Myself0},
+                      AccConnections),
+
+                  AccConnections
+              end, Connections1, Peers),
+
+            %% Notify with event.
+            notify(State1#state{connections=Connections}),
 
             %% Return.
             State1#state{connections=Connections};
@@ -560,15 +579,15 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
                     State1 = add_to_active_view(Peer, PeerTag, State0),
 
                     %% Establish connections.
-                    Connections = maybe_connect(Peer, Connections0),
+                    Connections1 = maybe_connect(Peer, Connections0),
 
                     LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
                     %% Send neighbor message to origin, that will update it's view.
                     do_send_message(Peer,
                                     {neighbor, Myself0, Tag0, LastDisconnectId, Peer},
-                                    Connections),
+                                    Connections1),
 
-                    State1#state{connections=Connections};
+                    State1#state{connections=Connections1};
                 false ->
                     State0
             end;
@@ -596,7 +615,7 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
                             State3 = add_to_active_view(Peer, PeerTag, State2),
 
                             %% Establish connections.
-                            Connections = maybe_connect(Peer, Connections0),
+                            Connections3 = maybe_connect(Peer, Connections0),
 
                             LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
                             %% Send neighbor message to origin, that will
@@ -604,23 +623,23 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
                             do_send_message(
                                 Peer,
                                 {neighbor, Myself0, Tag0, LastDisconnectId, Peer},
-                                Connections),
+                                Connections3),
 
-                            State3#state{connections=Connections};
+                            State3#state{connections=Connections3};
                         false ->
                             State2
                     end;
                 Random ->
                     %% Establish any new connections.
-                    Connections = maybe_connect(Random, Connections0),
+                    Connections2 = maybe_connect(Random, Connections0),
 
                     %% Forward join.
                     do_send_message(
                         Random,
                         {forward_join, Peer, PeerTag, PeerEpoch, TTL - 1, Myself0},
-                        Connections),
+                        Connections2),
 
-                    State2#state{connections=Connections}
+                    State2#state{connections=Connections2}
             end
     end,
 
@@ -657,13 +676,25 @@ handle_message({disconnect, Peer, DisconnectId},
             %% Trigger disconnection.
             Connections = disconnect(Peer, Connections0),
 
-            {noreply, State1#state{connections=Connections,
-                                   recv_message_map=RecvMessageMap}}
+            State = case sets:size(Active) == 1 of
+                        true ->
+                            lager:info("Node ~p is isolated.", [Myself0]),
+                            move_random_peer_from_passive_to_active(
+                                State1#state{connections=Connections,
+                                             recv_message_map=RecvMessageMap});
+                        false ->
+                            State1#state{connections=Connections,
+                                         recv_message_map=RecvMessageMap}
+                    end,
+
+            {noreply, State}
     end;
 
 %% @private
-handle_message({neighbor_request, Peer, Priority, PeerTag, DisconnectId},
+handle_message({neighbor_request, Peer, Priority, PeerTag, DisconnectId, Exchange},
                #state{myself=Myself0,
+                      active=Active0,
+                      passive=Passive0,
                       tag=Tag0,
                       connections=Connections0,
                       sent_message_map=SentMessageMap0,
@@ -674,35 +705,49 @@ handle_message({neighbor_request, Peer, Priority, PeerTag, DisconnectId},
     %% Establish connections.
     Connections = maybe_connect(Peer, Connections0),
 
-    State = case neighbor_acceptable(Priority, PeerTag, State0) of
-                true ->
-                    case is_addable(DisconnectId, Peer, SentMessageMap0) of
-                        true ->
-                            LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
-                            %% Reply to acknowledge the neighbor was accepted.
-                            do_send_message(
-                                Peer,
-                                {neighbor_accepted, Myself0, Tag0, LastDisconnectId},
+    Exchange_Ack0 = %% Myself.
+                    [Myself0] ++
+
+                    % Random members of the active list.
+                    select_random_sublist(Active0, k_active()) ++
+
+                    %% Random members of the passive list.
+                    select_random_sublist(Passive0, k_passive()),
+
+    Exchange_Ack = lists:usort(Exchange_Ack0),
+
+    State2 =
+        case neighbor_acceptable(Priority, PeerTag, State0) of
+            true ->
+                case is_addable(DisconnectId, Peer, SentMessageMap0) of
+                    true ->
+                        LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
+                        %% Reply to acknowledge the neighbor was accepted.
+                        do_send_message(
+                            Peer,
+                            {neighbor_accepted, Myself0, Tag0, LastDisconnectId, Exchange_Ack},
+                            Connections),
+
+                        State1 = add_to_active_view(Peer, PeerTag, State0),
+                        State1#state{connections=Connections};
+                    false ->
+                        %% Reply to acknowledge the neighbor was rejected.
+                        do_send_message(Peer,
+                                        {neighbor_rejected, Myself0, Exchange_Ack},
+                                        Connections),
+
+                        State0#state{connections=Connections}
+                end;
+            false ->
+                %% Reply to acknowledge the neighbor was rejected.
+                do_send_message(Peer,
+                                {neighbor_rejected, Myself0},
                                 Connections),
 
-                            State1 = add_to_active_view(Peer, PeerTag, State0),
-                            State1#state{connections=Connections};
-                        false ->
-                            %% Reply to acknowledge the neighbor was rejected.
-                            do_send_message(Peer,
-                                            {neighbor_rejected, Myself0},
-                                            Connections),
+                State0#state{connections=Connections}
+        end,
 
-                            State0#state{connections=Connections}
-                    end;
-                false ->
-                    %% Reply to acknowledge the neighbor was rejected.
-                    do_send_message(Peer,
-                                    {neighbor_rejected, Myself0},
-                                    Connections),
-
-                    State0#state{connections=Connections}
-            end,
+    State = merge_exchange(Exchange, State2),
 
     %% Notify with event.
     notify(State),
@@ -710,7 +755,7 @@ handle_message({neighbor_request, Peer, Priority, PeerTag, DisconnectId},
     {noreply, State};
 
 %% @private
-handle_message({neighbor_rejected, Peer},
+handle_message({neighbor_rejected, Peer, Exchange},
                #state{myself=Myself0,
                       connections=Connections0} = State0) ->
     lager:info("Node ~p received the NEIGHBOR_REJECTED message from ~p",
@@ -719,22 +764,26 @@ handle_message({neighbor_rejected, Peer},
     %% Trigger disconnection.
     Connections = disconnect(Peer, Connections0),
 
-    {noreply, State0#state{connections=Connections}};
+    State = merge_exchange(Exchange, State0#state{connections=Connections}),
+
+    {noreply, State};
 
 %% @private
-handle_message({neighbor_accepted, Peer, PeerTag, DisconnectId},
+handle_message({neighbor_accepted, Peer, PeerTag, DisconnectId, Exchange},
                #state{myself=Myself0,
                       sent_message_map=SentMessageMap0} = State0) ->
     lager:info("Node ~p received the NEIGHBOR_ACCEPTED message from ~p with ~p",
                [Myself0, Peer, DisconnectId]),
 
-    State = case is_addable(DisconnectId, Peer, SentMessageMap0) of
-                true ->
-                    %% Add node into the active view.
-                    add_to_active_view(Peer, PeerTag, State0);
-                false ->
-                    State0
-            end,
+    State1 = case is_addable(DisconnectId, Peer, SentMessageMap0) of
+                 true ->
+                     %% Add node into the active view.
+                     add_to_active_view(Peer, PeerTag, State0);
+                 false ->
+                     State0
+             end,
+
+    State = merge_exchange(Exchange, State1),
 
     %% Notify with event.
     notify(State),
@@ -749,32 +798,40 @@ handle_message({shuffle, Exchange, TTL, Sender},
                #state{myself=Myself,
                       active=Active0,
                       passive=Passive0,
-                      connections=Connections}=State0) ->
+                      connections=Connections0}=State0) ->
     %% Forward to random member of the active view.
     State = case TTL > 0 andalso sets:size(Active0) > 1 of
         true ->
-            case select_random(Active0, [Sender, Myself]) of
-                undefined ->
-                    ok;
-                Random ->
-                    %% Forward shuffle until random walk complete.
-                    do_send_message(Random,
-                                    {shuffle, Exchange, TTL - 1, Myself},
-                                    Connections)
-            end,
+            State1 = case select_random(Active0, [Sender, Myself]) of
+                         undefined ->
+                             State0;
+                         Random ->
+                             %% Trigger connection.
+                             Connections1 = maybe_connect(Random, Connections0),
 
-            State0;
+                             %% Forward shuffle until random walk complete.
+                             do_send_message(Random,
+                                             {shuffle, Exchange, TTL - 1, Myself},
+                                             Connections1),
+
+                             State0#state{connections=Connections1}
+                     end,
+
+            State1;
         false ->
             %% Randomly select nodes from the passive view and respond.
             ResponseExchange = select_random_sublist(Passive0,
                                                      length(Exchange)),
 
+            %% Trigger connection.
+            Connections2 = maybe_connect(Sender, Connections0),
+
             do_send_message(Sender,
                             {shuffle_reply, ResponseExchange, Myself},
-                            Connections),
+                            Connections2),
 
-            State1 = merge_exchange(Exchange, State0),
-            State1
+            State2 = merge_exchange(Exchange, State0#state{connections=Connections2}),
+            State2
     end,
     {noreply, State};
 
@@ -1070,6 +1127,9 @@ drop_random_element_from_active_view(
             State = add_to_passive_view(Peer,
                                         State0#state{active=Active}),
 
+            %% Trigger connection.
+            Connections1 = maybe_connect(Peer, Connections0),
+
             %% Get next disconnect id for the peer.
             NextId = get_next_id(Peer, Epoch0, SentMessageMap0),
             %% Update the SentMessageMap.
@@ -1078,10 +1138,10 @@ drop_random_element_from_active_view(
             %% Let peer know we are disconnecting them.
             do_send_message(Peer,
                             {disconnect, Myself0, NextId},
-                            Connections0),
+                            Connections1),
 
             %% Trigger disconnection.
-            Connections = disconnect(Peer, Connections0),
+            Connections = disconnect(Peer, Connections1),
 
             State#state{connections=Connections,
                         sent_message_map=SentMessageMap}
@@ -1242,6 +1302,7 @@ is_addable(PeerEpoch, Peer, SentMessageMap) ->
 %% @private
 move_random_peer_from_passive_to_active(
         #state{myself=Myself0,
+               active=Active0,
                passive=Passive0,
                tag=Tag0,
                connections=Connections0,
@@ -1253,13 +1314,24 @@ move_random_peer_from_passive_to_active(
         Random ->
             lager:info("Node ~p sends the NEIGHBOR_REQUEST to ~p", [Myself0, Random]),
 
+            Exchange0 = %% Myself.
+                        [Myself0] ++
+
+                        % Random members of the active list.
+                        select_random_sublist(Active0, k_active()) ++
+
+                        %% Random members of the passive list.
+                        select_random_sublist(Passive0, k_passive()),
+
+            Exchange = lists:usort(Exchange0),
+
             %% Trigger connection.
             Connections = maybe_connect(Random, Connections0),
 
             LastDisconnectId = get_current_id(Random, RecvMessageMap0),
             do_send_message(
                 Random,
-                {neighbor_request, Myself0, high, Tag0, LastDisconnectId},
+                {neighbor_request, Myself0, high, Tag0, LastDisconnectId, Exchange},
                 Connections),
 
             State0#state{connections=Connections}
