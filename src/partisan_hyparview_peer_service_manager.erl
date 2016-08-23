@@ -986,7 +986,13 @@ do_send_message(Name, Message, Connections) when is_atom(Name) ->
             %% Node was connected but is now disconnected.
             {error, disconnected};
         {ok, Pid} ->
-            gen_server:call(Pid, {send_message, Message});
+            try
+                gen_server:call(Pid, {send_message, Message})
+            catch
+                _:Error ->
+                    lager:info("Fail to send a message to ~p: ~p", [Name, Error]),
+                    {error, Error}
+            end;
         error ->
             %% Node has not been connected yet.
             {error, not_yet_connected}
