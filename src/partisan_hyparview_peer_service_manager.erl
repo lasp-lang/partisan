@@ -538,14 +538,21 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
 %% @private
 handle_message({neighbor, Peer, PeerTag, DisconnectId, _Sender},
                #state{myself=Myself0,
+                      connections=Connections0,
                       sent_message_map=SentMessageMap0}=State0) ->
     lager:info("Node ~p received the NEIGHBOR message from ~p with ~p",
                [Myself0, Peer, PeerTag]),
 
     State = case is_addable(DisconnectId, Peer, SentMessageMap0) of
                 true ->
+                    %% Establish connections.
+                    Connections = maybe_connect(Peer, Connections0),
+
                     %% Add node into the active view.
-                    add_to_active_view(Peer, PeerTag, State0);
+                    add_to_active_view(
+                        Peer,
+                        PeerTag,
+                        State0#state{connections=Connections});
                 false ->
                     State0
             end,
