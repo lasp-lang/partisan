@@ -351,7 +351,7 @@ handle_info(random_promotion, #state{myself=Myself0,
                     %% Do nothing if the active view is full.
                     State0;
                 false ->
-                    lager:info("Random promotion for node ~p", [Myself0]),
+                    % lager:info("Random promotion for node ~p", [Myself0]),
                     move_random_peer_from_passive_to_active(State0)
             end,
 
