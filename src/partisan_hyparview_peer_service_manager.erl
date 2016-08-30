@@ -342,8 +342,7 @@ handle_cast(Msg, State) ->
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
 
-handle_info(random_promotion, #state{myself=Myself0,
-                                     active=Active0,
+handle_info(random_promotion, #state{active=Active0,
                                      reserved=Reserved0,
                                      max_active_size=MaxActiveSize0}=State0) ->
     State = case is_full({active, Active0, Reserved0}, MaxActiveSize0) of
