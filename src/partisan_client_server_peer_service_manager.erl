@@ -280,7 +280,6 @@ handle_info({connected, Node, TheirTag, _RemoteState},
 
                     lager:info("Join ACCEPTED with ~p; node is ~p and we are ~p",
                                [Node, TheirTag, OurTag]),
-                    lager:info("New membership: ~p", [Membership]),
 
                     %% Return.
                     {noreply, State#state{pending=Pending,
@@ -550,7 +549,6 @@ shuffle(L) ->
 
 %% @private
 accept_join_with_tag(OurTag, TheirTag) ->
-    lager:info("Accepting join for: ~p ~p", [OurTag, TheirTag]),
     case OurTag of
         server ->
             case TheirTag of
