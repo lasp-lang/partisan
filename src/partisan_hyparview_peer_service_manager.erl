@@ -842,7 +842,6 @@ handle_message({shuffle, Exchange, TTL, Sender},
     {noreply, State};
 
 handle_message({forward_message, ServerRef, Message}, State) ->
-    lager:info("Forwarding message to process ~p ~p", [ServerRef, Message]),
     gen_server:cast(ServerRef, Message),
     {noreply, State}.
 
