@@ -273,6 +273,8 @@ handle_call({send_message, Name, Message}, _From,
 
 handle_call({forward_message, Name, ServerRef, Message}, _From,
             #state{connections=Connections0}=State) ->
+    lager:info("Forwarding message to peer: ~p ~p", [Name, Message]),
+
     Result = do_send_message(Name,
                              {forward_message, ServerRef, Message},
                              Connections0),
@@ -840,6 +842,7 @@ handle_message({shuffle, Exchange, TTL, Sender},
     {noreply, State};
 
 handle_message({forward_message, ServerRef, Message}, State) ->
+    lager:info("Forwarding message to process ~p ~p", [ServerRef, Message]),
     gen_server:cast(ServerRef, Message),
     {noreply, State}.
 
