@@ -79,6 +79,7 @@
                 tag :: tag(),
                 connections :: connections(),
                 max_active_size :: non_neg_integer(),
+                min_active_size :: non_neg_integer(),
                 max_passive_size :: non_neg_integer(),
                 epoch :: epoch(),
                 sent_message_map :: message_id_store(),
@@ -185,6 +186,7 @@ init([]) ->
 
     %% Get the default configuration.
     MaxActiveSize = partisan_config:get(max_active_size, 6),
+    MinActiveSize = partisan_config:get(min_active_size, 3),
     MaxPassiveSize = partisan_config:get(max_passive_size, 30),
 
     %% Get tag, if set.
@@ -212,6 +214,7 @@ init([]) ->
                         tag=Tag,
                         connections=Connections,
                         max_active_size=MaxActiveSize,
+                        min_active_size=MinActiveSize,
                         max_passive_size=MaxPassiveSize,
                         epoch=Epoch + 1,
                         sent_message_map=SentMessageMap,
@@ -344,10 +347,11 @@ handle_cast(Msg, State) ->
 
 handle_info(random_promotion, #state{active=Active0,
                                      reserved=Reserved0,
-                                     max_active_size=MaxActiveSize0}=State0) ->
-    State = case is_full({active, Active0, Reserved0}, MaxActiveSize0) of
+                                     min_active_size=MinActiveSize0}=State0) ->
+    State = case has_reached_the_limit({active, Active0, Reserved0},
+                                       MinActiveSize0) of
                 true ->
-                    %% Do nothing if the active view is full.
+                    %% Do nothing if the active view reaches the MinActiveSize.
                     State0;
                 false ->
                     % lager:info("Random promotion for node ~p", [Myself0]),
@@ -1361,3 +1365,16 @@ schedule_random_promotion() ->
     erlang:send_after(?RANDOM_PROMOTION_INTERVAL,
                       ?MODULE,
                       random_promotion).
+
+%% @private
+has_reached_the_limit({active, Active, Reserved}, LimitActiveSize) ->
+    %% Find the slots that are reserved, but not filled.
+    Open = dict:fold(fun(Key, Value, Acc) ->
+        case Value of
+            undefined ->
+                [Key | Acc];
+            _ ->
+                Acc
+        end
+                     end, [], Reserved),
+    sets:size(Active) + length(Open) >= LimitActiveSize.
