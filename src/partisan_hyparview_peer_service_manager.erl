@@ -199,8 +199,13 @@ init([]) ->
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
 
-    %% Schedule periodic random promotion.
-    schedule_random_promotion(),
+    %% Schedule periodic random promotion when it is enabled.
+    case partisan_config:get(random_promotion, true) of
+        true ->
+            schedule_random_promotion();
+        false ->
+            ok
+    end,
 
     %% Verify we don't have too many reservations.
     case length(Reservations) > MaxActiveSize of
