@@ -68,6 +68,14 @@ init([Peer, From]) ->
     {reply, term(), #state{}}.
 
 %% @private
+handle_call({send_message, Message}, _From, #state{socket=Socket}=State) ->
+    case gen_tcp:send(Socket, encode(Message)) of
+        ok ->
+            {reply, ok, State};
+        Error ->
+            lager:info("Message failed to send: ~p", [Error]),
+            {reply, Error, State}
+    end;
 handle_call(Msg, _From, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
     {reply, ok, State}.

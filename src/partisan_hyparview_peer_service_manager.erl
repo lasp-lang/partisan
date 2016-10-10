@@ -25,6 +25,7 @@
 -behaviour(partisan_peer_service_manager).
 
 -define(PASSIVE_VIEW_MAINTENANCE_INTERVAL, 10000).
+-define(RANDOM_PROMOTION_INTERVAL, 5000).
 
 -include("partisan.hrl").
 
@@ -62,8 +63,6 @@
 
 -type active() :: sets:set(node_spec()).
 -type passive() :: sets:set(node_spec()).
--type pending() :: sets:set(node_spec()).
--type suspected() :: sets:set(node_spec()).
 -type reserved() :: dict:dict(atom(), node_spec()).
 -type tag() :: atom().
 %% The epoch indicates how many times the node is restarted.
@@ -76,16 +75,15 @@
 -record(state, {myself :: node_spec(),
                 active :: active(),
                 passive :: passive(),
-                pending :: pending(),
                 reserved :: reserved(),
                 tag :: tag(),
-                suspected :: suspected(),
                 connections :: connections(),
                 max_active_size :: non_neg_integer(),
+                min_active_size :: non_neg_integer(),
                 max_passive_size :: non_neg_integer(),
                 epoch :: epoch(),
                 sent_message_map :: message_id_store(),
-                ack_message_map :: message_id_store()}).
+                recv_message_map :: message_id_store()}).
 
 %%%===================================================================
 %%% API
@@ -180,16 +178,15 @@ init([]) ->
     process_flag(trap_exit, true),
 
     {Active, Passive, Epoch} = maybe_load_state_from_disk(),
-    Pending = sets:new(),
-    Suspected = sets:new(),
     Connections = dict:new(),
     Myself = myself(),
 
     SentMessageMap = dict:new(),
-    AckMessageMap = dict:new(),
+    RecvMessageMap = dict:new(),
 
     %% Get the default configuration.
     MaxActiveSize = partisan_config:get(max_active_size, 6),
+    MinActiveSize = partisan_config:get(min_active_size, 3),
     MaxPassiveSize = partisan_config:get(max_passive_size, 30),
 
     %% Get tag, if set.
@@ -202,24 +199,31 @@ init([]) ->
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
 
+    %% Schedule periodic random promotion when it is enabled.
+    case partisan_config:get(random_promotion, true) of
+        true ->
+            schedule_random_promotion();
+        false ->
+            ok
+    end,
+
     %% Verify we don't have too many reservations.
     case length(Reservations) > MaxActiveSize of
         true ->
             {stop, reservation_limit_exceeded};
         false ->
             {ok, #state{myself=Myself,
-                        pending=Pending,
                         active=Active,
                         passive=Passive,
                         reserved=Reserved,
                         tag=Tag,
-                        suspected=Suspected,
                         connections=Connections,
                         max_active_size=MaxActiveSize,
+                        min_active_size=MinActiveSize,
                         max_passive_size=MaxPassiveSize,
                         epoch=Epoch + 1,
                         sent_message_map=SentMessageMap,
-                        ack_message_map=AckMessageMap}}
+                        recv_message_map=RecvMessageMap}}
     end.
 
 %% @private
@@ -270,37 +274,22 @@ handle_call(passive, _From, #state{passive=Passive}=State) ->
     {reply, {ok, Passive}, State};
 
 handle_call({send_message, Name, Message}, _From,
-            #state{active=Active,
-                   pending=Pending,
-                   connections=Connections0}=State) ->
-
-    %% Establish any new connections.
-    Connections = establish_connections(Pending,
-                                        Active,
-                                        Connections0),
-
-    Result = do_send_message(Name, Message, Connections),
+            #state{connections=Connections0}=State) ->
+    Result = do_send_message(Name, Message, Connections0),
 
     {reply, Result, State};
 
 handle_call({forward_message, Name, ServerRef, Message}, _From,
-            #state{active=Active,
-                   pending=Pending,
-                   connections=Connections0}=State) ->
-
-    %% Establish any new connections.
-    Connections = establish_connections(Pending,
-                                        Active,
-                                        Connections0),
-
+            #state{connections=Connections0}=State) ->
     Result = do_send_message(Name,
                              {forward_message, ServerRef, Message},
-                             Connections),
+                             Connections0),
 
     {reply, Result, State};
 
 handle_call({receive_message, Message}, _From, State) ->
-    handle_message(Message, State);
+    gen_server:cast(?MODULE, {receive_message, Message}),
+    {reply, ok, State};
 
 handle_call(members, _From, #state{myself=_Myself,
                                    active=Active}=State) ->
@@ -320,24 +309,29 @@ handle_call(Msg, _From, State) ->
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
 
 handle_cast({join, Peer},
-            #state{pending=Pending0,
-                   connections=Connections0}=State) ->
-    lager:info("JOIN issued for ~p", [Peer]),
-
-    %% Add to list of pending connections.
-    Pending = add_to_pending(Peer, Pending0),
-
+            #state{myself=Myself0,
+                   tag=Tag0,
+                   connections=Connections0,
+                   epoch=Epoch0}=State0) ->
     %% Trigger connection.
     Connections = maybe_connect(Peer, Connections0),
 
+    lager:info("Node ~p sends the JOIN message to ~p", [Myself0, Peer]),
+    %% Send the JOIN message to the peer.
+    do_send_message(Peer,
+                    {join, Myself0, Tag0, Epoch0},
+                    Connections),
+
     %% Return.
-    {noreply, State#state{pending=Pending, connections=Connections}};
+    {noreply, State0#state{connections=Connections}};
+
+handle_cast({receive_message, Message}, State0) ->
+    handle_message(Message, State0);
 
 %% @doc Handle disconnect messages.
 handle_cast({disconnect, Peer}, #state{active=Active0,
                                        connections=Connections0}=State0) ->
-    DisconnectTriggered = get_disconnect_trigger(Peer, Connections0),
-    case sets:is_element(Peer, Active0) andalso DisconnectTriggered of
+    case sets:is_element(Peer, Active0) of
         true ->
             %% If a member of the active view, remove it.
             Active = sets:del_element(Peer, Active0),
@@ -349,39 +343,6 @@ handle_cast({disconnect, Peer}, #state{active=Active0,
             {noreply, State0}
     end;
 
-handle_cast({suspected, Peer}, #state{myself=Myself,
-                                      active=Active0,
-                                      passive=Passive0,
-                                      pending=Pending0,
-                                      suspected=Suspected0,
-                                      connections=Connections0}=State) ->
-    lager:info("Node ~p suspected of failure.", [Peer]),
-
-    %% Select random peer from passive view, and attempt to connect it.
-    %% If it successfully connects, it will replace the failed node in
-    %% the active view.
-    Random = select_random(Passive0, [Myself]),
-
-    %% Add to list of pending connections.
-    Pending = add_to_pending(Random, Pending0),
-
-    %% Trigger connection.
-    Connections = maybe_connect(Random, Connections0),
-
-    %% NOTE: The failed process should automatically cause the node to
-    %% be added to the suspected list when the 'EXIT' is received,
-    %% therefore, this code is superfluous.
-    Suspected = case is_in_active_view(Peer, Active0) of
-        true ->
-            add_to_suspected(Peer, Suspected0);
-        false ->
-            Suspected0
-    end,
-
-    {noreply, State#state{pending=Pending,
-                          suspected=Suspected,
-                          connections=Connections}};
-
 handle_cast(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
     {noreply, State}.
@@ -389,18 +350,29 @@ handle_cast(Msg, State) ->
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
 
+handle_info(random_promotion, #state{active=Active0,
+                                     reserved=Reserved0,
+                                     min_active_size=MinActiveSize0}=State0) ->
+    State = case has_reached_the_limit({active, Active0, Reserved0},
+                                       MinActiveSize0) of
+                true ->
+                    %% Do nothing if the active view reaches the MinActiveSize.
+                    State0;
+                false ->
+                    % lager:info("Random promotion for node ~p", [Myself0]),
+                    move_random_peer_from_passive_to_active(State0)
+            end,
+
+    %% Schedule periodic random promotion.
+    schedule_random_promotion(),
+
+    {noreply, State};
+
 handle_info(passive_view_maintenance,
             #state{myself=Myself,
                    active=Active,
                    passive=Passive,
-                   pending=Pending,
-                   connections=Connections0}=State) ->
-
-    %% Establish any new connections.
-    Connections = establish_connections(Pending,
-                                        Active,
-                                        Connections0),
-
+                   connections=Connections0}=State0) ->
     Exchange0 = %% Myself.
                 [Myself] ++
 
@@ -413,29 +385,32 @@ handle_info(passive_view_maintenance,
     Exchange = lists:usort(Exchange0),
 
     %% Select random member of the active list.
-    case select_random(Active, [Myself]) of
-        undefined ->
-            ok;
-        Random ->
-            %% Forward shuffle request.
-            do_send_message(Random,
-                            {shuffle, Exchange, arwl(), Myself},
-                            Connections)
-    end,
+    State = case select_random(Active, [Myself]) of
+                undefined ->
+                    State0;
+                Random ->
+                    %% Trigger connection.
+                    Connections = maybe_connect(Random, Connections0),
+
+                    %% Forward shuffle request.
+                    do_send_message(Random,
+                                    {shuffle, Exchange, arwl(), Myself},
+                                    Connections),
+
+                    State0#state{connections=Connections}
+            end,
 
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
 
-    {noreply, State#state{connections=Connections}};
+    {noreply, State};
 
 handle_info({'EXIT', From, _Reason},
             #state{active=Active0,
                    passive=Passive0,
-                   pending=Pending0,
-                   suspected=Suspected0,
-                   connections=Connections0}=State) ->
+                   connections=Connections0}=State0) ->
     %% Prune active connections from dictionary.
-    FoldFun = fun(K, {V, _DisconnectTriggered}, {Peer, AccIn}) ->
+    FoldFun = fun(K, V, {Peer, AccIn}) ->
                       case V =:= From of
                           true ->
                               %% This *should* only ever match one.
@@ -443,32 +418,14 @@ handle_info({'EXIT', From, _Reason},
                               {K, AccOut};
                           false ->
                               {Peer, AccIn}
-                      end;
-                 (_K, undefined, {Peer, AccIn}) ->
-                     {Peer, AccIn}
+                      end
               end,
     {Peer, Connections} = dict:fold(FoldFun,
                                     {undefined, Connections0},
                                     Connections0),
 
-    %% If the connection was pending, and it exists in the passive view,
-    %% that means we were attemping to use it as a replacement in the
-    %% active view.
-    %%
-    %% We do the following:
-    %%
-    %% If pending, remove from pending.
-    %%
-    Pending = case is_pending(Peer, Pending0) of
-        true ->
-            remove_from_pending(Peer, Pending0);
-        false ->
-            Pending0
-    end,
-
     %% If it was in the passive view and our connection attempt failed,
     %% remove from the passive view altogether.
-    %%
     Passive = case is_in_passive_view(Peer, Passive0) of
         true ->
             remove_from_passive_view(Peer, Passive0);
@@ -476,35 +433,33 @@ handle_info({'EXIT', From, _Reason},
             Passive0
     end,
 
-    %% If this node was a member of the active view, add it to a list of
-    %% suspected active nodes that have failed and asynchronously fire
-    %% off a message to schedule a connection to a random member of the
-    %% passive set.
-    %%
-    Suspected = case is_in_active_view(Peer, Active0) of
-        true ->
-            add_to_suspected(Peer, Suspected0);
-        false ->
-            Suspected0
-    end,
+    %% If it was in the active view and our connection attempt failed,
+    %% remove from the active view altogether.
+    {Active, RemovedFromActive} =
+        case is_in_active_view(Peer, Active0) of
+            true ->
+                {remove_from_active_view(Peer, Active0), true};
+            false ->
+                {Active0, false}
+        end,
 
-    %% If there are nodes still suspected of failure, schedule
-    %% asynchronous message to find a replacement for these nodes.
-    %%
-    case is_empty(Suspected) of
-        true ->
-            ok;
-        false ->
-            gen_server:cast(?MODULE, {suspected, Peer})
-    end,
+    State = case RemovedFromActive of
+                true ->
+                    move_random_peer_from_passive_to_active(
+                        State0#state{active=Active,
+                                     passive=Passive,
+                                     connections=Connections});
+                false ->
+                    State0#state{active=Active,
+                                 passive=Passive,
+                                 connections=Connections}
+            end,
 
-    {noreply, State#state{pending=Pending,
-                          passive=Passive,
-                          suspected=Suspected,
-                          connections=Connections}};
+    {noreply, State};
 
-handle_info({connected, Peer, Tag, PeerEpoch, _RemoteState}, State) ->
-    handle_connect(Peer, Tag, PeerEpoch, State);
+handle_info({connected, Peer, _Tag, _PeerEpoch, _RemoteState}, State) ->
+    lager:info("Node ~p is connected", [Peer]),
+    {noreply, State};
 
 handle_info(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
@@ -513,15 +468,13 @@ handle_info(Msg, State) ->
 %% @private
 -spec terminate(term(), #state{}) -> term().
 terminate(_Reason, #state{connections=Connections}=_State) ->
-    dict:map(fun(_K, {Pid, _DisconnectTriggered}) ->
+    dict:map(fun(_K, Pid) ->
                      try
                          gen_server:stop(Pid, normal, infinity)
                      catch
                          _:_ ->
                              ok
-                     end;
-                (_K, undefined) ->
-                     ok
+                     end
              end, Connections),
     ok.
 
@@ -535,59 +488,77 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private
-handle_message({disconnect, Peer, DisconnectId},
-               #state{myself=Myself,
+handle_message({join, Peer, PeerTag, PeerEpoch},
+               #state{myself=Myself0,
                       active=Active0,
+                      tag=Tag0,
                       connections=Connections0,
-                      ack_message_map=AckMessageMap0}=State0) ->
-    lager:info("Node ~p received disconnect from ~p with ~p",
-               [Myself, Peer, DisconnectId]),
+                      sent_message_map=SentMessageMap0,
+                      recv_message_map=RecvMessageMap0}=State0) ->
+    lager:info("Node ~p received the JOIN message from ~p with ~p",
+               [Myself0, Peer, PeerEpoch]),
 
-    %% Let peer know we received the disconnect message.
-    do_send_message(Peer,
-                    {disconnect_ack, Myself, DisconnectId},
-                    Connections0),
-
-    case is_valid_disconnect(Peer, DisconnectId, AckMessageMap0) of
-        false ->
-            %% Ignore the older disconnect message.
-            {reply, ok, State0};
+    IsAddable = is_addable(PeerEpoch, Peer, SentMessageMap0),
+    NotInActiveView = not sets:is_element(Peer, Active0),
+    State = case IsAddable andalso NotInActiveView of
         true ->
-            %% Remove from active
-            Active = sets:del_element(Peer, Active0),
-            lager:info("Node ~p active view: ~p", [Myself, sets:to_list(Active)]),
+            %% Add to active view.
+            State1 = add_to_active_view(Peer, PeerTag, State0),
 
-            %% Add to passive view.
-            State = add_to_passive_view(Peer,
-                                        State0#state{active=Active}),
+            %% Establish connections.
+            Connections1 = maybe_connect(Peer, Connections0),
 
-            %% Update the AckMessageMap.
-            AckMessageMap = dict:store(Peer, DisconnectId, AckMessageMap0),
+            LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
+            %% Send the NEIGHBOR message to origin, that will update it's view.
+            do_send_message(Peer,
+                            {neighbor, Myself0, Tag0, LastDisconnectId, Peer},
+                            Connections1),
 
-            {reply, ok, State#state{ack_message_map=AckMessageMap}}
-    end;
+            %% Random walk for forward join.
+            Peers = members(Active0) -- [Myself0],
+
+            Connections = lists:foldl(
+              fun(P, AccConnections0) ->
+                  %% Establish connections.
+                  AccConnections = maybe_connect(Peer, AccConnections0),
+
+                  do_send_message(
+                      P,
+                      {forward_join, Peer, PeerTag, PeerEpoch, arwl(), Myself0},
+                      AccConnections),
+
+                  AccConnections
+              end, Connections1, Peers),
+
+            %% Notify with event.
+            notify(State1#state{connections=Connections}),
+
+            %% Return.
+            State1#state{connections=Connections};
+        false ->
+            State0
+    end,
+
+    {noreply, State};
 
 %% @private
-handle_message({disconnect_ack, Peer, DisconnectId},
-               #state{myself=Myself,
-                      connections=Connections0}=State0) ->
-    lager:info("Node ~p received disconnect_ack from ~p with ~p",
-               [Myself, Peer, DisconnectId]),
-
-    Connections = enable_disconnect_trigger(Peer, Connections0),
-    %% Trigger disconnect message.
-    gen_server:cast(?MODULE, {disconnect, Peer}),
-
-    {reply, ok, State0#state{connections=Connections}};
-
-handle_message({neighbor, Peer, TheirTag, DisconnectId, _Sender},
-               #state{sent_message_map=SentMessageMap0}=State0) ->
-    lager:info("Neighboring with ~p tagged ~p from random walk", [Peer, TheirTag]),
+handle_message({neighbor, Peer, PeerTag, DisconnectId, _Sender},
+               #state{myself=Myself0,
+                      connections=Connections0,
+                      sent_message_map=SentMessageMap0}=State0) ->
+    lager:info("Node ~p received the NEIGHBOR message from ~p with ~p",
+               [Myself0, Peer, PeerTag]),
 
     State = case is_addable(DisconnectId, Peer, SentMessageMap0) of
                 true ->
+                    %% Establish connections.
+                    Connections = maybe_connect(Peer, Connections0),
+
                     %% Add node into the active view.
-                    add_to_active_view(Peer, TheirTag, State0);
+                    add_to_active_view(
+                        Peer,
+                        PeerTag,
+                        State0#state{connections=Connections});
                 false ->
                     State0
             end,
@@ -595,264 +566,291 @@ handle_message({neighbor, Peer, TheirTag, DisconnectId, _Sender},
     %% Notify with event.
     notify(State),
 
-    {reply, ok, State};
+    {noreply, State};
 
 %% @private
-handle_message({neighbor_accepted, Peer, Tag, DisconnectId, Sender},
-               #state{active=Active0,
-                      myself=Myself,
-                      suspected=Suspected0,
-                      reserved=Reserved0,
-                      sent_message_map=SentMessageMap0} = State0) ->
-    lager:info("Neighbor request accepted for peer ~p with tag: ~p", [Peer, Tag]),
+handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
+               #state{myself=Myself0,
+                      active=Active0,
+                      tag=Tag0,
+                      connections=Connections0,
+                      sent_message_map=SentMessageMap0,
+                      recv_message_map=RecvMessageMap0}=State0) ->
+    lager:info("Node ~p received the FORWARD_JOIN message from ~p about ~p",
+               [Myself0, Sender, Peer]),
 
-    %% Select one of the suspected peers to replace: it can't be the
-    %% node we are peering with nor the node we are on.
-    State = case select_random(Suspected0, [Sender, Myself]) of
-        undefined ->
-            %% No more peers are suspected; no change.
-            State0;
-        Random ->
-            case is_addable(DisconnectId, Peer, SentMessageMap0) of
+    State = case TTL =:= 0 orelse sets:size(Active0) =:= 1 of
+        true ->
+            lager:info("FORWARD_JOIN: ttl expired; adding ~p tagged ~p.",
+                       [Peer, PeerTag]),
+
+            IsAddable0 = is_addable(PeerEpoch, Peer, SentMessageMap0),
+            NotInActiveView0 = not sets:is_element(Peer, Active0),
+            case IsAddable0 andalso NotInActiveView0 of
                 true ->
-                    %% Remove from suspected.
-                    Suspected = remove_from_suspected(Random, Suspected0),
+                    %% Add to our active view.
+                    State1 = add_to_active_view(Peer, PeerTag, State0),
 
-                    %% Remove from reserved.
-                    Reserved = remove_from_reserved(Random, Reserved0),
+                    %% Establish connections.
+                    Connections1 = maybe_connect(Peer, Connections0),
 
-                    %% Remove from active view.
-                    Active = remove_from_active_view(Random, Active0),
+                    LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
+                    %% Send neighbor message to origin, that will update it's view.
+                    do_send_message(Peer,
+                                    {neighbor, Myself0, Tag0, LastDisconnectId, Peer},
+                                    Connections1),
 
-                    %% Add to passive.
-                    State1 = add_to_passive_view(
-                               Random, State0#state{suspected=Suspected,
-                                                    reserved=Reserved,
-                                                    active=Active}),
-
-                    %% Add to active view.
-                    add_to_active_view(Peer, Tag, State1);
+                    State1#state{connections=Connections1};
                 false ->
                     State0
+            end;
+        false ->
+            %% If we run out of peers before we hit the PRWL, that's
+            %% fine, because exchanges between peers will eventually
+            %% repair the passive view during shuffles.
+            State2 = case TTL =:= prwl() of
+                         true ->
+                             lager:info("FORWARD_JOIN: Passive walk ttl expired!"),
+                             add_to_passive_view(Peer, State0);
+                         false ->
+                             State0
+                     end,
+
+            %% Don't forward the join to the sender, ourself, or the joining peer.
+            case select_random(Active0, [Sender, Myself0, Peer]) of
+                undefined ->
+                    IsAddable1 = is_addable(PeerEpoch, Peer, SentMessageMap0),
+                    NotInActiveView1 = not sets:is_element(Peer, Active0),
+                    case IsAddable1 andalso NotInActiveView1 of
+                        true ->
+                            lager:info("FORWARD_JOIN: No node for forward."),
+                            %% Add to our active view.
+                            State3 = add_to_active_view(Peer, PeerTag, State2),
+
+                            %% Establish connections.
+                            Connections3 = maybe_connect(Peer, Connections0),
+
+                            LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
+                            %% Send neighbor message to origin, that will
+                            %% update it's view.
+                            do_send_message(
+                                Peer,
+                                {neighbor, Myself0, Tag0, LastDisconnectId, Peer},
+                                Connections3),
+
+                            State3#state{connections=Connections3};
+                        false ->
+                            State2
+                    end;
+                Random ->
+                    %% Establish any new connections.
+                    Connections2 = maybe_connect(Random, Connections0),
+
+                    %% Forward join.
+                    do_send_message(
+                        Random,
+                        {forward_join, Peer, PeerTag, PeerEpoch, TTL - 1, Myself0},
+                        Connections2),
+
+                    State2#state{connections=Connections2}
             end
     end,
 
     %% Notify with event.
     notify(State),
 
-    {reply, ok, State};
+    {noreply, State};
 
-handle_message({neighbor_rejected, Peer, _Sender},
-               #state{connections=Connections0} = State0) ->
-    Connections = enable_disconnect_trigger(Peer, Connections0),
-    %% Trigger disconnect message.
-    gen_server:cast(?MODULE, {disconnect, Peer}),
-
-    {reply, ok, State0#state{connections=Connections}};
-
-handle_message({neighbor_request, Peer, Priority, Tag, DisconnectId, Sender},
-               #state{myself=Myself,
-                      pending=Pending,
-                      active=Active,
+%% @private
+handle_message({disconnect, Peer, DisconnectId},
+               #state{myself=Myself0,
+                      active=Active0,
                       connections=Connections0,
-                      sent_message_map=SentMessageMap,
-                      ack_message_map=AckMessageMap}=State0) ->
-    %% Establish connections.
-    Connections = establish_connections(Pending,
-                                        Active,
-                                        Connections0),
+                      recv_message_map=RecvMessageMap0}=State0) ->
+    lager:info("Node ~p received the DISCONNECT message from ~p with ~p",
+               [Myself0, Peer, DisconnectId]),
 
-    State = case neighbor_acceptable(Priority, Tag, State0) of
-        true ->
-            case is_addable(DisconnectId, Peer, SentMessageMap) of
-                true ->
-                    LastDisconnectId = get_current_id(Peer, AckMessageMap),
-                    %% Reply to acknowledge the neighbor was accepted.
-                    do_send_message(
-                      Sender,
-                      {neighbor_accepted, Peer, Tag, LastDisconnectId, Myself},
-                      Connections),
-
-                    State1 = add_to_active_view(Peer, Tag, State0),
-                    State1#state{connections=Connections};
-                false ->
-                    %% Reply to acknowledge the neighbor was rejected.
-                    do_send_message(Sender,
-                                    {neighbor_rejected, Peer, Myself},
-                                    Connections),
-
-                    State0#state{connections=Connections}
-            end;
+    case is_valid_disconnect(Peer, DisconnectId, RecvMessageMap0) of
         false ->
-            %% Reply to acknowledge the neighbor was rejected.
-            do_send_message(Sender,
-                            {neighbor_rejected, Peer, Myself},
+            %% Ignore the older disconnect message.
+            {noreply, State0};
+        true ->
+            %% Remove from active
+            Active = sets:del_element(Peer, Active0),
+            lager:info("Node ~p active view: ~p", [Myself0, sets:to_list(Active)]),
+
+            %% Add to passive view.
+            State1 = add_to_passive_view(Peer,
+                                         State0#state{active=Active}),
+
+            %% Update the AckMessageMap.
+            RecvMessageMap = dict:store(Peer, DisconnectId, RecvMessageMap0),
+
+            %% Trigger disconnection.
+            Connections = disconnect(Peer, Connections0),
+
+            State = case sets:size(Active) == 1 of
+                        true ->
+                            lager:info("Node ~p is isolated.", [Myself0]),
+                            move_random_peer_from_passive_to_active(
+                                State1#state{connections=Connections,
+                                             recv_message_map=RecvMessageMap});
+                        false ->
+                            State1#state{connections=Connections,
+                                         recv_message_map=RecvMessageMap}
+                    end,
+
+            {noreply, State}
+    end;
+
+%% @private
+handle_message({neighbor_request, Peer, Priority, PeerTag, DisconnectId, Exchange},
+               #state{myself=Myself0,
+                      active=Active0,
+                      passive=Passive0,
+                      tag=Tag0,
+                      connections=Connections0,
+                      sent_message_map=SentMessageMap0,
+                      recv_message_map=RecvMessageMap0}=State0) ->
+    lager:info("Node ~p received the NEIGHBOR_REQUEST message from ~p with ~p",
+               [Myself0, Peer, DisconnectId]),
+
+    %% Establish connections.
+    Connections = maybe_connect(Peer, Connections0),
+
+    Exchange_Ack0 = %% Myself.
+                    [Myself0] ++
+
+                    % Random members of the active list.
+                    select_random_sublist(Active0, k_active()) ++
+
+                    %% Random members of the passive list.
+                    select_random_sublist(Passive0, k_passive()),
+
+    Exchange_Ack = lists:usort(Exchange_Ack0),
+
+    State2 =
+        case neighbor_acceptable(Priority, PeerTag, State0) of
+            true ->
+                case is_addable(DisconnectId, Peer, SentMessageMap0) of
+                    true ->
+                        LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
+                        %% Reply to acknowledge the neighbor was accepted.
+                        do_send_message(
+                            Peer,
+                            {neighbor_accepted, Myself0, Tag0, LastDisconnectId, Exchange_Ack},
                             Connections),
 
-            State0#state{connections=Connections}
-    end,
+                        State1 = add_to_active_view(Peer, PeerTag, State0),
+                        State1#state{connections=Connections};
+                    false ->
+                        %% Reply to acknowledge the neighbor was rejected.
+                        do_send_message(Peer,
+                                        {neighbor_rejected, Myself0, Exchange_Ack},
+                                        Connections),
+
+                        State0#state{connections=Connections}
+                end;
+            false ->
+                %% Reply to acknowledge the neighbor was rejected.
+                do_send_message(Peer,
+                                {neighbor_rejected, Myself0},
+                                Connections),
+
+                State0#state{connections=Connections}
+        end,
+
+    State = merge_exchange(Exchange, State2),
 
     %% Notify with event.
     notify(State),
 
-    {reply, ok, State};
+    {noreply, State};
+
+%% @private
+handle_message({neighbor_rejected, Peer, Exchange},
+               #state{myself=Myself0,
+                      connections=Connections0} = State0) ->
+    lager:info("Node ~p received the NEIGHBOR_REJECTED message from ~p",
+               [Myself0, Peer]),
+
+    %% Trigger disconnection.
+    Connections = disconnect(Peer, Connections0),
+
+    State = merge_exchange(Exchange, State0#state{connections=Connections}),
+
+    {noreply, State};
+
+%% @private
+handle_message({neighbor_accepted, Peer, PeerTag, DisconnectId, Exchange},
+               #state{myself=Myself0,
+                      sent_message_map=SentMessageMap0} = State0) ->
+    lager:info("Node ~p received the NEIGHBOR_ACCEPTED message from ~p with ~p",
+               [Myself0, Peer, DisconnectId]),
+
+    State1 = case is_addable(DisconnectId, Peer, SentMessageMap0) of
+                 true ->
+                     %% Add node into the active view.
+                     add_to_active_view(Peer, PeerTag, State0);
+                 false ->
+                     State0
+             end,
+
+    State = merge_exchange(Exchange, State1),
+
+    %% Notify with event.
+    notify(State),
+
+    {noreply, State};
 
 handle_message({shuffle_reply, Exchange, _Sender}, State0) ->
     State = merge_exchange(Exchange, State0),
-    {reply, ok, State};
+    {noreply, State};
 
 handle_message({shuffle, Exchange, TTL, Sender},
                #state{myself=Myself,
-                      pending=Pending0,
                       active=Active0,
                       passive=Passive0,
                       connections=Connections0}=State0) ->
-    %% Establish connections.
-    Connections = establish_connections(Pending0,
-                                        Active0,
-                                        Connections0),
-
     %% Forward to random member of the active view.
     State = case TTL > 0 andalso sets:size(Active0) > 1 of
         true ->
-            case select_random(Active0, [Sender, Myself]) of
-                undefined ->
-                    ok;
-                Random ->
-                    %% Forward shuffle until random walk complete.
-                    do_send_message(Random,
-                                    {shuffle, Exchange, TTL - 1, Myself},
-                                    Connections)
-            end,
+            State1 = case select_random(Active0, [Sender, Myself]) of
+                         undefined ->
+                             State0;
+                         Random ->
+                             %% Trigger connection.
+                             Connections1 = maybe_connect(Random, Connections0),
 
-            State0#state{connections=Connections};
+                             %% Forward shuffle until random walk complete.
+                             do_send_message(Random,
+                                             {shuffle, Exchange, TTL - 1, Myself},
+                                             Connections1),
+
+                             State0#state{connections=Connections1}
+                     end,
+
+            State1;
         false ->
             %% Randomly select nodes from the passive view and respond.
             ResponseExchange = select_random_sublist(Passive0,
                                                      length(Exchange)),
 
+            %% Trigger connection.
+            Connections2 = maybe_connect(Sender, Connections0),
+
             do_send_message(Sender,
                             {shuffle_reply, ResponseExchange, Myself},
-                            Connections),
+                            Connections2),
 
-            State1 = merge_exchange(Exchange, State0),
-            State1#state{connections=Connections}
+            State2 = merge_exchange(Exchange, State0#state{connections=Connections2}),
+            State2
     end,
-    {reply, ok, State};
+    {noreply, State};
 
-handle_message({forward_join, Peer, Tag, PeerEpoch, TTL, Sender},
-               #state{myself=Myself,
-                      active=Active0,
-                      tag=OurTag,
-                      pending=Pending,
-                      connections=Connections0,
-                      sent_message_map=SentMessageMap,
-                      ack_message_map=AckMessageMap}=State0) ->
-    lager:info("Received forward join for ~p tagged ~p at ~p", [Peer, Tag, Myself]),
-
-    State = case TTL =:= 0 orelse sets:size(Active0) =:= 1 of
-        true ->
-            lager:info("Forward: ttl expired; adding ~p tagged ~p to view on ~p",
-                       [Peer, Tag, Myself]),
-
-            IsAddable0 = is_addable(PeerEpoch, Peer, SentMessageMap),
-            NotInActiveView0 = not sets:is_element(Peer, Active0),
-            case IsAddable0 andalso NotInActiveView0 of
-                true ->
-                    %% Add to our active view.
-                    State1 = #state{active=Active} =
-                                 add_to_active_view(Peer, Tag, State0),
-
-                    %% Establish connections.
-                    Connections = establish_connections(Pending,
-                                                        Active,
-                                                        Connections0),
-
-                    LastDisconnectId = get_current_id(Peer, AckMessageMap),
-                    %% Send neighbor message to origin, that will update it's
-                    %% view.
-                    do_send_message(Peer,
-                                    {neighbor, Myself, OurTag, LastDisconnectId, Peer},
-                                    Connections),
-
-                    State1#state{connections=Connections};
-                false ->
-                    State0
-            end;
-        false ->
-            % lager:info("Forward: ttl not expired!", []),
-
-            %% If we run out of peers before we hit the PRWL, that's
-            %% fine, because exchanges between peers will eventually
-            %% repair the passive view during shuffles.
-            %%
-            State1 = case TTL =:= prwl() of
-                true ->
-                    % lager:info("Passive walk ttl expired!"),
-                    add_to_passive_view(Peer, State0);
-                false ->
-                    State0
-            end,
-
-            %% Don't forward the join to the sender, ourself, or the
-            %% joining peer.
-            %%
-            case select_random(Active0, [Sender, Myself, Peer]) of
-                undefined ->
-                    IsAddable1 = is_addable(PeerEpoch, Peer, SentMessageMap),
-                    NotInActiveView1 = not sets:is_element(Peer, Active0),
-                    case IsAddable1 andalso NotInActiveView1 of
-                        true ->
-                            % lager:error("Forward: no peers to forward to; adding ~p to active view on node ~p.",
-                            %             [Peer, Myself]),
-
-                            %% Add to our active view.
-                            State2 = #state{active=Active} =
-                                         add_to_active_view(Peer, Tag, State1),
-
-                            %% Establish connections.
-                            Connections = establish_connections(Pending,
-                                                                Active,
-                                                                Connections0),
-
-                            LastDisconnectId = get_current_id(Peer, AckMessageMap),
-                            %% Send neighbor message to origin, that will
-                            %% update it's view.
-                            do_send_message(
-                              Peer,
-                              {neighbor, Myself, OurTag, LastDisconnectId, Peer},
-                              Connections),
-
-                            State2#state{connections=Connections};
-                        false ->
-                            State1
-                    end;
-                Random ->
-                    % lager:info("Forward: forwarding join from ~p to ~p",
-                    %            [Myself, Random]),
-
-                    %% Establish any new connections.
-                    Connections = establish_connections(Pending,
-                                                        Active0,
-                                                        Connections0),
-
-                    %% Forward join.
-                    do_send_message(
-                      Random,
-                      {forward_join, Peer, Tag, PeerEpoch, TTL - 1, Myself},
-                      Connections),
-
-                    State1#state{connections=Connections}
-            end
-    end,
-
-    %% Notify with event.
-    notify(State),
-
-    {reply, ok, State};
 handle_message({forward_message, ServerRef, Message}, State) ->
     gen_server:cast(ServerRef, Message),
-    {reply, ok, State}.
+    {noreply, State}.
 
 %% @private
 empty_membership() ->
@@ -926,14 +924,6 @@ members(Set) ->
     sets:to_list(Set).
 
 %% @private
-establish_connections(Pending0, Set0, Connections) ->
-    %% Reconnect disconnected members and members waiting to join.
-    Set = members(Set0),
-    Pending = members(Pending0),
-    AllPeers = lists:keydelete(node(), 1, Set ++ Pending),
-    lists:foldl(fun maybe_connect/2, Connections, AllPeers).
-
-%% @private
 %% Function should enforce the invariant that all cluster members are
 %% keys in the dict pointing to undefined if they are disconnected or a
 %% socket pid if they are connected.
@@ -947,14 +937,14 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
             case connect(Node) of
                 {ok, Pid} ->
                     lager:info("Node ~p connected.", [Node]),
-                    dict:store(Name, {Pid, false}, Connections0);
+                    dict:store(Name, Pid, Connections0);
                 Error ->
                     lager:info("Node ~p failed connection: ~p.", [Node, Error]),
                     dict:store(Name, undefined, Connections0)
             end;
         %% Found in dict and connected.
-        {ok, {Pid, _DisconnectTriggered}} ->
-            dict:store(Name, {Pid, false}, Connections0);
+        {ok, Pid} ->
+            dict:store(Name, Pid, Connections0);
         %% Not present; disconnected.
         error ->
             lager:info("Node ~p never was connected; initiating.", [Node]),
@@ -962,7 +952,7 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
             case connect(Node) of
                 {ok, Pid} ->
                     lager:info("Node ~p connected.", [Node]),
-                    dict:store(Name, {Pid, false}, Connections0);
+                    dict:store(Name, Pid, Connections0);
                 {error, normal} ->
                     %% Node isn't online just yet.
                     dict:store(Name, undefined, Connections0);
@@ -985,7 +975,7 @@ disconnect(Name, Connections) ->
         {ok, undefined} ->
             %% Return original set.
             Connections;
-        {ok, {Pid, _DisconnectTriggered}} ->
+        {ok, Pid} ->
             %% Stop;
             gen_server:stop(Pid),
 
@@ -1003,8 +993,14 @@ do_send_message(Name, Message, Connections) when is_atom(Name) ->
         {ok, undefined} ->
             %% Node was connected but is now disconnected.
             {error, disconnected};
-        {ok, {Pid, _DisconnectTriggered}} ->
-            gen_server:cast(Pid, {send_message, Message});
+        {ok, Pid} ->
+            try
+                gen_server:call(Pid, {send_message, Message})
+            catch
+                _:Error ->
+                    lager:info("Fail to send a message to ~p: ~p", [Name, Error]),
+                    {error, Error}
+            end;
         error ->
             %% Node has not been connected yet.
             {error, not_yet_connected}
@@ -1134,18 +1130,19 @@ is_full({passive, Passive}, MaxPassiveSize) ->
     sets:size(Passive) >= MaxPassiveSize.
 
 %% @doc Process of removing a random element from the active view.
-drop_random_element_from_active_view(#state{myself=Myself,
-                                            active=Active0,
-                                            reserved=Reserved,
-                                            connections=Connections0,
-                                            epoch=Epoch,
-                                            sent_message_map=SentMessageMap0}=State0) ->
+drop_random_element_from_active_view(
+        #state{myself=Myself0,
+               active=Active0,
+               reserved=Reserved0,
+               connections=Connections0,
+               epoch=Epoch0,
+               sent_message_map=SentMessageMap0}=State0) ->
     ReservedPeers = dict:fold(fun(_K, V, Acc) -> [V | Acc] end,
                               [],
-                              Reserved),
+                              Reserved0),
     %% Select random peer, but omit the peers in reserved slots and omit
     %% ourself from the active view.
-    case select_random(Active0, [Myself, ReservedPeers]) of
+    case select_random(Active0, [Myself0, ReservedPeers]) of
         undefined ->
             State0;
         Peer ->
@@ -1158,17 +1155,24 @@ drop_random_element_from_active_view(#state{myself=Myself,
             State = add_to_passive_view(Peer,
                                         State0#state{active=Active}),
 
+            %% Trigger connection.
+            Connections1 = maybe_connect(Peer, Connections0),
+
             %% Get next disconnect id for the peer.
-            NextId = get_next_id(Peer, Epoch, SentMessageMap0),
+            NextId = get_next_id(Peer, Epoch0, SentMessageMap0),
             %% Update the SentMessageMap.
             SentMessageMap = dict:store(Peer, NextId, SentMessageMap0),
 
             %% Let peer know we are disconnecting them.
             do_send_message(Peer,
-                            {disconnect, Myself, NextId},
-                            Connections0),
+                            {disconnect, Myself0, NextId},
+                            Connections1),
 
-            State#state{sent_message_map=SentMessageMap}
+            %% Trigger disconnection.
+            Connections = disconnect(Peer, Connections1),
+
+            State#state{connections=Connections,
+                        sent_message_map=SentMessageMap}
     end.
 
 %% @private
@@ -1188,118 +1192,12 @@ is_in_passive_view(Peer, Passive) ->
     sets:is_element(Peer, Passive).
 
 %% @private
-is_pending(Peer, Pending) ->
-    sets:is_element(Peer, Pending).
-
-%% @private
-add_to_pending(Peer, Pending) ->
-    sets:add_element(Peer, Pending).
-
-%% @private
-remove_from_pending(Peer, Pending) ->
-    sets:del_element(Peer, Pending).
-
-%% @private
 remove_from_active_view(Peer, Active) ->
     sets:del_element(Peer, Active).
 
 %% @private
 is_in_active_view(Peer, Active) ->
     sets:is_element(Peer, Active).
-
-%% @private
-add_to_suspected(Peer, Suspected) ->
-    sets:add_element(Peer, Suspected).
-
-%% @private
-remove_from_suspected(Peer, Suspected) ->
-    sets:del_element(Peer, Suspected).
-
-%% @private
-is_empty(View) ->
-    sets:size(View) =:= 0.
-
-%% @private
-is_not_empty(View) ->
-    sets:size(View) > 0.
-
-%% @private
-is_replacement_candidate(Peer, Passive, Suspected) ->
-    is_in_passive_view(Peer, Passive) andalso is_not_empty(Suspected).
-
-%% @private
-perform_join(Peer, Tag, PeerEpoch,
-             #state{myself=Myself,
-                    active=Active0,
-                    tag=OurTag,
-                    pending=Pending,
-                    suspected=Suspected0,
-                    connections=Connections0,
-                    sent_message_map=SentMessageMap,
-                    ack_message_map=AckMessageMap}=State0) ->
-    lager:info("Performing join of peer: ~p with tag ~p", [Peer, Tag]),
-
-    case is_addable(PeerEpoch, Peer, SentMessageMap) of
-        true ->
-            %% Add to active view.
-            State = #state{active=Active} = add_to_active_view(Peer, Tag, State0),
-
-            %% Establish connections.
-            Connections = establish_connections(Pending,
-                                                Active,
-                                                Connections0),
-
-            LastDisconnectId = get_current_id(Peer, AckMessageMap),
-            %% Send neighbor_accepted message to origin, that will
-            %% update it's view.
-            lager:info("Sending neightbor message to ~p with ~p ~p ~p", [Peer, Myself, Tag, Peer]),
-            do_send_message(Peer,
-                            {neighbor, Myself, OurTag, LastDisconnectId, Peer},
-                            Connections),
-
-            %% Notify with event.
-            notify(State),
-
-            %% Remove from suspected.
-            Suspected = remove_from_suspected(Peer, Suspected0),
-
-            %% Random walk for forward join.
-            Peers = members(Active0) -- [Myself],
-
-            lists:foreach(
-              fun(P) ->
-                      do_send_message(
-                        P,
-                        {forward_join, Peer, Tag, PeerEpoch, arwl(), Myself},
-                        Connections)
-              end, Peers),
-
-            %% Return.
-            State#state{suspected=Suspected};
-        false ->
-            State0
-    end.
-
-%% @private
-send_neighbor_request(Peer, #state{myself=Myself,
-                                   active=Active0,
-                                   tag=Tag,
-                                   connections=Connections,
-                                   ack_message_map=AckMessageMap}=State) ->
-    Priority = case sets:size(Active0) of
-        0 ->
-            high;
-        _ ->
-            low
-    end,
-
-    LastDisconnectId = get_current_id(Peer, AckMessageMap),
-    do_send_message(
-      Peer,
-      {neighbor_request, Peer, Priority, Tag, LastDisconnectId, Myself},
-      Connections),
-
-    State.
 
 %% @private
 neighbor_acceptable(Priority, Tag,
@@ -1362,61 +1260,15 @@ reserved_slot_available(Tag, Reserved) ->
     end.
 
 %% @private
-handle_connect(Peer, Tag, PeerEpoch,
-               #state{pending=Pending0,
-                      passive=Passive0,
-                      suspected=Suspected0}=State0) ->
-    lager:info("Peer ~p tagged ~p connected.", [Peer, Tag]),
-
-    %% When a node actually connects, perform the join steps.
-    case is_pending(Peer, Pending0) of
-        true ->
-            %% Move out of pending.
-            Pending = remove_from_pending(Peer, Pending0),
-
-            %% If node is in the passive view, and we have a suspected
-            %% node, that means it was contacted to be a potential node
-            %% for replacement in the active view.
-            %%
-            case is_replacement_candidate(Peer, Passive0, Suspected0) of
-                true ->
-                    %% Send neighbor request to peer asking it to
-                    %% replace a suspected node.
-                    %%
-                    State = send_neighbor_request(Peer,
-                                                  State0#state{pending=Pending}),
-
-                    %% Notify with event.
-                    notify(State),
-
-                    {noreply, State};
-                false ->
-                    %% Normal join.
-                    %%
-                    State = perform_join(Peer,
-                                         Tag,
-                                         PeerEpoch,
-                                         State0#state{pending=Pending}),
-
-                    %% Notify with event.
-                    notify(State),
-
-                    {noreply, State}
-            end;
-        false ->
-            {noreply, State0}
-    end.
-
-%% @private
-remove_from_reserved(Peer, Reserved) ->
-    dict:fold(fun(K, V, Acc) ->
-                      case V of
-                          Peer ->
-                              Acc;
-                          _ ->
-                              dict:store(K, V, Acc)
-                      end
-              end, dict:new(), Reserved).
+%%remove_from_reserved(Peer, Reserved) ->
+%%    dict:fold(fun(K, V, Acc) ->
+%%                      case V of
+%%                          Peer ->
+%%                              Acc;
+%%                          _ ->
+%%                              dict:store(K, V, Acc)
+%%                      end
+%%              end, dict:new(), Reserved).
 
 %% @private
 get_current_id(Peer, MessageMap) ->
@@ -1476,30 +1328,58 @@ is_addable(PeerEpoch, Peer, SentMessageMap) ->
     end.
 
 %% @private
-enable_disconnect_trigger(Name, Connections) ->
-    %% Find a connection for the remote node, if we have one.
-    case dict:find(Name, Connections) of
-        {ok, undefined} ->
-            %% Return original set.
-            Connections;
-        {ok, {Pid, _DisconnectTriggered}} ->
-            %% Enable the DisconnectTriggered.
-            dict:store(Name, {Pid, true}, Connections);
-        error ->
-            %% Return original set.
-            Connections
+move_random_peer_from_passive_to_active(
+        #state{myself=Myself0,
+               active=Active0,
+               passive=Passive0,
+               tag=Tag0,
+               connections=Connections0,
+               recv_message_map=RecvMessageMap0}=State0) ->
+    %% Select random peer from passive view, and attempt to connect it.
+    case select_random(Passive0, [Myself0]) of
+        undefined ->
+            State0;
+        Random ->
+            lager:info("Node ~p sends the NEIGHBOR_REQUEST to ~p", [Myself0, Random]),
+
+            Exchange0 = %% Myself.
+                        [Myself0] ++
+
+                        % Random members of the active list.
+                        select_random_sublist(Active0, k_active()) ++
+
+                        %% Random members of the passive list.
+                        select_random_sublist(Passive0, k_passive()),
+
+            Exchange = lists:usort(Exchange0),
+
+            %% Trigger connection.
+            Connections = maybe_connect(Random, Connections0),
+
+            LastDisconnectId = get_current_id(Random, RecvMessageMap0),
+            do_send_message(
+                Random,
+                {neighbor_request, Myself0, high, Tag0, LastDisconnectId, Exchange},
+                Connections),
+
+            State0#state{connections=Connections}
     end.
 
 %% @private
-get_disconnect_trigger(Name, Connections) ->
-    %% Find a connection for the remote node, if we have one.
-    case dict:find(Name, Connections) of
-        {ok, undefined} ->
-            %% No peer means no trigger.
-            false;
-        {ok, {_Pid, DisconnectTriggered}} ->
-            DisconnectTriggered;
-        error ->
-            %% No peer means no trigger.
-            false
-    end.
+schedule_random_promotion() ->
+    erlang:send_after(?RANDOM_PROMOTION_INTERVAL,
+                      ?MODULE,
+                      random_promotion).
+
+%% @private
+has_reached_the_limit({active, Active, Reserved}, LimitActiveSize) ->
+    %% Find the slots that are reserved, but not filled.
+    Open = dict:fold(fun(Key, Value, Acc) ->
+        case Value of
+            undefined ->
+                [Key | Acc];
+            _ ->
+                Acc
+        end
+                     end, [], Reserved),
+    sets:size(Active) + length(Open) >= LimitActiveSize.
