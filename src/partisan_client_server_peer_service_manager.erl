@@ -558,7 +558,7 @@ accept_join_with_tag(OurTag, TheirTag) ->
                 client ->
                     true;
                 server ->
-                    false
+                    true
             end;
         client ->
             case TheirTag of
