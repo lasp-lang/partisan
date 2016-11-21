@@ -954,7 +954,7 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
                     lager:info("Node ~p connected.", [Node]),
                     dict:store(Name, Pid, Connections0);
                 {error, normal} ->
-                    %% Node isn't online just yet.
+                    lager:info("Node ~p isn't online just yet.", [Node]),
                     dict:store(Name, undefined, Connections0);
                 Error ->
                     lager:info("Node ~p failed connection: ~p.", [Node, Error]),
