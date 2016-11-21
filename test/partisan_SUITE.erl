@@ -122,7 +122,6 @@ client_server_manager_test(Config) ->
     %% Start nodes.
     Nodes = start(client_server_manager_test, Config,
                   [{partisan_peer_service_manager, Manager},
-                   {client_number, ?CLIENT_NUMBER},
                    {servers, Servers},
                    {clients, Clients}]),
 
@@ -242,10 +241,15 @@ hyparview_manager_low_active_test(Config) ->
     %% Start nodes.
     MaxActiveSize = 3,
 
+    Servers = [server],
+
+    Clients = client_list(?CLIENT_NUMBER),
+
     Nodes = start(hyparview_manager_low_active_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {max_active_size, MaxActiveSize},
-                   {client_number, ?CLIENT_NUMBER}]),
+                   {servers, Servers},
+                   {clients, Clients}]),
 
     %% Pause for clustering.
     timer:sleep(4000),
@@ -314,12 +318,16 @@ hyparview_manager_high_client_test(Config) ->
     %% Use hyparview.
     Manager = partisan_hyparview_peer_service_manager,
 
-    %% Start nodes.
-    ClientNumber = 11,
+    %% Start clients,.
+    Clients = client_list(11),
+
+    %% Start servers.
+    Servers = [server],
 
     Nodes = start(hyparview_manager_low_active_test, Config,
                   [{partisan_peer_service_manager, Manager},
-                   {client_number, ClientNumber}]),
+                   {servers, Servers},
+                   {clients, Clients}]),
 
     %% Pause for clustering.
     timer:sleep(9000),
@@ -413,8 +421,11 @@ start(_Case, _Config, Options) ->
     %% Load lager.
     {ok, _} = application:ensure_all_started(lager),
 
-    ClientNumber = proplists:get_value(client_number, Options, 3),
-    NodeNames = node_list(ClientNumber),
+    Servers = proplists:get_value(servers, Options, []),
+    Clients = proplists:get_value(clients, Options, []),
+
+    NodeNames = lists:flatten(Servers ++ Clients),
+
     %% Start all nodes.
     InitializerFun = fun(Name) ->
                             ct:pal("Starting node: ~p", [Name]),
