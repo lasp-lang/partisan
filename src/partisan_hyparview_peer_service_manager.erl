@@ -291,7 +291,7 @@ handle_call({receive_message, Message}, _From, State) ->
     gen_server:cast(?MODULE, {receive_message, Message}),
     {reply, ok, State};
 
-handle_call(members, _From, #state{myself=_Myself,
+handle_call(members, _From, #state{myself=Myself,
                                    active=Active}=State) ->
     lager:info("Node ~p active view: ~p", [Myself, members(Active)]),
     ActiveMembers = [P || {P, _, _} <- members(Active)],
