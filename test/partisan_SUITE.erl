@@ -114,7 +114,7 @@ client_server_manager_test(Config) ->
     Manager = partisan_client_server_peer_service_manager,
 
     %% Specify servers.
-    Servers = [server],
+    Servers = [server_1, server_2],
 
     %% Specify clients.
     Clients = client_list(?CLIENT_NUMBER),
@@ -122,7 +122,6 @@ client_server_manager_test(Config) ->
     %% Start nodes.
     Nodes = start(client_server_manager_test, Config,
                   [{partisan_peer_service_manager, Manager},
-                   {client_number, ?CLIENT_NUMBER},
                    {servers, Servers},
                    {clients, Clients}]),
 
@@ -242,10 +241,15 @@ hyparview_manager_low_active_test(Config) ->
     %% Start nodes.
     MaxActiveSize = 3,
 
+    Servers = [server],
+
+    Clients = client_list(?CLIENT_NUMBER),
+
     Nodes = start(hyparview_manager_low_active_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {max_active_size, MaxActiveSize},
-                   {client_number, ?CLIENT_NUMBER}]),
+                   {servers, Servers},
+                   {clients, Clients}]),
 
     %% Pause for clustering.
     timer:sleep(4000),
@@ -314,12 +318,16 @@ hyparview_manager_high_client_test(Config) ->
     %% Use hyparview.
     Manager = partisan_hyparview_peer_service_manager,
 
-    %% Start nodes.
-    ClientNumber = 11,
+    %% Start clients,.
+    Clients = client_list(11),
+
+    %% Start servers.
+    Servers = [server],
 
     Nodes = start(hyparview_manager_low_active_test, Config,
                   [{partisan_peer_service_manager, Manager},
-                   {client_number, ClientNumber}]),
+                   {servers, Servers},
+                   {clients, Clients}]),
 
     %% Pause for clustering.
     timer:sleep(9000),
@@ -413,8 +421,11 @@ start(_Case, _Config, Options) ->
     %% Load lager.
     {ok, _} = application:ensure_all_started(lager),
 
-    ClientNumber = proplists:get_value(client_number, Options, 3),
-    NodeNames = node_list(ClientNumber),
+    Servers = proplists:get_value(servers, Options, []),
+    Clients = proplists:get_value(clients, Options, []),
+
+    NodeNames = lists:flatten(Servers ++ Clients),
+
     %% Start all nodes.
     InitializerFun = fun(Name) ->
                             ct:pal("Starting node: ~p", [Name]),
@@ -497,12 +508,23 @@ start(_Case, _Config, Options) ->
     lists:map(StartFun, Nodes),
 
     ct:pal("Clustering nodes."),
-    Manager = proplists:get_value(partisan_peer_service_manager, Options),
-    lists:map(fun(Node) -> cluster(Node, Nodes, Manager) end, Nodes),
+    lists:map(fun(Node) -> cluster(Node, Nodes, Options) end, Nodes),
 
     ct:pal("Partisan fully initialized."),
 
     Nodes.
+
+%% @private
+omit(OmitNameList, Nodes0) ->
+    FoldFun = fun({Name, _Node} = N, Nodes) ->
+                    case lists:member(Name, OmitNameList) of
+                        true ->
+                            Nodes;
+                        false ->
+                            Nodes ++ [N]
+                    end
+              end,
+    lists:foldl(FoldFun, [], Nodes0).
 
 %% @private
 codepath() ->
@@ -515,28 +537,45 @@ codepath() ->
 %% client/server topology, which requires all nodes talk to every other
 %% node to correctly compute the overlay.
 %%
-cluster(Node, Nodes, Manager) when is_list(Nodes) ->
+cluster({Name, _Node} = Myself, Nodes, Options) when is_list(Nodes) ->
+    Manager = proplists:get_value(partisan_peer_service_manager, Options),
+
+    Servers = proplists:get_value(servers, Options, []),
+    Clients = proplists:get_value(clients, Options, []),
+
+    AmIServer = lists:member(Name, Servers),
+    AmIClient = lists:member(Name, Clients),
+
     OtherNodes = case Manager of
                      partisan_default_peer_service_manager ->
-                         Nodes -- [Node];
+                         %% Omit just ourselves.
+                         omit([Name], Nodes);
                      partisan_client_server_peer_service_manager ->
-                         case Node of
-                             {server, _} ->
-                                 Nodes -- [Node];
-                             _ ->
-                                 Server = lists:keyfind(server, 1, Nodes),
-                                 [Server]
+                         case {AmIServer, AmIClient} of
+                             {true, false} ->
+                                %% If I'm a server, I connect to both
+                                %% clients and servers!
+                                omit([Name], Nodes);
+                             {false, true} ->
+                                %% I'm a client, pick servers.
+                                omit(Clients, Nodes);
+                             {_, _} ->
+                                omit([Name], Nodes)
                          end;
                      partisan_hyparview_peer_service_manager ->
-                         case Node of
-                             {server, _} ->
-                                 [];
-                             _ ->
-                                 Server = lists:keyfind(server, 1, Nodes),
-                                 [Server]
-                         end
+                        case {AmIServer, AmIClient} of
+                            {true, false} ->
+                               %% If I'm a server, I connect to both
+                               %% clients and servers!
+                               omit([Name], Nodes);
+                            {false, true} ->
+                               %% I'm a client, pick servers.
+                               omit(Clients, Nodes);
+                            {_, _} ->
+                               omit([Name], Nodes)
+                        end
                  end,
-    lists:map(fun(OtherNode) -> cluster(Node, OtherNode) end, OtherNodes).
+    lists:map(fun(OtherNode) -> cluster(Myself, OtherNode) end, OtherNodes).
 cluster({_, Node}, {_, OtherNode}) ->
     PeerPort = rpc:call(OtherNode,
                         partisan_config,
