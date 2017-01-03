@@ -149,7 +149,7 @@ handle_call({on_down, Name, Function},
             _From,
             #state{down_functions=DownFunctions0}=State) ->
     DownFunctions = try
-        dict:append_values(Name, [Function], DownFunctions0)
+        dict:append_list(Name, [Function], DownFunctions0)
     catch
         _:_ ->
             dict:store(Name, [Function], DownFunctions0)
