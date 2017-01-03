@@ -31,6 +31,7 @@
          join/1,
          leave/0,
          leave/1,
+         on_down/2,
          send_message/2,
          forward_message/3,
          receive_message/1,
@@ -54,6 +55,7 @@
 
 -record(state, {actor :: actor(),
                 pending :: pending(),
+                down_functions :: dict:dict(),
                 membership :: membership(),
                 connections :: connections()}).
 
@@ -73,6 +75,9 @@ members() ->
 %% @doc Return local node's view of cluster membership.
 get_local_state() ->
     gen_server:call(?MODULE, get_local_state, infinity).
+
+on_down(Name, Function) ->
+    gen_server:call(?MODULE, {on_down, Name, Function}, infinity).
 
 %% @doc Send message to a remote manager.
 send_message(Name, Message) ->
@@ -139,6 +144,17 @@ init([]) ->
 
 handle_call({reserve, _Tag}, _From, State) ->
     {reply, {error, no_available_slots}, State};
+
+handle_call({on_down, Name, Function},
+            _From,
+            #state{down_functions=DownFunctions0}=State) ->
+    DownFunctions = try
+        dict:append_values(Name, [Function], DownFunctions0)
+    catch
+        _:_ ->
+            dict:store(Name, [Function], DownFunctions0)
+    end,
+    {reply, ok, State#state{down_functions=DownFunctions}};
 
 handle_call({leave, Node}, _From,
             #state{actor=Actor,
@@ -232,6 +248,7 @@ handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
     FoldFun = fun(K, V, AccIn) ->
                       case V =:= From of
                           true ->
+                              down(K, State),
                               dict:store(K, undefined, AccIn);
                           false ->
                               AccIn
@@ -507,3 +524,13 @@ do_send_message(Name, Message, Connections) ->
 %% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
 shuffle(L) ->
     [X || {_, X} <- lists:sort([{rand_compat:uniform(), N} || N <- L])].
+
+%% @private
+down(Name, #state{down_functions=DownFunctions}) ->
+    case dict:find(Name, DownFunctions) of
+        error ->
+            ok;
+        Functions ->
+            [Function() || Function <- Functions],
+            ok
+    end.

@@ -39,6 +39,7 @@
          join/1,
          leave/0,
          leave/1,
+         on_down/2,
          send_message/2,
          forward_message/3,
          receive_message/1,
@@ -111,6 +112,9 @@ members() ->
 %% @doc Return local node's view of cluster membership.
 get_local_state() ->
     gen_server:call(?MODULE, get_local_state, infinity).
+
+on_down(_Name, _Function) ->
+    {error, not_implemented}.
 
 %% @doc Send message to a remote manager.
 send_message(Name, Message) ->
