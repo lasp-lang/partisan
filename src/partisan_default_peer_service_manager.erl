@@ -530,7 +530,7 @@ down(Name, #state{down_functions=DownFunctions}) ->
     case dict:find(Name, DownFunctions) of
         error ->
             ok;
-        Functions ->
+        {ok, Functions} ->
             [Function() || Function <- Functions],
             ok
     end.
