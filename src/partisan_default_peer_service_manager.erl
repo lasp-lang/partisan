@@ -136,7 +136,8 @@ init([]) ->
     {ok, #state{actor=Actor,
                 pending=[],
                 membership=Membership,
-                connections=Connections}}.
+                connections=Connections,
+                down_functions=dict:new()}}.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
@@ -148,12 +149,7 @@ handle_call({reserve, _Tag}, _From, State) ->
 handle_call({on_down, Name, Function},
             _From,
             #state{down_functions=DownFunctions0}=State) ->
-    DownFunctions = try
-        dict:append_list(Name, [Function], DownFunctions0)
-    catch
-        _:_ ->
-            dict:store(Name, [Function], DownFunctions0)
-    end,
+    DownFunctions = dict:append(Name, Function, DownFunctions0),
     {reply, ok, State#state{down_functions=DownFunctions}};
 
 handle_call({leave, Node}, _From,
