@@ -23,43 +23,50 @@
 
 -include("partisan.hrl").
 
--export([set/2,
-         get/2,
-         peer_config/0]).
+-export([init/0,
+         set/2,
+         get/1,
+         get/2]).
+
+init() ->
+    %% Generate a random peer port.
+    rand_compat:seed(erlang:phash2([node()]),
+                     erlang:monotonic_time(),
+                     erlang:unique_integer()),
+    RandomPeerPort = rand_compat:uniform(1000) + 10000,
+
+    [env_or_default(Key, Default) ||
+        {Key, Default} <- [{arwl, 6},
+                           {prwl, 6},
+                           {connect_disterl, false},
+                           {fanout, ?FANOUT},
+                           {gossip_interval, 10000},
+                           {max_active_size, 6},
+                           {max_passive_size, 30},
+                           {min_active_size, 3},
+                           {partisan_peer_service_manager,
+                            partisan_default_peer_service_manager},
+                           {peer_ip, ?PEER_IP},
+                           {peer_port, RandomPeerPort},
+                           {random_promotion, true},
+                           {reservations, []},
+                           {tag, undefined}]],
+    ok.
+
+env_or_default(Key, Default) ->
+    case application:get_env(partisan, Key) of
+        {ok, Value} ->
+            set(Key, Value);
+        undefined ->
+            set(Key, Default)
+    end.
+
+get(Key) ->
+    partisan_mochiglobal:get(Key).
 
 get(Key, Default) ->
-    mochiglobal:get(Key, Default).
+    partisan_mochiglobal:get(Key, Default).
 
 set(Key, Value) ->
     application:set_env(?APP, Key, Value),
-    mochiglobal:put(Key, Value).
-
-peer_config() ->
-    Port = case partisan_config:get(peer_port, undefined) of
-        undefined ->
-            %% Generate a random peer port.
-            rand_compat:seed(erlang:phash2([node()]),
-                             erlang:monotonic_time(),
-                             erlang:unique_integer()),
-            RandomPeerPort = rand_compat:uniform(1000) + 10000,
-
-            %% Choose either static port or fall back to random peer port.
-            DCOS = os:getenv("DCOS", "false"),
-            PeerPort = case DCOS of
-                "false" ->
-                    RandomPeerPort;
-                _ ->
-                    application:get_env(?APP, peer_port, RandomPeerPort)
-            end,
-
-            %% Make sure configuration has current peer port.
-            partisan_config:set(peer_port, PeerPort),
-
-            PeerPort;
-        PeerPort ->
-            PeerPort
-    end,
-
-    Config = [{port, Port}],
-    lager:info("Partisan configuration: ~p", [Config]),
-    Config.
+    partisan_mochiglobal:put(Key, Value).

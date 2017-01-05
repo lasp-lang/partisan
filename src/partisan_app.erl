@@ -29,6 +29,7 @@
 
 %% @doc Initialize the application.
 start(_StartType, _StartArgs) ->
+    partisan_config:init(),
     case partisan_sup:start_link() of
         {ok, Pid} ->
             {ok, Pid};
