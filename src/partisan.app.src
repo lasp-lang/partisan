@@ -3,7 +3,6 @@
   {description, "Scalable peer service for Lasp"},
   {vsn, "0.0.1"},
   {registered, []},
-  {included_applications,[ranch]},
   {applications, [
                   kernel,
                   stdlib,
@@ -11,7 +10,8 @@
                   lager,
                   types,
                   time_compat,
-                  rand_compat
+                  rand_compat,
+                  acceptor_pool
                  ]},
   {mod, {partisan_app, []}},
   {modules, []},

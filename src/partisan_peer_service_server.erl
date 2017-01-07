@@ -23,11 +23,13 @@
 
 -include("partisan.hrl").
 
+-behaviour(acceptor).
 -behaviour(gen_server).
 
-%% ranch_protocol callbacks.
--export([start_link/4,
-         init/4]).
+%% acceptor api
+-export([acceptor_init/3,
+         acceptor_continue/3,
+         acceptor_terminate/2]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -37,80 +39,51 @@
          terminate/2,
          code_change/3]).
 
--record(state, {socket, transport}).
+-record(state, {socket, ref}).
 
-%%%===================================================================
-%%% ranch_protocol callbacks
-%%%===================================================================
+acceptor_init(_SockName, LSocket, []) ->
+    % monitor listen socket to gracefully close when it closes
+    MRef = monitor(port, LSocket),
+    {ok, MRef}.
 
-%% @private
-start_link(ListenerPid, Socket, Transport, Options) ->
-    proc_lib:start_link(?MODULE,
-                        init,
-                        [ListenerPid, Socket, Transport, Options]).
+acceptor_continue(_PeerName, Socket, MRef) ->
+    send_message(Socket, {hello, node()}),
+    gen_server:enter_loop(?MODULE, [], #state{socket=Socket, ref=MRef}).
 
-%% @private
-init(ListenerPid, Socket, Transport, _Options) ->
-    %% Acknowledge process initialization.
-    ok = proc_lib:init_ack({ok, self()}),
+acceptor_terminate(Reason, _) ->
+    % Something went wrong. Either the acceptor_pool is terminating or the
+    % accept failed.
+    exit(Reason).
 
-    %% Acknowledge the connection.
-    ok = ranch:accept_ack(ListenerPid),
+%% gen_server api
 
-    %% Link to the socket.
-    link(Socket),
+init(_) ->
+    {stop, acceptor}.
 
-    %% Set the socket modes.
-    ok = inet:setopts(Socket, [binary, {packet, 4}, {active, true}, {keepalive, true}]),
+handle_call(Req, _, State) ->
+    {stop, {bad_call, Req}, State}.
 
-    %% Generate the welcome message, encode it and transmit the message.
-    send_message(Socket, Transport, {hello, node()}),
+handle_cast(Req, State) ->
+    {stop, {bad_cast, Req}, State}.
 
-    %% Enter the gen_server loop.
-    gen_server:enter_loop(?MODULE,
-                          [],
-                          #state{socket=Socket, transport=Transport}).
-
-%%%===================================================================
-%%% gen_server callbacks
-%%%===================================================================
-
-%% @private
-init([ListenerPid, Socket, Transport, Options]) ->
-    init(ListenerPid, Socket, Transport, Options).
-
-%% @private
--spec handle_call(term(), {pid(), term()}, #state{}) ->
-    {reply, term(), #state{}}.
-handle_call(Msg, _From, State) ->
-    lager:warning("Unhandled messages: ~p", [Msg]),
-    {reply, ok, State}.
-
--spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
-handle_cast(Msg, State) ->
-    lager:warning("Unhandled messages: ~p", [Msg]),
-    {noreply, State}.
-
-%% @private
--spec handle_info(term(), #state{}) -> {noreply, #state{}}.
-handle_info({tcp, _Socket, Data}, State0) ->
-    handle_message(decode(Data), State0);
-handle_info({tcp_closed, _Socket}, State) ->
+handle_info({tcp, Socket, Data}, State=#state{socket=Socket}) ->
+    handle_message(decode(Data), State),
+    ok = inet:setopts(Socket, [{active, once}]),
+    {noreply, State};
+handle_info({tcp_error, Socket, Reason}, State=#state{socket=Socket}) ->
+    {stop, Reason, State};
+handle_info({tcp_closed, Socket}, State=#state{socket=Socket}) ->
     {stop, normal, State};
-handle_info(Msg, State) ->
-    lager:warning("Unhandled messages: ~p", [Msg]),
+handle_info({'DOWN', MRef, port, _, _}, State=#state{socket=Socket,
+                                                     ref=MRef}) ->
+    %% Listen socket closed, receive all pending data then stop. In more
+    %% advanced protocols will likely be able to do better.
+    lager:info("Gracefully closing ~p~n", [Socket]),
+    {stop, flush_socket(Socket), State};
+handle_info(_, State) ->
     {noreply, State}.
 
-%% @private
--spec terminate(term(), #state{}) -> term().
-terminate(Reason, #state{socket=Socket, transport=Transport}) ->
-    case Reason of
-        normal ->
-            ok;
-        Reason ->
-            lager:info("Terminating server: ~p", [Reason])
-    end,
-    Transport:close(Socket),
+terminate(_, _) ->
     ok.
 
 %% @private
@@ -124,7 +97,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 handle_message({hello, Node},
-               #state{socket=Socket, transport=Transport}=State) ->
+               #state{socket=Socket}) ->
     %% Get our tag, if set.
     Tag = partisan_config:get(tag, undefined),
 
@@ -136,22 +109,22 @@ handle_message({hello, Node},
             %% it to bootstrap.
             Manager = manager(),
             {ok, LocalState} = Manager:get_local_state(),
-            send_message(Socket, Transport, {state, Tag, LocalState}),
-            {noreply, State};
+            send_message(Socket, {state, Tag, LocalState}),
+            ok;
         error ->
             lager:info("Node could not be connected."),
-            send_message(Socket, Transport, {hello, {error, pang}}),
-            {noreply, State}
+            send_message(Socket, {hello, {error, pang}}),
+            ok
     end;
-handle_message(Message, State) ->
+handle_message(Message, _State) ->
     Manager = manager(),
     Manager:receive_message(Message),
-    {noreply, State}.
+    ok.
 
 %% @private
-send_message(Socket, Transport, Message) ->
+send_message(Socket, Message) ->
     EncodedMessage = encode(Message),
-    Transport:send(Socket, EncodedMessage).
+    gen_tcp:send(Socket, EncodedMessage).
 
 %% @private
 encode(Message) ->
@@ -179,3 +152,29 @@ maybe_connect_disterl(Node) ->
 manager() ->
     partisan_config:get(partisan_peer_service_manager,
                         partisan_default_peer_service_manager).
+
+%% internal
+
+flush_socket(Socket) ->
+    receive
+        {tcp, Socket, Data}         -> flush_send(Socket, Data);
+        {tcp_error, Socket, Reason} -> Reason;
+        {tcp_closed, Socket}        -> normal
+    after
+        0                           -> normal
+    end.
+
+flush_send(Socket, Data) ->
+    case gen_tcp:send(Socket, Data) of
+        ok              -> flush_recv(Socket);
+        {error, closed} -> normal;
+        {error, Reason} -> Reason
+    end.
+
+flush_recv(Socket) ->
+    case gen_tcp:recv(Socket, 0, 0) of
+        {ok, Data}       -> flush_send(Socket, Data);
+        {error, timeout} -> normal;
+        {error, closed}  -> normal;
+        {error, Reason}  -> Reason
+end.

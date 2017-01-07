@@ -42,21 +42,11 @@ init([]) ->
                  ?CHILD(partisan_default_peer_service_manager, worker),
                  ?CHILD(partisan_client_server_peer_service_manager, worker),
                  ?CHILD(partisan_hyparview_peer_service_manager, worker),
-                 ?CHILD(partisan_peer_service_events, worker),
-                 ?CHILD(ranch_sup, supervisor)
+                 ?CHILD(partisan_peer_service_events, worker)
                  ]),
 
-    PeerPort = partisan_config:get(peer_port),
-    lager:info("Initializing listener for peer protocol; port: ~p",
-               [PeerPort]),
-
-    ListenerSpec = ranch:child_spec(?PEER_SERVICE_SERVER,
-                                    10,
-                                    ranch_tcp,
-                                    [{port, PeerPort}],
-                                    ?PEER_SERVICE_SERVER,
-                                    []),
-    Listeners = [ListenerSpec],
+    PoolSup = {partisan_pool_sup, {partisan_pool_sup, start_link, []},
+               permanent, 20000, supervisor, [partisan_pool_sup]},
 
     RestartStrategy = {one_for_one, 10, 10},
-    {ok, {RestartStrategy, Children ++ Listeners}}.
+    {ok, {RestartStrategy, Children ++ [PoolSup]}}.

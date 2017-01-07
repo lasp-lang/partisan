@@ -1,14 +1,12 @@
-[{<<"goldrush">>,
+{"1.1.0",
+[{<<"acceptor_pool">>,{pkg,<<"acceptor_pool">>,<<"1.0.0-rc.0">>},0},
+ {<<"goldrush">>,
   {git,"git://github.com/DeadZen/goldrush.git",
        {ref,"212299233c7e7eb63a97be2777e1c05ebaa58dbe"}},
   1},
  {<<"lager">>,
   {git,"https://github.com/basho/lager",
        {ref,"8187757388c9adc915379caaab36a2f2ca26e944"}},
-  0},
- {<<"ranch">>,
-  {git,"https://github.com/extend/ranch.git",
-       {ref,"a5d2efcde9a34ad38ab89a26d98ea5335e88625a"}},
   0},
  {<<"rand_compat">>,
   {git,"https://github.com/lasp-lang/rand_compat",
@@ -21,4 +19,8 @@
  {<<"types">>,
   {git,"https://github.com/lasp-lang/types",
        {ref,"da9f1c777e554d70360e9d3413eb4054756137ea"}},
-  0}].
+  0}]}.
+[
+{pkg_hash,[
+ {<<"acceptor_pool">>, <<"679D741DF87FC13599B1AEF2DF8F78F1F880449A6BEFAB7C44FB6FAE0E92A2DE">>}]}
+].

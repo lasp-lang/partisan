@@ -39,7 +39,4 @@ start(_StartType, _StartArgs) ->
 
 %% @doc Stop the application.
 stop(_State) ->
-    %% Ensure all ranch instances are stopped.
-    lager:info("Stopping peer protocol listener."),
-    ranch:stop_listener(?PEER_SERVICE_SERVER),
     ok.
