@@ -24,7 +24,7 @@
 -include("partisan.hrl").
 
 -callback start_link() -> {ok, pid()} | ignore | {error, term()}.
--callback members() -> [node()].
+-callback members() -> [name()].
 
 -callback get_local_state() -> term().
 
@@ -35,6 +35,8 @@
 -callback send_message(name(), message()) -> ok.
 -callback receive_message(message()) -> ok.
 -callback forward_message(name(), pid(), message()) -> ok.
+
+-callback on_down(name(), function()) -> ok | {error, not_implemented}.
 
 -callback decode(term()) -> term().
 

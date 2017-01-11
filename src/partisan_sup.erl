@@ -46,30 +46,14 @@ init([]) ->
                  ?CHILD(ranch_sup, supervisor)
                  ]),
 
-    %% Configure peer service manager.
-    case partisan_config:get(partisan_peer_service_manager, undefined) of
-        undefined ->
-            partisan_config:set(partisan_peer_service_manager,
-                                partisan_default_peer_service_manager);
-        _ ->
-            %% Use previously configured settings.
-            ok
-    end,
-
-    %% Configure fanout.
-    partisan_config:set(fanout, 5),
-
-    %% Configure interval.
-    partisan_config:set(gossip_interval, 10000),
-
-    PeerConfig = partisan_config:peer_config(),
-    lager:info("Initializing listener for peer protocol; config: ~p",
-               [PeerConfig]),
+    PeerPort = partisan_config:get(peer_port),
+    lager:info("Initializing listener for peer protocol; port: ~p",
+               [PeerPort]),
 
     ListenerSpec = ranch:child_spec(?PEER_SERVICE_SERVER,
                                     10,
                                     ranch_tcp,
-                                    PeerConfig,
+                                    [{port, PeerPort}],
                                     ?PEER_SERVICE_SERVER,
                                     []),
     Listeners = [ListenerSpec],
