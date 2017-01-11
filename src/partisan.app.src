@@ -10,7 +10,6 @@
                   crypto,
                   lager,
                   types,
-                  mochiweb,
                   time_compat,
                   rand_compat
                  ]},
