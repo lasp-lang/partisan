@@ -41,6 +41,8 @@
 
 -record(state, {socket, ref}).
 
+-type state_t() :: #state{}.
+
 acceptor_init(_SockName, LSocket, []) ->
     % monitor listen socket to gracefully close when it closes
     MRef = monitor(port, LSocket),
@@ -87,8 +89,8 @@ terminate(_, _) ->
     ok.
 
 %% @private
--spec code_change(term() | {down, term()}, #state{}, term()) ->
-    {ok, #state{}}.
+-spec code_change(term() | {down, term()}, state_t(), term()) ->
+    {ok, state_t()}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 

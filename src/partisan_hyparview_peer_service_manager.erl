@@ -86,6 +86,8 @@
                 sent_message_map :: message_id_store(),
                 recv_message_map :: message_id_store()}).
 
+-type state_t() :: #state{}.
+
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -171,7 +173,7 @@ decode(Active) ->
 %%%===================================================================
 
 %% @private
--spec init([]) -> {ok, #state{}}.
+-spec init([]) -> {ok, state_t()}.
 init([]) ->
     %% Seed the process at initialization.
     rand_compat:seed(erlang:phash2([node()]),
@@ -231,8 +233,8 @@ init([]) ->
     end.
 
 %% @private
--spec handle_call(term(), {pid(), term()}, #state{}) ->
-    {reply, term(), #state{}}.
+-spec handle_call(term(), {pid(), term()}, state_t()) ->
+    {reply, term(), state_t()}.
 
 handle_call({leave, _Node}, _From, State) ->
     {reply, error, State};
@@ -310,7 +312,7 @@ handle_call(Msg, _From, State) ->
     {reply, ok, State}.
 
 %% @private
--spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
+-spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
 
 handle_cast({join, Peer},
             #state{myself=Myself0,
@@ -352,7 +354,7 @@ handle_cast(Msg, State) ->
     {noreply, State}.
 
 %% @private
--spec handle_info(term(), #state{}) -> {noreply, #state{}}.
+-spec handle_info(term(), state_t()) -> {noreply, state_t()}.
 
 handle_info(random_promotion, #state{active=Active0,
                                      reserved=Reserved0,
@@ -470,7 +472,7 @@ handle_info(Msg, State) ->
     {noreply, State}.
 
 %% @private
--spec terminate(term(), #state{}) -> term().
+-spec terminate(term(), state_t()) -> term().
 terminate(_Reason, #state{connections=Connections}=_State) ->
     dict:map(fun(_K, Pid) ->
                      try
@@ -483,7 +485,7 @@ terminate(_Reason, #state{connections=Connections}=_State) ->
     ok.
 
 %% @private
--spec code_change(term() | {down, term()}, #state{}, term()) -> {ok, #state{}}.
+-spec code_change(term() | {down, term()}, state_t(), term()) -> {ok, state_t()}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 

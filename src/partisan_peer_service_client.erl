@@ -35,6 +35,8 @@
 
 -record(state, {socket, from, peer}).
 
+-type state_t() :: #state{}.
+
 %% Macros.
 -define(TIMEOUT, 1000).
 
@@ -54,7 +56,7 @@ start_link(Peer, From) ->
 %%%===================================================================
 
 %% @private
--spec init([iolist()]) -> {ok, #state{}}.
+-spec init([iolist()]) -> {ok, state_t()}.
 init([Peer, From]) ->
     case connect(Peer) of
         {ok, Socket} ->
@@ -64,8 +66,8 @@ init([Peer, From]) ->
     end.
 
 %% @private
--spec handle_call(term(), {pid(), term()}, #state{}) ->
-    {reply, term(), #state{}}.
+-spec handle_call(term(), {pid(), term()}, state_t()) ->
+    {reply, term(), state_t()}.
 
 %% @private
 handle_call({send_message, Message}, _From, #state{socket=Socket}=State) ->
@@ -80,7 +82,7 @@ handle_call(Msg, _From, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
     {reply, ok, State}.
 
--spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
+-spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
 %% @private
 handle_cast({send_message, Message}, #state{socket=Socket}=State) ->
     case gen_tcp:send(Socket, encode(Message)) of
@@ -95,7 +97,7 @@ handle_cast(Msg, State) ->
     {noreply, State}.
 
 %% @private
--spec handle_info(term(), #state{}) -> {noreply, #state{}}.
+-spec handle_info(term(), state_t()) -> {noreply, state_t()}.
 handle_info({tcp, _Socket, Data}, State0) ->
     handle_message(decode(Data), State0);
 handle_info({tcp_closed, _Socket}, State) ->
@@ -105,14 +107,14 @@ handle_info(Msg, State) ->
     {noreply, State}.
 
 %% @private
--spec terminate(term(), #state{}) -> term().
+-spec terminate(term(), state_t()) -> term().
 terminate(_Reason, #state{socket=Socket}) ->
     ok = gen_tcp:close(Socket),
     ok.
 
 %% @private
--spec code_change(term() | {down, term()}, #state{}, term()) ->
-    {ok, #state{}}.
+-spec code_change(term() | {down, term()}, state_t(), term()) ->
+    {ok, state_t()}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
