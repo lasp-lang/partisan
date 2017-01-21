@@ -3,7 +3,6 @@
   {description, "Scalable peer service for Lasp"},
   {vsn, "0.0.1"},
   {registered, []},
-  {included_applications,[ranch]},
   {applications, [
                   kernel,
                   stdlib,
@@ -11,10 +10,15 @@
                   lager,
                   types,
                   time_compat,
-                  rand_compat
+                  rand_compat,
+                  acceptor_pool
                  ]},
   {mod, {partisan_app, []}},
   {modules, []},
   {env, [
-         {partisan, "data"}]}
+         {partisan, "data"}]},
+
+  {maintainers, ["Chris Meiklejohn", "Vitor Enes Duarte", "Junghun Yoo"]},
+  {licenses, ["Apache 2.0"]},
+  {links, [{"Github", "https://github.com/lasp-lang/partisan"}]}
  ]}.
