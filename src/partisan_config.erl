@@ -38,6 +38,7 @@ init() ->
                         application:set_env(partisan, peer_ip, ParsedIP),
                         ParsedIP
                 end,
+
     PeerPort = case os:getenv("PEER_PORT", "false") of
                    "false" ->
                        rand_compat:seed(erlang:phash2([node()]),
@@ -60,6 +61,15 @@ init() ->
                           list_to_atom(PeerServiceList)
                   end,
 
+    DefaultTag = case os:getenv("TAG", "false") of
+                    "false" ->
+                        undefined;
+                    TagList ->
+                        Tag = list_to_atom(TagList),
+                        application:set_env(partisan, tag, Tag),
+                        Tag
+                end,
+
     [env_or_default(Key, Default) ||
         {Key, Default} <- [{arwl, 6},
                            {prwl, 6},
@@ -74,7 +84,7 @@ init() ->
                            {peer_port, PeerPort},
                            {random_promotion, true},
                            {reservations, []},
-                           {tag, undefined}]],
+                           {tag, DefaultTag}]],
     ok.
 
 env_or_default(Key, Default) ->
