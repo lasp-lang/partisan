@@ -29,11 +29,36 @@
          get/2]).
 
 init() ->
-    %% Generate a random peer port.
-    rand_compat:seed(erlang:phash2([node()]),
-                     erlang:monotonic_time(),
-                     erlang:unique_integer()),
-    RandomPeerPort = rand_compat:uniform(1000) + 10000,
+    %% override Erlang env configuration with OS var configurations if set
+    IPAddress = case os:getenv("IP", "false") of
+                    "false" ->
+                        ?PEER_IP;
+                    IP ->
+                        {ok, ParsedIP} = inet_parse:address(IP),
+                        application:set_env(partisan, peer_ip, ParsedIP),
+                        ParsedIP
+                end,
+    PeerPort = case os:getenv("PEER_PORT", "false") of
+                   "false" ->
+                       rand_compat:seed(erlang:phash2([node()]),
+                                        erlang:monotonic_time(),
+                                        erlang:unique_integer()),
+                       rand_compat:uniform(1000) + 10000;
+                   PeerPortList ->
+                       Port = list_to_integer(PeerPortList),
+                       application:set_env(partisan, peer_port, Port),
+                       Port
+               end,
+
+    DefaultPeerService = application:get_env(partisan,
+                                             partisan_peer_service_manager,
+                                             partisan_client_server_peer_service_manager),
+    PeerService = case os:getenv("PEER_SERVICE", "false") of
+                      "false" ->
+                          DefaultPeerService;
+                      PeerServiceList ->
+                          list_to_atom(PeerServiceList)
+                  end,
 
     [env_or_default(Key, Default) ||
         {Key, Default} <- [{arwl, 6},
@@ -44,10 +69,9 @@ init() ->
                            {max_active_size, 6},
                            {max_passive_size, 30},
                            {min_active_size, 3},
-                           {partisan_peer_service_manager,
-                            partisan_default_peer_service_manager},
-                           {peer_ip, ?PEER_IP},
-                           {peer_port, RandomPeerPort},
+                           {partisan_peer_service_manager, PeerService},
+                           {peer_ip, IPAddress},
+                           {peer_port, PeerPort},
                            {random_promotion, true},
                            {reservations, []},
                            {tag, undefined}]],

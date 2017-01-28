@@ -1,7 +1,7 @@
 {application, partisan,
  [
   {description, "Scalable peer service for Lasp"},
-  {vsn, "0.0.1"},
+  {vsn, "0.1.0"},
   {registered, []},
   {applications, [
                   kernel,
