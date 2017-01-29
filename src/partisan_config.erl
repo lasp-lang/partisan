@@ -41,9 +41,6 @@ init() ->
 
     PeerPort = case os:getenv("PEER_PORT", "false") of
                    "false" ->
-                       rand_compat:seed(erlang:phash2([node()]),
-                                        erlang:monotonic_time(),
-                                        erlang:unique_integer()),
                        random_port();
                    PeerPortList ->
                        Port = list_to_integer(PeerPortList),
