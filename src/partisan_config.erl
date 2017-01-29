@@ -44,7 +44,7 @@ init() ->
                        rand_compat:seed(erlang:phash2([node()]),
                                         erlang:monotonic_time(),
                                         erlang:unique_integer()),
-                       rand_compat:uniform(1000) + 10000;
+                       random_port();
                    PeerPortList ->
                        Port = list_to_integer(PeerPortList),
                        application:set_env(partisan, peer_port, Port),
@@ -104,3 +104,11 @@ get(Key, Default) ->
 set(Key, Value) ->
     application:set_env(?APP, Key, Value),
     partisan_mochiglobal:put(Key, Value).
+
+%% @private
+random_port() ->
+    {ok, Socket} = gen_tcp:listen(0, []),
+    {ok, {_, Port}} = inet:sockname(Socket),
+    ok = gen_tcp:close(Socket),
+    Port.
+
