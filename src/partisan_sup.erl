@@ -37,6 +37,8 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
+    partisan_config:init(),
+
     Children = lists:flatten(
                  [
                  ?CHILD(partisan_default_peer_service_manager, worker),
