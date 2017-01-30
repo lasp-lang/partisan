@@ -75,7 +75,7 @@
 -type epoch_count() :: non_neg_integer().
 -type message_id() :: {epoch(), epoch_count()}.
 -type message_id_store() :: dict:dict(node_spec(), message_id()).
--type partitioned_nodes() :: [node()].
+-type partitioned_nodes() :: [{reference(), node_spec()}].
 
 -record(state, {myself :: node_spec(),
                 active :: active(),
@@ -551,9 +551,8 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private
-handle_message({resolve_partition, Reference},
-               #state{partitions=Partitions0}=State) ->
-    Partitions = handle_partition_resolution(Reference, Partitions0),
+handle_message({resolve_partition, Reference}, State) ->
+    Partitions = handle_partition_resolution(Reference, State),
     {noreply, State#state{partitions=Partitions}};
 
 %% @private
