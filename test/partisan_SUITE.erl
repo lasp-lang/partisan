@@ -274,6 +274,25 @@ hyparview_manager_partition_test(Config) ->
     end,
     lists:foreach(PartitionVerifyFun, Nodes),
 
+    %% Resolve partition.
+    ok = rpc:call(PNode, Manager, resolve_partition, [Reference]),
+    ct:pal("Partition resolved: ~p", [Reference]),
+
+    timer:sleep(1000),
+
+    %% Verify resolved partition.
+    ResolveVerifyFun = fun({_Name, Node}) ->
+        {ok, Partitions} = rpc:call(Node, Manager, partitions, []),
+        ct:pal("Partitions for node ~p: ~p", [Node, Partitions]),
+        case Partitions == [] of
+            true ->
+                ok;
+            false ->
+                ct:fail("Partitions incorrectly resolved.")
+        end
+    end,
+    lists:foreach(ResolveVerifyFun, Nodes),
+
     %% Stop nodes.
     stop(Nodes),
 

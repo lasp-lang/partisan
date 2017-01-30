@@ -269,7 +269,8 @@ handle_call({join, {_Name, _, _}=Node}, _From, State) ->
     {reply, ok, State};
 
 handle_call({resolve_partition, Reference}, _From, State) ->
-    handle_message({resolve_partition, Reference}, State);
+    Partitions = handle_partition_resolution(Reference, State),
+    {reply, ok, State#state{partitions=Partitions}};
 
 handle_call({inject_partition, Origin, TTL}, _From,
             #state{myself=Myself, connections=Connections}=State) ->
@@ -551,31 +552,9 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private
 handle_message({resolve_partition, Reference},
-               #state{active=Active,
-                      partitions=Partitions0,
-                      connections=Connections}=State) ->
-
-    %% Remove partitions.
-    Partitions = lists:foldl(fun({Ref, Peer}, Acc) ->
-                        case Reference of
-                            Ref ->
-                                Acc;
-                            _ ->
-                                Acc ++ [{Ref, Peer}]
-                        end
-                end, [], Partitions0),
-
-    %% If the list hasn't changed, then don't further propagate
-    %% the message.
-    case Partitions of
-        Partitions0 ->
-            ok;
-        _ ->
-            [propagate_partition_resolution(Reference, Peer, Connections)
-             || Peer <- members(Active)]
-    end,
-
-    {reply, ok, State#state{partitions=Partitions}};
+               #state{partitions=Partitions0}=State) ->
+    Partitions = handle_partition_resolution(Reference, Partitions0),
+    {noreply, State#state{partitions=Partitions}};
 
 %% @private
 handle_message({inject_partition, Reference, Origin, TTL}, State) ->
@@ -1520,3 +1499,30 @@ handle_partition_injection(Reference, _Origin, TTL,
     Partitions0 ++ lists:map(fun(Peer) ->
                                      {Reference, Peer}
                              end, members(Active)).
+
+%% @private
+handle_partition_resolution(Reference,
+                            #state{active=Active,
+                                   partitions=Partitions0,
+                                   connections=Connections}) ->
+    %% Remove partitions.
+    Partitions = lists:foldl(fun({Ref, Peer}, Acc) ->
+                        case Reference of
+                            Ref ->
+                                Acc;
+                            _ ->
+                                Acc ++ [{Ref, Peer}]
+                        end
+                end, [], Partitions0),
+
+    %% If the list hasn't changed, then don't further propagate
+    %% the message.
+    case Partitions of
+        Partitions0 ->
+            ok;
+        _ ->
+            [propagate_partition_resolution(Reference, Peer, Connections)
+             || Peer <- members(Active)]
+    end,
+
+    Partitions.
