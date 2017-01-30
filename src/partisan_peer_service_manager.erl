@@ -42,7 +42,7 @@
 
 -callback reserve(atom()) -> ok | {error, no_available_slots}.
 
--callback partitions() -> {ok, partitions()}.
--callback inject_partition(node_spec(), ttl()) -> {ok, reference()}.
--callback resolve_partition(reference()) -> ok.
+-callback partitions() -> {ok, partitions()} | {error, not_implemented}.
+-callback inject_partition(node_spec(), ttl()) -> {ok, reference()} | {error, not_implemented}.
+-callback resolve_partition(reference()) -> ok | {error, not_implemented}.
 
