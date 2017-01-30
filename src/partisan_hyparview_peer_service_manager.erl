@@ -255,10 +255,20 @@ handle_call({join, {_Name, _, _}=Node}, _From, State) ->
     gen_server:cast(?MODULE, {join, Node}),
     {reply, ok, State};
 
-handle_call({inject_partition, Origin, _TTL} = Message, _From,
+handle_call({inject_partition, Origin, TTL}, _From,
             #state{connections=Connections}=State) ->
-    Result = do_send_message(Origin, Message, Connections),
-    {reply, Result, State};
+    Reference = make_ref(),
+
+    Result = do_send_message(Origin,
+                             {inject_partition, Reference, Origin, TTL},
+                             Connections),
+
+    case Result of
+        {error, Error} ->
+            {reply, {error, Error}, State};
+        ok ->
+            {reply, {ok, Reference}, State}
+    end;
 
 handle_call({reserve, Tag}, _From,
             #state{reserved=Reserved0,
@@ -304,7 +314,7 @@ handle_call({send_message, Name, Message}, _From,
 
 handle_call({forward_message, Name, ServerRef, Message}, _From,
             #state{connections=Connections0, partitions=Partitions}=State) ->
-    case lists:member(Name, Partitions) of
+    case lists:keymember(Name, 2, Partitions) of
         true ->
             {reply, {error, partitioned}, State};
         false ->
@@ -515,7 +525,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private
-handle_message({inject_partition, Origin, TTL},
+handle_message({inject_partition, Reference, Origin, TTL},
                #state{active=Active,
                       myself=Myself,
                       partitions=Partitions0,
@@ -531,7 +541,7 @@ handle_message({inject_partition, Origin, TTL},
     end,
 
     %% Update partition table.
-    Partitions = Partitions0 ++ [Origin],
+    Partitions = Partitions0 ++ [{Reference, Origin}],
 
     {reply, ok, State#state{partitions=Partitions}};
 
