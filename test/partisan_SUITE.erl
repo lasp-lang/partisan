@@ -78,9 +78,17 @@ default_manager_test(Config) ->
     %% Use the default peer service manager.
     Manager = partisan_default_peer_service_manager,
 
+    %% Specify servers.
+    Servers = [server],
+
+    %% Specify clients.
+    Clients = client_list(?CLIENT_NUMBER),
+
     %% Start nodes.
     Nodes = start(default_manager_test, Config,
-                  [{partisan_peer_service_manager, Manager}]),
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
 
     %% Pause for clustering.
     timer:sleep(1000),
@@ -169,10 +177,18 @@ hyparview_manager_high_active_test(Config) ->
     %% Use hyparview.
     Manager = partisan_hyparview_peer_service_manager,
 
+    %% Specify servers.
+    Servers = [server],
+
+    %% Specify clients.
+    Clients = client_list(?CLIENT_NUMBER),
+
     %% Start nodes.
     Nodes = start(hyparview_manager_high_active_test, Config,
                   [{partisan_peer_service_manager, Manager},
-                   {max_active_size, 5}]),
+                   {max_active_size, 5},
+                   {servers, Servers},
+                   {clients, Clients}]),
 
     %% Pause for clustering.
     timer:sleep(1000),
