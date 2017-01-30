@@ -45,7 +45,7 @@
          receive_message/1,
          decode/1,
          reserve/1,
-         inject_partition/1]).
+         inject_partition/2]).
 
 %% debug.
 -export([active/0,
@@ -151,8 +151,8 @@ reserve(Tag) ->
     gen_server:call(?MODULE, {reserve, Tag}, infinity).
 
 %% @doc Reserve a slot for the particular tag.
-inject_partition(TTL) ->
-    gen_server:call(?MODULE, {inject_partition, TTL}, infinity).
+inject_partition(Origin, TTL) ->
+    gen_server:call(?MODULE, {inject_partition, Origin, TTL}, infinity).
 
 %%%===================================================================
 %%% debugging callbacks
@@ -255,9 +255,10 @@ handle_call({join, {_Name, _, _}=Node}, _From, State) ->
     gen_server:cast(?MODULE, {join, Node}),
     {reply, ok, State};
 
-handle_call({inject_partition, TTL}, _From,
-            #state{myself=Myself}=State) ->
-    handle_message({inject_partition, Myself, TTL}, State);
+handle_call({inject_partition, Origin, _TTL} = Message, _From,
+            #state{connections=Connections}=State) ->
+    Result = do_send_message(Origin, Message, Connections),
+    {reply, Result, State};
 
 handle_call({reserve, Tag}, _From,
             #state{reserved=Reserved0,
