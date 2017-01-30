@@ -44,7 +44,10 @@
          forward_message/3,
          receive_message/1,
          decode/1,
-         reserve/1]).
+         reserve/1,
+         partitions/0,
+         inject_partition/2,
+         resolve_partition/1]).
 
 %% debug.
 -export([active/0,
@@ -84,7 +87,8 @@
                 max_passive_size :: non_neg_integer(),
                 epoch :: epoch(),
                 sent_message_map :: message_id_store(),
-                recv_message_map :: message_id_store()}).
+                recv_message_map :: message_id_store(),
+                partitions :: partitions()}).
 
 -type state_t() :: #state{}.
 
@@ -115,6 +119,7 @@ members() ->
 get_local_state() ->
     gen_server:call(?MODULE, get_local_state, infinity).
 
+%% @doc Register a trigger to fire when a connection drops.
 on_down(_Name, _Function) ->
     {error, not_implemented}.
 
@@ -145,6 +150,18 @@ leave(Node) ->
 %% @doc Reserve a slot for the particular tag.
 reserve(Tag) ->
     gen_server:call(?MODULE, {reserve, Tag}, infinity).
+
+%% @doc Inject a partition.
+inject_partition(Origin, TTL) ->
+    gen_server:call(?MODULE, {inject_partition, Origin, TTL}, infinity).
+
+%% @doc Resolve a partition.
+resolve_partition(Reference) ->
+    gen_server:call(?MODULE, {resolve_partition, Reference}, infinity).
+
+%% @doc Return partitions.
+partitions() ->
+    gen_server:call(?MODULE, partitions, infinity).
 
 %%%===================================================================
 %%% debugging callbacks
@@ -190,6 +207,9 @@ init([]) ->
     SentMessageMap = dict:new(),
     RecvMessageMap = dict:new(),
 
+    %% Partitions.
+    Partitions = [],
+
     %% Get the default configuration.
     MaxActiveSize = partisan_config:get(max_active_size, 6),
     MinActiveSize = partisan_config:get(min_active_size, 3),
@@ -229,12 +249,16 @@ init([]) ->
                         max_passive_size=MaxPassiveSize,
                         epoch=Epoch + 1,
                         sent_message_map=SentMessageMap,
-                        recv_message_map=RecvMessageMap}}
+                        recv_message_map=RecvMessageMap,
+                        partitions=Partitions}}
     end.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, state_t()) ->
     {reply, term(), state_t()}.
+
+handle_call(partitions, _From, #state{partitions=Partitions}=State) ->
+    {reply, {ok, Partitions}, State};
 
 handle_call({leave, _Node}, _From, State) ->
     {reply, error, State};
@@ -242,6 +266,34 @@ handle_call({leave, _Node}, _From, State) ->
 handle_call({join, {_Name, _, _}=Node}, _From, State) ->
     gen_server:cast(?MODULE, {join, Node}),
     {reply, ok, State};
+
+handle_call({resolve_partition, Reference}, _From, State) ->
+    Partitions = handle_partition_resolution(Reference, State),
+    {reply, ok, State#state{partitions=Partitions}};
+
+handle_call({inject_partition, Origin, TTL}, _From,
+            #state{myself=Myself, connections=Connections}=State) ->
+    Reference = make_ref(),
+
+    lager:info("Injecting partition; Origin: ~p Myself: ~p TTL: ~p",
+               [Origin, Myself, TTL]),
+
+    case Origin of
+        Myself ->
+            Partitions = handle_partition_injection(Reference, Origin, TTL, State),
+            {reply, {ok, Reference}, State#state{partitions=Partitions}};
+        _ ->
+            Result = do_send_message(Origin,
+                                     {inject_partition, Reference, Origin, TTL},
+                                     Connections),
+
+            case Result of
+                {error, Error} ->
+                    {reply, {error, Error}, State};
+                ok ->
+                    {reply, {ok, Reference}, State}
+            end
+    end;
 
 handle_call({reserve, Tag}, _From,
             #state{reserved=Reserved0,
@@ -286,12 +338,16 @@ handle_call({send_message, Name, Message}, _From,
     {reply, Result, State};
 
 handle_call({forward_message, Name, ServerRef, Message}, _From,
-            #state{connections=Connections0}=State) ->
-    Result = do_send_message(Name,
-                             {forward_message, ServerRef, Message},
-                             Connections0),
-
-    {reply, Result, State};
+            #state{connections=Connections0, partitions=Partitions}=State) ->
+    case lists:keymember(Name, 2, Partitions) of
+        true ->
+            {reply, {error, partitioned}, State};
+        false ->
+            Result = do_send_message(Name,
+                                     {forward_message, ServerRef, Message},
+                                     Connections0),
+            {reply, Result, State}
+    end;
 
 handle_call({receive_message, Message}, _From, State) ->
     gen_server:cast(?MODULE, {receive_message, Message}),
@@ -492,6 +548,16 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+%% @private
+handle_message({resolve_partition, Reference}, State) ->
+    Partitions = handle_partition_resolution(Reference, State),
+    {noreply, State#state{partitions=Partitions}};
+
+%% @private
+handle_message({inject_partition, Reference, Origin, TTL}, State) ->
+    Partitions = handle_partition_injection(Reference, Origin, TTL, State),
+    {noreply, State#state{partitions=Partitions}};
 
 %% @private
 handle_message({join, Peer, PeerTag, PeerEpoch},
@@ -1389,3 +1455,72 @@ has_reached_the_limit({active, Active, Reserved}, LimitActiveSize) ->
         end
                      end, [], Reserved),
     sets:size(Active) + length(Open) >= LimitActiveSize.
+
+%% @private
+propagate_partition_injection(Ref, Origin, TTL, Peer, Connections) ->
+    lager:info("Forwarding partition request to: ~p", [Peer]),
+
+    do_send_message(Peer,
+                    {inject_partition, Ref, Origin, TTL},
+                    Connections).
+
+%% @private
+propagate_partition_resolution(Reference, Peer, Connections) ->
+    lager:info("Forwarding partition request to: ~p", [Peer]),
+
+    do_send_message(Peer,
+                    {resolve_partition, Reference},
+                    Connections).
+
+%% @private
+handle_partition_injection(Reference, _Origin, TTL,
+                           #state{active=Active,
+                                  myself=Myself,
+                                  partitions=Partitions0,
+                                  connections=Connections}) ->
+    %% If the TTL hasn't expired, re-forward the partition injection
+    %% request.
+    case TTL > 0 of
+        true ->
+            [propagate_partition_injection(Reference,
+                                           Myself,
+                                           TTL - 1,
+                                           Peer,
+                                           Connections)
+             || Peer <- members(Active)];
+        false ->
+            ok
+    end,
+
+    %% Update partition table marking all immediate neighbors as
+    %% partitioned.
+    Partitions0 ++ lists:map(fun(Peer) ->
+                                     {Reference, Peer}
+                             end, members(Active)).
+
+%% @private
+handle_partition_resolution(Reference,
+                            #state{active=Active,
+                                   partitions=Partitions0,
+                                   connections=Connections}) ->
+    %% Remove partitions.
+    Partitions = lists:foldl(fun({Ref, Peer}, Acc) ->
+                        case Reference of
+                            Ref ->
+                                Acc;
+                            _ ->
+                                Acc ++ [{Ref, Peer}]
+                        end
+                end, [], Partitions0),
+
+    %% If the list hasn't changed, then don't further propagate
+    %% the message.
+    case Partitions of
+        Partitions0 ->
+            ok;
+        _ ->
+            [propagate_partition_resolution(Reference, Peer, Connections)
+             || Peer <- members(Active)]
+    end,
+
+    Partitions.

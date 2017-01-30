@@ -36,7 +36,10 @@
          forward_message/3,
          receive_message/1,
          decode/1,
-         reserve/1]).
+         reserve/1,
+         partitions/0,
+         inject_partition/2,
+         resolve_partition/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -114,6 +117,18 @@ decode(State) ->
 %% @doc Reserve a slot for the particular tag.
 reserve(Tag) ->
     gen_server:call(?MODULE, {reserve, Tag}, infinity).
+
+%% @doc Inject a partition.
+inject_partition(_Origin, _TTL) ->
+    {error, not_implemented}.
+
+%% @doc Resolve a partition.
+resolve_partition(_Reference) ->
+    {error, not_implemented}.
+
+%% @doc Return partitions.
+partitions() ->
+    {error, not_implemented}.
 
 %%%===================================================================
 %%% gen_server callbacks
