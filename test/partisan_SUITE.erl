@@ -65,6 +65,7 @@ all() ->
     [
      default_manager_test,
      client_server_manager_test,
+     hyparview_manager_partition_test,
      hyparview_manager_high_active_test,
      hyparview_manager_low_active_test,
      hyparview_manager_high_client_test
@@ -167,6 +168,111 @@ client_server_manager_test(Config) ->
 
     %% Verify the membership is correct.
     lists:foreach(VerifyFun, Nodes),
+
+    ct:pal("Nodes: ~p", [Nodes]),
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
+hyparview_manager_partition_test(Config) ->
+    %% Use hyparview.
+    Manager = partisan_hyparview_peer_service_manager,
+
+    %% Specify servers.
+    Servers = [server],
+
+    %% Specify clients.
+    Clients = client_list(?CLIENT_NUMBER),
+
+    %% Start nodes.
+    Nodes = start(hyparview_manager_partition_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {max_active_size, 5},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Create new digraph.
+    Graph = digraph:new(),
+
+    %% Verify connectedness.
+    %%
+    ConnectFun = fun({_, Node}) ->
+        {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
+        Active = sets:to_list(ActiveSet),
+
+        %% Add vertexes and edges.
+        [connect(Graph, Node, N) || {N, _, _} <- Active]
+                 end,
+
+    %% Build the graph.
+    lists:foreach(ConnectFun, Nodes),
+
+    %% Verify connectedness.
+    ConnectedFun = fun({_Name, Node}=Myself) ->
+        lists:foreach(fun({_, N}) ->
+            Path = digraph:get_short_path(Graph, Node, N),
+            case Path of
+                false ->
+                    ct:fail("Graph is not connected!");
+                _ ->
+                    ok
+            end
+                      end, Nodes -- [Myself])
+                   end,
+    lists:foreach(ConnectedFun, Nodes),
+
+    %% Verify symmetry.
+    SymmetryFun = fun({_, Node1}) ->
+        %% Get first nodes active set.
+        {ok, ActiveSet1} = rpc:call(Node1, Manager, active, []),
+        Active1 = sets:to_list(ActiveSet1),
+
+        lists:foreach(fun({Node2, _, _}) ->
+            %% Get second nodes active set.
+            {ok, ActiveSet2} = rpc:call(Node2, Manager, active, []),
+            Active2 = sets:to_list(ActiveSet2),
+
+            case lists:member(Node1, [N || {N, _, _} <- Active2]) of
+                true ->
+                    ok;
+                false ->
+                    ct:fail("~p has ~p in it's view but ~p does not have ~p in its view",
+                            [Node1, Node2, Node2, Node1])
+            end
+                      end, Active1)
+                  end,
+    lists:foreach(SymmetryFun, Nodes),
+
+    ct:pal("Nodes: ~p", [Nodes]),
+
+    %% Inject a partition.
+    {_, PNode} = hd(Nodes),
+    PFullNode = rpc:call(PNode, Manager, myself, []),
+
+    {ok, Reference} = rpc:call(PNode, Manager, inject_partition, [PFullNode, 1]),
+    ct:pal("Partition generated: ~p", [Reference]),
+
+    %% Verify partition.
+    PartitionVerifyFun = fun({_Name, Node}) ->
+        {ok, Partitions} = rpc:call(Node, Manager, partitions, []),
+        ct:pal("Partitions for node ~p: ~p", [Node, Partitions]),
+        {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
+        Active = sets:to_list(ActiveSet),
+        ct:pal("Peers for node ~p: ~p", [Node, Active]),
+        PartitionedPeers = [Peer || {_Reference, Peer} <- Partitions],
+        case PartitionedPeers == Active of
+            true ->
+                ok;
+            false ->
+                ct:fail("Partitions incorrectly generated.")
+        end
+    end,
+    lists:foreach(PartitionVerifyFun, Nodes),
 
     %% Stop nodes.
     stop(Nodes),

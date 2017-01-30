@@ -45,6 +45,7 @@
          receive_message/1,
          decode/1,
          reserve/1,
+         partitions/0,
          inject_partition/2,
          resolve_partition/1]).
 
@@ -159,6 +160,10 @@ inject_partition(Origin, TTL) ->
 resolve_partition(Reference) ->
     gen_server:call(?MODULE, {resolve_partition, Reference}, infinity).
 
+%% @doc Return partitions.
+partitions() ->
+    gen_server:call(?MODULE, partitions, infinity).
+
 %%%===================================================================
 %%% debugging callbacks
 %%%===================================================================
@@ -253,6 +258,9 @@ init([]) ->
 -spec handle_call(term(), {pid(), term()}, state_t()) ->
     {reply, term(), state_t()}.
 
+handle_call(partitions, _From, #state{partitions=Partitions}=State) ->
+    {reply, {ok, Partitions}, State};
+
 handle_call({leave, _Node}, _From, State) ->
     {reply, error, State};
 
@@ -264,18 +272,27 @@ handle_call({resolve_partition, Reference}, _From, State) ->
     handle_message({resolve_partition, Reference}, State);
 
 handle_call({inject_partition, Origin, TTL}, _From,
-            #state{connections=Connections}=State) ->
+            #state{myself=Myself, connections=Connections}=State) ->
     Reference = make_ref(),
 
-    Result = do_send_message(Origin,
-                             {inject_partition, Reference, Origin, TTL},
-                             Connections),
+    lager:info("Injecting partition; Origin: ~p Myself: ~p TTL: ~p",
+               [Origin, Myself, TTL]),
 
-    case Result of
-        {error, Error} ->
-            {reply, {error, Error}, State};
-        ok ->
-            {reply, {ok, Reference}, State}
+    case Origin of
+        Myself ->
+            Partitions = handle_partition_injection(Reference, Origin, TTL, State),
+            {reply, {ok, Reference}, State#state{partitions=Partitions}};
+        _ ->
+            Result = do_send_message(Origin,
+                                     {inject_partition, Reference, Origin, TTL},
+                                     Connections),
+
+            case Result of
+                {error, Error} ->
+                    {reply, {error, Error}, State};
+                ok ->
+                    {reply, {ok, Reference}, State}
+            end
     end;
 
 handle_call({reserve, Tag}, _From,
@@ -561,25 +578,9 @@ handle_message({resolve_partition, Reference},
     {reply, ok, State#state{partitions=Partitions}};
 
 %% @private
-handle_message({inject_partition, Reference, Origin, TTL},
-               #state{active=Active,
-                      myself=Myself,
-                      partitions=Partitions0,
-                      connections=Connections}=State) ->
-    %% If the TTL hasn't expired, re-forward the partition injection
-    %% request.
-    case TTL > 0 of
-        true ->
-            [propagate_partition_injection(Myself, TTL - 1, Peer, Connections)
-             || Peer <- members(Active)];
-        false ->
-            ok
-    end,
-
-    %% Update partition table.
-    Partitions = Partitions0 ++ [{Reference, Origin}],
-
-    {reply, ok, State#state{partitions=Partitions}};
+handle_message({inject_partition, Reference, Origin, TTL}, State) ->
+    Partitions = handle_partition_injection(Reference, Origin, TTL, State),
+    {noreply, State#state{partitions=Partitions}};
 
 %% @private
 handle_message({join, Peer, PeerTag, PeerEpoch},
@@ -1479,11 +1480,11 @@ has_reached_the_limit({active, Active, Reserved}, LimitActiveSize) ->
     sets:size(Active) + length(Open) >= LimitActiveSize.
 
 %% @private
-propagate_partition_injection(Origin, TTL, Peer, Connections) ->
+propagate_partition_injection(Ref, Origin, TTL, Peer, Connections) ->
     lager:info("Forwarding partition request to: ~p", [Peer]),
 
     do_send_message(Peer,
-                    {inject_partition, Origin, TTL},
+                    {inject_partition, Ref, Origin, TTL},
                     Connections).
 
 %% @private
@@ -1493,3 +1494,29 @@ propagate_partition_resolution(Reference, Peer, Connections) ->
     do_send_message(Peer,
                     {resolve_partition, Reference},
                     Connections).
+
+%% @private
+handle_partition_injection(Reference, _Origin, TTL,
+                           #state{active=Active,
+                                  myself=Myself,
+                                  partitions=Partitions0,
+                                  connections=Connections}) ->
+    %% If the TTL hasn't expired, re-forward the partition injection
+    %% request.
+    case TTL > 0 of
+        true ->
+            [propagate_partition_injection(Reference,
+                                           Myself,
+                                           TTL - 1,
+                                           Peer,
+                                           Connections)
+             || Peer <- members(Active)];
+        false ->
+            ok
+    end,
+
+    %% Update partition table marking all immediate neighbors as
+    %% partitioned.
+    Partitions0 ++ lists:map(fun(Peer) ->
+                                     {Reference, Peer}
+                             end, members(Active)).
