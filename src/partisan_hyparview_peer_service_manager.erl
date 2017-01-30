@@ -45,7 +45,8 @@
          receive_message/1,
          decode/1,
          reserve/1,
-         inject_partition/2]).
+         inject_partition/2,
+         resolve_partition/1]).
 
 %% debug.
 -export([active/0,
@@ -150,9 +151,13 @@ leave(Node) ->
 reserve(Tag) ->
     gen_server:call(?MODULE, {reserve, Tag}, infinity).
 
-%% @doc Reserve a slot for the particular tag.
+%% @doc Inject a partition.
 inject_partition(Origin, TTL) ->
     gen_server:call(?MODULE, {inject_partition, Origin, TTL}, infinity).
+
+%% @doc Resolve a partition.
+resolve_partition(Reference) ->
+    gen_server:call(?MODULE, {resolve_partition, Reference}, infinity).
 
 %%%===================================================================
 %%% debugging callbacks
@@ -254,6 +259,9 @@ handle_call({leave, _Node}, _From, State) ->
 handle_call({join, {_Name, _, _}=Node}, _From, State) ->
     gen_server:cast(?MODULE, {join, Node}),
     {reply, ok, State};
+
+handle_call({resolve_partition, Reference}, _From, State) ->
+    handle_message({resolve_partition, Reference}, State);
 
 handle_call({inject_partition, Origin, TTL}, _From,
             #state{connections=Connections}=State) ->
@@ -525,6 +533,34 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private
+handle_message({resolve_partition, Reference},
+               #state{active=Active,
+                      partitions=Partitions0,
+                      connections=Connections}=State) ->
+
+    %% Remove partitions.
+    Partitions = lists:foldl(fun({Ref, Peer}, Acc) ->
+                        case Reference of
+                            Ref ->
+                                Acc;
+                            _ ->
+                                Acc ++ [{Ref, Peer}]
+                        end
+                end, [], Partitions0),
+
+    %% If the list hasn't changed, then don't further propagate
+    %% the message.
+    case Partitions of
+        Partitions0 ->
+            ok;
+        _ ->
+            [propagate_partition_resolution(Reference, Peer, Connections)
+             || Peer <- members(Active)]
+    end,
+
+    {reply, ok, State#state{partitions=Partitions}};
+
+%% @private
 handle_message({inject_partition, Reference, Origin, TTL},
                #state{active=Active,
                       myself=Myself,
@@ -534,8 +570,8 @@ handle_message({inject_partition, Reference, Origin, TTL},
     %% request.
     case TTL > 0 of
         true ->
-            [propagate_partition(Myself, TTL - 1, Peer, Connections) ||
-                                 Peer <- members(Active)];
+            [propagate_partition_injection(Myself, TTL - 1, Peer, Connections)
+             || Peer <- members(Active)];
         false ->
             ok
     end,
@@ -1443,9 +1479,17 @@ has_reached_the_limit({active, Active, Reserved}, LimitActiveSize) ->
     sets:size(Active) + length(Open) >= LimitActiveSize.
 
 %% @private
-propagate_partition(Origin, TTL, Peer, Connections) ->
+propagate_partition_injection(Origin, TTL, Peer, Connections) ->
     lager:info("Forwarding partition request to: ~p", [Peer]),
 
     do_send_message(Peer,
                     {inject_partition, Origin, TTL},
+                    Connections).
+
+%% @private
+propagate_partition_resolution(Reference, Peer, Connections) ->
+    lager:info("Forwarding partition request to: ~p", [Peer]),
+
+    do_send_message(Peer,
+                    {resolve_partition, Reference},
                     Connections).
