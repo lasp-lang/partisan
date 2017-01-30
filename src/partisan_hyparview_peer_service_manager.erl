@@ -75,7 +75,6 @@
 -type epoch_count() :: non_neg_integer().
 -type message_id() :: {epoch(), epoch_count()}.
 -type message_id_store() :: dict:dict(node_spec(), message_id()).
--type partitioned_nodes() :: [{reference(), node_spec()}].
 
 -record(state, {myself :: node_spec(),
                 active :: active(),
@@ -89,7 +88,7 @@
                 epoch :: epoch(),
                 sent_message_map :: message_id_store(),
                 recv_message_map :: message_id_store(),
-                partitions :: partitioned_nodes()}).
+                partitions :: partitions()}).
 
 -type state_t() :: #state{}.
 

@@ -41,3 +41,8 @@
 -callback decode(term()) -> term().
 
 -callback reserve(atom()) -> ok | {error, no_available_slots}.
+
+-callback partitions() -> {ok, partitions()}.
+-callback inject_partition(node_spec(), ttl()) -> {ok, reference()}.
+-callback resolve_partition(reference()) -> ok.
+
