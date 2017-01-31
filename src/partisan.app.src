@@ -1,7 +1,7 @@
 {application, partisan,
  [
   {description, "Scalable peer service for Lasp"},
-  {vsn, "0.1.0"},
+  {vsn, "0.1.1"},
   {registered, []},
   {applications, [
                   kernel,
@@ -16,7 +16,7 @@
   {mod, {partisan_app, []}},
   {modules, []},
   {env, [
-         {partisan, "data"}]},
+        {partisan, "data"}]},
 
   {maintainers, ["Chris Meiklejohn", "Vitor Enes Duarte", "Junghun Yoo"]},
   {licenses, ["Apache 2.0"]},
