@@ -30,11 +30,11 @@
 -include("partisan.hrl").
 
 %% API callbacks
--export([myself/0]).
 
 %% partisan_peer_service_manager callbacks
 -export([start_link/0,
          members/0,
+         myself/0,
          get_local_state/0,
          join/1,
          leave/0,
@@ -43,7 +43,6 @@
          send_message/2,
          forward_message/3,
          receive_message/1,
-         decode/1,
          reserve/1,
          partitions/0,
          inject_partition/2,
@@ -93,16 +92,6 @@
 -type state_t() :: #state{}.
 
 %%%===================================================================
-%%% API
-%%%===================================================================
-
-%% @doc Return my nodename.
-myself() ->
-    Port = partisan_config:get(peer_port, ?PEER_PORT),
-    IPAddress = partisan_config:get(peer_ip, ?PEER_IP),
-    {node(), IPAddress, Port}.
-
-%%%===================================================================
 %%% partisan_peer_service_manager callbacks
 %%%===================================================================
 
@@ -114,6 +103,10 @@ start_link() ->
 %% @doc Return membership list.
 members() ->
     gen_server:call(?MODULE, members, infinity).
+
+%% @doc Return myself.
+myself() ->
+    partisan_peer_service_manager:myself().
 
 %% @doc Return local node's view of cluster membership.
 get_local_state() ->
@@ -178,12 +171,6 @@ active(Tag) ->
 %% @doc Debugging.
 passive() ->
     gen_server:call(?MODULE, passive, infinity).
-
-%% @doc Decode state.
-decode({state, Active, _Epoch}) ->
-    sets:to_list(Active);
-decode(Active) ->
-    sets:to_list(Active).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -1320,7 +1307,7 @@ merge_exchange(Exchange, #state{myself=Myself, active=Active}=State0) ->
 
 %% @private
 notify(#state{active=Active}) ->
-    partisan_peer_service_events:update(Active).
+    partisan_peer_service_events:update(members(Active)).
 
 %% @private
 reserved_slot_available(Tag, Reserved) ->

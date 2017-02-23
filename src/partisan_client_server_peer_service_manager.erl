@@ -27,6 +27,7 @@
 %% partisan_peer_service_manager callbacks
 -export([start_link/0,
          members/0,
+         myself/0,
          get_local_state/0,
          join/1,
          leave/0,
@@ -35,7 +36,6 @@
          send_message/2,
          forward_message/3,
          receive_message/1,
-         decode/1,
          reserve/1,
          partitions/0,
          inject_partition/2,
@@ -79,6 +79,10 @@ start_link() ->
 members() ->
     gen_server:call(?MODULE, members, infinity).
 
+%% @doc Return myself.
+myself() ->
+    partisan_peer_service_manager:myself().
+
 %% @doc Return local node's view of cluster membership.
 get_local_state() ->
     gen_server:call(?MODULE, get_local_state, infinity).
@@ -109,10 +113,6 @@ leave() ->
 %% @doc Remove another node from the cluster.
 leave(Node) ->
     gen_server:call(?MODULE, {leave, Node}, infinity).
-
-%% @doc Decode state.
-decode(State) ->
-    sets:to_list(?SET:query(State)).
 
 %% @doc Reserve a slot for the particular tag.
 reserve(Tag) ->
@@ -185,7 +185,7 @@ handle_call({leave, Node}, _From,
                             _ ->
                                 L0
                         end
-                end, Membership0, decode(Membership0)),
+                end, Membership0, members(Membership0)),
 
     %% Gossip.
     do_gossip(Tag, Membership, Connections),
@@ -289,7 +289,7 @@ handle_info({connected, Node, TheirTag, _RemoteState},
                     Membership = add_to_membership(Actor, Node, Membership0),
 
                     %% Announce to the peer service.
-                    partisan_peer_service_events:update(Membership),
+                    partisan_peer_service_events:update(members(Membership)),
 
                     %% Establish any new connections.
                     Connections = establish_connections(Pending,
@@ -486,7 +486,7 @@ handle_message({receive_state, TheirTag, PeerMembership},
                     persist_state(Merged),
 
                     %% Update users of the peer service.
-                    partisan_peer_service_events:update(Merged),
+                    partisan_peer_service_events:update(members(Merged)),
 
                     %% Compute members.
                     Members = [N || {N, _, _} <- members(Merged)],
@@ -601,9 +601,3 @@ accept_join_with_tag(OurTag, TheirTag) ->
 add_to_membership(Actor, Node, Membership0) ->
     {ok, Membership} = ?SET:mutate({add, Node}, Actor, Membership0),
     Membership.
-
-%% @private
-myself() ->
-    Port = partisan_config:get(peer_port, ?PEER_PORT),
-    IPAddress = partisan_config:get(peer_ip, ?PEER_IP),
-    {node(), IPAddress, Port}.
