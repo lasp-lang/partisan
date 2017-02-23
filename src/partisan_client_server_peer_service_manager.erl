@@ -55,8 +55,7 @@
 -type membership() :: sets:set(node_spec()).
 -type tag() :: atom().
 
--record(state, {actor :: actor(),
-                myself :: node_spec(),
+-record(state, {myself :: node_spec(),
                 tag :: tag(),
                 pending :: pending(),
                 membership :: membership(),
