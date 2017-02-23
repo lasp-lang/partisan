@@ -53,7 +53,7 @@
 -include("partisan.hrl").
 
 -type pending() :: [node_spec()].
--type membership() :: [node_spec()].
+-type membership() :: sets:set(node_spec()).
 
 -record(state, {myself :: node_spec(),
                 pending :: pending(),
