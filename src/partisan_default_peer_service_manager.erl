@@ -323,9 +323,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private
 empty_membership(Actor) ->
-    Port = partisan_config:get(peer_port, ?PEER_PORT),
-    IPAddress = partisan_config:get(peer_ip, ?PEER_IP),
-    Self = {node(), IPAddress, Port},
+    Self = myself(),
     {ok, LocalState} = ?SET:mutate({add, Self}, Actor, ?SET:new()),
     persist_state(LocalState),
     LocalState.
