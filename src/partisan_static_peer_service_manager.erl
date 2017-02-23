@@ -19,6 +19,7 @@
 %% -------------------------------------------------------------------
 
 -module(partisan_static_peer_service_manager).
+-author("Vitor Enes Duarte <vitorenesduarte@gmail.com>").
 
 -behaviour(gen_server).
 -behaviour(partisan_peer_service_manager).
