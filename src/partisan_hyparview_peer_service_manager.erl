@@ -43,7 +43,6 @@
          send_message/2,
          forward_message/3,
          receive_message/1,
-         decode/1,
          reserve/1,
          partitions/0,
          inject_partition/2,
@@ -178,12 +177,6 @@ active(Tag) ->
 %% @doc Debugging.
 passive() ->
     gen_server:call(?MODULE, passive, infinity).
-
-%% @doc Decode state.
-decode({state, Active, _Epoch}) ->
-    sets:to_list(Active);
-decode(Active) ->
-    sets:to_list(Active).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -1320,7 +1313,7 @@ merge_exchange(Exchange, #state{myself=Myself, active=Active}=State0) ->
 
 %% @private
 notify(#state{active=Active}) ->
-    partisan_peer_service_events:update(Active).
+    partisan_peer_service_events:update(members(Active)).
 
 %% @private
 reserved_slot_available(Tag, Reserved) ->
