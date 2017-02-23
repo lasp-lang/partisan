@@ -27,6 +27,7 @@
 %% partisan_peer_service_manager callbacks
 -export([start_link/0,
          members/0,
+         myself/0,
          get_local_state/0,
          join/1,
          leave/0,
@@ -75,6 +76,10 @@ start_link() ->
 %% @doc Return membership list.
 members() ->
     gen_server:call(?MODULE, members, infinity).
+
+%% @doc Return myself.
+myself() ->
+    partisan_peer_service_manager:myself().
 
 %% @doc Return local node's view of cluster membership.
 get_local_state() ->

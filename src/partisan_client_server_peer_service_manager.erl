@@ -27,6 +27,7 @@
 %% partisan_peer_service_manager callbacks
 -export([start_link/0,
          members/0,
+         myself/0,
          get_local_state/0,
          join/1,
          leave/0,
@@ -77,6 +78,10 @@ start_link() ->
 %% @doc Return membership list.
 members() ->
     gen_server:call(?MODULE, members, infinity).
+
+%% @doc Return myself.
+myself() ->
+    partisan_peer_service_manager:myself().
 
 %% @doc Return local node's view of cluster membership.
 get_local_state() ->
@@ -596,9 +601,3 @@ accept_join_with_tag(OurTag, TheirTag) ->
 add_to_membership(Actor, Node, Membership0) ->
     {ok, Membership} = ?SET:mutate({add, Node}, Actor, Membership0),
     Membership.
-
-%% @private
-myself() ->
-    Port = partisan_config:get(peer_port, ?PEER_PORT),
-    IPAddress = partisan_config:get(peer_ip, ?PEER_IP),
-    {node(), IPAddress, Port}.
