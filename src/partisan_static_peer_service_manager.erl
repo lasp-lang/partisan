@@ -212,6 +212,18 @@ handle_cast(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
     {noreply, State}.
 
+handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
+    FoldFun = fun(K, V, AccIn) ->
+                      case V =:= From of
+                          true ->
+                              dict:store(K, undefined, AccIn);
+                          false ->
+                              AccIn
+                      end
+              end,
+    Connections = dict:fold(FoldFun, Connections0, Connections0),
+    {noreply, State#state{connections=Connections}};
+
 handle_info({connected, Node, _Tag, _RemoteState},
                #state{pending=Pending0,
                       membership=Membership0,
