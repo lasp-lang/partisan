@@ -161,7 +161,7 @@ init([]) ->
 handle_call({reserve, _Tag}, _From, State) ->
     {reply, {error, no_available_slots}, State};
 
-handle_call({leave, _Node}, _From,State) ->
+handle_call({leave, _Node}, _From, State) ->
     {reply, error, State};
 
 handle_call({join, {Name, _, _}=Node},
