@@ -23,8 +23,11 @@
 
 -include("partisan.hrl").
 
+-export([myself/0]).
+
 -callback start_link() -> {ok, pid()} | ignore | {error, term()}.
 -callback members() -> [name()].
+-callback myself() -> node_spec().
 
 -callback get_local_state() -> term().
 
@@ -46,3 +49,8 @@
 -callback inject_partition(node_spec(), ttl()) -> {ok, reference()} | {error, not_implemented}.
 -callback resolve_partition(reference()) -> ok | {error, not_implemented}.
 
+-spec myself() -> node_spec().
+myself() ->
+    Port = partisan_config:get(peer_port, ?PEER_PORT),
+    IPAddress = partisan_config:get(peer_ip, ?PEER_IP),
+    {node(), IPAddress, Port}.

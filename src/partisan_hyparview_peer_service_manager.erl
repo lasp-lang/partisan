@@ -29,12 +29,10 @@
 
 -include("partisan.hrl").
 
-%% API callbacks
--export([myself/0]).
-
 %% partisan_peer_service_manager callbacks
 -export([start_link/0,
          members/0,
+         myself/0,
          get_local_state/0,
          join/1,
          leave/0,
@@ -93,16 +91,6 @@
 -type state_t() :: #state{}.
 
 %%%===================================================================
-%%% API
-%%%===================================================================
-
-%% @doc Return my nodename.
-myself() ->
-    Port = partisan_config:get(peer_port, ?PEER_PORT),
-    IPAddress = partisan_config:get(peer_ip, ?PEER_IP),
-    {node(), IPAddress, Port}.
-
-%%%===================================================================
 %%% partisan_peer_service_manager callbacks
 %%%===================================================================
 
@@ -114,6 +102,10 @@ start_link() ->
 %% @doc Return membership list.
 members() ->
     gen_server:call(?MODULE, members, infinity).
+
+%% @doc Return myself.
+myself() ->
+    partisan_peer_service_manager:myself().
 
 %% @doc Return local node's view of cluster membership.
 get_local_state() ->

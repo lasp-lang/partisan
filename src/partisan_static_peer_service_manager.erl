@@ -1,7 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2014 Helium Systems, Inc.  All Rights Reserved.
-%% Copyright (c) 2016 Christopher Meiklejohn.  All Rights Reserved.
+%% Copyright (c) 2017 Christopher Meiklejohn.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,7 +18,8 @@
 %%
 %% -------------------------------------------------------------------
 
--module(partisan_default_peer_service_manager).
+-module(partisan_static_peer_service_manager).
+-author("Vitor Enes Duarte <vitorenesduarte@gmail.com>").
 
 -behaviour(gen_server).
 -behaviour(partisan_peer_service_manager).
@@ -52,14 +52,11 @@
 
 -include("partisan.hrl").
 
--define(SET, state_orset).
-
 -type pending() :: [node_spec()].
--type membership() :: ?SET:orswot().
+-type membership() :: sets:set(node_spec()).
 
--record(state, {actor :: actor(),
+-record(state, {myself :: node_spec(),
                 pending :: pending(),
-                down_functions :: dict:dict(),
                 membership :: membership(),
                 connections :: connections()}).
 
@@ -86,8 +83,8 @@ myself() ->
 get_local_state() ->
     gen_server:call(?MODULE, get_local_state, infinity).
 
-on_down(Name, Function) ->
-    gen_server:call(?MODULE, {on_down, Name, Function}, infinity).
+on_down(_Name, _Function) ->
+    {error, not_implemented}.
 
 %% @doc Send message to a remote manager.
 send_message(Name, Message) ->
@@ -115,7 +112,7 @@ leave(Node) ->
 
 %% @doc Decode state.
 decode(State) ->
-    sets:to_list(?SET:query(State)).
+    sets:to_list(State).
 
 %% @doc Reserve a slot for the particular tag.
 reserve(Tag) ->
@@ -148,18 +145,14 @@ init([]) ->
     %% Process connection exits.
     process_flag(trap_exit, true),
 
-    %% Schedule periodic gossip.
-    schedule_gossip(),
-
-    Actor = gen_actor(),
-    Membership = maybe_load_state_from_disk(Actor),
+    Membership = maybe_load_state_from_disk(),
     Connections = dict:new(),
+    Myself = myself(),
 
-    {ok, #state{actor=Actor,
+    {ok, #state{myself=Myself,
                 pending=[],
                 membership=Membership,
-                connections=Connections,
-                down_functions=dict:new()}}.
+                connections=Connections}}.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, state_t()) ->
@@ -168,41 +161,8 @@ init([]) ->
 handle_call({reserve, _Tag}, _From, State) ->
     {reply, {error, no_available_slots}, State};
 
-handle_call({on_down, Name, Function},
-            _From,
-            #state{down_functions=DownFunctions0}=State) ->
-    DownFunctions = dict:append(Name, Function, DownFunctions0),
-    {reply, ok, State#state{down_functions=DownFunctions}};
-
-handle_call({leave, Node}, _From,
-            #state{actor=Actor,
-                   connections=Connections,
-                   membership=Membership0}=State) ->
-    %% Node may exist in the membership on multiple ports, so we need to
-    %% remove all.
-    Membership = lists:foldl(fun({N, _, _}, L0) ->
-                        case Node of
-                            N ->
-                                {ok, L} = ?SET:mutate({rmv, Node}, Actor, L0),
-                                L;
-                            _ ->
-                                L0
-                        end
-                end, Membership0, decode(Membership0)),
-
-    %% Gossip.
-    do_gossip(Membership, Connections),
-
-    %% Remove state and shutdown if we are removing ourselves.
-    case node() of
-        Node ->
-            delete_state_from_disk(),
-
-            %% Shutdown; connections terminated on shutdown.
-            {stop, normal, State#state{membership=Membership}};
-        _ ->
-            {reply, ok, State}
-    end;
+handle_call({leave, _Node}, _From, State) ->
+    {reply, error, State};
 
 handle_call({join, {Name, _, _}=Node},
             _From,
@@ -252,21 +212,10 @@ handle_cast(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
     {noreply, State}.
 
-%% @private
--spec handle_info(term(), state_t()) -> {noreply, state_t()}.
-handle_info(gossip, #state{pending=Pending,
-                           membership=Membership,
-                           connections=Connections0}=State) ->
-    Connections = establish_connections(Pending, Membership, Connections0),
-    do_gossip(Membership, Connections),
-    schedule_gossip(),
-    {noreply, State#state{connections=Connections}};
-
 handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
     FoldFun = fun(K, V, AccIn) ->
                       case V =:= From of
                           true ->
-                              down(K, State),
                               dict:store(K, undefined, AccIn);
                           false ->
                               AccIn
@@ -275,26 +224,35 @@ handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
     Connections = dict:fold(FoldFun, Connections0, Connections0),
     {noreply, State#state{connections=Connections}};
 
-handle_info({connected, Node, _Tag, RemoteState},
+handle_info({connected, Node, _Tag, _RemoteState},
                #state{pending=Pending0,
                       membership=Membership0,
-                      connections=Connections}=State) ->
+                      connections=Connections0}=State) ->
     case lists:member(Node, Pending0) of
         true ->
             %% Move out of pending.
             Pending = Pending0 -- [Node],
 
-            %% Update membership by joining with remote membership.
-            Membership = ?SET:merge(RemoteState, Membership0),
+            %% Add to our membership.
+            Membership = sets:add_element(Node, Membership0),
 
             %% Announce to the peer service.
             partisan_peer_service_events:update(Membership),
 
-            %% Gossip the new membership.
-            do_gossip(Membership, Connections),
+            %% Establish any new connections.
+            Connections = establish_connections(Pending,
+                                                Membership,
+                                                Connections0),
+
+            %% Compute count.
+            Count = sets:size(Membership),
+
+            lager:info("Join ACCEPTED with ~p; we have ~p members in our view.",
+                       [Node, Count]),
 
             %% Return.
             {noreply, State#state{pending=Pending,
+                                  connections=Connections,
                                   membership=Membership}};
         false ->
             {noreply, State}
@@ -327,21 +285,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private
-empty_membership(Actor) ->
-    Port = partisan_config:get(peer_port, ?PEER_PORT),
-    IPAddress = partisan_config:get(peer_ip, ?PEER_IP),
-    Self = {node(), IPAddress, Port},
-    {ok, LocalState} = ?SET:mutate({add, Self}, Actor, ?SET:new()),
+empty_membership() ->
+    LocalState = sets:add_element(myself(), sets:new()),
     persist_state(LocalState),
     LocalState.
-
-%% @private
-gen_actor() ->
-    Node = atom_to_list(node()),
-    Unique = time_compat:unique_integer([positive]),
-    TS = integer_to_list(Unique),
-    Term = Node ++ TS,
-    crypto:hash(sha, Term).
 
 %% @private
 data_root() ->
@@ -360,37 +307,22 @@ write_state_to_disk(State) ->
         Dir ->
             File = filename:join(Dir, "cluster_state"),
             ok = filelib:ensure_dir(File),
-            ok = file:write_file(File, ?SET:encode(erlang, State))
+            ok = file:write_file(File, term_to_binary(State))
     end.
 
 %% @private
-delete_state_from_disk() ->
+maybe_load_state_from_disk() ->
     case data_root() of
         undefined ->
-            ok;
-        Dir ->
-            File = filename:join(Dir, "cluster_state"),
-            ok = filelib:ensure_dir(File),
-            case file:delete(File) of
-                ok ->
-                    lager:info("Leaving cluster, removed cluster_state");
-                {error, Reason} ->
-                    lager:info("Unable to remove cluster_state for reason ~p", [Reason])
-            end
-    end.
-
-%% @private
-maybe_load_state_from_disk(Actor) ->
-    case data_root() of
-        undefined ->
-            empty_membership(Actor);
+            empty_membership();
         Dir ->
             case filelib:is_regular(filename:join(Dir, "cluster_state")) of
                 true ->
                     {ok, Bin} = file:read_file(filename:join(Dir, "cluster_state")),
-                    ?SET:decode(erlang, Bin);
+                    {ok, State} = binary_to_term(Bin),
+                    State;
                 false ->
-                    empty_membership(Actor)
+                    empty_membership()
             end
     end.
 
@@ -400,7 +332,7 @@ persist_state(State) ->
 
 %% @private
 members(Membership) ->
-    sets:to_list(?SET:query(Membership)).
+    sets:to_list(Membership).
 
 %% @private
 establish_connections(Pending, Membership, Connections) ->
@@ -444,86 +376,9 @@ connect(Node) ->
     Self = self(),
     partisan_peer_service_client:start_link(Node, Self).
 
-%% @private
-handle_message({receive_state, PeerMembership},
-               #state{pending=Pending,
-                      membership=Membership,
-                      connections=Connections0}=State) ->
-    case ?SET:equal(PeerMembership, Membership) of
-        true ->
-            %% No change.
-            {reply, ok, State};
-        false ->
-            %% Merge data items.
-            Merged = ?SET:merge(PeerMembership, Membership),
-
-            %% Persist state.
-            persist_state(Merged),
-
-            %% Update users of the peer service.
-            partisan_peer_service_events:update(Merged),
-
-            %% Compute members.
-            Members = [N || {N, _, _} <- members(Merged)],
-
-            %% Shutdown if we've been removed from the cluster.
-            case lists:member(node(), Members) of
-                true ->
-                    %% Establish any new connections.
-                    Connections = establish_connections(Pending,
-                                                        Membership,
-                                                        Connections0),
-
-                    %% Gossip.
-                    do_gossip(Membership, Connections),
-
-                    {reply, ok, State#state{membership=Merged,
-                                            connections=Connections}};
-                false ->
-                    %% Remove state.
-                    delete_state_from_disk(),
-
-                    %% Shutdown; connections terminated on shutdown.
-                    {stop, normal, State#state{membership=Membership}}
-            end
-    end;
 handle_message({forward_message, ServerRef, Message}, State) ->
     gen_server:cast(ServerRef, Message),
     {reply, ok, State}.
-
-%% @private
-schedule_gossip() ->
-    GossipInterval = partisan_config:get(gossip_interval, 10000),
-    erlang:send_after(GossipInterval, ?MODULE, gossip).
-
-%% @private
-do_gossip(Membership, Connections) ->
-    Fanout = partisan_config:get(fanout, ?FANOUT),
-
-    case get_peers(Membership) of
-        [] ->
-            ok;
-        AllPeers ->
-            {ok, Peers} = random_peers(AllPeers, Fanout),
-            lists:foreach(fun(Peer) ->
-                        do_send_message(Peer,
-                                        {receive_state, Membership},
-                                        Connections)
-                end, Peers),
-            ok
-    end.
-
-%% @private
-get_peers(Local) ->
-    Members = members(Local),
-    Peers = [X || {X, _, _} <- Members, X /= node()],
-    Peers.
-
-%% @private
-random_peers(Peers, Fanout) ->
-    Shuffled = shuffle(Peers),
-    Peer = lists:sublist(Shuffled, Fanout),
-    {ok, Peer}.
 
 %% @private
 do_send_message(Name, Message, Connections) ->
@@ -537,18 +392,4 @@ do_send_message(Name, Message, Connections) ->
         error ->
             %% Node has not been connected yet.
             {error, not_yet_connected}
-    end.
-
-%% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
-shuffle(L) ->
-    [X || {_, X} <- lists:sort([{rand_compat:uniform(), N} || N <- L])].
-
-%% @private
-down(Name, #state{down_functions=DownFunctions}) ->
-    case dict:find(Name, DownFunctions) of
-        error ->
-            ok;
-        {ok, Functions} ->
-            [Function() || Function <- Functions],
-            ok
     end.
