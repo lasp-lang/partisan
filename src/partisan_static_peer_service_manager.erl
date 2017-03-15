@@ -52,11 +52,9 @@
 
 -include("partisan.hrl").
 
--type pending() :: [node_spec()].
 -type membership() :: sets:set(node_spec()).
 
 -record(state, {myself :: node_spec(),
-                pending :: pending(),
                 membership :: membership(),
                 connections :: connections()}).
 
@@ -150,7 +148,6 @@ init([]) ->
     Myself = myself(),
 
     {ok, #state{myself=Myself,
-                pending=[],
                 membership=Membership,
                 connections=Connections}}.
 
@@ -164,21 +161,14 @@ handle_call({reserve, _Tag}, _From, State) ->
 handle_call({leave, _Node}, _From, State) ->
     {reply, error, State};
 
-handle_call({join, {Name, _, _}=Node},
+handle_call({join, {_, _, _}=Node},
             _From,
-            #state{pending=Pending0, connections=Connections0}=State) ->
-    %% Attempt to join via disterl for control messages during testing.
-    _ = net_kernel:connect(Name),
-
-    %% Add to list of pending connections.
-    Pending = [Node|Pending0],
-
+            #state{connections=Connections0}=State) ->
     %% Trigger connection.
-    Connections = maybe_connect(Node, Connections0),
+    {Result, Connections} = maybe_connect(Node, Connections0),
 
     %% Return.
-    {reply, ok, State#state{pending=Pending,
-                            connections=Connections}};
+    {reply, Result, State#state{connections=Connections}};
 
 handle_call({send_message, Name, Message}, _From,
             #state{connections=Connections}=State) ->
@@ -225,38 +215,27 @@ handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
     {noreply, State#state{connections=Connections}};
 
 handle_info({connected, Node, _Tag, _RemoteState},
-               #state{pending=Pending0,
-                      membership=Membership0,
+               #state{membership=Membership0,
                       connections=Connections0}=State) ->
-    case lists:member(Node, Pending0) of
-        true ->
-            %% Move out of pending.
-            Pending = Pending0 -- [Node],
+    %% Add to our membership.
+    Membership = sets:add_element(Node, Membership0),
 
-            %% Add to our membership.
-            Membership = sets:add_element(Node, Membership0),
+    %% Announce to the peer service.
+    partisan_peer_service_events:update(Membership),
 
-            %% Announce to the peer service.
-            partisan_peer_service_events:update(Membership),
+    %% Establish any new connections.
+    Connections = establish_connections(Membership,
+                                        Connections0),
 
-            %% Establish any new connections.
-            Connections = establish_connections(Pending,
-                                                Membership,
-                                                Connections0),
+    %% Compute count.
+    Count = sets:size(Membership),
 
-            %% Compute count.
-            Count = sets:size(Membership),
+    lager:info("Join ACCEPTED with ~p; we have ~p members in our view.",
+               [Node, Count]),
 
-            lager:info("Join ACCEPTED with ~p; we have ~p members in our view.",
-                       [Node, Count]),
-
-            %% Return.
-            {noreply, State#state{pending=Pending,
-                                  connections=Connections,
-                                  membership=Membership}};
-        false ->
-            {noreply, State}
-    end;
+    %% Return.
+    {noreply, State#state{connections=Connections,
+                          membership=Membership}};
 
 handle_info(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
@@ -335,11 +314,18 @@ members(Membership) ->
     sets:to_list(Membership).
 
 %% @private
-establish_connections(Pending, Membership, Connections) ->
+establish_connections(Membership, Connections) ->
     %% Reconnect disconnected members and members waiting to join.
     Members = members(Membership),
-    AllPeers = lists:keydelete(node(), 1, Members ++ Pending),
-    lists:foldl(fun maybe_connect/2, Connections, AllPeers).
+    AllPeers = lists:keydelete(node(), 1, Members),
+    lists:foldl(
+        fun(Peer, Acc) ->
+            {_, Connections0} = maybe_connect(Peer, Acc),
+            Connections0
+        end,
+        Connections,
+        AllPeers
+    ).
 
 %% @private
 %%
@@ -348,28 +334,27 @@ establish_connections(Pending, Membership, Connections) ->
 %% socket pid if they are connected.
 %%
 maybe_connect({Name, _, _} = Node, Connections0) ->
-    Connections = case dict:find(Name, Connections0) of
+    case dict:find(Name, Connections0) of
         %% Found in dict, and disconnected.
         {ok, undefined} ->
             case connect(Node) of
                 {ok, Pid} ->
-                    dict:store(Name, Pid, Connections0);
-                _ ->
-                    dict:store(Name, undefined, Connections0)
+                    {ok, dict:store(Name, Pid, Connections0)};
+                Error ->
+                    {Error, dict:store(Name, undefined, Connections0)}
             end;
         %% Found in dict and connected.
         {ok, _Pid} ->
-            Connections0;
+            {ok, Connections0};
         %% Not present; disconnected.
         error ->
             case connect(Node) of
                 {ok, Pid} ->
-                    dict:store(Name, Pid, Connections0);
-                _ ->
-                    dict:store(Name, undefined, Connections0)
+                    {ok, dict:store(Name, Pid, Connections0)};
+                Error ->
+                    {Error, dict:store(Name, undefined, Connections0)}
             end
-    end,
-    Connections.
+    end.
 
 %% @private
 connect(Node) ->
