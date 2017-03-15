@@ -63,13 +63,13 @@ end_per_testcase(Case, _Config) ->
 
 all() ->
     [
-     %default_manager_test,
-     %client_server_manager_test,
-     static_manager_test%,
-     %hyparview_manager_partition_test,
-     %hyparview_manager_high_active_test,
-     %hyparview_manager_low_active_test,
-     %hyparview_manager_high_client_test
+     default_manager_test,
+     client_server_manager_test,
+     static_manager_test,
+     hyparview_manager_partition_test,
+     hyparview_manager_high_active_test,
+     hyparview_manager_low_active_test,
+     hyparview_manager_high_client_test
     ].
 
 %% ===================================================================
