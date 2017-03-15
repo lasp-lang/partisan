@@ -61,8 +61,8 @@ init([Peer, From]) ->
     case connect(Peer) of
         {ok, Socket} ->
             {ok, #state{from=From, socket=Socket, peer=Peer}};
-        _Error ->
-            {stop, normal}
+        {error, Reason} ->
+            {stop, Reason}
     end.
 
 %% @private
