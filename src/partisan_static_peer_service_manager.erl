@@ -174,10 +174,10 @@ handle_call({join, {Name, _, _}=Node},
     Pending = [Node|Pending0],
 
     %% Trigger connection.
-    Connections = maybe_connect(Node, Connections0),
+    {Result, Connections} = maybe_connect(Node, Connections0),
 
     %% Return.
-    {reply, ok, State#state{pending=Pending,
+    {reply, Result, State#state{pending=Pending,
                             connections=Connections}};
 
 handle_call({send_message, Name, Message}, _From,
@@ -339,7 +339,14 @@ establish_connections(Pending, Membership, Connections) ->
     %% Reconnect disconnected members and members waiting to join.
     Members = members(Membership),
     AllPeers = lists:keydelete(node(), 1, Members ++ Pending),
-    lists:foldl(fun maybe_connect/2, Connections, AllPeers).
+    lists:foldl(
+        fun(Peer, Acc) ->
+            {_Result, Connections} = maybe_connect(Peer, Acc),
+            Connections
+        end,
+        Connections,
+        AllPeers
+    ).
 
 %% @private
 %%
@@ -348,28 +355,34 @@ establish_connections(Pending, Membership, Connections) ->
 %% socket pid if they are connected.
 %%
 maybe_connect({Name, _, _} = Node, Connections0) ->
-    Connections = case dict:find(Name, Connections0) of
-        %% Found in dict, and disconnected.
+    ShouldConnect = case dict:find(Name, Connections0) of
         {ok, undefined} ->
-            case connect(Node) of
-                {ok, Pid} ->
-                    dict:store(Name, Pid, Connections0);
-                _ ->
-                    dict:store(Name, undefined, Connections0)
-            end;
-        %% Found in dict and connected.
+            true;
         {ok, _Pid} ->
-            Connections0;
-        %% Not present; disconnected.
+            false;
         error ->
+            true
+    end,
+
+    case ShouldConnect of
+        true ->
             case connect(Node) of
                 {ok, Pid} ->
-                    dict:store(Name, Pid, Connections0);
+                    Result = ok,
+                    Connections1 = dict:store(Name,
+                                              Pid,
+                                              Connections0),
+                    {Result, Connections1};
                 _ ->
-                    dict:store(Name, undefined, Connections0)
-            end
-    end,
-    Connections.
+                    Result = {error, undefined},
+                    Connections1 = dict:store(Name,
+                                              undefined,
+                                              Connections0),
+                    {Result, Connections1}
+            end;
+        false ->
+            {ok, Connections0}
+    end.
 
 %% @private
 connect(Node) ->
