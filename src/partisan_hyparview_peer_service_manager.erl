@@ -1219,7 +1219,7 @@ drop_random_element_from_active_view(
                                         State0#state{active=Active}),
 
             %% Trigger connection.
-            Connections1 = maybe_connect(Peer, Connections0),
+            {_, Connections1} = maybe_connect(Peer, Connections0),
 
             %% Get next disconnect id for the peer.
             NextId = get_next_id(Peer, Epoch0, SentMessageMap0),
@@ -1417,7 +1417,7 @@ move_random_peer_from_passive_to_active(
             Exchange = lists:usort(Exchange0),
 
             %% Trigger connection.
-            Connections = maybe_connect(Random, Connections0),
+            {_, Connections} = maybe_connect(Random, Connections0),
 
             LastDisconnectId = get_current_id(Random, RecvMessageMap0),
             do_send_message(
