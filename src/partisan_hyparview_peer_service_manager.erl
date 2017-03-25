@@ -1014,8 +1014,7 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
                                               Connections0),
                     {Result, Connections1};
                 {error, normal} ->
-                    lager:info("Node ~p failed connection: ~p.",
-                               [Node]),
+                    lager:info("Node ~p failed connection.", [Node]),
                     Result = ok,
                     Connections1 = dict:store(Name,
                                               undefined,
