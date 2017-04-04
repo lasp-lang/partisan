@@ -183,10 +183,10 @@ handle_call({leave, Node}, _From,
                    membership=Membership0}=State) ->
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
-    Membership = lists:foldl(fun({N, _, _}, L0) ->
+    Membership = lists:foldl(fun({Name, _, _} = N, L0) ->
                         case Node of
-                            N ->
-                                {ok, L} = ?SET:mutate({rmv, Node}, Actor, L0),
+                            Name ->
+                                {ok, L} = ?SET:mutate({rmv, N}, Actor, L0),
                                 L;
                             _ ->
                                 L0
