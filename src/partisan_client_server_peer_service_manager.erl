@@ -56,7 +56,7 @@
 -define(SET, state_orset).
 
 -type pending() :: [node_spec()].
--type membership() :: ?SET:orswot().
+-type membership() :: ?SET:state_orset().
 -type tag() :: atom().
 
 -record(state, {actor :: actor(),

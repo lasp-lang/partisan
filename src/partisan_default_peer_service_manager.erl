@@ -55,7 +55,7 @@
 -define(SET, state_orset).
 
 -type pending() :: [node_spec()].
--type membership() :: ?SET:orswot().
+-type membership() :: ?SET:state_orset().
 
 -record(state, {actor :: actor(),
                 pending :: pending(),
