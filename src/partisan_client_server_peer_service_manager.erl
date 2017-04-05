@@ -168,8 +168,27 @@ init([]) ->
 handle_call({reserve, _Tag}, _From, State) ->
     {reply, {error, no_available_slots}, State};
 
-handle_call({leave, _Node}, _From, State) ->
-    {reply, error, State};
+handle_call({leave, Node}, _From,
+            #state{membership=Membership0}=State) ->
+    %% Node may exist in the membership on multiple ports, so we need to
+    %% remove all.
+    Membership = lists:foldl(fun({Name, _, _} = N, L0) ->
+                        case Node of
+                            Name ->
+                                sets:del_element(N, Membership0);
+                            _ ->
+                                L0
+                        end
+                end, Membership0, decode(Membership0)),
+
+    %% Remove state and shutdown if we are removing ourselves.
+    case node() of
+        Node ->
+            %% Shutdown; connections terminated on shutdown.
+            {stop, normal, State#state{membership=Membership}};
+        _ ->
+            {reply, ok, State}
+    end;
 
 handle_call({join, {Name, _, _}=Node},
             _From,
