@@ -26,7 +26,6 @@
          join/3,
          attempt_join/1,
          leave/1,
-         decode/1,
          stop/0,
          stop/1,
          members/0,
@@ -66,11 +65,6 @@ members() ->
 %% @doc Add callback.
 add_sup_callback(Function) ->
     partisan_peer_service_events:add_sup_callback(Function).
-
-%% @private
-decode(State) ->
-    Manager = manager(),
-    [P || {P, _, _} <- Manager:decode(State)].
 
 %% @private
 attempt_join({_Name, _, _}=Node) ->
