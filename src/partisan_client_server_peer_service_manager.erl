@@ -348,20 +348,20 @@ write_state_to_disk(State) ->
             ok = file:write_file(File, term_to_binary(State))
     end.
 
-%% @private		
-delete_state_from_disk() ->		
-    case data_root() of		
-        undefined ->		
-            ok;		
-        Dir ->		
-            File = filename:join(Dir, "cluster_state"),		
-            ok = filelib:ensure_dir(File),		
-            case file:delete(File) of		
-                ok ->		
-                    lager:info("Leaving cluster, removed cluster_state");		
-                {error, Reason} ->		
-                    lager:info("Unable to remove cluster_state for reason ~p", [Reason])		
-            end		
+%% @private
+delete_state_from_disk() ->
+    case data_root() of
+        undefined ->
+            ok;
+        Dir ->
+            File = filename:join(Dir, "cluster_state"),
+            ok = filelib:ensure_dir(File),
+            case file:delete(File) of
+                ok ->
+                    lager:info("Leaving cluster, removed cluster_state");
+                {error, Reason} ->
+                    lager:info("Unable to remove cluster_state for reason ~p", [Reason])
+            end
     end.
 
 %% @private
