@@ -65,6 +65,7 @@ all() ->
     [
      default_manager_test,
      client_server_manager_test,
+     static_manager_test,
      hyparview_manager_partition_test,
      hyparview_manager_high_active_test,
      hyparview_manager_low_active_test,
@@ -163,6 +164,47 @@ client_server_manager_test(Config) ->
                     ok;
                 false ->
                     ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Nodes, Members])
+            end
+    end,
+
+    %% Verify the membership is correct.
+    lists:foreach(VerifyFun, Nodes),
+
+    ct:pal("Nodes: ~p", [Nodes]),
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
+static_manager_test(Config) ->
+    %% Use the static peer service manager.
+    Manager = partisan_static_peer_service_manager,
+
+    %% Specify clients.
+    Clients = client_list(?CLIENT_NUMBER),
+
+    %% Start nodes.
+    Nodes = start(client_server_manager_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Verify membership.
+    %%
+    %% Every node should know about every other node in this topology.
+    %%
+    VerifyFun = fun({Name, Node}) ->
+            {ok, Members} = rpc:call(Node, Manager, members, []),
+            Should = [N || {_, N} <- Nodes, N /= Name],
+
+            case lists:usort(Members) =:= lists:usort(Should) of
+                true ->
+                    ok;
+                false ->
+                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Should, Members])
             end
     end,
 
@@ -703,6 +745,9 @@ cluster({Name, _Node} = Myself, Nodes, Options) when is_list(Nodes) ->
                              {_, _} ->
                                 omit([Name], Nodes)
                          end;
+                     partisan_static_peer_service_manager ->
+                         %% Connect to everyone except me.
+                         omit([Name], Nodes);
                      partisan_hyparview_peer_service_manager ->
                         case {AmIServer, AmIClient} of
                             {true, false} ->

@@ -31,7 +31,7 @@
 
 -callback get_local_state() -> term().
 
--callback join(node_spec()) -> ok.
+-callback join(node_spec()) -> ok | {error, term()}.
 -callback leave() -> ok.
 -callback leave(node_spec()) -> ok.
 
