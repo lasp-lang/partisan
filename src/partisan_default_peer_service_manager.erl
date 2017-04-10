@@ -55,7 +55,7 @@
 -define(SET, state_orset).
 
 -type pending() :: [node_spec()].
--type membership() :: ?SET:orswot().
+-type membership() :: ?SET:state_orset().
 
 -record(state, {actor :: actor(),
                 pending :: pending(),
@@ -180,10 +180,10 @@ handle_call({leave, Node}, _From,
                    membership=Membership0}=State) ->
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
-    Membership = lists:foldl(fun({N, _, _}, L0) ->
+    Membership = lists:foldl(fun({Name, _, _} = N, L0) ->
                         case Node of
-                            N ->
-                                {ok, L} = ?SET:mutate({rmv, Node}, Actor, L0),
+                            Name ->
+                                {ok, L} = ?SET:mutate({rmv, N}, Actor, L0),
                                 L;
                             _ ->
                                 L0
@@ -328,10 +328,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private
 empty_membership(Actor) ->
-    Port = partisan_config:get(peer_port, ?PEER_PORT),
-    IPAddress = partisan_config:get(peer_ip, ?PEER_IP),
-    Self = {node(), IPAddress, Port},
-    {ok, LocalState} = ?SET:mutate({add, Self}, Actor, ?SET:new()),
+    {ok, LocalState} = ?SET:mutate({add, myself()}, Actor, ?SET:new()),
     persist_state(LocalState),
     LocalState.
 
