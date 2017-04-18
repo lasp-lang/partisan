@@ -22,6 +22,7 @@
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -include("partisan.hrl").
+-include("partisan_peer_connection.hrl").
 
 -behaviour(acceptor).
 -behaviour(gen_server).
@@ -39,22 +40,26 @@
          terminate/2,
          code_change/3]).
 
--record(state, {socket, ref}).
+-record(state, {
+          socket :: partisan_peer_connection:connection(),
+          ref :: reference()
+         }).
 
 -type state_t() :: #state{}.
 
 acceptor_init(_SockName, LSocket, []) ->
-    % monitor listen socket to gracefully close when it closes
+    %% monitor listen socket to gracefully close when it closes
     MRef = monitor(port, LSocket),
     {ok, MRef}.
 
-acceptor_continue(_PeerName, Socket, MRef) ->
+acceptor_continue(_PeerName, Socket0, MRef) ->
+    Socket = partisan_peer_connection:accept(Socket0),
     send_message(Socket, {hello, node()}),
     gen_server:enter_loop(?MODULE, [], #state{socket=Socket, ref=MRef}).
 
 acceptor_terminate(Reason, _) ->
-    % Something went wrong. Either the acceptor_pool is terminating or the
-    % accept failed.
+    %% Something went wrong. Either the acceptor_pool is terminating
+    %% or the accept failed.
     exit(Reason).
 
 %% gen_server api
@@ -68,13 +73,13 @@ handle_call(Req, _, State) ->
 handle_cast(Req, State) ->
     {stop, {bad_cast, Req}, State}.
 
-handle_info({tcp, Socket, Data}, State=#state{socket=Socket}) ->
+handle_info({Tag, _RawSocket, Data}, State=#state{socket=Socket}) when ?DATA_MSG(Tag) ->
     handle_message(decode(Data), State),
-    ok = inet:setopts(Socket, [{active, once}]),
+    ok = partisan_peer_connection:setopts(Socket, [{active, once}]),
     {noreply, State};
-handle_info({tcp_error, Socket, Reason}, State=#state{socket=Socket}) ->
+handle_info({Tag, _RawSocket, Reason}, State=#state{socket=_Socket}) when ?ERROR_MSG(Tag) ->
     {stop, Reason, State};
-handle_info({tcp_closed, Socket}, State=#state{socket=Socket}) ->
+handle_info({Tag, _RawSocket}, State=#state{socket=_Socket}) when ?CLOSED_MSG(Tag) ->
     {stop, normal, State};
 handle_info({'DOWN', MRef, port, _, _}, State=#state{socket=Socket,
                                                      ref=MRef}) ->
@@ -90,7 +95,7 @@ terminate(_, _) ->
 
 %% @private
 -spec code_change(term() | {down, term()}, state_t(), term()) ->
-    {ok, state_t()}.
+                         {ok, state_t()}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
@@ -126,7 +131,7 @@ handle_message(Message, _State) ->
 %% @private
 send_message(Socket, Message) ->
     EncodedMessage = encode(Message),
-    gen_tcp:send(Socket, EncodedMessage).
+    partisan_peer_connection:send(Socket, EncodedMessage).
 
 %% @private
 encode(Message) ->
@@ -157,26 +162,27 @@ manager() ->
 
 %% internal
 
-flush_socket(Socket) ->
+flush_socket(Conn) ->
+    Socket = partisan_peer_connection:socket(Conn),
     receive
-        {tcp, Socket, Data}         -> flush_send(Socket, Data);
-        {tcp_error, Socket, Reason} -> Reason;
-        {tcp_closed, Socket}        -> normal
+        {Tag, Socket, Data} when ?DATA_MSG(Tag)    -> flush_send(Conn, Data);
+        {Tag, Socket, Reason} when ?ERROR_MSG(Tag) -> Reason;
+        {Tag, Socket} when ?CLOSED_MSG(Tag)        -> normal
     after
-        0                           -> normal
+        0 -> normal
     end.
 
-flush_send(Socket, Data) ->
-    case gen_tcp:send(Socket, Data) of
-        ok              -> flush_recv(Socket);
+flush_send(Conn, Data) ->
+    case partisan_peer_connection:send(Conn, Data) of
+        ok              -> flush_recv(Conn);
         {error, closed} -> normal;
         {error, Reason} -> Reason
     end.
 
-flush_recv(Socket) ->
-    case gen_tcp:recv(Socket, 0, 0) of
-        {ok, Data}       -> flush_send(Socket, Data);
+flush_recv(Conn) ->
+    case partisan_peer_connection:recv(Conn, 0, 0) of
+        {ok, Data}       -> flush_send(Conn, Data);
         {error, timeout} -> normal;
         {error, closed}  -> normal;
         {error, Reason}  -> Reason
-end.
+    end.

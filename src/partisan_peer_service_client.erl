@@ -41,6 +41,7 @@
 -define(TIMEOUT, 1000).
 
 -include("partisan.hrl").
+-include("partisan_peer_connection.hrl").
 
 %%%===================================================================
 %%% API
@@ -71,7 +72,7 @@ init([Peer, From]) ->
 
 %% @private
 handle_call({send_message, Message}, _From, #state{socket=Socket}=State) ->
-    case gen_tcp:send(Socket, encode(Message)) of
+    case partisan_peer_connection:send(Socket, encode(Message)) of
         ok ->
             {reply, ok, State};
         Error ->
@@ -85,7 +86,7 @@ handle_call(Msg, _From, State) ->
 -spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
 %% @private
 handle_cast({send_message, Message}, #state{socket=Socket}=State) ->
-    case gen_tcp:send(Socket, encode(Message)) of
+    case partisan_peer_connection:send(Socket, encode(Message)) of
         ok ->
             ok;
         Error ->
@@ -98,9 +99,9 @@ handle_cast(Msg, State) ->
 
 %% @private
 -spec handle_info(term(), state_t()) -> {noreply, state_t()}.
-handle_info({tcp, _Socket, Data}, State0) ->
+handle_info({Tag, _Socket, Data}, State0) when ?DATA_MSG(Tag) ->
     handle_message(decode(Data), State0);
-handle_info({tcp_closed, _Socket}, State) ->
+handle_info({Tag, _Socket}, State) when ?CLOSED_MSG(Tag) ->
     {stop, normal, State};
 handle_info(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
@@ -109,7 +110,7 @@ handle_info(Msg, State) ->
 %% @private
 -spec terminate(term(), state_t()) -> term().
 terminate(_Reason, #state{socket=Socket}) ->
-    ok = gen_tcp:close(Socket),
+    ok = partisan_peer_connection:close(Socket),
     ok.
 
 %% @private
@@ -139,7 +140,7 @@ connect(Peer) when is_atom(Peer) ->
 %% @doc Connect to remote peer.
 connect({_Name, Address, Port}) ->
     Options = [binary, {active, true}, {packet, 4}, {keepalive, true}],
-    case gen_tcp:connect(Address, Port, Options, ?TIMEOUT) of
+    case partisan_peer_connection:connect(Address, Port, Options, ?TIMEOUT) of
         {ok, Socket} ->
             {ok, Socket};
         {error, Error} ->
@@ -162,7 +163,7 @@ handle_message({state, Tag, LocalState},
     {noreply, State};
 handle_message({hello, _Node}, #state{socket=Socket}=State) ->
     Message = {hello, node()},
-    ok = gen_tcp:send(Socket, encode(Message)),
+    ok = partisan_peer_connection:send(Socket, encode(Message)),
     {noreply, State};
 handle_message(Message, State) ->
     lager:info("Invalid message: ~p", [Message]),

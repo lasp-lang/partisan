@@ -28,7 +28,9 @@
          end_per_suite/1,
          init_per_testcase/2,
          end_per_testcase/2,
-         all/0]).
+         all/0,
+         groups/0,
+         init_per_group/2]).
 
 %% tests
 -compile([export_all]).
@@ -51,24 +53,55 @@ init_per_suite(_Config) ->
 end_per_suite(_Config) ->
     _Config.
 
-init_per_testcase(Case, _Config) ->
+init_per_testcase(Case, Config) ->
     ct:pal("Beginning test case ~p", [Case]),
 
-    _Config.
+    [{hash, erlang:phash2({Case, Config})}|Config].
 
 end_per_testcase(Case, _Config) ->
     ct:pal("Ending test case ~p", [Case]),
 
     _Config.
 
+init_per_group(with_tls, Config) ->
+    TLSOpts = make_certs(Config),
+    [{tls, true}] ++ TLSOpts ++ Config;
+init_per_group(_, _Config) ->
+    _Config.
+
+
+end_per_group(_, _Config) ->
+    ok.
+
 all() ->
     [
-     default_manager_test,
-     client_server_manager_test,
-     hyparview_manager_partition_test,
-     hyparview_manager_high_active_test,
-     hyparview_manager_low_active_test,
-     hyparview_manager_high_client_test
+     {group, default, [parallel],
+      [{simple, [shuffle]},
+       {hyparview, [shuffle]}
+      ]},
+
+     {group, with_tls, [parallel]}
+    ].
+
+groups() ->
+    [
+     {default, [],
+      [{group, simple},
+       {group, hyparview}
+      ]},
+
+     {simple, [],
+      [default_manager_test,
+       client_server_manager_test]},
+
+     {hyparview, [],
+      [hyparview_manager_partition_test,
+       hyparview_manager_high_active_test,
+       hyparview_manager_low_active_test,
+       hyparview_manager_high_client_test]},
+
+     {with_tls, [],
+      [default_manager_test]}
     ].
 
 %% ===================================================================
@@ -80,10 +113,10 @@ default_manager_test(Config) ->
     Manager = partisan_default_peer_service_manager,
 
     %% Specify servers.
-    Servers = [server],
+    Servers = node_list(1, "server", Config),
 
     %% Specify clients.
-    Clients = client_list(?CLIENT_NUMBER),
+    Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
     Nodes = start(default_manager_test, Config,
@@ -123,10 +156,10 @@ client_server_manager_test(Config) ->
     Manager = partisan_client_server_peer_service_manager,
 
     %% Specify servers.
-    Servers = [server_1, server_2],
+    Servers = node_list(2, "server", Config), %% [server_1, server_2],
 
     %% Specify clients.
-    Clients = client_list(?CLIENT_NUMBER),
+    Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     %% Start nodes.
     Nodes = start(client_server_manager_test, Config,
@@ -181,10 +214,10 @@ hyparview_manager_partition_test(Config) ->
     Manager = partisan_hyparview_peer_service_manager,
 
     %% Specify servers.
-    Servers = [server],
+    Servers = node_list(1, "server", Config), %% [server],
 
     %% Specify clients.
-    Clients = client_list(?CLIENT_NUMBER),
+    Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     %% Start nodes.
     Nodes = start(hyparview_manager_partition_test, Config,
@@ -303,10 +336,10 @@ hyparview_manager_high_active_test(Config) ->
     Manager = partisan_hyparview_peer_service_manager,
 
     %% Specify servers.
-    Servers = [server],
+    Servers = node_list(1, "server", Config), %% [server],
 
     %% Specify clients.
-    Clients = client_list(?CLIENT_NUMBER),
+    Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     %% Start nodes.
     Nodes = start(hyparview_manager_high_active_test, Config,
@@ -382,9 +415,9 @@ hyparview_manager_low_active_test(Config) ->
     %% Start nodes.
     MaxActiveSize = 3,
 
-    Servers = [server],
+    Servers = node_list(1, "server", Config), %% [server],
 
-    Clients = client_list(?CLIENT_NUMBER),
+    Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     Nodes = start(hyparview_manager_low_active_test, Config,
                   [{partisan_peer_service_manager, Manager},
@@ -460,10 +493,10 @@ hyparview_manager_high_client_test(Config) ->
     Manager = partisan_hyparview_peer_service_manager,
 
     %% Start clients,.
-    Clients = client_list(11),
+    Clients = node_list(11, "client", Config), %% client_list(11),
 
     %% Start servers.
-    Servers = [server],
+    Servers = node_list(1, "server", Config), %% [server],
 
     Nodes = start(hyparview_manager_low_active_test, Config,
                   [{partisan_peer_service_manager, Manager},
@@ -539,7 +572,7 @@ hyparview_manager_high_client_test(Config) ->
 %% ===================================================================
 
 %% @private
-start(_Case, _Config, Options) ->
+start(_Case, Config, Options) ->
     %% Launch distribution for the test runner.
     ct:pal("Launching Erlang distribution..."),
 
@@ -619,13 +652,16 @@ start(_Case, _Config, Options) ->
             ok = rpc:call(Node, partisan_config, set,
                           [max_active_size, MaxActiveSize]),
 
+            ok = rpc:call(Node, partisan_config, set, [tls, ?config(tls, Config)]),
+
             Servers = proplists:get_value(servers, Options, []),
             Clients = proplists:get_value(clients, Options, []),
 
             %% Configure servers.
             case lists:member(Name, Servers) of
                 true ->
-                    ok = rpc:call(Node, partisan_config, set, [tag, server]);
+                    ok = rpc:call(Node, partisan_config, set, [tag, server]),
+                    ok = rpc:call(Node, partisan_config, set, [tls_options, ?config(tls_server_opts, Config)]);
                 false ->
                     ok
             end,
@@ -633,12 +669,13 @@ start(_Case, _Config, Options) ->
             %% Configure clients.
             case lists:member(Name, Clients) of
                 true ->
-                    ok = rpc:call(Node, partisan_config, set, [tag, client]);
+                    ok = rpc:call(Node, partisan_config, set, [tag, client]),
+                    ok = rpc:call(Node, partisan_config, set, [tls_options, ?config(tls_client_opts, Config)]);
                 false ->
                     ok
             end
     end,
-    lists:map(ConfigureFun, Nodes),
+    lists:foreach(ConfigureFun, Nodes),
 
     ct:pal("Starting nodes."),
 
@@ -646,10 +683,10 @@ start(_Case, _Config, Options) ->
                         %% Start partisan.
                         {ok, _} = rpc:call(Node, application, ensure_all_started, [partisan])
                    end,
-    lists:map(StartFun, Nodes),
+    lists:foreach(StartFun, Nodes),
 
     ct:pal("Clustering nodes."),
-    lists:map(fun(Node) -> cluster(Node, Nodes, Options) end, Nodes),
+    lists:foreach(fun(Node) -> cluster(Node, Nodes, Options) end, Nodes),
 
     ct:pal("Partisan fully initialized."),
 
@@ -758,11 +795,32 @@ connect(G, N1, N2) ->
     ok.
 
 %% @private
-node_list(ClientNumber) ->
-    Clients = client_list(ClientNumber),
-    [server | Clients].
+node_list(0, _Name, _Config) -> [];
+node_list(N, Name, Config) ->
+    [ list_to_atom(string:join([Name,
+                                integer_to_list(?config(hash, Config)),
+                                integer_to_list(X)],
+                               "_")) ||
+        X <- lists:seq(1, N) ].
 
 %% @private
-client_list(0) -> [];
-client_list(N) -> lists:append(client_list(N - 1),
-                               [list_to_atom("client_" ++ integer_to_list(N))]).
+make_certs(Config) ->
+    DataDir = ?config(data_dir, Config),
+    PrivDir = ?config(priv_dir, Config),
+    ct:pal("Generating TLS certificates into ~s", [PrivDir]),
+    MakeCertsFile = filename:join(DataDir, "make_certs.erl"),
+    {ok, make_certs, ModBin} = compile:file(MakeCertsFile, [binary, debug_info, report_errors, report_warnings]),
+    {module, make_certs} = code:load_binary(make_certs, MakeCertsFile, ModBin),
+
+    make_certs:all(DataDir, PrivDir),
+
+    [{tls_server_opts,
+      [
+       {certfile, filename:join(PrivDir, "server/keycert.pem")},
+       {cacertfile, filename:join(PrivDir, "server/cacerts.pem")}
+      ]},
+     {tls_client_opts,
+      [
+       {certfile, filename:join(PrivDir, "client/keycert.pem")},
+       {cacertfile, filename:join(PrivDir, "client/cacerts.pem")}
+      ]}].

@@ -81,6 +81,8 @@ init() ->
                            {peer_port, PeerPort},
                            {random_promotion, true},
                            {reservations, []},
+                           {tls, false},
+                           {tls_options, []},
                            {tag, DefaultTag}]],
     ok.
 
