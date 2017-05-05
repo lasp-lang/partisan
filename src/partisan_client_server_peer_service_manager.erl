@@ -53,7 +53,6 @@
 
 -include("partisan.hrl").
 
--type pending() :: [node_spec()].
 -type membership() :: sets:set(node_spec()).
 -type tag() :: atom().
 
@@ -70,7 +69,7 @@
 %%%===================================================================
 
 %% @doc Same as start_link([]).
--spec start_link() -> {ok, pid()} | ignore | {error, term()}.
+-spec start_link() -> {ok, pid()} | ignore | error().
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
@@ -202,10 +201,10 @@ handle_call({join, {Name, _, _}=Node},
     Pending = [Node|Pending0],
 
     %% Trigger connection.
-    Connections = maybe_connect(Node, Connections0),
+    {Result, Connections} = maybe_connect(Node, Connections0),
 
     %% Return.
-    {reply, ok, State#state{pending=Pending,
+    {reply, Result, State#state{pending=Pending,
                             connections=Connections}};
 
 handle_call({send_message, Name, Message}, _From,
@@ -390,45 +389,14 @@ members(Membership) ->
 
 %% @private
 establish_connections(Pending, Membership, Connections) ->
-    %% Reconnect disconnected members and members waiting to join.
     Members = members(Membership),
-    AllPeers = lists:keydelete(node(), 1, Members ++ Pending),
-    lists:foldl(fun maybe_connect/2, Connections, AllPeers).
+    partisan_util:establish_connections(Pending,
+                                        Members,
+                                        Connections).
 
 %% @private
-%%
-%% Function should enforce the invariant that all cluster members are
-%% keys in the dict pointing to undefined if they are disconnected or a
-%% socket pid if they are connected.
-%%
-maybe_connect({Name, _, _} = Node, Connections0) ->
-    Connections = case dict:find(Name, Connections0) of
-        %% Found in dict, and disconnected.
-        {ok, undefined} ->
-            case connect(Node) of
-                {ok, Pid} ->
-                    dict:store(Name, Pid, Connections0);
-                _ ->
-                    dict:store(Name, undefined, Connections0)
-            end;
-        %% Found in dict and connected.
-        {ok, _Pid} ->
-            Connections0;
-        %% Not present; disconnected.
-        error ->
-            case connect(Node) of
-                {ok, Pid} ->
-                    dict:store(Name, Pid, Connections0);
-                _ ->
-                    dict:store(Name, undefined, Connections0)
-            end
-    end,
-    Connections.
-
-%% @private
-connect(Node) ->
-    Self = self(),
-    partisan_peer_service_client:start_link(Node, Self).
+maybe_connect(Node, Connections) ->
+    partisan_util:maybe_connect(Node, Connections).
 
 handle_message({forward_message, ServerRef, Message}, State) ->
     gen_server:cast(ServerRef, Message),

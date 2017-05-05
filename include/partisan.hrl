@@ -6,8 +6,10 @@
 
 -type actor() :: binary().
 -type connections() :: dict:dict(node(), port()).
+-type pending() :: [node_spec()].
 -type node_spec() :: {node(), inet:ip_address(), non_neg_integer()}.
 -type message() :: term().
 -type name() :: node().
 -type partitions() :: [{reference(), node_spec()}].
 -type ttl() :: non_neg_integer().
+-type error() :: {error, term()}.

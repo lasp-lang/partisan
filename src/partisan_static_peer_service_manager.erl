@@ -52,7 +52,6 @@
 
 -include("partisan.hrl").
 
--type pending() :: [node_spec()].
 -type membership() :: sets:set(node_spec()).
 
 -record(state, {myself :: node_spec(),
@@ -67,7 +66,7 @@
 %%%===================================================================
 
 %% @doc Same as start_link([]).
--spec start_link() -> {ok, pid()} | ignore | {error, term()}.
+-spec start_link() -> {ok, pid()} | ignore | error().
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
@@ -336,58 +335,14 @@ members(Membership) ->
 
 %% @private
 establish_connections(Pending, Membership, Connections) ->
-    %% Reconnect disconnected members and members waiting to join.
     Members = members(Membership),
-    AllPeers = lists:keydelete(node(), 1, Members ++ Pending),
-    lists:foldl(
-        fun(Peer, Acc) ->
-            {_Result, Connections} = maybe_connect(Peer, Acc),
-            Connections
-        end,
-        Connections,
-        AllPeers
-    ).
+    partisan_util:establish_connections(Pending,
+                                        Members,
+                                        Connections).
 
 %% @private
-%%
-%% Function should enforce the invariant that all cluster members are
-%% keys in the dict pointing to undefined if they are disconnected or a
-%% socket pid if they are connected.
-%%
-maybe_connect({Name, _, _} = Node, Connections0) ->
-    ShouldConnect = case dict:find(Name, Connections0) of
-        {ok, undefined} ->
-            true;
-        {ok, _Pid} ->
-            false;
-        error ->
-            true
-    end,
-
-    case ShouldConnect of
-        true ->
-            case connect(Node) of
-                {ok, Pid} ->
-                    Result = ok,
-                    Connections1 = dict:store(Name,
-                                              Pid,
-                                              Connections0),
-                    {Result, Connections1};
-                _ ->
-                    Result = {error, undefined},
-                    Connections1 = dict:store(Name,
-                                              undefined,
-                                              Connections0),
-                    {Result, Connections1}
-            end;
-        false ->
-            {ok, Connections0}
-    end.
-
-%% @private
-connect(Node) ->
-    Self = self(),
-    partisan_peer_service_client:start_link(Node, Self).
+maybe_connect(Node, Connections) ->
+    partisan_util:maybe_connect(Node, Connections).
 
 handle_message({forward_message, ServerRef, Message}, State) ->
     gen_server:cast(ServerRef, Message),

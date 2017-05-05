@@ -95,7 +95,7 @@
 %%%===================================================================
 
 %% @doc Same as start_link([]).
--spec start_link() -> {ok, pid()} | ignore | {error, term()}.
+-spec start_link() -> {ok, pid()} | ignore | error().
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
@@ -982,51 +982,8 @@ members(Set) ->
     sets:to_list(Set).
 
 %% @private
-%% Function should enforce the invariant that all cluster members are
-%% keys in the dict pointing to undefined if they are disconnected or a
-%% socket pid if they are connected.
-%%
-maybe_connect({Name, _, _} = Node, Connections0) ->
-    ShouldConnect = case dict:find(Name, Connections0) of
-        %% Found in dict, and disconnected.
-        {ok, undefined} ->
-            lager:info("Node ~p is not connected; initiating.", [Node]),
-            true;
-        %% Found in dict and connected.
-        {ok, _Pid} ->
-            false;
-        %% Not present; disconnected.
-        error ->
-            lager:info("Node ~p never was connected; initiating.", [Node]),
-            true
-    end,
-
-    case ShouldConnect of
-        true ->
-            case connect(Node) of
-                {ok, Pid} ->
-                    lager:info("Node ~p connected.", [Node]),
-                    Result = ok,
-                    Connections1 = dict:store(Name,
-                                              Pid,
-                                              Connections0),
-                    {Result, Connections1};
-                {error, normal} ->
-                    lager:info("Node ~p failed connection.", [Node]),
-                    Result = ok,
-                    Connections1 = dict:store(Name,
-                                              undefined,
-                                              Connections0),
-                    {Result, Connections1}
-            end;
-        false ->
-            {ok, Connections0}
-    end.
-
-%% @private
-connect(Node) ->
-    Self = self(),
-    partisan_peer_service_client:start_link(Node, Self).
+maybe_connect(Node, Connections) ->
+    partisan_util:maybe_connect(Node, Connections).
 
 %% @private
 disconnect(Name, Connections) ->

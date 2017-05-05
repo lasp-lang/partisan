@@ -42,6 +42,7 @@
 -define(APP, partisan).
 -define(CLIENT_NUMBER, 3).
 -define(PEER_PORT, 9000).
+-define(WAIT_TIME, 2000). %% 2 seconds
 
 %% ===================================================================
 %% common_test callbacks
@@ -126,7 +127,7 @@ default_manager_test(Config) ->
                    {clients, Clients}]),
 
     %% Pause for clustering.
-    timer:sleep(1000),
+    pause(),
 
     %% Verify membership.
     %%
@@ -169,7 +170,7 @@ client_server_manager_test(Config) ->
                    {clients, Clients}]),
 
     %% Pause for clustering.
-    timer:sleep(1000),
+    pause(),
 
     %% Verify membership.
     %%
@@ -223,7 +224,7 @@ static_manager_test(Config) ->
                    {clients, Clients}]),
 
     %% Pause for clustering.
-    timer:sleep(1000),
+    pause(),
 
     %% Verify membership.
     %%
@@ -270,7 +271,7 @@ hyparview_manager_partition_test(Config) ->
                    {clients, Clients}]),
 
     %% Pause for clustering.
-    timer:sleep(1000),
+    pause(),
 
     %% Create new digraph.
     Graph = digraph:new(),
@@ -354,7 +355,7 @@ hyparview_manager_partition_test(Config) ->
     ok = rpc:call(PNode, Manager, resolve_partition, [Reference]),
     ct:pal("Partition resolved: ~p", [Reference]),
 
-    timer:sleep(1000),
+    pause(),
 
     %% Verify resolved partition.
     ResolveVerifyFun = fun({_Name, Node}) ->
@@ -392,7 +393,7 @@ hyparview_manager_high_active_test(Config) ->
                    {clients, Clients}]),
 
     %% Pause for clustering.
-    timer:sleep(1000),
+    pause(),
 
     %% Create new digraph.
     Graph = digraph:new(),
@@ -469,7 +470,7 @@ hyparview_manager_low_active_test(Config) ->
                    {clients, Clients}]),
 
     %% Pause for clustering.
-    timer:sleep(4000),
+    pause(),
 
     %% Create new digraph.
     Graph = digraph:new(),
@@ -547,7 +548,7 @@ hyparview_manager_high_client_test(Config) ->
                    {clients, Clients}]),
 
     %% Pause for clustering.
-    timer:sleep(9000),
+    pause(),
 
     %% Create new digraph.
     Graph = digraph:new(),
@@ -800,16 +801,26 @@ cluster({Name, _Node} = Myself, Nodes, Options) when is_list(Nodes) ->
                         end
                  end,
     lists:map(fun(OtherNode) -> cluster(Myself, OtherNode) end, OtherNodes).
-cluster({_, Node}, {_, OtherNode}) ->
+
+cluster({_, Node}=N1, {_, OtherNode}=N2) ->
     PeerPort = rpc:call(OtherNode,
                         partisan_config,
                         get,
                         [peer_port, ?PEER_PORT]),
     ct:pal("Joining node: ~p to ~p at port ~p", [Node, OtherNode, PeerPort]),
-    ok = rpc:call(Node,
-                  partisan_peer_service,
-                  join,
-                  [{OtherNode, {127, 0, 0, 1}, PeerPort}]).
+    Result = rpc:call(Node,
+                      partisan_peer_service,
+                      join,
+                      [{OtherNode, {127, 0, 0, 1}, PeerPort}]),
+
+    case Result of
+        ok ->
+            ok;
+        _ ->
+            ct:pal("Node ~p is not connected yet. Trying again in ~p ms.", [OtherNode, ?WAIT_TIME]),
+            pause(),
+            cluster(N1, N2)
+    end.
 
 %% @private
 stop(Nodes) ->
@@ -870,3 +881,6 @@ make_certs(Config) ->
        {certfile, filename:join(PrivDir, "client/keycert.pem")},
        {cacertfile, filename:join(PrivDir, "client/cacerts.pem")}
       ]}].
+
+pause() ->
+    timer:sleep(?WAIT_TIME).
