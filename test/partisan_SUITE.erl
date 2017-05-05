@@ -42,7 +42,7 @@
 -define(APP, partisan).
 -define(CLIENT_NUMBER, 3).
 -define(PEER_PORT, 9000).
--define(WAIT_TIME, 2000). %% 2 seconds
+-define(WAIT_TIME, 1000). %% 1 second
 
 %% ===================================================================
 %% common_test callbacks
@@ -114,12 +114,16 @@ default_manager_test(Config) ->
     %% Use the default peer service manager.
     Manager = partisan_default_peer_service_manager,
 
+    %% Specify servers.
+    Servers = node_list(1, "server", Config),
+
     %% Specify clients.
     Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
     Nodes = start(default_manager_test, Config,
                   [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
                    {clients, Clients}]),
 
     %% Pause for clustering.
