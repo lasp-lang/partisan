@@ -55,7 +55,8 @@ build_tree(N, Nodes, Opts) ->
 %% @doc Reconnect disconnected members and members waiting to join.
 -spec establish_connections(pending(), [node_spec()], connections()) -> connections().
 establish_connections(Pending, Members, Connections) ->
-    AllPeers = lists:keydelete(node(), 1, Members ++ Pending),
+    Myself = partisan_peer_service_manager:myself(),
+    AllPeers = lists:keydelete(Myself, 1, Members ++ Pending),
     lists:foldl(
         fun(Peer, Acc) ->
             {_Result, Connections} = maybe_connect(Peer, Acc),

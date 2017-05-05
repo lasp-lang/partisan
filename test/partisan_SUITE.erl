@@ -114,16 +114,12 @@ default_manager_test(Config) ->
     %% Use the default peer service manager.
     Manager = partisan_default_peer_service_manager,
 
-    %% Specify servers.
-    Servers = node_list(1, "server", Config),
-
     %% Specify clients.
     Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
     Nodes = start(default_manager_test, Config,
                   [{partisan_peer_service_manager, Manager},
-                   {servers, Servers},
                    {clients, Clients}]),
 
     %% Pause for clustering.
@@ -135,13 +131,13 @@ default_manager_test(Config) ->
     %%
     VerifyFun = fun({_, Node}) ->
             {ok, Members} = rpc:call(Node, Manager, members, []),
-            SortedNodes = lists:usort([N || {_, N} <- Nodes]),
+            SortedNodes = lists:usort([N || {_NName, N} <- Nodes]),
             SortedMembers = lists:usort(Members),
             case SortedMembers =:= SortedNodes of
                 true ->
                     ok;
                 false ->
-                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Nodes, Members])
+                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, SortedNodes, SortedMembers])
             end
     end,
 
@@ -182,14 +178,18 @@ client_server_manager_test(Config) ->
             %% If this node is a server, it should know about all nodes.
             SortedNodes = case lists:member(Name, Servers) of
                 true ->
-                    lists:usort([N || {_, N} <- Nodes]);
+                    lists:usort([N || {_NName, N} <- Nodes]);
                 false ->
                     %% Otherwise, it should only know about the server
                     %% and itself.
                     lists:usort(
-                        lists:map(fun(S) ->
-                                    proplists:get_value(S, Nodes)
-                            end, Servers) ++ [Node])
+                        lists:map(
+                            fun(Server) ->
+                                proplists:get_value(Server, Nodes)
+                            end,
+                            Servers
+                        ) ++ [Node]
+                    )
             end,
 
             SortedMembers = lists:usort(Members),
@@ -197,7 +197,7 @@ client_server_manager_test(Config) ->
                 true ->
                     ok;
                 false ->
-                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Nodes, Members])
+                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, SortedNodes, SortedMembers])
             end
     end,
 
@@ -227,19 +227,16 @@ static_manager_test(Config) ->
     pause(),
 
     %% Verify membership.
-    %%
-    %% Every node should know about every other node in this topology.
-    %%
-    %%
-    VerifyFun = fun({Name, Node}) -> 
+    VerifyFun = fun({_, Node}) ->
             {ok, Members} = rpc:call(Node, Manager, members, []), 
-            Should = [N || {_, N} <- Nodes, N /= Name], 
 
-            case lists:usort(Members) =:= lists:usort(Should) of
+            SortedNodes = lists:usort([N || {_NName, N} <- Nodes]),
+            SortedMembers = lists:usort(Members),
+            case SortedMembers =:= SortedNodes of
                 true ->
                     ok;
                 false ->
-                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Should, Members])
+                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, SortedNodes, SortedMembers])
             end
     end,
 
@@ -290,7 +287,7 @@ hyparview_manager_partition_test(Config) ->
     lists:foreach(ConnectFun, Nodes),
 
     %% Verify connectedness.
-    ConnectedFun = fun({_Name, Node}=Myself) ->
+    ConnectedFun = fun({_, Node}=Myself) ->
         lists:foreach(fun({_, N}) ->
             Path = digraph:get_short_path(Graph, Node, N),
             case Path of
@@ -335,7 +332,7 @@ hyparview_manager_partition_test(Config) ->
     ct:pal("Partition generated: ~p", [Reference]),
 
     %% Verify partition.
-    PartitionVerifyFun = fun({_Name, Node}) ->
+    PartitionVerifyFun = fun({_, Node}) ->
         {ok, Partitions} = rpc:call(Node, Manager, partitions, []),
         ct:pal("Partitions for node ~p: ~p", [Node, Partitions]),
         {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
@@ -358,7 +355,7 @@ hyparview_manager_partition_test(Config) ->
     pause(),
 
     %% Verify resolved partition.
-    ResolveVerifyFun = fun({_Name, Node}) ->
+    ResolveVerifyFun = fun({_, Node}) ->
         {ok, Partitions} = rpc:call(Node, Manager, partitions, []),
         ct:pal("Partitions for node ~p: ~p", [Node, Partitions]),
         case Partitions == [] of
@@ -412,7 +409,7 @@ hyparview_manager_high_active_test(Config) ->
     lists:foreach(ConnectFun, Nodes),
 
     %% Verify connectedness.
-    ConnectedFun = fun({_Name, Node}=Myself) ->
+    ConnectedFun = fun({_, Node}=Myself) ->
         lists:foreach(fun({_, N}) ->
             Path = digraph:get_short_path(Graph, Node, N),
             case Path of
@@ -492,7 +489,7 @@ hyparview_manager_low_active_test(Config) ->
     lists:foreach(ConnectFun, Nodes),
 
     %% Verify connectedness.
-    ConnectedFun = fun({_Name, Node}=Myself) ->
+    ConnectedFun = fun({_, Node}=Myself) ->
                         lists:foreach(fun({_, N}) ->
                                            Path = digraph:get_short_path(Graph, Node, N),
                                            case Path of
@@ -570,7 +567,7 @@ hyparview_manager_high_client_test(Config) ->
     lists:foreach(ConnectFun, Nodes),
 
     %% Verify connectedness.
-    ConnectedFun = fun({_Name, Node}=Myself) ->
+    ConnectedFun = fun({_, Node}=Myself) ->
         lists:foreach(fun({_, N}) ->
             Path = digraph:get_short_path(Graph, Node, N),
             case Path of
@@ -661,7 +658,7 @@ start(_Case, Config, Options) ->
     Nodes = lists:map(InitializerFun, NodeNames),
 
     %% Load applications on all of the nodes.
-    LoaderFun = fun({_Name, Node}) ->
+    LoaderFun = fun({_, Node}) ->
                             ct:pal("Loading applications on node: ~p", [Node]),
 
                             PrivDir = code:priv_dir(?APP),
@@ -723,7 +720,7 @@ start(_Case, Config, Options) ->
 
     ct:pal("Starting nodes."),
 
-    StartFun = fun({_Name, Node}) ->
+    StartFun = fun({_, Node}) ->
                         %% Start partisan.
                         {ok, _} = rpc:call(Node, application, ensure_all_started, [partisan])
                    end,
