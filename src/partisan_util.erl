@@ -67,7 +67,7 @@ establish_connections(Pending, Members, Connections) ->
 
 %% @doc Function should enforce the invariant that all cluster
 %%      members are keys in the dict pointing to undefined if they
-%%      are disconnected or a socket pid if they are connected. 
+%%      are disconnected or a socket pid if they are connected.
 -spec maybe_connect(node_spec(), connections()) -> {ok | error(), connections()}.
 maybe_connect({Name, _, _} = Node, Connections0) ->
     ShouldConnect = case dict:find(Name, Connections0) of

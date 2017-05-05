@@ -217,7 +217,7 @@ handle_call({join, {Name, _, _}=Node},
 
     %% Return.
     {reply, Result, State#state{pending=Pending,
-                            connections=Connections}};
+                                connections=Connections}};
 
 handle_call({send_message, Name, Message}, _From,
             #state{connections=Connections}=State) ->
