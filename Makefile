@@ -39,7 +39,8 @@ eunit:
 
 ct:
 	openssl rand -out test/partisan_SUITE_data/RAND 4096
-	${REBAR} as test ct
+	${REBAR} ct
+	${REBAR} cover
 
 shell:
 	${REBAR} shell --apps partisan
