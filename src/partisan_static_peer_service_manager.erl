@@ -211,18 +211,37 @@ handle_cast(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
     {noreply, State}.
 
-handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
-    FoldFun = fun(K, V, AccIn) ->
-                      case V =:= From of
-                          true ->
-                              dict:store(K, undefined, AccIn);
-                          false ->
-                              AccIn
-                      end
-              end,
-    Connections = dict:fold(FoldFun, Connections0, Connections0),
-    lager:info("FROM ~p, Connections0 ~p, Connections ~p\n\n", [From, Connections0, Connections]),
-    {noreply, State#state{connections=Connections}};
+handle_info({'EXIT', From, _Reason}, #state{connections=Connections0,
+                                            membership=Membership0}=State) ->
+    FoldFun = fun(K, V, {ConnectionsAcc0, MembershipAcc0}=AccIn) ->
+        case V =:= From of
+            true ->
+
+                % Remove from connections
+                ConnectionsAcc1 = dict:store(K, undefined, ConnectionsAcc0),
+
+                % Remove from membership
+                MembershipAcc1 = sets:filter(
+                    fun({Name, _, _}) ->
+                        Name /= V
+                    end,
+                    MembershipAcc0
+                ),
+
+                {ConnectionsAcc1, MembershipAcc1};
+            false ->
+                AccIn
+        end
+    end,
+    {Connections, Membership} = dict:fold(
+            FoldFun,
+            {Connections0, Membership0},
+            Connections0
+    ),
+    lager:info("FROM ~p, Connections0 ~p, Connections ~p\n\n", [From, dict:to_list(Connections0), dict:to_list(Connections)]),
+    lager:info("Membership0 ~p, Membership ~p\n\n", [sets:to_list(Membership0), sets:to_list(Membership)]),
+    {noreply, State#state{connections=Connections,
+                          membership=Membership}};
 
 handle_info({connected, Node, _Tag, _RemoteState},
                #state{pending=Pending0,
