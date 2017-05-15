@@ -286,6 +286,7 @@ handle_info({connected, _Node, _Tag, RemoteState},
                       connections=Connections}=State) ->
 
     %% Update membership by joining with remote membership.
+    lager:info("connected BF ~p", [RemoteState]),
     Membership = ?SET:merge(RemoteState, Membership0),
     persist_state(Membership),
 
@@ -417,6 +418,7 @@ handle_message({receive_state, PeerMembership},
             {reply, ok, State};
         false ->
             %% Merge data items.
+            lager:info("receive_state BF ~p", [PeerMembership]),
             Membership = ?SET:merge(PeerMembership, Membership0),
 
             %% Persist state.
