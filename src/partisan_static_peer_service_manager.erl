@@ -238,8 +238,13 @@ handle_info({'EXIT', From, _Reason}, #state{connections=Connections0,
             {Connections0, Membership0},
             Connections0
     ),
+
     lager:info("FROM ~p, Connections0 ~p, Connections ~p\n\n", [From, dict:to_list(Connections0), dict:to_list(Connections)]),
     lager:info("Membership0 ~p, Membership ~p\n\n", [sets:to_list(Membership0), sets:to_list(Membership)]),
+
+    %% Announce to the peer service.
+    partisan_peer_service_events:update(Membership),
+
     {noreply, State#state{connections=Connections,
                           membership=Membership}};
 
