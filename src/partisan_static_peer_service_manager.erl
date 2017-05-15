@@ -223,7 +223,7 @@ handle_info({'EXIT', From, _Reason}, #state{connections=Connections0,
                 % Remove from membership
                 MembershipAcc1 = sets:filter(
                     fun({Name, _, _}) ->
-                        Name /= V
+                        Name /= K
                     end,
                     MembershipAcc0
                 ),
