@@ -24,7 +24,7 @@
 -include("partisan.hrl").
 
 -export([build_tree/3,
-         establish_connections/3,
+         establish_connections/2,
          maybe_connect/2]).
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
@@ -52,23 +52,25 @@ build_tree(N, Nodes, Opts) ->
                     end, {[], tl(Expand)}, Nodes),
     orddict:from_list(Tree).
 
-%% @doc Reconnect disconnected members and members waiting to join.
--spec establish_connections(pending(), [node_spec()], connections()) -> connections().
-establish_connections(Pending, Members, Connections0) ->
-    {MyName, _, _} = partisan_peer_service_manager:myself(),
-    AllPeers = lists:keydelete(MyName, 1, Members ++ Pending),
+%% @doc Reconnect disconnected members.
+%%      Members waiting to join are already in the connections dictionary.
+-spec establish_connections([node_spec()], connections()) -> connections().
+establish_connections(Membership, Connections) ->
     lists:foldl(
-        fun(Peer, Acc) ->
-            {_Result, Connections} = maybe_connect(Peer, Acc),
-            Connections
+        fun(Peer, AccIn) ->
+            {_Result, AccOut} = maybe_connect(Peer, AccIn),
+            AccOut
         end,
-        Connections0,
-        AllPeers
+        Connections,
+        Membership
     ).
 
 %% @doc Function should enforce the invariant that all cluster
 %%      members are keys in the dict pointing to undefined if they
 %%      are disconnected or a socket pid if they are connected.
+%%
+%%      - In the end, the node name will be in the dictionary
+%%      (even if undefined).
 -spec maybe_connect(node_spec(), connections()) -> {ok | error(), connections()}.
 maybe_connect({Name, _, _} = Node, Connections0) ->
     ShouldConnect = case dict:find(Name, Connections0) of
