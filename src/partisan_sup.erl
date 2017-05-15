@@ -39,12 +39,11 @@ start_link() ->
 init([]) ->
     partisan_config:init(),
 
+    Manager = partisan_config:get(partisan_peer_service_manager),
+
     Children = lists:flatten(
                  [
-                 ?CHILD(partisan_default_peer_service_manager, worker),
-                 ?CHILD(partisan_client_server_peer_service_manager, worker),
-                 ?CHILD(partisan_static_peer_service_manager, worker),
-                 ?CHILD(partisan_hyparview_peer_service_manager, worker),
+                 ?CHILD(Manager, worker),
                  ?CHILD(partisan_peer_service_events, worker)
                  ]),
 
