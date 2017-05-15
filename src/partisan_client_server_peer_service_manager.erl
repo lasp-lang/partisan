@@ -439,14 +439,16 @@ accept_join_with_tag(OurTag, TheirTag) ->
 membership(Membership, Connections) ->
     lists:filter(
         fun({Name, _, _}) ->
-            case dict:find(Name, Connections) of
+            Connected = case dict:find(Name, Connections) of
                 {ok, undefined} ->
                     false;
                 {ok, _Pid} ->
                     true;
                 error ->
                     false
-            end
+            end,
+
+            Connected orelse Name == node()
         end,
         sets:to_list(Membership)
     ).

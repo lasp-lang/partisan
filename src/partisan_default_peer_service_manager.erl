@@ -507,14 +507,16 @@ down(Name, #state{down_functions=DownFunctions}) ->
 membership(Membership, Connections) ->
     lists:filter(
         fun({Name, _, _}) ->
-            case dict:find(Name, Connections) of
+            Connected = case dict:find(Name, Connections) of
                 {ok, undefined} ->
                     false;
                 {ok, _Pid} ->
                     true;
                 error ->
                     false
-            end
+            end,
+
+            Connected orelse Name == node()
         end,
         to_list(Membership)
     ).
