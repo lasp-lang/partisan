@@ -286,7 +286,6 @@ handle_info({connected, _Node, _Tag, RemoteState},
                       connections=Connections}=State) ->
 
     %% Update membership by joining with remote membership.
-    lager:info("connected BF ~p", [RemoteState]),
     Membership = ?SET:merge(RemoteState, Membership0),
     persist_state(Membership),
 

@@ -229,8 +229,6 @@ handle_info({'EXIT', From, _Reason}, #state{membership=Membership,
     end,
     Connections = dict:fold(FoldFun, Connections0, Connections0),
 
-    lager:info("FROM ~p, Connections0 ~p, Connections ~p\n\n", [From, dict:to_list(Connections0), dict:to_list(Connections)]),
-
     %% Announce to the peer service.
     ActualMembership = membership(Membership, Connections),
     partisan_peer_service_events:update(ActualMembership),
