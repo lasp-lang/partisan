@@ -88,7 +88,9 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
             true
     end,
 
-    ShoulConnect = ShouldConnect0 andalso Name /= node(),
+    ShouldConnect = ShouldConnect0 andalso Name /= node(),
+    lager:info("SC0 ~p, SC ~p, Name ~p, node() ~p\n\n", [ShouldConnect0, ShouldConnect, Name, node()]),
+
 
     case ShouldConnect of
         true ->
