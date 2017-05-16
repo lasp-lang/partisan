@@ -453,7 +453,6 @@ do_gossip(Membership, Connections) ->
     Fanout = partisan_config:get(fanout, ?FANOUT),
 
     ActualMembership = membership(Membership, Connections),
-    lager:info("M ~p, C ~p, A ~p", [Membership, Connections, ActualMembership]),
     Peers = [Name || {Name, _, _} <- ActualMembership, Name /= node()],
     PeersFanout = random_peers(Peers, Fanout),
 
