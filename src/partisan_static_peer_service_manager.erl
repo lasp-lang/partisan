@@ -219,22 +219,26 @@ handle_info(reconnect, #state{membership=Membership,
 handle_info({'EXIT', From, _Reason}, #state{membership=Membership,
                                             connections=Connections0}=State) ->
 
+    %% it's possible to receive and 'EXIT' from someone not in the
+    %% connections dictionary, why?
     lager:info("EXIT received"),
 
     FoldFun = fun(K, V, AccIn) ->
         case V =:= From of
             true ->
                 lager:info("EXIT received from ~p\n\n", [K]),
-                dict:store(K, undefined, AccIn);
+                AccOut = dict:store(K, undefined, AccIn),
+
+                %% Announce to the peer service.
+                ActualMembership = membership(Membership, AccOut),
+                partisan_peer_service_events:update(ActualMembership),
+                AccOut;
+
             false ->
                 AccIn
         end
     end,
     Connections = dict:fold(FoldFun, Connections0, Connections0),
-
-    %% Announce to the peer service.
-    ActualMembership = membership(Membership, Connections),
-    partisan_peer_service_events:update(ActualMembership),
 
     {noreply, State#state{connections=Connections}};
 
