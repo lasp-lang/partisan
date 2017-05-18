@@ -73,22 +73,26 @@ establish_connections(Membership, Connections) ->
 %%      (even if undefined).
 -spec maybe_connect(node_spec(), connections()) -> {ok | error(), connections()}.
 maybe_connect({Name, _, _} = Node, Connections0) ->
-    ShouldConnect0 = case dict:find(Name, Connections0) of
+    ShouldConnect = case dict:find(Name, Connections0) of
         %% Found in dict, and disconnected.
         {ok, undefined} ->
             lager:info("Node ~p is not connected; initiating.", [Node]),
             true;
         %% Found in dict and connected.
         {ok, _Pid} ->
-            lager:info("Node ~p is already connect.", [Node]),
+            %lager:info("Node ~p is already connect.", [Node]),
             false;
-        %% Not present; disconnected.
+        %% Not present; never connected.
         error ->
-            lager:info("Node ~p never was connected; initiating.", [Node]),
-            true
+            Should = Name /= node(),
+            case Should of
+                true ->
+                    lager:info("Node ~p never was connected; initiating.", [Node]);
+                false ->
+                    ok
+            end,
+            Should
     end,
-
-    ShouldConnect = ShouldConnect0 andalso Name /= node(),
 
     case ShouldConnect of
         true ->
