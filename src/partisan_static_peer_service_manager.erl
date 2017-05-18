@@ -219,9 +219,12 @@ handle_info(reconnect, #state{membership=Membership,
 handle_info({'EXIT', From, _Reason}, #state{membership=Membership,
                                             connections=Connections0}=State) ->
 
+    lager:info("EXIT received"),
+
     FoldFun = fun(K, V, AccIn) ->
         case V =:= From of
             true ->
+                lager:info("EXIT received from ~p\n\n", [K]),
                 dict:store(K, undefined, AccIn);
             false ->
                 AccIn
