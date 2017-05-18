@@ -53,13 +53,10 @@
 
 -include("partisan.hrl").
 
--type pending() :: [node_spec()].
 -type membership() :: sets:set(node_spec()).
 -type tag() :: atom().
 
--record(state, {myself :: node_spec(),
-                tag :: tag(),
-                pending :: pending(),
+-record(state, {tag :: tag(),
                 membership :: membership(),
                 connections :: connections()}).
 
@@ -70,7 +67,7 @@
 %%%===================================================================
 
 %% @doc Same as start_link([]).
--spec start_link() -> {ok, pid()} | ignore | {error, term()}.
+-spec start_link() -> {ok, pid()} | ignore | error().
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
@@ -115,7 +112,7 @@ leave(Node) ->
 
 %% @doc Decode state.
 decode(State) ->
-    sets:to_list(State).
+    State.
 
 %% @doc Reserve a slot for the particular tag.
 reserve(Tag) ->
@@ -150,14 +147,13 @@ init([]) ->
 
     Membership = maybe_load_state_from_disk(),
     Connections = dict:new(),
-    Myself = myself(),
 
     %% Get tag, if set.
     Tag = partisan_config:get(tag, undefined),
 
+    schedule_reconnect(),
+
     {ok, #state{tag=Tag,
-                myself=Myself,
-                pending=[],
                 membership=Membership,
                 connections=Connections}}.
 
@@ -194,19 +190,15 @@ handle_call({leave, Node}, _From,
 
 handle_call({join, {Name, _, _}=Node},
             _From,
-            #state{pending=Pending0, connections=Connections0}=State) ->
+            #state{connections=Connections0}=State) ->
     %% Attempt to join via disterl for control messages during testing.
     _ = net_kernel:connect(Name),
 
-    %% Add to list of pending connections.
-    Pending = [Node|Pending0],
-
     %% Trigger connection.
-    Connections = maybe_connect(Node, Connections0),
+    {Result, Connections} = maybe_connect(Node, Connections0),
 
     %% Return.
-    {reply, ok, State#state{pending=Pending,
-                            connections=Connections}};
+    {reply, Result, State#state{connections=Connections}};
 
 handle_call({send_message, Name, Message}, _From,
             #state{connections=Connections}=State) ->
@@ -223,8 +215,9 @@ handle_call({forward_message, Name, ServerRef, Message}, _From,
 handle_call({receive_message, Message}, _From, State) ->
     handle_message(Message, State);
 
-handle_call(members, _From, #state{membership=Membership}=State) ->
-    Members = [P || {P, _, _} <- members(Membership)],
+handle_call(members, _From, #state{membership=Membership,
+                                   connections=Connections}=State) ->
+    Members = [Name || {Name, _, _} <- membership(Membership, Connections)],
     {reply, {ok, Members}, State};
 
 handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
@@ -240,59 +233,62 @@ handle_cast(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
     {noreply, State}.
 
-handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
+handle_info(reconnect, #state{membership=Membership,
+                              connections=Connections0}=State) ->
+
+    Connections = establish_connections(Membership, Connections0),
+
+    schedule_reconnect(),
+
+    {noreply, State#state{connections=Connections}};
+
+handle_info({'EXIT', From, _Reason}, #state{membership=Membership,
+                                            connections=Connections0}=State) ->
+
     FoldFun = fun(K, V, AccIn) ->
-                      case V =:= From of
-                          true ->
-                              dict:store(K, undefined, AccIn);
-                          false ->
-                              AccIn
-                      end
-              end,
+        case V =:= From of
+            true ->
+                dict:store(K, undefined, AccIn);
+            false ->
+                AccIn
+        end
+    end,
     Connections = dict:fold(FoldFun, Connections0, Connections0),
+
+    %% Announce to the peer service.
+    ActualMembership = membership(Membership, Connections),
+    partisan_peer_service_events:update(ActualMembership),
+
     {noreply, State#state{connections=Connections}};
 
 handle_info({connected, Node, TheirTag, _RemoteState},
-               #state{pending=Pending0,
-                      tag=OurTag,
+               #state{tag=OurTag,
                       membership=Membership0,
-                      connections=Connections0}=State) ->
-    case lists:member(Node, Pending0) of
+                      connections=Connections}=State) ->
+
+    case accept_join_with_tag(OurTag, TheirTag) of
         true ->
-            case accept_join_with_tag(OurTag, TheirTag) of
-                true ->
-                    %% Move out of pending.
-                    Pending = Pending0 -- [Node],
+            %% Add to our membership.
+            Membership = sets:add_element(Node, Membership0),
+            persist_state(Membership),
 
-                    %% Add to our membership.
-                    Membership = sets:add_element(Node, Membership0),
+            %% Announce to the peer service.
+            ActualMembership = membership(Membership, Connections),
+            partisan_peer_service_events:update(Membership),
 
-                    %% Announce to the peer service.
-                    partisan_peer_service_events:update(Membership),
+            %% Compute count.
+            Count = length(ActualMembership),
 
-                    %% Establish any new connections.
-                    Connections = establish_connections(Pending,
-                                                        Membership,
-                                                        Connections0),
+            lager:info("Join ACCEPTED with ~p; node is ~p and we are ~p: we have ~p members in our view.",
+                       [Node, TheirTag, OurTag, Count]),
 
-                    %% Compute count.
-                    Count = sets:size(Membership),
-
-                    lager:info("Join ACCEPTED with ~p; node is ~p and we are ~p: we have ~p members in our view.",
-                               [Node, TheirTag, OurTag, Count]),
-
-                    %% Return.
-                    {noreply, State#state{pending=Pending,
-                                          connections=Connections,
-                                          membership=Membership}};
-                false ->
-                    lager:info("Join REFUSED with ~p; node is ~p and we are ~p",
-                               [Node, TheirTag, OurTag]),
-                    lager:info("Keeping membership: ~p", [Membership0]),
-
-                    {noreply, State}
-            end;
+            %% Return.
+            {noreply, State#state{membership=Membership}};
         false ->
+            lager:info("Join REFUSED with ~p; node is ~p and we are ~p",
+                       [Node, TheirTag, OurTag]),
+            lager:info("Keeping membership: ~p",  membership(Membership0, Connections)),
+
             {noreply, State}
     end;
 
@@ -385,50 +381,15 @@ persist_state(State) ->
     write_state_to_disk(State).
 
 %% @private
-members(Membership) ->
-    sets:to_list(Membership).
+establish_connections(Membership, Connections) ->
+    partisan_util:establish_connections(
+        sets:to_list(Membership),
+        Connections
+    ).
 
 %% @private
-establish_connections(Pending, Membership, Connections) ->
-    %% Reconnect disconnected members and members waiting to join.
-    Members = members(Membership),
-    AllPeers = lists:keydelete(node(), 1, Members ++ Pending),
-    lists:foldl(fun maybe_connect/2, Connections, AllPeers).
-
-%% @private
-%%
-%% Function should enforce the invariant that all cluster members are
-%% keys in the dict pointing to undefined if they are disconnected or a
-%% socket pid if they are connected.
-%%
-maybe_connect({Name, _, _} = Node, Connections0) ->
-    Connections = case dict:find(Name, Connections0) of
-        %% Found in dict, and disconnected.
-        {ok, undefined} ->
-            case connect(Node) of
-                {ok, Pid} ->
-                    dict:store(Name, Pid, Connections0);
-                _ ->
-                    dict:store(Name, undefined, Connections0)
-            end;
-        %% Found in dict and connected.
-        {ok, _Pid} ->
-            Connections0;
-        %% Not present; disconnected.
-        error ->
-            case connect(Node) of
-                {ok, Pid} ->
-                    dict:store(Name, Pid, Connections0);
-                _ ->
-                    dict:store(Name, undefined, Connections0)
-            end
-    end,
-    Connections.
-
-%% @private
-connect(Node) ->
-    Self = self(),
-    partisan_peer_service_client:start_link(Node, Self).
+maybe_connect(Node, Connections) ->
+    partisan_util:maybe_connect(Node, Connections).
 
 handle_message({forward_message, ServerRef, Message}, State) ->
     gen_server:cast(ServerRef, Message),
@@ -473,3 +434,25 @@ accept_join_with_tag(OurTag, TheirTag) ->
                     false
             end
     end.
+
+%% @private
+membership(Membership, Connections) ->
+    lists:filter(
+        fun({Name, _, _}) ->
+            Connected = case dict:find(Name, Connections) of
+                {ok, undefined} ->
+                    false;
+                {ok, _Pid} ->
+                    true;
+                error ->
+                    false
+            end,
+
+            Connected orelse Name == node()
+        end,
+        sets:to_list(Membership)
+    ).
+
+%% @private
+schedule_reconnect() ->
+    timer:send_after(?RECONNECT_INTERVAL, reconnect).

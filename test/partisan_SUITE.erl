@@ -42,6 +42,7 @@
 -define(APP, partisan).
 -define(CLIENT_NUMBER, 3).
 -define(PEER_PORT, 9000).
+-define(WAIT_TIME, 1000). %% 1 second
 
 %% ===================================================================
 %% common_test callbacks
@@ -92,7 +93,8 @@ groups() ->
 
      {simple, [],
       [default_manager_test,
-       client_server_manager_test]},
+       client_server_manager_test,
+       static_manager_test]},
 
      {hyparview, [],
       [hyparview_manager_partition_test,
@@ -125,7 +127,7 @@ default_manager_test(Config) ->
                    {clients, Clients}]),
 
     %% Pause for clustering.
-    timer:sleep(1000),
+    pause(),
 
     %% Verify membership.
     %%
@@ -133,13 +135,13 @@ default_manager_test(Config) ->
     %%
     VerifyFun = fun({_, Node}) ->
             {ok, Members} = rpc:call(Node, Manager, members, []),
-            SortedNodes = lists:usort([N || {_, N} <- Nodes]),
+            SortedNodes = lists:usort([N || {_NName, N} <- Nodes]),
             SortedMembers = lists:usort(Members),
             case SortedMembers =:= SortedNodes of
                 true ->
                     ok;
                 false ->
-                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Nodes, Members])
+                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, SortedNodes, SortedMembers])
             end
     end,
 
@@ -168,7 +170,7 @@ client_server_manager_test(Config) ->
                    {clients, Clients}]),
 
     %% Pause for clustering.
-    timer:sleep(1000),
+    pause(),
 
     %% Verify membership.
     %%
@@ -180,14 +182,18 @@ client_server_manager_test(Config) ->
             %% If this node is a server, it should know about all nodes.
             SortedNodes = case lists:member(Name, Servers) of
                 true ->
-                    lists:usort([N || {_, N} <- Nodes]);
+                    lists:usort([N || {_NName, N} <- Nodes]);
                 false ->
                     %% Otherwise, it should only know about the server
                     %% and itself.
                     lists:usort(
-                        lists:map(fun(S) ->
-                                    proplists:get_value(S, Nodes)
-                            end, Servers) ++ [Node])
+                        lists:map(
+                            fun(Server) ->
+                                proplists:get_value(Server, Nodes)
+                            end,
+                            Servers
+                        ) ++ [Node]
+                    )
             end,
 
             SortedMembers = lists:usort(Members),
@@ -195,7 +201,46 @@ client_server_manager_test(Config) ->
                 true ->
                     ok;
                 false ->
-                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Nodes, Members])
+                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, SortedNodes, SortedMembers])
+            end
+    end,
+
+    %% Verify the membership is correct.
+    lists:foreach(VerifyFun, Nodes),
+
+    ct:pal("Nodes: ~p", [Nodes]),
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
+static_manager_test(Config) ->
+    %% Use the static peer service manager.
+    Manager = partisan_static_peer_service_manager,
+
+    %% Specify clients.
+    Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
+
+    %% Start nodes.
+    Nodes = start(static_manager_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    pause(),
+
+    %% Verify membership.
+    VerifyFun = fun({_, Node}) ->
+            {ok, Members} = rpc:call(Node, Manager, members, []), 
+
+            SortedNodes = lists:usort([N || {_NName, N} <- Nodes]),
+            SortedMembers = lists:usort(Members),
+            case SortedMembers =:= SortedNodes of
+                true ->
+                    ok;
+                false ->
+                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, SortedNodes, SortedMembers])
             end
     end,
 
@@ -227,7 +272,7 @@ hyparview_manager_partition_test(Config) ->
                    {clients, Clients}]),
 
     %% Pause for clustering.
-    timer:sleep(1000),
+    pause(),
 
     %% Create new digraph.
     Graph = digraph:new(),
@@ -246,7 +291,7 @@ hyparview_manager_partition_test(Config) ->
     lists:foreach(ConnectFun, Nodes),
 
     %% Verify connectedness.
-    ConnectedFun = fun({_Name, Node}=Myself) ->
+    ConnectedFun = fun({_, Node}=Myself) ->
         lists:foreach(fun({_, N}) ->
             Path = digraph:get_short_path(Graph, Node, N),
             case Path of
@@ -291,7 +336,7 @@ hyparview_manager_partition_test(Config) ->
     ct:pal("Partition generated: ~p", [Reference]),
 
     %% Verify partition.
-    PartitionVerifyFun = fun({_Name, Node}) ->
+    PartitionVerifyFun = fun({_, Node}) ->
         {ok, Partitions} = rpc:call(Node, Manager, partitions, []),
         ct:pal("Partitions for node ~p: ~p", [Node, Partitions]),
         {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
@@ -311,10 +356,10 @@ hyparview_manager_partition_test(Config) ->
     ok = rpc:call(PNode, Manager, resolve_partition, [Reference]),
     ct:pal("Partition resolved: ~p", [Reference]),
 
-    timer:sleep(1000),
+    pause(),
 
     %% Verify resolved partition.
-    ResolveVerifyFun = fun({_Name, Node}) ->
+    ResolveVerifyFun = fun({_, Node}) ->
         {ok, Partitions} = rpc:call(Node, Manager, partitions, []),
         ct:pal("Partitions for node ~p: ~p", [Node, Partitions]),
         case Partitions == [] of
@@ -349,7 +394,7 @@ hyparview_manager_high_active_test(Config) ->
                    {clients, Clients}]),
 
     %% Pause for clustering.
-    timer:sleep(1000),
+    pause(),
 
     %% Create new digraph.
     Graph = digraph:new(),
@@ -368,7 +413,7 @@ hyparview_manager_high_active_test(Config) ->
     lists:foreach(ConnectFun, Nodes),
 
     %% Verify connectedness.
-    ConnectedFun = fun({_Name, Node}=Myself) ->
+    ConnectedFun = fun({_, Node}=Myself) ->
         lists:foreach(fun({_, N}) ->
             Path = digraph:get_short_path(Graph, Node, N),
             case Path of
@@ -426,7 +471,7 @@ hyparview_manager_low_active_test(Config) ->
                    {clients, Clients}]),
 
     %% Pause for clustering.
-    timer:sleep(4000),
+    pause(),
 
     %% Create new digraph.
     Graph = digraph:new(),
@@ -448,7 +493,7 @@ hyparview_manager_low_active_test(Config) ->
     lists:foreach(ConnectFun, Nodes),
 
     %% Verify connectedness.
-    ConnectedFun = fun({_Name, Node}=Myself) ->
+    ConnectedFun = fun({_, Node}=Myself) ->
                         lists:foreach(fun({_, N}) ->
                                            Path = digraph:get_short_path(Graph, Node, N),
                                            case Path of
@@ -504,7 +549,7 @@ hyparview_manager_high_client_test(Config) ->
                    {clients, Clients}]),
 
     %% Pause for clustering.
-    timer:sleep(9000),
+    pause(),
 
     %% Create new digraph.
     Graph = digraph:new(),
@@ -526,7 +571,7 @@ hyparview_manager_high_client_test(Config) ->
     lists:foreach(ConnectFun, Nodes),
 
     %% Verify connectedness.
-    ConnectedFun = fun({_Name, Node}=Myself) ->
+    ConnectedFun = fun({_, Node}=Myself) ->
         lists:foreach(fun({_, N}) ->
             Path = digraph:get_short_path(Graph, Node, N),
             case Path of
@@ -617,7 +662,7 @@ start(_Case, Config, Options) ->
     Nodes = lists:map(InitializerFun, NodeNames),
 
     %% Load applications on all of the nodes.
-    LoaderFun = fun({_Name, Node}) ->
+    LoaderFun = fun({_, Node}) ->
                             ct:pal("Loading applications on node: ~p", [Node]),
 
                             PrivDir = code:priv_dir(?APP),
@@ -679,7 +724,7 @@ start(_Case, Config, Options) ->
 
     ct:pal("Starting nodes."),
 
-    StartFun = fun({_Name, Node}) ->
+    StartFun = fun({_, Node}) ->
                         %% Start partisan.
                         {ok, _} = rpc:call(Node, application, ensure_all_started, [partisan])
                    end,
@@ -740,6 +785,9 @@ cluster({Name, _Node} = Myself, Nodes, Options) when is_list(Nodes) ->
                              {_, _} ->
                                 omit([Name], Nodes)
                          end;
+                     partisan_static_peer_service_manager ->
+                         %% Omit just ourselves.
+                         omit([Name], Nodes);
                      partisan_hyparview_peer_service_manager ->
                         case {AmIServer, AmIClient} of
                             {true, false} ->
@@ -754,16 +802,26 @@ cluster({Name, _Node} = Myself, Nodes, Options) when is_list(Nodes) ->
                         end
                  end,
     lists:map(fun(OtherNode) -> cluster(Myself, OtherNode) end, OtherNodes).
-cluster({_, Node}, {_, OtherNode}) ->
+
+cluster({_, Node}=N1, {_, OtherNode}=N2) ->
     PeerPort = rpc:call(OtherNode,
                         partisan_config,
                         get,
                         [peer_port, ?PEER_PORT]),
     ct:pal("Joining node: ~p to ~p at port ~p", [Node, OtherNode, PeerPort]),
-    ok = rpc:call(Node,
-                  partisan_peer_service,
-                  join,
-                  [{OtherNode, {127, 0, 0, 1}, PeerPort}]).
+    Result = rpc:call(Node,
+                      partisan_peer_service,
+                      join,
+                      [{OtherNode, {127, 0, 0, 1}, PeerPort}]),
+
+    case Result of
+        ok ->
+            ok;
+        _ ->
+            ct:pal("Node ~p is not connected yet. Trying again in ~p ms.", [OtherNode, ?WAIT_TIME]),
+            pause(),
+            cluster(N1, N2)
+    end.
 
 %% @private
 stop(Nodes) ->
@@ -824,3 +882,6 @@ make_certs(Config) ->
        {certfile, filename:join(PrivDir, "client/keycert.pem")},
        {cacertfile, filename:join(PrivDir, "client/cacerts.pem")}
       ]}].
+
+pause() ->
+    timer:sleep(?WAIT_TIME).

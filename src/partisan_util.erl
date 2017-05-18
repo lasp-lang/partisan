@@ -21,7 +21,11 @@
 
 -module(partisan_util).
 
--export([build_tree/3]).
+-include("partisan.hrl").
+
+-export([build_tree/3,
+         establish_connections/2,
+         maybe_connect/2]).
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
 %%      works by treating the list as an array-based tree where, for
@@ -47,3 +51,72 @@ build_tree(N, Nodes, Opts) ->
                             {NewResult, Rest}
                     end, {[], tl(Expand)}, Nodes),
     orddict:from_list(Tree).
+
+%% @doc Reconnect disconnected members.
+%%      Members waiting to join are already in the connections dictionary.
+-spec establish_connections([node_spec()], connections()) -> connections().
+establish_connections(Membership, Connections) ->
+    lists:foldl(
+        fun(Peer, AccIn) ->
+            {_Result, AccOut} = maybe_connect(Peer, AccIn),
+            AccOut
+        end,
+        Connections,
+        Membership
+    ).
+
+%% @doc Function should enforce the invariant that all cluster
+%%      members are keys in the dict pointing to undefined if they
+%%      are disconnected or a socket pid if they are connected.
+%%
+%%      - In the end, the node name will be in the dictionary
+%%      (even if undefined).
+-spec maybe_connect(node_spec(), connections()) -> {ok | error(), connections()}.
+maybe_connect({Name, _, _} = Node, Connections0) ->
+    ShouldConnect = case dict:find(Name, Connections0) of
+        %% Found in dict, and disconnected.
+        {ok, undefined} ->
+            lager:info("Node ~p is not connected; initiating.", [Node]),
+            true;
+        %% Found in dict and connected.
+        {ok, _Pid} ->
+            %lager:info("Node ~p is already connect.", [Node]),
+            false;
+        %% Not present; never connected.
+        error ->
+            Should = Name /= node(),
+            case Should of
+                true ->
+                    lager:info("Node ~p never was connected; initiating.", [Node]);
+                false ->
+                    ok
+            end,
+            Should
+    end,
+
+    case ShouldConnect of
+        true ->
+            case connect(Node) of
+                {ok, Pid} ->
+                    lager:info("Node ~p connected.", [Node]),
+                    Result = ok,
+                    Connections1 = dict:store(Name,
+                                              Pid,
+                                              Connections0),
+                    {Result, Connections1};
+                _ ->
+                    lager:info("Node ~p failed connection.", [Node]),
+                    Result = {error, undefined},
+                    Connections1 = dict:store(Name,
+                                              undefined,
+                                              Connections0),
+                    {Result, Connections1}
+            end;
+        false ->
+            {ok, Connections0}
+    end.
+
+%% @private
+connect(Node) ->
+    Self = self(),
+    partisan_peer_service_client:start_link(Node, Self).

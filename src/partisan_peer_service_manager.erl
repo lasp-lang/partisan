@@ -25,13 +25,13 @@
 
 -export([myself/0]).
 
--callback start_link() -> {ok, pid()} | ignore | {error, term()}.
+-callback start_link() -> {ok, pid()} | ignore | error().
 -callback members() -> [name()].
 -callback myself() -> node_spec().
 
 -callback get_local_state() -> term().
 
--callback join(node_spec()) -> ok.
+-callback join(node_spec()) -> ok | error().
 -callback leave() -> ok.
 -callback leave(node_spec()) -> ok.
 

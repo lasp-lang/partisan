@@ -22,9 +22,6 @@
 -module(partisan_peer_service).
 
 -export([join/1,
-         join/2,
-         join/3,
-         attempt_join/1,
          leave/1,
          decode/1,
          stop/0,
@@ -41,22 +38,9 @@ manager() ->
                         partisan_default_peer_service_manager).
 
 %% @doc prepare node to join a cluster
-join(Node) ->
-    join(Node, true).
-
-%% @doc Convert nodename to atom
-join(NodeStr, Auto) when is_list(NodeStr) ->
-    join(erlang:list_to_atom(lists:flatten(NodeStr)), Auto);
-join(Node, Auto) when is_atom(Node) ->
-    join(node(), Node, Auto);
-join({_Name, _IPAddress, _Port} = Node, _Auto) ->
-    attempt_join(Node).
-
-%% @doc Initiate join. Nodes cannot join themselves.
-join(Node, Node, _) ->
-    {error, self_join};
-join(_, Node, _Auto) ->
-    attempt_join(Node).
+join({_Name, _IPAddress, _Port} = Node) ->
+    Manager = manager(),
+    Manager:join(Node).
 
 %% @doc Return cluster members.
 members() ->
@@ -71,11 +55,6 @@ add_sup_callback(Function) ->
 decode(State) ->
     Manager = manager(),
     [P || {P, _, _} <- Manager:decode(State)].
-
-%% @private
-attempt_join({_Name, _, _}=Node) ->
-    Manager = manager(),
-    Manager:join(Node).
 
 %% @doc Attempt to leave the cluster.
 leave(_Args) when is_list(_Args) ->
