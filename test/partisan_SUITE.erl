@@ -625,7 +625,7 @@ start(_Case, Config, Options) ->
     ConfigureFun = fun({Name, Node}) ->
             %% Configure the peer service.
             PeerService = proplists:get_value(partisan_peer_service_manager, Options),
-            ct:pal("Setting peer service maanger on node ~p to ~p", [Node, PeerService]),
+            ct:pal("Setting peer service manager on node ~p to ~p", [Node, PeerService]),
             ok = rpc:call(Node, partisan_config, set,
                           [partisan_peer_service_manager, PeerService]),
 
