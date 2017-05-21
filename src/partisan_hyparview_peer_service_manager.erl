@@ -584,7 +584,7 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
             Connections = lists:foldl(
               fun(P, AccConnections0) ->
                   %% Establish connections.
-                  AccConnections = maybe_connect(Peer, AccConnections0),
+                  AccConnections = maybe_connect(P, AccConnections0),
 
                   do_send_message(
                       P,
