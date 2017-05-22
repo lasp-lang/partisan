@@ -67,12 +67,15 @@ init() ->
                         Tag
                 end,
 
+    KeepAlive = case list_to_atom(os:getenv("KEEP_ALIVE", "true")),
+
     [env_or_default(Key, Default) ||
         {Key, Default} <- [{arwl, 6},
                            {prwl, 6},
                            {connect_disterl, false},
                            {fanout, ?FANOUT},
                            {gossip_interval, 10000},
+                           {keep_alive, KeepAlive},
                            {max_active_size, 6},
                            {max_passive_size, 30},
                            {min_active_size, 3},
