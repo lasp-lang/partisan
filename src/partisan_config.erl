@@ -67,7 +67,7 @@ init() ->
                         Tag
                 end,
 
-    KeepAlive = case list_to_atom(os:getenv("KEEP_ALIVE", "true")),
+    KeepAlive = list_to_atom(os:getenv("KEEP_ALIVE", "true")),
 
     [env_or_default(Key, Default) ||
         {Key, Default} <- [{arwl, 6},
