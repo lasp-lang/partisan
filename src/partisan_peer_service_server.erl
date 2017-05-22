@@ -81,12 +81,9 @@ handle_info({Tag, _RawSocket, Reason}, State=#state{socket=_Socket}) when ?ERROR
     {stop, Reason, State};
 handle_info({Tag, _RawSocket}, State=#state{socket=_Socket}) when ?CLOSED_MSG(Tag) ->
     {stop, normal, State};
-handle_info({'DOWN', MRef, port, _, _}, State=#state{socket=Socket,
-                                                     ref=MRef}) ->
-    %% Listen socket closed, receive all pending data then stop. In more
-    %% advanced protocols will likely be able to do better.
-    lager:info("Gracefully closing ~p~n", [Socket]),
-    {stop, flush_socket(Socket), State};
+handle_info({'DOWN', MRef, port, _, _}, State=#state{ref=MRef}) ->
+    %% Listen socket closed
+    {stop, normal, State};
 handle_info(_, State) ->
     {noreply, State}.
 
@@ -159,30 +156,3 @@ maybe_connect_disterl(Node) ->
 manager() ->
     partisan_config:get(partisan_peer_service_manager,
                         partisan_default_peer_service_manager).
-
-%% internal
-
-flush_socket(Conn) ->
-    Socket = partisan_peer_connection:socket(Conn),
-    receive
-        {Tag, Socket, Data} when ?DATA_MSG(Tag)    -> flush_send(Conn, Data);
-        {Tag, Socket, Reason} when ?ERROR_MSG(Tag) -> Reason;
-        {Tag, Socket} when ?CLOSED_MSG(Tag)        -> normal
-    after
-        0 -> normal
-    end.
-
-flush_send(Conn, Data) ->
-    case partisan_peer_connection:send(Conn, Data) of
-        ok              -> flush_recv(Conn);
-        {error, closed} -> normal;
-        {error, Reason} -> Reason
-    end.
-
-flush_recv(Conn) ->
-    case partisan_peer_connection:recv(Conn, 0, 0) of
-        {ok, Data}       -> flush_send(Conn, Data);
-        {error, timeout} -> normal;
-        {error, closed}  -> normal;
-        {error, Reason}  -> Reason
-    end.
