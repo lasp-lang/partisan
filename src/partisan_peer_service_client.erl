@@ -110,6 +110,7 @@ handle_info(Msg, State) ->
 %% @private
 -spec terminate(term(), state_t()) -> term().
 terminate(_Reason, #state{socket=Socket}) ->
+    lager:info("Terminating...\n\n"),
     ok = partisan_peer_connection:close(Socket),
     ok.
 

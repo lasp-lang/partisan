@@ -38,6 +38,7 @@
          receive_message/1,
          decode/1,
          reserve/1,
+         close_connections/1,
          partitions/0,
          inject_partition/2,
          resolve_partition/1]).
@@ -118,6 +119,9 @@ decode(State) ->
 reserve(Tag) ->
     gen_server:call(?MODULE, {reserve, Tag}, infinity).
 
+close_connections(IPs) ->
+    gen_server:call(?MODULE, {close_connections, IPs}, infinity).
+
 %% @doc Inject a partition.
 inject_partition(_Origin, _TTL) ->
     {error, not_implemented}.
@@ -193,6 +197,38 @@ handle_call(members, _From, #state{membership=Membership,
 
 handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
     {reply, {ok, Membership}, State};
+
+handle_call({close_connections, IPs}, _From, #state{membership=Membership,
+                                                    connections=Connections0}=State) ->
+
+    Connections = lists:foldl(
+        fun({Name, Ip, _}, AccIn) ->
+            case lists:member(Ip, IPs) of
+                true ->
+                    %% if should close the current active connections
+                    case dict:find(Name, AccIn) of
+                        {ok, undefined} ->
+                            AccIn;
+                        {ok, Pid} ->
+                            gen_server:stop(Pid),
+                            dict:store(Name, undefined, AccIn);
+                        error ->
+                            AccIn
+                    end;
+                false ->
+                    ok
+            end
+        end,
+        Connections0,
+        sets:to_list(Membership)
+    ),
+
+
+    %% Announce to the peer service.
+    ActualMembership = membership(Membership, Connections),
+    partisan_peer_service_events:update(ActualMembership),
+
+    {reply, ok, State#state{connections=Connections}};
 
 handle_call(Msg, _From, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
