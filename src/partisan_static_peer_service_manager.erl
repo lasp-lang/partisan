@@ -163,7 +163,7 @@ handle_call({reserve, _Tag}, _From, State) ->
 handle_call({leave, _Node}, _From, State) ->
     {reply, error, State};
 
-handle_call({join, {Name, _, _}=Node}, _From,
+handle_call({join, {_, _, _}=Node}, _From,
             #state{connections=Connections0}=State) ->
     %% Trigger connection.
     {Result, Connections} = maybe_connect(Node, Connections0),
