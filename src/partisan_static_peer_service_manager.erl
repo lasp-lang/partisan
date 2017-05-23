@@ -165,9 +165,6 @@ handle_call({leave, _Node}, _From, State) ->
 
 handle_call({join, {Name, _, _}=Node}, _From,
             #state{connections=Connections0}=State) ->
-    %% Attempt to join via disterl for control messages during testing.
-    _ = net_kernel:connect(Name),
-
     %% Trigger connection.
     {Result, Connections} = maybe_connect(Node, Connections0),
 
