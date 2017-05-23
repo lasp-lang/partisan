@@ -218,7 +218,7 @@ handle_call({close_connections, IPs}, _From, #state{membership=Membership,
                             AccIn
                     end;
                 false ->
-                    ok
+                    AccIn
             end
         end,
         Connections0,
