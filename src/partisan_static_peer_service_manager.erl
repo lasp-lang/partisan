@@ -201,10 +201,12 @@ handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
 handle_call({close_connections, IPs}, _From, #state{membership=Membership,
                                                     connections=Connections0}=State) ->
 
+    lager:info("CLOSE CONNECTIONS ~p", [IPs]),
     Connections = lists:foldl(
         fun({Name, Ip, _}, AccIn) ->
             case lists:member(Ip, IPs) of
                 true ->
+                    lager:info("FOUND IP ~p IN ~p", [Ip, Name]),
                     %% if should close the current active connections
                     case dict:find(Name, AccIn) of
                         {ok, undefined} ->
@@ -222,7 +224,6 @@ handle_call({close_connections, IPs}, _From, #state{membership=Membership,
         Connections0,
         sets:to_list(Membership)
     ),
-
 
     %% Announce to the peer service.
     ActualMembership = membership(Membership, Connections),
