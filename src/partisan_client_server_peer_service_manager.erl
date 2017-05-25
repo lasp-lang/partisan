@@ -274,7 +274,7 @@ handle_info({connected, Node, TheirTag, _RemoteState},
 
             %% Announce to the peer service.
             ActualMembership = membership(Membership, Connections),
-            partisan_peer_service_events:update(Membership),
+            partisan_peer_service_events:update(ActualMembership),
 
             %% Compute count.
             Count = length(ActualMembership),

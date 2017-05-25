@@ -1265,7 +1265,7 @@ merge_exchange(Exchange, #state{myself=Myself, active=Active}=State0) ->
 
 %% @private
 notify(#state{active=Active}) ->
-    partisan_peer_service_events:update(Active).
+    partisan_peer_service_events:update(sets:to_list(Active)).
 
 %% @private
 reserved_slot_available(Tag, Reserved) ->
