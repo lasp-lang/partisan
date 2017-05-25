@@ -579,20 +579,21 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
                             Connections1),
 
             %% Random walk for forward join.
-            Peers = members(Active0) -- [Myself0],
+            Connections = case select_random(Active0, [Myself0]) of
+                undefined ->
+                    %% No peer, don't random walk.
+                    Connections0;
+                Random ->
+                    %% Establish connections.
+                    Connections1 = maybe_connect(Random, Connections0),
 
-            Connections = lists:foldl(
-              fun(P, AccConnections0) ->
-                  %% Establish connections.
-                  AccConnections = maybe_connect(Peer, AccConnections0),
+                    do_send_message(
+                        Random,
+                        {forward_join, Peer, PeerTag, PeerEpoch, arwl(), Myself0},
+                        Connections1),
 
-                  do_send_message(
-                      P,
-                      {forward_join, Peer, PeerTag, PeerEpoch, arwl(), Myself0},
-                      AccConnections),
-
-                  AccConnections
-              end, Connections1, Peers),
+                    Connections1
+            end,
 
             %% Notify with event.
             notify(State1#state{connections=Connections}),
