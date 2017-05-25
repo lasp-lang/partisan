@@ -93,8 +93,3 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-
-%% @private
-manager() ->
-    partisan_config:get(partisan_peer_service_manager,
-                        partisan_default_peer_service_manager).
