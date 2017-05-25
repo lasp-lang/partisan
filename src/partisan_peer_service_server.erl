@@ -111,7 +111,7 @@ handle_message({hello, Node},
         ok ->
             %% Send our state to the remote service, incase they want
             %% it to bootstrap.
-            Manager = manager(),
+            Manager = partisan_peer_service:manager(),
             {ok, LocalState} = Manager:get_local_state(),
             send_message(Socket, {state, Tag, LocalState}),
             ok;
@@ -121,7 +121,7 @@ handle_message({hello, Node},
             ok
     end;
 handle_message(Message, _State) ->
-    Manager = manager(),
+    Manager = partisan_peer_service:manager(),
     Manager:receive_message(Message),
     ok.
 
@@ -152,7 +152,3 @@ maybe_connect_disterl(Node) ->
             ok
     end.
 
-%% @private
-manager() ->
-    partisan_config:get(partisan_peer_service_manager,
-                        partisan_default_peer_service_manager).
