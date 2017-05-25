@@ -474,15 +474,15 @@ handle_info({'EXIT', From, _Reason},
                               {Peer, AccIn}
                       end
               end,
-    {Peer, Connections} = dict:fold(FoldFun,
+    {Name, Connections} = dict:fold(FoldFun,
                                     {undefined, Connections0},
                                     Connections0),
 
     %% If it was in the passive view and our connection attempt failed,
     %% remove from the passive view altogether.
-    Passive = case is_in_passive_view(Peer, Passive0) of
-        true ->
-            remove_from_passive_view(Peer, Passive0);
+    Passive = case is_in_passive_view(Name, Passive0) of
+        {true, PassivePeer} ->
+            remove_from_passive_view(PassivePeer, Passive0);
         false ->
             Passive0
     end,
@@ -490,9 +490,9 @@ handle_info({'EXIT', From, _Reason},
     %% If it was in the active view and our connection attempt failed,
     %% remove from the active view altogether.
     {Active, RemovedFromActive} =
-        case is_in_active_view(Peer, Active0) of
-            true ->
-                {remove_from_active_view(Peer, Active0), true};
+        case is_in_active_view(Name, Active0) of
+            {true, ActivePeer} ->
+                {remove_from_active_view(ActivePeer, Active0), true};
             false ->
                 {Active0, false}
         end,
@@ -1248,20 +1248,39 @@ prwl() ->
     partisan_config:get(prwl, 6).
 
 %% @private
+-spec remove_from_passive_view(node_spec(), passive()) -> passive().
 remove_from_passive_view(Peer, Passive) ->
     sets:del_element(Peer, Passive).
 
 %% @private
+-spec is_in_passive_view(node_spec() | node(), passive()) ->
+        false | {true, node_spec()}.
 is_in_passive_view(Peer, Passive) ->
-    sets:is_element(Peer, Passive).
+    is_in_view(Peer, Passive).
 
 %% @private
+-spec remove_from_active_view(node_spec(), active()) -> active().
 remove_from_active_view(Peer, Active) ->
     sets:del_element(Peer, Active).
 
 %% @private
+-spec is_in_active_view(node_spec() | node(), active()) ->
+        false | {true, node_spec()}.
 is_in_active_view(Peer, Active) ->
-    sets:is_element(Peer, Active).
+    is_in_view(Peer, Active).
+
+-spec is_in_view(node_spec() | node(), active() | passive()) ->
+        false | {true, node_spec()}.
+is_in_view({_Node, _, _} = Peer, View) ->
+    case sets:is_element(Peer, View) of
+        false -> false;
+        true -> {true, Peer}
+    end;
+is_in_view(Node, View) ->
+    case lists:keyfind(Node, 1, sets:to_list(View)) of
+        false -> false;
+        Peer -> {true, Peer}
+    end.
 
 %% @private
 neighbor_acceptable(Priority, Tag,

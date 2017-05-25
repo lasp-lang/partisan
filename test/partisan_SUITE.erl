@@ -326,6 +326,9 @@ hyparview_manager_partition_test(Config) ->
     end,
     lists:foreach(ResolveVerifyFun, Nodes),
 
+    %% Verify the behaviour when a node is stopped
+    check_stopped_member(Nodes),
+
     %% Stop nodes.
     stop(Nodes),
 
@@ -402,6 +405,9 @@ hyparview_manager_high_active_test(Config) ->
                       end, Active1)
                   end,
     lists:foreach(SymmetryFun, Nodes),
+
+    %% Verify the behaviour when a node is stopped
+    check_stopped_member(Nodes),
 
     %% Stop nodes.
     stop(Nodes),
@@ -483,6 +489,9 @@ hyparview_manager_low_active_test(Config) ->
                   end,
     lists:foreach(SymmetryFun, Nodes),
 
+    %% Verify the behaviour when a node is stopped
+    check_stopped_member(Nodes),
+
     %% Stop nodes.
     stop(Nodes),
 
@@ -560,6 +569,9 @@ hyparview_manager_high_client_test(Config) ->
                       end, Active1)
                   end,
     lists:foreach(SymmetryFun, Nodes),
+
+    %% Verify the behaviour when a node is stopped
+    check_stopped_member(Nodes),
 
     %% Stop nodes.
     stop(Nodes),
@@ -644,7 +656,7 @@ start(_Case, Config, Options) ->
     ConfigureFun = fun({Name, Node}) ->
             %% Configure the peer service.
             PeerService = proplists:get_value(partisan_peer_service_manager, Options),
-            ct:pal("Setting peer service maanger on node ~p to ~p", [Node, PeerService]),
+            ct:pal("Setting peer service manager on node ~p to ~p", [Node, PeerService]),
             ok = rpc:call(Node, partisan_config, set,
                           [partisan_peer_service_manager, PeerService]),
 
@@ -824,3 +836,24 @@ make_certs(Config) ->
        {certfile, filename:join(PrivDir, "client/keycert.pem")},
        {cacertfile, filename:join(PrivDir, "client/cacerts.pem")}
       ]}].
+
+%% @private
+check_stopped_member([_Node]) -> ok;
+check_stopped_member(Nodes) ->
+    [{_, FirstNode}|_] = Nodes,
+    ct:pal("nodes: ~p", [Nodes]),
+    %% Kill the first node of the list
+    ct:pal("stopping node ~p", [FirstNode]),
+    rpc:call(FirstNode, partisan, stop, []),
+    %% Obtain the membership from the last node from the list,
+    %% the killed node shouldn't be there
+    {_, LastNode} = lists:last(Nodes),
+    {ok, Members} = rpc:call(LastNode, partisan_peer_service, members, []),
+    ct:pal("~p's membership: ~p", [LastNode, Members]),
+    case lists:member(FirstNode, Members) of
+        true ->
+            ct:fail("~p has been killed, it should not be in ~p's membership",
+                    [FirstNode, LastNode]);
+        false ->
+            ok
+    end.
