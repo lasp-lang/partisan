@@ -71,14 +71,6 @@ update(LocalState) ->
 %% ===================================================================
 
 init([Fn]) ->
-    Manager = manager(),
-    {ok, LocalState} = Manager:get_local_state(),
-    try
-        Fn(LocalState)
-    catch
-        _:Error ->
-            lager:error("Error with callback: ~p", [Error])
-    end,
     {ok, #state{callback=Fn}}.
 
 handle_event({update, LocalState}, State) ->
