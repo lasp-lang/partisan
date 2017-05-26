@@ -201,12 +201,12 @@ handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
 handle_call({close_connections, IPs}, _From, #state{membership=Membership,
                                                     connections=Connections0}=State) ->
 
-    lager:info("CLOSE CONNECTIONS ~p", [IPs]),
+    %lager:info("CLOSE CONNECTIONS ~p", [IPs]),
     Connections = lists:foldl(
         fun({Name, Ip, _}, AccIn) ->
             case lists:member(Ip, IPs) of
                 true ->
-                    lager:info("FOUND IP ~p IN ~p", [Ip, Name]),
+                    %lager:info("FOUND IP ~p IN ~p", [Ip, Name]),
                     %% if should close the current active connections
                     case dict:find(Name, AccIn) of
                         {ok, undefined} ->
@@ -255,12 +255,12 @@ handle_info({'EXIT', From, _Reason}, #state{membership=Membership,
 
     %% it's possible to receive and 'EXIT' from someone not in the
     %% connections dictionary, why?
-    lager:info("EXIT received"),
+    %lager:info("EXIT received"),
 
     FoldFun = fun(K, V, AccIn) ->
         case V =:= From of
             true ->
-                lager:info("EXIT received from ~p\n\n", [K]),
+                %lager:info("EXIT received from ~p\n\n", [K]),
                 AccOut = dict:store(K, undefined, AccIn),
 
                 %% Announce to the peer service.
@@ -289,10 +289,8 @@ handle_info({connected, Node, _Tag, _RemoteState},
     partisan_peer_service_events:update(ActualMembership),
 
     %% Compute count.
-    Count = length(ActualMembership),
-
-    lager:info("Join ACCEPTED with ~p; we have ~p members in our view.",
-               [Node, Count]),
+    %Count = length(ActualMembership),
+    %lager:info("Join ACCEPTED with ~p; we have ~p members in our view.", [Node, Count]),
 
     {noreply, State#state{membership=Membership}};
 
