@@ -55,7 +55,14 @@ accept(TCPSocket) ->
     case tls_enabled() of
         true ->
             TLSOpts = tls_options(),
+            %% as per http://erlang.org/doc/man/ssl.html#ssl_accept-1
+            %% The listen socket is to be in mode {active, false} before telling the client
+            %% that the server is ready to upgrade by calling this function, else the upgrade
+            %% succeeds or does not succeed depending on timing.
+            inet:setopts(TCPSocket, [{active, false}]),
             {ok, TLSSocket} = ssl:ssl_accept(TCPSocket, TLSOpts),
+            %% restore the expected active once setting
+            ssl:setopts(TLSSocket, [{active, once}]),
             #connection{socket = TLSSocket, transport = ssl, control = ssl};
         _ ->
             #connection{socket = TCPSocket, transport = gen_tcp, control = inet}

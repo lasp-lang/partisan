@@ -146,6 +146,11 @@ default_manager_test(Config) ->
     %% Verify the membership is correct.
     lists:foreach(VerifyFun, Nodes),
 
+    %% Verify forward message functionality.
+    lists:foreach(fun({_Name, Node}) ->
+                    ok = check_forward_message(Node, Manager)
+                  end, Nodes),
+
     %% Stop nodes.
     stop(Nodes),
 
@@ -202,7 +207,10 @@ client_server_manager_test(Config) ->
     %% Verify the membership is correct.
     lists:foreach(VerifyFun, Nodes),
 
-    ct:pal("Nodes: ~p", [Nodes]),
+    %% Verify forward message functionality.
+    lists:foreach(fun({_Name, Node}) ->
+                    ok = check_forward_message(Node, Manager)
+                  end, Nodes),
 
     %% Stop nodes.
     stop(Nodes),
@@ -326,6 +334,11 @@ hyparview_manager_partition_test(Config) ->
     end,
     lists:foreach(ResolveVerifyFun, Nodes),
 
+    %% Verify forward message functionality.
+    lists:foreach(fun({_Name, Node}) ->
+                    ok = check_forward_message(Node, Manager)
+                  end, Nodes),
+
     %% Stop nodes.
     stop(Nodes),
 
@@ -402,6 +415,11 @@ hyparview_manager_high_active_test(Config) ->
                       end, Active1)
                   end,
     lists:foreach(SymmetryFun, Nodes),
+
+    %% Verify forward message functionality.
+    lists:foreach(fun({_Name, Node}) ->
+                    ok = check_forward_message(Node, Manager)
+                  end, Nodes),
 
     %% Stop nodes.
     stop(Nodes),
@@ -483,6 +501,11 @@ hyparview_manager_low_active_test(Config) ->
                   end,
     lists:foreach(SymmetryFun, Nodes),
 
+    %% Verify forward message functionality.
+    lists:foreach(fun({_Name, Node}) ->
+                    ok = check_forward_message(Node, Manager)
+                  end, Nodes),
+
     %% Stop nodes.
     stop(Nodes),
 
@@ -560,6 +583,11 @@ hyparview_manager_high_client_test(Config) ->
                       end, Active1)
                   end,
     lists:foreach(SymmetryFun, Nodes),
+
+    %% Verify forward message functionality.
+    lists:foreach(fun({_Name, Node}) ->
+                    ok = check_forward_message(Node, Manager)
+                  end, Nodes),
 
     %% Stop nodes.
     stop(Nodes),
@@ -681,8 +709,24 @@ start(_Case, Config, Options) ->
 
     StartFun = fun({_Name, Node}) ->
                         %% Start partisan.
-                        {ok, _} = rpc:call(Node, application, ensure_all_started, [partisan])
-                   end,
+                        {ok, _} = rpc:call(Node, application, ensure_all_started, [partisan]),
+                        %% Start a dummy registered process that saves in the environment
+                        %% whatever message it gets, it will only do this *x* amount of times
+                        %% *x* being the number of nodes present in the cluster
+                        Pid = rpc:call(Node, erlang, spawn,
+                                       [fun() ->
+                                            lists:foreach(fun(_) ->
+                                                receive
+                                                    {'$gen_cast', {store, N}} ->
+                                                        %% save the number in the environment
+                                                        application:set_env(partisan, forward_message_test, N)
+                                                end
+                                            end, lists:seq(1, length(NodeNames)))
+                                        end]),
+                        true = rpc:call(Node, erlang, register, [store_proc, Pid]),
+                        ct:pal("registered store_proc on pid ~p, node ~p",
+                               [Pid, Node])
+               end,
     lists:foreach(StartFun, Nodes),
 
     ct:pal("Clustering nodes."),
@@ -824,3 +868,33 @@ make_certs(Config) ->
        {certfile, filename:join(PrivDir, "client/keycert.pem")},
        {cacertfile, filename:join(PrivDir, "client/cacerts.pem")}
       ]}].
+
+%% @private
+check_forward_message(Node, Manager) ->
+    {ok, Members} = rpc:call(Node, Manager, members, []),
+    %% ask member node to forward a message to one other random member
+    ct:pal("members of ~p: ~p", [Node, Members]),
+    RandomMember = random(Members, Node),
+    ct:pal("requesting node ~p to forward message to store_proc on node ~p",
+           [Node, RandomMember]),
+    Rand = rand_compat:uniform(),
+    rpc:call(Node, Manager, forward_message,
+             [RandomMember, store_proc, {store, Rand}]),
+    %% wait a bit to allow for the message to arrive
+    timer:sleep(500),
+    %% now fetch the value from the random destination node
+    {ok, ExpectedRand} = rpc:call(RandomMember, application, get_env, [partisan, forward_message_test]),
+    %% it must match with what we asked the node to forward
+    ?assertEqual(Rand, ExpectedRand),
+    ok.
+
+random(List0, Omit) ->
+    List = List0 -- lists:flatten([Omit]),
+    %% Catch exceptions where there may not be enough members.
+    try
+        Index = rand_compat:uniform(length(List)),
+        lists:nth(Index, List)
+    catch
+        _:_ ->
+            undefined
+    end.
