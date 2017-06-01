@@ -832,8 +832,8 @@ check_forward_message(Node, Manager) ->
     ct:pal("requesting node ~p to forward message to store_proc on node ~p",
            [Node, RandomMember]),
     Rand = rand_compat:uniform(),
-    rpc:call(Node, Manager, forward_message,
-             [RandomMember, store_proc, {store, Rand}]),
+    ok = rpc:call(Node, Manager, forward_message,
+                  [RandomMember, store_proc, {store, Rand}]),
     %% now fetch the value from the random destination node
     ok = wait_until(fun() ->
                     %% it must match with what we asked the node to forward
