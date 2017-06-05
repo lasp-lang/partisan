@@ -35,7 +35,6 @@ init() ->
                         ?PEER_IP;
                     IP ->
                         {ok, ParsedIP} = inet_parse:address(IP),
-                        application:set_env(partisan, peer_ip, ParsedIP),
                         ParsedIP
                 end,
 
@@ -43,9 +42,7 @@ init() ->
                    "false" ->
                        random_port();
                    PeerPortList ->
-                       Port = list_to_integer(PeerPortList),
-                       application:set_env(partisan, peer_port, Port),
-                       Port
+                       list_to_integer(PeerPortList)
                end,
 
     DefaultPeerService = application:get_env(partisan,
@@ -62,9 +59,7 @@ init() ->
                     "false" ->
                         undefined;
                     TagList ->
-                        Tag = list_to_atom(TagList),
-                        application:set_env(partisan, tag, Tag),
-                        Tag
+                         list_to_atom(TagList)
                 end,
 
     [env_or_default(Key, Default) ||
@@ -110,4 +105,3 @@ random_port() ->
     {ok, {_, Port}} = inet:sockname(Socket),
     ok = gen_tcp:close(Socket),
     Port.
-
