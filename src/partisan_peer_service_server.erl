@@ -113,6 +113,8 @@ handle_message({hello, Node},
             %% it to bootstrap.
             Manager = partisan_peer_service:manager(),
             {ok, LocalState} = Manager:get_local_state(),
+            lager:info("got hello reply from ~p, sending local state",
+                       [Node]),
             send_message(Socket, {state, Tag, LocalState}),
             ok;
         error ->

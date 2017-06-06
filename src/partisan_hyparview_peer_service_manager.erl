@@ -459,10 +459,12 @@ handle_info(passive_view_maintenance,
 
     {noreply, State};
 
-handle_info({'EXIT', From, _Reason},
+handle_info({'EXIT', From, Reason},
             #state{active=Active0,
                    passive=Passive0,
                    connections=Connections0}=State0) ->
+    lager:info("connection pid ~p died due to ~p",
+               [From, Reason]),
     %% Prune active connections from dictionary.
     FoldFun = fun(K, V, {Peer, AccIn}) ->
                       case V =:= From of
@@ -512,7 +514,8 @@ handle_info({'EXIT', From, _Reason},
     {noreply, State};
 
 handle_info({connected, Peer, _Tag, _PeerEpoch, _RemoteState}, State) ->
-    lager:info("Node ~p is connected", [Peer]),
+    lager:info("Node ~p is now connected",
+               [Peer]),
     {noreply, State};
 
 handle_info(Msg, State) ->
@@ -559,13 +562,15 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
                       connections=Connections0,
                       sent_message_map=SentMessageMap0,
                       recv_message_map=RecvMessageMap0}=State0) ->
-    lager:info("Node ~p received the JOIN message from ~p with ~p",
+    lager:info("Node ~p received the JOIN message from ~p, epoch ~p",
                [Myself0, Peer, PeerEpoch]),
 
     IsAddable = is_addable(PeerEpoch, Peer, SentMessageMap0),
     NotInActiveView = not sets:is_element(Peer, Active0),
     State = case IsAddable andalso NotInActiveView of
         true ->
+            lager:info("Adding peer node ~p to the active view",
+                       [Peer]),
             %% Add to active view.
             State1 = add_to_active_view(Peer, PeerTag, State0),
 
@@ -586,6 +591,8 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
                   %% Establish connections.
                   AccConnections = maybe_connect(P, AccConnections0),
 
+                  lager:info("Forwarding join of ~p to active view peer ~p",
+                             [Peer, P]),
                   do_send_message(
                       P,
                       {forward_join, Peer, PeerTag, PeerEpoch, arwl(), Myself0},
@@ -594,12 +601,16 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
                   AccConnections
               end, Connections1, Peers),
 
+            lager:info("Node ~p active view: ~p", [Myself0, members(Active0)]),
+
             %% Notify with event.
             notify(State1#state{connections=Connections}),
 
             %% Return.
             State1#state{connections=Connections};
         false ->
+            lager:info("Peer node ~p will not be added to the active view",
+                       [Peer]),
             State0
     end,
 
@@ -619,10 +630,13 @@ handle_message({neighbor, Peer, PeerTag, DisconnectId, _Sender},
                     Connections = maybe_connect(Peer, Connections0),
 
                     %% Add node into the active view.
-                    add_to_active_view(
-                        Peer,
-                        PeerTag,
-                        State0#state{connections=Connections});
+                    State1 = add_to_active_view(
+                                Peer,
+                                PeerTag,
+                                State0#state{connections=Connections}),
+                    lager:info("Node ~p active view: ~p",
+                               [Myself0, members(State1#state.active)]),
+                    State1;
                 false ->
                     State0
             end,
@@ -645,7 +659,7 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
 
     State = case TTL =:= 0 orelse sets:size(Active0) =:= 1 of
         true ->
-            lager:info("FORWARD_JOIN: ttl expired; adding ~p tagged ~p.",
+            lager:info("FORWARD_JOIN: ttl expired; adding ~p tagged ~p to active view",
                        [Peer, PeerTag]),
 
             IsAddable0 = is_addable(PeerEpoch, Peer, SentMessageMap0),
@@ -664,8 +678,13 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
                                     {neighbor, Myself0, Tag0, LastDisconnectId, Peer},
                                     Connections1),
 
+                    lager:info("Node ~p active view: ~p",
+                               [Myself0, members(State1#state.active)]),
+
                     State1#state{connections=Connections1};
                 false ->
+                    lager:info("Peer node ~p will not be added to the active view",
+                               [Peer]),
                     State0
             end;
         false ->
@@ -674,7 +693,8 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
             %% repair the passive view during shuffles.
             State2 = case TTL =:= prwl() of
                          true ->
-                             lager:info("FORWARD_JOIN: Passive walk ttl expired!"),
+                             lager:info("FORWARD_JOIN: Passive walk ttl expired, adding ~p to "
+                                        "the passive view", [Peer]),
                              add_to_passive_view(Peer, State0);
                          false ->
                              State0
@@ -687,7 +707,8 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
                     NotInActiveView1 = not sets:is_element(Peer, Active0),
                     case IsAddable1 andalso NotInActiveView1 of
                         true ->
-                            lager:info("FORWARD_JOIN: No node for forward."),
+                            lager:info("FORWARD_JOIN: No node for forward, adding ~p to active view",
+                                      [Peer]),
                             %% Add to our active view.
                             State3 = add_to_active_view(Peer, PeerTag, State2),
 
@@ -702,14 +723,21 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
                                 {neighbor, Myself0, Tag0, LastDisconnectId, Peer},
                                 Connections3),
 
+                            lager:info("Node ~p active view: ~p",
+                                       [Myself0, members(State3#state.active)]),
+
                             State3#state{connections=Connections3};
                         false ->
+                            lager:info("Peer node ~p will not be added to the active view",
+                                       [Peer]),
                             State2
                     end;
                 Random ->
                     %% Establish any new connections.
                     Connections2 = maybe_connect(Random, Connections0),
 
+                    lager:info("FORWARD_JOIN: forwarding to ~p",
+                               [Random]),
                     %% Forward join.
                     do_send_message(
                         Random,
@@ -741,7 +769,7 @@ handle_message({disconnect, Peer, DisconnectId},
         true ->
             %% Remove from active
             Active = sets:del_element(Peer, Active0),
-            lager:info("Node ~p active view: ~p", [Myself0, sets:to_list(Active)]),
+            lager:info("Node ~p active view: ~p", [Myself0, members(Active)]),
 
             %% Add to passive view.
             State1 = add_to_passive_view(Peer,
@@ -798,6 +826,8 @@ handle_message({neighbor_request, Peer, Priority, PeerTag, DisconnectId, Exchang
             true ->
                 case is_addable(DisconnectId, Peer, SentMessageMap0) of
                     true ->
+                        lager:info("Node ~p accepted neighbor peer ~p",
+                                   [Myself0, Peer]),
                         LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
                         %% Reply to acknowledge the neighbor was accepted.
                         do_send_message(
@@ -806,8 +836,14 @@ handle_message({neighbor_request, Peer, Priority, PeerTag, DisconnectId, Exchang
                             Connections),
 
                         State1 = add_to_active_view(Peer, PeerTag, State0),
+
+                        lager:info("Node ~p active view: ~p",
+                                   [Myself0, members(State1#state.active)]),
+
                         State1#state{connections=Connections};
                     false ->
+                        lager:info("Node ~p rejected neighbor peer ~p",
+                                   [Myself0, Peer]),
                         %% Reply to acknowledge the neighbor was rejected.
                         do_send_message(Peer,
                                         {neighbor_rejected, Myself0, Exchange_Ack},
@@ -816,6 +852,8 @@ handle_message({neighbor_request, Peer, Priority, PeerTag, DisconnectId, Exchang
                         State0#state{connections=Connections}
                 end;
             false ->
+                lager:info("Node ~p rejected neighbor peer ~p",
+                           [Myself0, Peer]),
                 %% Reply to acknowledge the neighbor was rejected.
                 do_send_message(Peer,
                                 {neighbor_rejected, Myself0},
@@ -876,6 +914,8 @@ handle_message({shuffle, Exchange, TTL, Sender},
                       active=Active0,
                       passive=Passive0,
                       connections=Connections0}=State0) ->
+    lager:info("Node ~p received the SHUFFLE message from ~p",
+               [Myself, Sender]),
     %% Forward to random member of the active view.
     State = case TTL > 0 andalso sets:size(Active0) > 1 of
         true ->
@@ -1041,6 +1081,8 @@ disconnect(Name, Connections) ->
             Connections;
         {ok, Pid} ->
             %% Stop;
+            lager:info("disconnecting node ~p by stopping connection pid ~p",
+                       [Name, Pid]),
             gen_server:stop(Pid),
 
             %% Null out in the dictionary.
@@ -1061,8 +1103,8 @@ do_send_message(Name, Message, Connections) when is_atom(Name) ->
             try
                 gen_server:call(Pid, {send_message, Message})
             catch
-                _:Error ->
-                    lager:info("Fail to send a message to ~p: ~p", [Name, Error]),
+                Reason:Error ->
+                    lager:info("failed to send a message to ~p due to ~p:~p", [Name, Reason, Error]),
                     {error, Error}
             end;
         error ->
@@ -1234,6 +1276,8 @@ drop_random_element_from_active_view(
 
             %% Trigger disconnection.
             Connections = disconnect(Peer, Connections1),
+
+            lager:info("Node ~p active view: ~p", [Myself0, members(Active)]),
 
             State#state{connections=Connections,
                         sent_message_map=SentMessageMap}
