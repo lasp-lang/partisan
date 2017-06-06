@@ -62,7 +62,9 @@ init([Peer, From]) ->
     case connect(Peer) of
         {ok, Socket} ->
             {ok, #state{from=From, socket=Socket, peer=Peer}};
-        _Error ->
+        Error ->
+            lager:error("unable to connect to ~p due to ~p",
+                        [Peer, Error]),
             {stop, normal}
     end.
 
@@ -101,7 +103,9 @@ handle_cast(Msg, State) ->
 -spec handle_info(term(), state_t()) -> {noreply, state_t()}.
 handle_info({Tag, _Socket, Data}, State0) when ?DATA_MSG(Tag) ->
     handle_message(decode(Data), State0);
-handle_info({Tag, _Socket}, State) when ?CLOSED_MSG(Tag) ->
+handle_info({Tag, _Socket}, #state{peer = Peer} = State) when ?CLOSED_MSG(Tag) ->
+    lager:info("connection to ~p has been closed",
+               [Peer]),
     {stop, normal, State};
 handle_info(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
@@ -156,14 +160,22 @@ handle_message({state, Tag, LocalState},
                #state{peer=Peer, from=From}=State) ->
     case LocalState of
         {state, _Active, Epoch} ->
+            lager:info("got local state from peer ~p, informing ~p that we're connected",
+                       [Peer, From]),
             From ! {connected, Peer, Tag, Epoch, LocalState};
         _ ->
             From ! {connected, Peer, Tag, LocalState}
     end,
     {noreply, State};
-handle_message({hello, _Node}, #state{socket=Socket}=State) ->
+handle_message({hello, Node}, #state{socket=Socket}=State) ->
+    lager:info("sending hello to ~p", [Node]),
     Message = {hello, node()},
-    ok = partisan_peer_connection:send(Socket, encode(Message)),
+    case partisan_peer_connection:send(Socket, encode(Message)) of
+        ok -> ok;
+        Error ->
+            lager:info("failed to send hello message to node ~p due to ~p",
+                       [Node, Error])
+    end,
     {noreply, State};
 handle_message(Message, State) ->
     lager:info("Invalid message: ~p", [Message]),
