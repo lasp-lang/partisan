@@ -41,8 +41,6 @@
 
 -callback on_down(name(), function()) -> ok | {error, not_implemented}.
 
--callback decode(term()) -> term().
-
 -callback reserve(atom()) -> ok | {error, no_available_slots}.
 
 -callback partitions() -> {ok, partitions()} | {error, not_implemented}.

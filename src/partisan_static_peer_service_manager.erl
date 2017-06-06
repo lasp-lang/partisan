@@ -36,7 +36,6 @@
          send_message/2,
          forward_message/3,
          receive_message/1,
-         decode/1,
          reserve/1,
          partitions/0,
          inject_partition/2,
@@ -109,10 +108,6 @@ leave() ->
 %% @doc Remove another node from the cluster.
 leave(Node) ->
     gen_server:call(?MODULE, {leave, Node}, infinity).
-
-%% @doc Decode state.
-decode(State) ->
-    sets:to_list(State).
 
 %% @doc Reserve a slot for the particular tag.
 reserve(Tag) ->
