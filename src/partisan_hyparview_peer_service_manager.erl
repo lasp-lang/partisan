@@ -80,9 +80,6 @@
                 reserved :: reserved(),
                 tag :: tag(),
                 connections :: connections(),
-                max_active_size :: non_neg_integer(),
-                min_active_size :: non_neg_integer(),
-                max_passive_size :: non_neg_integer(),
                 epoch :: epoch(),
                 sent_message_map :: message_id_store(),
                 recv_message_map :: message_id_store(),
@@ -202,11 +199,6 @@ init([]) ->
     %% Partitions.
     Partitions = [],
 
-    %% Get the default configuration.
-    MaxActiveSize = partisan_config:get(max_active_size, 6),
-    MinActiveSize = partisan_config:get(min_active_size, 3),
-    MaxPassiveSize = partisan_config:get(max_passive_size, 30),
-
     %% Get tag, if set.
     Tag = partisan_config:get(tag, undefined),
 
@@ -226,7 +218,7 @@ init([]) ->
     end,
 
     %% Verify we don't have too many reservations.
-    case length(Reservations) > MaxActiveSize of
+    case length(Reservations) > max_active_size() of
         true ->
             {stop, reservation_limit_exceeded};
         false ->
@@ -236,9 +228,6 @@ init([]) ->
                         reserved=Reserved,
                         tag=Tag,
                         connections=Connections,
-                        max_active_size=MaxActiveSize,
-                        min_active_size=MinActiveSize,
-                        max_passive_size=MaxPassiveSize,
                         epoch=Epoch + 1,
                         sent_message_map=SentMessageMap,
                         recv_message_map=RecvMessageMap,
@@ -301,10 +290,9 @@ handle_call({inject_partition, Origin, TTL}, _From,
     end;
 
 handle_call({reserve, Tag}, _From,
-            #state{reserved=Reserved0,
-                   max_active_size=MaxActiveSize}=State) ->
+            #state{reserved=Reserved0}=State) ->
     Present = dict:fetch_keys(Reserved0),
-    case length(Present) < MaxActiveSize of
+    case length(Present) < max_active_size() of
         true ->
             Reserved = case lists:member(Tag, Present) of
                 true ->
@@ -399,10 +387,9 @@ handle_cast(Msg, State) ->
 -spec handle_info(term(), state_t()) -> {noreply, state_t()}.
 
 handle_info(random_promotion, #state{active=Active0,
-                                     reserved=Reserved0,
-                                     min_active_size=MinActiveSize0}=State0) ->
+                                     reserved=Reserved0}=State0) ->
     State = case has_reached_the_limit({active, Active0, Reserved0},
-                                       MinActiveSize0) of
+                                       min_active_size()) of
                 true ->
                     %% Do nothing if the active view reaches the MinActiveSize.
                     State0;
@@ -1055,8 +1042,7 @@ add_to_active_view({Name, _, _}=Peer, Tag,
                    #state{active=Active0,
                           myself=Myself,
                           passive=Passive0,
-                          reserved=Reserved0,
-                          max_active_size=MaxActiveSize}=State0) ->
+                          reserved=Reserved0}=State0) ->
     IsNotMyself = not (Name =:= node()),
     NotInActiveView = not sets:is_element(Peer, Active0),
     case IsNotMyself andalso NotInActiveView of
@@ -1064,7 +1050,7 @@ add_to_active_view({Name, _, _}=Peer, Tag,
             %% See above for more information.
             Passive = remove_from_passive_view(Peer, Passive0),
 
-            #state{active=Active1} = State1 = case is_full({active, Active0, Reserved0}, MaxActiveSize) of
+            #state{active=Active1} = State1 = case is_full({active, Active0, Reserved0}, max_active_size()) of
                 true ->
                     drop_random_element_from_active_view(State0#state{passive=Passive});
                 false ->
@@ -1106,8 +1092,7 @@ add_to_active_view({Name, _, _}=Peer, Tag,
 add_to_passive_view({Name, _, _}=Peer,
                     #state{myself=Myself,
                            active=Active0,
-                           passive=Passive0,
-                           max_passive_size=MaxPassiveSize}=State0) ->
+                           passive=Passive0}=State0) ->
     % lager:info("Adding ~p to passive view on ~p", [Peer, Myself]),
 
     IsNotMyself = not (Name =:= node()),
@@ -1115,7 +1100,7 @@ add_to_passive_view({Name, _, _}=Peer,
     NotInPassiveView = not sets:is_element(Peer, Passive0),
     Passive = case IsNotMyself andalso NotInActiveView andalso NotInPassiveView of
         true ->
-            Passive1 = case is_full({passive, Passive0}, MaxPassiveSize) of
+            Passive1 = case is_full({passive, Passive0}, max_passive_size()) of
                 true ->
                     Random = select_random(Passive0, [Myself]),
                     sets:del_element(Random, Passive0);
@@ -1219,8 +1204,7 @@ is_in_active_view(Peer, Active) ->
 %% @private
 neighbor_acceptable(Priority, Tag,
                     #state{active=Active,
-                           reserved=Reserved,
-                           max_active_size=MaxActiveSize}) ->
+                           reserved=Reserved}) ->
     %% Broken down for readability.
     case Priority of
         high ->
@@ -1233,7 +1217,7 @@ neighbor_acceptable(Priority, Tag,
                     true;
                 _ ->
                     %% Otherwise, only if we have a slot available.
-                    not is_full({active, Active, Reserved}, MaxActiveSize)
+                    not is_full({active, Active, Reserved}, max_active_size())
             end
     end.
 
@@ -1469,3 +1453,12 @@ handle_partition_resolution(Reference,
     end,
 
     Partitions.
+
+%% @private
+max_active_size() ->
+    lager:info("MAX ACTIVE SIZE ~p\n\n\n", [partisan_config:get(max_active_size)]),
+    partisan_config:get(max_active_size).
+min_active_size() ->
+    partisan_config:get(min_active_size).
+max_passive_size() ->
+    partisan_config:get(max_passive_size).
