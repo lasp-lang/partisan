@@ -559,7 +559,10 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
                             Connections1),
 
             %% Random walk for forward join.
-            Peers = members(Active0) -- [Myself0],
+            %% Since we might have dropped peers from the active view when
+            %% adding this one we need to use the most up to date active view,
+            %% and that's the one that's currently in the state
+            Peers = members(State1#state.active) -- [Myself0],
 
             Connections = lists:foldl(
               fun(P, AccConnections0) ->
