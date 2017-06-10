@@ -53,6 +53,7 @@
 -include("partisan.hrl").
 
 -define(SET, state_orset).
+-define(DEFAULT_PARALLELISM, 1).
 
 -type pending() :: [node_spec()].
 -type membership() :: ?SET:state_orset().
@@ -61,6 +62,7 @@
                 pending :: pending(),
                 down_functions :: dict:dict(),
                 membership :: membership(),
+                member_parallelism :: dict:dict(),
                 connections :: connections()}).
 
 -type state_t() :: #state{}.
@@ -159,6 +161,7 @@ init([]) ->
     {ok, #state{actor=Actor,
                 pending=[],
                 membership=Membership,
+                member_parallelism=dict:new(),
                 connections=Connections,
                 down_functions=dict:new()}}.
 
@@ -178,18 +181,20 @@ handle_call({on_down, Name, Function},
 handle_call({leave, Node}, _From,
             #state{actor=Actor,
                    connections=Connections,
-                   membership=Membership0}=State) ->
+                   membership=Membership0,
+                   member_parallelism=MemberParallelism0}=State) ->
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
-    Membership = lists:foldl(fun({Name, _, _} = N, L0) ->
+    {Membership, MemberParallelism} = lists:foldl(fun({Name, _, _} = N, {M0, MP0}) ->
                         case Node of
                             Name ->
-                                {ok, L} = ?SET:mutate({rmv, N}, Actor, L0),
-                                L;
+                                {ok, M} = ?SET:mutate({rmv, N}, Actor, M0),
+                                MP = dict:erase(N, MP0),
+                                {M, MP};
                             _ ->
-                                L0
+                                {M0, MP0}
                         end
-                end, Membership0, decode(Membership0)),
+                end, {Membership0, MemberParallelism0}, members(Membership0)),
 
     %% Gossip.
     do_gossip(Membership, Connections),
@@ -200,7 +205,8 @@ handle_call({leave, Node}, _From,
             delete_state_from_disk(),
 
             %% Shutdown; connections terminated on shutdown.
-            {stop, normal, State#state{membership=Membership}};
+            {stop, normal, State#state{membership=Membership,
+                                       member_parallelism=MemberParallelism}};
         _ ->
             {reply, ok, State}
     end;
@@ -209,6 +215,7 @@ handle_call({join, {Name, _, _}=Node},
             _From,
             #state{pending=Pending0,
                    membership=Membership,
+                   member_parallelism=MemberParallelism0,
                    connections=Connections0}=State) ->
     %% Attempt to join via disterl for control messages during testing.
     _ = net_kernel:connect(Name),
@@ -216,8 +223,14 @@ handle_call({join, {Name, _, _}=Node},
     %% Add to list of pending connections.
     Pending = [Node|Pending0],
 
+    %% Specify parallelism.
+    MemberParallelism = dict:store(Node, ?DEFAULT_PARALLELISM, MemberParallelism0),
+
     %% Trigger connection.
-    Connections = establish_connections(Pending, Membership, Connections0),
+    Connections = establish_connections(Pending,
+                                        Membership,
+                                        MemberParallelism,
+                                        Connections0),
 
     %% Return.
     {reply, ok, State#state{pending=Pending,
@@ -259,8 +272,12 @@ handle_cast(Msg, State) ->
 -spec handle_info(term(), state_t()) -> {noreply, state_t()}.
 handle_info(gossip, #state{pending=Pending,
                            membership=Membership,
+                           member_parallelism=MemberParallelism,
                            connections=Connections0}=State) ->
-    Connections = establish_connections(Pending, Membership, Connections0),
+    Connections = establish_connections(Pending,
+                                        Membership,
+                                        MemberParallelism,
+                                        Connections0),
     do_gossip(Membership, Connections),
     schedule_gossip(),
     {noreply, State#state{connections=Connections}};
@@ -409,7 +426,7 @@ without_me(Members) ->
     lists:keydelete(node(), 1, Members).
 
 %% @private
-establish_connections(Pending, Membership, Connections) ->
+establish_connections(Pending, Membership, _MemberParallelism, Connections) ->
     %% Reconnect disconnected members and members waiting to join.
     Members = members(Membership),
     Peers = Members ++ Pending,
@@ -454,6 +471,7 @@ connect(Node) ->
 handle_message({receive_state, PeerMembership},
                #state{pending=Pending,
                       membership=Membership,
+                      member_parallelism=MemberParallelism,
                       connections=Connections0}=State) ->
     case ?SET:equal(PeerMembership, Membership) of
         true ->
@@ -478,6 +496,7 @@ handle_message({receive_state, PeerMembership},
                     %% Establish any new connections.
                     Connections = establish_connections(Pending,
                                                         Membership,
+                                                        MemberParallelism,
                                                         Connections0),
 
                     %% Gossip.
