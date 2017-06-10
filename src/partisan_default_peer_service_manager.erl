@@ -206,7 +206,9 @@ handle_call({leave, Node}, _From,
 
 handle_call({join, {Name, _, _}=Node},
             _From,
-            #state{pending=Pending0, connections=Connections0}=State) ->
+            #state{pending=Pending0,
+                   membership=Membership,
+                   connections=Connections0}=State) ->
     %% Attempt to join via disterl for control messages during testing.
     _ = net_kernel:connect(Name),
 
@@ -214,7 +216,7 @@ handle_call({join, {Name, _, _}=Node},
     Pending = [Node|Pending0],
 
     %% Trigger connection.
-    Connections = maybe_connect(Node, Connections0),
+    Connections = establish_connections(Pending, Membership, Connections0),
 
     %% Return.
     {reply, ok, State#state{pending=Pending,
