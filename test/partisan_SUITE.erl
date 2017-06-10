@@ -69,7 +69,6 @@ init_per_group(with_tls, Config) ->
 init_per_group(_, _Config) ->
     _Config.
 
-
 end_per_group(_, _Config) ->
     ok.
 
@@ -137,14 +136,24 @@ default_manager_test(Config) ->
             SortedMembers = lists:usort(Members),
             case SortedMembers =:= SortedNodes of
                 true ->
-                    ok;
+                    true;
                 false ->
-                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Nodes, Members])
+                    {false, {Node, SortedNodes, SortedMembers}}
             end
     end,
 
     %% Verify the membership is correct.
-    lists:foreach(VerifyFun, Nodes),
+    lists:foreach(fun(Node) ->
+                          VerifyNodeFun = fun() -> VerifyFun(Node) end,
+
+                          case wait_until(VerifyNodeFun, 60 * 2, 100) of
+                              ok ->
+                                  ok;
+                              {fail, {false, {Node, Expected, Contains}}} ->
+                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
+                                         [Node, Expected, Contains])
+                          end
+                  end, Nodes),
 
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
@@ -897,4 +906,16 @@ random(List0, Omit) ->
     catch
         _:_ ->
             undefined
+    end.
+
+wait_until(Fun, Retry, Delay) when Retry > 0 ->
+    Res = Fun(),
+    case Res of
+        true ->
+            ok;
+        _ when Retry == 1 ->
+            {fail, Res};
+        _ ->
+            timer:sleep(Delay),
+            wait_until(Fun, Retry-1, Delay)
     end.
