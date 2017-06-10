@@ -50,7 +50,7 @@ init() ->
 
     DefaultPeerService = application:get_env(partisan,
                                              partisan_peer_service_manager,
-                                             partisan_client_server_peer_service_manager),
+                                             partisan_default_peer_service_manager),
     PeerService = case os:getenv("PEER_SERVICE", "false") of
                       "false" ->
                           DefaultPeerService;
