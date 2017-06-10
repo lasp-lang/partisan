@@ -86,6 +86,7 @@ myself() ->
 get_local_state() ->
     gen_server:call(?MODULE, get_local_state, infinity).
 
+%% @doc Trigger function on connection close for a given node.
 on_down(Name, Function) ->
     gen_server:call(?MODULE, {on_down, Name, Function}, infinity).
 
@@ -269,7 +270,7 @@ handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
                       case V =:= From of
                           true ->
                               down(K, State),
-                              dict:store(K, undefined, AccIn);
+                              dict:store(K, [], AccIn);
                           false ->
                               AccIn
                       end
@@ -309,13 +310,15 @@ handle_info(Msg, State) ->
 %% @private
 -spec terminate(term(), state_t()) -> term().
 terminate(_Reason, #state{connections=Connections}=_State) ->
-    dict:map(fun(_K, Pid) ->
-                     try
-                         gen_server:stop(Pid, normal, infinity)
-                     catch
-                         _:_ ->
-                             ok
-                     end
+    dict:map(fun(_K, Pids) ->
+                     lists:foreach(fun(Pid) ->
+                                        try
+                                            gen_server:stop(Pid, normal, infinity)
+                                        catch
+                                            _:_ ->
+                                                ok
+                                        end
+                                   end, Pids)
              end, Connections),
     ok.
 
@@ -411,29 +414,29 @@ establish_connections(Pending, Membership, Connections) ->
 %% @private
 %%
 %% Function should enforce the invariant that all cluster members are
-%% keys in the dict pointing to undefined if they are disconnected or a
+%% keys in the dict pointing to empty list if they are disconnected or a
 %% socket pid if they are connected.
 %%
 maybe_connect({Name, _, _} = Node, Connections0) ->
     Connections = case dict:find(Name, Connections0) of
         %% Found in dict, and disconnected.
-        {ok, undefined} ->
+        {ok, []} ->
             case connect(Node) of
-                {ok, Pid} ->
-                    dict:store(Name, Pid, Connections0);
+                {ok, Pids} ->
+                    dict:store(Name, [Pids], Connections0);
                 _ ->
-                    dict:store(Name, undefined, Connections0)
+                    dict:store(Name, [], Connections0)
             end;
         %% Found in dict and connected.
-        {ok, _Pid} ->
+        {ok, _Pids} ->
             Connections0;
         %% Not present; disconnected.
         error ->
             case connect(Node) of
                 {ok, Pid} ->
-                    dict:store(Name, Pid, Connections0);
+                    dict:store(Name, [Pid], Connections0);
                 _ ->
-                    dict:store(Name, undefined, Connections0)
+                    dict:store(Name, [], Connections0)
             end
     end,
     Connections.
@@ -528,10 +531,12 @@ random_peers(Peers, Fanout) ->
 do_send_message(Name, Message, Connections) ->
     %% Find a connection for the remote node, if we have one.
     case dict:find(Name, Connections) of
-        {ok, undefined} ->
+        {ok, []} ->
             %% Node was connected but is now disconnected.
             {error, disconnected};
-        {ok, Pid} ->
+        {ok, [Pid|_]} ->
+            %% TODO: Eventually be smarter about the process identifier
+            %% selection.
             gen_server:cast(Pid, {send_message, Message});
         error ->
             %% Node has not been connected yet.
