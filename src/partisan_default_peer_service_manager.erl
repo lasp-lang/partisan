@@ -405,11 +405,15 @@ members(Membership) ->
     sets:to_list(?SET:query(Membership)).
 
 %% @private
+without_me(Members) ->
+    lists:keydelete(node(), 1, Members).
+
+%% @private
 establish_connections(Pending, Membership, Connections) ->
     %% Reconnect disconnected members and members waiting to join.
     Members = members(Membership),
-    AllPeers = lists:keydelete(node(), 1, Members ++ Pending),
-    lists:foldl(fun maybe_connect/2, Connections, AllPeers).
+    Peers = Members ++ Pending,
+    lists:foldl(fun maybe_connect/2, Connections, without_me(Peers)).
 
 %% @private
 %%
