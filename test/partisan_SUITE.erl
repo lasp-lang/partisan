@@ -328,6 +328,7 @@ hyparview_manager_partition_test(Config) ->
     ok = rpc:call(PNode, Manager, resolve_partition, [Reference]),
     ct:pal("Partition resolved: ~p", [Reference]),
 
+    %% Pause for clustering.
     timer:sleep(1000),
 
     %% Verify resolved partition.
@@ -889,15 +890,15 @@ check_forward_message(Node, Manager) ->
     Rand = rand_compat:uniform(),
     rpc:call(Node, Manager, forward_message,
              [RandomMember, store_proc, {store, Rand}]),
-    %% wait a bit to allow for the message to arrive
-    timer:sleep(2000),
     %% now fetch the value from the random destination node
     ok = wait_until(fun() ->
                     %% it must match with what we asked the node to forward
-                    {ok, R} = rpc:call(RandomMember,
-                                       application, get_env,
-                                       [partisan, forward_message_test]),
-                    R == Rand
+                    case rpc:call(RandomMember, application, get_env, [partisan, forward_message_test]) of
+                        {ok, R} ->
+                            R =:= Rand;
+                        _ ->
+                            false
+                    end
                end, 60 * 2, 500),
 
     ok.
