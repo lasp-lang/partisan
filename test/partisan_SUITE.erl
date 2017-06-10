@@ -892,9 +892,14 @@ check_forward_message(Node, Manager) ->
     %% wait a bit to allow for the message to arrive
     timer:sleep(2000),
     %% now fetch the value from the random destination node
-    {ok, ExpectedRand} = rpc:call(RandomMember, application, get_env, [partisan, forward_message_test]),
-    %% it must match with what we asked the node to forward
-    ?assertEqual(Rand, ExpectedRand),
+    ok = wait_until(fun() ->
+                    %% it must match with what we asked the node to forward
+                    {ok, R} = rpc:call(RandomMember,
+                                       application, get_env,
+                                       [partisan, forward_message_test]),
+                    R == Rand
+               end, 60 * 2, 500),
+
     ok.
 
 random(List0, Omit) ->
