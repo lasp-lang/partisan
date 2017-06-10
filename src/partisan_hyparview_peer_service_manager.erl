@@ -559,7 +559,6 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
                #state{myself=Myself0,
                       active=Active0,
                       tag=Tag0,
-                      connections=Connections0,
                       sent_message_map=SentMessageMap0,
                       recv_message_map=RecvMessageMap0}=State0) ->
     lager:info("Node ~p received the JOIN message from ~p, epoch ~p",
@@ -575,7 +574,7 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
             State1 = add_to_active_view(Peer, PeerTag, State0),
 
             %% Establish connections.
-            Connections1 = maybe_connect(Peer, Connections0),
+            Connections1 = maybe_connect(Peer, State1#state.connections),
 
             LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
             %% Send the NEIGHBOR message to origin, that will update it's view.
@@ -673,7 +672,7 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
                     State1 = add_to_active_view(Peer, PeerTag, State0),
 
                     %% Establish connections.
-                    Connections1 = maybe_connect(Peer, Connections0),
+                    Connections1 = maybe_connect(Peer, State1#state.connections),
 
                     LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
                     %% Send neighbor message to origin, that will update it's view.
@@ -716,7 +715,7 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
                             State3 = add_to_active_view(Peer, PeerTag, State2),
 
                             %% Establish connections.
-                            Connections3 = maybe_connect(Peer, Connections0),
+                            Connections3 = maybe_connect(Peer, State3#state.connections),
 
                             LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
                             %% Send neighbor message to origin, that will
@@ -838,12 +837,13 @@ handle_message({neighbor_request, Peer, Priority, PeerTag, DisconnectId, Exchang
                             {neighbor_accepted, Myself0, Tag0, LastDisconnectId, Exchange_Ack},
                             Connections),
 
-                        State1 = add_to_active_view(Peer, PeerTag, State0),
+                        State1 = add_to_active_view(Peer, PeerTag,
+                                                    State0#state{connections = Connections}),
 
                         lager:info("Node ~p active view: ~p",
                                    [Myself0, members(State1#state.active)]),
 
-                        State1#state{connections=Connections};
+                        State1;
                     false ->
                         lager:info("Node ~p rejected neighbor peer ~p",
                                    [Myself0, Peer]),
