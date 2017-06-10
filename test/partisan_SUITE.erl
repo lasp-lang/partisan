@@ -69,7 +69,6 @@ init_per_group(with_tls, Config) ->
 init_per_group(_, _Config) ->
     _Config.
 
-
 end_per_group(_, _Config) ->
     ok.
 
@@ -137,14 +136,24 @@ default_manager_test(Config) ->
             SortedMembers = lists:usort(Members),
             case SortedMembers =:= SortedNodes of
                 true ->
-                    ok;
+                    true;
                 false ->
-                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Nodes, Members])
+                    {false, {Node, SortedNodes, SortedMembers}}
             end
     end,
 
     %% Verify the membership is correct.
-    lists:foreach(VerifyFun, Nodes),
+    lists:foreach(fun(Node) ->
+                          VerifyNodeFun = fun() -> VerifyFun(Node) end,
+
+                          case wait_until(VerifyNodeFun, 60 * 2, 100) of
+                              ok ->
+                                  ok;
+                              {fail, {false, {Node, Expected, Contains}}} ->
+                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
+                                         [Node, Expected, Contains])
+                          end
+                  end, Nodes),
 
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
@@ -881,11 +890,16 @@ check_forward_message(Node, Manager) ->
     rpc:call(Node, Manager, forward_message,
              [RandomMember, store_proc, {store, Rand}]),
     %% wait a bit to allow for the message to arrive
-    timer:sleep(500),
+    timer:sleep(2000),
     %% now fetch the value from the random destination node
-    {ok, ExpectedRand} = rpc:call(RandomMember, application, get_env, [partisan, forward_message_test]),
-    %% it must match with what we asked the node to forward
-    ?assertEqual(Rand, ExpectedRand),
+    ok = wait_until(fun() ->
+                    %% it must match with what we asked the node to forward
+                    {ok, R} = rpc:call(RandomMember,
+                                       application, get_env,
+                                       [partisan, forward_message_test]),
+                    R == Rand
+               end, 60 * 2, 500),
+
     ok.
 
 random(List0, Omit) ->
@@ -897,4 +911,16 @@ random(List0, Omit) ->
     catch
         _:_ ->
             undefined
+    end.
+
+wait_until(Fun, Retry, Delay) when Retry > 0 ->
+    Res = Fun(),
+    case Res of
+        true ->
+            ok;
+        _ when Retry == 1 ->
+            {fail, Res};
+        _ ->
+            timer:sleep(Delay),
+            wait_until(Fun, Retry-1, Delay)
     end.
