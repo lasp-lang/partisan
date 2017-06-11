@@ -106,7 +106,11 @@ receive_message(Message) ->
 
 %% @doc Attempt to join a remote node.
 join(Node) ->
-    gen_server:call(?MODULE, {join, Node}, infinity).
+    join(Node, ?DEFAULT_PARALLELISM).
+
+%% @doc Attempt to join a remote node and maintain multiple connections.
+join(Node, NumConnections) ->
+    gen_server:call(?MODULE, {join, Node, NumConnections}, infinity).
 
 %% @doc Leave the cluster.
 leave() ->
@@ -211,7 +215,7 @@ handle_call({leave, Node}, _From,
             {reply, ok, State}
     end;
 
-handle_call({join, {Name, _, _}=Node},
+handle_call({join, {Name, _, _}=Node, NumConnections},
             _From,
             #state{pending=Pending0,
                    membership=Membership,
@@ -224,7 +228,7 @@ handle_call({join, {Name, _, _}=Node},
     Pending = [Node|Pending0],
 
     %% Specify parallelism.
-    MemberParallelism = dict:store(Node, ?DEFAULT_PARALLELISM, MemberParallelism0),
+    MemberParallelism = dict:store(Node, NumConnections, MemberParallelism0),
 
     %% Trigger connection.
     Connections = establish_connections(Pending,
