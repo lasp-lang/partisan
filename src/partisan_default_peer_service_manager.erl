@@ -50,10 +50,13 @@
          terminate/2,
          code_change/3]).
 
+%% debug callbacks
+-export([connections/0]).
+
 -include("partisan.hrl").
 
 -define(SET, state_orset).
--define(DEFAULT_PARALLELISM, 1).
+-define(PARALLELISM, 1).
 
 -type pending() :: [node_spec()].
 -type membership() :: ?SET:state_orset().
@@ -79,6 +82,10 @@ start_link() ->
 %% @doc Return membership list.
 members() ->
     gen_server:call(?MODULE, members, infinity).
+
+%% @doc Return connections list.
+connections() ->
+    gen_server:call(?MODULE, connections, infinity).
 
 %% @doc Return myself.
 myself() ->
@@ -106,7 +113,9 @@ receive_message(Message) ->
 
 %% @doc Attempt to join a remote node.
 join(Node) ->
-    join(Node, ?DEFAULT_PARALLELISM).
+    Parallelism = partisan_config:get(parallelism, ?PARALLELISM),
+    ct:pal("Joining node with parallelism: ~p", [Parallelism]),
+    join(Node, Parallelism).
 
 %% @doc Attempt to join a remote node and maintain multiple connections.
 join(Node, NumConnections) ->
@@ -258,6 +267,9 @@ handle_call({receive_message, Message}, _From, State) ->
 handle_call(members, _From, #state{membership=Membership}=State) ->
     Members = [P || {P, _, _} <- members(Membership)],
     {reply, {ok, Members}, State};
+
+handle_call(connections, _From, #state{connections=Connections}=State) ->
+    {reply, {ok, Connections}, State};
 
 handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
     {reply, {ok, Membership}, State};
@@ -430,11 +442,21 @@ without_me(Members) ->
     lists:keydelete(node(), 1, Members).
 
 %% @private
-establish_connections(Pending, Membership, _MemberParallelism, Connections) ->
+establish_connections(Pending,
+                      Membership,
+                      MemberParallelism,
+                      Connections0) ->
+    %% Compute list of nodes that should be connected.
+    Peers = members(Membership) ++ Pending,
+
     %% Reconnect disconnected members and members waiting to join.
-    Members = members(Membership),
-    Peers = Members ++ Pending,
-    lists:foldl(fun maybe_connect/2, Connections, without_me(Peers)).
+    {Connections, MemberParallelism} = lists:foldl(
+                                         fun maybe_connect/2,
+                                         {Connections0, MemberParallelism},
+                                         without_me(Peers)),
+
+    %% Return the updated list of connections.
+    Connections.
 
 %% @private
 %%
@@ -442,19 +464,46 @@ establish_connections(Pending, Membership, _MemberParallelism, Connections) ->
 %% keys in the dict pointing to empty list if they are disconnected or a
 %% socket pid if they are connected.
 %%
-maybe_connect({Name, _, _} = Node, Connections0) ->
+maybe_connect({Name, _, _} = Node, {Connections0, MemberParallelism}) ->
+    %% Compute desired parallelism.
+    Parallelism  = case dict:find(Node, MemberParallelism) of
+        {ok, V} ->
+            %% We learned about a node via an explicit join.
+            V;
+        error ->
+            %% We learned about a node through a state merge; assume the
+            %% default unless later specified.
+            partisan_config:get(parallelism, ?PARALLELISM)
+    end,
+
+    lager:debug("Connecting ~p with parallelism: ~p",
+                [Node, Parallelism]),
+
+    %% Initiate connections.
     Connections = case dict:find(Name, Connections0) of
         %% Found in dict, and disconnected.
         {ok, []} ->
             case connect(Node) of
-                {ok, Pids} ->
-                    dict:store(Name, [Pids], Connections0);
+                {ok, Pid} ->
+                    dict:store(Name, [Pid], Connections0);
                 _ ->
                     dict:store(Name, [], Connections0)
             end;
         %% Found in dict and connected.
-        {ok, _Pids} ->
-            Connections0;
+        {ok, Pids} ->
+            lager:debug("Node ~p connected with ~p processes of ~p processes.",
+                        [Node, length(Pids), Parallelism]),
+            case length(Pids) < Parallelism of
+                true ->
+                    case connect(Node) of
+                        {ok, Pid} ->
+                            dict:store(Name, [Pid], Connections0);
+                        _ ->
+                            dict:store(Name, [], Connections0)
+                    end;
+                false ->
+                    Connections0
+            end;
         %% Not present; disconnected.
         error ->
             case connect(Node) of
@@ -464,7 +513,7 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
                     dict:store(Name, [], Connections0)
             end
     end,
-    Connections.
+    {Connections, MemberParallelism}.
 
 %% @private
 connect(Node) ->
