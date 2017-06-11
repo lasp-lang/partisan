@@ -176,23 +176,42 @@ default_manager_test(Config) ->
                                       partisan_default_peer_service_manager,
                                       connections,
                                       []),
-                             ct:pal("Connections: ~p~n", [Connections])
+                             ct:pal("Connections: ~p~n", [Connections]),
+                             Connections
                      end,
 
+    VerifyConnectionsFun = fun(Node) ->
+                                %% Get enabled parallelism.
+                                Parallelism = rpc:call(Node,
+                                                       partisan_config,
+                                                       get,
+                                                       [parallelism]),
+
+                                %% Get list of connections.
+                                {ok, Connections} = ConnectionsFun(Node),
+
+                                %% Verify we have enough connections.
+                                dict:map(fun(N, Active) ->
+                                                 case length(Active) == Parallelism of
+                                                     true ->
+                                                         true;
+                                                     false ->
+                                                         {false, {N, length(Active), Parallelism}}
+                                                 end
+                                         end, Connections)
+                          end,
+
     lists:foreach(fun({_Name, Node}) ->
-                          %% Get Connections
-                          ConnectionsVerifyFun = fun() ->
-                                                       ConnectionsFun(Node)
-                                                 end,
-                          ConnectionsVerifyFun(),
-
-                          %% Get enabled parallelism.
-                          Parallelism = rpc:call(Node,
-                                                 partisan_config,
-                                                 get,
-                                                 [parallelism]),
-
-                          ?assertEqual(ConfigParallelism, Parallelism)
+                        VerifyConnectionsNodeFun = fun() ->
+                                                           VerifyConnectionsFun(Node)
+                                                   end,
+                        case wait_until(VerifyConnectionsNodeFun, 60 * 2, 100) of
+                            ok ->
+                                ok;
+                            {fail, {false, {Peer, Active, Parallelism}}} ->
+                               ct:fail("Node ~p has connections for ~n (~n of ~n)",
+                                       [Node, Peer, Active, Parallelism])
+                        end
                   end, Nodes),
 
     %% Stop nodes.
