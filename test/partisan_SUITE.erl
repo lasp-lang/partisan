@@ -63,9 +63,11 @@ end_per_testcase(Case, _Config) ->
 
     _Config.
 
+init_per_group(with_parallelism, Config) ->
+    [{parallelism, 5}] ++ Config;
 init_per_group(with_tls, Config) ->
     TLSOpts = make_certs(Config),
-    [{tls, true}] ++ TLSOpts ++ Config;
+    [{parallelism, 1}, {tls, true}] ++ TLSOpts ++ Config;
 init_per_group(_, _Config) ->
     _Config.
 
@@ -79,7 +81,9 @@ all() ->
        {hyparview, [shuffle]}
       ]},
 
-     {group, with_tls, [parallel]}
+     {group, with_tls, [parallel]},
+
+     {group, with_parallelism, [parallel]}
     ].
 
 groups() ->
@@ -100,6 +104,9 @@ groups() ->
        hyparview_manager_high_client_test]},
 
      {with_tls, [],
+      [default_manager_test]},
+
+     {with_parallelism, [],
       [default_manager_test]}
     ].
 
@@ -158,6 +165,34 @@ default_manager_test(Config) ->
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
                     ok = check_forward_message(Node, Manager)
+                  end, Nodes),
+
+    %% Verify parallelism.
+    ConfigParallelism = proplists:get_value(parallelism, Config, undefined),
+    ct:pal("Configured parallelism: ~p", [ConfigParallelism]),
+
+    ConnectionsFun = fun(Node) ->
+                             Connections = rpc:call(Node,
+                                      partisan_default_peer_service_manager,
+                                      connections,
+                                      []),
+                             ct:pal("Connections: ~p~n", [Connections])
+                     end,
+
+    lists:foreach(fun({_Name, Node}) ->
+                          %% Get Connections
+                          ConnectionsVerifyFun = fun() ->
+                                                       ConnectionsFun(Node)
+                                                 end,
+                          ConnectionsVerifyFun(),
+
+                          %% Get enabled parallelism.
+                          Parallelism = rpc:call(Node,
+                                                 partisan_config,
+                                                 get,
+                                                 [parallelism]),
+
+                          ?assertEqual(ConfigParallelism, Parallelism)
                   end, Nodes),
 
     %% Stop nodes.
@@ -691,6 +726,7 @@ start(_Case, Config, Options) ->
                           [max_active_size, MaxActiveSize]),
 
             ok = rpc:call(Node, partisan_config, set, [tls, ?config(tls, Config)]),
+            ok = rpc:call(Node, partisan_config, set, [parallelism, ?config(parallelism, Config)]),
 
             Servers = proplists:get_value(servers, Options, []),
             Clients = proplists:get_value(clients, Options, []),
