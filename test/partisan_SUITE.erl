@@ -94,7 +94,7 @@ groups() ->
        client_server_manager_test]},
 
      {hyparview, [],
-      [hyparview_manager_partition_test,
+      [%% hyparview_manager_partition_test,
        hyparview_manager_high_active_test,
        hyparview_manager_low_active_test,
        hyparview_manager_high_client_test]},
