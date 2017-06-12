@@ -114,7 +114,6 @@ receive_message(Message) ->
 %% @doc Attempt to join a remote node.
 join(Node) ->
     Parallelism = partisan_config:get(parallelism, ?PARALLELISM),
-    ct:pal("Joining node with parallelism: ~p", [Parallelism]),
     join(Node, Parallelism).
 
 %% @doc Attempt to join a remote node and maintain multiple connections.
