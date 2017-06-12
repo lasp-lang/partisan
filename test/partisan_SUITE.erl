@@ -191,14 +191,14 @@ default_manager_test(Config) ->
                                 {ok, Connections} = ConnectionsFun(Node),
 
                                 %% Verify we have enough connections.
-                                dict:map(fun(N, Active) ->
+                                dict:fold(fun(_N, Active, Acc) ->
                                                  case length(Active) == Parallelism of
                                                      true ->
-                                                         true;
+                                                         Acc andalso true;
                                                      false ->
-                                                         {false, {N, length(Active), Parallelism}}
+                                                         Acc andalso false
                                                  end
-                                         end, Connections)
+                                         end, true, Connections)
                           end,
 
     lists:foreach(fun({_Name, Node}) ->
@@ -208,9 +208,8 @@ default_manager_test(Config) ->
                         case wait_until(VerifyConnectionsNodeFun, 60 * 2, 100) of
                             ok ->
                                 ok;
-                            {fail, {false, {Peer, Active, Parallelism}}} ->
-                               ct:fail("Node ~p has connections for ~n (~n of ~n)",
-                                       [Node, Peer, Active, Parallelism])
+                            _ ->
+                                ct:fail("Not enough connections have been opened.")
                         end
                   end, Nodes),
 
