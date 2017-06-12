@@ -476,9 +476,6 @@ maybe_connect({Name, _, _} = Node, {Connections0, MemberParallelism}) ->
             partisan_config:get(parallelism, ?PARALLELISM)
     end,
 
-    lager:debug("Connecting ~p with parallelism: ~p",
-                [Node, Parallelism]),
-
     %% Initiate connections.
     Connections = case dict:find(Name, Connections0) of
         %% Found in dict, and disconnected.
