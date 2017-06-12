@@ -496,8 +496,10 @@ maybe_connect({Name, _, _} = Node, {Connections0, MemberParallelism}) ->
 
                     case connect(Node) of
                         {ok, Pid} ->
-                            dict:store(Name, [Pid], Connections0);
-                        _ ->
+                            lager:info("Node connected with ~p", [Pid]),
+                            dict:append_list(Name, [Pid], Connections0);
+                        Error ->
+                            lager:info("Node failed connect with ~p", [Error]),
                             dict:store(Name, [], Connections0)
                     end;
                 false ->
