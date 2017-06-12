@@ -166,6 +166,9 @@ init([]) ->
     %% Schedule periodic gossip.
     schedule_gossip(),
 
+    %% Schedule periodic connections.
+    schedule_connections(),
+
     Actor = gen_actor(),
     Membership = maybe_load_state_from_disk(Actor),
     Connections = dict:new(),
@@ -296,6 +299,19 @@ handle_info(gossip, #state{pending=Pending,
     do_gossip(Membership, Connections),
     schedule_gossip(),
     {noreply, State#state{connections=Connections}};
+
+handle_info(connections, #state{pending=Pending,
+                                membership=Membership,
+                                member_parallelism=MemberParallelism,
+                                connections=Connections0}=State) ->
+    %% Trigger connection.
+    Connections = establish_connections(Pending,
+                                        Membership,
+                                        MemberParallelism,
+                                        Connections0),
+    schedule_connections(),
+    {noreply, State#state{pending=Pending,
+                          connections=Connections}};
 
 handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
     FoldFun = fun(K, V, AccIn) ->
@@ -573,6 +589,11 @@ handle_message({forward_message, ServerRef, Message}, State) ->
 schedule_gossip() ->
     GossipInterval = partisan_config:get(gossip_interval, 10000),
     erlang:send_after(GossipInterval, ?MODULE, gossip).
+
+%% @private
+schedule_connections() ->
+    ConnectionInterval = partisan_config:get(connection_interval, 1000),
+    erlang:send_after(ConnectionInterval, ?MODULE, connections).
 
 %% @private
 do_gossip(Membership, Connections) ->
