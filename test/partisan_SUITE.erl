@@ -296,67 +296,34 @@ hyparview_manager_partition_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    CheckStartedFun = fun() ->
+                        case hyparview_membership_check(Nodes) of
+                            {[], []} -> true;
+                            {ConnectedFails, []} ->
+                                {false, {connected_check_failed, ConnectedFails}};
+                            {[], SymmetryFails} ->
+                                {false, {symmetry_check_failed, SymmetryFails}};
+                            {ConnectedFails, SymmetryFails} ->
+                                {false, [{connected_check_failed, ConnectedFails},
+                                         {symmetry_check_failed, SymmetryFails}]}
+                        end
+                      end,
 
-    %% Create new digraph.
-    Graph = digraph:new(),
-
-    %% Verify connectedness.
-    %%
-    ConnectFun = fun({_, Node}) ->
-        {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
-        Active = sets:to_list(ActiveSet),
-
-        %% Add vertexes and edges.
-        [connect(Graph, Node, N) || {N, _, _} <- Active]
-                 end,
-
-    %% Build the graph.
-    lists:foreach(ConnectFun, Nodes),
-
-    %% Verify connectedness.
-    ConnectedFun = fun({_Name, Node}=Myself) ->
-        lists:foreach(fun({_, N}) ->
-            Path = digraph:get_short_path(Graph, Node, N),
-            case Path of
-                false ->
-                    lists:foreach(fun({_, N1}) ->
-                                        {ok, ActiveSet} = rpc:call(N1, Manager, active, []),
-                                        Active = sets:to_list(ActiveSet),
-                                        ct:pal("node ~p active view: ~p",
-                                               [N1, Active])
-                                   end, Nodes),
-                    ct:fail("Graph is not connected, unable to find route between nodes ~p and ~p",
-                           [Node, N]);
-                _ ->
-                    ok
-            end
-                      end, Nodes -- [Myself])
-                   end,
-    lists:foreach(ConnectedFun, Nodes),
-
-    %% Verify symmetry.
-    SymmetryFun = fun({_, Node1}) ->
-        %% Get first nodes active set.
-        {ok, ActiveSet1} = rpc:call(Node1, Manager, active, []),
-        Active1 = sets:to_list(ActiveSet1),
-
-        lists:foreach(fun({Node2, _, _}) ->
-            %% Get second nodes active set.
-            {ok, ActiveSet2} = rpc:call(Node2, Manager, active, []),
-            Active2 = sets:to_list(ActiveSet2),
-
-            case lists:member(Node1, [N || {N, _, _} <- Active2]) of
-                true ->
-                    ok;
-                false ->
-                    ct:fail("~p has ~p in it's view but ~p does not have ~p in its view",
-                            [Node1, Node2, Node2, Node1])
-            end
-                      end, Active1)
-                  end,
-    lists:foreach(SymmetryFun, Nodes),
+    case wait_until(CheckStartedFun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, {connected_check_failed, Nodes}} ->
+            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p",
+                    [Nodes]);
+        {fail, {symmetry_check_failed, Nodes}} ->
+            ct:fail("Symmetry is broken (ie. node1 has node2 in it's view but vice-versa is not true) between the following "
+                    "pairs of nodes: ~p", [Nodes]);
+        {fail, [{connected_check_failed, ConnectedFails},
+                {symmetry_check_failed, SymmetryFails}]} ->
+            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p, symmetry is broken as well"
+                    "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
+                    "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
+    end,
 
     ct:pal("Nodes: ~p", [Nodes]),
 
@@ -431,67 +398,34 @@ hyparview_manager_high_active_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    CheckStartedFun = fun() ->
+                        case hyparview_membership_check(Nodes) of
+                            {[], []} -> true;
+                            {ConnectedFails, []} ->
+                                {false, {connected_check_failed, ConnectedFails}};
+                            {[], SymmetryFails} ->
+                                {false, {symmetry_check_failed, SymmetryFails}};
+                            {ConnectedFails, SymmetryFails} ->
+                                {false, [{connected_check_failed, ConnectedFails},
+                                         {symmetry_check_failed, SymmetryFails}]}
+                        end
+                      end,
 
-    %% Create new digraph.
-    Graph = digraph:new(),
-
-    %% Verify connectedness.
-    %%
-    ConnectFun = fun({_, Node}) ->
-        {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
-        Active = sets:to_list(ActiveSet),
-
-        %% Add vertexes and edges.
-        [connect(Graph, Node, N) || {N, _, _} <- Active]
-                 end,
-
-    %% Build the graph.
-    lists:foreach(ConnectFun, Nodes),
-
-    %% Verify connectedness.
-    ConnectedFun = fun({_Name, Node}=Myself) ->
-        lists:foreach(fun({_, N}) ->
-            Path = digraph:get_short_path(Graph, Node, N),
-            case Path of
-                false ->
-                    lists:foreach(fun({_, N1}) ->
-                                        {ok, ActiveSet} = rpc:call(N1, Manager, active, []),
-                                        Active = sets:to_list(ActiveSet),
-                                        ct:pal("node ~p active view: ~p",
-                                               [N1, Active])
-                                   end, Nodes),
-                    ct:fail("Graph is not connected, unable to find route between nodes ~p and ~p",
-                           [Node, N]);
-                _ ->
-                    ok
-            end
-                      end, Nodes -- [Myself])
-                   end,
-    lists:foreach(ConnectedFun, Nodes),
-
-    %% Verify symmetry.
-    SymmetryFun = fun({_, Node1}) ->
-        %% Get first nodes active set.
-        {ok, ActiveSet1} = rpc:call(Node1, Manager, active, []),
-        Active1 = sets:to_list(ActiveSet1),
-
-        lists:foreach(fun({Node2, _, _}) ->
-            %% Get second nodes active set.
-            {ok, ActiveSet2} = rpc:call(Node2, Manager, active, []),
-            Active2 = sets:to_list(ActiveSet2),
-
-            case lists:member(Node1, [N || {N, _, _} <- Active2]) of
-                true ->
-                    ok;
-                false ->
-                    ct:fail("~p has ~p in it's view but ~p does not have ~p in its view",
-                            [Node1, Node2, Node2, Node1])
-            end
-                      end, Active1)
-                  end,
-    lists:foreach(SymmetryFun, Nodes),
+    case wait_until(CheckStartedFun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, {connected_check_failed, Nodes}} ->
+            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p",
+                    [Nodes]);
+        {fail, {symmetry_check_failed, Nodes}} ->
+            ct:fail("Symmetry is broken (ie. node1 has node2 in it's view but vice-versa is not true) between the following "
+                    "pairs of nodes: ~p", [Nodes]);
+        {fail, [{connected_check_failed, ConnectedFails},
+                {symmetry_check_failed, SymmetryFails}]} ->
+            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p, symmetry is broken as well"
+                    "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
+                    "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
+    end,
 
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
@@ -520,70 +454,34 @@ hyparview_manager_low_active_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(4000),
+    CheckStartedFun = fun() ->
+                        case hyparview_membership_check(Nodes) of
+                            {[], []} -> true;
+                            {ConnectedFails, []} ->
+                                {false, {connected_check_failed, ConnectedFails}};
+                            {[], SymmetryFails} ->
+                                {false, {symmetry_check_failed, SymmetryFails}};
+                            {ConnectedFails, SymmetryFails} ->
+                                {false, [{connected_check_failed, ConnectedFails},
+                                         {symmetry_check_failed, SymmetryFails}]}
+                        end
+                      end,
 
-    %% Create new digraph.
-    Graph = digraph:new(),
-
-    %% Verify membership.
-    %%
-    %% Every node should know about every other node in this topology
-    %% when the active setting is high.
-    %%
-    ConnectFun = fun({_, Node}) ->
-            {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
-            Active = sets:to_list(ActiveSet),
-
-            %% Add vertexes and edges.
-            [connect(Graph, Node, N) || {N, _, _} <- Active]
+    case wait_until(CheckStartedFun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, {connected_check_failed, Nodes}} ->
+            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p",
+                    [Nodes]);
+        {fail, {symmetry_check_failed, Nodes}} ->
+            ct:fail("Symmetry is broken (ie. node1 has node2 in it's view but vice-versa is not true) between the following "
+                    "pairs of nodes: ~p", [Nodes]);
+        {fail, [{connected_check_failed, ConnectedFails},
+                {symmetry_check_failed, SymmetryFails}]} ->
+            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p, symmetry is broken as well"
+                    "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
+                    "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
     end,
-
-    %% Verify the membership is correct.
-    lists:foreach(ConnectFun, Nodes),
-
-    %% Verify connectedness.
-    ConnectedFun = fun({_Name, Node}=Myself) ->
-                        lists:foreach(fun({_, N}) ->
-                                           Path = digraph:get_short_path(Graph, Node, N),
-                                           case Path of
-                                               false ->
-                                                    lists:foreach(fun({_, N1}) ->
-                                                                        {ok, ActiveSet} = rpc:call(N1, Manager, active, []),
-                                                                        Active = sets:to_list(ActiveSet),
-                                                                        ct:pal("node ~p active view: ~p",
-                                                                               [N1, Active])
-                                                                   end, Nodes),
-                                                    ct:fail("Graph is not connected, unable to find route between nodes ~p and ~p",
-                                                           [Node, N]);
-                                               _ ->
-                                                   ok
-                                           end
-                                      end, Nodes -- [Myself])
-                 end,
-    lists:foreach(ConnectedFun, Nodes),
-
-    %% Verify symmetry.
-    SymmetryFun = fun({_, Node1}) ->
-                          %% Get first nodes active set.
-                          {ok, ActiveSet1} = rpc:call(Node1, Manager, active, []),
-                          Active1 = sets:to_list(ActiveSet1),
-
-                          lists:foreach(fun({Node2, _, _}) ->
-                                                %% Get second nodes active set.
-                                                {ok, ActiveSet2} = rpc:call(Node2, Manager, active, []),
-                                                Active2 = sets:to_list(ActiveSet2),
-
-                                                case lists:member(Node1, [N || {N, _, _} <- Active2]) of
-                                                    true ->
-                                                        ok;
-                                                    false ->
-                                                        ct:fail("~p has ~p in it's view but ~p does not have ~p in its view",
-                                                                [Node1, Node2, Node2, Node1])
-                                                end
-                                        end, Active1)
-                  end,
-    lists:foreach(SymmetryFun, Nodes),
 
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
@@ -610,71 +508,35 @@ hyparview_manager_high_client_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(9000),
+    CheckStartedFun = fun() ->
+                        case hyparview_membership_check(Nodes) of
+                            {[], []} -> true;
+                            {ConnectedFails, []} ->
+                                {false, {connected_check_failed, ConnectedFails}};
+                            {[], SymmetryFails} ->
+                                {false, {symmetry_check_failed, SymmetryFails}};
+                            {ConnectedFails, SymmetryFails} ->
+                                {false, [{connected_check_failed, ConnectedFails},
+                                         {symmetry_check_failed, SymmetryFails}]}
+                        end
+                      end,
 
-    %% Create new digraph.
-    Graph = digraph:new(),
-
-    %% Verify membership.
-    %%
-    %% Every node should know about every other node in this topology
-    %% when the active setting is high.
-    %%
-    ConnectFun = fun({_, Node}) ->
-        {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
-        Active = sets:to_list(ActiveSet),
-
-        %% Add vertexes and edges.
-        [connect(Graph, Node, N) || {N, _, _} <- Active]
-                 end,
-
-    %% Verify the membership is correct.
-    lists:foreach(ConnectFun, Nodes),
-
-    %% Verify connectedness.
-    ConnectedFun = fun({_Name, Node}=Myself) ->
-        lists:foreach(fun({_, N}) ->
-            Path = digraph:get_short_path(Graph, Node, N),
-            case Path of
-                false ->
-                    lists:foreach(fun({_, N1}) ->
-                                        {ok, ActiveSet} = rpc:call(N1, Manager, active, []),
-                                        Active = sets:to_list(ActiveSet),
-                                        ct:pal("node ~p active view: ~p",
-                                               [N1, Active])
-                                   end, Nodes),
-                    ct:fail("Graph is not connected, unable to find route between nodes ~p and ~p",
-                           [Node, N]);
-                _ ->
-                    ok
-            end
-                      end, Nodes -- [Myself])
-                   end,
-    lists:foreach(ConnectedFun, Nodes),
-
-    %% Verify symmetry.
-    SymmetryFun = fun({_, Node1}) ->
-        %% Get first nodes active set.
-        {ok, ActiveSet1} = rpc:call(Node1, Manager, active, []),
-        Active1 = sets:to_list(ActiveSet1),
-
-        lists:foreach(fun({Node2, _, _}) ->
-            %% Get second nodes active set.
-            {ok, ActiveSet2} = rpc:call(Node2, Manager, active, []),
-            Active2 = sets:to_list(ActiveSet2),
-
-            case lists:member(Node1, [N || {N, _, _} <- Active2]) of
-                true ->
-                    ok;
-                false ->
-                    ct:fail("~p has ~p in it's view but ~p does not have ~p in its view",
-                            [Node1, Node2, Node2, Node1])
-            end
-                      end, Active1)
-                  end,
-    lists:foreach(SymmetryFun, Nodes),
-
+    case wait_until(CheckStartedFun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, {connected_check_failed, Nodes}} ->
+            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p",
+                    [Nodes]);
+        {fail, {symmetry_check_failed, Nodes}} ->
+            ct:fail("Symmetry is broken (ie. node1 has node2 in it's view but vice-versa is not true) between the following "
+                    "pairs of nodes: ~p", [Nodes]);
+        {fail, [{connected_check_failed, ConnectedFails},
+                {symmetry_check_failed, SymmetryFails}]} ->
+            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p, symmetry is broken as well"
+                    "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
+                    "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
+    end,
+    
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
                     ok = check_forward_message(Node, Manager)
@@ -1007,3 +869,72 @@ wait_until(Fun, Retry, Delay) when Retry > 0 ->
             timer:sleep(Delay),
             wait_until(Fun, Retry-1, Delay)
     end.
+
+%% @private
+hyparview_membership_check(Nodes) ->
+    Manager = partisan_hyparview_peer_service_manager,
+    %% Create new digraph.
+    Graph = digraph:new(),
+
+    %% Verify membership.
+    %%
+    %% Every node should know about every other node in this topology
+    %% when the active setting is high.
+    %%
+    ConnectFun =
+        fun({_, Node}) ->
+            {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
+            Active = sets:to_list(ActiveSet),
+
+            %% Add vertexes and edges.
+            [connect(Graph, Node, N) || {N, _, _} <- Active]
+         end,
+    %% Build a digraph representing the membership
+    lists:foreach(ConnectFun, Nodes),
+
+    %% Verify connectedness.
+    %% Return a list of node tuples that were found not to be connected,
+    %% empty otherwise
+    ConnectedFails =
+        lists:flatmap(fun({_Name, Node}=Myself) ->
+                lists:filtermap(fun({_, N}) ->
+                    Path = digraph:get_short_path(Graph, Node, N),
+                    case Path of
+                        false ->
+                            %% print out the active view of each node
+                            lists:foreach(fun({_, N1}) ->
+                                                {ok, ActiveSet} = rpc:call(N1, Manager, active, []),
+                                                Active = sets:to_list(ActiveSet),
+                                                ct:pal("node ~p active view: ~p",
+                                                       [N1, Active])
+                                           end, Nodes),
+                            {true, {Node, N}}; 
+                        _ ->
+                            false
+                    end
+                 end, Nodes -- [Myself])
+            end, Nodes),
+
+    %% Verify symmetry.
+    SymmetryFails =
+        lists:flatmap(fun({_, Node1}) ->
+                %% Get first nodes active set.
+                {ok, ActiveSet1} = rpc:call(Node1, Manager, active, []),
+                Active1 = sets:to_list(ActiveSet1),
+
+                lists:filtermap(fun({Node2, _, _}) ->
+                    %% Get second nodes active set.
+                    {ok, ActiveSet2} = rpc:call(Node2, Manager, active, []),
+                    Active2 = sets:to_list(ActiveSet2),
+
+                    case lists:member(Node1, [N || {N, _, _} <- Active2]) of
+                        true ->
+                            false;
+                        false ->
+                            {true, {Node1, Node2}}
+                    end
+                end, Active1)
+            end, Nodes),
+
+    {ConnectedFails, SymmetryFails}.
+
