@@ -68,8 +68,8 @@ init_per_group(with_parallelism, Config) ->
 init_per_group(with_tls, Config) ->
     TLSOpts = make_certs(Config),
     [{parallelism, 1}, {tls, true}] ++ TLSOpts ++ Config;
-init_per_group(_, _Config) ->
-    _Config.
+init_per_group(_, Config) ->
+    [{parallelism, 1}] ++ Config.
 
 end_per_group(_, _Config) ->
     ok.
@@ -168,7 +168,7 @@ default_manager_test(Config) ->
                   end, Nodes),
 
     %% Verify parallelism.
-    ConfigParallelism = proplists:get_value(parallelism, Config, undefined),
+    ConfigParallelism = proplists:get_value(parallelism, Config, 1),
     ct:pal("Configured parallelism: ~p", [ConfigParallelism]),
 
     ConnectionsFun = fun(Node) ->
@@ -180,13 +180,7 @@ default_manager_test(Config) ->
                              Connections
                      end,
 
-    VerifyConnectionsFun = fun(Node) ->
-                                %% Get enabled parallelism.
-                                Parallelism = rpc:call(Node,
-                                                       partisan_config,
-                                                       get,
-                                                       [parallelism]),
-
+    VerifyConnectionsFun = fun(Node, Parallelism) ->
                                 %% Get list of connections.
                                 {ok, Connections} = ConnectionsFun(Node),
 
@@ -202,14 +196,20 @@ default_manager_test(Config) ->
                           end,
 
     lists:foreach(fun({_Name, Node}) ->
+                        %% Get enabled parallelism.
+                        Parallelism = rpc:call(Node, partisan_config, get, [parallelism]),
+
+                        %% Generate fun.
                         VerifyConnectionsNodeFun = fun() ->
-                                                           VerifyConnectionsFun(Node)
+                                                           VerifyConnectionsFun(Node, Parallelism)
                                                    end,
+
+                        %% Wait until connections established.
                         case wait_until(VerifyConnectionsNodeFun, 60 * 2, 100) of
                             ok ->
                                 ok;
                             _ ->
-                                ct:fail("Not enough connections have been opened.")
+                                ct:fail("Not enough connections have been opened; need: ~p", [Parallelism])
                         end
                   end, Nodes),
 
