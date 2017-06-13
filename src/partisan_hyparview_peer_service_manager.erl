@@ -51,7 +51,8 @@
 %% debug.
 -export([active/0,
          active/1,
-         passive/0]).
+         passive/0,
+         connections/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -189,6 +190,11 @@ decode({state, Active, _Epoch}) ->
     sets:to_list(Active);
 decode(Active) ->
     sets:to_list(Active).
+
+%% @doc Debugging.
+-spec connections() -> {ok, list({node_spec(), pid()})}. 
+connections() ->
+    gen_server:call(?MODULE, connections, infinity).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -368,6 +374,19 @@ handle_call(get_local_state, _From, #state{active=Active,
                                            epoch=Epoch}=State) ->
     {reply, {ok, {state, Active, Epoch}}, State};
 
+handle_call(connections, _From,
+            #state{myself=Myself,
+                   connections=Connections,
+                   active=Active}=State) ->
+    %% get a list of all the client connections to the various peers of the active view
+    Cs = lists:map(fun(Peer) ->
+                    {ok, Pids} = partisan_peer_service_connections:find(Peer, Connections),
+                    lager:info("peer ~p connection pids: ~p",
+                               [Peer, Pids]),
+                    {Peer, Pids}
+                   end, members(Active) -- [Myself]),
+    {reply, {ok, Cs}, State};
+
 handle_call(Msg, _From, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
     {reply, ok, State}.
@@ -516,6 +535,9 @@ handle_info({'EXIT', From, Reason},
                                  passive=Passive,
                                  connections=Connections}
             end,
+
+    lager:info("Node ~p active view: ~p",
+               [Myself, members(State#state.active)]),
 
     {noreply, State};
 
