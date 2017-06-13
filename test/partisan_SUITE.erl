@@ -268,7 +268,14 @@ hyparview_manager_partition_test(Config) ->
             Path = digraph:get_short_path(Graph, Node, N),
             case Path of
                 false ->
-                    ct:fail("Graph is not connected!");
+                    lists:foreach(fun({_, N1}) ->
+                                        {ok, ActiveSet} = rpc:call(N1, Manager, active, []),
+                                        Active = sets:to_list(ActiveSet),
+                                        ct:pal("node ~p active view: ~p",
+                                               [N1, Active])
+                                   end, Nodes),
+                    ct:fail("Graph is not connected, unable to find route between nodes ~p and ~p",
+                           [Node, N]);
                 _ ->
                     ok
             end
@@ -396,7 +403,14 @@ hyparview_manager_high_active_test(Config) ->
             Path = digraph:get_short_path(Graph, Node, N),
             case Path of
                 false ->
-                    ct:fail("Graph is not connected!");
+                    lists:foreach(fun({_, N1}) ->
+                                        {ok, ActiveSet} = rpc:call(N1, Manager, active, []),
+                                        Active = sets:to_list(ActiveSet),
+                                        ct:pal("node ~p active view: ~p",
+                                               [N1, Active])
+                                   end, Nodes),
+                    ct:fail("Graph is not connected, unable to find route between nodes ~p and ~p",
+                           [Node, N]);
                 _ ->
                     ok
             end
@@ -481,7 +495,14 @@ hyparview_manager_low_active_test(Config) ->
                                            Path = digraph:get_short_path(Graph, Node, N),
                                            case Path of
                                                false ->
-                                                   ct:fail("Graph is not connected!");
+                                                    lists:foreach(fun({_, N1}) ->
+                                                                        {ok, ActiveSet} = rpc:call(N1, Manager, active, []),
+                                                                        Active = sets:to_list(ActiveSet),
+                                                                        ct:pal("node ~p active view: ~p",
+                                                                               [N1, Active])
+                                                                   end, Nodes),
+                                                    ct:fail("Graph is not connected, unable to find route between nodes ~p and ~p",
+                                                           [Node, N]);
                                                _ ->
                                                    ok
                                            end
@@ -564,7 +585,14 @@ hyparview_manager_high_client_test(Config) ->
             Path = digraph:get_short_path(Graph, Node, N),
             case Path of
                 false ->
-                    ct:fail("Graph is not connected!");
+                    lists:foreach(fun({_, N1}) ->
+                                        {ok, ActiveSet} = rpc:call(N1, Manager, active, []),
+                                        Active = sets:to_list(ActiveSet),
+                                        ct:pal("node ~p active view: ~p",
+                                               [N1, Active])
+                                   end, Nodes),
+                    ct:fail("Graph is not connected, unable to find route between nodes ~p and ~p",
+                           [Node, N]);
                 _ ->
                     ok
             end
