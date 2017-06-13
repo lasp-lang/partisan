@@ -3,7 +3,7 @@ Partisan
 
 [![Build Status](https://travis-ci.org/lasp-lang/partisan.svg?branch=master)](https://travis-ci.org/lasp-lang/partisan)
 
-Partisan is a prototype and primarily used in experiments.
+Partisan is a flexible, TCP-based membership system for Erlang/Elixir.
 
 Partisan features:
 
