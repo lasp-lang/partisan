@@ -3,6 +3,7 @@
 -define(PEER_PORT, 9000).
 -define(PEER_SERVICE_SERVER, partisan_peer_service_server).
 -define(FANOUT, 5).
+-define(CACHE, partisan_connection_cache).
 
 -type actor() :: binary().
 -type connections() :: dict:dict(node(), port()).
