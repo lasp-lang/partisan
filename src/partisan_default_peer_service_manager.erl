@@ -50,9 +50,13 @@
          terminate/2,
          code_change/3]).
 
+%% debug callbacks
+-export([connections/0]).
+
 -include("partisan.hrl").
 
 -define(SET, state_orset).
+-define(PARALLELISM, 1).
 
 -type pending() :: [node_spec()].
 -type membership() :: ?SET:state_orset().
@@ -61,6 +65,7 @@
                 pending :: pending(),
                 down_functions :: dict:dict(),
                 membership :: membership(),
+                member_parallelism :: dict:dict(),
                 connections :: connections()}).
 
 -type state_t() :: #state{}.
@@ -78,6 +83,10 @@ start_link() ->
 members() ->
     gen_server:call(?MODULE, members, infinity).
 
+%% @doc Return connections list.
+connections() ->
+    gen_server:call(?MODULE, connections, infinity).
+
 %% @doc Return myself.
 myself() ->
     partisan_peer_service_manager:myself().
@@ -86,6 +95,7 @@ myself() ->
 get_local_state() ->
     gen_server:call(?MODULE, get_local_state, infinity).
 
+%% @doc Trigger function on connection close for a given node.
 on_down(Name, Function) ->
     gen_server:call(?MODULE, {on_down, Name, Function}, infinity).
 
@@ -95,7 +105,15 @@ send_message(Name, Message) ->
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, ServerRef, Message) ->
-    gen_server:call(?MODULE, {forward_message, Name, ServerRef, Message}, infinity).
+    FullMessage = {forward_message, Name, ServerRef, Message},
+
+    %% Attempt to fast-path through the memoized connection cache.
+    case partisan_connection_cache:dispatch(FullMessage) of
+        ok ->
+            ok;
+        {error, trap} ->
+            gen_server:call(?MODULE, FullMessage, infinity)
+    end.
 
 %% @doc Receive message from a remote manager.
 receive_message(Message) ->
@@ -103,7 +121,12 @@ receive_message(Message) ->
 
 %% @doc Attempt to join a remote node.
 join(Node) ->
-    gen_server:call(?MODULE, {join, Node}, infinity).
+    Parallelism = partisan_config:get(parallelism, ?PARALLELISM),
+    join(Node, Parallelism).
+
+%% @doc Attempt to join a remote node and maintain multiple connections.
+join(Node, NumConnections) ->
+    gen_server:call(?MODULE, {join, Node, NumConnections}, infinity).
 
 %% @doc Leave the cluster.
 leave() ->
@@ -151,6 +174,9 @@ init([]) ->
     %% Schedule periodic gossip.
     schedule_gossip(),
 
+    %% Schedule periodic connections.
+    schedule_connections(),
+
     Actor = gen_actor(),
     Membership = maybe_load_state_from_disk(Actor),
     Connections = dict:new(),
@@ -158,6 +184,7 @@ init([]) ->
     {ok, #state{actor=Actor,
                 pending=[],
                 membership=Membership,
+                member_parallelism=dict:new(),
                 connections=Connections,
                 down_functions=dict:new()}}.
 
@@ -177,18 +204,20 @@ handle_call({on_down, Name, Function},
 handle_call({leave, Node}, _From,
             #state{actor=Actor,
                    connections=Connections,
-                   membership=Membership0}=State) ->
+                   membership=Membership0,
+                   member_parallelism=MemberParallelism0}=State) ->
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
-    Membership = lists:foldl(fun({Name, _, _} = N, L0) ->
+    {Membership, MemberParallelism} = lists:foldl(fun({Name, _, _} = N, {M0, MP0}) ->
                         case Node of
                             Name ->
-                                {ok, L} = ?SET:mutate({rmv, N}, Actor, L0),
-                                L;
+                                {ok, M} = ?SET:mutate({rmv, N}, Actor, M0),
+                                MP = dict:erase(N, MP0),
+                                {M, MP};
                             _ ->
-                                L0
+                                {M0, MP0}
                         end
-                end, Membership0, decode(Membership0)),
+                end, {Membership0, MemberParallelism0}, members(Membership0)),
 
     %% Gossip.
     do_gossip(Membership, Connections),
@@ -199,15 +228,17 @@ handle_call({leave, Node}, _From,
             delete_state_from_disk(),
 
             %% Shutdown; connections terminated on shutdown.
-            {stop, normal, State#state{membership=Membership}};
+            {stop, normal, State#state{membership=Membership,
+                                       member_parallelism=MemberParallelism}};
         _ ->
             {reply, ok, State}
     end;
 
-handle_call({join, {Name, _, _}=Node},
+handle_call({join, {Name, _, _}=Node, NumConnections},
             _From,
             #state{pending=Pending0,
                    membership=Membership,
+                   member_parallelism=MemberParallelism0,
                    connections=Connections0}=State) ->
     %% Attempt to join via disterl for control messages during testing.
     _ = net_kernel:connect(Name),
@@ -215,8 +246,14 @@ handle_call({join, {Name, _, _}=Node},
     %% Add to list of pending connections.
     Pending = [Node|Pending0],
 
+    %% Specify parallelism.
+    MemberParallelism = dict:store(Node, NumConnections, MemberParallelism0),
+
     %% Trigger connection.
-    Connections = establish_connections(Pending, Membership, Connections0),
+    Connections = establish_connections(Pending,
+                                        Membership,
+                                        MemberParallelism,
+                                        Connections0),
 
     %% Return.
     {reply, ok, State#state{pending=Pending,
@@ -241,6 +278,9 @@ handle_call(members, _From, #state{membership=Membership}=State) ->
     Members = [P || {P, _, _} <- members(Membership)],
     {reply, {ok, Members}, State};
 
+handle_call(connections, _From, #state{connections=Connections}=State) ->
+    {reply, {ok, Connections}, State};
+
 handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
     {reply, {ok, Membership}, State};
 
@@ -258,18 +298,35 @@ handle_cast(Msg, State) ->
 -spec handle_info(term(), state_t()) -> {noreply, state_t()}.
 handle_info(gossip, #state{pending=Pending,
                            membership=Membership,
+                           member_parallelism=MemberParallelism,
                            connections=Connections0}=State) ->
-    Connections = establish_connections(Pending, Membership, Connections0),
+    Connections = establish_connections(Pending,
+                                        Membership,
+                                        MemberParallelism,
+                                        Connections0),
     do_gossip(Membership, Connections),
     schedule_gossip(),
     {noreply, State#state{connections=Connections}};
+
+handle_info(connections, #state{pending=Pending,
+                                membership=Membership,
+                                member_parallelism=MemberParallelism,
+                                connections=Connections0}=State) ->
+    %% Trigger connection.
+    Connections = establish_connections(Pending,
+                                        Membership,
+                                        MemberParallelism,
+                                        Connections0),
+    schedule_connections(),
+    {noreply, State#state{pending=Pending,
+                          connections=Connections}};
 
 handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
     FoldFun = fun(K, V, AccIn) ->
                       case V =:= From of
                           true ->
                               down(K, State),
-                              dict:store(K, undefined, AccIn);
+                              dict:store(K, [], AccIn);
                           false ->
                               AccIn
                       end
@@ -309,13 +366,15 @@ handle_info(Msg, State) ->
 %% @private
 -spec terminate(term(), state_t()) -> term().
 terminate(_Reason, #state{connections=Connections}=_State) ->
-    dict:map(fun(_K, Pid) ->
-                     try
-                         gen_server:stop(Pid, normal, infinity)
-                     catch
-                         _:_ ->
-                             ok
-                     end
+    dict:map(fun(_K, Pids) ->
+                     lists:foreach(fun(Pid) ->
+                                        try
+                                            gen_server:stop(Pid, normal, infinity)
+                                        catch
+                                            _:_ ->
+                                                ok
+                                        end
+                                   end, Pids)
              end, Connections),
     ok.
 
@@ -402,41 +461,84 @@ members(Membership) ->
     sets:to_list(?SET:query(Membership)).
 
 %% @private
-establish_connections(Pending, Membership, Connections) ->
+without_me(Members) ->
+    lists:keydelete(node(), 1, Members).
+
+%% @private
+establish_connections(Pending,
+                      Membership,
+                      MemberParallelism,
+                      Connections0) ->
+    %% Compute list of nodes that should be connected.
+    Peers = members(Membership) ++ Pending,
+
     %% Reconnect disconnected members and members waiting to join.
-    Members = members(Membership),
-    AllPeers = lists:keydelete(node(), 1, Members ++ Pending),
-    lists:foldl(fun maybe_connect/2, Connections, AllPeers).
+    {Connections, MemberParallelism} = lists:foldl(
+                                         fun maybe_connect/2,
+                                         {Connections0, MemberParallelism},
+                                         without_me(Peers)),
+
+    %% Memoize connections.
+    partisan_connection_cache:update(Connections),
+
+    %% Return the updated list of connections.
+    Connections.
 
 %% @private
 %%
 %% Function should enforce the invariant that all cluster members are
-%% keys in the dict pointing to undefined if they are disconnected or a
+%% keys in the dict pointing to empty list if they are disconnected or a
 %% socket pid if they are connected.
 %%
-maybe_connect({Name, _, _} = Node, Connections0) ->
+maybe_connect({Name, _, _} = Node, {Connections0, MemberParallelism}) ->
+    %% Compute desired parallelism.
+    Parallelism  = case dict:find(Node, MemberParallelism) of
+        {ok, V} ->
+            %% We learned about a node via an explicit join.
+            V;
+        error ->
+            %% We learned about a node through a state merge; assume the
+            %% default unless later specified.
+            partisan_config:get(parallelism, ?PARALLELISM)
+    end,
+
+    %% Initiate connections.
     Connections = case dict:find(Name, Connections0) of
         %% Found in dict, and disconnected.
-        {ok, undefined} ->
+        {ok, []} ->
             case connect(Node) of
                 {ok, Pid} ->
-                    dict:store(Name, Pid, Connections0);
+                    dict:store(Name, [Pid], Connections0);
                 _ ->
-                    dict:store(Name, undefined, Connections0)
+                    dict:store(Name, [], Connections0)
             end;
         %% Found in dict and connected.
-        {ok, _Pid} ->
-            Connections0;
+        {ok, Pids} ->
+            case length(Pids) < Parallelism of
+                true ->
+                    lager:info("Connecting node ~p.", [Node]),
+
+                    case connect(Node) of
+                        {ok, Pid} ->
+                            lager:info("Node connected with ~p", [Pid]),
+                            dict:append_list(Name, [Pid], Connections0);
+                        Error ->
+                            lager:info("Node failed connect with ~p", [Error]),
+                            dict:store(Name, [], Connections0)
+                    end;
+                false ->
+                    Connections0
+            end;
         %% Not present; disconnected.
         error ->
             case connect(Node) of
                 {ok, Pid} ->
-                    dict:store(Name, Pid, Connections0);
+                    dict:store(Name, [Pid], Connections0);
                 _ ->
-                    dict:store(Name, undefined, Connections0)
+                    dict:store(Name, [], Connections0)
             end
     end,
-    Connections.
+    {Connections, MemberParallelism}.
 
 %% @private
 connect(Node) ->
@@ -447,6 +549,7 @@ connect(Node) ->
 handle_message({receive_state, PeerMembership},
                #state{pending=Pending,
                       membership=Membership,
+                      member_parallelism=MemberParallelism,
                       connections=Connections0}=State) ->
     case ?SET:equal(PeerMembership, Membership) of
         true ->
@@ -471,6 +574,7 @@ handle_message({receive_state, PeerMembership},
                     %% Establish any new connections.
                     Connections = establish_connections(Pending,
                                                         Membership,
+                                                        MemberParallelism,
                                                         Connections0),
 
                     %% Gossip.
@@ -494,6 +598,11 @@ handle_message({forward_message, ServerRef, Message}, State) ->
 schedule_gossip() ->
     GossipInterval = partisan_config:get(gossip_interval, 10000),
     erlang:send_after(GossipInterval, ?MODULE, gossip).
+
+%% @private
+schedule_connections() ->
+    ConnectionInterval = partisan_config:get(connection_interval, 1000),
+    erlang:send_after(ConnectionInterval, ?MODULE, connections).
 
 %% @private
 do_gossip(Membership, Connections) ->
@@ -528,10 +637,12 @@ random_peers(Peers, Fanout) ->
 do_send_message(Name, Message, Connections) ->
     %% Find a connection for the remote node, if we have one.
     case dict:find(Name, Connections) of
-        {ok, undefined} ->
+        {ok, []} ->
             %% Node was connected but is now disconnected.
             {error, disconnected};
-        {ok, Pid} ->
+        {ok, [Pid|_]} ->
+            %% TODO: Eventually be smarter about the process identifier
+            %% selection.
             gen_server:cast(Pid, {send_message, Message});
         error ->
             %% Node has not been connected yet.
