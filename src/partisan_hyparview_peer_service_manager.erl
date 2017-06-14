@@ -637,7 +637,7 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
                   AccConnections
               end, Connections1, Peers),
 
-            lager:info("Node ~p active view: ~p", [Myself0, members(Active0)]),
+            lager:info("Node ~p active view: ~p", [Myself0, members(State1#state.active)]),
 
             %% Notify with event.
             notify(State1#state{connections=Connections}),
