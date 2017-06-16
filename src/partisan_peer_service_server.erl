@@ -77,9 +77,13 @@ handle_info({Tag, _RawSocket, Data}, State=#state{socket=Socket}) when ?DATA_MSG
     handle_message(decode(Data), State),
     ok = partisan_peer_connection:setopts(Socket, [{active, once}]),
     {noreply, State};
-handle_info({Tag, _RawSocket, Reason}, State=#state{socket=_Socket}) when ?ERROR_MSG(Tag) ->
+handle_info({Tag, _RawSocket, Reason}, State=#state{socket=Socket}) when ?ERROR_MSG(Tag) ->
+    lager:error("connection socket ~p errored out, closing",
+                [Socket]),
     {stop, Reason, State};
-handle_info({Tag, _RawSocket}, State=#state{socket=_Socket}) when ?CLOSED_MSG(Tag) ->
+handle_info({Tag, _RawSocket}, State=#state{socket=Socket}) when ?CLOSED_MSG(Tag) ->
+    lager:error("connection socket ~p has been remotely closed",
+                [Socket]),
     {stop, normal, State};
 handle_info({'DOWN', MRef, port, _, _}, State=#state{ref=MRef}) ->
     %% Listen socket closed
