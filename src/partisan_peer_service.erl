@@ -31,7 +31,8 @@
          stop/1,
          members/0,
          manager/0,
-         add_sup_callback/1]).
+         add_sup_callback/1,
+         forward_message/3]).
 
 -include("partisan.hrl").
 
@@ -66,6 +67,11 @@ members() ->
 %% @doc Add callback.
 add_sup_callback(Function) ->
     partisan_peer_service_events:add_sup_callback(Function).
+
+%% @doc Forward message to registered process on the remote side.
+forward_message(Name, ServerRef, Message) ->
+    Manager = manager(),
+    Manager:forward_message(Name, ServerRef, Message).
 
 %% @private
 decode(State) ->
