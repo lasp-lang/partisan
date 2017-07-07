@@ -34,6 +34,7 @@
          leave/0,
          leave/1,
          on_down/2,
+         update_members/1,
          send_message/2,
          forward_message/3,
          receive_message/1,
@@ -86,7 +87,12 @@ myself() ->
 get_local_state() ->
     gen_server:call(?MODULE, get_local_state, infinity).
 
+%% @doc Register a trigger to fire when a connection drops.
 on_down(_Name, _Function) ->
+    {error, not_implemented}.
+
+%% @doc Update membership.
+update_members(_Nodes) ->
     {error, not_implemented}.
 
 %% @doc Send message to a remote manager.
