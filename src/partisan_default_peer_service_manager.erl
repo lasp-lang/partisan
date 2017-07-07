@@ -231,7 +231,8 @@ handle_call({leave, Node}, _From,
             {stop, normal, State#state{membership=Membership,
                                        member_parallelism=MemberParallelism}};
         _ ->
-            {reply, ok, State}
+            {reply, ok, State#state{membership=Membership,
+                                    member_parallelism=MemberParallelism}}
     end;
 
 handle_call({join, {Name, _, _}=Node, NumConnections},
