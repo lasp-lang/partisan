@@ -208,7 +208,7 @@ handle_call({on_down, Name, Function},
 
 handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State) ->
     %% Get the current membership.
-    CurrentMembership = [N || {N, _, _} <- ?SET:query(Membership)],
+    CurrentMembership = [N || {N, _, _} <- sets:to_list(?SET:query(Membership))],
 
     %% Compute leaving list.
     LeavingNodes = lists:filter(fun(N) ->
