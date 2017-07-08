@@ -35,6 +35,8 @@
 -callback leave() -> ok.
 -callback leave(node_spec()) -> ok.
 
+-callback update_members([node()]) -> ok | {error, not_implemented}.
+
 -callback send_message(name(), message()) -> ok.
 -callback receive_message(message()) -> ok.
 -callback forward_message(name(), pid(), message()) -> ok.

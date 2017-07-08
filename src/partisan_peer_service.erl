@@ -27,6 +27,7 @@
          attempt_join/1,
          leave/1,
          decode/1,
+         update_members/1,
          stop/0,
          stop/1,
          members/0,
@@ -63,6 +64,11 @@ join(_, Node, _Auto) ->
 members() ->
     Manager = manager(),
     Manager:members().
+
+%% @doc Update cluster members.
+update_members(Nodes) ->
+    Manager = manager(),
+    Manager:update_members(Nodes).
 
 %% @doc Add callback.
 add_sup_callback(Function) ->
