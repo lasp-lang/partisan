@@ -591,7 +591,8 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
             %% Since we might have dropped peers from the active view when
             %% adding this one we need to use the most up to date active view,
             %% and that's the one that's currently in the state
-            Peers = members(State1#state.active) -- [Myself0],
+            %% also disregard the the new joiner node
+            Peers = (members(State1#state.active) -- [Myself0]) -- [Peer],
 
             Connections = lists:foldl(
               fun(P, AccConnections0) ->
@@ -664,10 +665,12 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
     lager:info("Node ~p received the FORWARD_JOIN message from ~p about ~p",
                [Myself0, Sender, Peer]),
 
-    State = case TTL =:= 0 orelse sets:size(Active0) =:= 1 of
+    ActiveViewSize = sets:size(Active0),
+    State = case TTL =:= 0 orelse ActiveViewSize =:= 1 of
         true ->
-            lager:info("FORWARD_JOIN: ttl expired; adding ~p tagged ~p to active view",
-                       [Peer, PeerTag]),
+            lager:info("FORWARD_JOIN: ttl(~p) expired or only one peer in active view (~p), "
+                       "adding ~p tagged ~p to active view",
+                       [TTL, ActiveViewSize, Peer, PeerTag]),
 
             IsAddable0 = is_addable(PeerEpoch, Peer, SentMessageMap0),
             NotInActiveView0 = not sets:is_element(Peer, Active0),
