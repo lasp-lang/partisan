@@ -799,7 +799,10 @@ handle_message({disconnect, Peer, DisconnectId},
 
             State = case sets:size(Active) == 1 of
                         true ->
-                            RandomPeer = select_random(Passive, [Myself0]),
+                            %% the peer that disconnected us just got moved to the
+                            %% passive view, exclude it when selecting a new one to
+                            %% move back into the active view
+                            RandomPeer = select_random(Passive, [Myself0, Peer]),
                             lager:info("Node ~p is isolated, moving random peer ~p from passive "
                                        "to active view",
                                        [RandomPeer, Myself0]),
