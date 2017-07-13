@@ -512,9 +512,10 @@ maybe_connect({Name, _, _} = Node, {Connections0, MemberParallelism}) ->
             end;
         %% Found in dict and connected.
         {ok, Pids} ->
-            case length(Pids) < Parallelism of
+            case length(Pids) < Parallelism andalso Parallelism =/= undefined of
                 true ->
-                    lager:info("Connecting node ~p.", [Node]),
+                    lager:info("(~p of ~p) Connecting node ~p.",
+                               [length(Pids), Parallelism, Node]),
 
                     case connect(Node) of
                         {ok, Pid} ->
