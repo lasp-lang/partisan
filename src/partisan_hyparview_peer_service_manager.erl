@@ -409,7 +409,9 @@ handle_cast(Msg, State) ->
 %% @private
 -spec handle_info(term(), state_t()) -> {noreply, state_t()}.
 
-handle_info(random_promotion, #state{active=Active0,
+handle_info(random_promotion, #state{myself=Myself,
+                                     active=Active0,
+                                     passive=Passive,
                                      reserved=Reserved0,
                                      min_active_size=MinActiveSize0}=State0) ->
     State = case has_reached_the_limit({active, Active0, Reserved0},
@@ -419,7 +421,8 @@ handle_info(random_promotion, #state{active=Active0,
                     State0;
                 false ->
                     % lager:info("Random promotion for node ~p", [Myself0]),
-                    move_random_peer_from_passive_to_active(State0)
+                    RandomPeer = select_random(Passive, [Myself]),
+                    move_peer_from_passive_to_active(RandomPeer, State0)
             end,
 
     %% Schedule periodic random promotion.
@@ -465,7 +468,8 @@ handle_info(passive_view_maintenance,
     {noreply, State};
 
 handle_info({'EXIT', From, Reason},
-            #state{active=Active0,
+            #state{myself=Myself,
+                   active=Active0,
                    passive=Passive0,
                    connections=Connections0}=State0) ->
     lager:info("connection pid ~p died due to ~p",
@@ -506,7 +510,8 @@ handle_info({'EXIT', From, Reason},
 
     State = case RemovedFromActive of
                 true ->
-                    move_random_peer_from_passive_to_active(
+                    RandomPeer = select_random(Passive, [Myself]),
+                    move_peer_from_passive_to_active(RandomPeer,
                         State0#state{active=Active,
                                      passive=Passive,
                                      connections=Connections});
@@ -767,6 +772,7 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
 handle_message({disconnect, Peer, DisconnectId},
                #state{myself=Myself0,
                       active=Active0,
+                      passive=Passive,
                       connections=Connections0,
                       recv_message_map=RecvMessageMap0}=State0) ->
     lager:info("Node ~p received the DISCONNECT message from ~p with ~p",
@@ -793,8 +799,14 @@ handle_message({disconnect, Peer, DisconnectId},
 
             State = case sets:size(Active) == 1 of
                         true ->
-                            lager:info("Node ~p is isolated.", [Myself0]),
-                            move_random_peer_from_passive_to_active(
+                            %% the peer that disconnected us just got moved to the
+                            %% passive view, exclude it when selecting a new one to
+                            %% move back into the active view
+                            RandomPeer = select_random(Passive, [Myself0, Peer]),
+                            lager:info("Node ~p is isolated, moving random peer ~p from passive "
+                                       "to active view",
+                                       [RandomPeer, Myself0]),
+                            move_peer_from_passive_to_active(RandomPeer,
                                 State1#state{connections=Connections,
                                              recv_message_map=RecvMessageMap});
                         false ->
@@ -1447,42 +1459,37 @@ is_addable(PeerEpoch, Peer, SentMessageMap) ->
     end.
 
 %% @private
-move_random_peer_from_passive_to_active(
+move_peer_from_passive_to_active(undefined, State) -> State;
+move_peer_from_passive_to_active(Peer,
         #state{myself=Myself0,
                active=Active0,
                passive=Passive0,
                tag=Tag0,
                connections=Connections0,
                recv_message_map=RecvMessageMap0}=State0) ->
-    %% Select random peer from passive view, and attempt to connect it.
-    case select_random(Passive0, [Myself0]) of
-        undefined ->
-            State0;
-        Random ->
-            lager:info("Node ~p sends the NEIGHBOR_REQUEST to ~p", [Myself0, Random]),
+    lager:info("Node ~p sends the NEIGHBOR_REQUEST to ~p", [Myself0, Peer]),
 
-            Exchange0 = %% Myself.
-                        [Myself0] ++
+    Exchange0 = %% Myself.
+                [Myself0] ++
 
-                        % Random members of the active list.
-                        select_random_sublist(Active0, k_active()) ++
+                % Random members of the active list.
+                select_random_sublist(Active0, k_active()) ++
 
-                        %% Random members of the passive list.
-                        select_random_sublist(Passive0, k_passive()),
+                %% Random members of the passive list.
+                select_random_sublist(Passive0, k_passive()),
 
-            Exchange = lists:usort(Exchange0),
+    Exchange = lists:usort(Exchange0),
 
-            %% Trigger connection.
-            Connections = maybe_connect(Random, Connections0),
+    %% Trigger connection.
+    Connections = maybe_connect(Peer, Connections0),
 
-            LastDisconnectId = get_current_id(Random, RecvMessageMap0),
-            do_send_message(
-                Random,
-                {neighbor_request, Myself0, high, Tag0, LastDisconnectId, Exchange},
-                Connections),
+    LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
+    do_send_message(
+        Peer,
+        {neighbor_request, Myself0, high, Tag0, LastDisconnectId, Exchange},
+        Connections),
 
-            State0#state{connections=Connections}
-    end.
+    State0#state{connections=Connections}.
 
 %% @private
 schedule_random_promotion() ->
