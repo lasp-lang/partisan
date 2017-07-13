@@ -103,9 +103,8 @@ handle_cast(Msg, State) ->
 -spec handle_info(term(), state_t()) -> {noreply, state_t()}.
 handle_info({Tag, _Socket, Data}, State0) when ?DATA_MSG(Tag) ->
     handle_message(decode(Data), State0);
-handle_info({Tag, _Socket}, #state{peer = Peer} = State) when ?CLOSED_MSG(Tag) ->
-    lager:info("connection to ~p has been closed",
-               [Peer]),
+handle_info({Tag, _Socket}, #state{peer = _Peer} = State) when ?CLOSED_MSG(Tag) ->
+    % lager:info("connection to ~p has been closed", [Peer]),
     {stop, normal, State};
 handle_info(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
