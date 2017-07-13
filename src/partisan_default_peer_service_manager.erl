@@ -686,6 +686,18 @@ internal_leave(Node, #state{actor=Actor,
                 member_parallelism=MemberParallelism}.
 
 %% @private
+internal_join(Node, NumConnections, State) when is_atom(Node) ->
+    %% Use RPC to get the node's specific IP and port binding
+    %% information for the partisan backend connections.
+    PeerIP = rpc:call(Node,
+                      partisan_config,
+                      get,
+                      [peer_ip]),
+    PeerPort = rpc:call(Node,
+                        partisan_config,
+                        get,
+                        [peer_port]),
+    internal_join({Node, PeerIP, PeerPort}, NumConnections, State);
 internal_join({Name, _, _} = Node,
               NumConnections,
               #state{pending=Pending0,
