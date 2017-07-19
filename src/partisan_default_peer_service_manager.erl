@@ -207,13 +207,17 @@ handle_call({on_down, Name, Function},
     {reply, ok, State#state{down_functions=DownFunctions}};
 
 handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State) ->
+    % lager:info("Updating membership with: ~p", [Nodes]),
+
     %% Get the current membership.
     CurrentMembership = [N || {N, _, _} <- sets:to_list(?SET:query(Membership))],
+    % lager:info("CurrentMembership: ~p", [CurrentMembership]),
 
     %% Compute leaving list.
     LeavingNodes = lists:filter(fun(N) ->
                                         not lists:member(N, Nodes)
                                 end, CurrentMembership),
+    % lager:info("LeavingNodes: ~p", [LeavingNodes]),
 
     %% Issue leaves.
     State1 = lists:foldl(fun(N, S) ->
@@ -224,6 +228,7 @@ handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State)
     JoiningNodes = lists:filter(fun(N) ->
                                         not lists:member(N, CurrentMembership)
                                 end, Nodes),
+    % lager:info("JoiningNodes: ~p", [JoiningNodes]),
 
     %% Issue joins.
     Parallelism = partisan_config:get(parallelism, ?PARALLELISM),
