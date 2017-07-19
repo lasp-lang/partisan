@@ -349,6 +349,9 @@ handle_info({connected, Node, _Tag, RemoteState},
             %% Update membership by joining with remote membership.
             Membership = ?SET:merge(RemoteState, Membership0),
 
+            %% Persist state.
+            persist_state(Membership),
+
             %% Announce to the peer service.
             partisan_peer_service_events:update(Membership),
 
