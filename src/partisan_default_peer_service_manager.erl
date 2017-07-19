@@ -703,7 +703,14 @@ internal_join(Node, NumConnections, State) when is_atom(Node) ->
                         partisan_config,
                         get,
                         [peer_port]),
-    internal_join({Node, PeerIP, PeerPort}, NumConnections, State);
+    case {PeerIP, PeerPort} of
+        {undefined, undefined} ->
+            lager:error("Partisan isn't configured on remote host; ignoring join of ~p",
+                        [Node]),
+            State;
+        _ ->
+            internal_join({Node, PeerIP, PeerPort}, NumConnections, State)
+    end;
 internal_join({Name, _, _} = Node,
               NumConnections,
               #state{pending=Pending0,
