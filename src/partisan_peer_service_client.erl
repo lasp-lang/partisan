@@ -166,19 +166,30 @@ handle_message({state, Tag, LocalState},
             From ! {connected, Peer, Tag, LocalState}
     end,
     {noreply, State};
-handle_message({hello, Node}, #state{socket=Socket}=State) ->
+handle_message({hello, Node}, #state{peer=Peer, socket=Socket}=State) ->
     % lager:info("sending hello to ~p", [Node]),
 
-    Message = {hello, node()},
+    {PeerName, _, _} = Peer,
 
-    case partisan_peer_connection:send(Socket, encode(Message)) of
-        ok -> ok;
-        Error ->
-            lager:info("failed to send hello message to node ~p due to ~p",
-                       [Node, Error])
-    end,
+    case Node of
+        PeerName ->
+            Message = {hello, node()},
 
-    {noreply, State};
+            case partisan_peer_connection:send(Socket, encode(Message)) of
+                ok ->
+                    ok;
+                Error ->
+                    lager:info("failed to send hello message to node ~p due to ~p",
+                               [Node, Error])
+            end,
+
+            {noreply, State};
+        _ ->
+            %% If the peer isn't who it should be, abort.
+            lager:error("Peer ~p isn't ~p.", [Node, Peer]),
+            {stop, {unexpected_peer, Node, Peer}, State}
+    end;
+
 handle_message(Message, State) ->
     lager:info("Invalid message: ~p", [Message]),
     {stop, normal, State}.
