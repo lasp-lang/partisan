@@ -167,14 +167,17 @@ handle_message({state, Tag, LocalState},
     end,
     {noreply, State};
 handle_message({hello, Node}, #state{socket=Socket}=State) ->
-    lager:info("sending hello to ~p", [Node]),
+    % lager:info("sending hello to ~p", [Node]),
+
     Message = {hello, node()},
+
     case partisan_peer_connection:send(Socket, encode(Message)) of
         ok -> ok;
         Error ->
             lager:info("failed to send hello message to node ~p due to ~p",
                        [Node, Error])
     end,
+
     {noreply, State};
 handle_message(Message, State) ->
     lager:info("Invalid message: ~p", [Message]),
