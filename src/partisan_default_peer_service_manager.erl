@@ -476,7 +476,7 @@ establish_connections(Pending,
                       MemberParallelism,
                       Connections0) ->
     %% Compute list of nodes that should be connected.
-    Peers = members(Membership) ++ Pending,
+    Peers = without_me(members(Membership) ++ Pending),
 
     %% Reconnect disconnected members and members waiting to join.
     {Connections, MemberParallelism} = lists:foldl(
