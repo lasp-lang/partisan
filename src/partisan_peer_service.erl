@@ -31,6 +31,7 @@
          stop/0,
          stop/1,
          members/0,
+         connections/0,
          manager/0,
          add_sup_callback/1,
          forward_message/3]).
@@ -60,10 +61,15 @@ join(Node, Node, _) ->
 join(_, Node, _Auto) ->
     attempt_join(Node).
 
-%% @doc Return cluster members.
+%% @doc Return node members.
 members() ->
     Manager = manager(),
     Manager:members().
+
+%% @doc Return node connections.
+connections() ->
+    Manager = manager(),
+    Manager:connections().
 
 %% @doc Update cluster members.
 update_members(Nodes) ->
