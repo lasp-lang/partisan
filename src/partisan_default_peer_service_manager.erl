@@ -238,7 +238,7 @@ handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State)
 
     {reply, ok, State2};
 
-handle_call({leave, Node}, _From, State0) ->
+handle_call({leave, Node}, From, State0) ->
     %% Perform leave.
     State = internal_leave(Node, State0),
 
@@ -246,6 +246,8 @@ handle_call({leave, Node}, _From, State0) ->
     case node() of
         Node ->
             delete_state_from_disk(),
+
+            gen_server:reply(From, ok),
 
             %% Shutdown; connections terminated on shutdown.
             {stop, normal, State};

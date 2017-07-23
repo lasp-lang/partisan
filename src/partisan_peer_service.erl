@@ -108,9 +108,9 @@ attempt_join({_Name, _, _}=Node) ->
     Manager:join(Node).
 
 %% @doc Attempt to leave the cluster.
-leave(_Args) when is_list(_Args) ->
+leave(Node) ->
     Manager = manager(),
-    Manager:leave().
+    Manager:leave(Node).
 
 %% @doc Stop.
 stop() ->
