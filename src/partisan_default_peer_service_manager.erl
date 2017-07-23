@@ -460,7 +460,12 @@ maybe_load_state_from_disk(Actor) ->
 
 %% @private
 persist_state(State) ->
-    write_state_to_disk(State).
+    case partisan_config:get(persist_state, true) of
+        true ->
+            write_state_to_disk(State);
+        false ->
+            ok
+    end.
 
 %% @private
 members(Membership) ->
@@ -720,7 +725,7 @@ internal_join({Name, _, _} = Node,
                      connections=Connections0,
                      membership=Membership,
                      member_parallelism=MemberParallelism0}=State) ->
-    %% Attempt to join via disterl for control messages during testing.
+    %% Maintain disterl connection for control messages.
     _ = net_kernel:connect(Name),
 
     %% Add to list of pending connections.
