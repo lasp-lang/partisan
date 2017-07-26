@@ -126,7 +126,15 @@ send_message(Name, Message) ->
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, ServerRef, Message) ->
-    gen_server:call(?MODULE, {forward_message, Name, ServerRef, Message}, infinity).
+    FullMessage = {forward_message, Name, ServerRef, Message},
+
+    %% Attempt to fast-path through the memoized connection cache.
+    case partisan_connection_cache:dispatch(FullMessage) of
+        ok ->
+            ok;
+        {error, trap} ->
+            gen_server:call(?MODULE, FullMessage, infinity)
+    end.
 
 %% @doc Receive message from a remote manager.
 receive_message(Message) ->
@@ -1088,6 +1096,10 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
                     dict:store(Name, undefined, Connections0)
             end
     end,
+
+    %% Memoize connections.
+    partisan_connection_cache:update(Connections),
+
     Connections.
 
 %% @private
