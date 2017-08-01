@@ -24,6 +24,7 @@
 -include("partisan.hrl").
 
 -export([init/0,
+         listen_addrs/0,
          set/2,
          get/1,
          get/2]).
@@ -111,4 +112,10 @@ random_port() ->
     {ok, {_, Port}} = inet:sockname(Socket),
     ok = gen_tcp:close(Socket),
     Port.
+
+listen_addrs() ->
+    PeerIP = partisan_config:get(peer_ip),
+    PeerPort = partisan_config:get(peer_port),
+    ListenAddrs = partisan_config:get(listen_addrs, []),
+    lists:flatten([{PeerIP, PeerPort}] ++ ListenAddrs).
 

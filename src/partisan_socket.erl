@@ -4,7 +4,7 @@
 
 %% public api
 
--export([start_link/0]).
+-export([start_link/2]).
 
 %% gen_server api
 
@@ -17,17 +17,16 @@
 
 %% public api
 
-start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+start_link(PeerIP, PeerPort) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [PeerIP, PeerPort], []).
 
 %% gen_server api
 
-init([]) ->
-    PeerPort = partisan_config:get(peer_port),
+init([PeerIP, PeerPort]) ->
     AcceptorPoolSize = application:get_env(partisan, acceptor_pool_size, 10),
     % Trapping exit so can close socket in terminate/2
     _ = process_flag(trap_exit, true),
-    Opts = [{active, once}, {mode, binary}, {packet, 4},
+    Opts = [{active, once}, {mode, binary}, {ip, PeerIP}, {packet, 4},
             {reuseaddr, true}, {nodelay, true}, {keepalive, true}],
     case gen_tcp:listen(PeerPort, Opts) of
         {ok, Socket} ->

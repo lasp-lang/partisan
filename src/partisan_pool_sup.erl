@@ -19,8 +19,17 @@ start_link() ->
 
 init([]) ->
     Flags = #{strategy => rest_for_one},
-    Pool = #{id => partisan_pool,
-             start => {partisan_pool, start_link, []}},
-    Socket = #{id => partisan_socket,
-               start => {partisan_socket, start_link, []}},
-    {ok, {Flags, [Pool, Socket]}}.
+    Pool = pool(),
+    Sockets = [socket(PeerIP, PeerPort) || {PeerIP, PeerPort} <-
+                                           partisan_config:listen_addrs()],
+    {ok, {Flags, lists:flatten([Pool, Sockets])}}.
+
+%% @private
+socket(PeerIP, PeerPort) ->
+    #{id => partisan_socket,
+      start => {partisan_socket, start_link, [PeerIP, PeerPort]}}.
+
+%% @private
+pool() ->
+    #{id => partisan_pool,
+      start => {partisan_pool, start_link, []}}.
