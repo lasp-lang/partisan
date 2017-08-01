@@ -118,4 +118,3 @@ listen_addrs() ->
     PeerPort = partisan_config:get(peer_port),
     ListenAddrs = partisan_config:get(listen_addrs, []),
     lists:flatten([{PeerIP, PeerPort}] ++ ListenAddrs).
-
