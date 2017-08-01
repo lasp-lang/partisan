@@ -57,7 +57,6 @@
 -include("partisan.hrl").
 
 -define(SET, state_orset).
--define(PARALLELISM, 1).
 
 -type pending() :: [node_spec()].
 -type membership() :: ?SET:state_orset().
@@ -67,7 +66,7 @@
                 down_functions :: dict:dict(),
                 membership :: membership(),
                 member_parallelism :: dict:dict(),
-                connections :: connections()}).
+                connections :: partisan_peer_service_connections:t()}).
 
 -type state_t() :: #state{}.
 
@@ -184,7 +183,7 @@ init([]) ->
 
     Actor = gen_actor(),
     Membership = maybe_load_state_from_disk(Actor),
-    Connections = dict:new(),
+    Connections = partisan_peer_service_connections:new(),
 
     {ok, #state{actor=Actor,
                 pending=[],
@@ -327,16 +326,16 @@ handle_info(connections, #state{pending=Pending,
                           connections=Connections}};
 
 handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
-    FoldFun = fun(K, V, AccIn) ->
-                      case V =:= From of
-                          true ->
-                              down(K, State),
-                              dict:store(K, [], AccIn);
-                          false ->
-                              AccIn
-                      end
-              end,
-    Connections = dict:fold(FoldFun, Connections0, Connections0),
+    %% invoke the down callback on each matching entry
+    partisan_peer_service_connections:foreach(
+          fun(Node, Pids) ->
+                case lists:member(From, Pids) of
+                    true -> down(Node, State);
+                    false -> ok
+                end
+          end, Connections0),
+    %% and then prune all node entries containing the exit pid
+    {_, Connections} = partisan_peer_service_connections:prune(From, Connections0),
     {noreply, State#state{connections=Connections}};
 
 handle_info({connected, Node, _Tag, RemoteState},
@@ -374,16 +373,19 @@ handle_info(Msg, State) ->
 %% @private
 -spec terminate(term(), state_t()) -> term().
 terminate(_Reason, #state{connections=Connections}=_State) ->
-    dict:map(fun(_K, Pids) ->
-                     lists:foreach(fun(Pid) ->
-                                        try
-                                            gen_server:stop(Pid, normal, infinity)
-                                        catch
-                                            _:_ ->
-                                                ok
-                                        end
-                                   end, Pids)
-             end, Connections),
+    Fun =
+        fun(_K, Pids) ->
+            lists:foreach(
+              fun(Pid) ->
+                 try
+                     gen_server:stop(Pid, normal, infinity)
+                 catch
+                     _:_ ->
+                         ok
+                 end
+              end, Pids)
+         end,
+    partisan_peer_service_connections:foreach(Fun, Connections),
     ok.
 
 %% @private
@@ -486,78 +488,15 @@ establish_connections(Pending,
     Peers = without_me(members(Membership) ++ Pending),
 
     %% Reconnect disconnected members and members waiting to join.
-    {Connections, MemberParallelism} = lists:foldl(
-                                         fun maybe_connect/2,
-                                         {Connections0, MemberParallelism},
-                                         without_me(Peers)),
+    Connections = lists:foldl(fun(Peer, Cs) ->
+                                partisan_util:maybe_connect(Peer, Cs, MemberParallelism)
+                              end, Connections0, without_me(Peers)),
 
     %% Memoize connections.
     partisan_connection_cache:update(Connections),
 
     %% Return the updated list of connections.
     Connections.
-
-%% @private
-%%
-%% Function should enforce the invariant that all cluster members are
-%% keys in the dict pointing to empty list if they are disconnected or a
-%% socket pid if they are connected.
-%%
-maybe_connect({Name, _, _} = Node, {Connections0, MemberParallelism}) ->
-    %% Compute desired parallelism.
-    Parallelism  = case dict:find(Node, MemberParallelism) of
-        {ok, V} ->
-            %% We learned about a node via an explicit join.
-            V;
-        error ->
-            %% We learned about a node through a state merge; assume the
-            %% default unless later specified.
-            partisan_config:get(parallelism, ?PARALLELISM)
-    end,
-
-    %% Initiate connections.
-    Connections = case dict:find(Name, Connections0) of
-        %% Found in dict, and disconnected.
-        {ok, []} ->
-            case connect(Node) of
-                {ok, Pid} ->
-                    dict:store(Name, [Pid], Connections0);
-                _ ->
-                    dict:store(Name, [], Connections0)
-            end;
-        %% Found in dict and connected.
-        {ok, Pids} ->
-            case length(Pids) < Parallelism andalso Parallelism =/= undefined of
-                true ->
-                    lager:info("(~p of ~p) Connecting node ~p.",
-                               [length(Pids), Parallelism, Node]),
-
-                    case connect(Node) of
-                        {ok, Pid} ->
-                            lager:info("Node connected with ~p", [Pid]),
-                            dict:append_list(Name, [Pid], Connections0);
-                        Error ->
-                            lager:info("Node failed connect with ~p", [Error]),
-                            dict:store(Name, [], Connections0)
-                    end;
-                false ->
-                    Connections0
-            end;
-        %% Not present; disconnected.
-        error ->
-            case connect(Node) of
-                {ok, Pid} ->
-                    dict:store(Name, [Pid], Connections0);
-                _ ->
-                    dict:store(Name, [], Connections0)
-            end
-    end,
-    {Connections, MemberParallelism}.
-
-%% @private
-connect(Node) ->
-    Self = self(),
-    partisan_peer_service_client:start_link(Node, Self).
 
 %% @private
 handle_message({receive_state, PeerMembership},
@@ -648,9 +587,13 @@ random_peers(Peers, Fanout) ->
     {ok, Peer}.
 
 %% @private
-do_send_message(Name, Message, Connections) ->
+-spec do_send_message(Node :: atom() | node_spec(),
+                      Message :: term(),
+                      Connections :: partisan_peer_service_connections:t()) ->
+            {error, disconnected} | {error, not_yet_connected} | {error, term()} | ok.
+do_send_message(Node, Message, Connections) ->
     %% Find a connection for the remote node, if we have one.
-    case dict:find(Name, Connections) of
+    case partisan_peer_service_connections:find(Node, Connections) of
         {ok, []} ->
             %% Node was connected but is now disconnected.
             {error, disconnected};
@@ -658,7 +601,7 @@ do_send_message(Name, Message, Connections) ->
             %% TODO: Eventually be smarter about the process identifier
             %% selection.
             gen_server:cast(Pid, {send_message, Message});
-        error ->
+        {error, not_found} ->
             %% Node has not been connected yet.
             {error, not_yet_connected}
     end.

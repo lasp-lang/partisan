@@ -312,14 +312,14 @@ hyparview_manager_partition_test(Config) ->
     case wait_until(CheckStartedFun, 60 * 2, 100) of
         ok ->
             ok;
-        {fail, {connected_check_failed, Nodes}} ->
+        {fail, {false, {connected_check_failed, Nodes}}} ->
             ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p",
                     [Nodes]);
-        {fail, {symmetry_check_failed, Nodes}} ->
+        {fail, {false, {symmetry_check_failed, Nodes}}} ->
             ct:fail("Symmetry is broken (ie. node1 has node2 in it's view but vice-versa is not true) between the following "
                     "pairs of nodes: ~p", [Nodes]);
-        {fail, [{connected_check_failed, ConnectedFails},
-                {symmetry_check_failed, SymmetryFails}]} ->
+        {fail, {false, [{connected_check_failed, ConnectedFails},
+                        {symmetry_check_failed, SymmetryFails}]}} ->
             ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p, symmetry is broken as well"
                     "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
                     "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
@@ -414,14 +414,14 @@ hyparview_manager_high_active_test(Config) ->
     case wait_until(CheckStartedFun, 60 * 2, 100) of
         ok ->
             ok;
-        {fail, {connected_check_failed, Nodes}} ->
+        {fail, {false, {connected_check_failed, Nodes}}} ->
             ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p",
                     [Nodes]);
-        {fail, {symmetry_check_failed, Nodes}} ->
+        {fail, {false, {symmetry_check_failed, Nodes}}} ->
             ct:fail("Symmetry is broken (ie. node1 has node2 in it's view but vice-versa is not true) between the following "
                     "pairs of nodes: ~p", [Nodes]);
-        {fail, [{connected_check_failed, ConnectedFails},
-                {symmetry_check_failed, SymmetryFails}]} ->
+        {fail, {false, [{connected_check_failed, ConnectedFails},
+                        {symmetry_check_failed, SymmetryFails}]}} ->
             ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p, symmetry is broken as well"
                     "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
                     "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
@@ -470,14 +470,14 @@ hyparview_manager_low_active_test(Config) ->
     case wait_until(CheckStartedFun, 60 * 2, 100) of
         ok ->
             ok;
-        {fail, {connected_check_failed, Nodes}} ->
+        {fail, {false, {connected_check_failed, Nodes}}} ->
             ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p",
                     [Nodes]);
-        {fail, {symmetry_check_failed, Nodes}} ->
+        {fail, {false, {symmetry_check_failed, Nodes}}} ->
             ct:fail("Symmetry is broken (ie. node1 has node2 in it's view but vice-versa is not true) between the following "
                     "pairs of nodes: ~p", [Nodes]);
-        {fail, [{connected_check_failed, ConnectedFails},
-                {symmetry_check_failed, SymmetryFails}]} ->
+        {fail, {false, [{connected_check_failed, ConnectedFails},
+                        {symmetry_check_failed, SymmetryFails}]}} ->
             ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p, symmetry is broken as well"
                     "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
                     "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
@@ -524,14 +524,14 @@ hyparview_manager_high_client_test(Config) ->
     case wait_until(CheckStartedFun, 60 * 2, 100) of
         ok ->
             ok;
-        {fail, {connected_check_failed, Nodes}} ->
+        {fail, {false, {connected_check_failed, Nodes}}} ->
             ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p",
                     [Nodes]);
-        {fail, {symmetry_check_failed, Nodes}} ->
+        {fail, {false, {symmetry_check_failed, Nodes}}} ->
             ct:fail("Symmetry is broken (ie. node1 has node2 in it's view but vice-versa is not true) between the following "
                     "pairs of nodes: ~p", [Nodes]);
-        {fail, [{connected_check_failed, ConnectedFails},
-                {symmetry_check_failed, SymmetryFails}]} ->
+        {fail, {false, [{connected_check_failed, ConnectedFails},
+                        {symmetry_check_failed, SymmetryFails}]}} ->
             ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p, symmetry is broken as well"
                     "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
                     "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
@@ -832,8 +832,8 @@ check_forward_message(Node, Manager) ->
     ct:pal("requesting node ~p to forward message to store_proc on node ~p",
            [Node, RandomMember]),
     Rand = rand_compat:uniform(),
-    rpc:call(Node, Manager, forward_message,
-             [RandomMember, store_proc, {store, Rand}]),
+    ok = rpc:call(Node, Manager, forward_message,
+                  [RandomMember, store_proc, {store, Rand}]),
     %% now fetch the value from the random destination node
     ok = wait_until(fun() ->
                     %% it must match with what we asked the node to forward
