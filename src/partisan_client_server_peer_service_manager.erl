@@ -62,7 +62,7 @@
                 tag :: tag(),
                 pending :: pending(),
                 membership :: membership(),
-                connections :: connections()}).
+                connections :: partisan_peer_service_connections:t()}).
 
 -type state_t() :: #state{}.
 
@@ -155,7 +155,7 @@ init([]) ->
     process_flag(trap_exit, true),
 
     Membership = maybe_load_state_from_disk(),
-    Connections = dict:new(),
+    Connections = partisan_peer_service_connections:new(),
     Myself = myself(),
 
     %% Get tag, if set.
@@ -208,7 +208,7 @@ handle_call({join, {Name, _, _}=Node},
     Pending = [Node|Pending0],
 
     %% Trigger connection.
-    Connections = maybe_connect(Node, Connections0),
+    Connections = partisan_util:maybe_connect(Node, Connections0),
 
     %% Return.
     {reply, ok, State#state{pending=Pending,
@@ -247,15 +247,7 @@ handle_cast(Msg, State) ->
     {noreply, State}.
 
 handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
-    FoldFun = fun(K, V, AccIn) ->
-                      case V =:= From of
-                          true ->
-                              dict:store(K, undefined, AccIn);
-                          false ->
-                              AccIn
-                      end
-              end,
-    Connections = dict:fold(FoldFun, Connections0, Connections0),
+    {_, Connections} = partisan_peer_service_connections:prune(From, Connections0),
     {noreply, State#state{connections=Connections}};
 
 handle_info({connected, Node, TheirTag, _RemoteState},
@@ -309,14 +301,19 @@ handle_info(Msg, State) ->
 %% @private
 -spec terminate(term(), state_t()) -> term().
 terminate(_Reason, #state{connections=Connections}=_State) ->
-    dict:map(fun(_K, Pid) ->
-                     try
-                         gen_server:stop(Pid, normal, infinity)
-                     catch
-                         _:_ ->
-                             ok
-                     end
-             end, Connections),
+    Fun =
+        fun(_K, Pids) ->
+            lists:foreach(
+              fun(Pid) ->
+                 try
+                     gen_server:stop(Pid, normal, infinity)
+                 catch
+                     _:_ ->
+                         ok
+                 end
+              end, Pids)
+         end,
+    partisan_peer_service_connections:foreach(Fun, Connections),
     ok.
 
 %% @private
@@ -399,57 +396,26 @@ establish_connections(Pending, Membership, Connections) ->
     %% Reconnect disconnected members and members waiting to join.
     Members = members(Membership),
     AllPeers = lists:keydelete(node(), 1, Members ++ Pending),
-    lists:foldl(fun maybe_connect/2, Connections, AllPeers).
-
-%% @private
-%%
-%% Function should enforce the invariant that all cluster members are
-%% keys in the dict pointing to undefined if they are disconnected or a
-%% socket pid if they are connected.
-%%
-maybe_connect({Name, _, _} = Node, Connections0) ->
-    Connections = case dict:find(Name, Connections0) of
-        %% Found in dict, and disconnected.
-        {ok, undefined} ->
-            case connect(Node) of
-                {ok, Pid} ->
-                    dict:store(Name, Pid, Connections0);
-                _ ->
-                    dict:store(Name, undefined, Connections0)
-            end;
-        %% Found in dict and connected.
-        {ok, _Pid} ->
-            Connections0;
-        %% Not present; disconnected.
-        error ->
-            case connect(Node) of
-                {ok, Pid} ->
-                    dict:store(Name, Pid, Connections0);
-                _ ->
-                    dict:store(Name, undefined, Connections0)
-            end
-    end,
-    Connections.
-
-%% @private
-connect(Node) ->
-    Self = self(),
-    partisan_peer_service_client:start_link(Node, Self).
+    lists:foldl(fun partisan_util:maybe_connect/2, Connections, AllPeers).
 
 handle_message({forward_message, ServerRef, Message}, State) ->
     gen_server:cast(ServerRef, Message),
     {reply, ok, State}.
 
 %% @private
-do_send_message(Name, Message, Connections) ->
+-spec do_send_message(Node :: atom() | node_spec(),
+                      Message :: term(),
+                      Connections :: partisan_peer_service_connections:t()) ->
+            {error, disconnected} | {error, not_yet_connected} | {error, term()} | ok.
+do_send_message(Node, Message, Connections) ->
     %% Find a connection for the remote node, if we have one.
-    case dict:find(Name, Connections) of
-        {ok, undefined} ->
+    case partisan_peer_service_connections:find(Node, Connections) of
+        {ok, []} ->
             %% Node was connected but is now disconnected.
             {error, disconnected};
-        {ok, Pid} ->
+        {ok, [Pid|_]} ->
             gen_server:cast(Pid, {send_message, Message});
-        error ->
+        {error, not_found} ->
             %% Node has not been connected yet.
             {error, not_yet_connected}
     end.

@@ -80,7 +80,7 @@
                 passive :: passive(),
                 reserved :: reserved(),
                 tag :: tag(),
-                connections :: connections(),
+                connections :: partisan_peer_service_connections:t(),
                 max_active_size :: non_neg_integer(),
                 min_active_size :: non_neg_integer(),
                 max_passive_size :: non_neg_integer(),
@@ -206,7 +206,7 @@ init([]) ->
     process_flag(trap_exit, true),
 
     {Active, Passive, Epoch} = maybe_load_state_from_disk(),
-    Connections = dict:new(),
+    Connections = partisan_peer_service_connections:new(),
     Myself = myself(),
 
     SentMessageMap = dict:new(),
@@ -381,7 +381,7 @@ handle_cast({join, Peer},
                    connections=Connections0,
                    epoch=Epoch0}=State0) ->
     %% Trigger connection.
-    Connections = maybe_connect(Peer, Connections0),
+    Connections = partisan_util:maybe_connect(Peer, Connections0),
 
     lager:info("Node ~p sends the JOIN message to ~p", [Myself0, Peer]),
     %% Send the JOIN message to the peer.
@@ -460,7 +460,7 @@ handle_info(passive_view_maintenance,
                     State0;
                 Random ->
                     %% Trigger connection.
-                    Connections = maybe_connect(Random, Connections0),
+                    Connections = partisan_util:maybe_connect(Random, Connections0),
 
                     %% Forward shuffle request.
                     do_send_message(Random,
@@ -483,19 +483,7 @@ handle_info({'EXIT', From, Reason},
     lager:info("connection pid ~p died due to ~p",
                [From, Reason]),
     %% Prune active connections from dictionary.
-    FoldFun = fun(K, V, {Peer, AccIn}) ->
-                      case V =:= From of
-                          true ->
-                              %% This *should* only ever match one.
-                              AccOut = dict:store(K, undefined, AccIn),
-                              {K, AccOut};
-                          false ->
-                              {Peer, AccIn}
-                      end
-              end,
-    {Peer, Connections} = dict:fold(FoldFun,
-                                    {undefined, Connections0},
-                                    Connections0),
+    {Peer, Connections} = partisan_peer_service_connections:prune(From, Connections0),
 
     %% If it was in the passive view and our connection attempt failed,
     %% remove from the passive view altogether.
@@ -543,14 +531,19 @@ handle_info(Msg, State) ->
 %% @private
 -spec terminate(term(), state_t()) -> term().
 terminate(_Reason, #state{connections=Connections}=_State) ->
-    dict:map(fun(_K, Pid) ->
-                     try
-                         gen_server:stop(Pid, normal, infinity)
-                     catch
-                         _:_ ->
-                             ok
-                     end
-             end, Connections),
+    Fun =
+        fun(_K, Pids) ->
+            lists:foreach(
+              fun(Pid) ->
+                 try
+                     gen_server:stop(Pid, normal, infinity)
+                 catch
+                     _:_ ->
+                         ok
+                 end
+              end, Pids)
+         end,
+    partisan_peer_service_connections:foreach(Fun, Connections),
     ok.
 
 %% @private
@@ -592,7 +585,7 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
             State1 = add_to_active_view(Peer, PeerTag, State0),
 
             %% Establish connections.
-            Connections1 = maybe_connect(Peer, State1#state.connections),
+            Connections1 = partisan_util:maybe_connect(Peer, State1#state.connections),
 
             LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
             %% Send the NEIGHBOR message to origin, that will update it's view.
@@ -610,7 +603,7 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
             Connections = lists:foldl(
               fun(P, AccConnections0) ->
                   %% Establish connections.
-                  AccConnections = maybe_connect(P, AccConnections0),
+                  AccConnections = partisan_util:maybe_connect(P, AccConnections0),
 
                   lager:info("Forwarding join of ~p to active view peer ~p",
                              [Peer, P]),
@@ -648,7 +641,7 @@ handle_message({neighbor, Peer, PeerTag, DisconnectId, _Sender},
     State = case is_addable(DisconnectId, Peer, SentMessageMap0) of
                 true ->
                     %% Establish connections.
-                    Connections = maybe_connect(Peer, Connections0),
+                    Connections = partisan_util:maybe_connect(Peer, Connections0),
 
                     %% Add node into the active view.
                     State1 = add_to_active_view(
@@ -693,7 +686,7 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
                     State1 = add_to_active_view(Peer, PeerTag, State0),
 
                     %% Establish connections.
-                    Connections1 = maybe_connect(Peer, State1#state.connections),
+                    Connections1 = partisan_util:maybe_connect(Peer, State1#state.connections),
 
                     LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
                     %% Send neighbor message to origin, that will update it's view.
@@ -736,7 +729,7 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
                             State3 = add_to_active_view(Peer, PeerTag, State2),
 
                             %% Establish connections.
-                            Connections3 = maybe_connect(Peer, State3#state.connections),
+                            Connections3 = partisan_util:maybe_connect(Peer, State3#state.connections),
 
                             LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
                             %% Send neighbor message to origin, that will
@@ -757,7 +750,7 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
                     end;
                 Random ->
                     %% Establish any new connections.
-                    Connections2 = maybe_connect(Random, Connections0),
+                    Connections2 = partisan_util:maybe_connect(Random, Connections0),
 
                     lager:info("FORWARD_JOIN: forwarding to ~p",
                                [Random]),
@@ -838,7 +831,7 @@ handle_message({neighbor_request, Peer, Priority, PeerTag, DisconnectId, Exchang
                [Myself0, Peer, DisconnectId]),
 
     %% Establish connections.
-    Connections = maybe_connect(Peer, Connections0),
+    Connections = partisan_util:maybe_connect(Peer, Connections0),
 
     Exchange_Ack0 = %% Myself.
                     [Myself0] ++
@@ -955,7 +948,7 @@ handle_message({shuffle, Exchange, TTL, Sender},
                              State0;
                          Random ->
                              %% Trigger connection.
-                             Connections1 = maybe_connect(Random, Connections0),
+                             Connections1 = partisan_util:maybe_connect(Random, Connections0),
 
                              %% Forward shuffle until random walk complete.
                              do_send_message(Random,
@@ -972,7 +965,7 @@ handle_message({shuffle, Exchange, TTL, Sender},
                                                      length(Exchange)),
 
             %% Trigger connection.
-            Connections2 = maybe_connect(Sender, Connections0),
+            Connections2 = partisan_util:maybe_connect(Sender, Connections0),
 
             do_send_message(Sender,
                             {shuffle_reply, ResponseExchange, Myself},
@@ -1059,95 +1052,52 @@ members(Set) ->
     sets:to_list(Set).
 
 %% @private
-%% Function should enforce the invariant that all cluster members are
-%% keys in the dict pointing to undefined if they are disconnected or a
-%% socket pid if they are connected.
-%%
-maybe_connect({Name, _, _} = Node, Connections0) ->
-    Connections = case dict:find(Name, Connections0) of
-        %% Found in dict, and disconnected.
-        {ok, undefined} ->
-            lager:info("Node ~p is not connected; initiating.", [Node]),
-
-            case connect(Node) of
-                {ok, Pid} ->
-                    lager:info("Node ~p connected.", [Node]),
-                    dict:store(Name, Pid, Connections0);
-                Error ->
-                    lager:info("Node ~p failed connection: ~p.", [Node, Error]),
-                    dict:store(Name, undefined, Connections0)
-            end;
-        %% Found in dict and connected.
-        {ok, Pid} ->
-            dict:store(Name, Pid, Connections0);
-        %% Not present; disconnected.
-        error ->
-            lager:info("Node ~p never was connected; initiating.", [Node]),
-
-            case connect(Node) of
-                {ok, Pid} ->
-                    lager:info("Node ~p connected.", [Node]),
-                    dict:store(Name, Pid, Connections0);
-                {error, normal} ->
-                    lager:info("Node ~p isn't online just yet.", [Node]),
-                    dict:store(Name, undefined, Connections0);
-                Error ->
-                    lager:info("Node ~p failed connection: ~p.", [Node, Error]),
-                    dict:store(Name, undefined, Connections0)
-            end
-    end,
-
-    %% Memoize connections.
-    partisan_connection_cache:update(Connections),
-
-    Connections.
-
-%% @private
-connect(Node) ->
-    Self = self(),
-    partisan_peer_service_client:start_link(Node, Self).
-
-%% @private
-disconnect(Name, Connections) ->
+-spec disconnect(Node :: node_spec(),
+                 Connections :: partisan_peer_service_connections:t()) ->
+            partisan_peer_service_connections:t().
+disconnect(Node, Connections0) ->
     %% Find a connection for the remote node, if we have one.
-    case dict:find(Name, Connections) of
-        {ok, undefined} ->
+    case partisan_peer_service_connections:find(Node, Connections0) of
+        {ok, []} ->
             %% Return original set.
-            Connections;
-        {ok, Pid} ->
+            Connections0;
+        {ok, [Pid|_]} ->
             %% Stop;
             lager:info("disconnecting node ~p by stopping connection pid ~p",
-                       [Name, Pid]),
+                       [Node, Pid]),
             gen_server:stop(Pid),
 
             %% Null out in the dictionary.
-            dict:store(Name, undefined, Connections);
-        error ->
+            {_, Connections} =  partisan_peer_service_connections:prune(Node, Connections0),
+            Connections;
+        {error, not_found} ->
             %% Return original set.
-            Connections
+            Connections0
     end.
 
 %% @private
-do_send_message(Name, Message, Connections) when is_atom(Name) ->
+-spec do_send_message(Node :: atom() | node_spec(),
+                      Message :: term(),
+                      Connections :: partisan_peer_service_connections:t()) ->
+            {error, disconnected} | {error, not_yet_connected} | {error, term()} | ok.
+do_send_message(Node, Message, Connections) ->
     %% Find a connection for the remote node, if we have one.
-    case dict:find(Name, Connections) of
-        {ok, undefined} ->
+    case partisan_peer_service_connections:find(Node, Connections) of
+        {ok, []} ->
             %% Node was connected but is now disconnected.
             {error, disconnected};
-        {ok, Pid} ->
+        {ok, [Pid|_]} ->
             try
                 gen_server:call(Pid, {send_message, Message})
             catch
                 Reason:Error ->
-                    lager:info("failed to send a message to ~p due to ~p:~p", [Name, Reason, Error]),
+                    lager:info("failed to send a message to ~p due to ~p:~p", [Node, Reason, Error]),
                     {error, Error}
             end;
-        error ->
+        {error, not_found} ->
             %% Node has not been connected yet.
             {error, not_yet_connected}
-    end;
-do_send_message({Name, _, _}, Message, Connections) ->
-    do_send_message(Name, Message, Connections).
+    end.
 
 %% @private
 select_random(View, Omit) ->
@@ -1297,7 +1247,7 @@ drop_random_element_from_active_view(
                                         State0#state{active=Active}),
 
             %% Trigger connection.
-            Connections1 = maybe_connect(Peer, Connections0),
+            Connections1 = partisan_util:maybe_connect(Peer, Connections0),
 
             %% Get next disconnect id for the peer.
             NextId = get_next_id(Peer, Epoch0, SentMessageMap0),
@@ -1493,7 +1443,7 @@ move_peer_from_passive_to_active(Peer,
     Exchange = lists:usort(Exchange0),
 
     %% Trigger connection.
-    Connections = maybe_connect(Peer, Connections0),
+    Connections = partisan_util:maybe_connect(Peer, Connections0),
 
     LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
     do_send_message(
