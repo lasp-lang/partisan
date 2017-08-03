@@ -1057,23 +1057,25 @@ members(Set) ->
             partisan_peer_service_connections:t().
 disconnect(Node, Connections0) ->
     %% Find a connection for the remote node, if we have one.
-    case partisan_peer_service_connections:find(Node, Connections0) of
-        {ok, []} ->
-            %% Return original set.
-            Connections0;
-        {ok, [Pid|_]} ->
-            %% Stop;
-            lager:info("disconnecting node ~p by stopping connection pid ~p",
-                       [Node, Pid]),
-            gen_server:stop(Pid),
+    Connections =
+        case partisan_peer_service_connections:find(Node, Connections0) of
+            {ok, []} ->
+                %% Return original set.
+                Connections0;
+            {ok, [Pid|_]} ->
+                %% Stop;
+                lager:info("disconnecting node ~p by stopping connection pid ~p",
+                           [Node, Pid]),
+                gen_server:stop(Pid),
 
-            %% Null out in the dictionary.
-            {_, Connections} =  partisan_peer_service_connections:prune(Node, Connections0),
-            Connections;
-        {error, not_found} ->
-            %% Return original set.
-            Connections0
-    end.
+                %% Null out in the dictionary.
+                {_, Connections1} =  partisan_peer_service_connections:prune(Node, Connections0),
+                Connections1;
+            {error, not_found} ->
+                %% Return original set.
+                Connections0
+        end,
+    Connections.
 
 %% @private
 -spec do_send_message(Node :: atom() | node_spec(),
