@@ -24,7 +24,8 @@
 -include("partisan.hrl").
 
 -export([build_tree/3,
-         maybe_connect/2, maybe_connect/3]).
+         maybe_connect/2,
+         maybe_connect/3]).
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
 %%      works by treating the list as an array-based tree where, for
@@ -36,11 +37,11 @@
 -spec build_tree(N :: integer(), Nodes :: [term()], Opts :: [term()])
                 -> orddict:orddict().
 build_tree(N, Nodes, Opts) ->
-    case lists:member(cycles, Opts) of
+    Expand = case lists:member(cycles, Opts) of
         true ->
-            Expand = lists:flatten(lists:duplicate(N+1, Nodes));
+            lists:flatten(lists:duplicate(N+1, Nodes));
         false ->
-            Expand = Nodes
+            Nodes
     end,
     {Tree, _} =
         lists:foldl(fun(Elm, {Result, Worklist}) ->
@@ -68,7 +69,7 @@ maybe_connect(Node, Connections0) ->
                     Connections :: partisan_peer_service_connections:t(),
                     MemberParallelism :: dict:dict()) ->
             partisan_peer_service_connections:t().
-maybe_connect(Node, Connections, MemberParallelism) ->
+maybe_connect(Node, Connections0, MemberParallelism) ->
     %% Compute desired parallelism.
     Parallelism  = case dict:find(Node, MemberParallelism) of
         {ok, V} ->
@@ -81,17 +82,17 @@ maybe_connect(Node, Connections, MemberParallelism) ->
     end,
 
     %% Initiate connections.
-    case partisan_peer_service_connections:find(Node, Connections) of
+    Connections = case partisan_peer_service_connections:find(Node, Connections0) of
         %% Found disconnected.
         {ok, []} ->
             lager:info("Node ~p is not connected; initiating.", [Node]),
             case connect(Node) of
                 {ok, Pid} ->
                     lager:info("Node ~p connected.", [Node]),
-                    partisan_peer_service_connections:store(Node, Pid, Connections);
+                    partisan_peer_service_connections:store(Node, Pid, Connections0);
                 Error ->
                     lager:info("Node ~p failed connection: ~p.", [Node, Error]),
-                    partisan_peer_service_connections:store(Node, undefined, Connections)
+                    partisan_peer_service_connections:store(Node, undefined, Connections0)
             end;
         %% Found and connected.
         {ok, Pids} ->
@@ -103,28 +104,33 @@ maybe_connect(Node, Connections, MemberParallelism) ->
                     case connect(Node) of
                         {ok, Pid} ->
                             lager:info("Node connected with ~p", [Pid]),
-                            partisan_peer_service_connections:store(Node, Pid, Connections);
+                            partisan_peer_service_connections:store(Node, Pid, Connections0);
                         Error ->
                             lager:info("Node failed connect with ~p", [Error]),
-                            partisan_peer_service_connections:store(Node, undefined, Connections)
+                            partisan_peer_service_connections:store(Node, undefined, Connections0)
                     end;
                 false ->
-                    Connections
+                    Connections0
             end;
         %% Not present; disconnected.
         {error, not_found} ->
             case connect(Node) of
                 {ok, Pid} ->
                     lager:info("Node ~p connected.", [Node]),
-                    partisan_peer_service_connections:store(Node, Pid, Connections);
+                    partisan_peer_service_connections:store(Node, Pid, Connections0);
                 {error, normal} ->
                     lager:info("Node ~p isn't online just yet.", [Node]),
-                    partisan_peer_service_connections:store(Node, undefined, Connections);
+                    partisan_peer_service_connections:store(Node, undefined, Connections0);
                 Error ->
                     lager:info("Node ~p failed connection: ~p.", [Node, Error]),
-                    partisan_peer_service_connections:store(Node, undefined, Connections)
+                    partisan_peer_service_connections:store(Node, undefined, Connections0)
             end
-    end.
+    end,
+
+    %% Memoize connections.
+    partisan_connection_cache:update(Connections),
+
+    Connections.
 
 %% @private
 -spec connect(Node :: node_spec()) -> {ok, pid()} | ignore | {error, term()}.
