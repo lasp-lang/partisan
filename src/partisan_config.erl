@@ -117,4 +117,4 @@ listen_addrs() ->
     PeerIP = partisan_config:get(peer_ip),
     PeerPort = partisan_config:get(peer_port),
     ListenAddrs = partisan_config:get(listen_addrs, []),
-    lists:flatten([{PeerIP, PeerPort}] ++ ListenAddrs).
+    lists:flatten([{default, PeerIP, PeerPort}] ++ ListenAddrs).
