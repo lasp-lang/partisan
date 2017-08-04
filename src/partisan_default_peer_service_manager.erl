@@ -643,24 +643,12 @@ internal_leave(Node, #state{actor=Actor,
 
 %% @private
 internal_join(Node, NumConnections, State) when is_atom(Node) ->
-    %% Use RPC to get the node's specific IP and port binding
-    %% information for the partisan backend connections.
-    PeerIP = rpc:call(Node,
-                      partisan_config,
-                      get,
-                      [peer_ip]),
-    PeerPort = rpc:call(Node,
-                        partisan_config,
-                        get,
-                        [peer_port]),
-    case {PeerIP, PeerPort} of
-        {undefined, undefined} ->
-            lager:error("Partisan isn't configured on remote host; ignoring join of ~p",
-                        [Node]),
-            State;
-        _ ->
-            internal_join({Node, PeerIP, PeerPort}, NumConnections, State)
-    end;
+    ListenAddrs = rpc:call(Node, partisan_config, listen_addrs, []),
+
+    FoldFun = fun({_Label, PeerIP, PeerPort}, State0) ->
+                    internal_join({Node, PeerIP, PeerPort}, NumConnections, State0)
+              end,
+    lists:foldl(FoldFun, State, ListenAddrs);
 internal_join({Name, _, _} = Node,
               NumConnections,
               #state{pending=Pending0,
