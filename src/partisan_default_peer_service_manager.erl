@@ -492,9 +492,6 @@ establish_connections(Pending,
                                 partisan_util:maybe_connect(Peer, Cs, MemberParallelism)
                               end, Connections0, without_me(Peers)),
 
-    %% Memoize connections.
-    partisan_connection_cache:update(Connections),
-
     %% Return the updated list of connections.
     Connections.
 
