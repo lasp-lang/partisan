@@ -26,10 +26,12 @@
 -export([update/1,
          dispatch/1]).
 
+-spec update(partisan_peer_service_connections:t()) ->
+            partisan_peer_service_connections:t().
 update(Connections) ->
     ets:delete_all_objects(?CACHE),
 
-    dict:fold(fun(K, V, _AccIn) ->
+    dict:fold(fun({K, _, _}, V, _AccIn) ->
                       true = ets:insert(?CACHE, [{K, V}])
               end, [], Connections).
 
