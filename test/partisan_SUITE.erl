@@ -693,7 +693,7 @@ start(_Case, Config, Options) ->
     lists:foreach(StartFun, Nodes),
 
     ct:pal("Clustering nodes."),
-    lists:foreach(fun(Node) -> cluster(Node, Nodes, Options) end, Nodes),
+    lists:foreach(fun(Node) -> cluster(Node, Nodes, Options, Config) end, Nodes),
 
     ct:pal("Partisan fully initialized."),
 
@@ -722,7 +722,7 @@ codepath() ->
 %% client/server topology, which requires all nodes talk to every other
 %% node to correctly compute the overlay.
 %%
-cluster({Name, _Node} = Myself, Nodes, Options) when is_list(Nodes) ->
+cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
     Manager = proplists:get_value(partisan_peer_service_manager, Options),
 
     Servers = proplists:get_value(servers, Options, []),
@@ -760,17 +760,26 @@ cluster({Name, _Node} = Myself, Nodes, Options) when is_list(Nodes) ->
                                omit([Name], Nodes)
                         end
                  end,
-    lists:map(fun(OtherNode) -> cluster(Myself, OtherNode) end, OtherNodes).
-cluster({_, Node}, {_, OtherNode}) ->
+    lists:map(fun(OtherNode) -> cluster(Myself, OtherNode, Config) end, OtherNodes).
+cluster({_, Node}, {_, OtherNode}, Config) ->
     PeerPort = rpc:call(OtherNode,
                         partisan_config,
                         get,
                         [peer_port, ?PEER_PORT]),
+    Parallelism = case ?config(parallelism, Config) of
+                      undefined ->
+                          1;
+                      Other ->
+                          Other
+                  end,
     ct:pal("Joining node: ~p to ~p at port ~p", [Node, OtherNode, PeerPort]),
     ok = rpc:call(Node,
                   partisan_peer_service,
                   join,
-                  [#{name => OtherNode, ip => {127, 0, 0, 1}, port => PeerPort}]).
+                  [#{name => OtherNode,
+                     ip => {127, 0, 0, 1},
+                     port => PeerPort,
+                     parallelism => Parallelism}]).
 
 %% @private
 stop(Nodes) ->
