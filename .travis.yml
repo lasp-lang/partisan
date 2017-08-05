@@ -8,6 +8,7 @@ before_script:
   - epmd -daemon
 script:
   - make test
+  - make xref
   - make dialyzer
 notifications:
   email: christopher.meiklejohn@gmail.com
