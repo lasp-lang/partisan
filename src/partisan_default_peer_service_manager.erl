@@ -633,14 +633,6 @@ internal_leave(Node, #state{actor=Actor,
     State#state{membership=Membership}.
 
 %% @private
-internal_join(Node, State) when is_atom(Node) ->
-    ListenAddrs = rpc:call(Node, partisan_config, listen_addrs, []),
-
-    FoldFun = fun({_Label, PeerIP, PeerPort}, State0) ->
-                    internal_join(#{name => Node, ip => PeerIP, port => PeerPort},
-                                   State0)
-              end,
-    lists:foldl(FoldFun, State, ListenAddrs);
 internal_join(#{name := Name} = Node,
               #state{pending=Pending0,
                      connections=Connections0,
