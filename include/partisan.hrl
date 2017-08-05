@@ -7,7 +7,7 @@
 -define(PARALLELISM, 1).
 
 -type actor() :: binary().
--type node_spec() :: {node(), inet:ip_address(), non_neg_integer()}.
+-type node_spec() :: #{name => node(), ip => inet:ip_address(), port => non_neg_integer()}.
 -type message() :: term().
 -type name() :: node().
 -type partitions() :: [{reference(), node_spec()}].

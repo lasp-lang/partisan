@@ -52,7 +52,7 @@ join(NodeStr, Auto) when is_list(NodeStr) ->
     join(erlang:list_to_atom(lists:flatten(NodeStr)), Auto);
 join(Node, Auto) when is_atom(Node) ->
     join(node(), Node, Auto);
-join({_Name, _IPAddress, _Port} = Node, _Auto) ->
+join(Node, _Auto) ->
     attempt_join(Node).
 
 %% @doc Initiate join. Nodes cannot join themselves.
@@ -88,7 +88,7 @@ forward_message(Name, ServerRef, Message) ->
 %% @private
 decode(State) ->
     Manager = manager(),
-    [P || {P, _, _} <- Manager:decode(State)].
+    [P || #{name := P} <- Manager:decode(State)].
 
 %% @private
 attempt_join(Node) when is_atom(Node) ->
@@ -102,8 +102,8 @@ attempt_join(Node) when is_atom(Node) ->
                         partisan_config,
                         get,
                         [peer_port]),
-    attempt_join({Node, PeerIP, PeerPort});
-attempt_join({_Name, _, _}=Node) ->
+    attempt_join(#{name => Node, ip => PeerIP, port => PeerPort});
+attempt_join(#{name := _Name} = Node) ->
     Manager = manager(),
     Manager:join(Node).
 

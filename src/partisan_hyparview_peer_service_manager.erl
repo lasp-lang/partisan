@@ -268,7 +268,7 @@ handle_call(partitions, _From, #state{partitions=Partitions}=State) ->
 handle_call({leave, _Node}, _From, State) ->
     {reply, error, State};
 
-handle_call({join, {_Name, _, _}=Node}, _From, State) ->
+handle_call({join, #{name := _Name} = Node}, _From, State) ->
     gen_server:cast(?MODULE, {join, Node}),
     {reply, ok, State};
 
@@ -304,6 +304,7 @@ handle_call({reserve, Tag}, _From,
             #state{reserved=Reserved0,
                    max_active_size=MaxActiveSize}=State) ->
     Present = dict:fetch_keys(Reserved0),
+
     case length(Present) < MaxActiveSize of
         true ->
             Reserved = case lists:member(Tag, Present) of
@@ -324,7 +325,7 @@ handle_call({active, Tag},
             _From,
             #state{reserved=Reserved}=State) ->
     Result = case dict:find(Tag, Reserved) of
-        {ok, {Peer, _, _}} ->
+        {ok, #{name := Peer}} ->
             {ok, Peer};
         {ok, undefined} ->
             {ok, undefined};
@@ -344,7 +345,15 @@ handle_call({send_message, Name, Message}, _From,
 
 handle_call({forward_message, Name, ServerRef, Message}, _From,
             #state{connections=Connections0, partitions=Partitions}=State) ->
-    case lists:keymember(Name, 2, Partitions) of
+    IsPartitioned = lists:any(fun(#{name := N}) ->
+                                      case N of
+                                          Name ->
+                                              true;
+                                          _ ->
+                                              false
+                                      end
+                              end, Partitions),
+    case IsPartitioned of
         true ->
             {reply, {error, partitioned}, State};
         false ->
@@ -361,7 +370,7 @@ handle_call({receive_message, Message}, _From, State) ->
 handle_call(members, _From, #state{myself=Myself,
                                    active=Active}=State) ->
     lager:info("Node ~p active view: ~p", [Myself, members(Active)]),
-    ActiveMembers = [P || {P, _, _} <- members(Active)],
+    ActiveMembers = [P || #{name := P} <- members(Active)],
     {reply, {ok, ActiveMembers}, State};
 
 handle_call(get_local_state, _From, #state{active=Active,
@@ -1125,7 +1134,7 @@ select_random_sublist(View, K) ->
 %% network delay; if so, we have to remove this element from the passive
 %% view, otherwise it will exist in both places.
 %%
-add_to_active_view({Name, _, _}=Peer, Tag,
+add_to_active_view(#{name := Name}=Peer, Tag,
                    #state{active=Active0,
                           myself=Myself,
                           passive=Passive0,
@@ -1177,7 +1186,7 @@ add_to_active_view({Name, _, _}=Peer, Tag,
     end.
 
 %% @doc Add to the passive view.
-add_to_passive_view({Name, _, _}=Peer,
+add_to_passive_view(#{name := Name}=Peer,
                     #state{myself=Myself,
                            active=Active0,
                            passive=Passive0,

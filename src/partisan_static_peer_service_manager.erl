@@ -170,7 +170,7 @@ handle_call({reserve, _Tag}, _From, State) ->
 handle_call({leave, _Node}, _From, State) ->
     {reply, error, State};
 
-handle_call({join, {Name, _, _}=Node},
+handle_call({join, #{name := Name}=Node},
             _From,
             #state{pending=Pending0, connections=Connections0}=State) ->
     %% Attempt to join via disterl for control messages during testing.
@@ -202,7 +202,7 @@ handle_call({receive_message, Message}, _From, State) ->
     handle_message(Message, State);
 
 handle_call(members, _From, #state{membership=Membership}=State) ->
-    Members = [P || {P, _, _} <- members(Membership)],
+    Members = [P || #{name := P} <- members(Membership)],
     {reply, {ok, Members}, State};
 
 handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
@@ -341,7 +341,14 @@ members(Membership) ->
 establish_connections(Pending, Membership, Connections) ->
     %% Reconnect disconnected members and members waiting to join.
     Members = members(Membership),
-    AllPeers = lists:keydelete(node(), 1, Members ++ Pending),
+    AllPeers = lists:filter(fun(#{name := N}) ->
+                      case node() of
+                          N ->
+                              false;
+                          _ ->
+                              true
+                      end
+              end, Members ++ Pending),
     lists:foldl(fun partisan_util:maybe_connect/2, Connections, AllPeers).
 
 handle_message({forward_message, ServerRef, Message}, State) ->

@@ -209,7 +209,7 @@ handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State)
     % lager:info("Updating membership with: ~p", [Nodes]),
 
     %% Get the current membership.
-    CurrentMembership = [N || {N, _, _} <- sets:to_list(?SET:query(Membership))],
+    CurrentMembership = [N || #{name := N} <- sets:to_list(?SET:query(Membership))],
     % lager:info("CurrentMembership: ~p", [CurrentMembership]),
 
     %% Compute leaving list.
@@ -254,7 +254,7 @@ handle_call({leave, Node}, From, State0) ->
             {reply, ok, State}
     end;
 
-handle_call({join, {_Name, _, _}=Node, NumConnections},
+handle_call({join, #{name := _Name} = Node, NumConnections},
             _From,
             State0) ->
     %% Perform join.
@@ -279,7 +279,7 @@ handle_call({receive_message, Message}, _From, State) ->
     handle_message(Message, State);
 
 handle_call(members, _From, #state{membership=Membership}=State) ->
-    Members = [P || {P, _, _} <- members(Membership)],
+    Members = [P || #{name := P} <- members(Membership)],
     {reply, {ok, Members}, State};
 
 handle_call(connections, _From, #state{connections=Connections}=State) ->
@@ -330,8 +330,10 @@ handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
     partisan_peer_service_connections:foreach(
           fun(Node, Pids) ->
                 case lists:member(From, Pids) of
-                    true -> down(Node, State);
-                    false -> ok
+                    true ->
+                        down(Node, State);
+                    false ->
+                        ok
                 end
           end, Connections0),
     %% and then prune all node entries containing the exit pid
@@ -477,7 +479,14 @@ members(Membership) ->
 
 %% @private
 without_me(Members) ->
-    lists:keydelete(node(), 1, Members).
+    lists:filter(fun(#{name := Name}) ->
+                         case node() of
+                             Name ->
+                                 false;
+                             _ ->
+                                 true
+                         end
+                 end, Members).
 
 %% @private
 establish_connections(Pending,
@@ -516,7 +525,7 @@ handle_message({receive_state, PeerMembership},
             partisan_peer_service_events:update(Merged),
 
             %% Compute members.
-            Members = [N || {N, _, _} <- members(Merged)],
+            Members = [N || #{name := N} <- members(Merged)],
 
             %% Shutdown if we've been removed from the cluster.
             case lists:member(node(), Members) of
@@ -574,7 +583,7 @@ do_gossip(Membership, Connections) ->
 %% @private
 get_peers(Local) ->
     Members = members(Local),
-    Peers = [X || {X, _, _} <- Members, X /= node()],
+    Peers = [X || #{name := X} <- Members, X /= node()],
     Peers.
 
 %% @private
@@ -624,7 +633,7 @@ internal_leave(Node, #state{actor=Actor,
                             member_parallelism=MemberParallelism0}=State) ->
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
-    {Membership, MemberParallelism} = lists:foldl(fun({Name, _, _} = N, {M0, MP0}) ->
+    {Membership, MemberParallelism} = lists:foldl(fun(#{name := Name} = N, {M0, MP0}) ->
                         case Node of
                             Name ->
                                 {ok, M} = ?SET:mutate({rmv, N}, Actor, M0),
@@ -646,10 +655,10 @@ internal_join(Node, NumConnections, State) when is_atom(Node) ->
     ListenAddrs = rpc:call(Node, partisan_config, listen_addrs, []),
 
     FoldFun = fun({_Label, PeerIP, PeerPort}, State0) ->
-                    internal_join({Node, PeerIP, PeerPort}, NumConnections, State0)
+                    internal_join(#{name => Node, ip => PeerIP, port => PeerPort}, NumConnections, State0)
               end,
     lists:foldl(FoldFun, State, ListenAddrs);
-internal_join({Name, _, _} = Node,
+internal_join(#{name := Name} = Node,
               NumConnections,
               #state{pending=Pending0,
                      connections=Connections0,

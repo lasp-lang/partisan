@@ -77,6 +77,8 @@ terminate(_, {_Label, Socket, MRef}) ->
     % Socket may already be down but need to ensure it is closed to avoid
     % eaddrinuse error on restart
     case demonitor(MRef, [flush, info]) of
-        true  -> gen_tcp:close(Socket);
-        false -> ok
+        true  ->
+            gen_tcp:close(Socket);
+        false ->
+            ok
     end.

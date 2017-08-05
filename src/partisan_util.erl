@@ -69,9 +69,9 @@ maybe_connect(Node, Connections0) ->
                     Connections :: partisan_peer_service_connections:t(),
                     MemberParallelism :: dict:dict()) ->
             partisan_peer_service_connections:t().
-maybe_connect(Node, Connections0, MemberParallelism) ->
+maybe_connect(#{name := Name} = Node, Connections0, MemberParallelism) ->
     %% Compute desired parallelism.
-    Parallelism  = case dict:find(Node, MemberParallelism) of
+    Parallelism  = case dict:find(Name, MemberParallelism) of
         {ok, V} ->
             %% We learned about a node via an explicit join.
             V;
@@ -137,4 +137,3 @@ maybe_connect(Node, Connections0, MemberParallelism) ->
 connect(Node) ->
     Self = self(),
     partisan_peer_service_client:start_link(Node, Self).
-

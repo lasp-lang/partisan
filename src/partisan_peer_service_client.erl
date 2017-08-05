@@ -134,14 +134,18 @@ code_change(_OldVsn, State, _Extra) ->
 %%
 connect(Peer) when is_atom(Peer) ->
     %% Bootstrap with disterl.
+    PeerIP = rpc:call(Peer,
+                      partisan_config,
+                      get,
+                      [peer_ip, ?PEER_IP]),
     PeerPort = rpc:call(Peer,
                         partisan_config,
                         get,
                         [peer_port, ?PEER_PORT]),
-    connect({Peer, {127, 0, 0, 1}, PeerPort});
+    connect(#{name => Peer, ip => PeerIP, port => PeerPort});
 
 %% @doc Connect to remote peer.
-connect({_Name, Address, Port}) ->
+connect(#{name := _Name, ip := Address, port :=  Port}) ->
     Options = [binary, {active, true}, {packet, 4}, {keepalive, true}],
     case partisan_peer_connection:connect(Address, Port, Options, ?TIMEOUT) of
         {ok, Socket} ->
@@ -169,7 +173,7 @@ handle_message({state, Tag, LocalState},
 handle_message({hello, Node}, #state{peer=Peer, socket=Socket}=State) ->
     % lager:info("sending hello to ~p", [Node]),
 
-    {PeerName, _, _} = Peer,
+    #{name := PeerName} = Peer,
 
     case Node of
         PeerName ->

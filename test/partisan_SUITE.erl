@@ -197,7 +197,9 @@ default_manager_test(Config) ->
 
     lists:foreach(fun({_Name, Node}) ->
                         %% Get enabled parallelism.
-                        Parallelism = rpc:call(Node, partisan_config, get, [parallelism]),
+                        Parallelism = rpc:call(Node, partisan_config, get, [parallelism, 1]),
+
+                        ct:pal("Parallelism is: ~p", [Parallelism]),
 
                         %% Generate fun.
                         VerifyConnectionsNodeFun = fun() ->
@@ -634,6 +636,7 @@ start(_Case, Config, Options) ->
                           [max_active_size, MaxActiveSize]),
 
             ok = rpc:call(Node, partisan_config, set, [tls, ?config(tls, Config)]),
+            ct:pal("Setting parallelism to: ~p", [?config(parallelism, Config)]),
             ok = rpc:call(Node, partisan_config, set, [parallelism, ?config(parallelism, Config)]),
 
             Servers = proplists:get_value(servers, Options, []),
@@ -761,7 +764,7 @@ cluster({_, Node}, {_, OtherNode}) ->
     ok = rpc:call(Node,
                   partisan_peer_service,
                   join,
-                  [{OtherNode, {127, 0, 0, 1}, PeerPort}]).
+                  [#{name => OtherNode, ip => {127, 0, 0, 1}, port => PeerPort}]).
 
 %% @private
 stop(Nodes) ->
@@ -887,7 +890,7 @@ hyparview_membership_check(Nodes) ->
             Active = sets:to_list(ActiveSet),
 
             %% Add vertexes and edges.
-            [connect(Graph, Node, N) || {N, _, _} <- Active]
+            [connect(Graph, Node, N) || #{name := N} <- Active]
          end,
     %% Build a digraph representing the membership
     lists:foreach(ConnectFun, Nodes),
@@ -908,7 +911,7 @@ hyparview_membership_check(Nodes) ->
                                                 ct:pal("node ~p active view: ~p",
                                                        [N1, Active])
                                            end, Nodes),
-                            {true, {Node, N}}; 
+                            {true, {Node, N}};
                         _ ->
                             false
                     end
@@ -922,12 +925,12 @@ hyparview_membership_check(Nodes) ->
                 {ok, ActiveSet1} = rpc:call(Node1, Manager, active, []),
                 Active1 = sets:to_list(ActiveSet1),
 
-                lists:filtermap(fun({Node2, _, _}) ->
+                lists:filtermap(fun(#{name := Node2}) ->
                     %% Get second nodes active set.
                     {ok, ActiveSet2} = rpc:call(Node2, Manager, active, []),
                     Active2 = sets:to_list(ActiveSet2),
 
-                    case lists:member(Node1, [N || {N, _, _} <- Active2]) of
+                    case lists:member(Node1, [N || #{name := N} <- Active2]) of
                         true ->
                             false;
                         false ->
