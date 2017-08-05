@@ -31,7 +31,7 @@
 update(Connections) ->
     ets:delete_all_objects(?CACHE),
 
-    dict:fold(fun({K, _, _}, V, _AccIn) ->
+    dict:fold(fun(K, V, _AccIn) ->
                       true = ets:insert(?CACHE, [{K, V}])
               end, [], Connections).
 
