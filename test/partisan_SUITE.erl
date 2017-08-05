@@ -636,8 +636,14 @@ start(_Case, Config, Options) ->
                           [max_active_size, MaxActiveSize]),
 
             ok = rpc:call(Node, partisan_config, set, [tls, ?config(tls, Config)]),
-            ct:pal("Setting parallelism to: ~p", [?config(parallelism, Config)]),
-            ok = rpc:call(Node, partisan_config, set, [parallelism, ?config(parallelism, Config)]),
+            Parallelism = case ?config(parallelism, Config) of
+                              undefined ->
+                                  1;
+                                Other ->
+                                  Other
+                          end,
+            ct:pal("Setting parallelism to: ~p", [Parallelism]),
+            ok = rpc:call(Node, partisan_config, set, [parallelism, Parallelism]),
 
             Servers = proplists:get_value(servers, Options, []),
             Clients = proplists:get_value(clients, Options, []),
