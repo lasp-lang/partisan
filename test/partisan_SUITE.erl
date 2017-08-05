@@ -639,7 +639,7 @@ start(_Case, Config, Options) ->
             Parallelism = case ?config(parallelism, Config) of
                               undefined ->
                                   1;
-                                Other ->
+                              Other ->
                                   Other
                           end,
             ct:pal("Setting parallelism to: ~p", [Parallelism]),
