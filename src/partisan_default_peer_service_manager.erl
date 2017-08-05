@@ -124,7 +124,7 @@ receive_message(Message) ->
 
 %% @doc Attempt to join a remote node.
 join(Node) ->
-    join(Node).
+    gen_server:call(?MODULE, {join, Node}, infinity).
 
 %% @doc Leave the cluster.
 leave() ->
