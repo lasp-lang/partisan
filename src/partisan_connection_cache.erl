@@ -31,8 +31,8 @@
 update(Connections) ->
     ets:delete_all_objects(?CACHE),
 
-    dict:fold(fun(K, V, _AccIn) ->
-                      true = ets:insert(?CACHE, [{K, V}])
+    dict:fold(fun(#{name := Name}, V, _AccIn) ->
+                      true = ets:insert(?CACHE, [{Name, V}])
               end, [], Connections).
 
 dispatch({forward_message, Name, ServerRef, Message}) ->
