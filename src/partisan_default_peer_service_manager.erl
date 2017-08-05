@@ -65,7 +65,6 @@
                 pending :: pending(),
                 down_functions :: dict:dict(),
                 membership :: membership(),
-                member_parallelism :: dict:dict(),
                 connections :: partisan_peer_service_connections:t()}).
 
 -type state_t() :: #state{}.
@@ -125,12 +124,7 @@ receive_message(Message) ->
 
 %% @doc Attempt to join a remote node.
 join(Node) ->
-    Parallelism = partisan_config:get(parallelism, ?PARALLELISM),
-    join(Node, Parallelism).
-
-%% @doc Attempt to join a remote node and maintain multiple connections.
-join(Node, NumConnections) ->
-    gen_server:call(?MODULE, {join, Node, NumConnections}, infinity).
+    join(Node).
 
 %% @doc Leave the cluster.
 leave() ->
@@ -188,7 +182,6 @@ init([]) ->
     {ok, #state{actor=Actor,
                 pending=[],
                 membership=Membership,
-                member_parallelism=dict:new(),
                 connections=Connections,
                 down_functions=dict:new()}}.
 
@@ -230,9 +223,8 @@ handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State)
     % lager:info("JoiningNodes: ~p", [JoiningNodes]),
 
     %% Issue joins.
-    Parallelism = partisan_config:get(parallelism, ?PARALLELISM),
     State2 = lists:foldl(fun(N, S) ->
-                                 internal_join(N, Parallelism, S)
+                                 internal_join(N#{parallelism => ?PARALLELISM}, S)
                          end, State1, JoiningNodes),
 
     {reply, ok, State2};
@@ -254,11 +246,11 @@ handle_call({leave, Node}, From, State0) ->
             {reply, ok, State}
     end;
 
-handle_call({join, #{name := _Name} = Node, NumConnections},
+handle_call({join, #{name := _Name} = Node},
             _From,
             State0) ->
     %% Perform join.
-    State = internal_join(Node, NumConnections, State0),
+    State = internal_join(Node, State0),
 
     %% Return.
     {reply, ok, State};
@@ -302,11 +294,9 @@ handle_cast(Msg, State) ->
 -spec handle_info(term(), state_t()) -> {noreply, state_t()}.
 handle_info(gossip, #state{pending=Pending,
                            membership=Membership,
-                           member_parallelism=MemberParallelism,
                            connections=Connections0}=State) ->
     Connections = establish_connections(Pending,
                                         Membership,
-                                        MemberParallelism,
                                         Connections0),
     do_gossip(Membership, Connections),
     schedule_gossip(),
@@ -314,12 +304,10 @@ handle_info(gossip, #state{pending=Pending,
 
 handle_info(connections, #state{pending=Pending,
                                 membership=Membership,
-                                member_parallelism=MemberParallelism,
                                 connections=Connections0}=State) ->
     %% Trigger connection.
     Connections = establish_connections(Pending,
                                         Membership,
-                                        MemberParallelism,
                                         Connections0),
     schedule_connections(),
     {noreply, State#state{pending=Pending,
@@ -491,14 +479,13 @@ without_me(Members) ->
 %% @private
 establish_connections(Pending,
                       Membership,
-                      MemberParallelism,
                       Connections0) ->
     %% Compute list of nodes that should be connected.
     Peers = without_me(members(Membership) ++ Pending),
 
     %% Reconnect disconnected members and members waiting to join.
     Connections = lists:foldl(fun(Peer, Cs) ->
-                                partisan_util:maybe_connect(Peer, Cs, MemberParallelism)
+                                partisan_util:maybe_connect(Peer, Cs)
                               end, Connections0, without_me(Peers)),
 
     %% Return the updated list of connections.
@@ -508,7 +495,6 @@ establish_connections(Pending,
 handle_message({receive_state, PeerMembership},
                #state{pending=Pending,
                       membership=Membership,
-                      member_parallelism=MemberParallelism,
                       connections=Connections0}=State) ->
     case ?SET:equal(PeerMembership, Membership) of
         true ->
@@ -533,7 +519,6 @@ handle_message({receive_state, PeerMembership},
                     %% Establish any new connections.
                     Connections = establish_connections(Pending,
                                                         Membership,
-                                                        MemberParallelism,
                                                         Connections0),
 
                     %% Gossip.
@@ -629,54 +614,46 @@ down(Name, #state{down_functions=DownFunctions}) ->
 %% @private
 internal_leave(Node, #state{actor=Actor,
                             connections=Connections,
-                            membership=Membership0,
-                            member_parallelism=MemberParallelism0}=State) ->
+                            membership=Membership0}=State) ->
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
-    {Membership, MemberParallelism} = lists:foldl(fun(#{name := Name} = N, {M0, MP0}) ->
+    Membership = lists:foldl(fun(#{name := Name} = N, M0) ->
                         case Node of
                             Name ->
                                 {ok, M} = ?SET:mutate({rmv, N}, Actor, M0),
-                                MP = dict:erase(N, MP0),
-                                {M, MP};
+                                M;
                             _ ->
-                                {M0, MP0}
+                                M0
                         end
-                end, {Membership0, MemberParallelism0}, members(Membership0)),
+                end, Membership0, members(Membership0)),
 
     %% Gossip.
     do_gossip(Membership, Connections),
 
-    State#state{membership=Membership,
-                member_parallelism=MemberParallelism}.
+    State#state{membership=Membership}.
 
 %% @private
-internal_join(Node, NumConnections, State) when is_atom(Node) ->
+internal_join(Node, State) when is_atom(Node) ->
     ListenAddrs = rpc:call(Node, partisan_config, listen_addrs, []),
 
     FoldFun = fun({_Label, PeerIP, PeerPort}, State0) ->
-                    internal_join(#{name => Node, ip => PeerIP, port => PeerPort}, NumConnections, State0)
+                    internal_join(#{name => Node, ip => PeerIP, port => PeerPort},
+                                   State0)
               end,
     lists:foldl(FoldFun, State, ListenAddrs);
 internal_join(#{name := Name} = Node,
-              NumConnections,
               #state{pending=Pending0,
                      connections=Connections0,
-                     membership=Membership,
-                     member_parallelism=MemberParallelism0}=State) ->
+                     membership=Membership}=State) ->
     %% Maintain disterl connection for control messages.
     _ = net_kernel:connect(Name),
 
     %% Add to list of pending connections.
     Pending = [Node|Pending0],
 
-    %% Specify parallelism.
-    MemberParallelism = dict:store(Node, NumConnections, MemberParallelism0),
-
     %% Trigger connection.
     Connections = establish_connections(Pending,
                                         Membership,
-                                        MemberParallelism,
                                         Connections0),
 
     State#state{pending=Pending, connections=Connections}.

@@ -77,7 +77,6 @@ init() ->
                            {max_active_size, 6},
                            {max_passive_size, 30},
                            {min_active_size, 3},
-                           {parallelism, 1},
                            {partisan_peer_service_manager, PeerService},
                            {peer_ip, IPAddress},
                            {peer_port, PeerPort},

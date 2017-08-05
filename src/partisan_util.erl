@@ -24,8 +24,7 @@
 -include("partisan.hrl").
 
 -export([build_tree/3,
-         maybe_connect/2,
-         maybe_connect/3]).
+         maybe_connect/2]).
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
 %%      works by treating the list as an array-based tree where, for
@@ -62,24 +61,8 @@ build_tree(N, Nodes, Opts) ->
 -spec maybe_connect(Node :: node_spec(),
                     Connections :: partisan_peer_service_connections:t()) ->
             partisan_peer_service_connections:t().
-maybe_connect(Node, Connections0) ->
-    maybe_connect(Node, Connections0, dict:new()).
-
--spec maybe_connect(Node :: node_spec(),
-                    Connections :: partisan_peer_service_connections:t(),
-                    MemberParallelism :: dict:dict()) ->
-            partisan_peer_service_connections:t().
-maybe_connect(#{name := Name} = Node, Connections0, MemberParallelism) ->
-    %% Compute desired parallelism.
-    Parallelism  = case dict:find(Name, MemberParallelism) of
-        {ok, V} ->
-            %% We learned about a node via an explicit join.
-            V;
-        error ->
-            %% We learned about a node through a state merge; assume the
-            %% default unless later specified.
-            partisan_config:get(parallelism, ?PARALLELISM)
-    end,
+maybe_connect(#{name := _Name} = Node, Connections0) ->
+    Parallelism = maps:get(parallelism, Node, ?PARALLELISM),
 
     %% Initiate connections.
     Connections = case partisan_peer_service_connections:find(Node, Connections0) of
