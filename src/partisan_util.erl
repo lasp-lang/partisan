@@ -79,10 +79,10 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
             case connect(Node, ListenAddr) of
                 {ok, Pid} ->
                     lager:info("Node ~p connected.", [Node]),
-                    partisan_peer_service_connections:store(Node, Pid, Connections0);
+                    partisan_peer_service_connections:store(Node, {ListenAddr, Pid}, Connections0);
                 Error ->
                     lager:info("Node ~p failed connection: ~p.", [Node, Error]),
-                    partisan_peer_service_connections:store(Node, undefined, Connections0)
+                    Connections0
             end;
         %% Found and connected.
         {ok, Pids} ->
