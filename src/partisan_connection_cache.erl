@@ -42,6 +42,6 @@ dispatch({forward_message, Name, ServerRef, Message}) ->
             %% Trap back to gen_server.
             {error, trap};
         [{Name, Pids}] ->
-            Pid = lists:nth(rand_compat:uniform(length(Pids)), Pids),
+            {_ListenAddr, Pid} = lists:nth(rand_compat:uniform(length(Pids)), Pids),
             gen_server:cast(Pid, {send_message, {forward_message, ServerRef, Message}})
     end.

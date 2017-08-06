@@ -266,7 +266,7 @@ terminate(_Reason, #state{connections=Connections}=_State) ->
     Fun =
         fun(_K, Pids) ->
             lists:foreach(
-              fun(Pid) ->
+              fun({_ListenAddr, Pid}) ->
                  try
                      gen_server:stop(Pid, normal, infinity)
                  catch
@@ -366,7 +366,8 @@ do_send_message(Node, Message, Connections) ->
         {ok, []} ->
             %% Node was connected but is now disconnected.
             {error, disconnected};
-        {ok, [Pid|_]} ->
+        {ok, Entries} ->
+            {_ListenAddr, Pid} = lists:nth(rand_compat:uniform(length(Entries)), Entries),
             gen_server:cast(Pid, {send_message, Message});
         {error, not_found} ->
             %% Node has not been connected yet.

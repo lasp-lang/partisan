@@ -317,7 +317,7 @@ handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
     %% invoke the down callback on each matching entry
     partisan_peer_service_connections:foreach(
           fun(Node, Pids) ->
-                case lists:member(From, Pids) of
+                case lists:keymember(From, 2, Pids) of
                     true ->
                         down(Node, State);
                     false ->
@@ -588,9 +588,8 @@ do_send_message(Node, Message, Connections) ->
         {ok, []} ->
             %% Node was connected but is now disconnected.
             {error, disconnected};
-        {ok, [Pid|_]} ->
-            %% TODO: Eventually be smarter about the process identifier
-            %% selection.
+        {ok, Entries} ->
+            {_ListenAddr, Pid} = lists:nth(rand_compat:uniform(length(Entries)), Entries),
             gen_server:cast(Pid, {send_message, Message});
         {error, not_found} ->
             %% Node has not been connected yet.

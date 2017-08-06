@@ -86,18 +86,26 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
             end;
         %% Found and connected.
         {ok, Pids} ->
-            case length(Pids) < Parallelism andalso Parallelism =/= undefined of
+            FilteredPids = lists:filter(fun({Addr, _Pid}) ->
+                                 case Addr of
+                                     ListenAddr ->
+                                         true;
+                                     _ ->
+                                         false
+                                 end
+                         end, Pids),
+            case length(FilteredPids) < Parallelism andalso Parallelism =/= undefined of
                 true ->
                     lager:info("(~p of ~p) Connecting node ~p.",
-                               [length(Pids), Parallelism, Node]),
+                               [length(FilteredPids), Parallelism, Node]),
 
                     case connect(Node, ListenAddr) of
                         {ok, Pid} ->
                             lager:info("Node connected with ~p", [Pid]),
-                            partisan_peer_service_connections:store(Node, Pid, Connections0);
+                            partisan_peer_service_connections:store(Node, {ListenAddr, Pid}, Connections0);
                         Error ->
                             lager:info("Node failed connect with ~p", [Error]),
-                            partisan_peer_service_connections:store(Node, undefined, Connections0)
+                            Connections0
                     end;
                 false ->
                     Connections0
@@ -107,13 +115,13 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
             case connect(Node, ListenAddr) of
                 {ok, Pid} ->
                     lager:info("Node ~p connected.", [Node]),
-                    partisan_peer_service_connections:store(Node, Pid, Connections0);
+                    partisan_peer_service_connections:store(Node, {ListenAddr, Pid}, Connections0);
                 {error, normal} ->
                     lager:info("Node ~p isn't online just yet.", [Node]),
-                    partisan_peer_service_connections:store(Node, undefined, Connections0);
+                    Connections0;
                 Error ->
                     lager:info("Node ~p failed connection: ~p.", [Node, Error]),
-                    partisan_peer_service_connections:store(Node, undefined, Connections0)
+                    Connections0
             end
     end,
 

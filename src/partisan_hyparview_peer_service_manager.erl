@@ -543,7 +543,7 @@ terminate(_Reason, #state{connections=Connections}=_State) ->
     Fun =
         fun(_K, Pids) ->
             lists:foreach(
-              fun(Pid) ->
+              fun({_ListenAddr, Pid}) ->
                  try
                      gen_server:stop(Pid, normal, infinity)
                  catch
@@ -1071,7 +1071,7 @@ disconnect(Node, Connections0) ->
             {ok, []} ->
                 %% Return original set.
                 Connections0;
-            {ok, [Pid|_]} ->
+            {ok, [{_ListenAddr, Pid}|_]} ->
                 %% Stop;
                 lager:info("disconnecting node ~p by stopping connection pid ~p",
                            [Node, Pid]),
@@ -1097,8 +1097,9 @@ do_send_message(Node, Message, Connections) ->
         {ok, []} ->
             %% Node was connected but is now disconnected.
             {error, disconnected};
-        {ok, [Pid|_]} ->
+        {ok, Entries} ->
             try
+                {_ListenAddr, Pid} = lists:nth(rand_compat:uniform(length(Entries)), Entries),
                 gen_server:call(Pid, {send_message, Message})
             catch
                 Reason:Error ->
