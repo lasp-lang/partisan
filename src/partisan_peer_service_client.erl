@@ -132,20 +132,13 @@ code_change(_OldVsn, State, _Extra) ->
 %% every bind operation, but a different port instead of the standard
 %% port.
 %%
-connect(Peer) when is_atom(Peer) ->
-    %% Bootstrap with disterl.
-    PeerIP = rpc:call(Peer,
-                      partisan_config,
-                      get,
-                      [peer_ip, ?PEER_IP]),
-    PeerPort = rpc:call(Peer,
-                        partisan_config,
-                        get,
-                        [peer_port, ?PEER_PORT]),
-    connect(#{name => Peer, ip => PeerIP, port => PeerPort});
+connect(Node) when is_atom(Node) ->
+    ListenAddrs = rpc:call(Node, partisan_config, get, [listen_addrs]),
+    connect(#{name => Node, listen_addrs => ListenAddrs});
 
 %% @doc Connect to remote peer.
-connect(#{name := _Name, ip := Address, port :=  Port}) ->
+%%      Only use the first listen address.
+connect(#{name := _Name, listen_addrs := [#{ip := Address, port := Port}|_]}) ->
     Options = [binary, {active, true}, {packet, 4}, {keepalive, true}],
     case partisan_peer_connection:connect(Address, Port, Options, ?TIMEOUT) of
         {ok, Socket} ->

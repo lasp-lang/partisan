@@ -80,6 +80,7 @@ init() ->
                            {partisan_peer_service_manager, PeerService},
                            {peer_ip, IPAddress},
                            {peer_port, PeerPort},
+                           {listen_addrs, [#{ip => IPAddress, port => PeerPort}]},
                            {random_promotion, true},
                            {reservations, []},
                            {tls, false},
@@ -105,15 +106,12 @@ set(Key, Value) ->
     application:set_env(?APP, Key, Value),
     partisan_mochiglobal:put(Key, Value).
 
+listen_addrs() ->
+    partisan_config:get(listen_addrs, ?LISTEN_ADDRS).
+
 %% @private
 random_port() ->
     {ok, Socket} = gen_tcp:listen(0, []),
     {ok, {_, Port}} = inet:sockname(Socket),
     ok = gen_tcp:close(Socket),
     Port.
-
-listen_addrs() ->
-    PeerIP = partisan_config:get(peer_ip),
-    PeerPort = partisan_config:get(peer_port),
-    ListenAddrs = partisan_config:get(listen_addrs, []),
-    lists:flatten([{default, PeerIP, PeerPort}] ++ ListenAddrs).

@@ -25,7 +25,7 @@
 
 %% public api
 
--export([start_link/3]).
+-export([start_link/2]).
 
 %% gen_server api
 
@@ -38,12 +38,12 @@
 
 %% public api
 
-start_link(Label, PeerIP, PeerPort) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [Label, PeerIP, PeerPort], []).
+start_link(PeerIP, PeerPort) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [PeerIP, PeerPort], []).
 
 %% gen_server api
 
-init([Label, PeerIP, PeerPort]) ->
+init([PeerIP, PeerPort]) ->
     AcceptorPoolSize = application:get_env(partisan, acceptor_pool_size, 10),
     % Trapping exit so can close socket in terminate/2
     _ = process_flag(trap_exit, true),
@@ -54,7 +54,7 @@ init([Label, PeerIP, PeerPort]) ->
             % acceptor could close the socket if there is a problem
             MRef = monitor(port, Socket),
             partisan_pool:accept_socket(Socket, AcceptorPoolSize),
-            {ok, {Label, Socket, MRef}};
+            {ok, {Socket, MRef}};
         {error, Reason} ->
             {stop, Reason}
     end.
@@ -65,7 +65,7 @@ handle_call(Req, _, State) ->
 handle_cast(Req, State) ->
     {stop, {bad_cast, Req}, State}.
 
-handle_info({'DOWN', MRef, port, Socket, Reason}, {_Label, Socket, MRef} = State) ->
+handle_info({'DOWN', MRef, port, Socket, Reason}, {Socket, MRef} = State) ->
     {stop, Reason, State};
 handle_info(_, State) ->
     {noreply, State}.
@@ -73,7 +73,7 @@ handle_info(_, State) ->
 code_change(_, State, _) ->
     {ok, State}.
 
-terminate(_, {_Label, Socket, MRef}) ->
+terminate(_, {Socket, MRef}) ->
     % Socket may already be down but need to ensure it is closed to avoid
     % eaddrinuse error on restart
     case demonitor(MRef, [flush, info]) of

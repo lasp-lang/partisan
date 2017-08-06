@@ -111,10 +111,10 @@ find_first_name(Name, [_|Rest]) -> find_first_name(Name, Rest).
 -include_lib("eunit/include/eunit.hrl").
 
 node1() ->
-    #{name => node1, ip => {127, 0, 0, 1}, port => 80}.
+    #{name => node1, listen_addrs => [#{ip => {127, 0, 0, 1}, port => 80}]}.
 
 node2() ->
-    #{name => node2, ip => {127, 0, 0, 1}, port => 81}.
+    #{name => node2, listen_addrs => [#{ip => {127, 0, 0, 1}, port => 81}]}.
 
 no_connections_test() ->
     Connections0 = new(),
@@ -139,26 +139,32 @@ prune_connections_test() ->
     Connections1 = store(node1(), self(), Connections0),
     Connections2 = store(node1(), self(), Connections1),
     ?assertEqual({ok, [self(), self()]}, find(node1(), Connections2)),
-    {#{name := node1, ip := {127, 0, 0, 1}, port := 80}, Connections3} = prune(self(), Connections2),
+    {#{name := node1, listen_addrs := [#{ip := {127, 0, 0, 1}, port := 80}]},
+     Connections3} = prune(self(), Connections2),
     ?assertEqual({ok, [self()]}, find(node1(), Connections3)),
-    {#{name := node1, ip := {127, 0, 0, 1}, port := 80}, Connections4} = prune(self(), Connections3),
+    {#{name := node1, listen_addrs := [#{ip := {127, 0, 0, 1}, port := 80}]},
+     Connections4} = prune(self(), Connections3),
     ?assertEqual({ok, []}, find(node1(), Connections4)),
     Connections5 = store(node1(), self(), Connections4),
     Connections6 = store(node1(), self(), Connections5),
-    {#{name := node1, ip := {127, 0, 0, 1}, port := 80}, Connections7} = prune(self(), Connections6),
+    {#{name := node1, listen_addrs := [#{ip := {127, 0, 0, 1}, port := 80}]},
+     Connections7} = prune(self(), Connections6),
     ?assertEqual({ok, [self()]}, find(node1, Connections7)),
-    {#{name := node1, ip := {127, 0, 0, 1}, port := 80}, Connections8} = prune(self(), Connections7),
+    {#{name := node1, listen_addrs := [#{ip := {127, 0, 0, 1}, port := 80}]},
+     Connections8} = prune(self(), Connections7),
     ?assertEqual({ok, []}, find(node1, Connections8)).
 
 add_remove_add_connection_test() ->
     Connections0 = new(),
     Connections1 = store(node1(), self(), Connections0),
     ?assertEqual({ok, [self()]}, find(node1, Connections1)),
-    {#{name := node1, ip := {127, 0, 0, 1}, port := 80}, Connections2} = prune(self(), Connections1),
+    {#{name := node1, listen_addrs := [#{ip := {127, 0, 0, 1}, port := 80}]},
+     Connections2} = prune(self(), Connections1),
     ?assertEqual({ok, []}, find(node1, Connections2)),
     Connections3 = store(node1(), self(), Connections2),
     ?assertEqual({ok, [self()]}, find(node1, Connections3)),
-    {#{name := node1, ip := {127, 0, 0, 1}, port := 80}, Connections4} = prune(node1(), Connections3),
+    {#{name := node1, listen_addrs := [#{ip := {127, 0, 0, 1}, port := 80}]},
+     Connections4} = prune(node1(), Connections3),
     ?assertEqual({ok, []}, find(node1, Connections4)).
 
 -endif.

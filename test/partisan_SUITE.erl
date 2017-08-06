@@ -145,6 +145,8 @@ default_manager_test(Config) ->
                 true ->
                     true;
                 false ->
+                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
+                           [Node, SortedNodes, SortedMembers]),
                     {false, {Node, SortedNodes, SortedMembers}}
             end
     end,
@@ -777,8 +779,7 @@ cluster({_, Node}, {_, OtherNode}, Config) ->
                   partisan_peer_service,
                   join,
                   [#{name => OtherNode,
-                     ip => {127, 0, 0, 1},
-                     port => PeerPort,
+                     listen_addrs => [#{ip => {127, 0, 0, 1}, port => PeerPort}],
                      parallelism => Parallelism}]).
 
 %% @private

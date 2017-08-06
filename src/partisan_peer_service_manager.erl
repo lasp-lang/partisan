@@ -54,7 +54,6 @@
 -spec myself() -> node_spec().
 
 myself() ->
-    Port = partisan_config:get(peer_port, ?PEER_PORT),
-    IPAddress = partisan_config:get(peer_ip, ?PEER_IP),
-    Parallelism = partisan_config:get(parallelism, ?PEER_IP),
-    #{name => node(), ip => IPAddress, port => Port, parallelism => Parallelism}.
+    Parallelism = partisan_config:get(parallelism, ?PARALLELISM),
+    ListenAddrs = partisan_config:get(listen_addrs, ?LISTEN_ADDRS),
+    #{name => node(), listen_addrs => ListenAddrs, parallelism => Parallelism}.

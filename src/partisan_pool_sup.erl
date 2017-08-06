@@ -45,9 +45,8 @@ init([]) ->
     {ok, {Flags, lists:flatten([Pool, Sockets])}}.
 
 %% @private
-socket({Label, PeerIP, PeerPort}) ->
-    #{id => partisan_socket,
-      start => {partisan_socket, start_link, [Label, PeerIP, PeerPort]}}.
+socket(#{ip := IP, port := Port}) ->
+    #{id => partisan_socket, start => {partisan_socket, start_link, [IP, Port]}}.
 
 %% @private
 pool() ->

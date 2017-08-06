@@ -92,17 +92,8 @@ decode(State) ->
 
 %% @private
 attempt_join(Node) when is_atom(Node) ->
-    %% Use RPC to get the node's specific IP and port binding
-    %% information for the partisan backend connections.
-    PeerIP = rpc:call(Node,
-                      partisan_config,
-                      get,
-                      [peer_ip]),
-    PeerPort = rpc:call(Node,
-                        partisan_config,
-                        get,
-                        [peer_port]),
-    attempt_join(#{name => Node, ip => PeerIP, port => PeerPort});
+    ListenAddrs = rpc:call(Node, partisan_config, get, [listen_addrs]),
+    attempt_join(#{name => Node, listen_addrs => ListenAddrs});
 attempt_join(#{name := _Name} = Node) ->
     Manager = manager(),
     Manager:join(Node).
