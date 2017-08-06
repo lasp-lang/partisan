@@ -304,12 +304,12 @@ hyparview_manager_partition_test(Config) ->
                         case hyparview_membership_check(Nodes) of
                             {[], []} -> true;
                             {ConnectedFails, []} ->
-                                {false, {connected_check_failed, ConnectedFails}};
+                                {connected_check_failed, ConnectedFails};
                             {[], SymmetryFails} ->
-                                {false, {symmetry_check_failed, SymmetryFails}};
+                                {symmetry_check_failed, SymmetryFails};
                             {ConnectedFails, SymmetryFails} ->
-                                {false, [{connected_check_failed, ConnectedFails},
-                                         {symmetry_check_failed, SymmetryFails}]}
+                                [{connected_check_failed, ConnectedFails},
+                                 {symmetry_check_failed, SymmetryFails}]
                         end
                       end,
 
@@ -380,6 +380,24 @@ hyparview_manager_partition_test(Config) ->
                     ok = check_forward_message(Node, Manager)
                   end, Nodes),
 
+    %% Verify correct behaviour when a node is stopped
+    {_, KilledNode} = N0 = random(Nodes, []),
+    ok = rpc:call(KilledNode, partisan, stop, []),
+    CheckStoppedFun = fun() ->
+                        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
+                            [] -> true;
+                            FailedNodes ->
+                                FailedNodes
+                        end
+                      end,
+    case wait_until(CheckStoppedFun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, FailedNodes} ->
+            ct:fail("~p has been killed, it should not be in membership of nodes ~p",
+                    [KilledNode, FailedNodes])
+    end,
+
     %% Stop nodes.
     stop(Nodes),
 
@@ -435,6 +453,24 @@ hyparview_manager_high_active_test(Config) ->
     lists:foreach(fun({_Name, Node}) ->
                     ok = check_forward_message(Node, Manager)
                   end, Nodes),
+
+    %% Verify correct behaviour when a node is stopped
+    {_, KilledNode} = N0 = random(Nodes, []),
+    ok = rpc:call(KilledNode, partisan, stop, []),
+    CheckStoppedFun = fun() ->
+                        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
+                            [] -> true;
+                            FailedNodes ->
+                                FailedNodes
+                        end
+                      end,
+    case wait_until(CheckStoppedFun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, FailedNodes} ->
+            ct:fail("~p has been killed, it should not be in membership of nodes ~p",
+                    [KilledNode, FailedNodes])
+    end,
 
     %% Stop nodes.
     stop(Nodes),
@@ -492,6 +528,24 @@ hyparview_manager_low_active_test(Config) ->
                     ok = check_forward_message(Node, Manager)
                   end, Nodes),
 
+    %% Verify correct behaviour when a node is stopped
+    {_, KilledNode} = N0 = random(Nodes, []),
+    ok = rpc:call(KilledNode, partisan, stop, []),
+    CheckStoppedFun = fun() ->
+                        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
+                            [] -> true;
+                            FailedNodes ->
+                                FailedNodes
+                        end
+                      end,
+    case wait_until(CheckStoppedFun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, FailedNodes} ->
+            ct:fail("~p has been killed, it should not be in membership of nodes ~p",
+                    [KilledNode, FailedNodes])
+    end,
+
     %% Stop nodes.
     stop(Nodes),
 
@@ -545,6 +599,24 @@ hyparview_manager_high_client_test(Config) ->
     lists:foreach(fun({_Name, Node}) ->
                     ok = check_forward_message(Node, Manager)
                   end, Nodes),
+
+    %% Verify correct behaviour when a node is stopped
+    {_, KilledNode} = N0 = random(Nodes, []),
+    ok = rpc:call(KilledNode, partisan, stop, []),
+    CheckStoppedFun = fun() ->
+                        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
+                            [] -> true;
+                            FailedNodes ->
+                                FailedNodes
+                        end
+                      end,
+    case wait_until(CheckStoppedFun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, FailedNodes} ->
+            ct:fail("~p has been killed, it should not be in membership of nodes ~p",
+                    [KilledNode, FailedNodes])
+    end,
 
     %% Stop nodes.
     stop(Nodes),
@@ -629,7 +701,7 @@ start(_Case, Config, Options) ->
     ConfigureFun = fun({Name, Node}) ->
             %% Configure the peer service.
             PeerService = proplists:get_value(partisan_peer_service_manager, Options),
-            ct:pal("Setting peer service maanger on node ~p to ~p", [Node, PeerService]),
+            ct:pal("Setting peer service manager on node ~p to ~p", [Node, PeerService]),
             ok = rpc:call(Node, partisan_config, set,
                           [partisan_peer_service_manager, PeerService]),
 
@@ -890,6 +962,25 @@ wait_until(Fun, Retry, Delay) when Retry > 0 ->
     end.
 
 %% @private
+%% 
+%% Kill a random node and then return a list of nodes that still have the
+%% killed node in their membership
+%%
+hyparview_check_stopped_member(_, [_Node]) -> {undefined, []};
+hyparview_check_stopped_member(KilledNode, Nodes) ->
+    %% Obtain the membership from all the nodes,
+    %% the killed node shouldn't be there
+    lists:filtermap(fun({_, Node}) ->
+                        {ok, Members} = rpc:call(Node, partisan_peer_service, members, []),
+                        case lists:member(KilledNode, Members) of
+                            true ->
+                                {true, Node};
+                            false ->
+                                false
+                        end
+                     end, Nodes).
+
+%% @private
 hyparview_membership_check(Nodes) ->
     Manager = partisan_hyparview_peer_service_manager,
     %% Create new digraph.
@@ -956,4 +1047,3 @@ hyparview_membership_check(Nodes) ->
             end, Nodes),
 
     {ConnectedFails, SymmetryFails}.
-

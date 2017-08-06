@@ -78,7 +78,7 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
             lager:info("Node ~p is not connected; initiating.", [Node]),
             case connect(Node, ListenAddr) of
                 {ok, Pid} ->
-                    lager:info("Node ~p connected.", [Node]),
+                    lager:info("Node ~p connected, pid: ~p", [Node, Pid]),
                     partisan_peer_service_connections:store(Node, {ListenAddr, Pid}, Connections0);
                 Error ->
                     lager:info("Node ~p failed connection: ~p.", [Node, Error]),
@@ -101,7 +101,7 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
 
                     case connect(Node, ListenAddr) of
                         {ok, Pid} ->
-                            lager:info("Node connected with ~p", [Pid]),
+                            lager:info("Node ~p connected, pid: ~p", [Node, Pid]),
                             partisan_peer_service_connections:store(Node, {ListenAddr, Pid}, Connections0);
                         Error ->
                             lager:info("Node failed connect with ~p", [Error]),
@@ -114,7 +114,7 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
         {error, not_found} ->
             case connect(Node, ListenAddr) of
                 {ok, Pid} ->
-                    lager:info("Node ~p connected.", [Node]),
+                    lager:info("Node ~p connected, pid: ~p", [Node, Pid]),
                     partisan_peer_service_connections:store(Node, {ListenAddr, Pid}, Connections0);
                 {error, normal} ->
                     lager:info("Node ~p isn't online just yet.", [Node]),
