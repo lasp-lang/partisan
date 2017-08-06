@@ -61,7 +61,14 @@ build_tree(N, Nodes, Opts) ->
 -spec maybe_connect(Node :: node_spec(),
                     Connections :: partisan_peer_service_connections:t()) ->
             partisan_peer_service_connections:t().
-maybe_connect(#{name := _Name} = Node, Connections0) ->
+maybe_connect(#{name := _Name, listen_addrs := ListenAddrs} = Node, Connections0) ->
+    FoldFun = fun(ListenAddr, Connections) ->
+                      maybe_connect_listen_addr(Node, ListenAddr, Connections)
+              end,
+    lists:foldl(FoldFun, Connections0, ListenAddrs).
+
+%% @private
+maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
     Parallelism = maps:get(parallelism, Node, ?PARALLELISM),
 
     %% Initiate connections.
@@ -69,7 +76,7 @@ maybe_connect(#{name := _Name} = Node, Connections0) ->
         %% Found disconnected.
         {ok, []} ->
             lager:info("Node ~p is not connected; initiating.", [Node]),
-            case connect(Node) of
+            case connect(Node, ListenAddr) of
                 {ok, Pid} ->
                     lager:info("Node ~p connected.", [Node]),
                     partisan_peer_service_connections:store(Node, Pid, Connections0);
@@ -84,7 +91,7 @@ maybe_connect(#{name := _Name} = Node, Connections0) ->
                     lager:info("(~p of ~p) Connecting node ~p.",
                                [length(Pids), Parallelism, Node]),
 
-                    case connect(Node) of
+                    case connect(Node, ListenAddr) of
                         {ok, Pid} ->
                             lager:info("Node connected with ~p", [Pid]),
                             partisan_peer_service_connections:store(Node, Pid, Connections0);
@@ -97,7 +104,7 @@ maybe_connect(#{name := _Name} = Node, Connections0) ->
             end;
         %% Not present; disconnected.
         {error, not_found} ->
-            case connect(Node) of
+            case connect(Node, ListenAddr) of
                 {ok, Pid} ->
                     lager:info("Node ~p connected.", [Node]),
                     partisan_peer_service_connections:store(Node, Pid, Connections0);
@@ -116,7 +123,7 @@ maybe_connect(#{name := _Name} = Node, Connections0) ->
     Connections.
 
 %% @private
--spec connect(Node :: node_spec()) -> {ok, pid()} | ignore | {error, term()}.
-connect(Node) ->
+-spec connect(Node :: node_spec(), listen_addr()) -> {ok, pid()} | ignore | {error, term()}.
+connect(Node, ListenAddr) ->
     Self = self(),
-    partisan_peer_service_client:start_link(Node, Self).
+    partisan_peer_service_client:start_link(Node, ListenAddr, Self).
