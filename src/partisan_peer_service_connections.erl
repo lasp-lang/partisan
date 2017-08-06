@@ -21,8 +21,7 @@
 %% @doc API for managing peer service connections
 -module(partisan_peer_service_connections).
 
--export([
-         new/0,
+-export([new/0,
          find/2,
          store/3,
          prune/2,
@@ -33,6 +32,9 @@
 -type t() :: dict:dict(node_spec(), list(pid())).
 -export_type([t/0]).
 
+-type entries() :: [entry()].
+-type entry() :: {listen_addr(), pid()}.
+
 %% @doc Creates a new dictionary of connections.
 -spec new() -> t().
 new() ->
@@ -40,31 +42,30 @@ new() ->
 
 %% @doc Finds connection pids in dictionary either by name or node spec.
 -spec find(Node :: atom() | node_spec(),
-           Connections :: t()) -> {ok, list(pid())} | {error, not_found}.
+           Connections :: t()) -> {ok, entries()} | {error, not_found}.
 find(Name, Connections) when is_atom(Name) ->
     find_first_name(Name, dict:to_list(Connections));
 find(Node, Connections) ->
     case dict:find(Node, Connections) of
-        error -> {error, not_found};
-        {ok, Pids} -> {ok, Pids}
+        error ->
+            {error, not_found};
+        {ok, Entries} ->
+            {ok, Entries}
     end.
 
 %% @doc Store a connection pid
 -spec store(Node :: node_spec(),
-            Pid :: undefined | pid(),
+            Entry :: entry(),
             Connections :: t()) -> t().
-store(Node, Pid0, Connections) ->
-    Pid = case Pid0 of
-            undefined -> [];
-            _ -> [Pid0]
-          end,
+store(Node, {_ListenAddr, _Pids} = Entry, Connections) ->
     case find(Node, Connections) of
         {error, not_found} ->
-            dict:store(Node, Pid, Connections);
+            dict:store(Node, [Entry], Connections);
         _ ->
-            dict:fold(fun(Node0, Pids, ConnectionsIn) when Node0 =:= Node ->
-                            dict:store(Node, Pids ++ Pid, ConnectionsIn);
-                         (_Node, _Pids, ConnectionsIn) -> ConnectionsIn
+            dict:fold(fun(Node0, Entries, ConnectionsIn) when Node0 =:= Node ->
+                              dict:store(Node, Entries ++ [Entry], ConnectionsIn);
+                         (_Node, _Entries, ConnectionsIn) ->
+                              ConnectionsIn
                       end, Connections, Connections)
     end.
 
@@ -72,14 +73,14 @@ store(Node, Pid0, Connections) ->
 %%      returns the node where the pruned pid was found
 -spec prune(pid() | node_spec(),
             Connections :: t()) -> {node_spec(), t()}.
-prune({_, _, _} = Node, Connections) ->
+prune(#{name := _Name} = Node, Connections) ->
     {Node, dict:store(Node, [], Connections)};
-prune(Pid, Connections) ->
-    dict:fold(fun(Node, Pids, {AccNode, ConnectionsIn}) ->
-                    case lists:member(Pid, Pids) of
+prune(Pid, Connections) when is_pid(Pid) ->
+    dict:fold(fun(Node, Entries, {AccNode, ConnectionsIn}) ->
+                    case lists:keymember(Pid, 2, Entries) of
                         true ->
                             {Node,
-                             dict:store(Node, lists:subtract(Pids, [Pid]), ConnectionsIn)};
+                             dict:store(Node, lists:keydelete(Pid, 2, Entries), ConnectionsIn)};
                         false ->
                             {AccNode, ConnectionsIn}
                     end
@@ -89,15 +90,15 @@ prune(Pid, Connections) ->
 -spec foreach(Fun :: fun((node_spec(), list(pid())) -> ok),
               Connections :: t()) -> ok.
 foreach(Fun, Connections) ->
-    dict:map(Fun, Connections),
+    _ = dict:map(Fun, Connections),
     ok.
 
 %% @private
 -spec find_first_name(Name :: atom(),
-                      ConnectionsList :: [{node_spec(), list(pid())}]) ->
-            {ok, list(pid())} | {error, not_found}.
+                      ConnectionsList :: [{node_spec(), entries()}]) ->
+            {ok, entries()} | {error, not_found}.
 find_first_name(_Name, []) -> {error, not_found};
-find_first_name(Name, [{{Name, _, _}, Pids}|_]) -> {ok, Pids};
+find_first_name(Name, [{#{name := Name}, Entries}|_]) -> {ok, Entries};
 find_first_name(Name, [_|Rest]) -> find_first_name(Name, Rest).
 
 %%
@@ -107,49 +108,73 @@ find_first_name(Name, [_|Rest]) -> find_first_name(Name, Rest).
 
 -include_lib("eunit/include/eunit.hrl").
 
+node1() ->
+    #{name => node1, listen_addrs => [node1_listen_addr()]}.
+
+node1_listen_addr() ->
+    #{ip => {127, 0, 0, 1}, port => 80}.
+
+node2() ->
+    #{name => node2, listen_addrs => [node2_listen_addr()]}.
+
+node2_listen_addr() ->
+    #{ip => {127, 0, 0, 1}, port => 81}.
+
+node1_bind() ->
+    {node1_listen_addr(), self()}.
+
+node2_bind() ->
+    {node2_listen_addr(), self()}.
+
 no_connections_test() ->
     Connections0 = new(),
     ?assertEqual({error, not_found}, find(node1, Connections0)).
 
 one_connection_test() ->
     Connections0 = new(),
-    Connections1 = store({node1, {127, 0, 0, 1}, 80}, self(), Connections0),
-    ?assertEqual({ok, [self()]}, find({node1, {127, 0, 0, 1}, 80}, Connections1)),
-    Connections2 = store({node2, {127, 0, 0, 1}, 81}, self(), Connections1),
-    ?assertEqual({ok, [self()]}, find(node2, Connections2)).
+    Connections1 = store(node1(), node1_bind(), Connections0),
+    ?assertEqual({ok, [node1_bind()]}, find(node1(), Connections1)),
+    Connections2 = store(node2(), node2_bind(), Connections1),
+    ?assertEqual({ok, [node2_bind()]}, find(node2, Connections2)).
 
 several_connections_test() ->
     Connections0 = new(),
-    Connections1 = store({node1, {127, 0, 0, 1}, 80}, self(), Connections0),
-    Connections2 = store({node1, {127, 0, 0, 1}, 80}, self(), Connections1),
-    ?assertEqual({ok, [self(), self()]}, find({node1, {127, 0, 0, 1}, 80}, Connections2)),
-    ?assertEqual({ok, [self(), self()]}, find(node1, Connections2)).
+    Connections1 = store(node1(), node1_bind(), Connections0),
+    Connections2 = store(node1(), node1_bind(), Connections1),
+    ?assertEqual({ok, [node1_bind(), node1_bind()]}, find(node1(), Connections2)),
+    ?assertEqual({ok, [node1_bind(), node1_bind()]}, find(node1, Connections2)).
 
 prune_connections_test() ->
     Connections0 = new(),
-    Connections1 = store({node1, {127, 0, 0, 1}, 80}, self(), Connections0),
-    Connections2 = store({node1, {127, 0, 0, 1}, 80}, self(), Connections1),
-    ?assertEqual({ok, [self(), self()]}, find({node1, {127, 0, 0, 1}, 80}, Connections2)),
-    {{node1, {127, 0, 0, 1}, 80}, Connections3} = prune(self(), Connections2),
-    ?assertEqual({ok, [self()]}, find({node1, {127, 0, 0, 1}, 80}, Connections3)),
-    {{node1, {127, 0, 0, 1}, 80}, Connections4} = prune(self(), Connections3),
-    ?assertEqual({ok, []}, find({node1, {127, 0, 0, 1}, 80}, Connections4)),
-    Connections5 = store({node1, {127, 0, 0, 1}, 80}, self(), Connections4),
-    Connections6 = store({node1, {127, 0, 0, 1}, 80}, self(), Connections5),
-    {{node1, {127, 0, 0, 1}, 80}, Connections7} = prune(self(), Connections6),
-    ?assertEqual({ok, [self()]}, find(node1, Connections7)),
-    {{node1, {127, 0, 0, 1}, 80}, Connections8} = prune(self(), Connections7),
+    Connections1 = store(node1(), node1_bind(), Connections0),
+    Connections2 = store(node1(), node1_bind(), Connections1),
+    ?assertEqual({ok, [node1_bind(), node1_bind()]}, find(node1(), Connections2)),
+    {#{name := node1, listen_addrs := [#{ip := {127, 0, 0, 1}, port := 80}]},
+     Connections3} = prune(self(), Connections2),
+    ?assertEqual({ok, [node1_bind()]}, find(node1(), Connections3)),
+    {#{name := node1, listen_addrs := [#{ip := {127, 0, 0, 1}, port := 80}]},
+     Connections4} = prune(self(), Connections3),
+    ?assertEqual({ok, []}, find(node1(), Connections4)),
+    Connections5 = store(node1(), node1_bind(), Connections4),
+    Connections6 = store(node1(), node1_bind(), Connections5),
+    {#{name := node1, listen_addrs := [#{ip := {127, 0, 0, 1}, port := 80}]},
+     Connections7} = prune(self(), Connections6),
+    ?assertEqual({ok, [node1_bind()]}, find(node1, Connections7)),
+    {#{name := node1, listen_addrs := [#{ip := {127, 0, 0, 1}, port := 80}]},
+     Connections8} = prune(self(), Connections7),
     ?assertEqual({ok, []}, find(node1, Connections8)).
 
 add_remove_add_connection_test() ->
     Connections0 = new(),
-    Connections1 = store({node1, {127, 0, 0, 1}, 80}, self(), Connections0),
-    ?assertEqual({ok, [self()]}, find(node1, Connections1)),
-    {{node1, {127, 0, 0, 1}, 80}, Connections2} = prune(self(), Connections1),
+    Connections1 = store(node1(), node1_bind(), Connections0),
+    ?assertEqual({ok, [node1_bind()]}, find(node1, Connections1)),
+    {#{name := node1, listen_addrs := [#{ip := {127, 0, 0, 1}, port := 80}]},
+     Connections2} = prune(self(), Connections1),
     ?assertEqual({ok, []}, find(node1, Connections2)),
-    Connections3 = store({node1, {127, 0, 0, 1}, 81}, self(), Connections2),
-    ?assertEqual({ok, [self()]}, find(node1, Connections3)),
-    {{node1, {127, 0, 0, 1}, 81}, Connections4} = prune({node1, {127, 0, 0, 1}, 81}, Connections3),
+    Connections3 = store(node1(), node1_bind(), Connections2),
+    ?assertEqual({ok, [node1_bind()]}, find(node1, Connections3)),
+    {#{name := node1, listen_addrs := [#{ip := {127, 0, 0, 1}, port := 80}]},
+     Connections4} = prune(node1(), Connections3),
     ?assertEqual({ok, []}, find(node1, Connections4)).
 
 -endif.

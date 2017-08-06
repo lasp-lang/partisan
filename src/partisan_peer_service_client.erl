@@ -23,7 +23,7 @@
 
 -behaviour(gen_server).
 
--export([start_link/2]).
+-export([start_link/3]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -33,7 +33,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, {socket, from, peer}).
+-record(state, {socket, listen_addr, from, peer}).
 
 -type state_t() :: #state{}.
 
@@ -48,9 +48,9 @@
 %%%===================================================================
 
 %% @doc Start and link to calling process.
--spec start_link(node_spec(), pid()) -> {ok, pid()} | ignore | {error, term()}.
-start_link(Peer, From) ->
-    gen_server:start_link(?MODULE, [Peer, From], []).
+-spec start_link(node_spec(), listen_addr(), pid()) -> {ok, pid()} | ignore | {error, term()}.
+start_link(Peer, ListenAddr, From) ->
+    gen_server:start_link(?MODULE, [Peer, ListenAddr, From], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -58,10 +58,10 @@ start_link(Peer, From) ->
 
 %% @private
 -spec init([iolist()]) -> {ok, state_t()}.
-init([Peer, From]) ->
-    case connect(Peer) of
+init([Peer, ListenAddr, From]) ->
+    case connect(ListenAddr) of
         {ok, Socket} ->
-            {ok, #state{from=From, socket=Socket, peer=Peer}};
+            {ok, #state{from=From, listen_addr=ListenAddr, socket=Socket, peer=Peer}};
         Error ->
             lager:error("unable to connect to ~p due to ~p",
                         [Peer, Error]),
@@ -132,17 +132,21 @@ code_change(_OldVsn, State, _Extra) ->
 %% every bind operation, but a different port instead of the standard
 %% port.
 %%
-connect(Peer) when is_atom(Peer) ->
-    %% Bootstrap with disterl.
-    PeerPort = rpc:call(Peer,
-                        partisan_config,
-                        get,
-                        [peer_port, ?PEER_PORT]),
-    connect({Peer, {127, 0, 0, 1}, PeerPort});
+connect(Node) when is_atom(Node) ->
+    ListenAddrs = rpc:call(Node, partisan_config, get, [listen_addrs]),
+    case length(ListenAddrs) > 0 of
+        true ->
+            ListenAddr = hd(ListenAddrs),
+            connect(ListenAddr);
+        _ ->
+            {error, no_listen_addr}
+    end;
 
 %% @doc Connect to remote peer.
-connect({_Name, Address, Port}) ->
+%%      Only use the first listen address.
+connect(#{ip := Address, port := Port}) ->
     Options = [binary, {active, true}, {packet, 4}, {keepalive, true}],
+
     case partisan_peer_connection:connect(Address, Port, Options, ?TIMEOUT) of
         {ok, Socket} ->
             {ok, Socket};
@@ -169,7 +173,7 @@ handle_message({state, Tag, LocalState},
 handle_message({hello, Node}, #state{peer=Peer, socket=Socket}=State) ->
     % lager:info("sending hello to ~p", [Node]),
 
-    {PeerName, _, _} = Peer,
+    #{name := PeerName} = Peer,
 
     case Node of
         PeerName ->

@@ -145,6 +145,8 @@ default_manager_test(Config) ->
                 true ->
                     true;
                 false ->
+                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
+                           [Node, SortedNodes, SortedMembers]),
                     {false, {Node, SortedNodes, SortedMembers}}
             end
     end,
@@ -197,7 +199,9 @@ default_manager_test(Config) ->
 
     lists:foreach(fun({_Name, Node}) ->
                         %% Get enabled parallelism.
-                        Parallelism = rpc:call(Node, partisan_config, get, [parallelism]),
+                        Parallelism = rpc:call(Node, partisan_config, get, [parallelism, 1]),
+
+                        ct:pal("Parallelism is: ~p", [Parallelism]),
 
                         %% Generate fun.
                         VerifyConnectionsNodeFun = fun() ->
@@ -706,7 +710,14 @@ start(_Case, Config, Options) ->
                           [max_active_size, MaxActiveSize]),
 
             ok = rpc:call(Node, partisan_config, set, [tls, ?config(tls, Config)]),
-            ok = rpc:call(Node, partisan_config, set, [parallelism, ?config(parallelism, Config)]),
+            Parallelism = case ?config(parallelism, Config) of
+                              undefined ->
+                                  1;
+                              Other ->
+                                  Other
+                          end,
+            ct:pal("Setting parallelism to: ~p", [Parallelism]),
+            ok = rpc:call(Node, partisan_config, set, [parallelism, Parallelism]),
 
             Servers = proplists:get_value(servers, Options, []),
             Clients = proplists:get_value(clients, Options, []),
@@ -756,7 +767,7 @@ start(_Case, Config, Options) ->
     lists:foreach(StartFun, Nodes),
 
     ct:pal("Clustering nodes."),
-    lists:foreach(fun(Node) -> cluster(Node, Nodes, Options) end, Nodes),
+    lists:foreach(fun(Node) -> cluster(Node, Nodes, Options, Config) end, Nodes),
 
     ct:pal("Partisan fully initialized."),
 
@@ -785,7 +796,7 @@ codepath() ->
 %% client/server topology, which requires all nodes talk to every other
 %% node to correctly compute the overlay.
 %%
-cluster({Name, _Node} = Myself, Nodes, Options) when is_list(Nodes) ->
+cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
     Manager = proplists:get_value(partisan_peer_service_manager, Options),
 
     Servers = proplists:get_value(servers, Options, []),
@@ -823,17 +834,25 @@ cluster({Name, _Node} = Myself, Nodes, Options) when is_list(Nodes) ->
                                omit([Name], Nodes)
                         end
                  end,
-    lists:map(fun(OtherNode) -> cluster(Myself, OtherNode) end, OtherNodes).
-cluster({_, Node}, {_, OtherNode}) ->
+    lists:map(fun(OtherNode) -> cluster(Myself, OtherNode, Config) end, OtherNodes).
+cluster({_, Node}, {_, OtherNode}, Config) ->
     PeerPort = rpc:call(OtherNode,
                         partisan_config,
                         get,
                         [peer_port, ?PEER_PORT]),
+    Parallelism = case ?config(parallelism, Config) of
+                      undefined ->
+                          1;
+                      Other ->
+                          Other
+                  end,
     ct:pal("Joining node: ~p to ~p at port ~p", [Node, OtherNode, PeerPort]),
     ok = rpc:call(Node,
                   partisan_peer_service,
                   join,
-                  [{OtherNode, {127, 0, 0, 1}, PeerPort}]).
+                  [#{name => OtherNode,
+                     listen_addrs => [#{ip => {127, 0, 0, 1}, port => PeerPort}],
+                     parallelism => Parallelism}]).
 
 %% @private
 stop(Nodes) ->
@@ -978,7 +997,7 @@ hyparview_membership_check(Nodes) ->
             Active = sets:to_list(ActiveSet),
 
             %% Add vertexes and edges.
-            [connect(Graph, Node, N) || {N, _, _} <- Active]
+            [connect(Graph, Node, N) || #{name := N} <- Active]
          end,
     %% Build a digraph representing the membership
     lists:foreach(ConnectFun, Nodes),
@@ -999,7 +1018,7 @@ hyparview_membership_check(Nodes) ->
                                                 ct:pal("node ~p active view: ~p",
                                                        [N1, Active])
                                            end, Nodes),
-                            {true, {Node, N}}; 
+                            {true, {Node, N}};
                         _ ->
                             false
                     end
@@ -1013,12 +1032,12 @@ hyparview_membership_check(Nodes) ->
                 {ok, ActiveSet1} = rpc:call(Node1, Manager, active, []),
                 Active1 = sets:to_list(ActiveSet1),
 
-                lists:filtermap(fun({Node2, _, _}) ->
+                lists:filtermap(fun(#{name := Node2}) ->
                     %% Get second nodes active set.
                     {ok, ActiveSet2} = rpc:call(Node2, Manager, active, []),
                     Active2 = sets:to_list(ActiveSet2),
 
-                    case lists:member(Node1, [N || {N, _, _} <- Active2]) of
+                    case lists:member(Node1, [N || #{name := N} <- Active2]) of
                         true ->
                             false;
                         false ->

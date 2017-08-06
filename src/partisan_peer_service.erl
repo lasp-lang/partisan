@@ -52,7 +52,7 @@ join(NodeStr, Auto) when is_list(NodeStr) ->
     join(erlang:list_to_atom(lists:flatten(NodeStr)), Auto);
 join(Node, Auto) when is_atom(Node) ->
     join(node(), Node, Auto);
-join({_Name, _IPAddress, _Port} = Node, _Auto) ->
+join(Node, _Auto) ->
     attempt_join(Node).
 
 %% @doc Initiate join. Nodes cannot join themselves.
@@ -88,22 +88,13 @@ forward_message(Name, ServerRef, Message) ->
 %% @private
 decode(State) ->
     Manager = manager(),
-    [P || {P, _, _} <- Manager:decode(State)].
+    [P || #{name := P} <- Manager:decode(State)].
 
 %% @private
 attempt_join(Node) when is_atom(Node) ->
-    %% Use RPC to get the node's specific IP and port binding
-    %% information for the partisan backend connections.
-    PeerIP = rpc:call(Node,
-                      partisan_config,
-                      get,
-                      [peer_ip]),
-    PeerPort = rpc:call(Node,
-                        partisan_config,
-                        get,
-                        [peer_port]),
-    attempt_join({Node, PeerIP, PeerPort});
-attempt_join({_Name, _, _}=Node) ->
+    ListenAddrs = rpc:call(Node, partisan_config, get, [listen_addrs]),
+    attempt_join(#{name => Node, listen_addrs => ListenAddrs});
+attempt_join(#{name := _Name} = Node) ->
     Manager = manager(),
     Manager:join(Node).
 

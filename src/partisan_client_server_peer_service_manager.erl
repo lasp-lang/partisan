@@ -178,7 +178,7 @@ handle_call({leave, Node}, _From,
             #state{membership=Membership0}=State) ->
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
-    Membership = lists:foldl(fun({Name, _, _} = N, L0) ->
+    Membership = lists:foldl(fun(#{name := Name} = N, L0) ->
                         case Node of
                             Name ->
                                 sets:del_element(N, Membership0);
@@ -198,7 +198,7 @@ handle_call({leave, Node}, _From,
             {reply, ok, State}
     end;
 
-handle_call({join, {Name, _, _}=Node},
+handle_call({join, #{name := Name}=Node},
             _From,
             #state{pending=Pending0, connections=Connections0}=State) ->
     %% Attempt to join via disterl for control messages during testing.
@@ -230,7 +230,7 @@ handle_call({receive_message, Message}, _From, State) ->
     handle_message(Message, State);
 
 handle_call(members, _From, #state{membership=Membership}=State) ->
-    Members = [P || {P, _, _} <- members(Membership)],
+    Members = [P || #{name := P} <- members(Membership)],
     {reply, {ok, Members}, State};
 
 handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
@@ -304,7 +304,7 @@ terminate(_Reason, #state{connections=Connections}=_State) ->
     Fun =
         fun(_K, Pids) ->
             lists:foreach(
-              fun(Pid) ->
+              fun({_ListenAddr, Pid}) ->
                  try
                      gen_server:stop(Pid, normal, infinity)
                  catch
@@ -395,7 +395,14 @@ members(Membership) ->
 establish_connections(Pending, Membership, Connections) ->
     %% Reconnect disconnected members and members waiting to join.
     Members = members(Membership),
-    AllPeers = lists:keydelete(node(), 1, Members ++ Pending),
+    AllPeers = lists:filter(fun(#{name := Name}) ->
+                         case node() of
+                             Name ->
+                                 false;
+                             _ ->
+                                 true
+                         end
+                 end, Members ++ Pending),
     lists:foldl(fun partisan_util:maybe_connect/2, Connections, AllPeers).
 
 handle_message({forward_message, ServerRef, Message}, State) ->
@@ -413,7 +420,8 @@ do_send_message(Node, Message, Connections) ->
         {ok, []} ->
             %% Node was connected but is now disconnected.
             {error, disconnected};
-        {ok, [Pid|_]} ->
+        {ok, Entries} ->
+            {_ListenAddr, Pid} = lists:nth(rand_compat:uniform(length(Entries)), Entries),
             gen_server:cast(Pid, {send_message, Message});
         {error, not_found} ->
             %% Node has not been connected yet.
