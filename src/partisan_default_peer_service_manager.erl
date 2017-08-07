@@ -224,7 +224,7 @@ handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State)
 
     %% Issue joins.
     State2 = lists:foldl(fun(N, S) ->
-                                 internal_join(N#{parallelism => ?PARALLELISM}, S)
+                                 internal_join(N, S)
                          end, State1, JoiningNodes),
 
     {reply, ok, State2};
