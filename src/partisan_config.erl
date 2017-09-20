@@ -80,12 +80,12 @@ init() ->
                            {partisan_peer_service_manager, PeerService},
                            {peer_ip, IPAddress},
                            {peer_port, PeerPort},
-                           {listen_addrs, [#{ip => IPAddress, port => PeerPort}]},
                            {random_promotion, true},
                            {reservations, []},
                            {tls, false},
                            {tls_options, []},
                            {tag, DefaultTag}]],
+    set(listen_addrs, [#{ip => ?MODULE:get(peer_ip), port => ?MODULE:get(peer_port)}]),
     ok.
 
 env_or_default(Key, Default) ->
