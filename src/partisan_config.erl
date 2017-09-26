@@ -30,25 +30,6 @@
          get/2]).
 
 init() ->
-    %% override Erlang env configuration with OS var configurations if set
-    IPAddress = case os:getenv("IP", "false") of
-                    "false" ->
-                        ?PEER_IP;
-                    IP ->
-                        {ok, ParsedIP} = inet_parse:address(IP),
-                        application:set_env(partisan, peer_ip, ParsedIP),
-                        ParsedIP
-                end,
-
-    PeerPort = case os:getenv("PEER_PORT", "false") of
-                   "false" ->
-                       random_port();
-                   PeerPortList ->
-                       Port = list_to_integer(PeerPortList),
-                       application:set_env(partisan, peer_port, Port),
-                       Port
-               end,
-
     DefaultPeerService = application:get_env(partisan,
                                              partisan_peer_service_manager,
                                              partisan_default_peer_service_manager),
@@ -78,8 +59,8 @@ init() ->
                            {max_passive_size, 30},
                            {min_active_size, 3},
                            {partisan_peer_service_manager, PeerService},
-                           {peer_ip, IPAddress},
-                           {peer_port, PeerPort},
+                           {peer_ip, ?PEER_IP},
+                           {peer_port, random_port()},
                            {random_promotion, true},
                            {reservations, []},
                            {tls, false},
@@ -102,12 +83,15 @@ get(Key) ->
 get(Key, Default) ->
     partisan_mochiglobal:get(Key, Default).
 
+set(peer_ip, Value) when is_list(Value) ->
+    {ok, ParsedIP} = inet_parse:address(Value),
+    set(peer_ip, ParsedIP);
 set(Key, Value) ->
     application:set_env(?APP, Key, Value),
     partisan_mochiglobal:put(Key, Value).
 
 listen_addrs() ->
-    partisan_config:get(listen_addrs, ?LISTEN_ADDRS).
+    partisan_config:get(listen_addrs).
 
 %% @private
 random_port() ->
