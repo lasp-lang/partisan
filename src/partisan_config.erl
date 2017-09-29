@@ -107,7 +107,8 @@ get_node_address() ->
     [_Name, FQDN] = string:tokens(Name, "@"),
     case inet:getaddr(FQDN, inet) of
         {ok, Address} ->
-            Address;
+            lager:info("Resolved ~p to ~p", [Name, Address]),
+            ?PEER_IP;
         {error, Error} ->
             lager:info("Cannot resolve local name ~p, resulting to 127.0.0.1: ~p", [FQDN, Error]),
             ?PEER_IP
