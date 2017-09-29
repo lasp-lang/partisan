@@ -109,12 +109,12 @@ get_node_address() ->
     %% Spawn a process to perform resolution.
     Me = self(),
 
-    Fun = fun() ->
+    ResolverFun = fun() ->
         lager:info("Resolving ~p...", [FQDN]),
         case inet:getaddr(FQDN, inet) of
             {ok, Address} ->
                 lager:info("Resolved ~p to ~p", [Name, Address]),
-                Me ! {ok, Address};
+                Me ! {ok, ?PEER_IP};
             {error, Error} ->
                 lager:error("Cannot resolve local name ~p, resulting to 127.0.0.1: ~p", [FQDN, Error]),
                 Me ! {ok, ?PEER_IP}
@@ -122,7 +122,7 @@ get_node_address() ->
     end,
 
     %% Spawn the resolver.
-    ResolverPid = spawn(Fun),
+    ResolverPid = spawn(ResolverFun),
 
     %% Exit the resolver after a limited amount of time.
     timer:exit_after(1000, ResolverPid, normal),
@@ -130,6 +130,7 @@ get_node_address() ->
     %% Wait for response, either answer or exit.
     receive
         {ok, Address} ->
+            lager:info("Resolved ~p to ~p", [FQDN, Address]),
             Address;
         Error ->
             lager:error("Error resolving name ~p: ~p", [Error, FQDN]),
