@@ -104,7 +104,7 @@ random_port() ->
 %% @private
 get_node_address() ->
     Name = atom_to_list(node()),
-    [_Name, FQDN] = string:split(Name, "@", all),
+    [_Name, FQDN] = string:tokens(Name, "@"),
     case inet:getaddr(FQDN, inet) of
         {ok, Address} ->
             Address;
