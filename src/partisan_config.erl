@@ -33,6 +33,7 @@ init() ->
     DefaultPeerService = application:get_env(partisan,
                                              partisan_peer_service_manager,
                                              partisan_default_peer_service_manager),
+
     PeerService = case os:getenv("PEER_SERVICE", "false") of
                       "false" ->
                           DefaultPeerService;
@@ -59,7 +60,7 @@ init() ->
                            {max_passive_size, 30},
                            {min_active_size, 3},
                            {partisan_peer_service_manager, PeerService},
-                           {peer_ip, ?PEER_IP},
+                           {peer_ip, get_node_address()},
                            {peer_port, random_port()},
                            {random_promotion, true},
                            {reservations, []},
@@ -99,3 +100,15 @@ random_port() ->
     {ok, {_, Port}} = inet:sockname(Socket),
     ok = gen_tcp:close(Socket),
     Port.
+
+%% @private
+get_node_address() ->
+    Name = atom_to_list(node()),
+    [_Name, FQDN] = string:split(Name, "@", all),
+    case inet:getaddr(FQDN, inet) of
+        {ok, Address} ->
+            Address;
+        {error, Error} ->
+            lager:info("Cannot resolve local name ~p, resulting to 127.0.0.1: ~p", [FQDN, Error]),
+            ?PEER_IP
+    end.
