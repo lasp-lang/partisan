@@ -633,8 +633,8 @@ start(_Case, Config, Options) ->
     %% Launch distribution for the test runner.
     ct:pal("Launching Erlang distribution..."),
 
+    {ok, Hostname} = inet:gethostname(), 
     os:cmd(os:find_executable("epmd") ++ " -daemon"),
-    Hostname = "localhost",
     case net_kernel:start([list_to_atom("runner@" ++ Hostname), shortnames]) of
         {ok, _} ->
             ok;
