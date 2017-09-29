@@ -634,7 +634,7 @@ start(_Case, Config, Options) ->
     ct:pal("Launching Erlang distribution..."),
 
     os:cmd(os:find_executable("epmd") ++ " -daemon"),
-    {ok, Hostname} = inet:gethostname(),
+    Hostname = "localhost",
     case net_kernel:start([list_to_atom("runner@" ++ Hostname), shortnames]) of
         {ok, _} ->
             ok;
