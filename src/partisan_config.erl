@@ -33,6 +33,7 @@ init() ->
     DefaultPeerService = application:get_env(partisan,
                                              partisan_peer_service_manager,
                                              partisan_default_peer_service_manager),
+
     PeerService = case os:getenv("PEER_SERVICE", "false") of
                       "false" ->
                           DefaultPeerService;
@@ -59,7 +60,7 @@ init() ->
                            {max_passive_size, 30},
                            {min_active_size, 3},
                            {partisan_peer_service_manager, PeerService},
-                           {peer_ip, ?PEER_IP},
+                           {peer_ip, try_get_node_address()},
                            {peer_port, random_port()},
                            {random_promotion, true},
                            {reservations, []},
@@ -99,3 +100,48 @@ random_port() ->
     {ok, {_, Port}} = inet:sockname(Socket),
     ok = gen_tcp:close(Socket),
     Port.
+
+%% @private
+try_get_node_address() ->
+    case application:get_env(partisan, peer_ip) of
+        {ok, Address} ->
+            Address;
+        undefined ->
+            get_node_address()
+    end.
+
+%% @private
+get_node_address() ->
+    Name = atom_to_list(node()),
+    [_Hostname, FQDN] = string:tokens(Name, "@"),
+
+    %% Spawn a process to perform resolution.
+    Me = self(),
+
+    ResolverFun = fun() ->
+        lager:info("Resolving ~p...", [FQDN]),
+        case inet:getaddr(FQDN, inet) of
+            {ok, Address} ->
+                lager:info("Resolved ~p to ~p", [Name, Address]),
+                Me ! {ok, ?PEER_IP};
+            {error, Error} ->
+                lager:error("Cannot resolve local name ~p, resulting to 127.0.0.1: ~p", [FQDN, Error]),
+                Me ! {ok, ?PEER_IP}
+        end
+    end,
+
+    %% Spawn the resolver.
+    ResolverPid = spawn(ResolverFun),
+
+    %% Exit the resolver after a limited amount of time.
+    timer:exit_after(1000, ResolverPid, normal),
+
+    %% Wait for response, either answer or exit.
+    receive
+        {ok, Address} ->
+            lager:info("Resolved ~p to ~p", [FQDN, Address]),
+            Address;
+        Error ->
+            lager:error("Error resolving name ~p: ~p", [Error, FQDN]),
+            ?PEER_IP
+    end.

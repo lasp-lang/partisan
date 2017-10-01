@@ -633,8 +633,8 @@ start(_Case, Config, Options) ->
     %% Launch distribution for the test runner.
     ct:pal("Launching Erlang distribution..."),
 
+    {ok, Hostname} = inet:gethostname(), 
     os:cmd(os:find_executable("epmd") ++ " -daemon"),
-    {ok, Hostname} = inet:gethostname(),
     case net_kernel:start([list_to_atom("runner@" ++ Hostname), shortnames]) of
         {ok, _} ->
             ok;
@@ -884,7 +884,8 @@ connect(G, N1, N2) ->
     ok.
 
 %% @private
-node_list(0, _Name, _Config) -> [];
+node_list(0, _Name, _Config) -> 
+    [];
 node_list(N, Name, Config) ->
     [ list_to_atom(string:join([Name,
                                 integer_to_list(?config(hash, Config)),
@@ -898,7 +899,8 @@ make_certs(Config) ->
     PrivDir = ?config(priv_dir, Config),
     ct:pal("Generating TLS certificates into ~s", [PrivDir]),
     MakeCertsFile = filename:join(DataDir, "make_certs.erl"),
-    {ok, make_certs, ModBin} = compile:file(MakeCertsFile, [binary, debug_info, report_errors, report_warnings]),
+    {ok, make_certs, ModBin} = compile:file(MakeCertsFile, 
+        [binary, debug_info, report_errors, report_warnings]),
     {module, make_certs} = code:load_binary(make_certs, MakeCertsFile, ModBin),
 
     make_certs:all(DataDir, PrivDir),
