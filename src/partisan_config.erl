@@ -60,7 +60,7 @@ init() ->
                            {max_passive_size, 30},
                            {min_active_size, 3},
                            {partisan_peer_service_manager, PeerService},
-                           {peer_ip, get_node_address()},
+                           {peer_ip, try_get_node_address()},
                            {peer_port, random_port()},
                            {random_promotion, true},
                            {reservations, []},
@@ -100,6 +100,15 @@ random_port() ->
     {ok, {_, Port}} = inet:sockname(Socket),
     ok = gen_tcp:close(Socket),
     Port.
+
+%% @private
+try_get_node_address() ->
+    case application:get_env(partisan, peer_ip) of
+        {ok, Address} ->
+            Address;
+        undefined ->
+            get_node_address()
+    end.
 
 %% @private
 get_node_address() ->
