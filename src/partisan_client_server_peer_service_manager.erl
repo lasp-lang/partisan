@@ -36,6 +36,7 @@
          on_down/2,
          update_members/1,
          send_message/2,
+         cast_message/3,
          forward_message/3,
          receive_message/1,
          decode/1,
@@ -98,6 +99,11 @@ update_members(_Nodes) ->
 %% @doc Send message to a remote manager.
 send_message(Name, Message) ->
     gen_server:call(?MODULE, {send_message, Name, Message}, infinity).
+
+%% @doc Cast a message to a remote gen_server.
+cast_message(Name, ServerRef, Message) ->
+    FullMessage = {'$gen_cast', Message},
+    forward_message(Name, ServerRef, FullMessage).
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, ServerRef, Message) ->
