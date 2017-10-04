@@ -1015,7 +1015,7 @@ handle_message({shuffle, Exchange, TTL, Sender},
     {noreply, State};
 
 handle_message({forward_message, ServerRef, Message}, State) ->
-    gen_server:cast(ServerRef, Message),
+    ServerRef ! Message,
     {noreply, State}.
 
 %% @private

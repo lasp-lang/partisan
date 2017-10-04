@@ -359,7 +359,7 @@ establish_connections(Pending, Membership, Connections) ->
     lists:foldl(fun partisan_util:maybe_connect/2, Connections, AllPeers).
 
 handle_message({forward_message, ServerRef, Message}, State) ->
-    gen_server:cast(ServerRef, Message),
+    ServerRef ! Message,
     {reply, ok, State}.
 
 %% @private
