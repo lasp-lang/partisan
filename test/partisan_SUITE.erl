@@ -754,7 +754,7 @@ start(_Case, Config, Options) ->
                                        [fun() ->
                                             lists:foreach(fun(_) ->
                                                 receive
-                                                    {'$gen_cast', {store, N}} ->
+                                                    {store, N} ->
                                                         %% save the number in the environment
                                                         application:set_env(partisan, forward_message_test, N)
                                                 end
