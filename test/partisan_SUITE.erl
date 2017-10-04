@@ -860,6 +860,8 @@ stop(Nodes) ->
         case ct_slave:stop(Name) of
             {ok, _} ->
                 ok;
+            {error, stop_timeout, _} ->
+                ok;
             Error ->
                 ct:fail(Error)
         end
