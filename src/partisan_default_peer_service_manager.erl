@@ -110,7 +110,8 @@ send_message(Name, Message) ->
 %% @doc Cast a message to a remote gen_server.
 cast_message(Name, ServerRef, Message) ->
     FullMessage = {'$gen_cast', Message},
-    forward_message(Name, ServerRef, FullMessage).
+    forward_message(Name, ServerRef, FullMessage),
+    ok.
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, ServerRef, Message) ->
