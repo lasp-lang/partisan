@@ -35,6 +35,7 @@
          update_members/1,
          on_down/2,
          send_message/2,
+         cast_message/3,
          forward_message/3,
          receive_message/1,
          decode/1,
@@ -105,6 +106,12 @@ on_down(Name, Function) ->
 %% @doc Send message to a remote manager.
 send_message(Name, Message) ->
     gen_server:call(?MODULE, {send_message, Name, Message}, infinity).
+
+%% @doc Cast a message to a remote gen_server.
+cast_message(Name, ServerRef, Message) ->
+    FullMessage = {'$gen_cast', Message},
+    forward_message(Name, ServerRef, FullMessage),
+    ok.
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, ServerRef, Message) ->
@@ -535,7 +542,7 @@ handle_message({receive_state, PeerMembership},
             end
     end;
 handle_message({forward_message, ServerRef, Message}, State) ->
-    gen_server:cast(ServerRef, Message),
+    ServerRef ! Message,
     {reply, ok, State}.
 
 %% @private

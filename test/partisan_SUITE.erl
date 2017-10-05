@@ -754,7 +754,7 @@ start(_Case, Config, Options) ->
                                        [fun() ->
                                             lists:foreach(fun(_) ->
                                                 receive
-                                                    {'$gen_cast', {store, N}} ->
+                                                    {store, N} ->
                                                         %% save the number in the environment
                                                         application:set_env(partisan, forward_message_test, N)
                                                 end
@@ -859,6 +859,8 @@ stop(Nodes) ->
     StopFun = fun({Name, _Node}) ->
         case ct_slave:stop(Name) of
             {ok, _} ->
+                ok;
+            {error, stop_timeout, _} ->
                 ok;
             Error ->
                 ct:fail(Error)

@@ -34,6 +34,7 @@
          connections/0,
          manager/0,
          add_sup_callback/1,
+         cast_message/3,
          forward_message/3]).
 
 -include("partisan.hrl").
@@ -79,6 +80,11 @@ update_members(Nodes) ->
 %% @doc Add callback.
 add_sup_callback(Function) ->
     partisan_peer_service_events:add_sup_callback(Function).
+
+%% @doc Cast message to registered process on the remote side.
+cast_message(Name, ServerRef, Message) ->
+    Manager = manager(),
+    Manager:cast_message(Name, ServerRef, Message).
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, ServerRef, Message) ->
