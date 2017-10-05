@@ -22,6 +22,8 @@
 -module(partisan_SUITE).
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+-include("partisan.hrl").
+
 %% common_test callbacks
 -export([%% suite/0,
          init_per_suite/1,
@@ -39,9 +41,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 
--define(APP, partisan).
 -define(CLIENT_NUMBER, 3).
--define(PEER_PORT, 9000).
 
 %% ===================================================================
 %% common_test callbacks
@@ -708,6 +708,8 @@ start(_Case, Config, Options) ->
             MaxActiveSize = proplists:get_value(max_active_size, Options, 5),
             ok = rpc:call(Node, partisan_config, set,
                           [max_active_size, MaxActiveSize]),
+
+            ok = rpc:call(Node, application, set_env, [partisan, peer_ip, ?PEER_IP]),
 
             ok = rpc:call(Node, partisan_config, set, [tls, ?config(tls, Config)]),
             Parallelism = case ?config(parallelism, Config) of
