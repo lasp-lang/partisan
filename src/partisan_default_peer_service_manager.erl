@@ -117,12 +117,18 @@ cast_message(Name, ServerRef, Message) ->
 forward_message(Name, ServerRef, Message) ->
     FullMessage = {forward_message, Name, ServerRef, Message},
 
-    %% Attempt to fast-path through the memoized connection cache.
-    case partisan_connection_cache:dispatch(FullMessage) of
-        ok ->
-            ok;
-        {error, trap} ->
-            gen_server:call(?MODULE, FullMessage, infinity)
+    %% If attempting to forward to the local node, bypass.
+    case node() of
+        Name ->
+            ServerRef ! Message;
+        _ ->
+            %% Attempt to fast-path through the memoized connection cache.
+            case partisan_connection_cache:dispatch(FullMessage) of
+                ok ->
+                    ok;
+                {error, trap} ->
+                    gen_server:call(?MODULE, FullMessage, infinity)
+            end
     end.
 
 %% @doc Receive message from a remote manager.
