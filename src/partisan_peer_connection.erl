@@ -167,7 +167,7 @@ send(Transport, Socket, Data) ->
 
 %% Determine if we should transmit:
 %%
-%% If theré's another message in the queue, we can skip 
+%% If there's another message in the queue, we can skip 
 %% sending this message.  However, if the arrival rate of 
 %% messages is too high, we risk starvation where
 %% we may never send.  Therefore, we must force a transmission 
