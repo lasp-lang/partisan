@@ -184,14 +184,7 @@ monotonic_should_send(MessageQueueLen, LastTransmissionTime) ->
 
             SendWindow = partisan_config:get(send_window, 1000),
 
-            case Diff > SendWindow of
-                true ->
-                    %% We haven't sent recently enough; transmit.
-                    true;
-                false ->
-                    %% We sent within the window; ignore.
-                    false
-            end;
+            Diff > SendWindow;
         false ->
             %% No messages in queue; transmit.
             true
