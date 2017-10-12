@@ -87,7 +87,7 @@ send(#connection{socket = Socket, transport = Transport, monotonic = Monotonic},
                 true ->
                     send(Transport, Socket, Data)
             end;
-        _ ->
+        false ->
             send(Transport, Socket, Data)
     end.
 
@@ -140,7 +140,7 @@ socket(Conn) ->
 do_connect(Address, Port, Options, Timeout, Transport, Control) ->
    case Transport:connect(Address, Port, Options, Timeout) of
        {ok, Socket} ->
-           {ok, #connection{socket = Socket, transport = Transport, control = Control}};
+           {ok, #connection{socket = Socket, transport = Transport, control = Control, monotonic = false}};
        Error ->
            Error
    end.
