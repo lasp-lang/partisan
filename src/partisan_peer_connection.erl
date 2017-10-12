@@ -74,10 +74,10 @@ accept(TCPSocket) ->
 send(#connection{socket = Socket, transport = Transport, monotonic = Monotonic}, Data) ->
     case Monotonic of
         true ->
-            %% Get the current message queue time.
+            %% Get the current message queue length.
             {message_queue_len, MessageQueueLen} = process_info(self(), message_queue_len),
 
-            %% TODO: Get last send time.
+            %% Get last transmission time.
             LastTransmissionTime = get(last_transmission_time),
 
             %% Test for whether we should send or not.
@@ -154,9 +154,13 @@ tls_options() ->
     partisan_config:get(tls_options).
 
 %% @private
+monotonic_now() ->
+    erlang:monotonic_time(millisecond).
+
+%% @private
 send(Transport, Socket, Data) ->
     %% Update last transmission time.
-    put(last_transmission_time, erlang:monotonic_time(millisecond)),
+    put(last_transmission_time, monotonic_now()),
 
     %% Transmit the data on the socket.
     Transport:send(Socket, Data).
@@ -173,17 +177,22 @@ send(Transport, Socket, Data) ->
 monotonic_should_send(MessageQueueLen, LastTransmissionTime) ->
     case length(MessageQueueLen) > 0 of
         true ->
-            NowTime = erlang:monotonic_time(millisecond),
+            %% Messages in queue; conditional send.
+            NowTime = monotonic_now(),
+
             Diff = abs(NowTime - LastTransmissionTime),
 
             SendWindow = partisan_config:get(send_window, 1000),
 
             case Diff > SendWindow of
                 true ->
+                    %% We haven't sent recently enough; transmit.
                     true;
                 false ->
+                    %% We sent within the window; ignore.
                     false
             end;
         false ->
+            %% No messages in queue; transmit.
             true
     end.
