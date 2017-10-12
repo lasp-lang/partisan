@@ -39,12 +39,12 @@
 -record(connection, {
           socket :: gen_tcp:socket() | ssl:sslsocket(),
           transport :: gen_tcp | ssl,
-          control :: inet | ssl
+          control :: inet | ssl,
+          monotonic :: boolean()
          }).
 
 -type connection() :: #connection{}.
 -export_type([connection/0]).
-
 
 %% @doc Wraps a TCP socket with the appropriate information for
 %% transceiving on and controlling the socket later. If TLS/SSL is
@@ -63,16 +63,30 @@ accept(TCPSocket) ->
             {ok, TLSSocket} = ssl:ssl_accept(TCPSocket, TLSOpts),
             %% restore the expected active once setting
             ssl:setopts(TLSSocket, [{active, once}]),
-            #connection{socket = TLSSocket, transport = ssl, control = ssl};
+            #connection{socket = TLSSocket, transport = ssl, control = ssl, monotonic = false};
         _ ->
-            #connection{socket = TCPSocket, transport = gen_tcp, control = inet}
+            #connection{socket = TCPSocket, transport = gen_tcp, control = inet, monotonic = false}
     end.
 
 %% @see gen_tcp:send/2
 %% @see ssl:send/2
 -spec send(connection(), iodata()) -> ok | {error, reason()}.
-send(#connection{socket = Socket, transport = Transport}, Data) ->
-    Transport:send(Socket, Data).
+send(#connection{socket = Socket, transport = Transport, monotonic = true}, Data) ->
+    %% Get the current message queue length.
+    {message_queue_len, MessageQueueLen} = process_info(self(), message_queue_len),
+
+    %% Get last transmission time.
+    LastTransmissionTime = get(last_transmission_time),
+
+    %% Test for whether we should send or not.
+    case monotonic_should_send(MessageQueueLen, LastTransmissionTime) of
+        false ->
+            ok;
+        true ->
+            send(Transport, Socket, Data)
+    end;
+send(#connection{socket = Socket, transport = Transport, monotonic = false}, Data) ->
+    send(Transport, Socket, Data).
 
 %% @see gen_tcp:recv/2
 %% @see ssl:recv/2
@@ -119,17 +133,56 @@ connect(Address, Port, Options, Timeout) ->
 socket(Conn) ->
     Conn#connection.socket.
 
-%% Internal
+%% @private
 do_connect(Address, Port, Options, Timeout, Transport, Control) ->
    case Transport:connect(Address, Port, Options, Timeout) of
        {ok, Socket} ->
-           {ok, #connection{socket = Socket, transport = Transport, control = Control}};
+           {ok, #connection{socket = Socket, transport = Transport, control = Control, monotonic = false}};
        Error ->
            Error
    end.
 
+%% @private
 tls_enabled() ->
     partisan_config:get(tls).
 
+%% @private
 tls_options() ->
     partisan_config:get(tls_options).
+
+%% @private
+monotonic_now() ->
+    erlang:monotonic_time(millisecond).
+
+%% @private
+send(Transport, Socket, Data) ->
+    %% Update last transmission time.
+    put(last_transmission_time, monotonic_now()),
+
+    %% Transmit the data on the socket.
+    Transport:send(Socket, Data).
+
+%% Determine if we should transmit:
+%%
+%% If there's another message in the queue, we can skip 
+%% sending this message.  However, if the arrival rate of 
+%% messages is too high, we risk starvation where
+%% we may never send.  Therefore, we must force a transmission 
+%% after a given period with no transmissions.
+%%
+%% @private
+monotonic_should_send(MessageQueueLen, LastTransmissionTime) ->
+    case length(MessageQueueLen) > 0 of
+        true ->
+            %% Messages in queue; conditional send.
+            NowTime = monotonic_now(),
+
+            Diff = abs(NowTime - LastTransmissionTime),
+
+            SendWindow = partisan_config:get(send_window, 1000),
+
+            Diff > SendWindow;
+        false ->
+            %% No messages in queue; transmit.
+            true
+    end.
