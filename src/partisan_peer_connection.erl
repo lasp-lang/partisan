@@ -71,25 +71,22 @@ accept(TCPSocket) ->
 %% @see gen_tcp:send/2
 %% @see ssl:send/2
 -spec send(connection(), iodata()) -> ok | {error, reason()}.
-send(#connection{socket = Socket, transport = Transport, monotonic = Monotonic}, Data) ->
-    case Monotonic of
-        true ->
-            %% Get the current message queue length.
-            {message_queue_len, MessageQueueLen} = process_info(self(), message_queue_len),
+send(#connection{socket = Socket, transport = Transport, monotonic = true}, Data) ->
+    %% Get the current message queue length.
+    {message_queue_len, MessageQueueLen} = process_info(self(), message_queue_len),
 
-            %% Get last transmission time.
-            LastTransmissionTime = get(last_transmission_time),
+    %% Get last transmission time.
+    LastTransmissionTime = get(last_transmission_time),
 
-            %% Test for whether we should send or not.
-            case monotonic_should_send(MessageQueueLen, LastTransmissionTime) of
-                false ->
-                    ok;
-                true ->
-                    send(Transport, Socket, Data)
-            end;
+    %% Test for whether we should send or not.
+    case monotonic_should_send(MessageQueueLen, LastTransmissionTime) of
         false ->
+            ok;
+        true ->
             send(Transport, Socket, Data)
-    end.
+    end;
+send(#connection{socket = Socket, transport = Transport, monotonic = false}, Data) ->
+    send(Transport, Socket, Data).
 
 %% @see gen_tcp:recv/2
 %% @see ssl:recv/2
