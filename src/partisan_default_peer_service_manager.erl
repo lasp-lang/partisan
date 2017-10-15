@@ -666,7 +666,7 @@ internal_join(Node, State) when is_atom(Node) ->
     ListenAddrs = rpc:call(Node, partisan_config, listen_addrs, []),
 
     %% Get channels.
-    Channels = rpc:call(Node, partisan_config, channels, ?CHANNELS),
+    Channels = rpc:call(Node, partisan_config, channels, []),
 
     %% Perform the join.
     internal_join(#{name => Node,
