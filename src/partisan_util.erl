@@ -173,7 +173,7 @@ maybe_initiate_parallel_connections(Connections0, Channel, Node, ListenAddr, Par
             case connect(Node, ListenAddr) of
                 {ok, Pid} ->
                     lager:info("Node ~p connected, pid: ~p", [Node, Pid]),
-                    partisan_peer_service_connections:store(Node, {ListenAddr, ?DEFAULT_CHANNEL, Pid}, Connections0);
+                    partisan_peer_service_connections:store(Node, {ListenAddr, Channel, Pid}, Connections0);
                 Error ->
                     lager:info("Node failed connect with ~p", [Error]),
                     Connections0

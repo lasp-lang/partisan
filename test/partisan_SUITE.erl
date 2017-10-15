@@ -63,6 +63,8 @@ end_per_testcase(Case, _Config) ->
 
     _Config.
 
+init_per_group(with_channels, Config) ->
+    [{parallelism, 1}, {channels, [vnode, gossip]}] ++ Config;
 init_per_group(with_parallelism, Config) ->
     [{parallelism, 5}] ++ Config;
 init_per_group(with_tls, Config) ->
@@ -83,7 +85,9 @@ all() ->
 
      {group, with_tls, [parallel]},
 
-     {group, with_parallelism, [parallel]}
+     {group, with_parallelism, [parallel]},
+
+     {group, with_channels, [parallel]}
     ].
 
 groups() ->
@@ -107,6 +111,9 @@ groups() ->
       [default_manager_test]},
 
      {with_parallelism, [],
+      [default_manager_test]},
+     
+     {with_channels, [],
       [default_manager_test]}
     ].
 
@@ -173,6 +180,10 @@ default_manager_test(Config) ->
     ConfigParallelism = proplists:get_value(parallelism, Config, 1),
     ct:pal("Configured parallelism: ~p", [ConfigParallelism]),
 
+    %% Verify channels.
+    ConfigChannels = proplists:get_value(channels, Config, 1),
+    ct:pal("Configured channels: ~p", [ConfigChannels]),
+
     ConnectionsFun = fun(Node) ->
                              Connections = rpc:call(Node,
                                       partisan_default_peer_service_manager,
@@ -182,39 +193,53 @@ default_manager_test(Config) ->
                              Connections
                      end,
 
-    VerifyConnectionsFun = fun(Node, Parallelism) ->
+    VerifyConnectionsFun = fun(Node, Channel, Parallelism) ->
                                 %% Get list of connections.
                                 {ok, Connections} = ConnectionsFun(Node),
 
                                 %% Verify we have enough connections.
                                 dict:fold(fun(_N, Active, Acc) ->
-                                                 case length(Active) == Parallelism of
-                                                     true ->
-                                                         Acc andalso true;
-                                                     false ->
-                                                         Acc andalso false
-                                                 end
-                                         end, true, Connections)
+                                    Filtered = lists:filter(fun({_, C, _}) -> 
+                                        case C of
+                                            Channel ->
+                                                true;
+                                            _ ->
+                                                false
+                                        end
+                                    end, Active),
+
+                                    case length(Filtered) == Parallelism of
+                                        true ->
+                                            Acc andalso true;
+                                        false ->
+                                            Acc andalso false
+                                    end
+                                end, true, Connections)
                           end,
 
     lists:foreach(fun({_Name, Node}) ->
                         %% Get enabled parallelism.
                         Parallelism = rpc:call(Node, partisan_config, get, [parallelism, 1]),
-
                         ct:pal("Parallelism is: ~p", [Parallelism]),
 
-                        %% Generate fun.
-                        VerifyConnectionsNodeFun = fun() ->
-                                                           VerifyConnectionsFun(Node, Parallelism)
-                                                   end,
+                        %% Get enabled channels.
+                        Channels = rpc:call(Node, partisan_config, get, [channels, ?CHANNELS]),
+                        ct:pal("Channels are: ~p", [Channels]),
 
-                        %% Wait until connections established.
-                        case wait_until(VerifyConnectionsNodeFun, 60 * 2, 100) of
-                            ok ->
-                                ok;
-                            _ ->
-                                ct:fail("Not enough connections have been opened; need: ~p", [Parallelism])
-                        end
+                        lists:foreach(fun(Channel) ->
+                            %% Generate fun.
+                            VerifyConnectionsNodeFun = fun() ->
+                                                            VerifyConnectionsFun(Node, Channel, Parallelism)
+                                                    end,
+
+                            %% Wait until connections established.
+                            case wait_until(VerifyConnectionsNodeFun, 60 * 2, 100) of
+                                ok ->
+                                    ok;
+                                _ ->
+                                    ct:fail("Not enough connections have been opened; need: ~p", [Parallelism])
+                            end
+                        end, Channels)
                   end, Nodes),
 
     %% Stop nodes.
@@ -711,6 +736,9 @@ start(_Case, Config, Options) ->
 
             ok = rpc:call(Node, application, set_env, [partisan, peer_ip, ?PEER_IP]),
 
+            ct:pal("Setting channels to: ~p", [?config(channels, Config)]),
+            ok = rpc:call(Node, partisan_config, set, [channels, ?config(channels, Config)]),
+
             ok = rpc:call(Node, partisan_config, set, [tls, ?config(tls, Config)]),
             Parallelism = case ?config(parallelism, Config) of
                               undefined ->
@@ -845,8 +873,14 @@ cluster({_, Node}, {_, OtherNode}, Config) ->
     Parallelism = case ?config(parallelism, Config) of
                       undefined ->
                           1;
-                      Other ->
-                          Other
+                      P ->
+                          P
+                  end,
+    Channels = case ?config(channels, Config) of
+                      undefined ->
+                          [];
+                      C ->
+                          C
                   end,
     ct:pal("Joining node: ~p to ~p at port ~p", [Node, OtherNode, PeerPort]),
     ok = rpc:call(Node,
@@ -854,6 +888,7 @@ cluster({_, Node}, {_, OtherNode}, Config) ->
                   join,
                   [#{name => OtherNode,
                      listen_addrs => [#{ip => {127, 0, 0, 1}, port => PeerPort}],
+                     channels => Channels,
                      parallelism => Parallelism}]).
 
 %% @private

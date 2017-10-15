@@ -60,5 +60,6 @@
 
 myself() ->
     Parallelism = partisan_config:get(parallelism, ?PARALLELISM),
+    Channels = partisan_config:get(channels, ?CHANNELS),
     ListenAddrs = partisan_config:get(listen_addrs),
-    #{name => node(), listen_addrs => ListenAddrs, parallelism => Parallelism}.
+    #{name => node(), listen_addrs => ListenAddrs, channels => Channels, parallelism => Parallelism}.
