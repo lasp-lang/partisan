@@ -616,7 +616,7 @@ do_send_message(Node, Channel, Message, Connections) ->
             {error, disconnected};
         {ok, Entries} ->
             Pid = partisan_util:dispatch_pid(Channel, Entries),
-            gen_server:cast(Pid, {send_message, Channel, Message});
+            gen_server:cast(Pid, {send_message, Message});
         {error, not_found} ->
             %% Node has not been connected yet.
             {error, not_yet_connected}
