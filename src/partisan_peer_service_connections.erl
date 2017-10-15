@@ -32,7 +32,6 @@
 -type t() :: dict:dict(node_spec(), list(pid())).
 -export_type([t/0]).
 
--type channel() :: atom().
 -type entries() :: [entry()].
 -type entry() :: {listen_addr(), channel(), pid()}.
 

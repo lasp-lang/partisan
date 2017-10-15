@@ -5,6 +5,7 @@
 -define(FANOUT, 5).
 -define(CACHE, partisan_connection_cache).
 -define(PARALLELISM, 1).
+-define(DEFAULT_CHANNEL, undefined).
 
 -type actor() :: binary().
 -type listen_addr() :: #{ip => inet:ip_address(), port => non_neg_integer()}.
@@ -15,3 +16,4 @@
 -type name() :: node().
 -type partitions() :: [{reference(), node_spec()}].
 -type ttl() :: non_neg_integer().
+-type channel() :: atom().

@@ -37,6 +37,8 @@
          send_message/2,
          cast_message/3,
          forward_message/3,
+         cast_message/4,
+         forward_message/4,
          receive_message/1,
          decode/1,
          reserve/1,
@@ -105,17 +107,25 @@ on_down(Name, Function) ->
 
 %% @doc Send message to a remote manager.
 send_message(Name, Message) ->
-    gen_server:call(?MODULE, {send_message, Name, Message}, infinity).
+    gen_server:call(?MODULE, {send_message, Name, ?DEFAULT_CHANNEL, Message}, infinity).
 
 %% @doc Cast a message to a remote gen_server.
 cast_message(Name, ServerRef, Message) ->
+    cast_message(Name, ?DEFAULT_CHANNEL, ServerRef, Message).
+
+%% @doc Cast a message to a remote gen_server.
+cast_message(Name, Channel, ServerRef, Message) ->
     FullMessage = {'$gen_cast', Message},
-    forward_message(Name, ServerRef, FullMessage),
+    forward_message(Name, Channel, ServerRef, FullMessage),
     ok.
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, ServerRef, Message) ->
-    FullMessage = {forward_message, Name, ServerRef, Message},
+    forward_message(Name, ?DEFAULT_CHANNEL, ServerRef, Message).
+
+%% @doc Forward message to registered process on the remote side.
+forward_message(Name, Channel, ServerRef, Message) ->
+    FullMessage = {forward_message, Name, Channel, ServerRef, Message},
 
     %% If attempting to forward to the local node, bypass.
     case node() of
@@ -268,14 +278,15 @@ handle_call({join, #{name := _Name} = Node},
     %% Return.
     {reply, ok, State};
 
-handle_call({send_message, Name, Message}, _From,
+handle_call({send_message, Name, Channel, Message}, _From,
             #state{connections=Connections}=State) ->
-    Result = do_send_message(Name, Message, Connections),
+    Result = do_send_message(Name, Channel, Message, Connections),
     {reply, Result, State};
 
-handle_call({forward_message, Name, ServerRef, Message}, _From,
+handle_call({forward_message, Name, Channel, ServerRef, Message}, _From,
             #state{connections=Connections}=State) ->
     Result = do_send_message(Name,
+                             Channel,
                              {forward_message, ServerRef, Message},
                              Connections),
     {reply, Result, State};
@@ -572,6 +583,7 @@ do_gossip(Membership, Connections) ->
             {ok, Peers} = random_peers(AllPeers, Fanout),
             lists:foreach(fun(Peer) ->
                         do_send_message(Peer,
+                                        ?DEFAULT_CHANNEL,
                                         {receive_state, Membership},
                                         Connections)
                 end, Peers),
@@ -592,18 +604,19 @@ random_peers(Peers, Fanout) ->
 
 %% @private
 -spec do_send_message(Node :: atom() | node_spec(),
+                      Channel :: channel(),
                       Message :: term(),
                       Connections :: partisan_peer_service_connections:t()) ->
             {error, disconnected} | {error, not_yet_connected} | {error, term()} | ok.
-do_send_message(Node, Message, Connections) ->
+do_send_message(Node, Channel, Message, Connections) ->
     %% Find a connection for the remote node, if we have one.
     case partisan_peer_service_connections:find(Node, Connections) of
         {ok, []} ->
             %% Node was connected but is now disconnected.
             {error, disconnected};
         {ok, Entries} ->
-            Pid = partisan_util:dispatch_pid(Entries),
-            gen_server:cast(Pid, {send_message, Message});
+            Pid = partisan_util:dispatch_pid(Channel, Entries),
+            gen_server:cast(Pid, {send_message, Channel, Message});
         {error, not_found} ->
             %% Node has not been connected yet.
             {error, not_yet_connected}

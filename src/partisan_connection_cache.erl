@@ -35,6 +35,22 @@ update(Connections) ->
                       true = ets:insert(?CACHE, [{Name, V}])
               end, [], Connections).
 
+dispatch({forward_message, Name, Channel, ServerRef, Message}) ->
+    %% Find a connection for the remote node, if we have one.
+    case ets:lookup(?CACHE, Name) of
+        [] ->
+            %% Trap back to gen_server.
+            {error, trap};
+        [{Name, Pids}] ->
+            case length(Pids) of
+                0 ->
+                    {error, trap};
+                _ ->
+                    Pid = partisan_util:dispatch_pid(Channel, Pids),
+                    gen_server:cast(Pid, {send_message, {forward_message, ServerRef, Message}})
+            end
+    end;
+
 dispatch({forward_message, Name, ServerRef, Message}) ->
     %% Find a connection for the remote node, if we have one.
     case ets:lookup(?CACHE, Name) of

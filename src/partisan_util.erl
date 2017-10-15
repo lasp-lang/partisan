@@ -155,7 +155,15 @@ dispatch_pid(Channel, Entries) ->
         end
     end, Entries),
 
+    %% Fall back to unlabeled channels.
+    DispatchEntries = case length(ChannelEntries) of
+        0 ->
+            Entries;
+        _ ->
+            ChannelEntries
+    end,
+
     %% Randomly select one.
-    {_ListenAddr, _Channel, Pid} = lists:nth(rand_compat:uniform(length(ChannelEntries)), ChannelEntries),
+    {_ListenAddr, _Channel, Pid} = lists:nth(rand_compat:uniform(length(DispatchEntries)), DispatchEntries),
 
     Pid.
