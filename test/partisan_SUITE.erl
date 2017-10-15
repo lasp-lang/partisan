@@ -66,7 +66,7 @@ end_per_testcase(Case, _Config) ->
 init_per_group(with_channels, Config) ->
     [{parallelism, 1}, {channels, [vnode, gossip]}] ++ Config;
 init_per_group(with_parallelism, Config) ->
-    [{parallelism, 5}] ++ Config;
+    [{parallelism, 5}, {channels, ?CHANNELS}] ++ Config;
 init_per_group(with_tls, Config) ->
     TLSOpts = make_certs(Config),
     [{parallelism, 1}, {tls, true}] ++ TLSOpts ++ Config;
@@ -177,11 +177,11 @@ default_manager_test(Config) ->
                   end, Nodes),
 
     %% Verify parallelism.
-    ConfigParallelism = proplists:get_value(parallelism, Config, 1),
+    ConfigParallelism = proplists:get_value(parallelism, Config, ?PARALLELISM),
     ct:pal("Configured parallelism: ~p", [ConfigParallelism]),
 
     %% Verify channels.
-    ConfigChannels = proplists:get_value(channels, Config, 1),
+    ConfigChannels = proplists:get_value(channels, Config, ?CHANNELS),
     ct:pal("Configured channels: ~p", [ConfigChannels]),
 
     ConnectionsFun = fun(Node) ->
@@ -219,7 +219,7 @@ default_manager_test(Config) ->
 
     lists:foreach(fun({_Name, Node}) ->
                         %% Get enabled parallelism.
-                        Parallelism = rpc:call(Node, partisan_config, get, [parallelism, 1]),
+                        Parallelism = rpc:call(Node, partisan_config, get, [parallelism, ?PARALLELISM]),
                         ct:pal("Parallelism is: ~p", [Parallelism]),
 
                         %% Get enabled channels.
@@ -736,15 +736,21 @@ start(_Case, Config, Options) ->
 
             ok = rpc:call(Node, application, set_env, [partisan, peer_ip, ?PEER_IP]),
 
-            ct:pal("Setting channels to: ~p", [?config(channels, Config)]),
-            ok = rpc:call(Node, partisan_config, set, [channels, ?config(channels, Config)]),
+            Channels = case ?config(channels, Config) of
+                              undefined ->
+                                  ?CHANNELS;
+                              C ->
+                                  C
+                          end,
+            ct:pal("Setting channels to: ~p", [Channels]),
+            ok = rpc:call(Node, partisan_config, set, [channels, Channels]),
 
             ok = rpc:call(Node, partisan_config, set, [tls, ?config(tls, Config)]),
             Parallelism = case ?config(parallelism, Config) of
                               undefined ->
-                                  1;
-                              Other ->
-                                  Other
+                                  ?PARALLELISM;
+                              P ->
+                                  P
                           end,
             ct:pal("Setting parallelism to: ~p", [Parallelism]),
             ok = rpc:call(Node, partisan_config, set, [parallelism, Parallelism]),

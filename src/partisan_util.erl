@@ -71,11 +71,17 @@ maybe_connect(#{name := _Name, listen_addrs := ListenAddrs} = Node, Connections0
 
 %% @private
 maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
-    Channels = maps:get(channels, Node, []),
     Parallelism = maps:get(parallelism, Node, ?PARALLELISM),
 
     %% Always have a default, unlabeled channel.
-    AllChannels = Channels ++ [?DEFAULT_CHANNEL],
+    Channels = case maps:get(channels, Node, [?DEFAULT_CHANNEL]) of
+        [] ->
+            [?DEFAULT_CHANNEL];
+        undefined ->
+            [?DEFAULT_CHANNEL];
+        Other ->
+            lists:usort(Other ++ [?DEFAULT_CHANNEL])
+    end,
 
     %% Initiate connections.
     Connections = case partisan_peer_service_connections:find(Node, Connections0) of
@@ -94,7 +100,7 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
         {ok, Pids} ->
             lists:foldl(fun(Channel, ChannelConnections) ->
                 maybe_initiate_parallel_connections(ChannelConnections, Channel, Node, ListenAddr, Parallelism, Pids)
-            end, Connections0, AllChannels);
+            end, Connections0, Channels);
         %% Not present; disconnected.
         {error, not_found} ->
             case connect(Node, ListenAddr) of
