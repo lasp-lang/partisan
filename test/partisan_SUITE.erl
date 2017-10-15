@@ -63,6 +63,8 @@ end_per_testcase(Case, _Config) ->
 
     _Config.
 
+init_per_group(with_monotonic_channels, Config) ->
+    [{parallelism, 1}, {channels, [{monotonic, vnode}, gossip]}] ++ Config;
 init_per_group(with_channels, Config) ->
     [{parallelism, 1}, {channels, [vnode, gossip]}] ++ Config;
 init_per_group(with_parallelism, Config) ->
@@ -87,7 +89,9 @@ all() ->
 
      {group, with_parallelism, [parallel]},
 
-     {group, with_channels, [parallel]}
+     {group, with_channels, [parallel]},
+     
+     {group, with_monotonic_channels, [parallel]}
     ].
 
 groups() ->
@@ -114,6 +118,9 @@ groups() ->
       [default_manager_test]},
      
      {with_channels, [],
+      [default_manager_test]},
+
+     {with_monotonic_channels, [],
       [default_manager_test]}
     ].
 

@@ -179,7 +179,7 @@ send(Transport, Socket, Data) ->
 %%
 %% @private
 monotonic_should_send(MessageQueueLen, LastTransmissionTime) ->
-    case length(MessageQueueLen) > 0 of
+    case MessageQueueLen > 0 of
         true ->
             %% Messages in queue; conditional send.
             NowTime = monotonic_now(),
