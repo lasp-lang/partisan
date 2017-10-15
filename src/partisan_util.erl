@@ -88,7 +88,7 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
         %% Found disconnected.
         {ok, []} ->
             lager:info("Node ~p is not connected; initiating.", [Node]),
-            case connect(Node, ListenAddr) of
+            case connect(Node, ListenAddr, ?DEFAULT_CHANNEL) of
                 {ok, Pid} ->
                     lager:info("Node ~p connected, pid: ~p", [Node, Pid]),
                     partisan_peer_service_connections:store(Node, {ListenAddr, ?DEFAULT_CHANNEL, Pid}, Connections0);
@@ -103,7 +103,7 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
             end, Connections0, Channels);
         %% Not present; disconnected.
         {error, not_found} ->
-            case connect(Node, ListenAddr) of
+            case connect(Node, ListenAddr, ?DEFAULT_CHANNEL) of
                 {ok, Pid} ->
                     lager:info("Node ~p connected, pid: ~p", [Node, Pid]),
                     partisan_peer_service_connections:store(Node, {ListenAddr, ?DEFAULT_CHANNEL, Pid}, Connections0);
@@ -122,8 +122,8 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
     Connections.
 
 %% @private
--spec connect(Node :: node_spec(), listen_addr()) -> {ok, pid()} | ignore | {error, term()}.
-connect(Node, ListenAddr) ->
+-spec connect(Node :: node_spec(), listen_addr(), channel()) -> {ok, pid()} | ignore | {error, term()}.
+connect(Node, ListenAddr, _Channel) ->
     Self = self(),
     partisan_peer_service_client:start_link(Node, ListenAddr, Self).
 
@@ -176,7 +176,7 @@ maybe_initiate_parallel_connections(Connections0, Channel, Node, ListenAddr, Par
             lager:info("(~p of ~p connected for channel ~p) Connecting node ~p.",
                         [length(FilteredPids), Parallelism, Channel, Node]),
 
-            case connect(Node, ListenAddr) of
+            case connect(Node, ListenAddr, Channel) of
                 {ok, Pid} ->
                     lager:info("Node ~p connected, pid: ~p", [Node, Pid]),
                     partisan_peer_service_connections:store(Node, {ListenAddr, Channel, Pid}, Connections0);
