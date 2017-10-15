@@ -24,6 +24,8 @@
 -include("partisan.hrl").
 
 -export([build_tree/3,
+         dispatch_pid/1,
+         dispatch_pid/2,
          maybe_connect/2]).
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
@@ -71,51 +73,40 @@ maybe_connect(#{name := _Name, listen_addrs := ListenAddrs} = Node, Connections0
 maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
     Parallelism = maps:get(parallelism, Node, ?PARALLELISM),
 
+    %% Always have a default, unlabeled channel.
+    Channels = case maps:get(channels, Node, [?DEFAULT_CHANNEL]) of
+        [] ->
+            [?DEFAULT_CHANNEL];
+        undefined ->
+            [?DEFAULT_CHANNEL];
+        Other ->
+            lists:usort(Other ++ [?DEFAULT_CHANNEL])
+    end,
+
     %% Initiate connections.
     Connections = case partisan_peer_service_connections:find(Node, Connections0) of
         %% Found disconnected.
         {ok, []} ->
             lager:info("Node ~p is not connected; initiating.", [Node]),
-            case connect(Node, ListenAddr) of
+            case connect(Node, ListenAddr, ?DEFAULT_CHANNEL) of
                 {ok, Pid} ->
                     lager:info("Node ~p connected, pid: ~p", [Node, Pid]),
-                    partisan_peer_service_connections:store(Node, {ListenAddr, Pid}, Connections0);
+                    partisan_peer_service_connections:store(Node, {ListenAddr, ?DEFAULT_CHANNEL, Pid}, Connections0);
                 Error ->
                     lager:info("Node ~p failed connection: ~p.", [Node, Error]),
                     Connections0
             end;
         %% Found and connected.
         {ok, Pids} ->
-            FilteredPids = lists:filter(fun({Addr, _Pid}) ->
-                                 case Addr of
-                                     ListenAddr ->
-                                         true;
-                                     _ ->
-                                         false
-                                 end
-                         end, Pids),
-            case length(FilteredPids) < Parallelism andalso Parallelism =/= undefined of
-                true ->
-                    lager:info("(~p of ~p) Connecting node ~p.",
-                               [length(FilteredPids), Parallelism, Node]),
-
-                    case connect(Node, ListenAddr) of
-                        {ok, Pid} ->
-                            lager:info("Node ~p connected, pid: ~p", [Node, Pid]),
-                            partisan_peer_service_connections:store(Node, {ListenAddr, Pid}, Connections0);
-                        Error ->
-                            lager:info("Node failed connect with ~p", [Error]),
-                            Connections0
-                    end;
-                false ->
-                    Connections0
-            end;
+            lists:foldl(fun(Channel, ChannelConnections) ->
+                maybe_initiate_parallel_connections(ChannelConnections, Channel, Node, ListenAddr, Parallelism, Pids)
+            end, Connections0, Channels);
         %% Not present; disconnected.
         {error, not_found} ->
-            case connect(Node, ListenAddr) of
+            case connect(Node, ListenAddr, ?DEFAULT_CHANNEL) of
                 {ok, Pid} ->
                     lager:info("Node ~p connected, pid: ~p", [Node, Pid]),
-                    partisan_peer_service_connections:store(Node, {ListenAddr, Pid}, Connections0);
+                    partisan_peer_service_connections:store(Node, {ListenAddr, ?DEFAULT_CHANNEL, Pid}, Connections0);
                 {error, normal} ->
                     lager:info("Node ~p isn't online just yet.", [Node]),
                     Connections0;
@@ -131,7 +122,68 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
     Connections.
 
 %% @private
--spec connect(Node :: node_spec(), listen_addr()) -> {ok, pid()} | ignore | {error, term()}.
-connect(Node, ListenAddr) ->
+-spec connect(Node :: node_spec(), listen_addr(), channel()) -> {ok, pid()} | ignore | {error, term()}.
+connect(Node, ListenAddr, Channel) ->
     Self = self(),
-    partisan_peer_service_client:start_link(Node, ListenAddr, Self).
+    partisan_peer_service_client:start_link(Node, ListenAddr, Channel, Self).
+
+%% @doc Return a pid to use for message dispatch.
+dispatch_pid(Entries) ->
+    dispatch_pid(undefined, Entries).
+
+%% @doc Return a pid to use for message dispatch for a given channel.
+dispatch_pid(Channel, Entries) ->
+    %% Entries for channel.
+    ChannelEntries = lists:filter(fun({_, C, _}) ->
+        case C of
+            Channel ->
+                true;
+            _ ->
+                false
+        end
+    end, Entries),
+
+    %% Fall back to unlabeled channels.
+    DispatchEntries = case length(ChannelEntries) of
+        0 ->
+            Entries;
+        _ ->
+            ChannelEntries
+    end,
+
+    %% Randomly select one.
+    {_ListenAddr, _Channel, Pid} = lists:nth(rand_compat:uniform(length(DispatchEntries)), DispatchEntries),
+
+    Pid.
+
+%% @private
+maybe_initiate_parallel_connections(Connections0, Channel, Node, ListenAddr, Parallelism, Pids) ->
+    FilteredPids = lists:filter(fun({A, C, _}) ->
+                            case A of
+                                ListenAddr ->
+                                    case C of
+                                        Channel ->
+                                            true;
+                                        _ ->
+                                            false
+                                    end;
+                                _ ->
+                                    false
+                            end
+                    end, Pids),
+    case length(FilteredPids) < Parallelism andalso Parallelism =/= undefined of
+        true ->
+            lager:info("(~p of ~p connected for channel ~p) Connecting node ~p.",
+                        [length(FilteredPids), Parallelism, Channel, Node]),
+
+            case connect(Node, ListenAddr, Channel) of
+                {ok, Pid} ->
+                    lager:info("Node ~p connected, pid: ~p", [Node, Pid]),
+                    partisan_peer_service_connections:store(Node, {ListenAddr, Channel, Pid}, Connections0);
+                Error ->
+                    lager:info("Node failed connect with ~p", [Error]),
+                    Connections0
+            end;
+        false ->
+            Connections0
+    end.

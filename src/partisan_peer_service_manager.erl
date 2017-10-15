@@ -39,8 +39,12 @@
 
 -callback send_message(name(), message()) -> ok.
 -callback receive_message(message()) -> ok.
+
 -callback cast_message(name(), pid(), message()) -> ok.
 -callback forward_message(name(), pid(), message()) -> ok.
+
+-callback cast_message(name(), channel(), pid(), message()) -> ok.
+-callback forward_message(name(), channel(), pid(), message()) -> ok.
 
 -callback on_down(name(), function()) -> ok | {error, not_implemented}.
 
@@ -56,5 +60,6 @@
 
 myself() ->
     Parallelism = partisan_config:get(parallelism, ?PARALLELISM),
+    Channels = partisan_config:get(channels, ?CHANNELS),
     ListenAddrs = partisan_config:get(listen_addrs),
-    #{name => node(), listen_addrs => ListenAddrs, parallelism => Parallelism}.
+    #{name => node(), listen_addrs => ListenAddrs, channels => Channels, parallelism => Parallelism}.

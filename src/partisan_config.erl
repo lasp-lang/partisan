@@ -24,6 +24,7 @@
 -include("partisan.hrl").
 
 -export([init/0,
+         channels/0,
          listen_addrs/0,
          set/2,
          get/1,
@@ -93,6 +94,9 @@ set(Key, Value) ->
 
 listen_addrs() ->
     partisan_config:get(listen_addrs).
+
+channels() ->
+    partisan_config:get(channels).
 
 %% @private
 random_port() ->
