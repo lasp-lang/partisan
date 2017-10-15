@@ -123,9 +123,9 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
 
 %% @private
 -spec connect(Node :: node_spec(), listen_addr(), channel()) -> {ok, pid()} | ignore | {error, term()}.
-connect(Node, ListenAddr, _Channel) ->
+connect(Node, ListenAddr, Channel) ->
     Self = self(),
-    partisan_peer_service_client:start_link(Node, ListenAddr, Self).
+    partisan_peer_service_client:start_link(Node, ListenAddr, Channel, Self).
 
 %% @doc Return a pid to use for message dispatch.
 dispatch_pid(Entries) ->

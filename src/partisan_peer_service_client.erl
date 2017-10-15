@@ -23,7 +23,7 @@
 
 -behaviour(gen_server).
 
--export([start_link/3]).
+-export([start_link/4]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -33,7 +33,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, {socket, listen_addr, from, peer}).
+-record(state, {socket, listen_addr, channel, from, peer}).
 
 -type state_t() :: #state{}.
 
@@ -48,9 +48,9 @@
 %%%===================================================================
 
 %% @doc Start and link to calling process.
--spec start_link(node_spec(), listen_addr(), pid()) -> {ok, pid()} | ignore | {error, term()}.
-start_link(Peer, ListenAddr, From) ->
-    gen_server:start_link(?MODULE, [Peer, ListenAddr, From], []).
+-spec start_link(node_spec(), listen_addr(), channel(), pid()) -> {ok, pid()} | ignore | {error, term()}.
+start_link(Peer, ListenAddr, Channel, From) ->
+    gen_server:start_link(?MODULE, [Peer, ListenAddr, Channel, From], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -58,10 +58,10 @@ start_link(Peer, ListenAddr, From) ->
 
 %% @private
 -spec init([iolist()]) -> {ok, state_t()}.
-init([Peer, ListenAddr, From]) ->
-    case connect(ListenAddr) of
+init([Peer, ListenAddr, Channel, From]) ->
+    case connect(ListenAddr, Channel) of
         {ok, Socket} ->
-            {ok, #state{from=From, listen_addr=ListenAddr, socket=Socket, peer=Peer}};
+            {ok, #state{from=From, listen_addr=ListenAddr, channel=Channel, socket=Socket, peer=Peer}};
         Error ->
             lager:error("unable to connect to ~p due to ~p",
                         [Peer, Error]),
@@ -132,22 +132,30 @@ code_change(_OldVsn, State, _Extra) ->
 %% every bind operation, but a different port instead of the standard
 %% port.
 %%
-connect(Node) when is_atom(Node) ->
+connect(Node, Channel) when is_atom(Node) ->
     ListenAddrs = rpc:call(Node, partisan_config, get, [listen_addrs]),
     case length(ListenAddrs) > 0 of
         true ->
             ListenAddr = hd(ListenAddrs),
-            connect(ListenAddr);
+            connect(ListenAddr, Channel);
         _ ->
             {error, no_listen_addr}
     end;
 
 %% @doc Connect to remote peer.
 %%      Only use the first listen address.
-connect(#{ip := Address, port := Port}) ->
-    Options = [binary, {active, true}, {packet, 4}, {keepalive, true}],
+connect(#{ip := Address, port := Port}, Channel) ->
+    Monotonic = case Channel of
+        {monotonic, _} ->
+            true;
+        _ ->
+            false
+    end,
 
-    case partisan_peer_connection:connect(Address, Port, Options, ?TIMEOUT) of
+    SocketOptions = [binary, {active, true}, {packet, 4}, {keepalive, true}],
+    PartisanOptions = [{monotonic, Monotonic}],
+
+    case partisan_peer_connection:connect(Address, Port, SocketOptions, ?TIMEOUT, PartisanOptions) of
         {ok, Socket} ->
             {ok, Socket};
         {error, Error} ->

@@ -27,6 +27,7 @@
          close/1,
          connect/3,
          connect/4,
+         connect/5,
          recv/2,
          recv/3,
          send/2,
@@ -120,12 +121,16 @@ connect(Address, Port, Options) ->
 
 -spec connect(inet:socket_address() | inet:hostname(), inet:port_number(),  options(), timeout()) -> {ok, connection()} | {error, inet:posix()}.
 connect(Address, Port, Options, Timeout) ->
+    connect(Address, Port, Options, Timeout, []).
+
+-spec connect(inet:socket_address() | inet:hostname(), inet:port_number(),  options(), timeout(), list()) -> {ok, connection()} | {error, inet:posix()}.
+connect(Address, Port, Options, Timeout, PartisanOptions) ->
     case tls_enabled() of
         true ->
             TLSOptions = tls_options(),
-            do_connect(Address, Port, Options ++ TLSOptions, Timeout, ssl, ssl);
+            do_connect(Address, Port, Options ++ TLSOptions, Timeout, ssl, ssl, PartisanOptions);
         _ ->
-            do_connect(Address, Port, Options, Timeout, gen_tcp, inet)
+            do_connect(Address, Port, Options, Timeout, gen_tcp, inet, PartisanOptions)
     end.
 
 %% @doc Returns the wrapped socket from within the connection.
@@ -134,10 +139,12 @@ socket(Conn) ->
     Conn#connection.socket.
 
 %% @private
-do_connect(Address, Port, Options, Timeout, Transport, Control) ->
+do_connect(Address, Port, Options, Timeout, Transport, Control, PartisanOptions) ->
+   Monotonic = proplists:get_value(monotonic, PartisanOptions, false),
+
    case Transport:connect(Address, Port, Options, Timeout) of
        {ok, Socket} ->
-           {ok, #connection{socket = Socket, transport = Transport, control = Control, monotonic = false}};
+           {ok, #connection{socket = Socket, transport = Transport, control = Control, monotonic = Monotonic}};
        Error ->
            Error
    end.
