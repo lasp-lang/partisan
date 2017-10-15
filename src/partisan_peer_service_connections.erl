@@ -32,8 +32,9 @@
 -type t() :: dict:dict(node_spec(), list(pid())).
 -export_type([t/0]).
 
+-type channel() :: atom().
 -type entries() :: [entry()].
--type entry() :: {listen_addr(), pid()}.
+-type entry() :: {listen_addr(), channel(), pid()}.
 
 %% @doc Creates a new dictionary of connections.
 -spec new() -> t().
@@ -57,7 +58,7 @@ find(Node, Connections) ->
 -spec store(Node :: node_spec(),
             Entry :: entry(),
             Connections :: t()) -> t().
-store(Node, {_ListenAddr, _Pids} = Entry, Connections) ->
+store(Node, {_ListenAddr, _Channel, _Pids} = Entry, Connections) ->
     case find(Node, Connections) of
         {error, not_found} ->
             dict:store(Node, [Entry], Connections);
@@ -77,7 +78,7 @@ prune(#{name := _Name} = Node, Connections) ->
     {Node, dict:store(Node, [], Connections)};
 prune(Pid, Connections) when is_pid(Pid) ->
     dict:fold(fun(Node, Entries, {AccNode, ConnectionsIn}) ->
-                    case lists:keymember(Pid, 2, Entries) of
+                    case lists:keymember(Pid, 3, Entries) of
                         true ->
                             {Node,
                              dict:store(Node, lists:keydelete(Pid, 2, Entries), ConnectionsIn)};

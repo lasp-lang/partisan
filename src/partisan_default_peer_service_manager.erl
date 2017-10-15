@@ -602,7 +602,7 @@ do_send_message(Node, Message, Connections) ->
             %% Node was connected but is now disconnected.
             {error, disconnected};
         {ok, Entries} ->
-            {_ListenAddr, Pid} = lists:nth(rand_compat:uniform(length(Entries)), Entries),
+            Pid = partisan_util:dispatch_pid(Entries),
             gen_server:cast(Pid, {send_message, Message});
         {error, not_found} ->
             %% Node has not been connected yet.

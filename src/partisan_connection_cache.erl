@@ -46,7 +46,7 @@ dispatch({forward_message, Name, ServerRef, Message}) ->
                 0 ->
                     {error, trap};
                 _ ->
-                    {_ListenAddr, Pid} = lists:nth(rand_compat:uniform(length(Pids)), Pids),
+                    Pid = partisan_util:dispatch_pid(Pids),
                     gen_server:cast(Pid, {send_message, {forward_message, ServerRef, Message}})
             end
     end.

@@ -397,7 +397,7 @@ handle_call(connections, _From,
     %% get a list of all the client connections to the various peers of the active view
     Cs = lists:map(fun(Peer) ->
                     {ok, Pids} = partisan_peer_service_connections:find(Peer, Connections),
-                    MappedPids = [Pid || {_ListenAddr, Pid} <- Pids],
+                    MappedPids = [Pid || {_ListenAddr, _Channel, Pid} <- Pids],
                     lager:info("peer ~p connection pids: ~p",
                                [Peer, MappedPids]),
                     {Peer, MappedPids}
@@ -573,7 +573,7 @@ terminate(_Reason, #state{connections=Connections}=_State) ->
     Fun =
         fun(_K, Pids) ->
             lists:foreach(
-              fun({_ListenAddr, Pid}) ->
+              fun({_ListenAddr, _Channel, Pid}) ->
                  try
                      gen_server:stop(Pid, normal, infinity)
                  catch
@@ -1101,7 +1101,7 @@ disconnect(Node, Connections0) ->
             {ok, []} ->
                 %% Return original set.
                 Connections0;
-            {ok, [{_ListenAddr, Pid}|_]} ->
+            {ok, [{_ListenAddr, _Channel, Pid}|_]} ->
                 %% Stop;
                 lager:info("disconnecting node ~p by stopping connection pid ~p",
                            [Node, Pid]),
@@ -1129,7 +1129,7 @@ do_send_message(Node, Message, Connections) ->
             {error, disconnected};
         {ok, Entries} ->
             try
-                {_ListenAddr, Pid} = lists:nth(rand_compat:uniform(length(Entries)), Entries),
+                Pid = partisan_util:dispatch_pid(Entries),
                 gen_server:call(Pid, {send_message, Message})
             catch
                 Reason:Error ->
