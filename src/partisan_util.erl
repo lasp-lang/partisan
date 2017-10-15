@@ -92,8 +92,8 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
             end;
         %% Found and connected.
         {ok, Pids} ->
-            lists:foldl(fun(_Channel, ChannelConnections) ->
-                maybe_initiate_parallel_connections(ChannelConnections, Node, ListenAddr, Parallelism, Pids)
+            lists:foldl(fun(Channel, ChannelConnections) ->
+                maybe_initiate_parallel_connections(ChannelConnections, Channel, Node, ListenAddr, Parallelism, Pids)
             end, Connections0, AllChannels);
         %% Not present; disconnected.
         {error, not_found} ->
@@ -150,19 +150,25 @@ dispatch_pid(Channel, Entries) ->
 
     Pid.
 
-maybe_initiate_parallel_connections(Connections0, Node, ListenAddr, Parallelism, Pids) ->
-    FilteredPids = lists:filter(fun({Addr, _Channel, _Pid}) ->
-                            case Addr of
+%% @private
+maybe_initiate_parallel_connections(Connections0, Channel, Node, ListenAddr, Parallelism, Pids) ->
+    FilteredPids = lists:filter(fun({A, C, _}) ->
+                            case A of
                                 ListenAddr ->
-                                    true;
+                                    case C of
+                                        Channel ->
+                                            true;
+                                        _ ->
+                                            false
+                                    end;
                                 _ ->
                                     false
                             end
                     end, Pids),
     case length(FilteredPids) < Parallelism andalso Parallelism =/= undefined of
         true ->
-            lager:info("(~p of ~p connected) Connecting node ~p.",
-                        [length(FilteredPids), Parallelism, Node]),
+            lager:info("(~p of ~p connected for channel ~p) Connecting node ~p.",
+                        [length(FilteredPids), Parallelism, Channel, Node]),
 
             case connect(Node, ListenAddr) of
                 {ok, Pid} ->
