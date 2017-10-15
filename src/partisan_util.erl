@@ -25,6 +25,7 @@
 
 -export([build_tree/3,
          dispatch_pid/1,
+         dispatch_pid/2,
          maybe_connect/2]).
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
@@ -140,5 +141,21 @@ connect(Node, ListenAddr) ->
 
 %% @doc Return a pid to use for message dispatch.
 dispatch_pid(Entries) ->
-    {_ListenAddr, _Channel, Pid} = lists:nth(rand_compat:uniform(length(Entries)), Entries),
+    dispatch_pid(undefined, Entries).
+
+%% @doc Return a pid to use for message dispatch for a given channel.
+dispatch_pid(Channel, Entries) ->
+    %% Entries for channel.
+    ChannelEntries = lists:filter(fun({_, C, _}) ->
+        case C of
+            Channel ->
+                true;
+            _ ->
+                false
+        end
+    end, Entries),
+
+    %% Randomly select one.
+    {_ListenAddr, _Channel, Pid} = lists:nth(rand_compat:uniform(length(ChannelEntries)), ChannelEntries),
+
     Pid.
