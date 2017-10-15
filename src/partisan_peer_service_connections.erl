@@ -81,7 +81,7 @@ prune(Pid, Connections) when is_pid(Pid) ->
                     case lists:keymember(Pid, 3, Entries) of
                         true ->
                             {Node,
-                             dict:store(Node, lists:keydelete(Pid, 2, Entries), ConnectionsIn)};
+                             dict:store(Node, lists:keydelete(Pid, 3, Entries), ConnectionsIn)};
                         false ->
                             {AccNode, ConnectionsIn}
                     end
@@ -122,10 +122,10 @@ node2_listen_addr() ->
     #{ip => {127, 0, 0, 1}, port => 81}.
 
 node1_bind() ->
-    {node1_listen_addr(), self()}.
+    {node1_listen_addr(), undefined, self()}.
 
 node2_bind() ->
-    {node2_listen_addr(), self()}.
+    {node2_listen_addr(), undefined, self()}.
 
 no_connections_test() ->
     Connections0 = new(),
