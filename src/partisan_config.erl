@@ -52,11 +52,16 @@ init() ->
                         Tag
                 end,
 
-    ListenAddrs = [#{ip => ?MODULE:get(peer_ip), 
-                     port => ?MODULE:get(peer_port),
-                     parallelism => ?MODULE:get(parallelism),
+    DefaultPeerIP = try_get_node_address(),
+    DefaultPeerPort = random_port(),
+
+    %% Setup default listen addr.
+    ListenAddrs = [#{ip => DefaultPeerIP,
+                     port => DefaultPeerPort,
+                     parallelism => ?PARALLELISM,
                      channels => ?CHANNELS}],
 
+    %% Configure system.
     [env_or_default(Key, Default) ||
         {Key, Default} <- [{arwl, 6},
                            {prwl, 6},
@@ -69,8 +74,8 @@ init() ->
                            {min_active_size, 3},
                            {parallelism, ?PARALLELISM},
                            {partisan_peer_service_manager, PeerService},
-                           {peer_ip, try_get_node_address()},
-                           {peer_port, random_port()},
+                           {peer_ip, DefaultPeerIP},
+                           {peer_port, DefaultPeerPort},
                            {random_promotion, true},
                            {reservations, []},
                            {tls, false},
