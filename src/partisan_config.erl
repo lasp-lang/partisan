@@ -62,7 +62,6 @@ init() ->
                            {connect_disterl, false},
                            {fanout, ?FANOUT},
                            {gossip_interval, 10000},
-                           {listen_addrs, ListenAddrs},
                            {max_active_size, 6},
                            {max_passive_size, 30},
                            {min_active_size, 3},
