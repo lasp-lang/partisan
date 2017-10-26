@@ -24,7 +24,7 @@
 -behaviour(gen_server).
 -behaviour(partisan_peer_service_manager).
 
--define(PASSIVE_VIEW_MAINTENANCE_INTERVAL, 10000).
+-define(DEFAULT_PASSIVE_VIEW_MAINTENANCE_INTERVAL, 10000).
 -define(RANDOM_PROMOTION_INTERVAL, 5000).
 
 -include("partisan.hrl").
@@ -1375,7 +1375,9 @@ k_passive() ->
 
 %% @private
 schedule_passive_view_maintenance() ->
-    erlang:send_after(?PASSIVE_VIEW_MAINTENANCE_INTERVAL,
+    Period = partisan_config:get(passive_view_shuffle_period,
+                                 ?DEFAULT_PASSIVE_VIEW_MAINTENANCE_INTERVAL),
+    erlang:send_after(Period,
                       ?MODULE,
                       passive_view_maintenance).
 
