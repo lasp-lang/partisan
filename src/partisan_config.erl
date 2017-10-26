@@ -52,16 +52,10 @@ init() ->
                         Tag
                 end,
 
+    %% Configure system parameters.
     DefaultPeerIP = try_get_node_address(),
     DefaultPeerPort = random_port(),
 
-    %% Setup default listen addr.
-    ListenAddrs = [#{ip => DefaultPeerIP,
-                     port => DefaultPeerPort,
-                     parallelism => ?PARALLELISM,
-                     channels => ?CHANNELS}],
-
-    %% Configure system.
     [env_or_default(Key, Default) ||
         {Key, Default} <- [{arwl, 6},
                            {prwl, 6},
@@ -81,6 +75,12 @@ init() ->
                            {tls, false},
                            {tls_options, []},
                            {tag, DefaultTag}]],
+
+    %% Setup default listen addr.
+    DefaultListenAddrs = [#{ip => ?MODULE:get(peer_ip), port => ?MODULE:get(peer_port), parallelism => ?PARALLELISM, channels => ?CHANNELS}],
+
+    env_or_default(listen_addrs, DefaultListenAddr),
+
     ok.
 
 env_or_default(Key, Default) ->
