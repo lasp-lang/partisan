@@ -564,8 +564,15 @@ handle_message({forward_message, ServerRef, Message}, State) ->
 
 %% @private
 schedule_gossip() ->
-    GossipInterval = partisan_config:get(gossip_interval, 10000),
-    erlang:send_after(GossipInterval, ?MODULE, gossip).
+    ShouldGossip = partisan_config:get(gossip, true),
+
+    case ShouldGossip of
+        true ->
+            GossipInterval = partisan_config:get(gossip_interval, 10000),
+            erlang:send_after(GossipInterval, ?MODULE, gossip);
+        _ ->
+            ok
+    end.
 
 %% @private
 schedule_connections() ->
@@ -574,19 +581,26 @@ schedule_connections() ->
 
 %% @private
 do_gossip(Membership, Connections) ->
-    Fanout = partisan_config:get(fanout, ?FANOUT),
+    ShouldGossip = partisan_config:get(gossip, true),
 
-    case get_peers(Membership) of
-        [] ->
-            ok;
-        AllPeers ->
-            {ok, Peers} = random_peers(AllPeers, Fanout),
-            lists:foreach(fun(Peer) ->
-                        do_send_message(Peer,
-                                        ?DEFAULT_CHANNEL,
-                                        {receive_state, Membership},
-                                        Connections)
-                end, Peers),
+    case ShouldGossip of
+        true ->
+            Fanout = partisan_config:get(fanout, ?FANOUT),
+
+            case get_peers(Membership) of
+                [] ->
+                    ok;
+                AllPeers ->
+                    {ok, Peers} = random_peers(AllPeers, Fanout),
+                    lists:foreach(fun(Peer) ->
+                                do_send_message(Peer,
+                                                ?DEFAULT_CHANNEL,
+                                                {receive_state, Membership},
+                                                Connections)
+                        end, Peers),
+                    ok
+            end;
+        _ ->
             ok
     end.
 
