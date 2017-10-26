@@ -668,11 +668,14 @@ internal_join(Node, State) when is_atom(Node) ->
     %% Get channels.
     Channels = rpc:call(Node, partisan_config, channels, []),
 
+    %% Get parallelism.
+    Parallelism = rpc:call(Node, partisan_config, parallelism, []),
+
     %% Perform the join.
     internal_join(#{name => Node,
                     listen_addrs => ListenAddrs,
                     channels => Channels,
-                    parallelism => ?PARALLELISM}, State);
+                    parallelism => Parallelism}, State);
 internal_join(#{name := Name} = Node,
               #state{pending=Pending0,
                      connections=Connections0,

@@ -25,6 +25,7 @@
 
 -export([init/0,
          channels/0,
+         parallelism/0,
          listen_addrs/0,
          set/2,
          get/1,
@@ -51,6 +52,10 @@ init() ->
                         Tag
                 end,
 
+    %% Configure system parameters.
+    DefaultPeerIP = try_get_node_address(),
+    DefaultPeerPort = random_port(),
+
     [env_or_default(Key, Default) ||
         {Key, Default} <- [{arwl, 6},
                            {prwl, 6},
@@ -60,15 +65,20 @@ init() ->
                            {max_active_size, 6},
                            {max_passive_size, 30},
                            {min_active_size, 3},
+                           {parallelism, ?PARALLELISM},
                            {partisan_peer_service_manager, PeerService},
-                           {peer_ip, try_get_node_address()},
-                           {peer_port, random_port()},
+                           {peer_ip, DefaultPeerIP},
+                           {peer_port, DefaultPeerPort},
                            {random_promotion, true},
                            {reservations, []},
                            {tls, false},
                            {tls_options, []},
                            {tag, DefaultTag}]],
-    set(listen_addrs, [#{ip => ?MODULE:get(peer_ip), port => ?MODULE:get(peer_port)}]),
+
+    %% Setup default listen addr.
+    DefaultListenAddrs = [#{ip => ?MODULE:get(peer_ip), port => ?MODULE:get(peer_port)}],
+    env_or_default(listen_addrs, DefaultListenAddrs),
+
     ok.
 
 env_or_default(Key, Default) ->
@@ -97,6 +107,9 @@ listen_addrs() ->
 
 channels() ->
     partisan_config:get(channels).
+
+parallelism() ->
+    partisan_config:get(parallelism).
 
 %% @private
 random_port() ->
