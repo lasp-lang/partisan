@@ -66,6 +66,7 @@ init() ->
                            {max_active_size, 6},
                            {max_passive_size, 30},
                            {min_active_size, 3},
+                           {passive_view_shuffle_period, 10000},
                            {parallelism, ?PARALLELISM},
                            {partisan_peer_service_manager, PeerService},
                            {peer_ip, DefaultPeerIP},
