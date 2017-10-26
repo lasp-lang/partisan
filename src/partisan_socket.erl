@@ -51,6 +51,9 @@ init([PeerIP, PeerPort]) ->
             {reuseaddr, true}, {nodelay, true}, {keepalive, true}],
     case gen_tcp:listen(PeerPort, Opts) of
         {ok, Socket} ->
+            % if the port is to be system allocated we need to set
+            % it in the config
+            ok = maybe_update_port_config(PeerIP, PeerPort, Socket),
             % acceptor could close the socket if there is a problem
             MRef = monitor(port, Socket),
             partisan_pool:accept_socket(Socket, AcceptorPoolSize),
@@ -82,3 +85,23 @@ terminate(_, {Socket, MRef}) ->
         false ->
             ok
     end.
+
+%% private
+maybe_update_port_config(PeerIP, 0, Socket) ->
+    case inet:sockname(Socket) of
+        {ok, {_IPAddress, Port}} ->
+            lager:info("partisan listening on peer ~p, system allocated port ~p",
+                       [PeerIP, Port]),
+            partisan_config:set(peer_port, Port),
+            % search the listen addrs map for the provided ip Address
+            % and update the port key
+            ListenAddrs0 = partisan_config:get(listen_addrs),
+            ListenAddrs = lists:map(fun(#{ip := IP} = Map) when PeerIP =:= IP ->
+                                        maps:update(port, Port, Map);
+                                       (Map) -> Map
+                                    end, ListenAddrs0),
+            partisan_config:set(listen_addrs, ListenAddrs),
+            ok;
+        _ -> ok
+    end;
+maybe_update_port_config(_, _, _) -> ok.
