@@ -39,7 +39,7 @@
 %% public api
 
 start_link(PeerIP, PeerPort) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [PeerIP, PeerPort], []).
+    gen_server:start_link(?MODULE, [PeerIP, PeerPort], []).
 
 %% gen_server api
 
