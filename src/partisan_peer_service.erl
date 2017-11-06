@@ -25,6 +25,10 @@
          join/2,
          join/3,
          attempt_join/1,
+         sync_join/1,
+         sync_join/2,
+         sync_join/3,
+         attempt_sync_join/1,
          leave/1,
          decode/1,
          update_members/1,
@@ -48,6 +52,10 @@ manager() ->
 join(Node) ->
     join(Node, true).
 
+%% @doc prepare node to join a cluster
+sync_join(Node) ->
+    sync_join(Node, true).
+
 %% @doc Convert nodename to atom
 join(NodeStr, Auto) when is_list(NodeStr) ->
     join(erlang:list_to_atom(lists:flatten(NodeStr)), Auto);
@@ -56,11 +64,25 @@ join(Node, Auto) when is_atom(Node) ->
 join(Node, _Auto) ->
     attempt_join(Node).
 
+%% @doc Convert nodename to atom
+sync_join(NodeStr, Auto) when is_list(NodeStr) ->
+    sync_join(erlang:list_to_atom(lists:flatten(NodeStr)), Auto);
+sync_join(Node, Auto) when is_atom(Node) ->
+    sync_join(node(), Node, Auto);
+sync_join(Node, _Auto) ->
+    attempt_sync_join(Node).
+
 %% @doc Initiate join. Nodes cannot join themselves.
 join(Node, Node, _) ->
     {error, self_join};
 join(_, Node, _Auto) ->
     attempt_join(Node).
+
+%% @doc Initiate join. Nodes cannot join themselves.
+sync_join(Node, Node, _) ->
+    {error, self_join};
+sync_join(_, Node, _Auto) ->
+    attempt_sync_join(Node).
 
 %% @doc Return node members.
 members() ->
@@ -103,6 +125,14 @@ attempt_join(Node) when is_atom(Node) ->
 attempt_join(#{name := _Name} = Node) ->
     Manager = manager(),
     Manager:join(Node).
+
+%% @private
+attempt_sync_join(Node) when is_atom(Node) ->
+    ListenAddrs = rpc:call(Node, partisan_config, get, [listen_addrs]),
+    attempt_sync_join(#{name => Node, listen_addrs => ListenAddrs});
+attempt_sync_join(#{name := _Name} = Node) ->
+    Manager = manager(),
+    Manager:sync_join(Node).
 
 %% @doc Attempt to leave the cluster.
 leave(Node) ->

@@ -69,7 +69,7 @@
                 pending :: pending(),
                 down_functions :: dict:dict(),
                 membership :: membership(),
-                sync_joins :: [node()],
+                sync_joins :: [node_spec()],
                 connections :: partisan_peer_service_connections:t()}).
 
 -type state_t() :: #state{}.
@@ -396,11 +396,11 @@ handle_info({connected, Node, _Tag, RemoteState},
                     case fully_connected(Node, Connections) of
                         true ->
                             gen_server:reply(FromPid, ok),
-                            lists:keydelete(FromPid, 1, SyncJoins0);
+                            lists:keydelete(FromPid, 2, SyncJoins0);
                         _ ->
                             SyncJoins0
                     end;
-                _ ->
+                false ->
                     SyncJoins0
             end,
 
@@ -744,25 +744,6 @@ internal_join(#{name := Name} = Node,
 
     State#state{pending=Pending, connections=Connections}.
 
-%% @private
-sync_internal_join(Node, From, State) when is_atom(Node) ->
-    %% Maintain disterl connection for control messages.
-    _ = net_kernel:connect(Node),
-
-    %% Get listen addresses.
-    ListenAddrs = rpc:call(Node, partisan_config, listen_addrs, []),
-
-    %% Get channels.
-    Channels = rpc:call(Node, partisan_config, channels, []),
-
-    %% Get parallelism.
-    Parallelism = rpc:call(Node, partisan_config, parallelism, []),
-
-    %% Perform the join.
-    sync_internal_join(#{name => Node,
-                       listen_addrs => ListenAddrs,
-                       channels => Channels,
-                       parallelism => Parallelism}, From, State);
 sync_internal_join(#{name := Name} = Node,
               From,      
               #state{pending=Pending0,
@@ -805,7 +786,7 @@ fully_connected(Node, Connections) ->
 
     case partisan_peer_service_connections:find(Node, Connections) of
         {ok, Conns} ->
-            length(Conns) =:= length(Channels * Parallelism);
+            length(Conns) =:= (length(Channels) * Parallelism);
         _ ->
             false
     end.
