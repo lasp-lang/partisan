@@ -277,23 +277,37 @@ handle_call({leave, Node}, From, State0) ->
             {reply, ok, State}
     end;
 
-handle_call({join, #{name := _Name} = Node},
+handle_call({join, #{name := Name} = Node},
             _From,
             State0) ->
-    %% Perform join.
-    State = internal_join(Node, State0),
+    case node() of
+        Name ->
+            %% Ignoring self join.
+            {reply, ok, State0};
+        _ ->
+            %% Perform join.
+            State = internal_join(Node, State0),
 
-    %% Return.
-    {reply, ok, State};
+            %% Return.
+            {reply, ok, State}
+    end;
 
-handle_call({sync_join, #{name := _Name} = Node},
+handle_call({sync_join, #{name := Name} = Node},
             From,
             State0) ->
-    %% Perform join.
-    State = sync_internal_join(Node, From, State0),
+    lager:info("Starting synchronous join to ~p from ~p", [Node, node()]),
 
-    %% Return.
-    {noreply, State};
+    case node() of
+        Name ->
+            %% Ignoring self join.
+            {reply, ok, State0};
+        _ ->
+            %% Perform join.
+            State = sync_internal_join(Node, From, State0),
+
+            %% Return.
+            {reply, ok, State}
+    end;
 
 handle_call({send_message, Name, Channel, Message}, _From,
             #state{connections=Connections}=State) ->
@@ -374,6 +388,8 @@ handle_info({connected, Node, _Tag, RemoteState},
                       membership=Membership0,
                       sync_joins=SyncJoins0,
                       connections=Connections}=State) ->
+    lager:info("Node ~p connected!", [Node]),
+
     case lists:member(Node, Pending0) of
         true ->
             %% Move out of pending.
@@ -396,6 +412,7 @@ handle_info({connected, Node, _Tag, RemoteState},
                 {Node, FromPid} ->
                     case fully_connected(Node, Connections) of
                         true ->
+                            lager:info("Node ~p is fully connected.", [Node]),
                             gen_server:reply(FromPid, ok),
                             lists:keydelete(FromPid, 2, SyncJoins0);
                         _ ->
@@ -774,6 +791,8 @@ sync_internal_join(#{name := Name} = Node,
 
 %% @private
 fully_connected(Node, Connections) ->
+    lager:info("Checking if node ~p is fully connected.", [Node]),
+
     Parallelism = maps:get(parallelism, Node, ?PARALLELISM),
 
     Channels = case maps:get(channels, Node, [?DEFAULT_CHANNEL]) of
@@ -787,7 +806,10 @@ fully_connected(Node, Connections) ->
 
     case partisan_peer_service_connections:find(Node, Connections) of
         {ok, Conns} ->
-            length(Conns) =:= (length(Channels) * Parallelism);
+            Open = length(Conns),
+            Required = length(Channels) * Parallelism,
+            lager:info("Node ~p has ~p open connections, ~p required.", [Node, Open, Required]),
+            Open =:= Required;
         _ ->
             false
     end.
