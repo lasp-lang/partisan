@@ -69,7 +69,7 @@
                 pending :: pending(),
                 down_functions :: dict:dict(),
                 membership :: membership(),
-                sync_joins :: [node_spec()],
+                sync_joins :: [{node_spec(), pid()}],
                 connections :: partisan_peer_service_connections:t()}).
 
 -type state_t() :: #state{}.
