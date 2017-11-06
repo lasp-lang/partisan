@@ -7,6 +7,7 @@
 -define(PARALLELISM, 1).
 -define(DEFAULT_CHANNEL, undefined).
 -define(CHANNELS, [?DEFAULT_CHANNEL]).
+-define(CONNECTION_JITTER, 1000).
 
 -type actor() :: binary().
 -type listen_addr() :: #{ip => inet:ip_address(), port => non_neg_integer()}.

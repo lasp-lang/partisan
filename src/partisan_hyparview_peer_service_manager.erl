@@ -35,6 +35,7 @@
          myself/0,
          get_local_state/0,
          join/1,
+         sync_join/1,
          leave/0,
          leave/1,
          update_members/1,
@@ -161,6 +162,10 @@ receive_message(Message) ->
 %% @doc Attempt to join a remote node.
 join(Node) ->
     gen_server:call(?MODULE, {join, Node}, infinity).
+
+%% @doc Attempt to join a remote node.
+sync_join(_Node) ->
+    {error, not_implemented}.
 
 %% @doc Leave the cluster.
 leave() ->

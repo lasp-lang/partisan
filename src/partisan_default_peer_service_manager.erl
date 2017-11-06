@@ -30,6 +30,7 @@
          myself/0,
          get_local_state/0,
          join/1,
+         sync_join/1,
          leave/0,
          leave/1,
          update_members/1,
@@ -63,11 +64,13 @@
 
 -type pending() :: [node_spec()].
 -type membership() :: ?SET:state_orset().
+-type from() :: {pid(), atom()}.
 
 -record(state, {actor :: actor(),
                 pending :: pending(),
                 down_functions :: dict:dict(),
                 membership :: membership(),
+                sync_joins :: [{node_spec(), from()}],
                 connections :: partisan_peer_service_connections:t()}).
 
 -type state_t() :: #state{}.
@@ -146,6 +149,10 @@ receive_message(Message) ->
     gen_server:call(?MODULE, {receive_message, Message}, infinity).
 
 %% @doc Attempt to join a remote node.
+sync_join(Node) ->
+    gen_server:call(?MODULE, {sync_join, Node}, infinity).
+
+%% @doc Attempt to join a remote node.
 join(Node) ->
     gen_server:call(?MODULE, {join, Node}, infinity).
 
@@ -206,6 +213,7 @@ init([]) ->
                 pending=[],
                 membership=Membership,
                 connections=Connections,
+                sync_joins=[],
                 down_functions=dict:new()}}.
 
 %% @private
@@ -269,14 +277,37 @@ handle_call({leave, Node}, From, State0) ->
             {reply, ok, State}
     end;
 
-handle_call({join, #{name := _Name} = Node},
+handle_call({join, #{name := Name} = Node},
             _From,
             State0) ->
-    %% Perform join.
-    State = internal_join(Node, State0),
+    case node() of
+        Name ->
+            %% Ignoring self join.
+            {reply, ok, State0};
+        _ ->
+            %% Perform join.
+            State = internal_join(Node, State0),
 
-    %% Return.
-    {reply, ok, State};
+            %% Return.
+            {reply, ok, State}
+    end;
+
+handle_call({sync_join, #{name := Name} = Node},
+            From,
+            State0) ->
+    lager:info("Starting synchronous join to ~p from ~p", [Node, node()]),
+
+    case node() of
+        Name ->
+            %% Ignoring self join.
+            {reply, ok, State0};
+        _ ->
+            %% Perform join.
+            State = sync_internal_join(Node, From, State0),
+
+            %% Return.
+            {reply, ok, State}
+    end;
 
 handle_call({send_message, Name, Channel, Message}, _From,
             #state{connections=Connections}=State) ->
@@ -355,7 +386,10 @@ handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
 handle_info({connected, Node, _Tag, RemoteState},
                #state{pending=Pending0,
                       membership=Membership0,
+                      sync_joins=SyncJoins0,
                       connections=Connections}=State) ->
+    lager:info("Node ~p connected!", [Node]),
+
     case lists:member(Node, Pending0) of
         true ->
             %% Move out of pending.
@@ -373,8 +407,24 @@ handle_info({connected, Node, _Tag, RemoteState},
             %% Gossip the new membership.
             do_gossip(Membership, Connections),
 
+            %% Notify for sync join.
+            SyncJoins = case lists:keyfind(Node, 1, SyncJoins0) of
+                {Node, FromPid} ->
+                    case fully_connected(Node, Connections) of
+                        true ->
+                            lager:info("Node ~p is fully connected.", [Node]),
+                            gen_server:reply(FromPid, ok),
+                            lists:keydelete(FromPid, 2, SyncJoins0);
+                        _ ->
+                            SyncJoins0
+                    end;
+                false ->
+                    SyncJoins0
+            end,
+
             %% Return.
             {noreply, State#state{pending=Pending,
+                                  sync_joins=SyncJoins,
                                   membership=Membership}};
         false ->
             {noreply, State}
@@ -620,8 +670,7 @@ random_peers(Peers, Fanout) ->
 -spec do_send_message(Node :: atom() | node_spec(),
                       Channel :: channel(),
                       Message :: term(),
-                      Connections :: partisan_peer_service_connections:t()) ->
-            {error, disconnected} | {error, not_yet_connected} | {error, term()} | ok.
+                      Connections :: partisan_peer_service_connections:t()) -> ok.
 do_send_message(Node, Channel, Message, Connections) ->
     %% Find a connection for the remote node, if we have one.
     case partisan_peer_service_connections:find(Node, Connections) of
@@ -629,6 +678,7 @@ do_send_message(Node, Channel, Message, Connections) ->
             %% Node was connected but is now disconnected.
             {error, disconnected};
         {ok, Entries} ->
+            %% TODO: What if I don't have a connection for that channel yet?
             Pid = partisan_util:dispatch_pid(Channel, Entries),
             gen_server:cast(Pid, {send_message, Message});
         {error, not_found} ->
@@ -700,9 +750,66 @@ internal_join(#{name := Name} = Node,
     %% Add to list of pending connections.
     Pending = [Node|Pending0],
 
+    %% Sleep before connecting, to avoid a rush on
+    %% connections.
+    ConnectionJitter = partisan_config:get(connection_jitter, ?CONNECTION_JITTER),
+    timer:sleep(ConnectionJitter),
+
     %% Trigger connection.
     Connections = establish_connections(Pending,
                                         Membership,
                                         Connections0),
 
     State#state{pending=Pending, connections=Connections}.
+
+sync_internal_join(#{name := Name} = Node,
+              From,      
+              #state{pending=Pending0,
+                     sync_joins=SyncJoins0,
+                     connections=Connections0,
+                     membership=Membership}=State) ->
+    %% Maintain disterl connection for control messages.
+    _ = net_kernel:connect(Name),
+
+    %% Add to list of pending connections.
+    Pending = [Node|Pending0],
+
+    %% Sleep before connecting, to avoid a rush on
+    %% connections.
+    ConnectionJitter = partisan_config:get(connection_jitter, ?CONNECTION_JITTER),
+    timer:sleep(ConnectionJitter),
+
+    %% Add to sync joins list.
+    SyncJoins = SyncJoins0 ++ [{Node, From}],
+
+    %% Trigger connection.
+    Connections = establish_connections(Pending,
+                                        Membership,
+                                        Connections0),
+
+    State#state{pending=Pending, sync_joins=SyncJoins, connections=Connections}.
+
+%% @private
+fully_connected(Node, Connections) ->
+    lager:info("Checking if node ~p is fully connected.", [Node]),
+
+    Parallelism = maps:get(parallelism, Node, ?PARALLELISM),
+
+    Channels = case maps:get(channels, Node, [?DEFAULT_CHANNEL]) of
+        [] ->
+            [?DEFAULT_CHANNEL];
+        undefined ->
+            [?DEFAULT_CHANNEL];
+        Other ->
+            lists:usort(Other ++ [?DEFAULT_CHANNEL])
+    end,
+
+    case partisan_peer_service_connections:find(Node, Connections) of
+        {ok, Conns} ->
+            Open = length(Conns),
+            Required = length(Channels) * Parallelism,
+            lager:info("Node ~p has ~p open connections, ~p required.", [Node, Open, Required]),
+            Open =:= Required;
+        _ ->
+            false
+    end.

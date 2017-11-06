@@ -63,6 +63,8 @@ end_per_testcase(Case, _Config) ->
 
     _Config.
 
+init_per_group(with_sync_join, Config) ->
+    [{parallelism, 1}, {sync_join, true}] ++ Config;
 init_per_group(with_monotonic_channels, Config) ->
     [{parallelism, 1}, {channels, [{monotonic, vnode}, gossip]}] ++ Config;
 init_per_group(with_channels, Config) ->
@@ -91,7 +93,9 @@ all() ->
 
      {group, with_channels, [parallel]},
      
-     {group, with_monotonic_channels, [parallel]}
+     {group, with_monotonic_channels, [parallel]},
+
+     {group, with_sync_join, [parallel]}
     ].
 
 groups() ->
@@ -121,6 +125,9 @@ groups() ->
       [default_manager_test]},
 
      {with_monotonic_channels, [],
+      [default_manager_test]},
+
+     {with_sync_join, [],
       [default_manager_test]}
     ].
 
@@ -895,10 +902,16 @@ cluster({_, Node}, {_, OtherNode}, Config) ->
                       C ->
                           C
                   end,
+    JoinMethod = case ?config(sync_join, Config) of
+                  undefined ->
+                      join;
+                  true ->
+                      sync_join
+                  end,
     ct:pal("Joining node: ~p to ~p at port ~p", [Node, OtherNode, PeerPort]),
     ok = rpc:call(Node,
                   partisan_peer_service,
-                  join,
+                  JoinMethod,
                   [#{name => OtherNode,
                      listen_addrs => [#{ip => {127, 0, 0, 1}, port => PeerPort}],
                      channels => Channels,
