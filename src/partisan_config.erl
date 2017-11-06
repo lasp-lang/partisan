@@ -61,6 +61,7 @@ init() ->
                            {prwl, 6},
                            {channels, ?CHANNELS},
                            {connect_disterl, false},
+                           {connection_jitter, ?CONNECTION_JITTER},
                            {fanout, ?FANOUT},
                            {gossip, true},
                            {gossip_interval, 10000},

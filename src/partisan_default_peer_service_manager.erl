@@ -64,12 +64,13 @@
 
 -type pending() :: [node_spec()].
 -type membership() :: ?SET:state_orset().
+-type from() :: {pid(), atom()}.
 
 -record(state, {actor :: actor(),
                 pending :: pending(),
                 down_functions :: dict:dict(),
                 membership :: membership(),
-                sync_joins :: [{node_spec(), pid()}],
+                sync_joins :: [{node_spec(), from()}],
                 connections :: partisan_peer_service_connections:t()}).
 
 -type state_t() :: #state{}.
@@ -734,7 +735,7 @@ internal_join(#{name := Name} = Node,
 
     %% Sleep before connecting, to avoid a rush on
     %% connections.
-    ConnectionJitter = partisan_config:get(connection_jitter, 1000),
+    ConnectionJitter = partisan_config:get(connection_jitter, ?CONNECTION_JITTER),
     timer:sleep(ConnectionJitter),
 
     %% Trigger connection.
@@ -758,7 +759,7 @@ sync_internal_join(#{name := Name} = Node,
 
     %% Sleep before connecting, to avoid a rush on
     %% connections.
-    ConnectionJitter = partisan_config:get(connection_jitter, 1000),
+    ConnectionJitter = partisan_config:get(connection_jitter, ?CONNECTION_JITTER),
     timer:sleep(ConnectionJitter),
 
     %% Add to sync joins list.
