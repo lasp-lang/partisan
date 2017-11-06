@@ -27,7 +27,10 @@ packageclean:
 ## Test targets
 ##
 
-check: test xref dialyzer
+kill: 
+	pkill -9 beam.smp; pkill -9 epmd; exit 0
+
+check: kill test xref dialyzer
 
 test: ct eunit
 
