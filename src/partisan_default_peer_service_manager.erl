@@ -229,12 +229,18 @@ handle_call({on_down, Name, Function},
     DownFunctions = dict:append(Name, Function, DownFunctions0),
     {reply, ok, State#state{down_functions=DownFunctions}};
 
-handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State) ->
+handle_call({update_members, Nodes}, _From, #state{pending=Pending,
+                                                   membership=Membership}=State) ->
     % lager:info("Updating membership with: ~p", [Nodes]),
 
     %% Get the current membership.
     CurrentMembership = [N || #{name := N} <- sets:to_list(?SET:query(Membership))],
     % lager:info("CurrentMembership: ~p", [CurrentMembership]),
+
+    %% Compute leaving list.
+    Pending1 = lists:filter(fun(N) ->
+                                    lists:member(N, Nodes)
+                            end, Pending),
 
     %% Compute leaving list.
     LeavingNodes = lists:filter(fun(N) ->
@@ -258,7 +264,7 @@ handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State)
                                  internal_join(N, S)
                          end, State1, JoiningNodes),
 
-    {reply, ok, State2};
+    {reply, ok, State2#state{pending=Pending1}};
 
 handle_call({leave, Node}, From, State0) ->
     %% Perform leave.
@@ -763,7 +769,7 @@ internal_join(#{name := Name} = Node,
     State#state{pending=Pending, connections=Connections}.
 
 sync_internal_join(#{name := Name} = Node,
-              From,      
+              From,
               #state{pending=Pending0,
                      sync_joins=SyncJoins0,
                      connections=Connections0,
