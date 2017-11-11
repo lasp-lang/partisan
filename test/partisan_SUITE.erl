@@ -71,6 +71,8 @@ init_per_group(with_channels, Config) ->
     [{parallelism, 1}, {channels, [vnode, gossip]}] ++ Config;
 init_per_group(with_parallelism, Config) ->
     [{parallelism, 5}, {channels, ?CHANNELS}] ++ Config;
+init_per_group(with_no_channels, Config) ->
+    [{parallelism, 1}, {channels, []}] ++ Config;
 init_per_group(with_tls, Config) ->
     TLSOpts = make_certs(Config),
     [{parallelism, 1}, {tls, true}] ++ TLSOpts ++ Config;
@@ -92,6 +94,8 @@ all() ->
      {group, with_parallelism, [parallel]},
 
      {group, with_channels, [parallel]},
+
+     {group, with_no_channels, [parallel]},
      
      {group, with_monotonic_channels, [parallel]},
 
@@ -122,6 +126,9 @@ groups() ->
       [default_manager_test]},
      
      {with_channels, [],
+      [default_manager_test]},
+
+     {with_no_channels, [],
       [default_manager_test]},
 
      {with_monotonic_channels, [],

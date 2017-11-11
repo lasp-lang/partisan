@@ -675,6 +675,7 @@ do_send_message(Node, Channel, Message, Connections) ->
     %% Find a connection for the remote node, if we have one.
     case partisan_peer_service_connections:find(Node, Connections) of
         {ok, []} ->
+            lager:error("Node ~p was connected, but is now disconnected!", [Node]),
             %% Node was connected but is now disconnected.
             {error, disconnected};
         {ok, Entries} ->
@@ -682,6 +683,7 @@ do_send_message(Node, Channel, Message, Connections) ->
             Pid = partisan_util:dispatch_pid(Channel, Entries),
             gen_server:cast(Pid, {send_message, Message});
         {error, not_found} ->
+            lager:error("Node ~p is not yet connected during send!", [Node]),
             %% Node has not been connected yet.
             {error, not_yet_connected}
     end.
