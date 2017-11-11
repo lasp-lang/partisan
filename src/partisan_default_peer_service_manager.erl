@@ -236,9 +236,17 @@ handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State)
     CurrentMembership = [N || #{name := N} <- sets:to_list(?SET:query(Membership))],
     % lager:info("CurrentMembership: ~p", [CurrentMembership]),
 
+    %% need to support Nodes as a list of maps or atoms
+    %% TODO: require each node to be a map
+    NodesNames = lists:map(fun(#{name := N}) ->
+                                   N;
+                              (N) when is_atom(N) ->
+                                   N
+                           end, Nodes),
+
     %% Compute leaving list.
     LeavingNodes = lists:filter(fun(N) ->
-                                        not lists:member(N, Nodes)
+                                        not lists:member(N, NodesNames)
                                 end, CurrentMembership),
     % lager:info("LeavingNodes: ~p", [LeavingNodes]),
 
@@ -248,17 +256,24 @@ handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State)
                          end, State, LeavingNodes),
 
     %% Compute joining list.
-    JoiningNodes = lists:filter(fun(N) ->
+    JoiningNodes = lists:filter(fun(#{name := N}) ->
+                                        not lists:member(N, CurrentMembership);
+                                   (N) when is_atom(N) ->
                                         not lists:member(N, CurrentMembership)
                                 end, Nodes),
     % lager:info("JoiningNodes: ~p", [JoiningNodes]),
 
     %% Issue joins.
-    State2 = lists:foldl(fun(N, S) ->
-                                 internal_join(N, S)
-                         end, State1, JoiningNodes),
+    State2=#state{pending=Pending} = lists:foldl(fun(N, S) ->
+                                                         internal_join(N, S)
+                                                 end, State1, JoiningNodes),
 
-    {reply, ok, State2};
+    %% Compute current pending list.
+    Pending1 = lists:filter(fun(#{name := N}) ->
+                                    lists:member(N, NodesNames)
+                            end, Pending),
+
+    {reply, ok, State2#state{pending=Pending1}};
 
 handle_call({leave, Node}, From, State0) ->
     %% Perform leave.
@@ -765,7 +780,7 @@ internal_join(#{name := Name} = Node,
     State#state{pending=Pending, connections=Connections}.
 
 sync_internal_join(#{name := Name} = Node,
-              From,      
+              From,
               #state{pending=Pending0,
                      sync_joins=SyncJoins0,
                      connections=Connections0,
