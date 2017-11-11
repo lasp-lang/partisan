@@ -238,7 +238,7 @@ handle_call({update_members, Nodes}, _From, #state{pending=Pending,
     % lager:info("CurrentMembership: ~p", [CurrentMembership]),
 
     %% Compute leaving list.
-    Pending1 = lists:filter(fun(#{name := N}) ->
+    Pending1 = lists:filter(fun(N) ->
                                     lists:member(N, Nodes)
                             end, Pending),
 
