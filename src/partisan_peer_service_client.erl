@@ -61,6 +61,12 @@ start_link(Peer, ListenAddr, Channel, From) ->
 init([Peer, ListenAddr, Channel, From]) ->
     case connect(ListenAddr, Channel) of
         {ok, Socket} ->
+            %% For debugging, store information in the process dictionary.
+            put({?MODULE, from}, From),
+            put({?MODULE, listen_addr}, ListenAddr),
+            put({?MODULE, channel}, Channel),
+            put({?MODULE, peer}, Peer),
+
             {ok, #state{from=From, listen_addr=ListenAddr, channel=Channel, socket=Socket, peer=Peer}};
         Error ->
             lager:error("unable to connect to ~p due to ~p",
