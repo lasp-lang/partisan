@@ -34,6 +34,7 @@
          sync_join/1,
          leave/0,
          leave/1,
+         on_up/2,
          on_down/2,
          update_members/1,
          send_message/2,
@@ -93,6 +94,10 @@ get_local_state() ->
 
 %% @doc Register a trigger to fire when a connection drops.
 on_down(_Name, _Function) ->
+    {error, not_implemented}.
+
+%% @doc Register a trigger to fire when a connection opens.
+on_up(_Name, _Function) ->
     {error, not_implemented}.
 
 %% @doc Update membership.

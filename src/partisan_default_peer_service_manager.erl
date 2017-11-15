@@ -35,6 +35,7 @@
          leave/1,
          update_members/1,
          on_down/2,
+         on_up/2,
          send_message/2,
          cast_message/3,
          forward_message/3,
@@ -69,6 +70,7 @@
 -record(state, {actor :: actor(),
                 pending :: pending(),
                 down_functions :: dict:dict(),
+                up_functions :: dict:dict(),
                 membership :: membership(),
                 sync_joins :: [{node_spec(), from()}],
                 connections :: partisan_peer_service_connections:t()}).
@@ -109,6 +111,12 @@ on_down(#{name := Name}, Function) ->
     on_down(Name, Function);
 on_down(Name, Function) when is_atom(Name) ->
     gen_server:call(?MODULE, {on_down, Name, Function}, infinity).
+
+%% @doc Trigger function on connection open for a given node.
+on_up(#{name := Name}, Function) ->
+    on_up(Name, Function);
+on_up(Name, Function) when is_atom(Name) ->
+    gen_server:call(?MODULE, {on_up, Name, Function}, infinity).
 
 %% @doc Send message to a remote manager.
 send_message(Name, Message) ->
@@ -216,6 +224,7 @@ init([]) ->
                 membership=Membership,
                 connections=Connections,
                 sync_joins=[],
+                up_functions=dict:new(),
                 down_functions=dict:new()}}.
 
 %% @private
@@ -224,6 +233,12 @@ init([]) ->
 
 handle_call({reserve, _Tag}, _From, State) ->
     {reply, {error, no_available_slots}, State};
+
+handle_call({on_up, Name, Function},
+            _From,
+            #state{up_functions=UpFunctions0}=State) ->
+    UpFunctions = dict:append(Name, Function, UpFunctions0),
+    {reply, ok, State#state{up_functions=UpFunctions}};
 
 handle_call({on_down, Name, Function},
             _From,
@@ -423,6 +438,17 @@ handle_info({connected, Node, _Tag, RemoteState},
 
             %% Gossip the new membership.
             do_gossip(Membership, Connections),
+
+            %% Send up notifications.
+            partisan_peer_service_connections:foreach(
+                fun(N, Pids) ->
+                        case length(Pids -- Pending) =:= 1 of
+                            true ->
+                                up(N, State);
+                            false ->
+                                ok
+                        end
+                end, Connections),
 
             %% Notify for sync join.
             SyncJoins = case lists:keyfind(Node, 1, SyncJoins0) of
@@ -708,6 +734,18 @@ do_send_message(Node, Channel, Message, Connections) ->
 %% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
 shuffle(L) ->
     [X || {_, X} <- lists:sort([{rand_compat:uniform(), N} || N <- L])].
+
+%% @private
+up(#{name := Name}, State) ->
+    up(Name, State);
+up(Name, #state{up_functions=UpFunctions}) ->
+    case dict:find(Name, UpFunctions) of
+        error ->
+            ok;
+        {ok, Functions} ->
+            [Function() || Function <- Functions],
+            ok
+    end.
 
 %% @private
 down(#{name := Name}, State) ->
