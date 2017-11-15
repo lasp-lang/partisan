@@ -48,6 +48,7 @@
 -callback forward_message(name(), channel(), pid(), message()) -> ok.
 
 -callback on_down(name(), function()) -> ok | {error, not_implemented}.
+-callback on_up(name(), function()) -> ok | {error, not_implemented}.
 
 -callback decode(term()) -> term().
 
