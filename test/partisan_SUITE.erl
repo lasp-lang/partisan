@@ -41,6 +41,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 
+-define(TIMEOUT, 10000).
 -define(CLIENT_NUMBER, 3).
 
 %% ===================================================================
@@ -111,6 +112,7 @@ groups() ->
 
      {simple, [],
       [default_manager_test,
+       on_down_test,
        client_server_manager_test]},
 
      {hyparview, [],
@@ -141,6 +143,53 @@ groups() ->
 %% ===================================================================
 %% Tests.
 %% ===================================================================
+
+on_down_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = partisan_default_peer_service_manager,
+
+    %% Specify servers.
+    Servers = node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+
+    %% Start nodes.
+    Nodes = start(default_manager_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Test on_down callback.
+    [{_, _}, {_, _}, {Name3, Node3}, {_, Node4}] = Nodes,
+
+    Self = self(),
+    Callback = fun() ->
+        Self ! down
+    end,
+
+    ok = rpc:call(Node4, Manager, on_down, [Node3, Callback]),
+
+    %% Shutdown, wait for shutdown...
+    {ok, Node3} = ct_slave:stop(Name3),
+    timer:sleep(10000),
+
+    %% Assert we receive the response.
+    receive
+        down ->
+            ok
+    after 
+        ?TIMEOUT ->
+            ct:fail("Didn't receive down callback.")
+    end,
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
 
 default_manager_test(Config) ->
     %% Use the default peer service manager.
@@ -931,6 +980,8 @@ stop(Nodes) ->
             {ok, _} ->
                 ok;
             {error, stop_timeout, _} ->
+                ok;
+            {error, not_started, _} ->
                 ok;
             Error ->
                 ct:fail(Error)

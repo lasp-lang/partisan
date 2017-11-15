@@ -105,7 +105,9 @@ get_local_state() ->
     gen_server:call(?MODULE, get_local_state, infinity).
 
 %% @doc Trigger function on connection close for a given node.
-on_down(Name, Function) ->
+on_down(#{name := Name}, Function) ->
+    on_down(Name, Function);
+on_down(Name, Function) when is_atom(Name) ->
     gen_server:call(?MODULE, {on_down, Name, Function}, infinity).
 
 %% @doc Send message to a remote manager.
@@ -387,7 +389,7 @@ handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
     %% invoke the down callback on each matching entry
     partisan_peer_service_connections:foreach(
           fun(Node, Pids) ->
-                case lists:keymember(From, 2, Pids) of
+                case lists:keymember(From, 3, Pids) andalso length(Pids) =:= 1 of
                     true ->
                         down(Node, State);
                     false ->
@@ -708,6 +710,8 @@ shuffle(L) ->
     [X || {_, X} <- lists:sort([{rand_compat:uniform(), N} || N <- L])].
 
 %% @private
+down(#{name := Name}, State) ->
+    down(Name, State);
 down(Name, #state{down_functions=DownFunctions}) ->
     case dict:find(Name, DownFunctions) of
         error ->
