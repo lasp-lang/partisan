@@ -652,7 +652,12 @@ handle_message({receive_state, PeerMembership},
             end
     end;
 handle_message({forward_message, ServerRef, Message}, State) ->
-    ServerRef ! Message,
+    try
+        ServerRef ! Message
+    catch
+        _:Error ->
+            lager:info("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
+    end,
     {reply, ok, State}.
 
 %% @private
