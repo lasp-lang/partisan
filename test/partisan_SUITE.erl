@@ -209,7 +209,7 @@ rejoin_test(Config) ->
                    {clients, Clients}]),
 
     %% Pause for clustering.
-    timer:sleep(1000),
+    timer:sleep(2000),
 
     %% Verify membership.
     %%
@@ -248,7 +248,7 @@ rejoin_test(Config) ->
     ok = rpc:call(Node2, partisan_peer_service, leave, [Node4]),
     
     %% Pause for clustering.
-    timer:sleep(2000),
+    timer:sleep(3000),
 
     %% Verify membership.
     %%
@@ -292,7 +292,7 @@ rejoin_test(Config) ->
     ok = rpc:call(Node2, partisan_peer_service, join, [Node4]),
     
     %% Pause for clustering.
-    timer:sleep(2000),
+    timer:sleep(3000),
 
     %% Verify membership.
     %%
