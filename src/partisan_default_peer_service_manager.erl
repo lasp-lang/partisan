@@ -292,19 +292,19 @@ handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State)
 
     {reply, ok, State2#state{pending=Pending1}};
 
-handle_call({leave, Node}, From, State0) ->
+handle_call({leave, Node}, From, #state{actor=Actor}=State0) ->
     %% Perform leave.
     State = internal_leave(Node, State0),
 
     %% Remove state and shutdown if we are removing ourselves.
     case node() of
         Node ->
-            delete_state_from_disk(),
-
             gen_server:reply(From, ok),
 
-            %% Shutdown; connections terminated on shutdown.
-            {stop, normal, State};
+            Membership = empty_membership(Actor),
+            persist_state(Membership),
+
+            {repl, ok, State};
         _ ->
             {reply, ok, State}
     end;
@@ -539,22 +539,6 @@ write_state_to_disk(State) ->
     end.
 
 %% @private
-delete_state_from_disk() ->
-    case data_root() of
-        undefined ->
-            ok;
-        Dir ->
-            File = filename:join(Dir, "cluster_state"),
-            ok = filelib:ensure_dir(File),
-            case file:delete(File) of
-                ok ->
-                    lager:info("Leaving cluster, removed cluster_state");
-                {error, Reason} ->
-                    lager:info("Unable to remove cluster_state for reason ~p", [Reason])
-            end
-    end.
-
-%% @private
 maybe_load_state_from_disk(Actor) ->
     case data_root() of
         undefined ->
@@ -610,7 +594,8 @@ establish_connections(Pending,
 
 %% @private
 handle_message({receive_state, PeerMembership},
-               #state{pending=Pending,
+               #state{actor=Actor,
+                      pending=Pending,
                       membership=Membership,
                       connections=Connections0}=State) ->
     case ?SET:equal(PeerMembership, Membership) of
@@ -644,11 +629,10 @@ handle_message({receive_state, PeerMembership},
                     {reply, ok, State#state{membership=Merged,
                                             connections=Connections}};
                 false ->
-                    %% Remove state.
-                    delete_state_from_disk(),
+                    Membership = empty_membership(Actor),
+                    persist_state(Membership),
 
-                    %% Shutdown; connections terminated on shutdown.
-                    {stop, normal, State#state{membership=Membership}}
+                    {reply, ok, State#state{membership=Membership}}
             end
     end;
 handle_message({forward_message, ServerRef, Message}, State) ->
@@ -679,23 +663,24 @@ schedule_connections() ->
 
 %% @private
 do_gossip(Membership, Connections) ->
+    do_gossip(Membership, Membership, Connections).
+
+%% @private
+do_gossip(Recipients, Membership, Connections) ->
     ShouldGossip = partisan_config:get(gossip, true),
 
     case ShouldGossip of
         true ->
-            Fanout = partisan_config:get(fanout, ?FANOUT),
-
-            case get_peers(Membership) of
+            case get_peers(Recipients) of
                 [] ->
                     ok;
                 AllPeers ->
-                    {ok, Peers} = random_peers(AllPeers, Fanout),
                     lists:foreach(fun(Peer) ->
                                 do_send_message(Peer,
                                                 ?DEFAULT_CHANNEL,
                                                 {receive_state, Membership},
                                                 Connections)
-                        end, Peers),
+                        end, AllPeers),
                     ok
             end;
         _ ->
@@ -707,12 +692,6 @@ get_peers(Local) ->
     Members = members(Local),
     Peers = [X || #{name := X} <- Members, X /= node()],
     Peers.
-
-%% @private
-random_peers(Peers, Fanout) ->
-    Shuffled = shuffle(Peers),
-    Peer = lists:sublist(Shuffled, Fanout),
-    {ok, Peer}.
 
 %% @private
 -spec do_send_message(Node :: atom() | node_spec(),
@@ -735,10 +714,6 @@ do_send_message(Node, Channel, Message, Connections) ->
             %% Node has not been connected yet.
             {error, not_yet_connected}
     end.
-
-%% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
-shuffle(L) ->
-    [X || {_, X} <- lists:sort([{rand_compat:uniform(), N} || N <- L])].
 
 %% @private
 up(#{name := Name}, State) ->
@@ -780,8 +755,8 @@ internal_leave(Node, #state{actor=Actor,
                         end
                 end, Membership0, members(Membership0)),
 
-    %% Gossip.
-    do_gossip(Membership, Connections),
+    %% Gossip new membership to existing members, so they remove themselves.
+    do_gossip(Membership0, Membership, Connections),
 
     State#state{membership=Membership}.
 
