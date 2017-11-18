@@ -304,7 +304,7 @@ handle_call({leave, Node}, From, #state{actor=Actor}=State0) ->
             Membership = empty_membership(Actor),
             persist_state(Membership),
 
-            {repl, ok, State};
+            {reply, ok, State};
         _ ->
             {reply, ok, State}
     end;
