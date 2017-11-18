@@ -629,10 +629,10 @@ handle_message({receive_state, PeerMembership},
                     {reply, ok, State#state{membership=Merged,
                                             connections=Connections}};
                 false ->
-                    Membership = empty_membership(Actor),
-                    persist_state(Membership),
+                    EmptyMembership = empty_membership(Actor),
+                    persist_state(EmptyMembership),
 
-                    {reply, ok, State#state{membership=Membership}}
+                    {reply, ok, State#state{membership=EmptyMembership}}
             end
     end;
 handle_message({forward_message, ServerRef, Message}, State) ->
