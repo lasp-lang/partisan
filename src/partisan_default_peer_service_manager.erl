@@ -306,7 +306,7 @@ handle_call({leave, Node}, From, #state{actor=Actor}=State0) ->
             EmptyMembership = empty_membership(Actor),
             persist_state(EmptyMembership),
 
-            {reply, ok, State#state{membership=EmptyMembership}};
+            {stop, normal, State#state{membership=EmptyMembership}};
         _ ->
             {reply, ok, State}
     end;
