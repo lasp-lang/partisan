@@ -156,7 +156,7 @@ on_down_test(Config) ->
     Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
-    Nodes = start(default_manager_test, Config,
+    Nodes = start(on_down_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -192,6 +192,144 @@ on_down_test(Config) ->
 
     ok.
 
+rejoin_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = partisan_default_peer_service_manager,
+
+    %% Specify servers.
+    Servers = node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+
+    %% Start nodes.
+    Nodes = start(rejoin_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(2000),
+
+    %% Verify membership.
+    %%
+    %% Every node should know about every other node in this topology.
+    %%
+    VerifyInitialFun = fun({_, Node}) ->
+            {ok, Members} = rpc:call(Node, Manager, members, []),
+            SortedNodes = lists:usort([N || {_, N} <- Nodes]),
+            SortedMembers = lists:usort(Members),
+            case SortedMembers =:= SortedNodes of
+                true ->
+                    true;
+                false ->
+                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
+                           [Node, SortedNodes, SortedMembers]),
+                    {false, {Node, SortedNodes, SortedMembers}}
+            end
+    end,
+
+    %% Verify the membership is correct.
+    lists:foreach(fun(Node) ->
+                          VerifyNodeFun = fun() -> VerifyInitialFun(Node) end,
+
+                          case wait_until(VerifyNodeFun, 60 * 2, 100) of
+                              ok ->
+                                  ok;
+                              {fail, {false, {Node, Expected, Contains}}} ->
+                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
+                                         [Node, Expected, Contains])
+                          end
+                  end, Nodes),
+
+    %% Remove a node from the cluster.
+    [{_, _}, {_, Node2}, {_, _}, {_, Node4}] = Nodes,
+    ct:pal("Removing node ~p from the cluster.", [Node4]),
+    ok = rpc:call(Node2, partisan_peer_service, leave, [Node4]),
+    
+    %% Pause for clustering.
+    timer:sleep(3000),
+
+    %% Verify membership.
+    %%
+    %% Every node should know about every other node in this topology.
+    %%
+    VerifyRemoveFun = fun({_, Node}) ->
+            {ok, Members} = rpc:call(Node, Manager, members, []),
+            SortedNodes = case Node of
+                Node4 ->
+                    [Node4];
+                _ ->
+                    lists:usort([N || {_, N} <- Nodes]) -- [Node4]
+            end,
+            SortedMembers = lists:usort(Members),
+            case SortedMembers =:= SortedNodes of
+                true ->
+                    true;
+                false ->
+                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
+                           [Node, SortedNodes, SortedMembers]),
+                    {false, {Node, SortedNodes, SortedMembers}}
+            end
+    end,
+
+    %% Verify the membership is correct.
+    lists:foreach(fun(Node) ->
+                          VerifyNodeFun = fun() -> VerifyRemoveFun(Node) end,
+
+                          case wait_until(VerifyNodeFun, 60 * 2, 100) of
+                              ok ->
+                                  ok;
+                              {fail, {false, {Node, Expected, Contains}}} ->
+                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
+                                         [Node, Expected, Contains])
+                          end
+                  end, Nodes),
+    
+    %% Join a node from the cluster.
+    [{_, _}, {_, Node2}, {_, _}, {_, Node4}] = Nodes,
+    ct:pal("Joining node ~p to the cluster.", [Node4]),
+    ok = rpc:call(Node2, partisan_peer_service, join, [Node4]),
+    
+    %% Pause for clustering.
+    timer:sleep(3000),
+
+    %% Verify membership.
+    %%
+    %% Every node should know about every other node in this topology.
+    %%
+    VerifyJoinFun = fun({_, Node}) ->
+            {ok, Members} = rpc:call(Node, Manager, members, []),
+            SortedNodes = lists:usort([N || {_, N} <- Nodes]),
+            SortedMembers = lists:usort(Members),
+            case SortedMembers =:= SortedNodes of
+                true ->
+                    true;
+                false ->
+                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
+                           [Node, SortedNodes, SortedMembers]),
+                    {false, {Node, SortedNodes, SortedMembers}}
+            end
+    end,
+
+    %% Verify the membership is correct.
+    lists:foreach(fun(Node) ->
+                          VerifyNodeFun = fun() -> VerifyJoinFun(Node) end,
+
+                          case wait_until(VerifyNodeFun, 60 * 2, 100) of
+                              ok ->
+                                  ok;
+                              {fail, {false, {Node, Expected, Contains}}} ->
+                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
+                                         [Node, Expected, Contains])
+                          end
+                  end, Nodes),
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
 leave_test(Config) ->
     %% Use the default peer service manager.
     Manager = partisan_default_peer_service_manager,
@@ -203,7 +341,7 @@ leave_test(Config) ->
     Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
-    Nodes = start(default_manager_test, Config,
+    Nodes = start(leave_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
