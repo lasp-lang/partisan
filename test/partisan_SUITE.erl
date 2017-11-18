@@ -209,8 +209,8 @@ rejoin_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(2000),
+    %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
+    timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
 
     %% Verify membership.
     %%
@@ -248,8 +248,8 @@ rejoin_test(Config) ->
     ct:pal("Removing node ~p from the cluster.", [Node4]),
     ok = rpc:call(Node2, partisan_peer_service, leave, [Node4]),
     
-    %% Pause for clustering.
-    timer:sleep(3000),
+    %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
+    timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
 
     %% Verify membership.
     %%
@@ -292,8 +292,8 @@ rejoin_test(Config) ->
     ct:pal("Joining node ~p to the cluster.", [Node4]),
     ok = rpc:call(Node2, partisan_peer_service, join, [Node4]),
     
-    %% Pause for clustering.
-    timer:sleep(3000),
+    %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
+    timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
 
     %% Verify membership.
     %%
