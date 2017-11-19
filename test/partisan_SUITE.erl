@@ -1286,7 +1286,7 @@ check_forward_message(Node, Manager) ->
     RandomMember = random(Members, Node),
     ct:pal("requesting node ~p to forward message to store_proc on node ~p",
            [Node, RandomMember]),
-    Rand = rand_compat:uniform(),
+    Rand = rand:uniform(),
     ok = rpc:call(Node, Manager, forward_message,
                   [RandomMember, store_proc, {store, Rand}]),
     %% now fetch the value from the random destination node
@@ -1306,7 +1306,7 @@ random(List0, Omit) ->
     List = List0 -- lists:flatten([Omit]),
     %% Catch exceptions where there may not be enough members.
     try
-        Index = rand_compat:uniform(length(List)),
+        Index = rand:uniform(length(List)),
         lists:nth(Index, List)
     catch
         _:_ ->

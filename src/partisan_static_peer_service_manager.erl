@@ -171,9 +171,9 @@ partitions() ->
 -spec init([]) -> {ok, state_t()}.
 init([]) ->
     %% Seed the process at initialization.
-    rand_compat:seed(erlang:phash2([node()]),
-                     erlang:monotonic_time(),
-                     erlang:unique_integer()),
+    rand:seed(exsplus, {erlang:phash2([node()]),
+                        erlang:monotonic_time(),
+                        erlang:unique_integer()}),
 
     %% Process connection exits.
     process_flag(trap_exit, true),

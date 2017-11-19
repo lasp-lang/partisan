@@ -152,7 +152,7 @@ dispatch_pid(Channel, Entries) ->
     end,
 
     %% Randomly select one.
-    {_ListenAddr, _Channel, Pid} = lists:nth(rand_compat:uniform(length(DispatchEntries)), DispatchEntries),
+    {_ListenAddr, _Channel, Pid} = lists:nth(rand:uniform(length(DispatchEntries)), DispatchEntries),
 
     Pid.
 
