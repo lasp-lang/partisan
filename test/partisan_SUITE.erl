@@ -41,6 +41,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 
+-define(GOSSIP_INTERVAL, 1000).
 -define(TIMEOUT, 10000).
 -define(CLIENT_NUMBER, 3).
 
@@ -113,6 +114,7 @@ groups() ->
      {simple, [],
       [default_manager_test,
        leave_test,
+       rejoin_test,
        on_down_test,
        client_server_manager_test]},
 
@@ -208,8 +210,8 @@ rejoin_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(2000),
+    %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
+    timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
 
     %% Verify membership.
     %%
@@ -247,8 +249,8 @@ rejoin_test(Config) ->
     ct:pal("Removing node ~p from the cluster.", [Node4]),
     ok = rpc:call(Node2, partisan_peer_service, leave, [Node4]),
     
-    %% Pause for clustering.
-    timer:sleep(3000),
+    %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
+    timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
 
     %% Verify membership.
     %%
@@ -291,8 +293,8 @@ rejoin_test(Config) ->
     ct:pal("Joining node ~p to the cluster.", [Node4]),
     ok = rpc:call(Node2, partisan_peer_service, join, [Node4]),
     
-    %% Pause for clustering.
-    timer:sleep(3000),
+    %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
+    timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
 
     %% Verify membership.
     %%
@@ -346,8 +348,8 @@ leave_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
+    timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
 
     %% Verify membership.
     %%
@@ -385,8 +387,8 @@ leave_test(Config) ->
     ct:pal("Removing node ~p from the cluster.", [Node4]),
     ok = rpc:call(Node2, partisan_peer_service, leave, [Node4]),
     
-    %% Pause for clustering.
-    timer:sleep(2000),
+    %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
+    timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
 
     %% Verify membership.
     %%
@@ -1042,6 +1044,9 @@ start(_Case, Config, Options) ->
             MaxActiveSize = proplists:get_value(max_active_size, Options, 5),
             ok = rpc:call(Node, partisan_config, set,
                           [max_active_size, MaxActiveSize]),
+                          
+            ok = rpc:call(Node, partisan_config, set,
+                          [gossip_interval, ?GOSSIP_INTERVAL]),
 
             ok = rpc:call(Node, application, set_env, [partisan, peer_ip, ?PEER_IP]),
 

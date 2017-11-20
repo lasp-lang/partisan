@@ -296,15 +296,17 @@ handle_call({leave, Node}, From, #state{actor=Actor}=State0) ->
     %% Perform leave.
     State = internal_leave(Node, State0),
 
-    %% Remove state and shutdown if we are removing ourselves.
     case node() of
         Node ->
             gen_server:reply(From, ok),
 
-            Membership = empty_membership(Actor),
-            persist_state(Membership),
+            %% Reset membership, normal terminate on the gen_server:
+            %% this will close all connections, restart the gen_server,
+            %% and reboot with empty state, so the node will be isolated.
+            EmptyMembership = empty_membership(Actor),
+            persist_state(EmptyMembership),
 
-            {reply, ok, State};
+            {stop, normal, State#state{membership=EmptyMembership}};
         _ ->
             {reply, ok, State}
     end;
@@ -593,7 +595,7 @@ establish_connections(Pending,
     Connections.
 
 %% @private
-handle_message({receive_state, PeerMembership},
+handle_message({receive_state, #{name := From}, PeerMembership},
                #state{actor=Actor,
                       pending=Pending,
                       membership=Membership,
@@ -623,16 +625,23 @@ handle_message({receive_state, PeerMembership},
                                                         Membership,
                                                         Connections0),
 
+                    lager:info("Received updated membership state: ~p from ~p", [Members, From]),
+
                     %% Gossip.
                     do_gossip(Membership, Connections),
 
                     {reply, ok, State#state{membership=Merged,
                                             connections=Connections}};
                 false ->
+                    lager:info("Node ~p is no longer part of the cluster, setting empty membership.", [node()]),
+
+                    %% Reset membership, normal terminate on the gen_server:
+                    %% this will close all connections, restart the gen_server,
+                    %% and reboot with empty state, so the node will be isolated.
                     EmptyMembership = empty_membership(Actor),
                     persist_state(EmptyMembership),
 
-                    {reply, ok, State#state{membership=EmptyMembership}}
+                    {stop, normal, State#state{membership=EmptyMembership}}
             end
     end;
 handle_message({forward_message, ServerRef, Message}, State) ->
@@ -675,10 +684,14 @@ do_gossip(Recipients, Membership, Connections) ->
                 [] ->
                     ok;
                 AllPeers ->
+                    Members = [N || #{name := N} <- members(Membership)],
+
+                    lager:info("Sending state with updated membership: ~p", [Members]),
+
                     lists:foreach(fun(Peer) ->
                                 do_send_message(Peer,
                                                 ?DEFAULT_CHANNEL,
-                                                {receive_state, Membership},
+                                                {receive_state, myself(), Membership},
                                                 Connections)
                         end, AllPeers),
                     ok
@@ -743,6 +756,8 @@ down(Name, #state{down_functions=DownFunctions}) ->
 internal_leave(Node, #state{actor=Actor,
                             connections=Connections,
                             membership=Membership0}=State) ->
+    lager:info("Leaving node ~p at node ~p", [Node, node()]),
+
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
     Membership = lists:foldl(fun(#{name := Name} = N, M0) ->
