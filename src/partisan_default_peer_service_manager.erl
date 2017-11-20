@@ -202,9 +202,9 @@ partitions() ->
 -spec init([]) -> {ok, state_t()}.
 init([]) ->
     %% Seed the process at initialization.
-    rand_compat:seed(erlang:phash2([node()]),
-                     erlang:monotonic_time(),
-                     erlang:unique_integer()),
+    rand:seed(exsplus, {erlang:phash2([node()]),
+                        erlang:monotonic_time(),
+                        erlang:unique_integer()}),
 
     %% Process connection exits.
     process_flag(trap_exit, true),
@@ -515,7 +515,7 @@ empty_membership(Actor) ->
 %% @private
 gen_actor() ->
     Node = atom_to_list(node()),
-    Unique = time_compat:unique_integer([positive]),
+    Unique = erlang:unique_integer([positive]),
     TS = integer_to_list(Unique),
     Term = Node ++ TS,
     crypto:hash(sha, Term).
