@@ -15,4 +15,7 @@ notifications:
   email: christopher.meiklejohn@gmail.com
   slack: lasp-lang:hiPRNnbUa3zdGrrXZfGRAF7D
   irc: "irc.freenode.org#lasp-lang"
+  webhooks: 
+      urls:
+          - https://webhooks.gitter.im/e/1382c852fbaf2633033a
 sudo: false
