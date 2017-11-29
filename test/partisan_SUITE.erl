@@ -147,6 +147,54 @@ groups() ->
 %% Tests.
 %% ===================================================================
 
+amqp_manager_test(Config) ->
+    %% Use the amqp peer service manager.
+    Manager = partisan_amqp_peer_service_manager,
+
+    %% Specify servers.
+    Servers = node_list(2, "server", Config), %% [server_1, server_2],
+
+    %% Specify clients.
+    Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
+
+    %% Start nodes.
+    Nodes = start(amqp_manager_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for gossip.
+    timer:sleep(10000),
+
+    %% Verify membership.
+    %%
+    %% Every node should know about every other node in this topology.
+    %%
+    VerifyFun = fun({_Name, Node}) ->
+            {ok, Members} = rpc:call(Node, Manager, members, []),
+            SortedNodes = lists:usort([N || {_, N} <- Nodes]),
+            SortedMembers = lists:usort(Members),
+            case SortedMembers =:= SortedNodes of
+                true ->
+                    ok;
+                false ->
+                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, SortedNodes, SortedMembers])
+            end
+    end,
+
+    %% Verify the membership is correct.
+    lists:foreach(VerifyFun, Nodes),
+
+    %% Verify forward message functionality.
+    lists:foreach(fun({_Name, Node}) ->
+                    ok = check_forward_message(Node, Manager)
+                  end, Nodes),
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
 on_down_test(Config) ->
     %% Use the default peer service manager.
     Manager = partisan_default_peer_service_manager,
@@ -1157,6 +1205,9 @@ cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
 
     OtherNodes = case Manager of
                      partisan_default_peer_service_manager ->
+                         %% Omit just ourselves.
+                         omit([Name], Nodes);
+                     partisan_amqp_peer_service_manager ->
                          %% Omit just ourselves.
                          omit([Name], Nodes);
                      partisan_client_server_peer_service_manager ->
