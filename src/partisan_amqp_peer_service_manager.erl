@@ -24,6 +24,9 @@
 -behaviour(gen_server).
 -behaviour(partisan_peer_service_manager).
 
+-define(SET, state_awset).
+-define(BROADCAST, <<"broadcast">>).
+
 %% partisan_peer_service_manager callbacks
 -export([start_link/0,
          members/0,
@@ -182,7 +185,7 @@ init([]) ->
 
     %% Initialize membership.
     Myself = myself(),
-    {ok, Membership} = state_awset:mutate({add, Myself}, Myself, state_awset:new()),
+    {ok, Membership} = ?SET:mutate({add, Myself}, Myself, ?SET:new()),
 
     %% Schedule periodic broadcast.
     schedule_broadcast(),
@@ -259,7 +262,7 @@ handle_cast(Msg, State) ->
     {noreply, State}.
 
 handle_info(broadcast, #state{channel=Channel, membership=Membership0}=State) ->
-    Membership = state_awset:query(Membership0),
+    Membership = ?SET:query(Membership0),
 
     %% Open direct exchanges and default channels.
     lists:foreach(fun(Node) ->
@@ -325,7 +328,7 @@ gen_unicast_name(#{name := Name, listen_addrs := ListenAddrs}) ->
 %% @private
 do_send_message(Message, Channel) ->
     lager:info("Sending broadcast: ~p", [Message]),
-    BroadcastName = <<"broadcast">>,
+    BroadcastName = ?BROADCAST,
     Payload = term_to_binary(Message),
     Publish = #'basic.publish'{exchange = BroadcastName},
     amqp_channel:cast(Channel, Publish, #amqp_msg{payload = Payload}),
@@ -344,7 +347,7 @@ do_send_message(Name, Message, Channel) ->
 
 %% @private
 gen_broadcast_exchanges_channels_bindings(Channel) ->
-    BroadcastName = <<"broadcast">>,
+    BroadcastName = ?BROADCAST,
 
     ExchangeDeclare = #'exchange.declare'{exchange = BroadcastName, type = <<"fanout">>},
     #'exchange.declare_ok'{} = amqp_channel:call(Channel, ExchangeDeclare),
@@ -378,7 +381,7 @@ gen_unicast_exchanges_channels_bindings(Node, Channel) ->
 
 %% @private
 gen_broadcast_subscription(Channel) ->
-    BroadcastName = <<"broadcast">>,
+    BroadcastName = ?BROADCAST,
 
     Sub = #'basic.consume'{queue = BroadcastName},
     #'basic.consume_ok'{consumer_tag = _Tag} = amqp_channel:call(Channel, Sub),
@@ -396,7 +399,7 @@ gen_unicast_subscription(Node, Channel) ->
 
 %% @private
 handle_message({membership, IncomingMembership}, #state{membership=Membership0}=State) ->
-    Membership = state_awset:merge(IncomingMembership, Membership0),
+    Membership = ?SET:merge(IncomingMembership, Membership0),
     State#state{membership=Membership};
 handle_message({forward_message, ServerRef, Message}, State) ->
     ServerRef ! Message,
@@ -404,5 +407,5 @@ handle_message({forward_message, ServerRef, Message}, State) ->
 
 %% @private
 members(Membership) ->
-    Members = state_awset:query(Membership),
+    Members = ?SET:query(Membership),
     sets:to_list(Members).
