@@ -8,6 +8,7 @@
 -define(DEFAULT_CHANNEL, undefined).
 -define(CHANNELS, [?DEFAULT_CHANNEL]).
 -define(CONNECTION_JITTER, 1000).
+-define(DEFAULT_PEER_SERVICE_MANAGER, partisan_default_peer_service_manager).
 
 -type actor() :: binary().
 -type listen_addr() :: #{ip => inet:ip_address(), port => non_neg_integer()}.
