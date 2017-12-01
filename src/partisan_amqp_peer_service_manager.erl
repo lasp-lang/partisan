@@ -151,7 +151,7 @@ decode(State) ->
 
 %% @doc Reserve a slot for the particular tag.
 reserve(_Tag) ->
-    {error, not_implemented}.
+    {error, no_available_slots}.
 
 %% @doc Inject a partition.
 inject_partition(_Origin, _TTL) ->
