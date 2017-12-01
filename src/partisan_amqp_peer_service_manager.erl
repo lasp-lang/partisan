@@ -190,16 +190,15 @@ init([]) ->
     %% Schedule periodic broadcast.
     schedule_broadcast(),
 
-    URI = case os:getenv("RABBITMQ_URI") of
+    ConnectionRecord = case os:getenv("RABBITMQ_URI") of
         false ->
-            {stop, no_uri};
-        V ->
-            V
+            #amqp_params_network{};
+        URI ->
+            {ok, ParsedURI} = amqp_uri:parse(URI),
+            ParsedURI
     end,
-    
-    {ok, ParsedURI} = amqp_uri:parse(URI),
 
-    case amqp_connection:start(ParsedURI) of
+    case amqp_connection:start(ConnectionRecord) of
         {ok, Connection} ->
             case amqp_connection:open_channel(Connection) of
                 {ok, Channel} ->
@@ -325,7 +324,6 @@ gen_unicast_name(#{name := Name}) ->
 
 %% @private
 do_send_message(Message, Channel) ->
-    lager:info("Sending broadcast: ~p", [Message]),
     BroadcastName = ?BROADCAST,
     Payload = term_to_binary(Message),
     Publish = #'basic.publish'{exchange = BroadcastName},
@@ -335,7 +333,6 @@ do_send_message(Message, Channel) ->
 
 %% @private
 do_send_message(Name, Message, Channel) ->
-    lager:info("Sending message to ~p: ~p", [Name, Message]),
     UnicastName = gen_unicast_name(Name),
     Payload = term_to_binary(Message),
     Publish = #'basic.publish'{exchange = UnicastName, routing_key = UnicastName},
