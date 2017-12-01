@@ -345,6 +345,9 @@ rejoin_test(Config) ->
     %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
     timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
 
+    %% TODO: temporary
+    timer:sleep(10000),
+
     %% Verify membership.
     %%
     %% Every node should know about every other node in this topology.
