@@ -197,7 +197,6 @@ init([]) ->
             V
     end,
     
-    %% Open a connection to the local broker.
     {ok, ParsedURI} = amqp_uri:parse(URI),
 
     case amqp_connection:start(ParsedURI) of
