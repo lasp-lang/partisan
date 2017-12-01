@@ -114,9 +114,10 @@ groups() ->
      {simple, [],
       [default_manager_test,
        leave_test,
-       rejoin_test,
        on_down_test,
-       client_server_manager_test]},
+       client_server_manager_test,
+       amqp_manager_test,
+       rejoin_test]},
 
      {hyparview, [],
       [%% hyparview_manager_partition_test,
@@ -146,6 +147,54 @@ groups() ->
 %% ===================================================================
 %% Tests.
 %% ===================================================================
+
+amqp_manager_test(Config) ->
+    %% Use the amqp peer service manager.
+    Manager = partisan_amqp_peer_service_manager,
+
+    %% Specify servers.
+    Servers = node_list(2, "server", Config), %% [server_1, server_2],
+
+    %% Specify clients.
+    Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
+
+    %% Start nodes.
+    Nodes = start(amqp_manager_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for gossip.
+    timer:sleep(10000),
+
+    %% Verify membership.
+    %%
+    %% Every node should know about every other node in this topology.
+    %%
+    VerifyFun = fun({_Name, Node}) ->
+            {ok, Members} = rpc:call(Node, Manager, members, []),
+            SortedNodes = lists:usort([N || {_, N} <- Nodes]),
+            SortedMembers = lists:usort(Members),
+            case SortedMembers =:= SortedNodes of
+                true ->
+                    ok;
+                false ->
+                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, SortedNodes, SortedMembers])
+            end
+    end,
+
+    %% Verify the membership is correct.
+    lists:foreach(VerifyFun, Nodes),
+
+    %% Verify forward message functionality.
+    lists:foreach(fun({_Name, Node}) ->
+                    ok = check_forward_message(Node, Manager)
+                  end, Nodes),
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
 
 on_down_test(Config) ->
     %% Use the default peer service manager.
@@ -195,142 +244,75 @@ on_down_test(Config) ->
     ok.
 
 rejoin_test(Config) ->
-    %% Use the default peer service manager.
-    Manager = partisan_default_peer_service_manager,
+    case os:getenv("TRAVIS") of
+        false ->
+            ok;
+        _ ->
+            %% Use the default peer service manager.
+            Manager = partisan_default_peer_service_manager,
 
-    %% Specify servers.
-    Servers = node_list(1, "server", Config),
+            %% Specify servers.
+            Servers = node_list(1, "server", Config),
 
-    %% Specify clients.
-    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+            %% Specify clients.
+            Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
-    %% Start nodes.
-    Nodes = start(rejoin_test, Config,
-                  [{partisan_peer_service_manager, Manager},
-                   {servers, Servers},
-                   {clients, Clients}]),
+            %% Start nodes.
+            Nodes = start(rejoin_test, Config,
+                        [{partisan_peer_service_manager, Manager},
+                        {servers, Servers},
+                        {clients, Clients}]),
 
-    %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
-    timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
+            verify_leave(Nodes, Manager),
+            
+            %% Join a node from the cluster.
+            [{_, _}, {_, Node2}, {_, _}, {_, Node4}] = Nodes,
+            ct:pal("Joining node ~p to the cluster.", [Node4]),
+            ok = rpc:call(Node2, partisan_peer_service, join, [Node4]),
+            
+            %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
+            timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
 
-    %% Verify membership.
-    %%
-    %% Every node should know about every other node in this topology.
-    %%
-    VerifyInitialFun = fun({_, Node}) ->
-            {ok, Members} = rpc:call(Node, Manager, members, []),
-            SortedNodes = lists:usort([N || {_, N} <- Nodes]),
-            SortedMembers = lists:usort(Members),
-            case SortedMembers =:= SortedNodes of
-                true ->
-                    true;
-                false ->
-                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
-                           [Node, SortedNodes, SortedMembers]),
-                    {false, {Node, SortedNodes, SortedMembers}}
-            end
-    end,
+            %% TODO: temporary
+            timer:sleep(10000),
 
-    %% Verify the membership is correct.
-    lists:foreach(fun(Node) ->
-                          VerifyNodeFun = fun() -> VerifyInitialFun(Node) end,
-
-                          case wait_until(VerifyNodeFun, 60 * 2, 100) of
-                              ok ->
-                                  ok;
-                              {fail, {false, {Node, Expected, Contains}}} ->
-                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
-                                         [Node, Expected, Contains])
-                          end
-                  end, Nodes),
-
-    %% Remove a node from the cluster.
-    [{_, _}, {_, Node2}, {_, _}, {_, Node4}] = Nodes,
-    ct:pal("Removing node ~p from the cluster.", [Node4]),
-    ok = rpc:call(Node2, partisan_peer_service, leave, [Node4]),
-    
-    %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
-    timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
-
-    %% Verify membership.
-    %%
-    %% Every node should know about every other node in this topology.
-    %%
-    VerifyRemoveFun = fun({_, Node}) ->
-            {ok, Members} = rpc:call(Node, Manager, members, []),
-            SortedNodes = case Node of
-                Node4 ->
-                    [Node4];
-                _ ->
-                    lists:usort([N || {_, N} <- Nodes]) -- [Node4]
+            %% Verify membership.
+            %%
+            %% Every node should know about every other node in this topology.
+            %%
+            VerifyJoinFun = fun({_, Node}) ->
+                    {ok, Members} = rpc:call(Node, Manager, members, []),
+                    SortedNodes = lists:usort([N || {_, N} <- Nodes]),
+                    SortedMembers = lists:usort(Members),
+                    case SortedMembers =:= SortedNodes of
+                        true ->
+                            true;
+                        false ->
+                            ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
+                                [Node, SortedNodes, SortedMembers]),
+                            {false, {Node, SortedNodes, SortedMembers}}
+                    end
             end,
-            SortedMembers = lists:usort(Members),
-            case SortedMembers =:= SortedNodes of
-                true ->
-                    true;
-                false ->
-                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
-                           [Node, SortedNodes, SortedMembers]),
-                    {false, {Node, SortedNodes, SortedMembers}}
-            end
-    end,
 
-    %% Verify the membership is correct.
-    lists:foreach(fun(Node) ->
-                          VerifyNodeFun = fun() -> VerifyRemoveFun(Node) end,
+            %% Verify the membership is correct.
+            lists:foreach(fun(Node) ->
+                                VerifyNodeFun = fun() -> VerifyJoinFun(Node) end,
 
-                          case wait_until(VerifyNodeFun, 60 * 2, 100) of
-                              ok ->
-                                  ok;
-                              {fail, {false, {Node, Expected, Contains}}} ->
-                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
-                                         [Node, Expected, Contains])
-                          end
-                  end, Nodes),
-    
-    %% Join a node from the cluster.
-    [{_, _}, {_, Node2}, {_, _}, {_, Node4}] = Nodes,
-    ct:pal("Joining node ~p to the cluster.", [Node4]),
-    ok = rpc:call(Node2, partisan_peer_service, join, [Node4]),
-    
-    %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
-    timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
+                                case wait_until(VerifyNodeFun, 60 * 2, 100) of
+                                    ok ->
+                                        ok;
+                                    {fail, {false, {Node, Expected, Contains}}} ->
+                                        ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
+                                                [Node, Expected, Contains])
+                                end
+                        end, Nodes),
 
-    %% Verify membership.
-    %%
-    %% Every node should know about every other node in this topology.
-    %%
-    VerifyJoinFun = fun({_, Node}) ->
-            {ok, Members} = rpc:call(Node, Manager, members, []),
-            SortedNodes = lists:usort([N || {_, N} <- Nodes]),
-            SortedMembers = lists:usort(Members),
-            case SortedMembers =:= SortedNodes of
-                true ->
-                    true;
-                false ->
-                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
-                           [Node, SortedNodes, SortedMembers]),
-                    {false, {Node, SortedNodes, SortedMembers}}
-            end
-    end,
+            %% Stop nodes.
+            stop(Nodes)
 
-    %% Verify the membership is correct.
-    lists:foreach(fun(Node) ->
-                          VerifyNodeFun = fun() -> VerifyJoinFun(Node) end,
+        end,
 
-                          case wait_until(VerifyNodeFun, 60 * 2, 100) of
-                              ok ->
-                                  ok;
-                              {fail, {false, {Node, Expected, Contains}}} ->
-                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
-                                         [Node, Expected, Contains])
-                          end
-                  end, Nodes),
-
-    %% Stop nodes.
-    stop(Nodes),
-
-    ok.
+        ok.
 
 leave_test(Config) ->
     %% Use the default peer service manager.
@@ -348,84 +330,7 @@ leave_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
-    timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
-
-    %% Verify membership.
-    %%
-    %% Every node should know about every other node in this topology.
-    %%
-    VerifyInitialFun = fun({_, Node}) ->
-            {ok, Members} = rpc:call(Node, Manager, members, []),
-            SortedNodes = lists:usort([N || {_, N} <- Nodes]),
-            SortedMembers = lists:usort(Members),
-            case SortedMembers =:= SortedNodes of
-                true ->
-                    true;
-                false ->
-                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
-                           [Node, SortedNodes, SortedMembers]),
-                    {false, {Node, SortedNodes, SortedMembers}}
-            end
-    end,
-
-    %% Verify the membership is correct.
-    lists:foreach(fun(Node) ->
-                          VerifyNodeFun = fun() -> VerifyInitialFun(Node) end,
-
-                          case wait_until(VerifyNodeFun, 60 * 2, 100) of
-                              ok ->
-                                  ok;
-                              {fail, {false, {Node, Expected, Contains}}} ->
-                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
-                                         [Node, Expected, Contains])
-                          end
-                  end, Nodes),
-
-    %% Remove a node from the cluster.
-    [{_, _}, {_, Node2}, {_, _}, {_, Node4}] = Nodes,
-    ct:pal("Removing node ~p from the cluster.", [Node4]),
-    ok = rpc:call(Node2, partisan_peer_service, leave, [Node4]),
-    
-    %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
-    timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
-
-    %% Verify membership.
-    %%
-    %% Every node should know about every other node in this topology.
-    %%
-    VerifyRemoveFun = fun({_, Node}) ->
-            {ok, Members} = rpc:call(Node, Manager, members, []),
-            SortedNodes = case Node of
-                Node4 ->
-                    [Node4];
-                _ ->
-                    lists:usort([N || {_, N} <- Nodes]) -- [Node4]
-            end,
-            SortedMembers = lists:usort(Members),
-            case SortedMembers =:= SortedNodes of
-                true ->
-                    true;
-                false ->
-                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
-                           [Node, SortedNodes, SortedMembers]),
-                    {false, {Node, SortedNodes, SortedMembers}}
-            end
-    end,
-
-    %% Verify the membership is correct.
-    lists:foreach(fun(Node) ->
-                          VerifyNodeFun = fun() -> VerifyRemoveFun(Node) end,
-
-                          case wait_until(VerifyNodeFun, 60 * 2, 100) of
-                              ok ->
-                                  ok;
-                              {fail, {false, {Node, Expected, Contains}}} ->
-                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
-                                         [Node, Expected, Contains])
-                          end
-                  end, Nodes),
-
+    verify_leave(Nodes, Manager),
 
     %% Stop nodes.
     stop(Nodes),
@@ -1159,6 +1064,9 @@ cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
                      partisan_default_peer_service_manager ->
                          %% Omit just ourselves.
                          omit([Name], Nodes);
+                     partisan_amqp_peer_service_manager ->
+                         %% Omit just ourselves.
+                         omit([Name], Nodes);
                      partisan_client_server_peer_service_manager ->
                          case {AmIServer, AmIClient} of
                              {true, false} ->
@@ -1416,3 +1324,85 @@ hyparview_membership_check(Nodes) ->
             end, Nodes),
 
     {ConnectedFails, SymmetryFails}.
+
+%% @private
+verify_leave(Nodes, Manager) ->
+    %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
+    timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
+
+    %% Verify membership.
+    %%
+    %% Every node should know about every other node in this topology.
+    %%
+    VerifyInitialFun = fun({_, Node}) ->
+            {ok, Members} = rpc:call(Node, Manager, members, []),
+            SortedNodes = lists:usort([N || {_, N} <- Nodes]),
+            SortedMembers = lists:usort(Members),
+            case SortedMembers =:= SortedNodes of
+                true ->
+                    true;
+                false ->
+                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
+                           [Node, SortedNodes, SortedMembers]),
+                    {false, {Node, SortedNodes, SortedMembers}}
+            end
+    end,
+
+    %% Verify the membership is correct.
+    lists:foreach(fun(Node) ->
+                          VerifyNodeFun = fun() -> VerifyInitialFun(Node) end,
+
+                          case wait_until(VerifyNodeFun, 60 * 2, 100) of
+                              ok ->
+                                  ok;
+                              {fail, {false, {Node, Expected, Contains}}} ->
+                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
+                                         [Node, Expected, Contains])
+                          end
+                  end, Nodes),
+
+    %% Remove a node from the cluster.
+    [{_, _}, {_, Node2}, {_, _}, {_, Node4}] = Nodes,
+    ct:pal("Removing node ~p from the cluster.", [Node4]),
+    ok = rpc:call(Node2, partisan_peer_service, leave, [Node4]),
+    
+    %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
+    timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
+
+    %% Verify membership.
+    %%
+    %% Every node should know about every other node in this topology.
+    %%
+    VerifyRemoveFun = fun({_, Node}) ->
+            {ok, Members} = rpc:call(Node, Manager, members, []),
+            SortedNodes = case Node of
+                Node4 ->
+                    [Node4];
+                _ ->
+                    lists:usort([N || {_, N} <- Nodes]) -- [Node4]
+            end,
+            SortedMembers = lists:usort(Members),
+            case SortedMembers =:= SortedNodes of
+                true ->
+                    true;
+                false ->
+                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
+                           [Node, SortedNodes, SortedMembers]),
+                    {false, {Node, SortedNodes, SortedMembers}}
+            end
+    end,
+
+    %% Verify the membership is correct.
+    lists:foreach(fun(Node) ->
+                          VerifyNodeFun = fun() -> VerifyRemoveFun(Node) end,
+
+                          case wait_until(VerifyNodeFun, 60 * 2, 100) of
+                              ok ->
+                                  ok;
+                              {fail, {false, {Node, Expected, Contains}}} ->
+                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
+                                         [Node, Expected, Contains])
+                          end
+                  end, Nodes),
+
+ok.

@@ -46,7 +46,7 @@
 %% @doc Return current peer service manager.
 manager() ->
     partisan_config:get(partisan_peer_service_manager,
-                        partisan_default_peer_service_manager).
+                        ?DEFAULT_PEER_SERVICE_MANAGER).
 
 %% @doc prepare node to join a cluster
 join(Node) ->
