@@ -244,69 +244,75 @@ on_down_test(Config) ->
     ok.
 
 rejoin_test(Config) ->
-    %% Use the default peer service manager.
-    Manager = partisan_default_peer_service_manager,
+    case os:getenv("TRAVIS") of
+        false ->
+            ok;
+        _ ->
+            %% Use the default peer service manager.
+            Manager = partisan_default_peer_service_manager,
 
-    %% Specify servers.
-    Servers = node_list(1, "server", Config),
+            %% Specify servers.
+            Servers = node_list(1, "server", Config),
 
-    %% Specify clients.
-    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+            %% Specify clients.
+            Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
-    %% Start nodes.
-    Nodes = start(rejoin_test, Config,
-                  [{partisan_peer_service_manager, Manager},
-                   {servers, Servers},
-                   {clients, Clients}]),
+            %% Start nodes.
+            Nodes = start(rejoin_test, Config,
+                        [{partisan_peer_service_manager, Manager},
+                        {servers, Servers},
+                        {clients, Clients}]),
 
-    verify_leave(Nodes, Manager),
-    
-    %% Join a node from the cluster.
-    [{_, _}, {_, Node2}, {_, _}, {_, Node4}] = Nodes,
-    ct:pal("Joining node ~p to the cluster.", [Node4]),
-    ok = rpc:call(Node2, partisan_peer_service, join, [Node4]),
-    
-    %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
-    timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
+            verify_leave(Nodes, Manager),
+            
+            %% Join a node from the cluster.
+            [{_, _}, {_, Node2}, {_, _}, {_, Node4}] = Nodes,
+            ct:pal("Joining node ~p to the cluster.", [Node4]),
+            ok = rpc:call(Node2, partisan_peer_service, join, [Node4]),
+            
+            %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
+            timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
 
-    %% TODO: temporary
-    timer:sleep(10000),
+            %% TODO: temporary
+            timer:sleep(10000),
 
-    %% Verify membership.
-    %%
-    %% Every node should know about every other node in this topology.
-    %%
-    VerifyJoinFun = fun({_, Node}) ->
-            {ok, Members} = rpc:call(Node, Manager, members, []),
-            SortedNodes = lists:usort([N || {_, N} <- Nodes]),
-            SortedMembers = lists:usort(Members),
-            case SortedMembers =:= SortedNodes of
-                true ->
-                    true;
-                false ->
-                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
-                           [Node, SortedNodes, SortedMembers]),
-                    {false, {Node, SortedNodes, SortedMembers}}
-            end
-    end,
+            %% Verify membership.
+            %%
+            %% Every node should know about every other node in this topology.
+            %%
+            VerifyJoinFun = fun({_, Node}) ->
+                    {ok, Members} = rpc:call(Node, Manager, members, []),
+                    SortedNodes = lists:usort([N || {_, N} <- Nodes]),
+                    SortedMembers = lists:usort(Members),
+                    case SortedMembers =:= SortedNodes of
+                        true ->
+                            true;
+                        false ->
+                            ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
+                                [Node, SortedNodes, SortedMembers]),
+                            {false, {Node, SortedNodes, SortedMembers}}
+                    end
+            end,
 
-    %% Verify the membership is correct.
-    lists:foreach(fun(Node) ->
-                          VerifyNodeFun = fun() -> VerifyJoinFun(Node) end,
+            %% Verify the membership is correct.
+            lists:foreach(fun(Node) ->
+                                VerifyNodeFun = fun() -> VerifyJoinFun(Node) end,
 
-                          case wait_until(VerifyNodeFun, 60 * 2, 100) of
-                              ok ->
-                                  ok;
-                              {fail, {false, {Node, Expected, Contains}}} ->
-                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
-                                         [Node, Expected, Contains])
-                          end
-                  end, Nodes),
+                                case wait_until(VerifyNodeFun, 60 * 2, 100) of
+                                    ok ->
+                                        ok;
+                                    {fail, {false, {Node, Expected, Contains}}} ->
+                                        ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
+                                                [Node, Expected, Contains])
+                                end
+                        end, Nodes),
 
-    %% Stop nodes.
-    stop(Nodes),
+            %% Stop nodes.
+            stop(Nodes)
 
-    ok.
+        end,
+
+        ok.
 
 leave_test(Config) ->
     %% Use the default peer service manager.
