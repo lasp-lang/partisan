@@ -190,7 +190,7 @@ init([]) ->
     %% Schedule periodic broadcast.
     schedule_broadcast(),
 
-    URI = case os:getenv("RABBIT_URI") of
+    URI = case os:getenv("RABBITMQ_URI") of
         false ->
             {stop, no_uri};
         V ->
@@ -204,10 +204,10 @@ init([]) ->
             case amqp_connection:open_channel(Connection) of
                 {ok, Channel} ->
                     ok = gen_unicast_exchanges_channels_bindings(Myself, Channel),
-                    ok = gen_broadcast_exchanges_channels_bindings(Channel),
+                    ok = gen_broadcast_exchanges_channels_bindings(Myself, Channel),
 
                     ok = gen_unicast_subscription(Myself, Channel),
-                    ok = gen_broadcast_subscription(Channel),
+                    ok = gen_broadcast_subscription(Myself, Channel),
 
                     {ok, #state{myself=Myself,
                                 membership=Membership,
@@ -318,11 +318,10 @@ schedule_broadcast() ->
     erlang:send_after(BroadcastInterval, ?MODULE, broadcast).
 
 %% @private
-gen_unicast_name(#{name := Name, listen_addrs := ListenAddrs}) ->
-    ListName = atom_to_list(Name),
-    #{port := Port} = hd(ListenAddrs),
-    Exchange = ListName ++ ":" ++ integer_to_list(Port),
-    list_to_binary(Exchange).
+gen_unicast_name(Node) when is_atom(Node) ->
+    gen_unicast_name(#{name => Node});
+gen_unicast_name(#{name := Name}) ->
+    list_to_binary(atom_to_list(Name)).
 
 %% @private
 do_send_message(Message, Channel) ->
@@ -345,16 +344,20 @@ do_send_message(Name, Message, Channel) ->
     ok.
 
 %% @private
-gen_broadcast_exchanges_channels_bindings(Channel) ->
+gen_broadcast_exchanges_channels_bindings(Node, Channel) ->
     BroadcastName = ?BROADCAST,
 
+    %% Generate a fanout exchange.
     ExchangeDeclare = #'exchange.declare'{exchange = BroadcastName, type = <<"fanout">>},
     #'exchange.declare_ok'{} = amqp_channel:call(Channel, ExchangeDeclare),
 
-    QueueDeclare = #'queue.declare'{queue = BroadcastName},
+    %% Generate a queue for our messages to be used by fanout exchange.
+    UnicastName = gen_unicast_name(Node),
+    QueueDeclare = #'queue.declare'{queue = UnicastName},
     #'queue.declare_ok'{} = amqp_channel:call(Channel, QueueDeclare),
 
-    Binding = #'queue.bind'{queue = BroadcastName,
+    %% Bind our queue to fanout exchange.
+    Binding = #'queue.bind'{queue = UnicastName,
                             exchange = BroadcastName,
                             routing_key = BroadcastName},
     #'queue.bind_ok'{} = amqp_channel:call(Channel, Binding),
@@ -365,12 +368,16 @@ gen_broadcast_exchanges_channels_bindings(Channel) ->
 gen_unicast_exchanges_channels_bindings(Node, Channel) ->
     UnicastName = gen_unicast_name(Node),
 
+    %% Create a direct exchange for this node.
     ExchangeDeclare = #'exchange.declare'{exchange = UnicastName},
     #'exchange.declare_ok'{} = amqp_channel:call(Channel, ExchangeDeclare),
 
+    %% Create a queue for this node.
     QueueDeclare = #'queue.declare'{queue = UnicastName},
     #'queue.declare_ok'{} = amqp_channel:call(Channel, QueueDeclare),
 
+    %% Bind this queue to the direct exchange for this node;
+    %% this serves as our unicast messaging channel for the node.
     Binding = #'queue.bind'{queue = UnicastName,
                             exchange = UnicastName,
                             routing_key = UnicastName},
@@ -379,10 +386,11 @@ gen_unicast_exchanges_channels_bindings(Node, Channel) ->
     ok.
 
 %% @private
-gen_broadcast_subscription(Channel) ->
-    BroadcastName = ?BROADCAST,
+gen_broadcast_subscription(Node, Channel) ->
+    UnicastName = gen_unicast_name(Node),
 
-    Sub = #'basic.consume'{queue = BroadcastName},
+    %% Subscribe to our queue served by fanout exchange.
+    Sub = #'basic.consume'{queue = UnicastName},
     #'basic.consume_ok'{consumer_tag = _Tag} = amqp_channel:call(Channel, Sub),
 
     ok.
@@ -391,6 +399,7 @@ gen_broadcast_subscription(Channel) ->
 gen_unicast_subscription(Node, Channel) ->
     UnicastName = gen_unicast_name(Node),
 
+    %% Subscribe to our queue / direct exchange for messages.
     Sub = #'basic.consume'{queue = UnicastName},
     #'basic.consume_ok'{consumer_tag = _Tag} = amqp_channel:call(Channel, Sub),
 
@@ -402,7 +411,7 @@ handle_message({membership, IncomingMembership}, #state{membership=Membership0}=
     State#state{membership=Membership};
 handle_message({forward_message, ServerRef, Message}, State) ->
     ServerRef ! Message,
-    {reply, ok, State}.
+    State.
 
 %% @private
 members(Membership) ->
