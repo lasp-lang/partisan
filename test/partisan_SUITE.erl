@@ -114,10 +114,10 @@ groups() ->
      {simple, [],
       [default_manager_test,
        leave_test,
-       rejoin_test,
        on_down_test,
        client_server_manager_test,
-       amqp_manager_test]},
+       amqp_manager_test,
+       rejoin_test]},
 
      {hyparview, [],
       [%% hyparview_manager_partition_test,
