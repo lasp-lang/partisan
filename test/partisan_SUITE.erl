@@ -116,7 +116,8 @@ groups() ->
        leave_test,
        rejoin_test,
        on_down_test,
-       client_server_manager_test]},
+       client_server_manager_test,
+       amqp_manager_test]},
 
      {hyparview, [],
       [%% hyparview_manager_partition_test,
