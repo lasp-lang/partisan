@@ -341,6 +341,8 @@ leave_test(Config) ->
     _ ->
         ok
 
+    end,
+
     ok.
 
 default_manager_test(Config) ->
