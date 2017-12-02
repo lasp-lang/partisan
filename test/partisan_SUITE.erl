@@ -246,8 +246,6 @@ on_down_test(Config) ->
 rejoin_test(Config) ->
     case os:getenv("TRAVIS") of
         false ->
-            ok;
-        _ ->
             %% Use the default peer service manager.
             Manager = partisan_default_peer_service_manager,
 
@@ -308,7 +306,10 @@ rejoin_test(Config) ->
                         end, Nodes),
 
             %% Stop nodes.
-            stop(Nodes)
+            stop(Nodes);
+
+        _ ->
+            ok
 
         end,
 
