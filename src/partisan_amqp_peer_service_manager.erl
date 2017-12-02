@@ -180,9 +180,6 @@ init([]) ->
     %% Process connection exits.
     process_flag(trap_exit, true),
 
-    %% Ensure that the amqp backend is started.
-    {ok, _} = application:ensure_all_started(amqp_client),
-
     %% Initialize membership.
     Myself = myself(),
     {ok, Membership} = ?SET:mutate({add, Myself}, Myself, ?SET:new()),
@@ -190,7 +187,7 @@ init([]) ->
     %% Schedule periodic broadcast.
     schedule_broadcast(),
 
-    ConnectionRecord = case os:getenv("RABBITMQ_URI") of
+    ConnectionRecord = case application:get_env(partisan, amqp_uri, false) of
         false ->
             #amqp_params_network{};
         URI ->
@@ -213,9 +210,11 @@ init([]) ->
                                 channel=Channel, 
                                 connection=Connection}};
                 {error, Reason} ->
+                    lager:error("Failure trying to open channel: ~p", [Reason]),
                     {stop, Reason}
             end;
         {error, Reason} ->
+            lager:error("Failure trying to open connection to URI ~p: ~p", [ConnectionRecord, Reason]),
             {stop, Reason}
     end.
 

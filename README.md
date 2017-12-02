@@ -22,4 +22,3 @@ Partisan has many available peer service managers:
 * Client/server topology: `plumtree_client_server_peer_service_manager.`
 * HyParView, hybrid partial view membership protocol, with TCP-based failure detection: `plumtree_hyparview_peer_service_manager.`
 * Static topology: `plumtree_static_peer_service_manager`.
-
