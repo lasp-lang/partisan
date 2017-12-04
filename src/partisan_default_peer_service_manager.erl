@@ -155,6 +155,14 @@ forward_message(Name, Channel, ServerRef, Message) ->
     end.
 
 %% @doc Receive message from a remote manager.
+receive_message({forward_message, ServerRef, Message}) ->
+    try
+        ServerRef ! Message
+    catch
+        _:Error ->
+            lager:info("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
+    end,
+    ok;
 receive_message(Message) ->
     gen_server:call(?MODULE, {receive_message, Message}, infinity).
 
