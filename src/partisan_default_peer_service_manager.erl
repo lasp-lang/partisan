@@ -138,13 +138,19 @@ forward_message(Name, ServerRef, Message) ->
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, Channel, ServerRef, Message) ->
-    FullMessage = {forward_message, Name, Channel, ServerRef, Message},
-
     %% If attempting to forward to the local node, bypass.
     case node() of
         Name ->
             ServerRef ! Message;
         _ ->
+            FullMessage = case partisan_config:get(binary_padding, false) of
+                true ->
+                    BinaryPadding = partisan_config:get(binary_padding_term, undefined),
+                    {forward_message, Name, Channel, ServerRef, {'$partisan_padded', BinaryPadding, Message}};
+                false ->
+                    {forward_message, Name, Channel, ServerRef, Message}
+            end,
+
             %% Attempt to fast-path through the memoized connection cache.
             case partisan_connection_cache:dispatch(FullMessage) of
                 ok ->
@@ -155,6 +161,8 @@ forward_message(Name, Channel, ServerRef, Message) ->
     end.
 
 %% @doc Receive message from a remote manager.
+receive_message({forward_message, ServerRef, {'$partisan_padded', _Padding, Message}}) ->
+    receive_message({forward_message, ServerRef, Message});
 receive_message({forward_message, ServerRef, Message}) ->
     try
         ServerRef ! Message
@@ -213,6 +221,15 @@ init([]) ->
     rand:seed(exsplus, {erlang:phash2([node()]),
                         erlang:monotonic_time(),
                         erlang:unique_integer()}),
+
+    case partisan_config:get(binary_padding, false) of
+        true ->    
+            %% Use 64-byte binary to force shared heap usage to cut down on copying.
+            BinaryPaddingTerm = rand_bits(512),
+            partisan_config:set(binary_padding_term, BinaryPaddingTerm);
+        _ ->
+            undefined
+    end,
 
     %% Process connection exits.
     process_flag(trap_exit, true),
@@ -875,3 +892,9 @@ fully_connected(Node, Connections) ->
         _ ->
             false
     end.
+
+%% @private
+rand_bits(Bits) ->
+        Bytes = (Bits + 7) div 8,
+        <<Result:Bits/bits, _/bits>> = crypto:strong_rand_bytes(Bytes),
+        Result.

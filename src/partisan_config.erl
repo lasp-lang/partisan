@@ -59,6 +59,7 @@ init() ->
     [env_or_default(Key, Default) ||
         {Key, Default} <- [{arwl, 6},
                            {prwl, 6},
+                           {binary_padding, false},
                            {channels, ?CHANNELS},
                            {connect_disterl, false},
                            {connection_jitter, ?CONNECTION_JITTER},
