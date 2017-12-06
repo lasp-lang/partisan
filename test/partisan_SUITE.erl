@@ -120,7 +120,7 @@ groups() ->
        leave_test,
        on_down_test,
        client_server_manager_test,
-       amqp_manager_test,
+       %% amqp_manager_test,
        rejoin_test]},
 
      {hyparview, [],
