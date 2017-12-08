@@ -179,8 +179,6 @@ handle_cast(Msg, State) ->
 
 %% @private
 handle_info(heartbeat, State) ->
-    Node = node(),
-
     %% Generate message with monotonically increasing integer.
     Counter = time_compat:unique_integer([monotonic, positive]),
 

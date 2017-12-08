@@ -3,6 +3,10 @@
  {<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.9">>},1},
  {<<"lager">>,{pkg,<<"lager">>,<<"3.5.1">>},0},
  {<<"lasp_support">>,{pkg,<<"lasp_support">>,<<"0.0.3">>},1},
+ {<<"plumtree">>,
+  {git,"git://github.com/lasp-lang/plumtree.git",
+       {ref,"e1a9e94814c7507319181ae5dbcc232e783b426e"}},
+  0},
  {<<"rand_compat">>,{pkg,<<"rand_compat">>,<<"0.0.3">>},1},
  {<<"time_compat">>,{pkg,<<"time_compat">>,<<"0.0.1">>},1},
  {<<"types">>,{pkg,<<"types">>,<<"0.1.6">>},0}]}.
