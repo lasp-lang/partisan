@@ -6,6 +6,7 @@
                              ssl]},
               {mod,{partisan_app,[]}},
               {modules,[]},
+              {included_applications, [plumtree]},
               {env,[{partisan,"data"}]},
               {maintainers,["Chris Meiklejohn","Vitor Enes Duarte",
                             "Junghun Yoo"]},

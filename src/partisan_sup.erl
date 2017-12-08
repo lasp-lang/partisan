@@ -44,6 +44,8 @@ init([]) ->
                  [
                  ?CHILD(Manager, worker),
                  ?CHILD(partisan_peer_service_events, worker)
+                 ?CHILD(partisan_plumtree_backend, worker),
+                 ?CHILD(plumtree_sup, supervisor),
                  ]),
 
     PoolSup = {partisan_pool_sup, {partisan_pool_sup, start_link, []},
@@ -52,5 +54,5 @@ init([]) ->
     %% Initialize the connection cache supervised by the supervisor.
     ?CACHE = ets:new(?CACHE, [public, named_table, set, {read_concurrency, true}]),
 
-    RestartStrategy = {one_for_one, 10, 10},
+    RestartStrategy = {one_for_all, 10, 10},
     {ok, {RestartStrategy, Children ++ [PoolSup]}}.
