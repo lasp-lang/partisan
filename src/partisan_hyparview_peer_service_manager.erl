@@ -1035,9 +1035,10 @@ handle_message({shuffle, Exchange, TTL, Sender},
     end,
     {noreply, State};
 
-handle_message({relay_message, Node, {forward_message, ServerRef, MessageContent} = Message}, State) ->
-    ServerRef ! Message,
-    {noreply, State}.
+handle_message({relay_message, Node, Message}, #state{connections=Connections}=State) ->
+    %% Attempt to deliver, or recurse and forward on through a relay.
+    ok = do_send_message(Node, Message, Connections, []),
+    {noreply, State};
 handle_message({forward_message, ServerRef, Message}, State) ->
     ServerRef ! Message,
     {noreply, State}.
