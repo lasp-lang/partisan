@@ -5,7 +5,7 @@
  {<<"lasp_support">>,{pkg,<<"lasp_support">>,<<"0.0.3">>},1},
  {<<"plumtree">>,
   {git,"git://github.com/lasp-lang/plumtree.git",
-       {ref,"e1a9e94814c7507319181ae5dbcc232e783b426e"}},
+       {ref,"8a0f9fe860c0d0bbcb9399394c3c9a829ef4f6a4"}},
   0},
  {<<"rand_compat">>,{pkg,<<"rand_compat">>,<<"0.0.3">>},1},
  {<<"time_compat">>,{pkg,<<"time_compat">>,<<"0.0.1">>},1},
