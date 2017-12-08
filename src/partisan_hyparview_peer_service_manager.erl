@@ -1035,6 +1035,9 @@ handle_message({shuffle, Exchange, TTL, Sender},
     end,
     {noreply, State};
 
+handle_message({relay_message, Node, {forward_message, ServerRef, MessageContent} = Message}, State) ->
+    ServerRef ! Message,
+    {noreply, State}.
 handle_message({forward_message, ServerRef, Message}, State) ->
     ServerRef ! Message,
     {noreply, State}.
@@ -1137,11 +1140,15 @@ disconnect(Node, Connections0) ->
     Connections.
 
 %% @private
+do_send_message(Node, Message, Connections) ->
+    do_send_message(Node, Message, Connections, []).
+
+%% @private
 -spec do_send_message(Node :: atom() | node_spec(),
                       Message :: term(),
                       Connections :: partisan_peer_service_connections:t()) ->
             {error, disconnected} | {error, not_yet_connected} | {error, term()} | ok.
-do_send_message(Node, Message, Connections) ->
+do_send_message(Node, Message, Connections, Options) ->
     %% Find a connection for the remote node, if we have one.
     case partisan_peer_service_connections:find(Node, Connections) of
         {ok, []} ->
@@ -1157,8 +1164,19 @@ do_send_message(Node, Message, Connections) ->
                     {error, Error}
             end;
         {error, not_found} ->
-            %% Node has not been connected yet.
-            {error, not_yet_connected}
+            %% We aren't connected, and it's not sure we will ever be.  Take the list of gossip peers and forward the message down the tree.
+            case partisan_config:get(broadcast, false) of
+                true ->
+                    case proplists:get_value(no_forward, Options, false) of
+                        true ->
+                            ok;
+                        false ->
+                            do_plumtree_forward(Message, Connections, [])
+                    end;
+                false ->
+                    %% Node has not been connected yet.
+                    {error, not_yet_connected}
+            end
     end.
 
 %% @private
@@ -1604,3 +1622,19 @@ handle_partition_resolution(Reference,
     end,
 
     Partitions.
+
+%% @private
+do_plumtree_forward(Message, Connections, Options) ->
+    %% Use our tree.
+    Root = node(),
+
+    %% Forward down our out-links.
+    {EagerPeers, _LazyPeers} = plumtree_broadcast:debug_get_peers(node(), Root),
+    OutLinks = ordsets:to_list(EagerPeers),
+
+    %% Send messages, but don't attempt to forward again, if we aren't connected.
+    lists:foreach(fun(Node) ->
+        RelayMessage = {relay_message, Node, Message},
+        do_send_message(Node, RelayMessage, Connections, Options ++ [{no_forward, true}])
+        end, OutLinks),
+    ok.
