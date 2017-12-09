@@ -65,6 +65,8 @@ end_per_testcase(Case, _Config) ->
 
     _Config.
 
+init_per_group(with_broadcast, Config) ->
+    [{broadcast, true}] ++ Config;
 init_per_group(with_binary_padding, Config) ->
     [{binary_padding, true}] ++ Config;
 init_per_group(with_sync_join, Config) ->
@@ -105,7 +107,9 @@ all() ->
 
      {group, with_sync_join, [parallel]},
 
-     {group, with_binary_padding, [parallel]}
+     {group, with_binary_padding, [parallel]},
+
+     {group, with_broadcast, [parallel]}
     ].
 
 groups() ->
@@ -148,6 +152,9 @@ groups() ->
       [default_manager_test]},
 
      {with_binary_padding, [],
+      [default_manager_test]},
+
+     {with_broadcast, [],
       [default_manager_test]}
     ].
 
