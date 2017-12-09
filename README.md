@@ -13,7 +13,7 @@ Partisan features:
 * Connections are verified at each gossip round.
 * Configurable fanout.
 * On join, gossip is performed immediately, instead of having to wait for the next gossip round.
-* Prototype HyParView implementation.
+* HyParView implementation.
 
 Partisan has many available peer service managers:
 
