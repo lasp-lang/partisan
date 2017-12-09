@@ -155,7 +155,7 @@ groups() ->
       [default_manager_test]},
 
      {with_broadcast, [],
-      [default_manager_test]}
+      [hyparview_manager_low_active_test]}
     ].
 
 %% ===================================================================
