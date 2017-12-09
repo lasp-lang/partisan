@@ -177,7 +177,7 @@ handle_message({state, Tag, LocalState},
                #state{peer=Peer, from=From}=State) ->
     case LocalState of
         {state, _Active, Epoch} ->
-            lager:info("got local state from peer ~p, informing ~p that we're connected",
+            lager:debug("got local state from peer ~p, informing ~p that we're connected",
                        [Peer, From]),
             From ! {connected, Peer, Tag, Epoch, LocalState};
         _ ->
