@@ -1141,13 +1141,18 @@ disconnect(Node, Connections0) ->
     Connections.
 
 %% @private
+-spec do_send_message(Node :: atom() | node_spec(),
+                      Message :: term(),
+                      Connections :: partisan_peer_service_connections:t()) ->
+            {error, disconnected} | {error, not_yet_connected} | {error, term()} | ok.
 do_send_message(Node, Message, Connections) ->
     do_send_message(Node, Message, Connections, []).
 
 %% @private
 -spec do_send_message(Node :: atom() | node_spec(),
                       Message :: term(),
-                      Connections :: partisan_peer_service_connections:t()) ->
+                      Connections :: partisan_peer_service_connections:t(),
+                      Options :: list()) ->
             {error, disconnected} | {error, not_yet_connected} | {error, term()} | ok.
 do_send_message(Node, Message, Connections, Options) ->
     %% Find a connection for the remote node, if we have one.
@@ -1168,7 +1173,7 @@ do_send_message(Node, Message, Connections, Options) ->
             %% We aren't connected, and it's not sure we will ever be.  Take the list of gossip peers and forward the message down the tree.
             case partisan_config:get(broadcast, false) of
                 true ->
-                    case proplists:get_value(no_forward, Options, false) of
+                    case proplists:get_value(transitive, Options, false) of
                         true ->
                             ok;
                         false ->
@@ -1636,6 +1641,6 @@ do_tree_forward(Message, Connections, Options) ->
     %% Send messages, but don't attempt to forward again, if we aren't connected.
     lists:foreach(fun(Node) ->
         RelayMessage = {relay_message, Node, Message},
-        do_send_message(Node, RelayMessage, Connections, Options ++ [{no_forward, true}])
+        do_send_message(Node, RelayMessage, Connections, Options ++ [{transitive, true}])
         end, OutLinks),
     ok.
