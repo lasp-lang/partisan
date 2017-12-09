@@ -1172,7 +1172,7 @@ do_send_message(Node, Message, Connections, Options) ->
                         true ->
                             ok;
                         false ->
-                            do_plumtree_forward(Message, Connections, [])
+                            do_tree_forward(Message, Connections, [])
                     end;
                 false ->
                     %% Node has not been connected yet.
@@ -1625,12 +1625,12 @@ handle_partition_resolution(Reference,
     Partitions.
 
 %% @private
-do_plumtree_forward(Message, Connections, Options) ->
+do_tree_forward(Message, Connections, Options) ->
     %% Use our tree.
     Root = node(),
 
     %% Forward down our out-links.
-    {EagerPeers, _LazyPeers} = plumtree_broadcast:debug_get_peers(node(), Root),
+    {EagerPeers, _LazyPeers} = partisan_plumtree_broadcast:debug_get_peers(node(), Root),
     OutLinks = ordsets:to_list(EagerPeers),
 
     %% Send messages, but don't attempt to forward again, if we aren't connected.

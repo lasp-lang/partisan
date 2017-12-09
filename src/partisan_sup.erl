@@ -45,7 +45,7 @@ init([]) ->
                  ?CHILD(Manager, worker),
                  ?CHILD(partisan_peer_service_events, worker),
                  ?CHILD(partisan_plumtree_backend, worker),
-                 ?CHILD(plumtree_sup, supervisor)
+                 ?CHILD(partisan_plumtree_broadcast, worker)
                  ]),
 
     PoolSup = {partisan_pool_sup, {partisan_pool_sup, start_link, []},

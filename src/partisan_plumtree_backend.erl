@@ -21,13 +21,13 @@
 -module(partisan_plumtree_backend).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
--behaviour(plumtree_broadcast_handler).
+-behaviour(partisan_plumtree_broadcast_handler).
 
 %% API
 -export([start_link/0,
          start_link/1]).
 
-%% plumtree_broadcast_handler callbacks
+%% partisan_plumtree_broadcast_handler callbacks
 -export([broadcast_data/1,
          merge/2,
          is_stale/1,
@@ -66,7 +66,7 @@ start_link(Opts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
 
 %%%===================================================================
-%%% plumtree_broadcast_handler callbacks
+%%% partisan_plumtree_broadcast_handler callbacks
 %%%===================================================================
 
 -type timestamp() :: non_neg_integer().
@@ -192,7 +192,7 @@ handle_info(heartbeat, State) ->
     true = ets:insert(?MODULE, [{Timestamp, true}]),
 
     %% Send message with monotonically increasing integer.
-    ok = plumtree_broadcast:broadcast(#broadcast{timestamp=Timestamp}, ?MODULE),
+    ok = partisan_plumtree_broadcast:broadcast(#broadcast{timestamp=Timestamp}, ?MODULE),
 
     lager:info("Heartbeat triggered: sending ping ~p to ensure tree.",
                 [Timestamp]),
