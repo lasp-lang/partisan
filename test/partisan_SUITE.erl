@@ -977,6 +977,15 @@ start(_Case, Config, Options) ->
 
             ok = rpc:call(Node, application, set_env, [partisan, peer_ip, ?PEER_IP]),
 
+            BinaryPadding = case ?config(binary_padding, Config) of
+                              undefined ->
+                                  false;
+                              BP ->
+                                  BP
+                          end,
+            ct:pal("Setting binary_padding to: ~p", [BinaryPadding]),
+            ok = rpc:call(Node, partisan_config, set, [binary_padding, BinaryPadding]),
+
             Channels = case ?config(channels, Config) of
                               undefined ->
                                   ?CHANNELS;
