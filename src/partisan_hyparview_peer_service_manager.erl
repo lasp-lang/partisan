@@ -1037,7 +1037,7 @@ handle_message({shuffle, Exchange, TTL, Sender},
 
 handle_message({relay_message, Node, Message}, #state{connections=Connections}=State) ->
     %% Attempt to deliver, or recurse and forward on through a relay.
-    ok = do_send_message(Node, Message, Connections, []),
+    ok = do_send_message(Node, Message, Connections, [{transitive, true}]),
     {noreply, State};
 handle_message({forward_message, ServerRef, Message}, State) ->
     ServerRef ! Message,
@@ -1158,8 +1158,19 @@ do_send_message(Node, Message, Connections, Options) ->
     %% Find a connection for the remote node, if we have one.
     case partisan_peer_service_connections:find(Node, Connections) of
         {ok, []} ->
-            %% Node was connected but is now disconnected.
-            {error, disconnected};
+            %% We were connected, but we're not anymore.
+            case partisan_config:get(broadcast, false) of
+                true ->
+                    case proplists:get_value(transitive, Options, false) of
+                        true ->
+                            ok;
+                        false ->
+                            do_tree_forward(Node, Message, Connections, [])
+                    end;
+                false ->
+                    %% Node was connected but is now disconnected.
+                    {error, disconnected}
+            end;
         {ok, Entries} ->
             try
                 Pid = partisan_util:dispatch_pid(Entries),
@@ -1177,7 +1188,7 @@ do_send_message(Node, Message, Connections, Options) ->
                         true ->
                             ok;
                         false ->
-                            do_tree_forward(Message, Connections, [])
+                            do_tree_forward(Node, Message, Connections, [])
                     end;
                 false ->
                     %% Node has not been connected yet.
@@ -1630,7 +1641,7 @@ handle_partition_resolution(Reference,
     Partitions.
 
 %% @private
-do_tree_forward(Message, Connections, Options) ->
+do_tree_forward(Node, Message, Connections, Options) ->
     %% Use our tree.
     Root = node(),
 
@@ -1639,8 +1650,8 @@ do_tree_forward(Message, Connections, Options) ->
     OutLinks = ordsets:to_list(EagerPeers),
 
     %% Send messages, but don't attempt to forward again, if we aren't connected.
-    lists:foreach(fun(Node) ->
+    lists:foreach(fun(N) ->
         RelayMessage = {relay_message, Node, Message},
-        do_send_message(Node, RelayMessage, Connections, Options ++ [{transitive, true}])
+        do_send_message(N, RelayMessage, Connections, proplists:delete(transitive, Options))
         end, OutLinks),
     ok.
