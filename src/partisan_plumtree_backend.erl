@@ -85,7 +85,7 @@ broadcast_data(#broadcast{timestamp=Timestamp}) ->
 %%      local datastore.
 -spec merge(broadcast_id(), broadcast_payload()) -> boolean().
 merge(Timestamp, Timestamp) ->
-    lager:info("Heartbeat received: ~p", [Timestamp]),
+    lager:debug("Heartbeat received: ~p", [Timestamp]),
 
     case is_stale(Timestamp) of
         true ->
@@ -194,8 +194,7 @@ handle_info(heartbeat, State) ->
     %% Send message with monotonically increasing integer.
     ok = partisan_plumtree_broadcast:broadcast(#broadcast{timestamp=Timestamp}, ?MODULE),
 
-    lager:info("Heartbeat triggered: sending ping ~p to ensure tree.",
-                [Timestamp]),
+    lager:debug("Heartbeat triggered: sending ping ~p to ensure tree.", [Timestamp]),
 
     %% Schedule report.
     schedule_heartbeat(),
