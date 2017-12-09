@@ -168,7 +168,7 @@ receive_message({forward_message, ServerRef, Message}) ->
         ServerRef ! Message
     catch
         _:Error ->
-            lager:info("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
+            lager:error("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
     end,
     ok;
 receive_message(Message) ->
@@ -272,11 +272,11 @@ handle_call({on_down, Name, Function},
     {reply, ok, State#state{down_functions=DownFunctions}};
 
 handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State) ->
-    % lager:info("Updating membership with: ~p", [Nodes]),
+    % lager:debug("Updating membership with: ~p", [Nodes]),
 
     %% Get the current membership.
     CurrentMembership = [N || #{name := N} <- sets:to_list(?SET:query(Membership))],
-    % lager:info("CurrentMembership: ~p", [CurrentMembership]),
+    % lager:debug("CurrentMembership: ~p", [CurrentMembership]),
 
     %% need to support Nodes as a list of maps or atoms
     %% TODO: require each node to be a map
@@ -290,7 +290,7 @@ handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State)
     LeavingNodes = lists:filter(fun(N) ->
                                         not lists:member(N, NodesNames)
                                 end, CurrentMembership),
-    % lager:info("LeavingNodes: ~p", [LeavingNodes]),
+    % lager:debug("LeavingNodes: ~p", [LeavingNodes]),
 
     %% Issue leaves.
     State1 = lists:foldl(fun(N, S) ->
@@ -303,7 +303,7 @@ handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State)
                                    (N) when is_atom(N) ->
                                         not lists:member(N, CurrentMembership)
                                 end, Nodes),
-    % lager:info("JoiningNodes: ~p", [JoiningNodes]),
+    % lager:debug("JoiningNodes: ~p", [JoiningNodes]),
 
     %% Issue joins.
     State2=#state{pending=Pending} = lists:foldl(fun(N, S) ->
@@ -354,7 +354,7 @@ handle_call({join, #{name := Name} = Node},
 handle_call({sync_join, #{name := Name} = Node},
             From,
             State0) ->
-    lager:info("Starting synchronous join to ~p from ~p", [Node, node()]),
+    lager:debug("Starting synchronous join to ~p from ~p", [Node, node()]),
 
     case node() of
         Name ->
@@ -447,7 +447,7 @@ handle_info({connected, Node, _Tag, RemoteState},
                       membership=Membership0,
                       sync_joins=SyncJoins0,
                       connections=Connections}=State) ->
-    lager:info("Node ~p connected!", [Node]),
+    lager:debug("Node ~p connected!", [Node]),
 
     case lists:member(Node, Pending0) of
         true ->
@@ -482,7 +482,7 @@ handle_info({connected, Node, _Tag, RemoteState},
                 {Node, FromPid} ->
                     case fully_connected(Node, Connections) of
                         true ->
-                            lager:info("Node ~p is fully connected.", [Node]),
+                            lager:debug("Node ~p is fully connected.", [Node]),
                             gen_server:reply(FromPid, ok),
                             lists:keydelete(FromPid, 2, SyncJoins0);
                         _ ->
@@ -650,7 +650,7 @@ handle_message({receive_state, #{name := From}, PeerMembership},
                                                         Membership,
                                                         Connections0),
 
-                    lager:info("Received updated membership state: ~p from ~p", [Members, From]),
+                    lager:debug("Received updated membership state: ~p from ~p", [Members, From]),
 
                     %% Gossip.
                     do_gossip(Membership, Connections),
@@ -658,7 +658,7 @@ handle_message({receive_state, #{name := From}, PeerMembership},
                     {reply, ok, State#state{membership=Merged,
                                             connections=Connections}};
                 false ->
-                    lager:info("Node ~p is no longer part of the cluster, setting empty membership.", [node()]),
+                    lager:debug("Node ~p is no longer part of the cluster, setting empty membership.", [node()]),
 
                     %% Reset membership, normal terminate on the gen_server:
                     %% this will close all connections, restart the gen_server,
@@ -674,7 +674,7 @@ handle_message({forward_message, ServerRef, Message}, State) ->
         ServerRef ! Message
     catch
         _:Error ->
-            lager:info("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
+            lager:debug("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
     end,
     {reply, ok, State}.
 
@@ -711,7 +711,7 @@ do_gossip(Recipients, Membership, Connections) ->
                 AllPeers ->
                     Members = [N || #{name := N} <- members(Membership)],
 
-                    lager:info("Sending state with updated membership: ~p", [Members]),
+                    lager:debug("Sending state with updated membership: ~p", [Members]),
 
                     lists:foreach(fun(Peer) ->
                                 do_send_message(Peer,
@@ -781,7 +781,7 @@ down(Name, #state{down_functions=DownFunctions}) ->
 internal_leave(Node, #state{actor=Actor,
                             connections=Connections,
                             membership=Membership0}=State) ->
-    lager:info("Leaving node ~p at node ~p", [Node, node()]),
+    lager:debug("Leaving node ~p at node ~p", [Node, node()]),
 
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
@@ -870,7 +870,7 @@ sync_internal_join(#{name := Name} = Node,
 
 %% @private
 fully_connected(Node, Connections) ->
-    lager:info("Checking if node ~p is fully connected.", [Node]),
+    lager:debug("Checking if node ~p is fully connected.", [Node]),
 
     Parallelism = maps:get(parallelism, Node, ?PARALLELISM),
 
@@ -887,7 +887,7 @@ fully_connected(Node, Connections) ->
         {ok, Conns} ->
             Open = length(Conns),
             Required = length(Channels) * Parallelism,
-            lager:info("Node ~p has ~p open connections, ~p required.", [Node, Open, Required]),
+            lager:debug("Node ~p has ~p open connections, ~p required.", [Node, Open, Required]),
             Open =:= Required;
         _ ->
             false
