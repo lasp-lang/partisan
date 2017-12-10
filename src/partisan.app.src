@@ -3,7 +3,7 @@
               {vsn,"1.4.0"},
               {registered,[]},
               {applications,[kernel,stdlib,crypto,lager,types,acceptor_pool,
-                             ssl]},
+                             ssl,rand_compat]},
               {mod,{partisan_app,[]}},
               {modules,[]},
               {included_applications,[]},
