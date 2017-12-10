@@ -47,6 +47,9 @@
 -callback cast_message(name(), channel(), pid(), message()) -> ok.
 -callback forward_message(name(), channel(), pid(), message()) -> ok.
 
+-callback cast_message(name(), channel(), pid(), message(), options()) -> ok.
+-callback forward_message(name(), channel(), pid(), message(), options()) -> ok.
+
 -callback on_down(name(), function()) -> ok | {error, not_implemented}.
 -callback on_up(name(), function()) -> ok | {error, not_implemented}.
 

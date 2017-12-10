@@ -10,6 +10,12 @@
 -define(CONNECTION_JITTER, 1000).
 -define(DEFAULT_PEER_SERVICE_MANAGER, partisan_default_peer_service_manager).
 
+-define(UTIL, partisan_plumtree_util).
+-define(DEFAULT_LAZY_TICK_PERIOD, 1000).
+-define(DEFAULT_EXCHANGE_TICK_PERIOD, 10000).
+
+-type options() :: [{atom(), term()}].
+
 -type actor() :: binary().
 -type listen_addr() :: #{ip => inet:ip_address(), port => non_neg_integer()}.
 -type node_spec() :: #{name => node(),

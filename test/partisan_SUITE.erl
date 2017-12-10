@@ -65,6 +65,8 @@ end_per_testcase(Case, _Config) ->
 
     _Config.
 
+init_per_group(with_broadcast, Config) ->
+    [{broadcast, true}] ++ Config;
 init_per_group(with_binary_padding, Config) ->
     [{binary_padding, true}] ++ Config;
 init_per_group(with_sync_join, Config) ->
@@ -105,7 +107,9 @@ all() ->
 
      {group, with_sync_join, [parallel]},
 
-     {group, with_binary_padding, [parallel]}
+     {group, with_binary_padding, [parallel]},
+
+     {group, with_broadcast, [parallel]}
     ].
 
 groups() ->
@@ -148,7 +152,10 @@ groups() ->
       [default_manager_test]},
 
      {with_binary_padding, [],
-      [default_manager_test]}
+      [default_manager_test]},
+
+     {with_broadcast, [],
+      [hyparview_manager_low_active_test]}
     ].
 
 %% ===================================================================
@@ -195,7 +202,7 @@ amqp_manager_test(Config) ->
 
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
-                    ok = check_forward_message(Node, Manager)
+                    ok = check_forward_message(Node, Manager, Nodes)
                   end, Nodes),
 
     %% Stop nodes.
@@ -404,7 +411,7 @@ default_manager_test(Config) ->
 
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
-                    ok = check_forward_message(Node, Manager)
+                    ok = check_forward_message(Node, Manager, Nodes)
                   end, Nodes),
 
     %% Verify parallelism.
@@ -531,7 +538,7 @@ client_server_manager_test(Config) ->
 
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
-                    ok = check_forward_message(Node, Manager)
+                    ok = check_forward_message(Node, Manager, Nodes)
                   end, Nodes),
 
     %% Stop nodes.
@@ -633,7 +640,7 @@ hyparview_manager_partition_test(Config) ->
 
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
-                    ok = check_forward_message(Node, Manager)
+                    ok = check_forward_message(Node, Manager, Nodes)
                   end, Nodes),
 
     %% Verify correct behaviour when a node is stopped
@@ -707,7 +714,7 @@ hyparview_manager_high_active_test(Config) ->
 
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
-                    ok = check_forward_message(Node, Manager)
+                    ok = check_forward_message(Node, Manager, Nodes)
                   end, Nodes),
 
     %% Verify correct behaviour when a node is stopped
@@ -781,7 +788,7 @@ hyparview_manager_low_active_test(Config) ->
 
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
-                    ok = check_forward_message(Node, Manager)
+                    ok = check_forward_message(Node, Manager, Nodes)
                   end, Nodes),
 
     %% Verify correct behaviour when a node is stopped
@@ -853,7 +860,7 @@ hyparview_manager_high_client_test(Config) ->
     
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
-                    ok = check_forward_message(Node, Manager)
+                    ok = check_forward_message(Node, Manager, Nodes)
                   end, Nodes),
 
     %% Verify correct behaviour when a node is stopped
@@ -969,6 +976,24 @@ start(_Case, Config, Options) ->
                           [gossip_interval, ?GOSSIP_INTERVAL]),
 
             ok = rpc:call(Node, application, set_env, [partisan, peer_ip, ?PEER_IP]),
+
+            BinaryPadding = case ?config(binary_padding, Config) of
+                              undefined ->
+                                  false;
+                              BP ->
+                                  BP
+                          end,
+            ct:pal("Setting binary_padding to: ~p", [BinaryPadding]),
+            ok = rpc:call(Node, partisan_config, set, [binary_padding, BinaryPadding]),
+
+            Broadcast = case ?config(broadcast, Config) of
+                              undefined ->
+                                  false;
+                              B ->
+                                  B
+                          end,
+            ct:pal("Setting broadcast to: ~p", [Broadcast]),
+            ok = rpc:call(Node, partisan_config, set, [broadcast, Broadcast]),
 
             Channels = case ?config(channels, Config) of
                               undefined ->
@@ -1207,16 +1232,23 @@ make_certs(Config) ->
       ]}].
 
 %% @private
-check_forward_message(Node, Manager) ->
-    {ok, Members} = rpc:call(Node, Manager, members, []),
-    %% ask member node to forward a message to one other random member
-    ct:pal("members of ~p: ~p", [Node, Members]),
+check_forward_message(Node, Manager, Nodes) ->
+    {Transitive, Members} = case rpc:call(Node, partisan_config, get, [broadcast, false]) of
+        true ->
+            M = lists:usort([N || {_, N} <- Nodes]),
+            ct:pal("Checking forward functionality for all nodes: ~p", [M]),
+            {true, M};
+        false ->
+            {ok, M} = rpc:call(Node, Manager, members, []),
+            ct:pal("Checking forward functionality for subset of nodes: ~p", [M]),
+            {false, M}
+    end,
+
     RandomMember = random(Members, Node),
     ct:pal("requesting node ~p to forward message to store_proc on node ~p",
            [Node, RandomMember]),
     Rand = rand:uniform(),
-    ok = rpc:call(Node, Manager, forward_message,
-                  [RandomMember, store_proc, {store, Rand}]),
+    ok = rpc:call(Node, Manager, forward_message, [RandomMember, undefined, store_proc, {store, Rand}, [{transitive, Transitive}]]),
     %% now fetch the value from the random destination node
     ok = wait_until(fun() ->
                     %% it must match with what we asked the node to forward

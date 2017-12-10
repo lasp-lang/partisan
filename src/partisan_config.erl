@@ -60,6 +60,8 @@ init() ->
         {Key, Default} <- [{arwl, 6},
                            {prwl, 6},
                            {binary_padding, false},
+                           {broadcast, false},
+                           {broadcast_mods, [partisan_plumtree_backend]},
                            {channels, ?CHANNELS},
                            {connect_disterl, false},
                            {connection_jitter, ?CONNECTION_JITTER},
