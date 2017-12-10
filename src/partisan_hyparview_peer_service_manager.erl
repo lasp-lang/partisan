@@ -87,6 +87,7 @@
                 active :: active(),
                 passive :: passive(),
                 reserved :: reserved(),
+                out_links :: list(),
                 tag :: tag(),
                 connections :: partisan_peer_service_connections:t(),
                 max_active_size :: non_neg_integer(),
@@ -275,6 +276,9 @@ init([]) ->
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
 
+    %% Schedule tree peers refresh.
+    schedule_tree_refresh(),
+
     %% Schedule periodic random promotion when it is enabled.
     case partisan_config:get(random_promotion, true) of
         true ->
@@ -293,6 +297,7 @@ init([]) ->
                         passive=Passive,
                         reserved=Reserved,
                         tag=Tag,
+                        out_links=[],
                         connections=Connections,
                         max_active_size=MaxActiveSize,
                         min_active_size=MinActiveSize,
@@ -506,6 +511,24 @@ handle_info(random_promotion, #state{myself=Myself,
     schedule_random_promotion(),
 
     {noreply, State};
+
+handle_info(tree_refresh, #state{}=State) ->
+    %% Use our tree for the root.
+    Root = node(),
+
+    %% Get lazily computed outlinks.
+    OutLinks = try partisan_plumtree_broadcast:debug_get_peers(node(), Root) of
+        {EagerPeers, _LazyPeers} ->
+            ordsets:to_list(EagerPeers)
+    catch
+        _:_ ->
+            []
+    end,
+
+    %% Reschedule.
+    schedule_tree_refresh(),
+
+    {noreply, State#state{out_links=OutLinks}};
 
 handle_info(passive_view_maintenance,
             #state{myself=Myself,
@@ -1048,11 +1071,11 @@ handle_message({shuffle, Exchange, TTL, Sender},
     end,
     {noreply, State};
 
-handle_message({relay_message, Node, Message}, #state{connections=Connections}=State) ->
+handle_message({relay_message, Node, Message}, #state{out_links=OutLinks, connections=Connections}=State) ->
     lager:debug("Node ~p received tree relay to ~p", [node(), Node]),
 
     %% Attempt to deliver, or recurse and forward on through a relay.
-    ok = do_send_message(Node, Message, Connections, [{transitive, true}]),
+    ok = do_send_message(Node, Message, Connections, [{out_links, OutLinks}, {transitive, true}]),
 
     {noreply, State};
 handle_message({forward_message, ServerRef, Message}, State) ->
@@ -1441,6 +1464,11 @@ k_passive() ->
     4.
 
 %% @private
+schedule_tree_refresh() ->
+    Period = partisan_config:get(tree_refresh, 1000),
+    erlang:send_after(Period, ?MODULE, tree_refresh).
+
+%% @private
 schedule_passive_view_maintenance() ->
     Period = partisan_config:get(passive_view_shuffle_period,
                                  ?DEFAULT_PASSIVE_VIEW_MAINTENANCE_INTERVAL),
@@ -1666,21 +1694,21 @@ handle_partition_resolution(Reference,
 do_tree_forward(Node, Message, Connections, Options) ->
     lager:debug("Attempting to forward message from ~p to ~p.", [node(), Node]),
 
-    %% Forward down our out-links.
-    OutLinks = try retrieve_outlinks() of
-        Value ->
-            Value
-    catch
-        _:_ ->
-            lager:error("Outlinks retrieval failed!"),
-            []
-    end,
+    %% Preempt with user-supplied outlinks.
+    UserOutLinks = proplists:get_value(out_links, Options, undefined),
 
-    case length(OutLinks) of
-        0 ->
-            lager:error("No outlinks.");
-        _ ->
-            ok
+    OutLinks = case UserOutLinks of
+        undefined ->
+            try retrieve_outlinks() of
+                Value ->
+                    Value
+            catch
+                _:_ ->
+                    lager:error("Outlinks retrieval failed!"),
+                    []
+            end;
+        OL ->
+            OL
     end,
 
     %% Send messages, but don't attempt to forward again, if we aren't connected.
