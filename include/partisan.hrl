@@ -14,6 +14,8 @@
 -define(DEFAULT_LAZY_TICK_PERIOD, 1000).
 -define(DEFAULT_EXCHANGE_TICK_PERIOD, 10000).
 
+-type options() :: [{atom(), term()}].
+
 -type actor() :: binary().
 -type listen_addr() :: #{ip => inet:ip_address(), port => non_neg_integer()}.
 -type node_spec() :: #{name => node(),

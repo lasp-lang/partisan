@@ -41,6 +41,8 @@
          forward_message/3,
          cast_message/4,
          forward_message/4,
+         cast_message/5,
+         forward_message/5,
          receive_message/1,
          decode/1,
          reserve/1,
@@ -132,12 +134,22 @@ cast_message(Name, Channel, ServerRef, Message) ->
     forward_message(Name, Channel, ServerRef, FullMessage),
     ok.
 
+%% @doc Cast a message to a remote gen_server.
+cast_message(Name, Channel, ServerRef, Message, Options) ->
+    FullMessage = {'$gen_cast', Message},
+    forward_message(Name, Channel, ServerRef, FullMessage, Options),
+    ok.
+
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, ServerRef, Message) ->
     forward_message(Name, ?DEFAULT_CHANNEL, ServerRef, Message).
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, Channel, ServerRef, Message) ->
+    forward_message(Name, Channel, ServerRef, Message, []).
+
+%% @doc Forward message to registered process on the remote side.
+forward_message(Name, Channel, ServerRef, Message, Options) ->
     %% If attempting to forward to the local node, bypass.
     case node() of
         Name ->
@@ -146,9 +158,9 @@ forward_message(Name, Channel, ServerRef, Message) ->
             FullMessage = case partisan_config:get(binary_padding, false) of
                 true ->
                     BinaryPadding = partisan_config:get(binary_padding_term, undefined),
-                    {forward_message, Name, Channel, ServerRef, {'$partisan_padded', BinaryPadding, Message}};
+                    {forward_message, Name, Channel, ServerRef, {'$partisan_padded', BinaryPadding, Message}, Options};
                 false ->
-                    {forward_message, Name, Channel, ServerRef, Message}
+                    {forward_message, Name, Channel, ServerRef, Message, Options}
             end,
 
             %% Attempt to fast-path through the memoized connection cache.
@@ -373,7 +385,7 @@ handle_call({send_message, Name, Channel, Message}, _From,
     Result = do_send_message(Name, Channel, Message, Connections),
     {reply, Result, State};
 
-handle_call({forward_message, Name, Channel, ServerRef, Message}, _From,
+handle_call({forward_message, Name, Channel, ServerRef, Message, _Options}, _From,
             #state{connections=Connections}=State) ->
     Result = do_send_message(Name,
                              Channel,

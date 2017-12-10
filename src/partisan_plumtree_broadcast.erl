@@ -128,7 +128,7 @@ start_link() ->
     LazyTickPeriod = partisan_config:get(lazy_tick_period, ?DEFAULT_LAZY_TICK_PERIOD),
     ExchangeTickPeriod = partisan_config:get(exchange_tick_period, ?DEFAULT_EXCHANGE_TICK_PERIOD),
     {ok, Members} = partisan_peer_service:members(),
-    ?UTIL:log(debug, "peer sampling service members: ~p", [Members]),
+    ?UTIL:log(info, "peer sampling service members: ~p", [Members]),
     %% the peer service has already sampled the members, we start off
     %% with pure gossip (ie. all members are in the eager push list and lazy
     %% list is empty)
