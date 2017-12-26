@@ -133,27 +133,35 @@ dispatch_pid(Entries) ->
 
 %% @doc Return a pid to use for message dispatch for a given channel.
 dispatch_pid(Channel, Entries) ->
-    %% Entries for channel.
-    ChannelEntries = lists:filter(fun({_, C, _}) ->
-        case C of
-            Channel ->
-                true;
-            _ ->
-                false
-        end
-    end, Entries),
-
-    %% Fall back to unlabeled channels.
-    DispatchEntries = case length(ChannelEntries) of
-        0 ->
+    DispatchEntries = case Channel of
+        undefined ->
             Entries;
         _ ->
-            ChannelEntries
+            %% Entries for channel.
+            ChannelEntries = lists:filter(fun({_, C, _}) ->
+                case C of
+                    Channel ->
+                        true;
+                    _ ->
+                        false
+                end
+            end, Entries),
+
+            %% Fall back to unlabeled channels.
+            case length(ChannelEntries) of
+                0 ->
+                    Entries;
+                _ ->
+                    ChannelEntries
+            end
     end,
 
     %% Randomly select one.
-    {_ListenAddr, _Channel, Pid} = lists:nth(rand:uniform(length(DispatchEntries)), DispatchEntries),
+    NumEntries = length(DispatchEntries),
+    EntriesIndex = rand:uniform(NumEntries),
+    {_ListenAddr, _Channel, Pid} = lists:nth(EntriesIndex, DispatchEntries),
 
+    %% Return pid of connection process.
     Pid.
 
 %% @private
