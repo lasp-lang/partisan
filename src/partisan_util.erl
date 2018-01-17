@@ -26,6 +26,7 @@
 -export([build_tree/3,
          dispatch_pid/1,
          dispatch_pid/2,
+         dispatch_pid/3,
          maybe_connect/2]).
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
@@ -131,8 +132,12 @@ connect(Node, ListenAddr, Channel) ->
 dispatch_pid(Entries) ->
     dispatch_pid(undefined, Entries).
 
-%% @doc Return a pid to use for message dispatch for a given channel.
+%% @doc Return a pid to use for message dispatch.
 dispatch_pid(Channel, Entries) ->
+    dispatch_pid(undefined, Channel, Entries).
+
+%% @doc Return a pid to use for message dispatch for a given channel.
+dispatch_pid(PartitionKey, Channel, Entries) ->
     DispatchEntries = case Channel of
         undefined ->
             Entries;
@@ -156,9 +161,18 @@ dispatch_pid(Channel, Entries) ->
             end
     end,
 
-    %% Randomly select one.
+    %% Get the number of elements in the list.
     NumEntries = length(DispatchEntries),
-    EntriesIndex = rand:uniform(NumEntries),
+
+    %% Depending on whether or not a hash key has been provided, use it for routing.
+    EntriesIndex = case PartitionKey of
+        undefined ->
+            rand:uniform(NumEntries);
+        PartitionKey when is_integer(PartitionKey) ->
+            PartitionKey rem NumEntries + 1
+    end,
+
+    %% Select that entry from the list.
     {_ListenAddr, _Channel, Pid} = lists:nth(EntriesIndex, DispatchEntries),
 
     %% Return pid of connection process.

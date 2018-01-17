@@ -26,8 +26,7 @@
 -export([update/1,
          dispatch/1]).
 
--spec update(partisan_peer_service_connections:t()) ->
-            partisan_peer_service_connections:t().
+-spec update(partisan_peer_service_connections:t()) -> partisan_peer_service_connections:t().
 update(Connections) ->
     ets:delete_all_objects(?CACHE),
 
@@ -35,7 +34,7 @@ update(Connections) ->
                       true = ets:insert(?CACHE, [{Name, V}])
               end, [], Connections).
 
-dispatch({forward_message, Name, Channel, ServerRef, Message, _Options}) ->
+dispatch({forward_message, Name, Channel, PartitionKey, ServerRef, Message, _Options}) ->
     %% Find a connection for the remote node, if we have one.
     case ets:lookup(?CACHE, Name) of
         [] ->
@@ -46,7 +45,7 @@ dispatch({forward_message, Name, Channel, ServerRef, Message, _Options}) ->
                 0 ->
                     {error, trap};
                 _ ->
-                    Pid = partisan_util:dispatch_pid(Channel, Pids),
+                    Pid = partisan_util:dispatch_pid(PartitionKey, Channel, Pids),
                     gen_server:cast(Pid, {send_message, {forward_message, ServerRef, Message}})
             end
     end;
