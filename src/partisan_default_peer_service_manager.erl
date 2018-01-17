@@ -150,6 +150,9 @@ forward_message(Name, Channel, ServerRef, Message) ->
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, Channel, ServerRef, Message, Options) ->
+    %% Attempt to get the partition key, if possible.
+    PartitionKey = proplists:get_value(partition_key, Options, ?DEFAULT_PARTITION_KEY),
+
     %% If attempting to forward to the local node, bypass.
     case node() of
         Name ->
@@ -158,9 +161,9 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
             FullMessage = case partisan_config:get(binary_padding, false) of
                 true ->
                     BinaryPadding = partisan_config:get(binary_padding_term, undefined),
-                    {forward_message, Name, Channel, ServerRef, {'$partisan_padded', BinaryPadding, Message}, Options};
+                    {forward_message, Name, Channel, PartitionKey, ServerRef, {'$partisan_padded', BinaryPadding, Message}, Options};
                 false ->
-                    {forward_message, Name, Channel, ServerRef, Message, Options}
+                    {forward_message, Name, Channel, PartitionKey, ServerRef, Message, Options}
             end,
 
             %% Attempt to fast-path through the memoized connection cache.
@@ -382,13 +385,18 @@ handle_call({sync_join, #{name := Name} = Node},
 
 handle_call({send_message, Name, Channel, Message}, _From,
             #state{connections=Connections}=State) ->
-    Result = do_send_message(Name, Channel, Message, Connections),
+    Result = do_send_message(Name, 
+                             Channel, 
+                             ?DEFAULT_PARTITION_KEY, 
+                             Message, 
+                             Connections),
     {reply, Result, State};
 
-handle_call({forward_message, Name, Channel, ServerRef, Message, _Options}, _From,
+handle_call({forward_message, Name, Channel, PartitionKey, ServerRef, Message, _Options}, _From,
             #state{connections=Connections}=State) ->
     Result = do_send_message(Name,
                              Channel,
+                             PartitionKey,
                              {forward_message, ServerRef, Message},
                              Connections),
     {reply, Result, State};
@@ -728,6 +736,7 @@ do_gossip(Recipients, Membership, Connections) ->
                     lists:foreach(fun(Peer) ->
                                 do_send_message(Peer,
                                                 ?DEFAULT_CHANNEL,
+                                                ?DEFAULT_PARTITION_KEY,
                                                 {receive_state, myself(), Membership},
                                                 Connections)
                         end, AllPeers),
@@ -746,9 +755,10 @@ get_peers(Local) ->
 %% @private
 -spec do_send_message(Node :: atom() | node_spec(),
                       Channel :: channel(),
+                      PartitionKey :: term(),
                       Message :: term(),
                       Connections :: partisan_peer_service_connections:t()) -> ok.
-do_send_message(Node, Channel, Message, Connections) ->
+do_send_message(Node, Channel, PartitionKey, Message, Connections) ->
     %% Find a connection for the remote node, if we have one.
     case partisan_peer_service_connections:find(Node, Connections) of
         {ok, []} ->
@@ -756,8 +766,7 @@ do_send_message(Node, Channel, Message, Connections) ->
             %% Node was connected but is now disconnected.
             {error, disconnected};
         {ok, Entries} ->
-            %% TODO: What if I don't have a connection for that channel yet?
-            Pid = partisan_util:dispatch_pid(Channel, Entries),
+            Pid = partisan_util:dispatch_pid(PartitionKey, Channel, Entries),
             gen_server:cast(Pid, {send_message, Message});
         {error, not_found} ->
             lager:error("Node ~p is not yet connected during send!", [Node]),
