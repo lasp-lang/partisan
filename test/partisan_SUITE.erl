@@ -67,6 +67,8 @@ end_per_testcase(Case, _Config) ->
 
 init_per_group(with_broadcast, Config) ->
     [{broadcast, true}] ++ Config;
+init_per_group(with_partition_key, Config) ->
+    [{forward_options, [{partition_key, 1}]}] ++ Config;
 init_per_group(with_binary_padding, Config) ->
     [{binary_padding, true}] ++ Config;
 init_per_group(with_sync_join, Config) ->
@@ -108,6 +110,8 @@ all() ->
      {group, with_sync_join, [parallel]},
 
      {group, with_binary_padding, [parallel]},
+
+     {group, with_partition_key, [parallel]},
 
      {group, with_broadcast, [parallel]}
     ].
@@ -152,6 +156,9 @@ groups() ->
       [default_manager_test]},
 
      {with_binary_padding, [],
+      [default_manager_test]},
+
+     {with_partition_key, [],
       [default_manager_test]},
 
      {with_broadcast, [],
@@ -977,6 +984,15 @@ start(_Case, Config, Options) ->
 
             ok = rpc:call(Node, application, set_env, [partisan, peer_ip, ?PEER_IP]),
 
+            ForwardOptions = case ?config(forward_options, Config) of
+                              undefined ->
+                                  [];
+                              FO ->
+                                  FO
+                          end,
+            ct:pal("Setting forward_options to: ~p", [ForwardOptions]),
+            ok = rpc:call(Node, partisan_config, set, [forward_options, ForwardOptions]),
+
             BinaryPadding = case ?config(binary_padding, Config) of
                               undefined ->
                                   false;
@@ -1244,11 +1260,13 @@ check_forward_message(Node, Manager, Nodes) ->
             {false, M}
     end,
 
+    ForwardOptions = rpc:call(Node, partisan_config, get, [forward_options, []]),
+
     RandomMember = random(Members, Node),
     ct:pal("requesting node ~p to forward message to store_proc on node ~p",
            [Node, RandomMember]),
     Rand = rand:uniform(),
-    ok = rpc:call(Node, Manager, forward_message, [RandomMember, undefined, store_proc, {store, Rand}, [{transitive, Transitive}]]),
+    ok = rpc:call(Node, Manager, forward_message, [RandomMember, undefined, store_proc, {store, Rand}, [{transitive, Transitive}, {forward_options, ForwardOptions}]]),
     %% now fetch the value from the random destination node
     ok = wait_until(fun() ->
                     %% it must match with what we asked the node to forward
