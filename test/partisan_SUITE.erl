@@ -487,38 +487,50 @@ default_manager_test(Config) ->
                         end, Channels)
                   end, Nodes),
 
-    %% Perform end to end messaging between two nodes.
-    [{_Name1, Node1}, {_Name2, Node2}|_] = Nodes,
+    case os:getenv("PROFILE", false) of
+        "true" ->
+            %% Perform end to end messaging between two nodes.
+            [{_Name1, Node1}, {_Name2, Node2}|_] = Nodes,
 
-    ReceiverFun = fun() ->
-        receive
-            _ ->
-                ok
-        end
+            ReceiverFun = fun() ->
+                receive
+                    _ ->
+                        ok
+                end,
+                receive
+                    _ ->
+                        ok
+                end
+            end,
+            Node2ReceiverPid = rpc:call(Node2, erlang, spawn, [ReceiverFun]),
+
+            ct:pal("Enabling eprof on ~p", [Node1]),
+            {ok, _} = rpc:call(Node1, eprof, start, []),
+
+            ct:pal("Sending a profiled message from ~p to ~p, ~p", [Node1, Node2, Node2ReceiverPid]),
+            Object = rand_bits(10 * 1024 * 1024 * 8),
+
+            SendFun = fun() ->
+                ok = Manager:forward_message(Node2, undefined, Node2ReceiverPid, Object, [])
+            end,
+            {ok, ok} = rpc:call(Node1, eprof, profile, [SendFun]), 
+            {ok, ok} = rpc:call(Node1, eprof, profile, [SendFun]), 
+
+            Suffix = case ?config(parallelism, Config) of
+                undefined ->
+                    "partisan";
+                Conns ->
+                    "partisan-" ++ integer_to_list(Conns)
+            end,
+
+            timer:sleep(2000),
+
+            ok = rpc:call(Node1, eprof, log, ["/mnt/c/Users/chris/GitHub/unir/_checkouts/partisan/eprof-" ++ Suffix]),
+            ok = rpc:call(Node1, eprof, analyze, []),
+            ct:pal("Message sent, and profile completed!", []);
+        _ ->
+            ok
     end,
-    Node2ReceiverPid = rpc:call(Node2, erlang, spawn, [ReceiverFun]),
-
-    ct:pal("Enabling eprof on ~p", [Node1]),
-    {ok, _} = rpc:call(Node1, eprof, start, []),
-
-    ct:pal("Sending a profiled message from ~p to ~p, ~p", [Node1, Node2, Node2ReceiverPid]),
-    Object = rand_bits(1024 * 1024 * 8),
-
-    SendFun = fun() ->
-        ok = Manager:forward_message(Node2, undefined, Node2ReceiverPid, Object, [])
-    end,
-    {ok, ok} = rpc:call(Node1, eprof, profile, [SendFun]), 
-
-    Suffix = case ?config(parallelism, Config) of
-        undefined ->
-            "partisan";
-        Conns ->
-            "partisan-" ++ integer_to_list(Conns)
-    end,
-
-    ok = rpc:call(Node1, eprof, log, ["/mnt/c/Users/chris/GitHub/unir/_checkouts/partisan/eprof-" ++ Suffix]),
-    ok = rpc:call(Node1, eprof, analyze, []),
-    ct:pal("Message sent, and profile completed!", []),
 
     %% Stop nodes.
     stop(Nodes),
