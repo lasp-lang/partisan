@@ -153,8 +153,8 @@ dispatch_pid(PartitionKey, Channel, Entries) ->
             end, Entries),
 
             %% Fall back to unlabeled channels.
-            case length(ChannelEntries) of
-                0 ->
+            case ChannelEntries of
+                [] ->
                     Entries;
                 _ ->
                     ChannelEntries
