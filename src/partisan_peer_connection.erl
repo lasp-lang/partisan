@@ -84,6 +84,9 @@ send(#connection{socket = Socket, transport = Transport, monotonic = true}, Data
         false ->
             ok;
         true ->
+            %% Update last transmission time.
+            put(last_transmission_time, monotonic_now()),
+
             send(Transport, Socket, Data)
     end;
 send(#connection{socket = Socket, transport = Transport, monotonic = false}, Data) ->
@@ -163,9 +166,6 @@ monotonic_now() ->
 
 %% @private
 send(Transport, Socket, Data) ->
-    %% Update last transmission time.
-    put(last_transmission_time, monotonic_now()),
-
     %% Transmit the data on the socket.
     Transport:send(Socket, Data).
 
