@@ -1483,9 +1483,8 @@ hyparview_membership_check(Nodes) ->
                             %% print out the active view of each node
                             lists:foreach(fun({_, N1}) ->
                                                 {ok, ActiveSet} = rpc:call(N1, Manager, active, []),
-                                                Active = sets:to_list(ActiveSet),
-                                                ct:pal("node ~p active view: ~p",
-                                                       [N1, Active])
+                                                Active = sets:to_list(ActiveSet)
+                                                %% ct:pal("node ~p active view: ~p", [N1, Active])
                                            end, Nodes),
                             {true, {Node, N}};
                         _ ->
