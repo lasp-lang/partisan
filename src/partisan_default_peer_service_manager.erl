@@ -156,11 +156,13 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
     %% If attempting to forward to the local node, bypass.
     case node() of
         Name ->
-            ServerRef ! Message;
+            ServerRef ! Message,
+            ok;
         _ ->
             case partisan_config:get(disterl, false) of
                 true ->
-                    ServerRef ! Message;
+                    ServerRef ! Message,
+                    ok;
                 false ->
                     FullMessage = case partisan_config:get(binary_padding, false) of
                         true ->
