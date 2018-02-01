@@ -214,4 +214,4 @@ handle_message(Message, State) ->
 
 %% @private
 encode(Message) ->
-    term_to_binary(Message).
+    partisan_util:term_to_iolist(Message).
