@@ -150,8 +150,7 @@ groups() ->
        performance_test]},
 
      {with_disterl, [],
-      [default_manager_test,
-       performance_test]},
+      [performance_test]},
      
      {with_channels, [],
       [default_manager_test]},
