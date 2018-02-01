@@ -80,7 +80,7 @@ init_per_group(with_monotonic_channels, Config) ->
 init_per_group(with_channels, Config) ->
     [{parallelism, 1}, {channels, [vnode, gossip]}] ++ Config;
 init_per_group(with_parallelism, Config) ->
-    [{parallelism, 5}, {channels, ?CHANNELS}] ++ Config;
+    parallelism() ++ [{channels, ?CHANNELS}] ++ Config;
 init_per_group(with_no_channels, Config) ->
     [{parallelism, 1}, {channels, []}] ++ Config;
 init_per_group(with_tls, Config) ->
@@ -395,7 +395,31 @@ performance_test(Config) ->
     timer:sleep(1000),
 
     [{_, Node1}, {_, Node2}] = Nodes,
-    Concurrency = 4,
+
+    %% One process per connection.
+    Concurrency = case os:getenv("CONCURRENCY", "1") of
+        undefined ->
+            1;
+        C ->
+            list_to_integer(C)
+    end,
+
+    %% Latency.
+    Latency = case os:getenv("LATENCY", "0") of
+        undefined ->
+            0;
+        L ->
+            list_to_integer(L)
+    end,
+
+    %% Parallelism.
+    Parallelism = case rpc:call(Node1, partisan_config, get, [parallelism]) of
+        undefined ->
+            1;
+        P ->
+            P
+    end,
+        
     NumMessages = 1000,
     BenchPid = self(),
     Size = 1 * 1024 * 1024,
@@ -447,7 +471,7 @@ performance_test(Config) ->
                     list_to_atom("partisan_" ++ integer_to_list(Conns))
             end
     end,
-    io:format(FileHandle, "~p,~p,~p,~p,~p~n", [Backend, Concurrency, Size, NumMessages, Time]),
+    io:format(FileHandle, "~p,~p,~p,~p,~p,~p,~p~n", [Backend, Concurrency, Parallelism, Size, NumMessages, Latency, Time]),
     file:close(FileHandle),
 
     ct:pal("Time: ~p", [Time]),
@@ -1623,3 +1647,14 @@ root_dir(Config) ->
     RootDir = string:substr(RootOutput, 1, length(RootOutput) - 1) ++ "/",
     ct:pal("RootDir: ~p", [RootDir]),
     RootDir.
+
+%% @private
+parallelism() ->
+    case os:getenv("PARALLELISM", "1") of
+        false ->
+            [{parallelism, list_to_integer("1")}];
+        "1" ->
+            [{parallelism, list_to_integer("1")}];
+        Config ->
+            [{parallelism, list_to_integer(Config)}]
+    end.

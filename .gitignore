@@ -30,3 +30,4 @@ fprof.trace
 .rebar3/
 test/*/RAND
 .DS_Store
+results.csv

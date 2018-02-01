@@ -4,6 +4,9 @@ BASE_DIR         = $(shell pwd)
 ERLANG_BIN       = $(shell dirname $(shell which erl))
 REBAR            = $(shell pwd)/rebar3
 MAKE						 = make
+CONCURRENCY 	 = 4
+PARALLELISM 	 = 4
+LATENCY 		 = 0
 
 .PHONY: rel deps test plots
 
@@ -28,9 +31,9 @@ packageclean:
 ##
 
 perf:
-	clear; pkill -9 beam.smp; pkill -9 epmd; ./rebar3 ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=with_parallelism
-	clear; pkill -9 beam.smp; pkill -9 epmd; ./rebar3 ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=with_disterl
-	clear; pkill -9 beam.smp; pkill -9 epmd; ./rebar3 ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=default
+	pkill -9 beam.smp; pkill -9 epmd; LATENCY=${LATENCY} CONCURRENCY=${CONCURRENCY} ${REBAR} ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=with_disterl
+	pkill -9 beam.smp; pkill -9 epmd; LATENCY=${LATENCY} CONCURRENCY=${CONCURRENCY} ${REBAR} ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=default
+	pkill -9 beam.smp; pkill -9 epmd; LATENCY=${LATENCY} CONCURRENCY=${CONCURRENCY} PARALLELISM=${PARALLELISM} ${REBAR} ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=with_parallelism
 
 kill: 
 	pkill -9 beam.smp; pkill -9 epmd; exit 0
