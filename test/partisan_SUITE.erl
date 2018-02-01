@@ -397,29 +397,24 @@ performance_test(Config) ->
 
     [{_, Node1}, {_, Node2}] = Nodes,
     Concurrency = 4,
-    NumMessages = 100,
+    NumMessages = 5000,
     BenchPid = self(),
-    Size = 8 * 1024 * 1024,
+    Size = 1 * 1024 * 1024,
 
     %% Prime a binary at each node.
     ct:pal("Generating binaries!"),
-    Binary = rand_bits(Size * 8),
-
-    lists:foreach(fun(N) ->
-        ct:pal("Installing binary at node ~p.", [N]),
-        ok = rpc:call(N, partisan_config, set, [echo_binary, Binary])
-    end, [Node1, Node2]),
+    EchoBinary = rand_bits(Size * 8),
 
     %% Spawn processes to send receive messages on node 1.
     ct:pal("Spawning processes."),
-    SenderPids = lists:map(fun(_) ->
+    SenderPids = lists:map(fun(PartitionKey) ->
         ReceiverFun = fun() ->
             receiver(Manager, BenchPid, NumMessages)
         end,
         ReceiverPid = rpc:call(Node2, erlang, spawn, [ReceiverFun]),
 
         SenderFun = fun() ->
-            sender(Manager, Node2, ReceiverPid, NumMessages)
+            init_sender(EchoBinary, Manager, Node2, ReceiverPid, PartitionKey, NumMessages)
         end,
         SenderPid = rpc:call(Node1, erlang, spawn, [SenderFun]),
         SenderPid
@@ -1593,19 +1588,18 @@ receiver(Manager, BenchPid, Count) ->
             receiver(Manager, BenchPid, Count - 1)
     end.
 
-sender(_EchoBinary, _Manager, _DestinationNode, _DestinationPid, 0) ->
+sender(_EchoBinary, _Manager, _DestinationNode, _DestinationPid, _PartitionKey, 0) ->
     ok;
-sender(EchoBinary, Manager, DestinationNode, DestinationPid, Count) ->
-    Manager:forward_message(DestinationNode, undefined, DestinationPid, {EchoBinary, node(), self()}, []),
-    sender(EchoBinary, Manager, DestinationNode, DestinationPid, Count - 1).
+sender(EchoBinary, Manager, DestinationNode, DestinationPid, PartitionKey, Count) ->
+    Manager:forward_message(DestinationNode, undefined, DestinationPid, {EchoBinary, node(), self()}, [{partition_key, PartitionKey}]),
+    sender(EchoBinary, Manager, DestinationNode, DestinationPid, PartitionKey, Count - 1).
 
-sender(Manager, DestinationNode, DestinationPid, Count) ->
-    EchoBinary = partisan_config:get(echo_binary),
+init_sender(EchoBinary, Manager, DestinationNode, DestinationPid, PartitionKey, Count) ->
     receive
         start ->
             ok
     end,
-    sender(EchoBinary, Manager, DestinationNode, DestinationPid, Count).
+    sender(EchoBinary, Manager, DestinationNode, DestinationPid, PartitionKey, Count).
 
 bench_receiver(0) ->
     ok;
@@ -1621,7 +1615,7 @@ bench_receiver(Count) ->
 %% @private
 root_path(Config) ->
     DataDir = proplists:get_value(data_dir, Config, ""),
-    DataDir ++ "../../../../../".
+    DataDir ++ "../../../../../../".
 
 %% @private
 root_dir(Config) ->
