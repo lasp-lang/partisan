@@ -1,0 +1,5 @@
+#!/bin/bash
+
+SIZE=1024 CONCURRENCY=1 make perf
+SIZE=1024 CONCURRENCY=2 make perf
+SIZE=1024 CONCURRENCY=4 make perf

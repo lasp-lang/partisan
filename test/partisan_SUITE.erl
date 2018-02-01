@@ -412,6 +412,14 @@ performance_test(Config) ->
             list_to_integer(L)
     end,
 
+    %% Size.
+    Size = case os:getenv("SIZE", "0") of
+        undefined ->
+            0;
+        S ->
+            list_to_integer(S)
+    end,
+
     %% Parallelism.
     Parallelism = case rpc:call(Node1, partisan_config, get, [parallelism]) of
         undefined ->
@@ -422,11 +430,11 @@ performance_test(Config) ->
         
     NumMessages = 1000,
     BenchPid = self(),
-    Size = 1 * 1024 * 1024,
+    BytesSize = Size * 1024,
 
     %% Prime a binary at each node.
     ct:pal("Generating binaries!"),
-    EchoBinary = rand_bits(Size * 8),
+    EchoBinary = rand_bits(BytesSize * 8),
 
     %% Spawn processes to send receive messages on node 1.
     ct:pal("Spawning processes."),
@@ -464,14 +472,9 @@ performance_test(Config) ->
         true ->
             disterl;
         _ ->
-            case rpc:call(Node1, partisan_config, get, [parallelism]) of
-                undefined ->
-                    partisan;
-                Conns ->
-                    list_to_atom("partisan_" ++ integer_to_list(Conns))
-            end
+            partisan
     end,
-    io:format(FileHandle, "~p,~p,~p,~p,~p,~p,~p~n", [Backend, Concurrency, Parallelism, Size, NumMessages, Latency, Time]),
+    io:format(FileHandle, "~p,~p,~p,~p,~p,~p,~p~n", [Backend, Concurrency, Parallelism, BytesSize, NumMessages, Latency, Time]),
     file:close(FileHandle),
 
     ct:pal("Time: ~p", [Time]),
