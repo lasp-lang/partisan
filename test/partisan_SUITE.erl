@@ -129,6 +129,7 @@ groups() ->
        on_down_test,
        client_server_manager_test,
        %% amqp_manager_test,
+       performance_test,
        rejoin_test]},
 
      {hyparview, [],
@@ -141,7 +142,8 @@ groups() ->
       [default_manager_test]},
 
      {with_parallelism, [],
-      [default_manager_test]},
+      [default_manager_test,
+       performance_test]},
      
      {with_channels, [],
       [default_manager_test]},
@@ -366,6 +368,73 @@ leave_test(Config) ->
 
     ok.
 
+performance_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = partisan_default_peer_service_manager,
+
+    %% Specify servers.
+    Servers = node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = node_list(1, "client", Config),
+
+    %% Start nodes.
+    Nodes = start(default_manager_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    [{_, Node1}, {_, Node2}] = Nodes,
+    Concurrency = 4,
+    NumMessages = 100,
+    BenchPid = self(),
+
+    %% Prime a binary at each node.
+    ct:pal("Generating binaries!"),
+    Binary = rand_bits(1 * 1024 * 1024 * 8),
+
+    lists:foreach(fun(N) ->
+        ct:pal("Installing binary at node ~p.", [N]),
+        ok = rpc:call(N, partisan_config, set, [echo_binary, Binary])
+    end, [Node1, Node2]),
+
+    %% Spawn processes to send receive messages on node 1.
+    ct:pal("Spawning processes."),
+    SenderPids = lists:map(fun(_) ->
+        ReceiverFun = fun() ->
+            receiver(Manager, BenchPid, NumMessages)
+        end,
+        ReceiverPid = rpc:call(Node2, erlang, spawn, [ReceiverFun]),
+
+        SenderFun = fun() ->
+            sender(Manager, Node2, ReceiverPid, NumMessages)
+        end,
+        SenderPid = rpc:call(Node1, erlang, spawn, [SenderFun]),
+        SenderPid
+    end, lists:seq(1, Concurrency)),
+
+    %% Start bench.
+    ProfileFun = fun() ->
+        %% Start sending.
+        lists:foreach(fun(SenderPid) ->
+            SenderPid ! start
+        end, SenderPids),
+
+        %% Wait for them all.
+        bench_receiver(Concurrency)
+    end,
+    {Time, _Value} = timer:tc(ProfileFun),
+
+    ct:pal("Time: ~p", [Time]),
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
 default_manager_test(Config) ->
     %% Use the default peer service manager.
     Manager = partisan_default_peer_service_manager,
@@ -486,51 +555,6 @@ default_manager_test(Config) ->
                             end
                         end, Channels)
                   end, Nodes),
-
-    case os:getenv("PROFILE", false) of
-        "true" ->
-            %% Perform end to end messaging between two nodes.
-            [{_Name1, Node1}, {_Name2, Node2}|_] = Nodes,
-
-            ReceiverFun = fun() ->
-                receive
-                    _ ->
-                        ok
-                end,
-                receive
-                    _ ->
-                        ok
-                end
-            end,
-            Node2ReceiverPid = rpc:call(Node2, erlang, spawn, [ReceiverFun]),
-
-            ct:pal("Enabling eprof on ~p", [Node1]),
-            {ok, _} = rpc:call(Node1, eprof, start, []),
-
-            ct:pal("Sending a profiled message from ~p to ~p, ~p", [Node1, Node2, Node2ReceiverPid]),
-            Object = rand_bits(10 * 1024 * 1024 * 8),
-
-            SendFun = fun() ->
-                ok = Manager:forward_message(Node2, undefined, Node2ReceiverPid, Object, [])
-            end,
-            {ok, ok} = rpc:call(Node1, eprof, profile, [SendFun]), 
-            {ok, ok} = rpc:call(Node1, eprof, profile, [SendFun]), 
-
-            Suffix = case ?config(parallelism, Config) of
-                undefined ->
-                    "partisan";
-                Conns ->
-                    "partisan-" ++ integer_to_list(Conns)
-            end,
-
-            timer:sleep(2000),
-
-            ok = rpc:call(Node1, eprof, log, ["/mnt/c/Users/chris/GitHub/unir/_checkouts/partisan/eprof-" ++ Suffix]),
-            ok = rpc:call(Node1, eprof, analyze, []),
-            ct:pal("Message sent, and profile completed!", []);
-        _ ->
-            ok
-    end,
 
     %% Stop nodes.
     stop(Nodes),
@@ -1522,3 +1546,37 @@ rand_bits(Bits) ->
         Bytes = (Bits + 7) div 8,
         <<Result:Bits/bits, _/bits>> = crypto:strong_rand_bytes(Bytes),
         Result.
+
+receiver(_Manager, BenchPid, 0) ->
+    BenchPid ! done,
+    ok;
+receiver(Manager, BenchPid, Count) ->
+    receive
+        {_Message, _SourceNode, _SourcePid} ->
+            receiver(Manager, BenchPid, Count - 1)
+    end.
+
+sender(_EchoBinary, _Manager, _DestinationNode, _DestinationPid, 0) ->
+    ok;
+sender(EchoBinary, Manager, DestinationNode, DestinationPid, Count) ->
+    Manager:forward_message(DestinationNode, undefined, DestinationPid, {EchoBinary, node(), self()}, []),
+    sender(EchoBinary, Manager, DestinationNode, DestinationPid, Count - 1).
+
+sender(Manager, DestinationNode, DestinationPid, Count) ->
+    EchoBinary = partisan_config:get(echo_binary),
+    receive
+        start ->
+            ok
+    end,
+    sender(EchoBinary, Manager, DestinationNode, DestinationPid, Count).
+
+bench_receiver(0) ->
+    ok;
+bench_receiver(Count) ->
+    ct:pal("Waiting for ~p processes to finish...", [Count]),
+
+    receive
+        done ->
+            ct:pal("Received, but still waiting for ~p", [Count -1]),
+            bench_receiver(Count - 1)
+    end.
