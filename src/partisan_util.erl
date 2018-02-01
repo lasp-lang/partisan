@@ -27,7 +27,8 @@
          dispatch_pid/1,
          dispatch_pid/2,
          dispatch_pid/3,
-         maybe_connect/2]).
+         maybe_connect/2,
+         term_to_iolist/1]).
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
 %%      works by treating the list as an array-based tree where, for
@@ -209,3 +210,49 @@ maybe_initiate_parallel_connections(Connections0, Channel, Node, ListenAddr, Par
         false ->
             Connections0
     end.
+
+term_to_iolist(Term) ->
+    [131, term_to_iolist_(Term)].
+        
+term_to_iolist_([]) ->
+    106;
+term_to_iolist_({}) ->
+    [104, 0];
+term_to_iolist_(T) when is_atom(T) ->
+    L = atom_to_list(T),
+    Len = length(L),
+    %% TODO utf-8 atoms
+    case Len > 256 of
+        false ->
+            [115, Len, L];
+        true->
+            [100, <<Len:16/integer-big>>, L]
+    end;
+term_to_iolist_(T) when is_binary(T) ->
+    Len = byte_size(T),
+    [109, <<Len:32/integer-big>>, T];
+term_to_iolist_(T) when is_tuple(T) ->
+    Len = tuple_size(T),
+    case Len > 255 of
+        false ->
+            [104, Len, [term_to_iolist_(E) || E <- tuple_to_list(T)]];
+        true ->
+            [104, <<Len:32/integer-big>>, [term_to_iolist_(E) || E <- tuple_to_list(T)]]
+    end;
+term_to_iolist_(T) when is_list(T) ->
+    %% TODO improper lists
+    Len = length(T),
+    case Len < 64436 andalso lists:all(fun(E) when is_integer(E), E >= 0, E < 256 ->
+                                                true;
+                                            (_) ->
+                                                 false
+                                        end, T) of
+        true ->
+            [107, <<Len:16/integer-big>>, T];
+        false ->
+            [108, <<Len:32/integer-big>>, [[term_to_iolist_(E) || E <- T]], 106]
+    end;
+term_to_iolist_(T) ->
+    %% fallback clause
+    <<131, Rest/binary>> = term_to_binary(T),
+    Rest.
