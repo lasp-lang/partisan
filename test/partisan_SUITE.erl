@@ -397,7 +397,7 @@ performance_test(Config) ->
 
     [{_, Node1}, {_, Node2}] = Nodes,
     Concurrency = 4,
-    NumMessages = 5000,
+    NumMessages = 1000,
     BenchPid = self(),
     Size = 1 * 1024 * 1024,
 
