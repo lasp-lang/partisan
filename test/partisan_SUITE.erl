@@ -65,6 +65,8 @@ end_per_testcase(Case, _Config) ->
 
     _Config.
 
+init_per_group(with_disterl, Config) ->
+    [{disterl, true}] ++ Config;
 init_per_group(with_broadcast, Config) ->
     [{broadcast, true}] ++ Config;
 init_per_group(with_partition_key, Config) ->
@@ -100,6 +102,8 @@ all() ->
      {group, with_tls, [parallel]},
 
      {group, with_parallelism, [parallel]},
+
+     {group, with_disterl, [parallel]},
 
      {group, with_channels, [parallel]},
 
@@ -142,6 +146,10 @@ groups() ->
       [default_manager_test]},
 
      {with_parallelism, [],
+      [default_manager_test,
+       performance_test]},
+
+     {with_disterl, [],
       [default_manager_test,
        performance_test]},
      
@@ -391,10 +399,11 @@ performance_test(Config) ->
     Concurrency = 4,
     NumMessages = 100,
     BenchPid = self(),
+    Size = 8 * 1024 * 1024,
 
     %% Prime a binary at each node.
     ct:pal("Generating binaries!"),
-    Binary = rand_bits(1 * 1024 * 1024 * 8),
+    Binary = rand_bits(Size * 8),
 
     lists:foreach(fun(N) ->
         ct:pal("Installing binary at node ~p.", [N]),
@@ -427,6 +436,25 @@ performance_test(Config) ->
         bench_receiver(Concurrency)
     end,
     {Time, _Value} = timer:tc(ProfileFun),
+
+    %% Write results.
+    RootDir = root_dir(Config),
+    ResultsFile = RootDir ++ "results.csv",
+    ct:pal("Writing results to: ~p", [ResultsFile]),
+    {ok, FileHandle} = file:open(ResultsFile, [append]),
+    Backend = case rpc:call(Node1, partisan_config, get, [disterl]) of
+        true ->
+            disterl;
+        _ ->
+            case rpc:call(Node1, partisan_config, get, [parallelism]) of
+                undefined ->
+                    partisan;
+                Conns ->
+                    list_to_atom("partisan_" ++ integer_to_list(Conns))
+            end
+    end,
+    io:format(FileHandle, "~p,~p,~p,~p,~p~n", [Backend, Concurrency, Size, NumMessages, Time]),
+    file:close(FileHandle),
 
     ct:pal("Time: ~p", [Time]),
 
@@ -1062,6 +1090,15 @@ start(_Case, Config, Options) ->
             ct:pal("Setting forward_options to: ~p", [ForwardOptions]),
             ok = rpc:call(Node, partisan_config, set, [forward_options, ForwardOptions]),
 
+            Disterl = case ?config(disterl, Config) of
+                              undefined ->
+                                  false;
+                              true ->
+                                  true
+                          end,
+            ct:pal("Setting disterl to: ~p", [Disterl]),
+            ok = rpc:call(Node, partisan_config, set, [disterl, Disterl]),
+
             BinaryPadding = case ?config(binary_padding, Config) of
                               undefined ->
                                   false;
@@ -1580,3 +1617,16 @@ bench_receiver(Count) ->
             ct:pal("Received, but still waiting for ~p", [Count -1]),
             bench_receiver(Count - 1)
     end.
+
+%% @private
+root_path(Config) ->
+    DataDir = proplists:get_value(data_dir, Config, ""),
+    DataDir ++ "../../../../../".
+
+%% @private
+root_dir(Config) ->
+    RootCommand = "cd " ++ root_path(Config) ++ "; pwd",
+    RootOutput = os:cmd(RootCommand),
+    RootDir = string:substr(RootOutput, 1, length(RootOutput) - 1) ++ "/",
+    ct:pal("RootDir: ~p", [RootDir]),
+    RootDir.

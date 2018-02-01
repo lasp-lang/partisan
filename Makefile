@@ -28,10 +28,9 @@ packageclean:
 ##
 
 perf:
-	clear; pkill -9 beam.smp; pkill -9 epmd; exit 0
-	./rebar3 ct --readable=false -v --suite=partisan_SUITE --case=default_manager_test --group=with_parallelism
-	clear; pkill -9 beam.smp; pkill -9 epmd; exit 0
-	./rebar3 ct --readable=false -v --suite=partisan_SUITE --case=default_manager_test --group=default
+	clear; pkill -9 beam.smp; pkill -9 epmd; ./rebar3 ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=with_parallelism
+	clear; pkill -9 beam.smp; pkill -9 epmd; ./rebar3 ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=with_disterl
+	clear; pkill -9 beam.smp; pkill -9 epmd; ./rebar3 ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=default
 
 kill: 
 	pkill -9 beam.smp; pkill -9 epmd; exit 0
