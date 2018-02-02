@@ -139,9 +139,18 @@ dispatch_pid(Channel, Entries) ->
 
 %% @doc Return a pid to use for message dispatch for a given channel.
 dispatch_pid(PartitionKey, Channel, Entries) ->
+    UndefinedEntries = lists:filter(fun({_, C, _}) ->
+        case C of
+            undefined ->
+                true;
+            _ ->
+                false
+        end
+    end, Entries),
+
     DispatchEntries = case Channel of
         undefined ->
-            Entries;
+            UndefinedEntries;
         _ ->
             %% Entries for channel.
             ChannelEntries = lists:filter(fun({_, C, _}) ->
@@ -156,7 +165,7 @@ dispatch_pid(PartitionKey, Channel, Entries) ->
             %% Fall back to unlabeled channels.
             case ChannelEntries of
                 [] ->
-                    Entries;
+                    UndefinedEntries;
                 _ ->
                     ChannelEntries
             end
