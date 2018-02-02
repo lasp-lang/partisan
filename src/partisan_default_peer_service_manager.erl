@@ -159,7 +159,8 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
             ServerRef ! Message,
             ok;
         _ ->
-            case partisan_config:get(disterl, false) of
+            Disterl = partisan_config:get(disterl, false),
+            case Disterl of
                 true ->
                     ServerRef ! Message,
                     ok;

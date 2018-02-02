@@ -79,7 +79,7 @@ init([Peer, ListenAddr, Channel, From]) ->
     {reply, term(), state_t()}.
 
 %% @private
-handle_call({send_message, Message}, _From, #state{socket=Socket}=State) ->
+handle_call({send_message, Message}, _From, #state{channel=_Channel, socket=Socket}=State) ->
     case partisan_peer_connection:send(Socket, encode(Message)) of
         ok ->
             {reply, ok, State};
@@ -93,7 +93,7 @@ handle_call(Msg, _From, State) ->
 
 -spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
 %% @private
-handle_cast({send_message, Message}, #state{socket=Socket}=State) ->
+handle_cast({send_message, Message}, #state{channel=_Channel, socket=Socket}=State) ->
     case partisan_peer_connection:send(Socket, encode(Message)) of
         ok ->
             ok;
@@ -193,7 +193,7 @@ handle_message({hello, Node}, #state{peer=Peer, socket=Socket}=State) ->
         PeerName ->
             Message = {hello, node()},
 
-            case partisan_peer_connection:send(Socket, encode(Message)) of
+            case partisan_peer_connection:send(Socket, default_encode(Message)) of
                 ok ->
                     ok;
                 Error ->
@@ -215,3 +215,7 @@ handle_message(Message, State) ->
 %% @private
 encode(Message) ->
     partisan_util:term_to_iolist(Message).
+
+%% @private
+default_encode(Message) ->
+    term_to_binary(Message).
