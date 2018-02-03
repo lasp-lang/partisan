@@ -76,11 +76,11 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
     ShouldConnect = case dict:find(Name, Connections0) of
         %% Found in dict, and disconnected.
         {ok, undefined} ->
-            %lager:info("Node ~p is not connected; initiating.", [Node]),
+            lager:info("Node ~p is not connected; initiating.", [Node]),
             true;
         %% Found in dict and connected.
         {ok, _Pid} ->
-            %lager:info("Node ~p is already connect.", [Node]),
+            lager:info("Node ~p is already connect.", [Node]),
             false;
         %% Not present; never connected.
         error ->
@@ -91,14 +91,14 @@ maybe_connect({Name, _, _} = Node, Connections0) ->
         true ->
             case connect(Node) of
                 {ok, Pid} ->
-                    %lager:info("Node ~p connected.", [Node]),
+                    lager:info("Node ~p connected.", [Node]),
                     Result = ok,
                     Connections1 = dict:store(Name,
                                               Pid,
                                               Connections0),
                     {Result, Connections1};
                 _ ->
-                    %lager:info("Node ~p failed connection.", [Node]),
+                    lager:info("Node ~p failed connection.", [Node]),
                     Result = {error, undefined},
                     Connections1 = dict:store(Name,
                                               undefined,

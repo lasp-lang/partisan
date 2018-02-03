@@ -169,6 +169,7 @@ handle_call({leave, _Node}, _From, State) ->
 
 handle_call({join, {_, _, _}=Node}, _From,
             #state{connections=Connections0}=State) ->
+    lager:info("NEW STATIC JOIN ~p", [Node]),
     %% Trigger connection.
     {Result, Connections} = maybe_connect(Node, Connections0),
 
