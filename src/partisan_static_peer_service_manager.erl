@@ -173,6 +173,8 @@ handle_call({join, {_, _, _}=Node}, _From,
     %% Trigger connection.
     {Result, Connections} = maybe_connect(Node, Connections0),
 
+    lager:info("CONN-JOIN ~p", [dict:to_list(Connections)]),
+
     %% Return.
     {reply, Result, State#state{connections=Connections}};
 
@@ -226,6 +228,8 @@ handle_call({close_connections, IPs}, _From, #state{membership=Membership,
         sets:to_list(Membership)
     ),
 
+    lager:info("CONN-CLOSE ~p", [dict:to_list(Connections)]),
+
     %% Announce to the peer service.
     ActualMembership = membership(Membership, Connections),
     partisan_peer_service_events:update(ActualMembership),
@@ -256,7 +260,7 @@ handle_info({'EXIT', From, _Reason}, #state{membership=Membership,
 
     %% it's possible to receive and 'EXIT' from someone not in the
     %% connections dictionary, why?
-    %lager:info("EXIT received"),
+    lager:info("EXIT received"),
 
     FoldFun = fun(K, V, AccIn) ->
         case V =:= From of
@@ -274,6 +278,8 @@ handle_info({'EXIT', From, _Reason}, #state{membership=Membership,
         end
     end,
     Connections = dict:fold(FoldFun, Connections0, Connections0),
+
+    lager:info("CONN-EXIT ~p", [dict:to_list(Connections)]),
 
     {noreply, State#state{connections=Connections}};
 
