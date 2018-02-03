@@ -152,7 +152,7 @@ init([]) ->
     Membership = maybe_load_state_from_disk(),
     Connections = dict:new(),
 
-    schedule_reconnect(),
+    %schedule_reconnect(),
 
     {ok, #state{membership=Membership,
                 connections=Connections}}.
