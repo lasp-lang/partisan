@@ -169,11 +169,8 @@ handle_call({leave, _Node}, _From, State) ->
 
 handle_call({join, {_, _, _}=Node}, _From,
             #state{connections=Connections0}=State) ->
-    lager:info("NEW STATIC JOIN ~p", [Node]),
     %% Trigger connection.
     {Result, Connections} = maybe_connect(Node, Connections0),
-
-    lager:info("CONN-JOIN ~p", [dict:to_list(Connections)]),
 
     %% Return.
     {reply, Result, State#state{connections=Connections}};
@@ -204,12 +201,10 @@ handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
 handle_call({close_connections, IPs}, _From, #state{membership=Membership,
                                                     connections=Connections0}=State) ->
 
-    %lager:info("CLOSE CONNECTIONS ~p", [IPs]),
     Connections = lists:foldl(
         fun({Name, Ip, _}, AccIn) ->
             case lists:member(Ip, IPs) of
                 true ->
-                    %lager:info("FOUND IP ~p IN ~p", [Ip, Name]),
                     %% if should close the current active connections
                     case dict:find(Name, AccIn) of
                         {ok, undefined} ->
@@ -227,8 +222,6 @@ handle_call({close_connections, IPs}, _From, #state{membership=Membership,
         Connections0,
         sets:to_list(Membership)
     ),
-
-    lager:info("CONN-CLOSE ~p", [dict:to_list(Connections)]),
 
     %% Announce to the peer service.
     ActualMembership = membership(Membership, Connections),
@@ -260,12 +253,11 @@ handle_info({'EXIT', From, _Reason}, #state{membership=Membership,
 
     %% it's possible to receive and 'EXIT' from someone not in the
     %% connections dictionary, why?
-    lager:info("EXIT received"),
 
     FoldFun = fun(K, V, AccIn) ->
         case V =:= From of
             true ->
-                %lager:info("EXIT received from ~p\n\n", [K]),
+                lager:info("EXIT received from ~p", [K]),
                 AccOut = dict:store(K, undefined, AccIn),
 
                 %% Announce to the peer service.
@@ -279,15 +271,11 @@ handle_info({'EXIT', From, _Reason}, #state{membership=Membership,
     end,
     Connections = dict:fold(FoldFun, Connections0, Connections0),
 
-    lager:info("CONN-EXIT ~p", [dict:to_list(Connections)]),
-
     {noreply, State#state{connections=Connections}};
 
 handle_info({connected, Node, _Tag, _RemoteState},
                #state{membership=Membership0,
                       connections=Connections}=State) ->
-
-    lager:info("STATIC CONNECTED 4"),
 
     %% Add to our membership.
     Membership = sets:add_element(Node, Membership0),
