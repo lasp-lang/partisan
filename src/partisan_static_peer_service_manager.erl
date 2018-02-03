@@ -290,8 +290,8 @@ handle_info({connected, Node, _Tag, _RemoteState},
     partisan_peer_service_events:update(ActualMembership),
 
     %% Compute count.
-    %Count = length(ActualMembership),
-    %lager:info("Join ACCEPTED with ~p; we have ~p members in our view.", [Node, Count]),
+    Count = length(ActualMembership),
+    lager:info("Join ACCEPTED with ~p; we have ~p members in our view.", [Node, Count]),
 
     {noreply, State#state{membership=Membership}};
 
