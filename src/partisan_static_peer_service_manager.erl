@@ -281,6 +281,8 @@ handle_info({connected, Node, _Tag, _RemoteState},
                #state{membership=Membership0,
                       connections=Connections}=State) ->
 
+    lager:info("STATIC CONNECTED 4"),
+
     %% Add to our membership.
     Membership = sets:add_element(Node, Membership0),
     persist_state(Membership),

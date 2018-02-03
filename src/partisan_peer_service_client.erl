@@ -153,17 +153,22 @@ decode(Message) ->
     binary_to_term(Message).
 
 %% @private
-handle_message({state, Tag, LocalState},
+handle_message({state, Tag, LocalState}=RemoteState,
                #state{peer=Peer, from=From}=State) ->
+    lager:info("CLIENT RECEIVED STATE ~p", [RemoteState]),
     case LocalState of
         {state, _Active, Epoch} ->
+            lager:info("CLIENT CONNECTED 5"),
             From ! {connected, Peer, Tag, Epoch, LocalState};
         _ ->
+            lager:info("CLIENT CONNECTED 4"),
             From ! {connected, Peer, Tag, LocalState}
     end,
     {noreply, State};
-handle_message({hello, _Node}, #state{socket=Socket}=State) ->
+handle_message({hello, Node}, #state{socket=Socket}=State) ->
+    lager:info("CLIENT RECEIVED HELLO FROM ~p ~p", [Node, Socket]),
     Message = {hello, node()},
+    lager:info("CLIENT SENDING HELLO TO ~p ~p", [Node, Socket]),
     ok = partisan_peer_connection:send(Socket, encode(Message)),
     {noreply, State};
 handle_message(Message, State) ->

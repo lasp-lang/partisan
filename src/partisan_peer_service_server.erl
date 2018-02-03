@@ -52,8 +52,9 @@ acceptor_init(_SockName, LSocket, []) ->
     MRef = monitor(port, LSocket),
     {ok, MRef}.
 
-acceptor_continue(_PeerName, Socket0, MRef) ->
+acceptor_continue(PeerName, Socket0, MRef) ->
     Socket = partisan_peer_connection:accept(Socket0),
+    lager:info("SERVER SENDING HELLO TO ~p ~p", [PeerName, Socket0]),
     send_message(Socket, {hello, node()}),
     gen_server:enter_loop(?MODULE, [], #state{socket=Socket, ref=MRef}).
 
@@ -105,6 +106,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 handle_message({hello, Node},
                #state{socket=Socket}) ->
+    lager:info("SERVER RECEIVED HELLO FROM ~p ~p", [Node, Socket]),
     %% Get our tag, if set.
     Tag = partisan_config:get(tag, undefined),
 
@@ -116,6 +118,7 @@ handle_message({hello, Node},
             %% it to bootstrap.
             Manager = manager(),
             {ok, LocalState} = Manager:get_local_state(),
+            lager:info("SERVER SENDING STATE"),
             send_message(Socket, {state, Tag, LocalState}),
             ok;
         error ->
