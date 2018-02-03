@@ -140,11 +140,13 @@ connect(Peer) when is_atom(Peer) ->
 
 %% @doc Connect to remote peer.
 connect({_Name, Address, Port}) ->
-    Options = [binary, {active, true}, {packet, 4}, {keepalive, partisan_config:get(keep_alive)}],
+    Options = [binary, {active, true}, {packet, 4}],
     case partisan_peer_connection:connect(Address, Port, Options, ?TIMEOUT) of
         {ok, Socket} ->
+            lager:info("CLIENT CONNECT OK"),
             {ok, Socket};
         {error, Error} ->
+            lager:info("CLIENT CONNECT ERROR"),
             {error, Error}
     end.
 

@@ -28,7 +28,7 @@ init([]) ->
     % Trapping exit so can close socket in terminate/2
     _ = process_flag(trap_exit, true),
     Opts = [{active, once}, {mode, binary}, {packet, 4},
-            {reuseaddr, true}, {nodelay, true}, {keepalive, partisan_config:get(keep_alive)}],
+            {reuseaddr, true}, {nodelay, true}],
     case gen_tcp:listen(PeerPort, Opts) of
         {ok, Socket} ->
             % acceptor could close the socket if there is a problem
