@@ -156,22 +156,30 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
     %% If attempting to forward to the local node, bypass.
     case node() of
         Name ->
-            ServerRef ! Message;
+            ServerRef ! Message,
+            ok;
         _ ->
-            FullMessage = case partisan_config:get(binary_padding, false) of
+            Disterl = partisan_config:get(disterl, false),
+            case Disterl of
                 true ->
-                    BinaryPadding = partisan_config:get(binary_padding_term, undefined),
-                    {forward_message, Name, Channel, PartitionKey, ServerRef, {'$partisan_padded', BinaryPadding, Message}, Options};
-                false ->
-                    {forward_message, Name, Channel, PartitionKey, ServerRef, Message, Options}
-            end,
-
-            %% Attempt to fast-path through the memoized connection cache.
-            case partisan_connection_cache:dispatch(FullMessage) of
-                ok ->
+                    ServerRef ! Message,
                     ok;
-                {error, trap} ->
-                    gen_server:call(?MODULE, FullMessage, infinity)
+                false ->
+                    FullMessage = case partisan_config:get(binary_padding, false) of
+                        true ->
+                            BinaryPadding = partisan_config:get(binary_padding_term, undefined),
+                            {forward_message, Name, Channel, PartitionKey, ServerRef, {'$partisan_padded', BinaryPadding, Message}, Options};
+                        false ->
+                            {forward_message, Name, Channel, PartitionKey, ServerRef, Message, Options}
+                    end,
+
+                    %% Attempt to fast-path through the memoized connection cache.
+                    case partisan_connection_cache:dispatch(FullMessage) of
+                        ok ->
+                            ok;
+                        {error, trap} ->
+                            gen_server:call(?MODULE, FullMessage, infinity)
+                    end
             end
     end.
 

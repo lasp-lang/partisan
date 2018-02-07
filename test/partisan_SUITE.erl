@@ -65,6 +65,8 @@ end_per_testcase(Case, _Config) ->
 
     _Config.
 
+init_per_group(with_disterl, Config) ->
+    [{disterl, true}] ++ Config;
 init_per_group(with_broadcast, Config) ->
     [{broadcast, true}] ++ Config;
 init_per_group(with_partition_key, Config) ->
@@ -78,7 +80,7 @@ init_per_group(with_monotonic_channels, Config) ->
 init_per_group(with_channels, Config) ->
     [{parallelism, 1}, {channels, [vnode, gossip]}] ++ Config;
 init_per_group(with_parallelism, Config) ->
-    [{parallelism, 5}, {channels, ?CHANNELS}] ++ Config;
+    parallelism() ++ [{channels, ?CHANNELS}] ++ Config;
 init_per_group(with_no_channels, Config) ->
     [{parallelism, 1}, {channels, []}] ++ Config;
 init_per_group(with_tls, Config) ->
@@ -100,6 +102,8 @@ all() ->
      {group, with_tls, [parallel]},
 
      {group, with_parallelism, [parallel]},
+
+     {group, with_disterl, [parallel]},
 
      {group, with_channels, [parallel]},
 
@@ -129,6 +133,7 @@ groups() ->
        on_down_test,
        client_server_manager_test,
        %% amqp_manager_test,
+       performance_test,
        rejoin_test]},
 
      {hyparview, [],
@@ -141,7 +146,11 @@ groups() ->
       [default_manager_test]},
 
      {with_parallelism, [],
-      [default_manager_test]},
+      [default_manager_test,
+       performance_test]},
+
+     {with_disterl, [],
+      [performance_test]},
      
      {with_channels, [],
       [default_manager_test]},
@@ -363,6 +372,115 @@ leave_test(Config) ->
         ok
 
     end,
+
+    ok.
+
+performance_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = partisan_default_peer_service_manager,
+
+    %% Specify servers.
+    Servers = node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = node_list(1, "client", Config),
+
+    %% Start nodes.
+    Nodes = start(default_manager_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    [{_, Node1}, {_, Node2}] = Nodes,
+
+    %% One process per connection.
+    Concurrency = case os:getenv("CONCURRENCY", "1") of
+        undefined ->
+            1;
+        C ->
+            list_to_integer(C)
+    end,
+
+    %% Latency.
+    Latency = case os:getenv("LATENCY", "0") of
+        undefined ->
+            0;
+        L ->
+            list_to_integer(L)
+    end,
+
+    %% Size.
+    Size = case os:getenv("SIZE", "0") of
+        undefined ->
+            0;
+        S ->
+            list_to_integer(S)
+    end,
+
+    %% Parallelism.
+    Parallelism = case rpc:call(Node1, partisan_config, get, [parallelism]) of
+        undefined ->
+            1;
+        P ->
+            P
+    end,
+        
+    NumMessages = 1000,
+    BenchPid = self(),
+    BytesSize = Size * 1024,
+
+    %% Prime a binary at each node.
+    ct:pal("Generating binaries!"),
+    EchoBinary = rand_bits(BytesSize * 8),
+
+    %% Spawn processes to send receive messages on node 1.
+    ct:pal("Spawning processes."),
+    SenderPids = lists:map(fun(PartitionKey) ->
+        ReceiverFun = fun() ->
+            receiver(Manager, BenchPid, NumMessages)
+        end,
+        ReceiverPid = rpc:call(Node2, erlang, spawn, [ReceiverFun]),
+
+        SenderFun = fun() ->
+            init_sender(EchoBinary, Manager, Node2, ReceiverPid, PartitionKey, NumMessages)
+        end,
+        SenderPid = rpc:call(Node1, erlang, spawn, [SenderFun]),
+        SenderPid
+    end, lists:seq(1, Concurrency)),
+
+    %% Start bench.
+    ProfileFun = fun() ->
+        %% Start sending.
+        lists:foreach(fun(SenderPid) ->
+            SenderPid ! start
+        end, SenderPids),
+
+        %% Wait for them all.
+        bench_receiver(Concurrency)
+    end,
+    {Time, _Value} = timer:tc(ProfileFun),
+
+    %% Write results.
+    RootDir = root_dir(Config),
+    ResultsFile = RootDir ++ "results.csv",
+    ct:pal("Writing results to: ~p", [ResultsFile]),
+    {ok, FileHandle} = file:open(ResultsFile, [append]),
+    Backend = case rpc:call(Node1, partisan_config, get, [disterl]) of
+        true ->
+            disterl;
+        _ ->
+            partisan
+    end,
+    io:format(FileHandle, "~p,~p,~p,~p,~p,~p,~p~n", [Backend, Concurrency, Parallelism, BytesSize, NumMessages, Latency, Time]),
+    file:close(FileHandle),
+
+    ct:pal("Time: ~p", [Time]),
+
+    %% Stop nodes.
+    stop(Nodes),
 
     ok.
 
@@ -993,6 +1111,15 @@ start(_Case, Config, Options) ->
             ct:pal("Setting forward_options to: ~p", [ForwardOptions]),
             ok = rpc:call(Node, partisan_config, set, [forward_options, ForwardOptions]),
 
+            Disterl = case ?config(disterl, Config) of
+                              undefined ->
+                                  false;
+                              true ->
+                                  true
+                          end,
+            ct:pal("Setting disterl to: ~p", [Disterl]),
+            ok = rpc:call(Node, partisan_config, set, [disterl, Disterl]),
+
             BinaryPadding = case ?config(binary_padding, Config) of
                               undefined ->
                                   false;
@@ -1354,12 +1481,11 @@ hyparview_membership_check(Nodes) ->
                     case Path of
                         false ->
                             %% print out the active view of each node
-                            lists:foreach(fun({_, N1}) ->
-                                                {ok, ActiveSet} = rpc:call(N1, Manager, active, []),
-                                                Active = sets:to_list(ActiveSet),
-                                                ct:pal("node ~p active view: ~p",
-                                                       [N1, Active])
-                                           end, Nodes),
+                            % lists:foreach(fun({_, N1}) ->
+                            %                     {ok, ActiveSet} = rpc:call(N1, Manager, active, []),
+                            %                     Active = sets:to_list(ActiveSet),
+                            %                     ct:pal("node ~p active view: ~p", [N1, Active])
+                            %                end, Nodes),
                             {true, {Node, N}};
                         _ ->
                             false
@@ -1471,3 +1597,66 @@ verify_leave(Nodes, Manager) ->
                   end, Nodes),
 
 ok.
+
+%% @private
+rand_bits(Bits) ->
+        Bytes = (Bits + 7) div 8,
+        <<Result:Bits/bits, _/bits>> = crypto:strong_rand_bytes(Bytes),
+        Result.
+
+receiver(_Manager, BenchPid, 0) ->
+    BenchPid ! done,
+    ok;
+receiver(Manager, BenchPid, Count) ->
+    receive
+        {_Message, _SourceNode, _SourcePid} ->
+            receiver(Manager, BenchPid, Count - 1)
+    end.
+
+sender(_EchoBinary, _Manager, _DestinationNode, _DestinationPid, _PartitionKey, 0) ->
+    ok;
+sender(EchoBinary, Manager, DestinationNode, DestinationPid, PartitionKey, Count) ->
+    Manager:forward_message(DestinationNode, undefined, DestinationPid, {EchoBinary, node(), self()}, [{partition_key, PartitionKey}]),
+    sender(EchoBinary, Manager, DestinationNode, DestinationPid, PartitionKey, Count - 1).
+
+init_sender(EchoBinary, Manager, DestinationNode, DestinationPid, PartitionKey, Count) ->
+    receive
+        start ->
+            ok
+    end,
+    sender(EchoBinary, Manager, DestinationNode, DestinationPid, PartitionKey, Count).
+
+bench_receiver(0) ->
+    ok;
+bench_receiver(Count) ->
+    ct:pal("Waiting for ~p processes to finish...", [Count]),
+
+    receive
+        done ->
+            ct:pal("Received, but still waiting for ~p", [Count -1]),
+            bench_receiver(Count - 1)
+    end.
+
+%% @private
+root_path(Config) ->
+    DataDir = proplists:get_value(data_dir, Config, ""),
+    DataDir ++ "../../../../../../".
+
+%% @private
+root_dir(Config) ->
+    RootCommand = "cd " ++ root_path(Config) ++ "; pwd",
+    RootOutput = os:cmd(RootCommand),
+    RootDir = string:substr(RootOutput, 1, length(RootOutput) - 1) ++ "/",
+    ct:pal("RootDir: ~p", [RootDir]),
+    RootDir.
+
+%% @private
+parallelism() ->
+    case os:getenv("PARALLELISM", "1") of
+        false ->
+            [{parallelism, list_to_integer("1")}];
+        "1" ->
+            [{parallelism, list_to_integer("1")}];
+        Config ->
+            [{parallelism, list_to_integer(Config)}]
+    end.
