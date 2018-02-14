@@ -1111,6 +1111,9 @@ start(_Case, Config, Options) ->
     %% Load lager.
     {ok, _} = application:ensure_all_started(lager),
 
+    %% Load ranch.
+    {ok, _} = application:ensure_all_started(ranch),
+
     Servers = proplists:get_value(servers, Options, []),
     Clients = proplists:get_value(clients, Options, []),
 
