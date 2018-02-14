@@ -156,7 +156,7 @@ connect(#{ip := Address, port := Port}, Channel) ->
     %% Start local swarm, which will reuse existing swarm if available.
     case libp2p_swarm:start(OurListenAddr) of
         {ok, FromSwarm} ->
-            case libp2p_swarm:dial(FromSwarm, ToListenAddr, Channel) of
+            case libp2p_swarm:dial(FromSwarm, ToListenAddr, atom_to_list(Channel)) of
                 {ok, Stream} ->
                     {ok, Stream};
                 {error, Error} ->
