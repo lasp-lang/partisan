@@ -75,8 +75,8 @@ init([]) ->
             Channels = partisan_config:get(channels, []),
 
             lists:foreach(fun(Channel) ->
-                C = atom_to_list(Channel),
-                libp2p_swarm:add_stream_handler(Swarm, C, {partisan_peer_service_libp2p_server_worker, start_link, [C]})
+                Name = atom_to_list(Channel),
+                libp2p_swarm:add_stream_handler(Swarm, Name, {libp2p_framed_stream, server, [partisan_peer_service_libp2p_framed_stream]})
             end, Channels),
 
             {ok, #state{swarm=Swarm}};
