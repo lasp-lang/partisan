@@ -52,7 +52,7 @@ init([]) ->
         native ->
             [{partisan_pool_sup, {partisan_pool_sup, start_link, []}, permanent, 20000, supervisor, [partisan_pool_sup]}];
         libp2p ->
-            []
+            [?CHILD(partisan_peer_service_libp2p_server, worker)]
     end,
 
     %% Initialize the connection cache supervised by the supervisor.

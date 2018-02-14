@@ -139,7 +139,7 @@ connect(Node, Channel) when is_atom(Node) ->
         true ->
             ListenAddr = hd(ListenAddrs),
             connect(ListenAddr, Channel);
-        _ ->
+        false ->
             {error, no_listen_addr}
     end;
 
@@ -149,7 +149,8 @@ connect(#{ip := Address, port := Port}, Channel) ->
     ToListenAddr = "/ip4/" ++ inet:ntoa(Address) ++ "/tcp/" ++ integer_to_list(Port),
 
     %% Get our information.
-    #{ip := MyAddress, port := MyPort} = partisan_peer_service_manager:myself(),
+    #{listen_addrs := ListenAddrs} = partisan_peer_service_manager:myself(),
+    #{ip := MyAddress, port := MyPort} = hd(ListenAddrs),
     OurListenAddr = "/ip4/" ++ inet:ntoa(MyAddress) ++ "/tcp/" ++ integer_to_list(MyPort),
 
     %% Start local swarm, which will reuse existing swarm if available.
