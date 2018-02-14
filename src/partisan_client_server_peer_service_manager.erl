@@ -220,7 +220,7 @@ handle_call({leave, Node}, _From,
     Membership = lists:foldl(fun(#{name := Name} = N, L0) ->
                         case Node of
                             Name ->
-                                sets:del_element(N, Membership0);
+                                sets:del_element(N, L0);
                             _ ->
                                 L0
                         end
