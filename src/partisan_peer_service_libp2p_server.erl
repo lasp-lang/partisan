@@ -21,6 +21,8 @@
 -module(partisan_peer_service_libp2p_server).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+-include("partisan.hrl").
+
 %% API
 -export([start_link/0,
          start_link/1]).
@@ -34,7 +36,7 @@
          code_change/3]).
 
 %% State record.
--record(state, {pid}).
+-record(state, {swarm}).
 
 %%%===================================================================
 %%% API
@@ -62,10 +64,22 @@ init([]) ->
     #{ip := MyAddress, port := MyPort} = hd(ListenAddrs),
     OurListenAddr = "/ip4/" ++ inet:ntoa(MyAddress) ++ "/tcp/" ++ integer_to_list(MyPort),
 
+    %% Initialize the connection cache supervised by the supervisor.
+    ?LIBP2P_SERVER = ets:new(?LIBP2P_SERVER, [public, named_table, set, {read_concurrency, true}]),
+
     %% Bind a listener.
     case libp2p_swarm:start(OurListenAddr) of
-        {ok, Pid} ->
-            {ok, #state{pid=Pid}};
+        {ok, Swarm} ->
+            true = ets:insert(?LIBP2P_SERVER, {local_swarm, Swarm}),
+
+            Channels = partisan_config:get(channels, []),
+
+            lists:foreach(fun(Channel) ->
+                C = atom_to_list(Channel),
+                libp2p_swarm:add_stream_handler(Swarm, C, {partisan_peer_service_libp2p_server_worker, start_link, [C]})
+            end, Channels),
+
+            {ok, #state{swarm=Swarm}};
         Error ->
             lager:error("Unable to init ~p due to ~p", [OurListenAddr, Error]),
             {stop, normal}

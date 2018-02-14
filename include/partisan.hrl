@@ -3,6 +3,7 @@
 -define(PEER_PORT, 9000).
 -define(FANOUT, 5).
 -define(CACHE, partisan_connection_cache).
+-define(LIBP2P_SERVER, partisan_libp2p_server_table).
 -define(PARALLELISM, 1).
 -define(DEFAULT_CHANNEL, undefined).
 -define(DEFAULT_PARTITION_KEY, undefined).

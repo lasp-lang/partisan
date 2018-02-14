@@ -148,22 +148,19 @@ connect(Node, Channel) when is_atom(Node) ->
 connect(#{ip := Address, port := Port}, Channel) ->
     ToListenAddr = "/ip4/" ++ inet:ntoa(Address) ++ "/tcp/" ++ integer_to_list(Port),
 
-    %% Get our information.
-    #{listen_addrs := ListenAddrs} = partisan_peer_service_manager:myself(),
-    #{ip := MyAddress, port := MyPort} = hd(ListenAddrs),
-    OurListenAddr = "/ip4/" ++ inet:ntoa(MyAddress) ++ "/tcp/" ++ integer_to_list(MyPort),
-
-    %% Start local swarm, which will reuse existing swarm if available.
-    case libp2p_swarm:start(OurListenAddr) of
-        {ok, FromSwarm} ->
+    case ets:lookup(?LIBP2P_SERVER, local_swarm) of
+        [{local_swarm, FromSwarm}] ->
+            lager:info("Issuing libp2p operation: FromSwarm: ~p, ToListenAddr: ~p Channel: ~p", 
+                       [FromSwarm, ToListenAddr, Channel]),
             case libp2p_swarm:dial(FromSwarm, ToListenAddr, atom_to_list(Channel)) of
                 {ok, Stream} ->
                     {ok, Stream};
                 {error, Error} ->
                     {error, Error}
             end;
-        InitError ->
-            InitError
+        [] ->
+            lager:error("No local swarm!"),
+            {error, no_local_swarm}
     end.
 
 %% @private
