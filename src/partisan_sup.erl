@@ -48,11 +48,15 @@ init([]) ->
                  ?CHILD(partisan_plumtree_broadcast, worker)
                  ]),
 
-    PoolSup = {partisan_pool_sup, {partisan_pool_sup, start_link, []},
-               permanent, 20000, supervisor, [partisan_pool_sup]},
+    TransportSpecs = case partisan_config:get(transport, native) of
+        native ->
+            [{partisan_pool_sup, {partisan_pool_sup, start_link, []}, permanent, 20000, supervisor, [partisan_pool_sup]}];
+        libp2p ->
+            []
+    end,
 
     %% Initialize the connection cache supervised by the supervisor.
     ?CACHE = ets:new(?CACHE, [public, named_table, set, {read_concurrency, true}]),
 
     RestartStrategy = {one_for_one, 10, 10},
-    {ok, {RestartStrategy, Children ++ [PoolSup]}}.
+    {ok, {RestartStrategy, Children ++ TransportSpecs}}.

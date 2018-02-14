@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(partisan_peer_service_client).
+-module(partisan_peer_service_native_client).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -behaviour(gen_server).

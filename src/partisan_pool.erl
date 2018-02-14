@@ -39,7 +39,7 @@ accept_socket(Socket, Acceptors) ->
 %% acceptor_pool api
 
 init([]) ->
-    Conn = #{id => partisan_peer_service_server,
-             start => {partisan_peer_service_server, [], []},
+    Conn = #{id => partisan_peer_service_native_server,
+             start => {partisan_peer_service_native_server, [], []},
              grace => 5000}, % Give connections 5000ms to close before shutdown
     {ok, {#{}, [Conn]}}.
