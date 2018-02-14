@@ -80,12 +80,8 @@ handle_info(_, Msg, State) ->
     {noreply, State}.
 
 %% @private
-encode(Term) ->
-    term_to_binary(Term).
-
-% %% @private
-% encode(Message) ->
-%     partisan_util:term_to_iolist(Message).
+encode(Message) ->
+    partisan_util:term_to_iolist(Message).
 
 %% @private
 decode(Bin) ->
