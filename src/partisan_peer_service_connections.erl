@@ -25,6 +25,7 @@
          find/2,
          store/3,
          prune/2,
+         erase/2,
          foreach/2]).
 
 -include("partisan.hrl").
@@ -85,6 +86,22 @@ prune(Pid, Connections) when is_pid(Pid) ->
                             {AccNode, ConnectionsIn}
                     end
               end, {undefined, Connections}, Connections).
+
+erase(NodeName, Connections) ->
+    dict:fold(fun(#{name := Name} = Node, {_ListenAddr, _Channel, Pid} = Entry, ConnectionsAcc) ->
+                      case Name of
+                          NodeName ->
+                              try
+                                  gen_server:stop(Pid, normal, infinity)
+                              catch
+                                  _:_ ->
+                                      ok
+                              end,
+                              ConnectionsAcc;
+                          _ ->
+                              dict:store(Node, Entry, ConnectionsAcc)
+                      end
+              end, dict:new(), Connections).
 
 %% @doc Apply a function to all connection entries
 -spec foreach(Fun :: fun((node_spec(), list(pid())) -> ok),
