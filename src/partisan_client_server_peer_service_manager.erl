@@ -213,12 +213,15 @@ init([]) ->
 handle_call({reserve, _Tag}, _From, State) ->
     {reply, {error, no_available_slots}, State};
 
-handle_call({leave, Node}, _From,
-            #state{membership=Membership0}=State) ->
+handle_call({leave, NodeName}, _From,
+            #state{membership=Membership0,
+                   pending = Pending,
+                   connections = Connections
+                  }=State) ->
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
     Membership = lists:foldl(fun(#{name := Name} = N, L0) ->
-                        case Node of
+                        case NodeName of
                             Name ->
                                 sets:del_element(N, L0);
                             _ ->
@@ -228,13 +231,27 @@ handle_call({leave, Node}, _From,
 
     %% Remove state and shutdown if we are removing ourselves.
     case node() of
-        Node ->
+        NodeName ->
             delete_state_from_disk(),
 
             %% Shutdown; connections terminated on shutdown.
             {stop, normal, State#state{membership=Membership}};
         _ ->
-            {reply, ok, State}
+           NewPending = lists:filter(fun(#{name := Name}) ->
+                                             case Name of
+                                                 NodeName ->
+                                                     %% delete the same name node
+                                                     false;
+                                                 _ ->
+                                                     true
+                                             end
+                                     end, Pending),
+            NewConnections = partisan_util:may_disconnect(NodeName, Connections),
+            {reply, ok, State#state{
+                          membership = Membership,
+                          pending = NewPending,
+                          connections = NewConnections
+                         }}
     end;
 
 handle_call({join, #{name := Name}=Node},

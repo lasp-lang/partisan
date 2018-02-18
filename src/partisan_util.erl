@@ -28,6 +28,7 @@
          dispatch_pid/2,
          dispatch_pid/3,
          maybe_connect/2,
+         may_disconnect/2,
          term_to_iolist/1]).
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
@@ -71,6 +72,9 @@ maybe_connect(#{name := _Name, listen_addrs := ListenAddrs} = Node, Connections0
               end,
     lists:foldl(FoldFun, Connections0, ListenAddrs).
 
+may_disconnect(NodeName, Connections) ->
+    partisan_peer_service_connections:erase(NodeName, Connections).
+
 %% @private
 maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
     Parallelism = maps:get(parallelism, Node, ?PARALLELISM),
@@ -99,9 +103,9 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
                     Connections0
             end;
         %% Found and connected.
-        {ok, Pids} ->
+        {ok, Entries} ->
             lists:foldl(fun(Channel, ChannelConnections) ->
-                maybe_initiate_parallel_connections(ChannelConnections, Channel, Node, ListenAddr, Parallelism, Pids)
+                maybe_initiate_parallel_connections(ChannelConnections, Channel, Node, ListenAddr, Parallelism, Entries)
             end, Connections0, Channels);
         %% Not present; disconnected.
         {error, not_found} ->
@@ -189,8 +193,8 @@ dispatch_pid(PartitionKey, Channel, Entries) ->
     Pid.
 
 %% @private
-maybe_initiate_parallel_connections(Connections0, Channel, Node, ListenAddr, Parallelism, Pids) ->
-    FilteredPids = lists:filter(fun({A, C, _}) ->
+maybe_initiate_parallel_connections(Connections0, Channel, Node, ListenAddr, Parallelism, Entries) ->
+    FilteredEntries = lists:filter(fun({A, C, _}) ->
                             case A of
                                 ListenAddr ->
                                     case C of
@@ -202,11 +206,11 @@ maybe_initiate_parallel_connections(Connections0, Channel, Node, ListenAddr, Par
                                 _ ->
                                     false
                             end
-                    end, Pids),
-    case length(FilteredPids) < Parallelism andalso Parallelism =/= undefined of
+                    end, Entries),
+    case length(FilteredEntries) < Parallelism andalso Parallelism =/= undefined of
         true ->
             lager:debug("(~p of ~p connected for channel ~p) Connecting node ~p.",
-                        [length(FilteredPids), Parallelism, Channel, Node]),
+                        [length(FilteredEntries), Parallelism, Channel, Node]),
 
             case connect(Node, ListenAddr, Channel) of
                 {ok, Pid} ->
