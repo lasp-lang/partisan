@@ -1136,8 +1136,7 @@ maybe_load_state_from_disk() ->
             case filelib:is_regular(filename:join(Dir, "cluster_state")) of
                 true ->
                     {ok, Bin} = file:read_file(filename:join(Dir, "cluster_state")),
-                    {ok, State} = binary_to_term(Bin),
-                    State;
+                    binary_to_term(Bin);
                 false ->
                     empty_membership()
             end
