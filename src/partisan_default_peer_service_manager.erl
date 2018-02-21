@@ -712,7 +712,7 @@ schedule_gossip() ->
 
     case ShouldGossip of
         true ->
-            GossipInterval = partisan_config:get(gossip_interval, 10000),
+            GossipInterval = partisan_config:get(gossip_interval, 1000),
             erlang:send_after(GossipInterval, ?MODULE, gossip);
         _ ->
             ok

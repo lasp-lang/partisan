@@ -65,6 +65,8 @@ end_per_testcase(Case, _Config) ->
 
     _Config.
 
+init_per_group(with_libp2p, Config) ->
+    [{transport, libp2p}] ++ Config;
 init_per_group(with_disterl, Config) ->
     [{disterl, true}] ++ Config;
 init_per_group(with_broadcast, Config) ->
@@ -103,6 +105,8 @@ all() ->
 
      {group, with_parallelism, [parallel]},
 
+     {group, with_libp2p, [parallel]},
+
      {group, with_disterl, [parallel]},
 
      {group, with_channels, [parallel]},
@@ -129,6 +133,7 @@ groups() ->
 
      {simple, [],
       [default_manager_test,
+       libp2p_test,
        leave_test,
        on_down_test,
        client_server_manager_test,
@@ -148,6 +153,9 @@ groups() ->
      {with_parallelism, [],
       [default_manager_test,
        performance_test]},
+
+     {with_libp2p, [],
+      [default_manager_test]},
 
      {with_disterl, [],
       [performance_test]},
@@ -345,32 +353,95 @@ rejoin_test(Config) ->
 
         ok.
 
+libp2p_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = partisan_default_peer_service_manager,
+
+    %% Specify servers.
+    Servers = node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+
+    %% Start nodes.
+    Nodes = start(libp2p_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                  {servers, Servers},
+                  {clients, Clients}]),
+
+    %% Ensure ranch is started.
+    lists:foreach(fun({_Name, Node}) ->
+        {ok, _} = rpc:call(Node, application, ensure_all_started, [ranch])
+    end, Nodes),
+
+    %% Start swarms.
+    Swarms = lists:map(fun({_Name, Node}) ->
+        {ok, Pid} = rpc:call(Node, libp2p_swarm, start, ["/ip4/127.0.0.1/tcp/0"]),
+        {Node, Pid}
+    end, Nodes),
+    ct:pal("Swarms are: ~p", [Swarms]),
+
+    %% Collect listen addrs.
+    ListenAddrs = lists:map(fun({_Name, Node}) ->
+        SwarmPid = proplists:get_value(Node, Swarms),
+        ListenAddrs = rpc:call(Node, libp2p_swarm, listen_addrs, [SwarmPid]),
+        ct:pal("Node: ~p ListenAddrs: ~p", [Node, ListenAddrs]),
+        {Node, ListenAddrs}
+    end, Nodes),
+    ct:pal("ListenAddrs are: ~p", [ListenAddrs]),
+
+    %% Create a new session.
+    [{_Name1, Node1}, {_Name2, Node2} | _] = Nodes,
+    Node2ListenAddrs = proplists:get_value(Node2, ListenAddrs),
+    Node1Swarm = proplists:get_value(Node2, Swarms),
+    {ok, Session1} = rpc:call(Node1, libp2p_swarm, connect, [Node1Swarm, hd(Node2ListenAddrs)]),
+    ct:pal("Session ~p created from ~p to ~p", [Session1, Node1, Node2]),
+
+    %% Ping stream.
+    ct:pal("Ping sent for session: ~p", [Session1]),
+    ?assertMatch({ok, _}, rpc:call(Node1, libp2p_session, ping, [Session1])),
+
+    %% Create a new stream.
+    {ok, Stream1} = rpc:call(Node1, libp2p_session, open, [Session1]),
+    ct:pal("Stream ~p created for session ~p", [Stream1, Session1]),
+
+    %% Send a message.
+    ct:pal("Sending a message from ~p to ~p", [Node1, Node2]),
+    ok = rpc:call(Node1, libp2p_connection, send, [Stream1, <<"test-data">>]),
+
+    %% Closing the stream.
+    ct:pal("Closing stream: ~p", [Stream1]),
+    ?assertEqual(ok, rpc:call(Node1, libp2p_connection, close, [Stream1])),
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
 leave_test(Config) ->
     case os:getenv("TRAVIS") of
         false ->
-        %% Use the default peer service manager.
-        Manager = partisan_default_peer_service_manager,
+            %% Use the default peer service manager.
+            Manager = partisan_default_peer_service_manager,
 
-        %% Specify servers.
-        Servers = node_list(1, "server", Config),
+            %% Specify servers.
+            Servers = node_list(1, "server", Config),
 
-        %% Specify clients.
-        Clients = node_list(?CLIENT_NUMBER, "client", Config),
+            %% Specify clients.
+            Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
-        %% Start nodes.
-        Nodes = start(leave_test, Config,
-                    [{partisan_peer_service_manager, Manager},
-                    {servers, Servers},
-                    {clients, Clients}]),
+            %% Start nodes.
+            Nodes = start(leave_test, Config,
+                        [{partisan_peer_service_manager, Manager},
+                        {servers, Servers},
+                        {clients, Clients}]),
 
-        verify_leave(Nodes, Manager),
+            verify_leave(Nodes, Manager),
 
-        %% Stop nodes.
-        stop(Nodes);
-
-    _ ->
-        ok
-
+            %% Stop nodes.
+            stop(Nodes);
+        _ ->
+            ok
     end,
 
     ok.
@@ -552,7 +623,7 @@ default_manager_test(Config) ->
                                       partisan_default_peer_service_manager,
                                       connections,
                                       []),
-                             ct:pal("Connections: ~p~n", [Connections]),
+                             % ct:pal("Connections: ~p~n", [Connections]),
                              Connections
                      end,
 
@@ -1040,6 +1111,9 @@ start(_Case, Config, Options) ->
     %% Load lager.
     {ok, _} = application:ensure_all_started(lager),
 
+    %% Load ranch.
+    {ok, _} = application:ensure_all_started(ranch),
+
     Servers = proplists:get_value(servers, Options, []),
     Clients = proplists:get_value(clients, Options, []),
 
@@ -1119,6 +1193,15 @@ start(_Case, Config, Options) ->
                           end,
             ct:pal("Setting disterl to: ~p", [Disterl]),
             ok = rpc:call(Node, partisan_config, set, [disterl, Disterl]),
+
+            Transport = case ?config(transport, Config) of
+                              undefined ->
+                                  native;
+                              T ->
+                                  T
+                          end,
+            ct:pal("Setting transport to: ~p", [Transport]),
+            ok = rpc:call(Node, partisan_config, set, [transport, Transport]),
 
             BinaryPadding = case ?config(binary_padding, Config) of
                               undefined ->

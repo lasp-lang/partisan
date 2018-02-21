@@ -131,7 +131,12 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
 -spec connect(Node :: node_spec(), listen_addr(), channel()) -> {ok, pid()} | ignore | {error, term()}.
 connect(Node, ListenAddr, Channel) ->
     Self = self(),
-    partisan_peer_service_client:start_link(Node, ListenAddr, Channel, Self).
+    case partisan_config:get(transport, native) of
+        native ->
+            partisan_peer_service_native_client:start_link(Node, ListenAddr, Channel, Self);
+        libp2p ->
+            partisan_peer_service_libp2p_client:start_link(Node, ListenAddr, Channel, Self)
+    end.
 
 %% @doc Return a pid to use for message dispatch.
 dispatch_pid(Entries) ->

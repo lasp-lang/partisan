@@ -78,6 +78,7 @@ init() ->
                            {peer_port, DefaultPeerPort},
                            {random_promotion, true},
                            {reservations, []},
+                           {transport, native},
                            {tls, false},
                            {tls_options, []},
                            {tag, DefaultTag}]],
