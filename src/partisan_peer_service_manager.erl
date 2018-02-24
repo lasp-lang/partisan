@@ -21,7 +21,7 @@
 -module(partisan_peer_service_manager).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
--include("partisan.hrl").
+-include("../include/partisan.hrl").
 
 -export([myself/0, mynode/0]).
 

@@ -122,10 +122,10 @@ all() ->
 
 groups() ->
     [
-     {default, [],
-      [{group, simple},
-       {group, hyparview}
-      ]},
+     %{default, [],
+     % [{group, simple},
+     %  {group, hyparview}
+     % ]},
 
      {simple, [],
       [default_manager_test,
@@ -135,15 +135,15 @@ groups() ->
        %% amqp_manager_test,
        performance_test,
        rejoin_test]},
-
+       
      {hyparview, [],
       [%% hyparview_manager_partition_test,
        hyparview_manager_high_active_test,
        hyparview_manager_low_active_test,
        hyparview_manager_high_client_test]},
 
-     {with_tls, [],
-      [default_manager_test]},
+     %{with_tls, [],
+     % [default_manager_test]},
 
      {with_parallelism, [],
       [default_manager_test,
@@ -152,8 +152,8 @@ groups() ->
      {with_disterl, [],
       [performance_test]},
      
-     {with_channels, [],
-      [default_manager_test]},
+     %{with_channels, [],
+     % [default_manager_test]},
 
      {with_no_channels, [],
       [default_manager_test]},
@@ -172,6 +172,7 @@ groups() ->
 
      {with_broadcast, [],
       [hyparview_manager_low_active_test]}
+
     ].
 
 %% ===================================================================
