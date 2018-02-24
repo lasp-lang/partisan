@@ -1662,4 +1662,3 @@ parallelism() ->
         Config ->
             [{parallelism, list_to_integer(Config)}]
     end.
-
