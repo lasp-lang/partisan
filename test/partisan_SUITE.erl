@@ -1599,6 +1599,7 @@ verify_leave(Nodes, Manager) ->
 
 ok.
 
+
 %% @private
 rand_bits(Bits) ->
         Bytes = (Bits + 7) div 8,
