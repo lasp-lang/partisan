@@ -27,7 +27,9 @@
 -define(DEFAULT_PASSIVE_VIEW_MAINTENANCE_INTERVAL, 10000).
 -define(RANDOM_PROMOTION_INTERVAL, 5000).
 
--include("partisan.hrl").
+-define(XBOT_EXECUTION_INTERVAL, 5000).
+
+-include("../include/partisan.hrl").
 
 %% partisan_peer_service_manager callbacks
 -export([start_link/0,
@@ -275,6 +277,9 @@ init([]) ->
 
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
+    
+    %% Schedule periodic execution of xbot algorithm (optimization)
+    schedule_xbot_execution(),
 
     %% Schedule tree peers refresh.
     schedule_tree_refresh(),
@@ -566,7 +571,36 @@ handle_info(passive_view_maintenance,
     schedule_passive_view_maintenance(),
 
     {noreply, State};
+    
+handle_info(xbot_execution, 
+				#state{active=Active,
+					   passive=Passive,
+					   max_active_size=MaxActiveSize,
+					   reserved=Reserved}=InitiatorState) ->
+	
 
+	IsFull = is_full({active,Active,Reserved}, MaxActiveSize),
+	case IsFull of
+		true ->
+			Candidates = select_random_sublist(Passive, 2),
+			send_optimization_messages(Active, Candidates, InitiatorState);
+%			for(i = UN; i < sizeof(Active); i = i+1)
+%				Old = Active[i],
+%				while candidates != {} do
+%					Candidate = removeFirst(Candidates),
+%					if is_better(Old,Candidate) ->
+%						xbot_receive(optimization, _, Old, InitiatorState, Candidate, _), %%Obtain old and candidate states to send
+%						break
+%					end
+%				end
+%			end
+		false -> ok
+	end,
+	
+	%Schedule periodic xbot execution algorithm (optimization)
+	schedule_xbot_execution(),
+	{noreply, InitiatorState};
+	
 handle_info({'EXIT', From, Reason},
             #state{myself=Myself,
                    active=Active0,
@@ -649,6 +683,22 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+%% @private
+send_optimization_messages(_, [], _) -> ok;
+send_optimization_messages(Active, [Candidate | RestCandidates], InitiatorState) ->
+	process_candidate(Active, Candidate, InitiatorState),
+	send_optimization_messages(Active, RestCandidates, InitiatorState).
+	
+%% @private
+process_candidate([], _, _) -> ok;
+process_candidate([Old | RestActive],#state{connections=CConnections}=Candidate, InitiatorState) ->
+	IsBetter = is_better(Old, Candidate),
+	if IsBetter ->
+		do_send_message(Candidate,{optimization, none, Old, InitiatorState, Candidate, none},CConnections); %change none?
+	   true -> 
+		process_candidate(RestActive, Candidate, InitiatorState)
+	end.
 
 %% @private
 handle_message({resolve_partition, Reference}, State) ->
@@ -1080,7 +1130,118 @@ handle_message({relay_message, Node, Message}, #state{out_links=OutLinks, connec
     {noreply, State};
 handle_message({forward_message, ServerRef, Message}, State) ->
     ServerRef ! Message,
-    {noreply, State}.
+    {noreply, State};
+    
+%lager:debug("Removing and disconnecting peer: ~p", [Peer]),
+
+%% Remove from the active view.
+%Active = sets:del_element(Peer, Active0),
+
+%% Add to the passive view.
+%State = add_to_passive_view(Peer,
+%                          State0#state{active=Active}),
+
+%% Trigger connection.
+%Connections1 = partisan_util:maybe_connect(Peer, Connections0),
+
+%% Get next disconnect id for the peer.
+%NextId = get_next_id(Peer, Epoch0, SentMessageMap0),
+%% Update the SentMessageMap.
+%SentMessageMap = dict:store(Peer, NextId, SentMessageMap0),
+
+%% Let peer know we are disconnecting them.
+%do_send_message(Peer,
+%                {disconnect, Myself0, NextId},
+%                Connections1),
+
+%% Trigger disconnection.
+%Connections = disconnect(Peer, Connections1),
+
+%lager:debug("Node ~p active view: ~p", [Myself0, members(Active)]),
+
+%            State#state{connections=Connections,
+%                        sent_message_map=SentMessageMap}
+%    end.
+    
+%% Optimization Reply
+handle_message({optimization_reply, true, #state{myself=OPeer}, #state{active=Active} = InitiatorState, CandidateState, none}, #state{myself=Myself,connections=Connections}) ->
+	Check = is_in_active_view(OPeer, Active),
+	if Check ->
+		%Revisar los disconnect
+		remove_from_active_view(OPeer, Active),
+	    Connections1 = partisan_util:maybe_connect(OPeer, Connections),
+	    do_send_message(OPeer,
+                {disconnect, Myself, none}, %Change none for NextId ¿What? 
+                Connections1),
+        %NewConnections = disconnect(OPeer, Connections1)
+        disconnect(OPeer, Connections1)
+	end,
+	move_peer_from_passive_to_active(CandidateState, InitiatorState); %%State of initiator or the peer that will be moved???
+handle_message({optimization_reply, true, #state{myself=OPeer}, #state{active=Active} = InitiatorState, CandidateState, DisconnectState}, _) ->
+	Check = is_in_active_view(OPeer, Active),
+	if Check ->
+		DisconnectState, %Send(disconnect_wait, o),
+		remove_from_active_view(OPeer, Active)
+	end,
+	move_peer_from_passive_to_active(CandidateState, InitiatorState); %%State of initiator or the peer that will be moved???
+handle_message({optimization_reply, false, _, _, _, _}, _) ->
+	ok;
+
+%% Optimization
+handle_message({optimization, _, OldState, #state{active=Active, reserved=Reserved, max_active_size=MaxActiveSize} = InitiatorState, 
+				#state{myself=CPeer,tag=CTag}=CandidateState, DisconnectState}, #state{connections=Connections}) ->
+	Check = is_full({active, Active, Reserved},MaxActiveSize),
+	if not Check -> 
+			add_to_active_view(CPeer, CTag, InitiatorState), %% I think this is good specified, add CPeer with CTag to active view of InitiatorState
+			do_send_message(InitiatorState, {optimization_reply, true, OldState, InitiatorState, #state{}, none}, Connections); %% Change the null value for erlang equivalent
+		true ->
+%			d = Active[UNOPT],
+			do_send_message(DisconnectState,{replace, none, #state{}, DisconnectState, OldState, CandidateState}, Connections)
+	end;
+	
+%% Replace Reply
+handle_message({replace_reply, true, OldState, #state{myself=IPeer,tag=ITag,active=Active}=InitiatorState, CandidateState, #state{myself=DPeer}=DisconnectState}, 
+			#state{connections=Connections}) ->
+	remove_from_active_view(DPeer, Active),
+	add_to_active_view(IPeer, ITag, InitiatorState), %%Tag of i or what?
+	do_send_message(CandidateState,{optimization_reply, true, OldState, InitiatorState, #state{}, DisconnectState},Connections);
+handle_message({replace_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, #state{connections=Connections}) ->
+	do_send_message(CandidateState,{optimization_reply, false, OldState, InitiatorState, #state{}, DisconnectState},Connections);
+
+%% Replace
+handle_message({replace, _, OldState, InitiatorState, CandidateState, _}, #state{connections=Connections}) ->
+	Check = is_better(CandidateState, OldState),
+	if not Check ->
+			do_send_message(CandidateState,{replace_reply, false, CandidateState, InitiatorState, #state{}, OldState}, Connections);
+		true ->
+			do_send_message(OldState,{switch, none, #state{}, OldState, InitiatorState, CandidateState}, Connections)
+	end;
+
+%% Switch Reply
+handle_message({switch_reply, true, #state{myself=OPeer}, #state{active=Active,tag=Tag} = InitiatorState, #state{myself=CPeer}=CandidateState, _}, 
+			#state{connections=Connections}) ->
+	remove_from_active_view(CPeer, Active),
+	add_to_active_view(OPeer, Tag, InitiatorState), %%What tag?? initiator or o??
+	do_send_message(CandidateState,{replace_reply, true, #state{}, InitiatorState, #state{}, #state{}}, Connections);
+handle_message({switch_reply, false, _, InitiatorState, CandidateState, _}, #state{connections=Connections}) ->
+	do_send_message(CandidateState, {replace_reply, false, #state{}, InitiatorState, #state{}, #state{}}, Connections);
+	
+%% Switch
+handle_message({switch, _, _, #state{myself=IPeer,active=Active,tag=Tag} = InitiatorState, CandidateState, #state{myself=DPeer}=DisconnectState},
+			#state{connections=Connections}) ->
+	Check = is_in_active_view(IPeer, Active),
+	if Check -> %or Send(disconnect_wait from i) ->
+			%Send(disconnect_wait, InitiatorState),
+			remove_from_active_view(IPeer, Active), %% 'i' would be their 'Myself' (aka peer)??
+			add_to_active_view(DPeer, Tag, InitiatorState) %%What tag?? 
+	end,
+	%% TODO: Determine which answer return
+	do_send_message(DisconnectState, {switch_reply, answer, DisconnectState, InitiatorState, CandidateState, #state{}}, Connections).
+	
+is_better(_,_) -> %New, Old) ->
+	true.
+	%% TODO: Implement the oracle (for early versions we can use always a true value)
+	%Oracle.getCost(old) > Oracle.getCost(new).
 
 %% @private
 empty_membership() ->
@@ -1475,6 +1636,12 @@ schedule_passive_view_maintenance() ->
     erlang:send_after(Period,
                       ?MODULE,
                       passive_view_maintenance).
+                      
+%% @private
+schedule_xbot_execution() ->
+	erlang:send_after(?XBOT_EXECUTION_INTERVAL,
+						?MODULE,
+						xbot_execution).
 
 %% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
 shuffle(L) ->
@@ -1687,7 +1854,6 @@ handle_partition_resolution(Reference,
             [propagate_partition_resolution(Reference, Peer, Connections)
              || Peer <- members(Active)]
     end,
-
     Partitions.
 
 %% @private
