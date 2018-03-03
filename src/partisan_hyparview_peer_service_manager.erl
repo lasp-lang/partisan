@@ -571,33 +571,26 @@ handle_info(passive_view_maintenance,
     schedule_passive_view_maintenance(),
 
     {noreply, State};
-    
+
+% handle optimization using xbot algorithm
 handle_info(xbot_execution, 
 				#state{active=Active,
 					   passive=Passive,
 					   max_active_size=MaxActiveSize,
 					   reserved=Reserved}=InitiatorState) ->
 	
-
+	% check if active view is full
 	IsFull = is_full({active,Active,Reserved}, MaxActiveSize),
 	case IsFull of
+		% if full, check for candidates and try to optimize
 		true ->
 			Candidates = select_random_sublist(Passive, 2),
 			send_optimization_messages(Active, Candidates, InitiatorState);
-%			for(i = UN; i < sizeof(Active); i = i+1)
-%				Old = Active[i],
-%				while candidates != {} do
-%					Candidate = removeFirst(Candidates),
-%					if is_better(Old,Candidate) ->
-%						xbot_receive(optimization, _, Old, InitiatorState, Candidate, _), %%Obtain old and candidate states to send
-%						break
-%					end
-%				end
-%			end
+		% in other case, do nothing
 		false -> ok
 	end,
 	
-	%Schedule periodic xbot execution algorithm (optimization)
+	%In any case, schedule periodic xbot execution algorithm (optimization)
 	schedule_xbot_execution(),
 	{noreply, InitiatorState};
 	
@@ -684,19 +677,26 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
+% Send optimization messages when apply
 %% @private
 send_optimization_messages(_, [], _) -> ok;
 send_optimization_messages(Active, [Candidate | RestCandidates], InitiatorState) ->
+	% check the first candidate against every node in the active view
 	process_candidate(Active, Candidate, InitiatorState),
+	% do same for every candidate against the active
 	send_optimization_messages(Active, RestCandidates, InitiatorState).
 	
+% check if a candidate is valid and send message to try optimization
+% we only send an optimization messages for one node in active view, once we have sent it we stop searching possibilities
 %% @private
 process_candidate([], _, _) -> ok;
 process_candidate([Old | RestActive],#state{connections=CConnections}=Candidate, InitiatorState) ->
 	IsBetter = is_better(Old, Candidate),
 	if IsBetter ->
-		do_send_message(Candidate,{optimization, none, Old, InitiatorState, Candidate, none},CConnections); %change none?
+		% if cadidate is better that first node in active view, send optimization message
+		do_send_message(Candidate,{optimization, undefined, Old, InitiatorState, Candidate, undefined},CConnections);
 	   true -> 
+	    % if not, continue checking against the remaining nodes in active view 
 		process_candidate(RestActive, Candidate, InitiatorState)
 	end.
 
