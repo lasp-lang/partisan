@@ -661,7 +661,7 @@ reset_peers(AllMembers, EagerPeers, LazyPeers, State) ->
 
 %% @private
 myself() ->
-    node().
+    partisan_peer_service_manager:myself().
 
 %% @private
 instrument_transmission(Message, Mod) ->
