@@ -22,4 +22,3 @@ Partisan has many available peer service managers:
 * HyParView, hybrid partial view membership protocol, with TCP-based failure detection: `partisan_hyparview_peer_service_manager.`
 * Static topology: `partisan_static_peer_service_manager`.
 * AMQP topology: `partisan_amqp_peer_service_manager`.
-
