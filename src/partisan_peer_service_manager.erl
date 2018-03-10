@@ -23,7 +23,7 @@
 
 -include("partisan.hrl").
 
--export([myself/0]).
+-export([myself/0, mynode/0]).
 
 -callback start_link() -> {ok, pid()} | ignore | {error, term()}.
 -callback members() -> [name()].
@@ -69,3 +69,6 @@ myself() ->
     Name = partisan_config:get(name, node()),
     ListenAddrs = partisan_config:get(listen_addrs),
     #{name => Name, listen_addrs => ListenAddrs, channels => Channels, parallelism => Parallelism}.
+
+mynode() ->
+    node().
