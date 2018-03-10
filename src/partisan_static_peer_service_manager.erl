@@ -149,7 +149,7 @@ sync_join(_Node) ->
 
 %% @doc Leave the cluster.
 leave() ->
-    gen_server:call(?MODULE, {leave, node()}, infinity).
+    gen_server:call(?MODULE, {leave, myself(name)}, infinity).
 
 %% @doc Remove another node from the cluster.
 leave(Node) ->
@@ -183,7 +183,7 @@ partitions() ->
 -spec init([]) -> {ok, state_t()}.
 init([]) ->
     %% Seed the process at initialization.
-    rand:seed(exsplus, {erlang:phash2([node()]),
+    rand:seed(exsplus, {erlang:phash2([myself(name)]),
                         erlang:monotonic_time(),
                         erlang:unique_integer()}),
 
@@ -380,7 +380,7 @@ establish_connections(Pending, Membership, Connections) ->
     %% Reconnect disconnected members and members waiting to join.
     Members = members(Membership),
     AllPeers = lists:filter(fun(#{name := N}) ->
-                      case node() of
+                      case myself(name) of
                           N ->
                               false;
                           _ ->
@@ -411,3 +411,7 @@ do_send_message(Node, Message, Connections) ->
             %% Node has not been connected yet.
             {error, not_yet_connected}
     end.
+
+%% @private
+myself(name) ->
+    partisan_peer_service_manager:myself(name).

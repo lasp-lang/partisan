@@ -23,7 +23,7 @@
 
 -include("partisan.hrl").
 
--export([myself/0]).
+-export([myself/0, myself/1]).
 
 -callback start_link() -> {ok, pid()} | ignore | {error, term()}.
 -callback members() -> [name()].
@@ -62,6 +62,10 @@
 -callback resolve_partition(reference()) -> ok | {error, not_implemented}.
 
 -spec myself() -> node_spec().
+
+myself(name) ->
+    #{name := Name} = myself(),
+    Name.
 
 myself() ->
     Parallelism = partisan_config:get(parallelism, ?PARALLELISM),

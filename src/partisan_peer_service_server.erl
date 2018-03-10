@@ -54,7 +54,8 @@ acceptor_init(_SockName, LSocket, []) ->
 
 acceptor_continue(_PeerName, Socket0, MRef) ->
     Socket = partisan_peer_connection:accept(Socket0),
-    send_message(Socket, {hello, node()}),
+    #{name:= Name} = partisan_peer_service_manager:myself(),
+    send_message(Socket, {hello, Name}),
     gen_server:enter_loop(?MODULE, [], #state{socket=Socket, ref=MRef}).
 
 acceptor_terminate(Reason, _) ->

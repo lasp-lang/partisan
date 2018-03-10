@@ -60,7 +60,8 @@ sync_join(Node) ->
 join(NodeStr, Auto) when is_list(NodeStr) ->
     join(erlang:list_to_atom(lists:flatten(NodeStr)), Auto);
 join(Node, Auto) when is_atom(Node) ->
-    join(node(), Node, Auto);
+    Manager = manager(),
+    join(Manager:myself(name), Node, Auto);
 join(Node, _Auto) ->
     attempt_join(Node).
 
@@ -68,7 +69,8 @@ join(Node, _Auto) ->
 sync_join(NodeStr, Auto) when is_list(NodeStr) ->
     sync_join(erlang:list_to_atom(lists:flatten(NodeStr)), Auto);
 sync_join(Node, Auto) when is_atom(Node) ->
-    sync_join(node(), Node, Auto);
+    Manager = manager(),
+    sync_join(Manager:myself(name), Node, Auto);
 sync_join(Node, _Auto) ->
     attempt_sync_join(Node).
 

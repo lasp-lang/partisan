@@ -4,7 +4,11 @@
  {<<"lager">>,{pkg,<<"lager">>,<<"3.5.1">>},0},
  {<<"rand_compat">>,{pkg,<<"rand_compat">>,<<"0.0.3">>},0},
  {<<"time_compat">>,{pkg,<<"time_compat">>,<<"0.0.1">>},0},
- {<<"types">>,{pkg,<<"types">>,<<"0.1.6">>},0}]}.
+ {<<"types">>,{pkg,<<"types">>,<<"0.1.6">>},0},
+ {<<"uuid">>,
+  {git,"https://github.com/avtobiff/erlang-uuid",
+       {ref,"1fdc1b367902da71b774a34ae15690811ac17b99"}},
+  0}]}.
 [
 {pkg_hash,[
  {<<"acceptor_pool">>, <<"679D741DF87FC13599B1AEF2DF8F78F1F880449A6BEFAB7C44FB6FAE0E92A2DE">>},

@@ -34,7 +34,19 @@
 init() ->
     DefaultPeerService = application:get_env(partisan,
                                              partisan_peer_service_manager,
-                                             ?DEFAULT_PEER_SERVICE_MANAGER),
+                                 
+                                            ?DEFAULT_PEER_SERVICE_MANAGER),
+    %% Configure the hostname to use.
+    case node() of
+        'nonode@nohost' ->
+            lager:info("Distributed erlang is not enabled, generating UUID for node."),
+            UUID = uuid:to_string(uuid:uuid1()),
+            Name = UUID ++ "@localhost",
+            partisan_config:set(name, Name),
+            lager:info("Setting partisan name to ~p", [Name]);
+        _ ->
+            ok
+    end,
 
     PeerService = case os:getenv("PEER_SERVICE", "false") of
                       "false" ->
@@ -71,7 +83,6 @@ init() ->
                            {max_active_size, 6},
                            {max_passive_size, 30},
                            {min_active_size, 3},
-                           {name, node()},
                            {passive_view_shuffle_period, 10000},
                            {parallelism, ?PARALLELISM},
                            {partisan_peer_service_manager, PeerService},
