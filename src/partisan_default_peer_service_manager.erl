@@ -154,7 +154,7 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
     PartitionKey = proplists:get_value(partition_key, Options, ?DEFAULT_PARTITION_KEY),
 
     %% If attempting to forward to the local node, bypass.
-    case node() of
+    case partisan_peer_service_manager:mynode() of
         Name ->
             ServerRef ! Message,
             ok;
@@ -207,7 +207,7 @@ join(Node) ->
 
 %% @doc Leave the cluster.
 leave() ->
-    gen_server:call(?MODULE, {leave, node()}, infinity).
+    gen_server:call(?MODULE, {leave, partisan_peer_service_manager:mynode()}, infinity).
 
 %% @doc Remove another node from the cluster.
 leave(Node) ->
@@ -241,7 +241,7 @@ partitions() ->
 -spec init([]) -> {ok, state_t()}.
 init([]) ->
     %% Seed the process at initialization.
-    rand:seed(exsplus, {erlang:phash2([node()]),
+    rand:seed(exsplus, {erlang:phash2([partisan_peer_service_manager:mynode()]),
                         erlang:monotonic_time(),
                         erlang:unique_integer()}),
 
@@ -344,7 +344,7 @@ handle_call({leave, Node}, From, #state{actor=Actor}=State0) ->
     %% Perform leave.
     State = internal_leave(Node, State0),
 
-    case node() of
+    case partisan_peer_service_manager:mynode() of
         Node ->
             gen_server:reply(From, ok),
 
@@ -362,7 +362,7 @@ handle_call({leave, Node}, From, #state{actor=Actor}=State0) ->
 handle_call({join, #{name := Name} = Node},
             _From,
             State0) ->
-    case node() of
+    case partisan_peer_service_manager:mynode() of
         Name ->
             %% Ignoring self join.
             {reply, ok, State0};
@@ -377,9 +377,9 @@ handle_call({join, #{name := Name} = Node},
 handle_call({sync_join, #{name := Name} = Node},
             From,
             State0) ->
-    lager:debug("Starting synchronous join to ~p from ~p", [Node, node()]),
+    lager:debug("Starting synchronous join to ~p from ~p", [Node, partisan_peer_service_manager:mynode()]),
 
-    case node() of
+    case partisan_peer_service_manager:mynode() of
         Name ->
             %% Ignoring self join.
             {reply, ok, State0};
@@ -567,7 +567,7 @@ empty_membership(Actor) ->
 
 %% @private
 gen_actor() ->
-    Node = atom_to_list(node()),
+    Node = atom_to_list(partisan_peer_service_manager:mynode()),
     Unique = erlang:unique_integer([positive]),
     TS = integer_to_list(Unique),
     Term = Node ++ TS,
@@ -624,7 +624,7 @@ members(Membership) ->
 %% @private
 without_me(Members) ->
     lists:filter(fun(#{name := Name}) ->
-                         case node() of
+                         case partisan_peer_service_manager:mynode() of
                              Name ->
                                  false;
                              _ ->
@@ -671,7 +671,7 @@ handle_message({receive_state, #{name := From}, PeerMembership},
             Members = [N || #{name := N} <- members(Merged)],
 
             %% Shutdown if we've been removed from the cluster.
-            case lists:member(node(), Members) of
+            case lists:member(partisan_peer_service_manager:mynode(), Members) of
                 true ->
                     %% Establish any new connections.
                     Connections = establish_connections(Pending,
@@ -686,7 +686,7 @@ handle_message({receive_state, #{name := From}, PeerMembership},
                     {reply, ok, State#state{membership=Merged,
                                             connections=Connections}};
                 false ->
-                    lager:debug("Node ~p is no longer part of the cluster, setting empty membership.", [node()]),
+                    lager:debug("Node ~p is no longer part of the cluster, setting empty membership.", [partisan_peer_service_manager:mynode()]),
 
                     %% Reset membership, normal terminate on the gen_server:
                     %% this will close all connections, restart the gen_server,
@@ -757,7 +757,7 @@ do_gossip(Recipients, Membership, Connections) ->
 %% @private
 get_peers(Local) ->
     Members = members(Local),
-    Peers = [X || #{name := X} <- Members, X /= node()],
+    Peers = [X || #{name := X} <- Members, X /= partisan_peer_service_manager:mynode()],
     Peers.
 
 %% @private
@@ -810,7 +810,7 @@ down(Name, #state{down_functions=DownFunctions}) ->
 internal_leave(Node, #state{actor=Actor,
                             connections=Connections,
                             membership=Membership0}=State) ->
-    lager:debug("Leaving node ~p at node ~p", [Node, node()]),
+    lager:debug("Leaving node ~p at node ~p", [Node, partisan_peer_service_manager:mynode()]),
 
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
