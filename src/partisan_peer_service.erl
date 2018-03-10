@@ -60,7 +60,7 @@ sync_join(Node) ->
 join(NodeStr, Auto) when is_list(NodeStr) ->
     join(erlang:list_to_atom(lists:flatten(NodeStr)), Auto);
 join(Node, Auto) when is_atom(Node) ->
-    join(node(), Node, Auto);
+    join(partisan_peer_service_manager:mynode(), Node, Auto);
 join(Node, _Auto) ->
     attempt_join(Node).
 
@@ -68,7 +68,7 @@ join(Node, _Auto) ->
 sync_join(NodeStr, Auto) when is_list(NodeStr) ->
     sync_join(erlang:list_to_atom(lists:flatten(NodeStr)), Auto);
 sync_join(Node, Auto) when is_atom(Node) ->
-    sync_join(node(), Node, Auto);
+    sync_join(partisan_peer_service_manager:mynode(), Node, Auto);
 sync_join(Node, _Auto) ->
     attempt_sync_join(Node).
 
