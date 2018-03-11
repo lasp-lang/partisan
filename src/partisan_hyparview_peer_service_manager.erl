@@ -1132,39 +1132,8 @@ handle_message({forward_message, ServerRef, Message}, State) ->
     ServerRef ! Message,
     {noreply, State};
     
-%lager:debug("Removing and disconnecting peer: ~p", [Peer]),
-
-%% Remove from the active view.
-%Active = sets:del_element(Peer, Active0),
-
-%% Add to the passive view.
-%State = add_to_passive_view(Peer,
-%                          State0#state{active=Active}),
-
-%% Trigger connection.
-%Connections1 = partisan_util:maybe_connect(Peer, Connections0),
-
-%% Get next disconnect id for the peer.
-%NextId = get_next_id(Peer, Epoch0, SentMessageMap0),
-%% Update the SentMessageMap.
-%SentMessageMap = dict:store(Peer, NextId, SentMessageMap0),
-
-%% Let peer know we are disconnecting them.
-%do_send_message(Peer,
-%                {disconnect, Myself0, NextId},
-%                Connections1),
-
-%% Trigger disconnection.
-%Connections = disconnect(Peer, Connections1),
-
-%lager:debug("Node ~p active view: ~p", [Myself0, members(Active)]),
-
-%            State#state{connections=Connections,
-%                        sent_message_map=SentMessageMap}
-%    end.
-    
 %% Optimization Reply
-handle_message({optimization_reply, true, #state{myself=OPeer}, #state{active=Active} = InitiatorState, CandidateState, none}, #state{myself=Myself,connections=Connections}) ->
+handle_message({optimization_reply, true, #state{myself=OPeer}, #state{active=Active} = InitiatorState, CandidateState, undefined}, #state{myself=Myself,connections=Connections}) ->
 	Check = is_in_active_view(OPeer, Active),
 	if Check ->
 		%Revisar los disconnect
@@ -1189,14 +1158,14 @@ handle_message({optimization_reply, false, _, _, _, _}, _) ->
 
 %% Optimization
 handle_message({optimization, _, OldState, #state{active=Active, reserved=Reserved, max_active_size=MaxActiveSize} = InitiatorState, 
-				#state{myself=CPeer,tag=CTag}=CandidateState, DisconnectState}, #state{connections=Connections}) ->
+				#state{myself=CPeer,tag=CTag}=CandidateState, undefined, #state{connections=Connections}) ->
 	Check = is_full({active, Active, Reserved},MaxActiveSize),
 	if not Check -> 
 			add_to_active_view(CPeer, CTag, InitiatorState), %% I think this is good specified, add CPeer with CTag to active view of InitiatorState
-			do_send_message(InitiatorState, {optimization_reply, true, OldState, InitiatorState, #state{}, none}, Connections); %% Change the null value for erlang equivalent
+			do_send_message(InitiatorState, {optimization_reply, true, OldState, InitiatorState, CandidateState, undefined}, Connections);
 		true ->
-%			d = Active[UNOPT],
-			do_send_message(DisconnectState,{replace, none, #state{}, DisconnectState, OldState, CandidateState}, Connections)
+%			d = Active[UNOPT], // Change following  undefined for the disconnect node
+			do_send_message(DisconnectState,{replace, undefined, OldState, InitiatorState, CandidateState, undefined}, Connections)
 	end;
 	
 %% Replace Reply
@@ -1204,30 +1173,30 @@ handle_message({replace_reply, true, OldState, #state{myself=IPeer,tag=ITag,acti
 			#state{connections=Connections}) ->
 	remove_from_active_view(DPeer, Active),
 	add_to_active_view(IPeer, ITag, InitiatorState), %%Tag of i or what?
-	do_send_message(CandidateState,{optimization_reply, true, OldState, InitiatorState, #state{}, DisconnectState},Connections);
+	do_send_message(CandidateState,{optimization_reply, true, OldState, InitiatorState, CandidateState, DisconnectState},Connections);
 handle_message({replace_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, #state{connections=Connections}) ->
-	do_send_message(CandidateState,{optimization_reply, false, OldState, InitiatorState, #state{}, DisconnectState},Connections);
+	do_send_message(CandidateState,{optimization_reply, false, OldState, InitiatorState, CandidateState, DisconnectState},Connections);
 
 %% Replace
-handle_message({replace, _, OldState, InitiatorState, CandidateState, _}, #state{connections=Connections}) ->
+handle_message({replace, _, OldState, InitiatorState, CandidateState, DisconnectState}, #state{connections=Connections}) ->
 	Check = is_better(CandidateState, OldState),
 	if not Check ->
-			do_send_message(CandidateState,{replace_reply, false, CandidateState, InitiatorState, #state{}, OldState}, Connections);
+			do_send_message(CandidateState,{replace_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, Connections);
 		true ->
-			do_send_message(OldState,{switch, none, #state{}, OldState, InitiatorState, CandidateState}, Connections)
+			do_send_message(OldState,{switch, undefined, OldState, InitiatorState, CandidateState, DisconnectState}, Connections)
 	end;
 
 %% Switch Reply
-handle_message({switch_reply, true, #state{myself=OPeer}, #state{active=Active,tag=Tag} = InitiatorState, #state{myself=CPeer}=CandidateState, _}, 
+handle_message({switch_reply, true, #state{myself=OPeer}=OldState, #state{active=Active,tag=Tag} = InitiatorState, #state{myself=CPeer}=CandidateState, DisconnectState}, 
 			#state{connections=Connections}) ->
 	remove_from_active_view(CPeer, Active),
 	add_to_active_view(OPeer, Tag, InitiatorState), %%What tag?? initiator or o??
-	do_send_message(CandidateState,{replace_reply, true, #state{}, InitiatorState, #state{}, #state{}}, Connections);
-handle_message({switch_reply, false, _, InitiatorState, CandidateState, _}, #state{connections=Connections}) ->
-	do_send_message(CandidateState, {replace_reply, false, #state{}, InitiatorState, #state{}, #state{}}, Connections);
+	do_send_message(CandidateState,{replace_reply, true, OldState, InitiatorState, CandidateState, DisconnectState}, Connections);
+handle_message({switch_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, #state{connections=Connections}) ->
+	do_send_message(CandidateState, {replace_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, Connections);
 	
 %% Switch
-handle_message({switch, _, _, #state{myself=IPeer,active=Active,tag=Tag} = InitiatorState, CandidateState, #state{myself=DPeer}=DisconnectState},
+handle_message({switch, _, OldState, #state{myself=IPeer,active=Active,tag=Tag} = InitiatorState, CandidateState, #state{myself=DPeer}=DisconnectState},
 			#state{connections=Connections}) ->
 	Check = is_in_active_view(IPeer, Active),
 	if Check -> %or Send(disconnect_wait from i) ->
@@ -1236,7 +1205,7 @@ handle_message({switch, _, _, #state{myself=IPeer,active=Active,tag=Tag} = Initi
 			add_to_active_view(DPeer, Tag, InitiatorState) %%What tag?? 
 	end,
 	%% TODO: Determine which answer return
-	do_send_message(DisconnectState, {switch_reply, answer, DisconnectState, InitiatorState, CandidateState, #state{}}, Connections).
+	do_send_message(DisconnectState, {switch_reply, answer, OldState, InitiatorState, CandidateState, DisconnectState}, Connections).
 	
 is_better(_,_) -> %New, Old) ->
 	true.
