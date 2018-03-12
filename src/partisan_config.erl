@@ -44,7 +44,16 @@ init() ->
                   end,
 
     %% Configure the partisan node name.
-    Name = node(),
+    Name = case node() of
+        nonode@nohost ->
+            UUID = uuid:to_string(uuid:uuid1()),
+            NodeName = list_to_atom(UUID ++ "@127.0.0.1"),
+            lager:info("Generated name for node: ~p", [NodeName]),
+            NodeName;
+        Other ->
+            lager:info("Using node name: ~p", [Other]),
+            Other
+    end,
 
     DefaultTag = case os:getenv("TAG", "false") of
                     "false" ->
