@@ -189,7 +189,7 @@ sync_join(_Node) ->
 
 %% @doc Leave the cluster.
 leave() ->
-    gen_server:call(?MODULE, {leave, node()}, infinity).
+    gen_server:call(?MODULE, {leave, partisan_peer_service_manager:mynode()}, infinity).
 
 %% @doc Remove another node from the cluster.
 leave(Node) ->
@@ -246,7 +246,7 @@ connections() ->
 -spec init([]) -> {ok, state_t()}.
 init([]) ->
     %% Seed the process at initialization.
-    rand:seed(exsplus, {erlang:phash2([node()]),
+    rand:seed(exsplus, {erlang:phash2([partisan_peer_service_manager:mynode()]),
                         erlang:monotonic_time(),
                         erlang:unique_integer()}),
 
@@ -519,10 +519,10 @@ handle_info(random_promotion, #state{myself=Myself,
 
 handle_info(tree_refresh, #state{}=State) ->
     %% Use our tree for the root.
-    Root = node(),
+    Root = partisan_peer_service_manager:mynode(),
 
     %% Get lazily computed outlinks.
-    OutLinks = try partisan_plumtree_broadcast:debug_get_peers(node(), Root) of
+    OutLinks = try partisan_plumtree_broadcast:debug_get_peers(partisan_peer_service_manager:mynode(), Root) of
         {EagerPeers, _LazyPeers} ->
             ordsets:to_list(EagerPeers)
     catch
@@ -1122,7 +1122,7 @@ handle_message({shuffle, Exchange, TTL, Sender},
     {noreply, State};
 
 handle_message({relay_message, Node, Message}, #state{out_links=OutLinks, connections=Connections}=State) ->
-    lager:debug("Node ~p received tree relay to ~p", [node(), Node]),
+    lager:debug("Node ~p received tree relay to ~p", [partisan_peer_service_manager:mynode(), Node]),
 
     %% Attempt to deliver, or recurse and forward on through a relay.
     ok = do_send_message(Node, Message, Connections, [{out_links, OutLinks}, {transitive, true}]),
@@ -1403,7 +1403,7 @@ add_to_active_view(#{name := Name}=Peer, Tag,
                           passive=Passive0,
                           reserved=Reserved0,
                           max_active_size=MaxActiveSize}=State0) ->
-    IsNotMyself = not (Name =:= node()),
+    IsNotMyself = not (Name =:= partisan_peer_service_manager:mynode()),
     NotInActiveView = not sets:is_element(Peer, Active0),
     case IsNotMyself andalso NotInActiveView of
         true ->
@@ -1456,7 +1456,7 @@ add_to_passive_view(#{name := Name}=Peer,
                            max_passive_size=MaxPassiveSize}=State0) ->
     % lager:debug("Adding ~p to passive view on ~p", [Peer, Myself]),
 
-    IsNotMyself = not (Name =:= node()),
+    IsNotMyself = not (Name =:= partisan_peer_service_manager:mynode()),
     NotInActiveView = not sets:is_element(Peer, Active0),
     NotInPassiveView = not sets:is_element(Peer, Passive0),
     Passive = case IsNotMyself andalso NotInActiveView andalso NotInPassiveView of
@@ -1827,7 +1827,7 @@ handle_partition_resolution(Reference,
 
 %% @private
 do_tree_forward(Node, Message, Connections, Options) ->
-    lager:debug("Attempting to forward message from ~p to ~p.", [node(), Node]),
+    lager:debug("Attempting to forward message from ~p to ~p.", [partisan_peer_service_manager:mynode(), Node]),
 
     %% Preempt with user-supplied outlinks.
     UserOutLinks = proplists:get_value(out_links, Options, undefined),
@@ -1848,7 +1848,7 @@ do_tree_forward(Node, Message, Connections, Options) ->
 
     %% Send messages, but don't attempt to forward again, if we aren't connected.
     lists:foreach(fun(N) ->
-        lager:debug("Forwarding relay message to node ~p for node ~p from node ~p", [N, Node, node()]),
+        lager:debug("Forwarding relay message to node ~p for node ~p from node ~p", [N, Node, partisan_peer_service_manager:mynode()]),
 
         RelayMessage = {relay_message, Node, Message},
         do_send_message(N, RelayMessage, Connections, proplists:delete(transitive, Options))
@@ -1858,8 +1858,8 @@ do_tree_forward(Node, Message, Connections, Options) ->
 %% @private
 retrieve_outlinks() ->
     %% Use our tree for the root.
-    Root = node(),
+    Root = partisan_peer_service_manager:mynode(),
 
-    {EagerPeers, _LazyPeers} = partisan_plumtree_broadcast:debug_get_peers(node(), Root),
+    {EagerPeers, _LazyPeers} = partisan_plumtree_broadcast:debug_get_peers(partisan_peer_service_manager:mynode(), Root),
 
     ordsets:to_list(EagerPeers).

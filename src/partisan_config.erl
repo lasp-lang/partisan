@@ -43,6 +43,18 @@ init() ->
                           list_to_atom(PeerServiceList)
                   end,
 
+    %% Configure the partisan node name.
+    Name = case node() of
+        nonode@nohost ->
+            UUID = uuid:to_string(uuid:uuid1()),
+            NodeName = list_to_atom(UUID ++ "@127.0.0.1"),
+            lager:info("Generated name for node: ~p", [NodeName]),
+            NodeName;
+        Other ->
+            lager:info("Using node name: ~p", [Other]),
+            Other
+    end,
+
     DefaultTag = case os:getenv("TAG", "false") of
                     "false" ->
                         undefined;
@@ -71,6 +83,7 @@ init() ->
                            {max_active_size, 6},
                            {max_passive_size, 30},
                            {min_active_size, 3},
+                           {name, Name},
                            {passive_view_shuffle_period, 10000},
                            {parallelism, ?PARALLELISM},
                            {partisan_peer_service_manager, PeerService},
@@ -136,7 +149,7 @@ try_get_node_address() ->
 
 %% @private
 get_node_address() ->
-    Name = atom_to_list(node()),
+    Name = atom_to_list(partisan_peer_service_manager:mynode()),
     [_Hostname, FQDN] = string:tokens(Name, "@"),
 
     %% Spawn a process to perform resolution.

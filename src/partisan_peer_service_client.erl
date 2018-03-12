@@ -191,7 +191,7 @@ handle_message({hello, Node}, #state{peer=Peer, socket=Socket}=State) ->
 
     case Node of
         PeerName ->
-            Message = {hello, node()},
+            Message = {hello, partisan_peer_service_manager:mynode()},
 
             case partisan_peer_connection:send(Socket, default_encode(Message)) of
                 ok ->
