@@ -71,4 +71,4 @@ myself() ->
     #{name => Name, listen_addrs => ListenAddrs, channels => Channels, parallelism => Parallelism}.
 
 mynode() ->
-    partisan_config:get(name).
+    partisan_config:get(name, node()).
