@@ -55,6 +55,9 @@ init() ->
             Other
     end,
 
+    %% Must be done here, before the resolution call is made.
+    partisan_config:set(name, Name),
+
     DefaultTag = case os:getenv("TAG", "false") of
                     "false" ->
                         undefined;
