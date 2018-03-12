@@ -29,7 +29,7 @@
 
 -define(XBOT_EXECUTION_INTERVAL, 5000).
 
--include("../include/partisan.hrl").
+-include("partisan.hrl").
 
 %% partisan_peer_service_manager callbacks
 -export([start_link/0,
