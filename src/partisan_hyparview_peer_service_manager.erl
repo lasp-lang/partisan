@@ -1158,13 +1158,14 @@ handle_message({optimization_reply, false, _, _, _, _}, _) ->
 
 %% Optimization
 handle_message({optimization, _, OldState, #state{active=Active, reserved=Reserved, max_active_size=MaxActiveSize} = InitiatorState, 
-				#state{myself=CPeer,tag=CTag}=CandidateState, undefined, #state{connections=Connections}) ->
+				#state{myself=CPeer,tag=CTag}=CandidateState, undefined}, #state{connections=Connections}) ->
 	Check = is_full({active, Active, Reserved},MaxActiveSize),
 	if not Check -> 
 			add_to_active_view(CPeer, CTag, InitiatorState), %% I think this is good specified, add CPeer with CTag to active view of InitiatorState
 			do_send_message(InitiatorState, {optimization_reply, true, OldState, InitiatorState, CandidateState, undefined}, Connections);
 		true ->
 %			d = Active[UNOPT], // Change following  undefined for the disconnect node
+			DisconnectState = undefined,
 			do_send_message(DisconnectState,{replace, undefined, OldState, InitiatorState, CandidateState, undefined}, Connections)
 	end;
 	
