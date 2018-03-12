@@ -201,7 +201,7 @@ exchanges() ->
     exchanges(myself()).
 
 %% @doc returns a list of exchanges, started by broadcast on `Node', that are running
--spec exchanges(node()) -> exchanges().
+%% -spec exchanges(node()) -> exchanges().
 exchanges(Node) ->
     gen_server:call({?SERVER, Node}, exchanges, infinity).
 
