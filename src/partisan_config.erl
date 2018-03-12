@@ -72,8 +72,8 @@ init() ->
     DefaultPeerPort = random_port(),
 
     [env_or_default(Key, Default) ||
-        {Key, Default} <- [{arwl, 6},
-                           {prwl, 6},
+        {Key, Default} <- [{arwl, 5},
+                           {prwl, 30},
                            {binary_padding, false},
                            {broadcast, false},
                            {broadcast_mods, [partisan_plumtree_backend]},
