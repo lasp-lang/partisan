@@ -47,7 +47,7 @@ init() ->
     Name = case node() of
         nonode@nohost ->
             lager:info("Distributed Erlang is not enabled, generating UUID."),
-            UUID = uuid:uuid1(),
+            UUID = uuid:uuid4(),
             lager:info("Generated UUID: ~p, converting to string.", [UUID]),
             StringUUID = uuid:to_string(UUID),
             NodeName = list_to_atom(StringUUID ++ "@127.0.0.1"),
