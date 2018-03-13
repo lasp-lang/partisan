@@ -46,8 +46,11 @@ init() ->
     %% Configure the partisan node name.
     Name = case node() of
         nonode@nohost ->
-            UUID = uuid:to_string(uuid:uuid1()),
-            NodeName = list_to_atom(UUID ++ "@127.0.0.1"),
+            lager:info("Distributed Erlang is not enabled, generating UUID."),
+            UUID = uuid:uuid4(),
+            lager:info("Generated UUID: ~p, converting to string.", [UUID]),
+            StringUUID = uuid:to_string(UUID),
+            NodeName = list_to_atom(StringUUID ++ "@127.0.0.1"),
             lager:info("Generated name for node: ~p", [NodeName]),
             NodeName;
         Other ->
