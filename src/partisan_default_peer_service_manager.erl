@@ -642,7 +642,7 @@ establish_connections(Pending,
     %% Reconnect disconnected members and members waiting to join.
     Connections = lists:foldl(fun(Peer, Cs) ->
                                 partisan_util:maybe_connect(Peer, Cs)
-                              end, Connections0, without_me(Peers)),
+                              end, Connections0, Peers),
 
     %% Return the updated list of connections.
     Connections.
