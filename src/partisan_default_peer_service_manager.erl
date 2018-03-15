@@ -246,7 +246,7 @@ init([]) ->
                         erlang:unique_integer()}),
 
     case partisan_config:get(binary_padding, false) of
-        true ->    
+        true ->
             %% Use 64-byte binary to force shared heap usage to cut down on copying.
             BinaryPaddingTerm = rand_bits(512),
             partisan_config:set(binary_padding_term, BinaryPaddingTerm);
@@ -354,6 +354,9 @@ handle_call({leave, Node}, From, #state{actor=Actor}=State0) ->
             EmptyMembership = empty_membership(Actor),
             persist_state(EmptyMembership),
 
+            %% Update users of the peer service.
+            partisan_peer_service_events:update(EmptyMembership),
+
             {stop, normal, State#state{membership=EmptyMembership}};
         _ ->
             {reply, ok, State}
@@ -393,10 +396,10 @@ handle_call({sync_join, #{name := Name} = Node},
 
 handle_call({send_message, Name, Channel, Message}, _From,
             #state{connections=Connections}=State) ->
-    Result = do_send_message(Name, 
-                             Channel, 
-                             ?DEFAULT_PARTITION_KEY, 
-                             Message, 
+    Result = do_send_message(Name,
+                             Channel,
+                             ?DEFAULT_PARTITION_KEY,
+                             Message,
                              Connections),
     {reply, Result, State};
 
