@@ -1203,10 +1203,11 @@ handle_message({switch, _, OldState, #state{myself=IPeer,active=Active,tag=Tag} 
 	if Check -> %or Send(disconnect_wait from i) ->
 			%Send(disconnect_wait, InitiatorState),
 			remove_from_active_view(IPeer, Active), %% 'i' would be their 'Myself' (aka peer)??
-			add_to_active_view(DPeer, Tag, InitiatorState) %%What tag?? 
-	end,
-	%% TODO: Determine which answer return
-	do_send_message(DisconnectState, {switch_reply, answer, OldState, InitiatorState, CandidateState, DisconnectState}, Connections).
+			add_to_active_view(DPeer, Tag, InitiatorState), %%What tag?? 
+			do_send_message(DisconnectState, {switch_reply, true, OldState, InitiatorState, CandidateState, DisconnectState}, Connections).
+		true -> 
+			do_send_message(DisconnectState, {switch_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, Connections).
+	end.
 	
 is_better(_,_) -> %New, Old) ->
 	true.
