@@ -402,22 +402,26 @@ handle_graft({error, Reason}, _MessageId, Mod, _Round, _Root, _From, State) ->
     lager:error("unable to graft message from ~p. reason: ~p", [Mod, Reason]),
     State.
 
-neighbors_down(Removed, State=#state{common_eagers=CommonEagers, eager_sets=EagerSets,
-                                     common_lazys=CommonLazys, lazy_sets=LazySets,
-                                     outstanding=Outstanding}) ->
-    NewCommonEagers = ordsets:subtract(CommonEagers, Removed),
-    NewCommonLazys  = ordsets:subtract(CommonLazys, Removed),
+neighbors_down(Removed, State) ->
+    NewAll = ordsets:subtract(State#state.all_members, Removed),
+    NewCommonEagers = ordsets:subtract(State#state.common_eagers, Removed),
+    NewCommonLazys  = ordsets:subtract(State#state.common_lazys, Removed),
     %% TODO: once we have delayed grafting need to remove timers
-    NewEagerSets = ordsets:from_list([{Root, ordsets:subtract(Existing, Removed)} ||
-                                         {Root, Existing} <- ordsets:to_list(EagerSets)]),
-    NewLazySets  = ordsets:from_list([{Root, ordsets:subtract(Existing, Removed)} ||
-                                         {Root, Existing} <- ordsets:to_list(LazySets)]),
+    NewEagerSets = ordsets:from_list([
+        {Root, ordsets:subtract(Existing, Removed)} ||
+        {Root, Existing} <- ordsets:to_list(State#state.eager_sets)
+    ]),
+    NewLazySets  = ordsets:from_list([
+        {Root, ordsets:subtract(Existing, Removed)} ||
+        {Root, Existing} <- ordsets:to_list(State#state.lazy_sets)
+    ]),
     %% delete outstanding messages to removed peers
     NewOutstanding = ordsets:fold(fun(RPeer, OutstandingAcc) ->
                                           orddict:erase(RPeer, OutstandingAcc)
                                   end,
-                                  Outstanding, Removed),
-    State#state{common_eagers=NewCommonEagers,
+                                  State#state.outstanding, Removed),
+    State#state{all_members = NewAll,
+                common_eagers=NewCommonEagers,
                 common_lazys=NewCommonLazys,
                 eager_sets=NewEagerSets,
                 lazy_sets=NewLazySets,
