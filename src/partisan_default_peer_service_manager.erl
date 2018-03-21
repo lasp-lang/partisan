@@ -359,6 +359,8 @@ handle_call({leave, Node}, From, #state{actor=Actor}=State0) ->
 
             {stop, normal, State#state{membership=EmptyMembership}};
         _ ->
+            %% Update users of the peer service.
+            partisan_peer_service_events:update(State#state.membership),
             {reply, ok, State}
     end;
 
@@ -696,6 +698,9 @@ handle_message({receive_state, #{name := From}, PeerMembership},
                     %% and reboot with empty state, so the node will be isolated.
                     EmptyMembership = empty_membership(Actor),
                     persist_state(EmptyMembership),
+
+                    %% Update users of the peer service.
+                    partisan_peer_service_events:update(EmptyMembership),
 
                     {stop, normal, State#state{membership=EmptyMembership}}
             end
