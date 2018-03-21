@@ -246,7 +246,7 @@ init([]) ->
                         erlang:unique_integer()}),
 
     case partisan_config:get(binary_padding, false) of
-        true ->    
+        true ->
             %% Use 64-byte binary to force shared heap usage to cut down on copying.
             BinaryPaddingTerm = rand_bits(512),
             partisan_config:set(binary_padding_term, BinaryPaddingTerm);
@@ -354,8 +354,13 @@ handle_call({leave, Node}, From, #state{actor=Actor}=State0) ->
             EmptyMembership = empty_membership(Actor),
             persist_state(EmptyMembership),
 
+            %% Update users of the peer service.
+            partisan_peer_service_events:update(EmptyMembership),
+
             {stop, normal, State#state{membership=EmptyMembership}};
         _ ->
+            %% Update users of the peer service.
+            partisan_peer_service_events:update(State#state.membership),
             {reply, ok, State}
     end;
 
@@ -393,10 +398,10 @@ handle_call({sync_join, #{name := Name} = Node},
 
 handle_call({send_message, Name, Channel, Message}, _From,
             #state{connections=Connections}=State) ->
-    Result = do_send_message(Name, 
-                             Channel, 
-                             ?DEFAULT_PARTITION_KEY, 
-                             Message, 
+    Result = do_send_message(Name,
+                             Channel,
+                             ?DEFAULT_PARTITION_KEY,
+                             Message,
                              Connections),
     {reply, Result, State};
 
@@ -642,7 +647,7 @@ establish_connections(Pending,
     %% Reconnect disconnected members and members waiting to join.
     Connections = lists:foldl(fun(Peer, Cs) ->
                                 partisan_util:maybe_connect(Peer, Cs)
-                              end, Connections0, without_me(Peers)),
+                              end, Connections0, Peers),
 
     %% Return the updated list of connections.
     Connections.
@@ -675,13 +680,13 @@ handle_message({receive_state, #{name := From}, PeerMembership},
                 true ->
                     %% Establish any new connections.
                     Connections = establish_connections(Pending,
-                                                        Membership,
+                                                        Merged,
                                                         Connections0),
 
                     lager:debug("Received updated membership state: ~p from ~p", [Members, From]),
 
                     %% Gossip.
-                    do_gossip(Membership, Connections),
+                    do_gossip(Merged, Connections),
 
                     {reply, ok, State#state{membership=Merged,
                                             connections=Connections}};
@@ -693,6 +698,9 @@ handle_message({receive_state, #{name := From}, PeerMembership},
                     %% and reboot with empty state, so the node will be isolated.
                     EmptyMembership = empty_membership(Actor),
                     persist_state(EmptyMembership),
+
+                    %% Update users of the peer service.
+                    partisan_peer_service_events:update(EmptyMembership),
 
                     {stop, normal, State#state{membership=EmptyMembership}}
             end

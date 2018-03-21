@@ -108,7 +108,7 @@ all() ->
      {group, with_channels, [parallel]},
 
      {group, with_no_channels, [parallel]},
-     
+
      {group, with_monotonic_channels, [parallel]},
 
      {group, with_sync_join, [parallel]},
@@ -151,7 +151,7 @@ groups() ->
 
      {with_disterl, [],
       [performance_test]},
-     
+
      {with_channels, [],
       [default_manager_test]},
 
@@ -263,7 +263,7 @@ on_down_test(Config) ->
     receive
         down ->
             ok
-    after 
+    after
         ?TIMEOUT ->
             ct:fail("Didn't receive down callback.")
     end,
@@ -292,12 +292,12 @@ rejoin_test(Config) ->
                         {clients, Clients}]),
 
             verify_leave(Nodes, Manager),
-            
+
             %% Join a node from the cluster.
             [{_, _}, {_, Node2}, {_, _}, {_, Node4}] = Nodes,
             ct:pal("Joining node ~p to the cluster.", [Node4]),
             ok = rpc:call(Node2, partisan_peer_service, join, [Node4]),
-            
+
             %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
             timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
 
@@ -427,7 +427,7 @@ performance_test(Config) ->
         P ->
             P
     end,
-        
+
     NumMessages = 1000,
     BenchPid = self(),
     BytesSize = Size * 1024,
@@ -562,7 +562,7 @@ default_manager_test(Config) ->
 
                                 %% Verify we have enough connections.
                                 dict:fold(fun(_N, Active, Acc) ->
-                                    Filtered = lists:filter(fun({_, C, _}) -> 
+                                    Filtered = lists:filter(fun({_, C, _}) ->
                                         case C of
                                             Channel ->
                                                 true;
@@ -982,7 +982,7 @@ hyparview_manager_high_client_test(Config) ->
                     "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
                     "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
     end,
-    
+
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
                     ok = check_forward_message(Node, Manager, Nodes)
@@ -1021,7 +1021,7 @@ start(_Case, Config, Options) ->
     %% Launch distribution for the test runner.
     ct:pal("Launching Erlang distribution..."),
 
-    {ok, Hostname} = inet:gethostname(), 
+    {ok, Hostname} = inet:gethostname(),
     os:cmd(os:find_executable("epmd") ++ " -daemon"),
     case net_kernel:start([list_to_atom("runner@" ++ Hostname), shortnames]) of
         {ok, _} ->
@@ -1096,7 +1096,7 @@ start(_Case, Config, Options) ->
             MaxActiveSize = proplists:get_value(max_active_size, Options, 5),
             ok = rpc:call(Node, partisan_config, set,
                           [max_active_size, MaxActiveSize]),
-                          
+
             ok = rpc:call(Node, partisan_config, set,
                           [gossip_interval, ?GOSSIP_INTERVAL]),
 
@@ -1342,7 +1342,7 @@ connect(G, N1, N2) ->
     ok.
 
 %% @private
-node_list(0, _Name, _Config) -> 
+node_list(0, _Name, _Config) ->
     [];
 node_list(N, Name, Config) ->
     [ list_to_atom(string:join([Name,
@@ -1357,7 +1357,7 @@ make_certs(Config) ->
     PrivDir = ?config(priv_dir, Config),
     ct:pal("Generating TLS certificates into ~s", [PrivDir]),
     MakeCertsFile = filename:join(DataDir, "make_certs.erl"),
-    {ok, make_certs, ModBin} = compile:file(MakeCertsFile, 
+    {ok, make_certs, ModBin} = compile:file(MakeCertsFile,
         [binary, debug_info, report_errors, report_warnings]),
     {module, make_certs} = code:load_binary(make_certs, MakeCertsFile, ModBin),
 
@@ -1431,7 +1431,7 @@ wait_until(Fun, Retry, Delay) when Retry > 0 ->
     end.
 
 %% @private
-%% 
+%%
 %% Kill a random node and then return a list of nodes that still have the
 %% killed node in their membership
 %%
@@ -1516,6 +1516,7 @@ hyparview_membership_check(Nodes) ->
 
     {ConnectedFails, SymmetryFails}.
 
+
 %% @private
 verify_leave(Nodes, Manager) ->
     %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
@@ -1552,11 +1553,13 @@ verify_leave(Nodes, Manager) ->
                           end
                   end, Nodes),
 
-    %% Remove a node from the cluster.
+
     [{_, _}, {_, Node2}, {_, _}, {_, Node4}] = Nodes,
+
+    %% Remove a node from the cluster.
     ct:pal("Removing node ~p from the cluster.", [Node4]),
     ok = rpc:call(Node2, partisan_peer_service, leave, [Node4]),
-    
+
     %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
     timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
 
@@ -1566,6 +1569,8 @@ verify_leave(Nodes, Manager) ->
     %%
     VerifyRemoveFun = fun({_, Node}) ->
             {ok, Members} = rpc:call(Node, Manager, members, []),
+            BroadcastMembers = rpc:call(
+                Node, partisan_plumtree_broadcast, broadcast_members, []),
             SortedNodes = case Node of
                 Node4 ->
                     [Node4];
@@ -1573,13 +1578,21 @@ verify_leave(Nodes, Manager) ->
                     lists:usort([N || {_, N} <- Nodes]) -- [Node4]
             end,
             SortedMembers = lists:usort(Members),
+            SortedBroadcastMembers = lists:usort(BroadcastMembers),
             case SortedMembers =:= SortedNodes of
                 true ->
-                    true;
+                    case SortedBroadcastMembers =:= SortedNodes of
+                        true ->
+                            true;
+                        false ->
+                            ct:pal("Plumtree broadcast membership incorrect; node ~p should have ~p but has ~p",
+                                   [Node, SortedNodes, SortedBroadcastMembers]),
+                            {false, broadcast_members, {Node, SortedNodes, SortedBroadcastMembers}}
+                    end;
                 false ->
                     ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
                            [Node, SortedNodes, SortedMembers]),
-                    {false, {Node, SortedNodes, SortedMembers}}
+                    {false, members, {Node, SortedNodes, SortedMembers}}
             end
     end,
 
@@ -1590,13 +1603,16 @@ verify_leave(Nodes, Manager) ->
                           case wait_until(VerifyNodeFun, 60 * 2, 100) of
                               ok ->
                                   ok;
-                              {fail, {false, {Node, Expected, Contains}}} ->
+                              {fail, {false, members, {Node, Expected, Contains}}} ->
                                  ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
-                                         [Node, Expected, Contains])
+                                         [Node, Expected, Contains]);
+                                {fail, {false, broadcast_members, {Node, Expected, Contains}}} ->
+                                    ct:fail("Broadcast membership incorrect; node ~p should have ~p but has ~p",
+                                            [Node, Expected, Contains])
                           end
                   end, Nodes),
 
-ok.
+    ok.
 
 %% @private
 rand_bits(Bits) ->
