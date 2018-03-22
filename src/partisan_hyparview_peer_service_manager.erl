@@ -1204,15 +1204,27 @@ handle_message({switch, _, OldState, #state{myself=IPeer,active=Active,tag=Tag} 
 			%Send(disconnect_wait, InitiatorState),
 			remove_from_active_view(IPeer, Active), %% 'i' would be their 'Myself' (aka peer)??
 			add_to_active_view(DPeer, Tag, InitiatorState), %%What tag?? 
-			do_send_message(DisconnectState, {switch_reply, true, OldState, InitiatorState, CandidateState, DisconnectState}, Connections).
+			do_send_message(DisconnectState, {switch_reply, true, OldState, InitiatorState, CandidateState, DisconnectState}, Connections);
 		true -> 
-			do_send_message(DisconnectState, {switch_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, Connections).
+			do_send_message(DisconnectState, {switch_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, Connections)
 	end.
 	
-is_better(_,_) -> %New, Old) ->
-	true.
-	%% TODO: Implement the oracle (for early versions we can use always a true value)
-	%Oracle.getCost(old) > Oracle.getCost(new).
+%% Determine if New node is better than Old node based on ping (latency)
+%% @private
+is_better(#{name := NewNodeName}, #{name := OldNodeName}) ->
+	is_better_node(timer:tc(ping, NewNodeName), timer:tc(ping, OldNodeName)).
+	
+%% @private
+is_better_node({_, pang}, {_, _}) ->
+	%% if we do not get ping response from new node
+	false;
+is_better_node({_, pong}, {_, pang}) ->
+	%% if we cannot get response from old node but we got response from new
+	true;
+is_better_node({NewTime, pong}, {OldTime, pong}) ->
+	%% otherwise check lower ping response
+	(OldTime-NewTime) > 0.
+	
 
 %% @private
 empty_membership() ->
