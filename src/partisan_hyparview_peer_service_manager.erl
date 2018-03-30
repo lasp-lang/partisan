@@ -27,7 +27,9 @@
 -define(DEFAULT_PASSIVE_VIEW_MAINTENANCE_INTERVAL, 10000).
 -define(RANDOM_PROMOTION_INTERVAL, 5000).
 
--define(XBOT_EXECUTION_INTERVAL, 5000).
+% parameter used for xbot optimization
+% - latency (uses ping to check better nodes)
+% - true (always returns true when checking better)
 -define(XPARAM, latency).
 
 -include("partisan.hrl").
@@ -1632,7 +1634,7 @@ schedule_passive_view_maintenance() ->
                       
 %% @private
 schedule_xbot_execution() ->
-	erlang:send_after(?XBOT_EXECUTION_INTERVAL,
+	erlang:send_after(?DEFAULT_XBOT_EXECUTION_INTERVAL,
 						?MODULE,
 						xbot_execution).
 

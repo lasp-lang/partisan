@@ -21,7 +21,7 @@
 -module(partisan_peer_service_manager).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
--include("../include/partisan.hrl").
+-include("partisan.hrl").
 
 -export([myself/0, mynode/0]).
 
@@ -68,7 +68,8 @@ myself() ->
     Channels = partisan_config:get(channels, ?CHANNELS),
     Name = partisan_config:get(name),
     ListenAddrs = partisan_config:get(listen_addrs),
-    #{name => Name, listen_addrs => ListenAddrs, channels => Channels, parallelism => Parallelism}.
+    XBotOptNodeInterval = rand:uniform(?XBOT_RANGE_INTERVAL)+?XBOT_MIN_INTERVAL,
+    #{name => Name, listen_addrs => ListenAddrs, channels => Channels, parallelism => Parallelism, xbot_interval = XBotOptNodeInterval}.
 
 mynode() ->
     partisan_config:get(name, node()).
