@@ -28,6 +28,7 @@
 -define(RANDOM_PROMOTION_INTERVAL, 5000).
 
 -define(XBOT_EXECUTION_INTERVAL, 5000).
+-define(XPARAM, latency).
 
 -include("partisan.hrl").
 
@@ -691,7 +692,7 @@ send_optimization_messages(Active, [Candidate | RestCandidates], InitiatorState)
 %% @private
 process_candidate([], _, _) -> ok;
 process_candidate([Old | RestActive],#state{connections=CConnections}=Candidate, InitiatorState) ->
-	IsBetter = is_better(Old, Candidate),
+	IsBetter = is_better(?XPARAM, Old, Candidate),
 	if IsBetter ->
 		% if cadidate is better that first node in active view, send optimization message
 		do_send_message(Candidate,{optimization, undefined, Old, InitiatorState, Candidate, undefined},CConnections);
@@ -1179,7 +1180,7 @@ handle_message({replace_reply, false, OldState, InitiatorState, CandidateState, 
 
 %% Replace
 handle_message({replace, _, OldState, InitiatorState, CandidateState, DisconnectState}, #state{connections=Connections}) ->
-	Check = is_better(CandidateState, OldState),
+	Check = is_better(?XPARAM, CandidateState, OldState),
 	if not Check ->
 			do_send_message(CandidateState,{replace_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, Connections);
 		true ->
@@ -1209,17 +1210,19 @@ handle_message({switch, _, OldState, #state{myself=IPeer,active=Active,tag=Tag} 
 	
 %% Determine if New node is better than Old node based on ping (latency)
 %% @private
-is_better(#{name := NewNodeName}, #{name := OldNodeName}) ->
-	is_better_node(timer:tc(ping, NewNodeName), timer:tc(ping, OldNodeName)).
+is_better(latency, #{name := NewNodeName}, #{name := OldNodeName}) ->
+	is_better_node_by_latency(timer:tc(ping, NewNodeName), timer:tc(ping, OldNodeName));
+is_better(true, _, _) ->
+	true.
 	
 %% @private
-is_better_node({_, pang}, {_, _}) ->
+is_better_node_by_latency({_, pang}, {_, _}) ->
 	%% if we do not get ping response from new node
 	false;
-is_better_node({_, pong}, {_, pang}) ->
+is_better_node_by_latency({_, pong}, {_, pang}) ->
 	%% if we cannot get response from old node but we got response from new
 	true;
-is_better_node({NewTime, pong}, {OldTime, pong}) ->
+is_better_node_by_latency({NewTime, pong}, {OldTime, pong}) ->
 	%% otherwise check lower ping response
 	(OldTime-NewTime) > 0.
 	
@@ -1231,7 +1234,7 @@ select_disconnect_node([H | T]) ->
 select_worst_in_active_view([], Worst) ->
 	Worst;
 select_worst_in_active_view([H | T], Worst) ->
-	NewWorst = is_better(H, Worst),
+	NewWorst = is_better(?XPARAM, H, Worst),
 	select_worst_in_active_view(T, NewWorst).
 
 %% @private
