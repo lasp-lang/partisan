@@ -1149,7 +1149,7 @@ handle_message({optimization_reply, true, #state{myself=OPeer}, #state{active=Ac
 handle_message({optimization_reply, true, #state{myself=OPeer}, #state{active=Active} = InitiatorState, CandidateState, DisconnectState}, _) ->
 	Check = is_in_active_view(OPeer, Active),
 	if Check ->
-		DisconnectState, %Send(disconnect_wait, o),
+		DisconnectState, 
 		remove_from_active_view(OPeer, Active)
 	end,
 	move_peer_from_passive_to_active(CandidateState, InitiatorState); %%State of initiator or the peer that will be moved???
@@ -1164,8 +1164,7 @@ handle_message({optimization, _, OldState, #state{active=Active, reserved=Reserv
 			add_to_active_view(CPeer, CTag, InitiatorState), %% I think this is good specified, add CPeer with CTag to active view of InitiatorState
 			do_send_message(InitiatorState, {optimization_reply, true, OldState, InitiatorState, CandidateState, undefined}, Connections);
 		true ->
-%			d = Active[UNOPT], // Change following  undefined for the disconnect node
-			DisconnectState = undefined,
+			DisconnectState = select_disconnect_node(Active),
 			do_send_message(DisconnectState,{replace, undefined, OldState, InitiatorState, CandidateState, undefined}, Connections)
 	end;
 	
@@ -1200,8 +1199,7 @@ handle_message({switch_reply, false, OldState, InitiatorState, CandidateState, D
 handle_message({switch, _, OldState, #state{myself=IPeer,active=Active,tag=Tag} = InitiatorState, CandidateState, #state{myself=DPeer}=DisconnectState},
 			#state{connections=Connections}) ->
 	Check = is_in_active_view(IPeer, Active),
-	if Check -> %or Send(disconnect_wait from i) ->
-			%Send(disconnect_wait, InitiatorState),
+	if Check -> 
 			remove_from_active_view(IPeer, Active), %% 'i' would be their 'Myself' (aka peer)??
 			add_to_active_view(DPeer, Tag, InitiatorState), %%What tag?? 
 			do_send_message(DisconnectState, {switch_reply, true, OldState, InitiatorState, CandidateState, DisconnectState}, Connections);
@@ -1225,6 +1223,16 @@ is_better_node({NewTime, pong}, {OldTime, pong}) ->
 	%% otherwise check lower ping response
 	(OldTime-NewTime) > 0.
 	
+%% @private
+select_disconnect_node([H | T]) ->
+	select_worst_in_active_view(T, H).
+	
+%% @private
+select_worst_in_active_view([], Worst) ->
+	Worst;
+select_worst_in_active_view([H | T], Worst) ->
+	NewWorst = is_better(H, Worst),
+	select_worst_in_active_view(T, NewWorst).
 
 %% @private
 empty_membership() ->
