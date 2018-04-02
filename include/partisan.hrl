@@ -18,6 +18,11 @@
 -define(XBOT_MIN_INTERVAL, 5000).
 -define(XBOT_RANGE_INTERVAL, 10000).
 
+% parameter used for xbot optimization
+% - latency (uses ping to check better nodes)
+% - true (always returns true when checking better)
+-define(XPARAM, latency).
+
 -type options() :: [{atom(), term()}].
 
 -type actor() :: binary().

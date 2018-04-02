@@ -69,7 +69,7 @@ myself() ->
     Name = partisan_config:get(name),
     ListenAddrs = partisan_config:get(listen_addrs),
     XBotOptNodeInterval = rand:uniform(?XBOT_RANGE_INTERVAL)+?XBOT_MIN_INTERVAL,
-    #{name => Name, listen_addrs => ListenAddrs, channels => Channels, parallelism => Parallelism, xbot_interval = XBotOptNodeInterval}.
+    #{name => Name, listen_addrs => ListenAddrs, channels => Channels, parallelism => Parallelism, xbot_interval => XBotOptNodeInterval}.
 
 mynode() ->
     partisan_config:get(name, node()).

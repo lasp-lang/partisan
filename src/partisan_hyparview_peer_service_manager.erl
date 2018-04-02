@@ -27,11 +27,6 @@
 -define(DEFAULT_PASSIVE_VIEW_MAINTENANCE_INTERVAL, 10000).
 -define(RANDOM_PROMOTION_INTERVAL, 5000).
 
-% parameter used for xbot optimization
-% - latency (uses ping to check better nodes)
-% - true (always returns true when checking better)
--define(XPARAM, latency).
-
 -include("partisan.hrl").
 
 %% partisan_peer_service_manager callbacks
@@ -282,7 +277,7 @@ init([]) ->
     schedule_passive_view_maintenance(),
     
     %% Schedule periodic execution of xbot algorithm (optimization)
-    schedule_xbot_execution(),
+    schedule_xbot_execution(Myself),
 
     %% Schedule tree peers refresh.
     schedule_tree_refresh(),
@@ -577,7 +572,8 @@ handle_info(passive_view_maintenance,
 
 % handle optimization using xbot algorithm
 handle_info(xbot_execution, 
-				#state{active=Active,
+				#state{myself=Myself,
+					   active=Active,
 					   passive=Passive,
 					   max_active_size=MaxActiveSize,
 					   reserved=Reserved}=InitiatorState) ->
@@ -594,7 +590,7 @@ handle_info(xbot_execution,
 	end,
 	
 	%In any case, schedule periodic xbot execution algorithm (optimization)
-	schedule_xbot_execution(),
+	schedule_xbot_execution(Myself),
 	{noreply, InitiatorState};
 	
 handle_info({'EXIT', From, Reason},
@@ -1136,14 +1132,14 @@ handle_message({forward_message, ServerRef, Message}, State) ->
     {noreply, State};
     
 %% Optimization Reply
-handle_message({optimization_reply, true, #state{myself=OPeer, tag=OTag}, #state{active=Active} = InitiatorState, CandidateState, undefined}, #state{myself=Myself,connections=Connections}) ->
+handle_message({optimization_reply, true, #state{myself=OPeer}, #state{active=Active} = InitiatorState, CandidateState, undefined}, _) ->
 	Check = is_in_active_view(OPeer, Active),
 	if Check ->
 		remove_from_active_view(OPeer, Active)
 	end,
 	move_peer_from_passive_to_active(CandidateState, InitiatorState),
-	add_to_passive_view(OPeer, OTag, InitiatorState);
-handle_message({optimization_reply, true, #state{myself=OPeer}, #state{active=Active} = InitiatorState, CandidateState, DisconnectState}, _) ->
+	add_to_passive_view(OPeer, InitiatorState);
+handle_message({optimization_reply, true, #state{myself=OPeer}, #state{active=Active} = InitiatorState, CandidateState, _}, _) ->
 	Check = is_in_active_view(OPeer, Active),
 	if Check ->
 		remove_from_active_view(OPeer, Active)
@@ -1626,8 +1622,8 @@ schedule_passive_view_maintenance() ->
                       passive_view_maintenance).
                       
 %% @private
-schedule_xbot_execution() ->
-	erlang:send_after(?DEFAULT_XBOT_EXECUTION_INTERVAL,
+schedule_xbot_execution(#{xbot_interval := Interval}) ->
+	erlang:send_after(Interval,
 						?MODULE,
 						xbot_execution).
 
