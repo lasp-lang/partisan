@@ -1136,26 +1136,19 @@ handle_message({forward_message, ServerRef, Message}, State) ->
     {noreply, State};
     
 %% Optimization Reply
-handle_message({optimization_reply, true, #state{myself=OPeer}, #state{active=Active} = InitiatorState, CandidateState, undefined}, #state{myself=Myself,connections=Connections}) ->
+handle_message({optimization_reply, true, #state{myself=OPeer, tag=OTag}, #state{active=Active} = InitiatorState, CandidateState, undefined}, #state{myself=Myself,connections=Connections}) ->
 	Check = is_in_active_view(OPeer, Active),
 	if Check ->
-		%Revisar los disconnect
-		remove_from_active_view(OPeer, Active),
-	    Connections1 = partisan_util:maybe_connect(OPeer, Connections),
-	    do_send_message(OPeer,
-                {disconnect, Myself, none}, %Change none for NextId ¿What? 
-                Connections1),
-        %NewConnections = disconnect(OPeer, Connections1)
-        disconnect(OPeer, Connections1)
+		remove_from_active_view(OPeer, Active)
 	end,
-	move_peer_from_passive_to_active(CandidateState, InitiatorState); %%State of initiator or the peer that will be moved???
+	move_peer_from_passive_to_active(CandidateState, InitiatorState),
+	add_to_passive_view(OPeer, OTag, InitiatorState);
 handle_message({optimization_reply, true, #state{myself=OPeer}, #state{active=Active} = InitiatorState, CandidateState, DisconnectState}, _) ->
 	Check = is_in_active_view(OPeer, Active),
 	if Check ->
-		DisconnectState, 
 		remove_from_active_view(OPeer, Active)
 	end,
-	move_peer_from_passive_to_active(CandidateState, InitiatorState); %%State of initiator or the peer that will be moved???
+	move_peer_from_passive_to_active(CandidateState, InitiatorState); 
 handle_message({optimization_reply, false, _, _, _, _}, _) ->
 	ok;
 
@@ -1164,7 +1157,7 @@ handle_message({optimization, _, OldState, #state{active=Active, reserved=Reserv
 				#state{myself=CPeer,tag=CTag}=CandidateState, undefined}, #state{connections=Connections}) ->
 	Check = is_full({active, Active, Reserved},MaxActiveSize),
 	if not Check -> 
-			add_to_active_view(CPeer, CTag, InitiatorState), %% I think this is good specified, add CPeer with CTag to active view of InitiatorState
+			add_to_active_view(CPeer, CTag, InitiatorState), 
 			do_send_message(InitiatorState, {optimization_reply, true, OldState, InitiatorState, CandidateState, undefined}, Connections);
 		true ->
 			DisconnectState = select_disconnect_node(Active),
@@ -1175,7 +1168,7 @@ handle_message({optimization, _, OldState, #state{active=Active, reserved=Reserv
 handle_message({replace_reply, true, OldState, #state{myself=IPeer,tag=ITag,active=Active}=InitiatorState, CandidateState, #state{myself=DPeer}=DisconnectState}, 
 			#state{connections=Connections}) ->
 	remove_from_active_view(DPeer, Active),
-	add_to_active_view(IPeer, ITag, InitiatorState), %%Tag of i or what?
+	add_to_active_view(IPeer, ITag, CandidateState), 
 	do_send_message(CandidateState,{optimization_reply, true, OldState, InitiatorState, CandidateState, DisconnectState},Connections);
 handle_message({replace_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, #state{connections=Connections}) ->
 	do_send_message(CandidateState,{optimization_reply, false, OldState, InitiatorState, CandidateState, DisconnectState},Connections);
@@ -1193,18 +1186,18 @@ handle_message({replace, _, OldState, InitiatorState, CandidateState, Disconnect
 handle_message({switch_reply, true, #state{myself=OPeer}=OldState, #state{active=Active,tag=Tag} = InitiatorState, #state{myself=CPeer}=CandidateState, DisconnectState}, 
 			#state{connections=Connections}) ->
 	remove_from_active_view(CPeer, Active),
-	add_to_active_view(OPeer, Tag, InitiatorState), %%What tag?? initiator or o??
+	add_to_active_view(OPeer, Tag, DisconnectState),
 	do_send_message(CandidateState,{replace_reply, true, OldState, InitiatorState, CandidateState, DisconnectState}, Connections);
 handle_message({switch_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, #state{connections=Connections}) ->
 	do_send_message(CandidateState, {replace_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, Connections);
 	
 %% Switch
-handle_message({switch, _, OldState, #state{myself=IPeer,active=Active,tag=Tag} = InitiatorState, CandidateState, #state{myself=DPeer}=DisconnectState},
+handle_message({switch, _, OldState, #state{myself=IPeer,active=Active} = InitiatorState, CandidateState, #state{myself=DPeer, tag=DTag}=DisconnectState},
 			#state{connections=Connections}) ->
 	Check = is_in_active_view(IPeer, Active),
 	if Check -> 
-			remove_from_active_view(IPeer, Active), %% 'i' would be their 'Myself' (aka peer)??
-			add_to_active_view(DPeer, Tag, InitiatorState), %%What tag?? 
+			remove_from_active_view(IPeer, Active), 
+			add_to_active_view(DPeer, DTag, OldState),  
 			do_send_message(DisconnectState, {switch_reply, true, OldState, InitiatorState, CandidateState, DisconnectState}, Connections);
 		true -> 
 			do_send_message(DisconnectState, {switch_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, Connections)
