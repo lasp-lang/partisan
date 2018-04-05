@@ -40,9 +40,9 @@
 -record(state, {myself, local_clock, order_buffer, buffered_messages, delivery_fun}).
 
 %% TODO: Needs some sort of persistence for the local causality information.
-%% TODO: Ensure we recursively deliver message.
 %% TODO: How do you know if we can use a causal channel or not?
 %% TODO: GC.
+%% TODO: Add acknowledgements.
 
 %%%===================================================================
 %%% API
@@ -150,11 +150,15 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-%% TODO: We aren't updating the order buffer here.
-
 %% @private
-deliver(#state{myself=Myself, local_clock=LocalClock, delivery_fun=DeliveryFun}=State, 
-        MessageClock, ServerRef, Message) ->
+deliver(#state{myself=Myself, local_clock=LocalClock, order_buffer=OrderBuffer, delivery_fun=DeliveryFun}=State, 
+        IncomingOrderBuffer, MessageClock, ServerRef, Message) ->
+    %% Merge order buffers.
+    MergeFun = fun(_Key, Value1, Value2) ->
+        vclock:merge([Value1, Value2])
+    end,
+    orddict:merge(MergeFun, IncomingOrderBuffer, OrderBuffer),
+
     %% Merge clocks.
     MergedLocalClock = vclock:merge([LocalClock, MessageClock]),
 
@@ -191,14 +195,14 @@ receive_message({causal, _Node, ServerRef, IncomingOrderBuffer, MessageClock, Me
         %% No dependencies.
         error ->
             lager:info("Message ~p has no dependencies, delivering.", [MessageClock]),
-            deliver(State0#state{buffered_messages=BufferedMessages -- [FullMessage]}, MessageClock, ServerRef, Message);
+            deliver(State0#state{buffered_messages=BufferedMessages -- [FullMessage]}, IncomingOrderBuffer, MessageClock, ServerRef, Message);
         %% Dependencies.
         {ok, DependencyClock} ->
             case vclock:dominates(LocalClock, DependencyClock) of
                 %% Dependencies met.
                 true ->
                     lager:info("Message ~p dependencies met, delivering.", [MessageClock]),
-                    deliver(State0#state{buffered_messages=BufferedMessages -- [FullMessage]}, MessageClock, ServerRef, Message);
+                    deliver(State0#state{buffered_messages=BufferedMessages -- [FullMessage]}, IncomingOrderBuffer, MessageClock, ServerRef, Message);
                 %% Dependencies NOT met.
                 false ->
                     %% Buffer, for later delivery.
