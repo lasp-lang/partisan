@@ -154,8 +154,6 @@ deliver(#state{myself=Myself, local_clock=LocalClock, order_buffer=OrderBuffer, 
     end,
     orddict:merge(MergeFun, IncomingOrderBuffer, OrderBuffer),
 
-    %% Prune order buffers.
-
     %% Merge clocks.
     MergedLocalClock = vclock:merge([LocalClock, MessageClock]),
 
