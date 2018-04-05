@@ -130,6 +130,7 @@ groups() ->
      {simple, [],
       [default_manager_test,
        leave_test,
+       causal_test,
        on_down_test,
        client_server_manager_test,
        %% amqp_manager_test,
@@ -220,6 +221,89 @@ amqp_manager_test(Config) ->
     lists:foreach(fun({_Name, Node}) ->
                     ok = check_forward_message(Node, Manager, Nodes)
                   end, Nodes),
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
+causal_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = partisan_default_peer_service_manager,
+
+    %% Specify servers.
+    Servers = node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+
+    %% Start nodes.
+    Nodes = start(causal_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Test on_down callback.
+    [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
+
+    %% Use our process identifier as the message destination.
+    ServerRef = self(),
+
+    %% Set the delivery function on all nodes to send messages here.
+    DeliveryFun = fun(_ServerRef, Message) ->
+        ServerRef ! Message
+    end,
+    lists:foreach(fun({_, N}) ->
+        ok = rpc:call(N, partisan_causality_backend, set_delivery_fun, [DeliveryFun])
+        end, Nodes),
+
+    %% Generate a message and vclock for that message.
+    Message1 = message_1,
+    {ok, FullMessage1} = rpc:call(Node3, partisan_causality_backend, emit, [Node4, ServerRef, Message1]),
+    ct:pal("Generated at node ~p full message: ~p", [Node3, FullMessage1]),
+
+    %% Generate a second message, which should depend on the first.
+    Message2 = message_2,
+    {ok, FullMessage2} = rpc:call(Node3, partisan_causality_backend, emit, [Node4, ServerRef, Message2]),
+    ct:pal("Generated at node ~p full message: ~p", [Node3, FullMessage2]),
+
+    %% Attempt to deliver message2.
+    ok = rpc:call(Node4, partisan_causality_backend, receive_message, [FullMessage2]),
+    
+    %% Message2 reception.
+    receive
+        Message2 ->
+            ct:fail("Received message 2 first!")
+    after
+        1000 ->
+            ok
+    end,
+
+    %% Attempt to deliver message1.
+    ok = rpc:call(Node4, partisan_causality_backend, receive_message, [FullMessage1]),
+
+    %% Message1 reception.
+    receive
+        Message1 ->
+            ct:pal("Received message 1!"),
+            ok
+    after
+        1000 ->
+            ct:fail("Didn't receive message 1!")
+    end,
+
+    %% See what messages we have received.
+    receive
+        Message2 ->
+            ct:pal("Received message 2!"),
+            ok
+    after
+        10000 ->
+            ct:fail("Didn't receive message 2!")
+    end,
 
     %% Stop nodes.
     stop(Nodes),
