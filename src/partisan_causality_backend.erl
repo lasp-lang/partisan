@@ -39,11 +39,6 @@
 
 -record(state, {myself, local_clock, order_buffer, buffered_messages, delivery_fun}).
 
-%% TODO: Needs some sort of persistence for the local causality information.
-%% TODO: How do you know if we can use a causal channel or not?
-%% TODO: GC.
-%% TODO: Add acknowledgements.
-
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -158,6 +153,8 @@ deliver(#state{myself=Myself, local_clock=LocalClock, order_buffer=OrderBuffer, 
         vclock:merge([Value1, Value2])
     end,
     orddict:merge(MergeFun, IncomingOrderBuffer, OrderBuffer),
+
+    %% Prune order buffers.
 
     %% Merge clocks.
     MergedLocalClock = vclock:merge([LocalClock, MessageClock]),
