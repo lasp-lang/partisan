@@ -37,7 +37,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, {label, myself, local_clock, order_buffer, buffered_messages, delivery_fun}).
+-record(state, {name, label, myself, local_clock, order_buffer, buffered_messages, delivery_fun}).
 
 %%%===================================================================
 %%% API
@@ -81,11 +81,35 @@ init([Label]) ->
     %% Schedule delivery attempts.
     schedule_delivery(Label),
 
-    {ok, #state{myself=Myself,
-                label=Label, 
-                local_clock=LocalClock, 
-                order_buffer=OrderBuffer, 
-                buffered_messages=BufferedMessages}}.
+    %% Get generated name.
+    Name = generate_name(Label),
+
+    %% Open the storage backend.
+    try
+        File = filename:join(application:get_env(data_root, partisan, dets), atom_to_list(Name)),
+        lager:info("Trying to open backend: ~p", [File]),
+        ok = filelib:ensure_dir(File),
+        case dets:open_file(Name, [{file, File}]) of
+            {ok, Name} ->
+                case dets:lookup(Name, state) of
+                    [{_, State}] ->
+                        {ok, State};
+                    [] ->
+                        {ok, #state{name=Name,
+                                    myself=Myself,
+                                    label=Label, 
+                                    local_clock=LocalClock, 
+                                    order_buffer=OrderBuffer, 
+                                    buffered_messages=BufferedMessages}}
+                end;
+            {error, Error} ->
+                {stop, Error}
+        end
+    catch
+        _:Reason ->
+            _ = lager:info("Backend initialization failed!"),
+            {stop, Reason}
+    end.
 
 %% @private
 
@@ -118,6 +142,10 @@ handle_call({receive_message, {causal, _Node, _ServerRef, _IncomingOrderBuffer, 
     lager:info("Received message ~p and inserting into buffer.", [MessageClock]),
     BufferedMessages = BufferedMessages0 ++ [FullMessage],
     State = lists:foldl(fun(M, S) -> internal_receive_message(M, S) end, State0#state{buffered_messages=BufferedMessages}, BufferedMessages),
+
+    %% Write state to disk.
+    write_state(State),
+
     {reply, ok, State};
 
 handle_call({set_delivery_fun, DeliveryFun}, _From, State) ->
@@ -133,7 +161,13 @@ handle_cast(_Msg, State) ->
 %% @private
 handle_info(deliver, #state{buffered_messages=BufferedMessages, label=Label}=State0) ->
     State = lists:foldl(fun(M, S) -> internal_receive_message(M, S) end, State0, BufferedMessages),
+
+    %% Write state to disk.
+    write_state(State),
+
+    %% Schedule next set of deliveries.
     schedule_delivery(Label),
+
     {noreply, State};
 handle_info(_Msg, State) ->
     {noreply, State}.
@@ -215,3 +249,7 @@ internal_receive_message({causal, _Node, ServerRef, IncomingOrderBuffer, Message
 %% @private
 generate_name(Label) ->
     list_to_atom(atom_to_list(?MODULE) ++ "_" ++ atom_to_list(Label)).
+
+%% @private
+write_state(#state{name=Name}=State) ->
+    ok = dets:insert(Name, {state, State}).

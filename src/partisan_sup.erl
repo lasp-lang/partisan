@@ -48,7 +48,7 @@ init([]) ->
                  ?CHILD(partisan_plumtree_broadcast, worker)
                  ]),
 
-    %% Configure causal labels.
+    %% Run a single backend for each label.
     CausalLabels = partisan_config:get(causal_labels, [default]),
 
     CausalBackendFun = fun(Label) ->
