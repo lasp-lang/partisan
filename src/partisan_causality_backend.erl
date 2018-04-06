@@ -93,8 +93,10 @@ init([Label]) ->
             {ok, Name} ->
                 case dets:lookup(Name, state) of
                     [{_, State}] ->
+                        lager:info("Read state from disk: ~p", [State]),
                         {ok, State};
                     [] ->
+                        lager:info("Using default state.", []),
                         {ok, #state{name=Name,
                                     myself=Myself,
                                     label=Label, 
@@ -185,7 +187,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private
-deliver(#state{myself=Myself, local_clock=LocalClock, order_buffer=OrderBuffer, delivery_fun=DeliveryFun}=State, 
+deliver(#state{myself=Myself, local_clock=LocalClock, order_buffer=OrderBuffer, delivery_fun=DeliveryFun}=State0, 
         IncomingOrderBuffer, MessageClock, ServerRef, Message) ->
     %% Merge order buffers.
     MergeFun = fun(_Key, Value1, Value2) ->
@@ -212,8 +214,10 @@ deliver(#state{myself=Myself, local_clock=LocalClock, order_buffer=OrderBuffer, 
             DeliveryFun(ServerRef, Message)
     end,
 
-    %% Return updated state.
-    State#state{local_clock=IncrementedLocalClock}.
+    %% Write and return updated state.
+    State = State0#state{local_clock=IncrementedLocalClock},
+    write_state(State),
+    State.
 
 %% @private
 schedule_delivery(Label) ->
@@ -252,4 +256,5 @@ generate_name(Label) ->
 
 %% @private
 write_state(#state{name=Name}=State) ->
-    ok = dets:insert(Name, {state, State}).
+    ok = dets:insert(Name, {state, State}),
+    State.

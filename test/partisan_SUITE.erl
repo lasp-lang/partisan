@@ -83,6 +83,8 @@ init_per_group(with_parallelism, Config) ->
     parallelism() ++ [{channels, ?CHANNELS}] ++ Config;
 init_per_group(with_no_channels, Config) ->
     [{parallelism, 1}, {channels, []}] ++ Config;
+init_per_group(with_causal_labels, Config) ->
+    [{causal_labels, [default]}] ++ Config;
 init_per_group(with_tls, Config) ->
     TLSOpts = make_certs(Config),
     [{parallelism, 1}, {tls, true}] ++ TLSOpts ++ Config;
@@ -98,6 +100,8 @@ all() ->
       [{simple, [shuffle]},
        {hyparview, [shuffle]}
       ]},
+
+     {group, with_causal_labels, []},
 
      {group, with_tls, [parallel]},
 
@@ -130,7 +134,6 @@ groups() ->
      {simple, [],
       [default_manager_test,
        leave_test,
-       causal_test,
        on_down_test,
        client_server_manager_test,
        %% amqp_manager_test,
@@ -142,6 +145,9 @@ groups() ->
        hyparview_manager_high_active_test,
        hyparview_manager_low_active_test,
        hyparview_manager_high_client_test]},
+
+     {with_causal_labels, [],
+      [causal_test]},
 
      {with_tls, [],
       [default_manager_test]},
@@ -1233,6 +1239,15 @@ start(_Case, Config, Options) ->
                           end,
             ct:pal("Setting channels to: ~p", [Channels]),
             ok = rpc:call(Node, partisan_config, set, [channels, Channels]),
+
+            CausalLabels = case ?config(causal_labels, Config) of
+                              undefined ->
+                                  [];
+                              CL ->
+                                  CL
+                          end,
+            ct:pal("Setting causal_labels to: ~p", [CausalLabels]),
+            ok = rpc:call(Node, partisan_config, set, [causal_labels, CausalLabels]),
 
             ok = rpc:call(Node, partisan_config, set, [tls, ?config(tls, Config)]),
             Parallelism = case ?config(parallelism, Config) of
