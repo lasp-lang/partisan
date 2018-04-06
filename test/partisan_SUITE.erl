@@ -252,26 +252,29 @@ causal_test(Config) ->
     %% Use our process identifier as the message destination.
     ServerRef = self(),
 
+    %% Use default causal channel label.
+    Label = default,
+
     %% Set the delivery function on all nodes to send messages here.
     DeliveryFun = fun(_ServerRef, Message) ->
         ServerRef ! Message
     end,
     lists:foreach(fun({_, N}) ->
-        ok = rpc:call(N, partisan_causality_backend, set_delivery_fun, [DeliveryFun])
+        ok = rpc:call(N, partisan_causality_backend, set_delivery_fun, [Label, DeliveryFun])
         end, Nodes),
 
     %% Generate a message and vclock for that message.
     Message1 = message_1,
-    {ok, FullMessage1} = rpc:call(Node3, partisan_causality_backend, emit, [Node4, ServerRef, Message1]),
+    {ok, FullMessage1} = rpc:call(Node3, partisan_causality_backend, emit, [Label, Node4, ServerRef, Message1]),
     ct:pal("Generated at node ~p full message: ~p", [Node3, FullMessage1]),
 
     %% Generate a second message, which should depend on the first.
     Message2 = message_2,
-    {ok, FullMessage2} = rpc:call(Node3, partisan_causality_backend, emit, [Node4, ServerRef, Message2]),
+    {ok, FullMessage2} = rpc:call(Node3, partisan_causality_backend, emit, [Label, Node4, ServerRef, Message2]),
     ct:pal("Generated at node ~p full message: ~p", [Node3, FullMessage2]),
 
     %% Attempt to deliver message2.
-    ok = rpc:call(Node4, partisan_causality_backend, receive_message, [FullMessage2]),
+    ok = rpc:call(Node4, partisan_causality_backend, receive_message, [Label, FullMessage2]),
     
     %% Message2 reception.
     receive
@@ -283,7 +286,7 @@ causal_test(Config) ->
     end,
 
     %% Attempt to deliver message1.
-    ok = rpc:call(Node4, partisan_causality_backend, receive_message, [FullMessage1]),
+    ok = rpc:call(Node4, partisan_causality_backend, receive_message, [Label, FullMessage1]),
 
     %% Message1 reception.
     receive

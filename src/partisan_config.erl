@@ -81,6 +81,7 @@ init() ->
                            {binary_padding, false},
                            {broadcast, false},
                            {broadcast_mods, [partisan_plumtree_backend]},
+                           {causal_labels, [default]},
                            {channels, ?CHANNELS},
                            {connect_disterl, false},
                            {connection_jitter, ?CONNECTION_JITTER},

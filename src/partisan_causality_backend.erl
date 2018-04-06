@@ -24,10 +24,10 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0,
-         emit/3,
-         receive_message/1,
-         set_delivery_fun/1]).
+-export([start_link/1,
+         emit/4,
+         receive_message/2,
+         set_delivery_fun/2]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -37,31 +37,35 @@
          terminate/2,
          code_change/3]).
 
--record(state, {myself, local_clock, order_buffer, buffered_messages, delivery_fun}).
+-record(state, {label, myself, local_clock, order_buffer, buffered_messages, delivery_fun}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
 %% @doc Same as start_link([]).
-start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+start_link(Label) ->
+    Name = generate_name(Label),
+    gen_server:start_link({local, Name}, ?MODULE, [Label], []).
 
-emit(Node, ServerRef, Message) ->
-    gen_server:call(?MODULE, {emit, Node, ServerRef, Message}, infinity).
+emit(Label, Node, ServerRef, Message) ->
+    Name = generate_name(Label),
+    gen_server:call(Name, {emit, Node, ServerRef, Message}, infinity).
 
-receive_message(Message) ->
-    gen_server:call(?MODULE, {receive_message, Message}, infinity).
+receive_message(Label, Message) ->
+    Name = generate_name(Label),
+    gen_server:call(Name, {receive_message, Message}, infinity).
 
-set_delivery_fun(DeliveryFun) ->
-    gen_server:call(?MODULE, {set_delivery_fun, DeliveryFun}, infinity).
+set_delivery_fun(Label, DeliveryFun) ->
+    Name = generate_name(Label),
+    gen_server:call(Name, {set_delivery_fun, DeliveryFun}, infinity).
 
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
 
 %% @private
-init([]) ->
+init([Label]) ->
     %% Figure out who we are.
     Myself = partisan_peer_service_manager:myself(),
 
@@ -75,9 +79,10 @@ init([]) ->
     BufferedMessages = [],
 
     %% Schedule delivery attempts.
-    schedule_delivery(),
+    schedule_delivery(Label),
 
-    {ok, #state{myself=Myself, 
+    {ok, #state{myself=Myself,
+                label=Label, 
                 local_clock=LocalClock, 
                 order_buffer=OrderBuffer, 
                 buffered_messages=BufferedMessages}}.
@@ -112,7 +117,7 @@ handle_call({receive_message, {causal, _Node, _ServerRef, _IncomingOrderBuffer, 
     %% Add to the buffer and try to deliver.
     lager:info("Received message ~p and inserting into buffer.", [MessageClock]),
     BufferedMessages = BufferedMessages0 ++ [FullMessage],
-    State = lists:foldl(fun(M, S) -> receive_message(M, S) end, State0#state{buffered_messages=BufferedMessages}, BufferedMessages),
+    State = lists:foldl(fun(M, S) -> internal_receive_message(M, S) end, State0#state{buffered_messages=BufferedMessages}, BufferedMessages),
     {reply, ok, State};
 
 handle_call({set_delivery_fun, DeliveryFun}, _From, State) ->
@@ -126,9 +131,9 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @private
-handle_info(deliver, #state{buffered_messages=BufferedMessages}=State0) ->
-    State = lists:foldl(fun(M, S) -> receive_message(M, S) end, State0, BufferedMessages),
-    schedule_delivery(),
+handle_info(deliver, #state{buffered_messages=BufferedMessages, label=Label}=State0) ->
+    State = lists:foldl(fun(M, S) -> internal_receive_message(M, S) end, State0, BufferedMessages),
+    schedule_delivery(Label),
     {noreply, State};
 handle_info(_Msg, State) ->
     {noreply, State}.
@@ -177,13 +182,14 @@ deliver(#state{myself=Myself, local_clock=LocalClock, order_buffer=OrderBuffer, 
     State#state{local_clock=IncrementedLocalClock}.
 
 %% @private
-schedule_delivery() ->
+schedule_delivery(Label) ->
     Interval = partisan_config:get(redelivery_interval, 1000),
-    erlang:send_after(Interval, ?MODULE, deliver).
+    Name = generate_name(Label),
+    erlang:send_after(Interval, Name, deliver).
 
 %% @private
-receive_message({causal, _Node, ServerRef, IncomingOrderBuffer, MessageClock, Message}=FullMessage, 
-                #state{myself=#{name := Myself}, local_clock=LocalClock, buffered_messages=BufferedMessages}=State0) ->
+internal_receive_message({causal, _Node, ServerRef, IncomingOrderBuffer, MessageClock, Message}=FullMessage, 
+                         #state{myself=#{name := Myself}, local_clock=LocalClock, buffered_messages=BufferedMessages}=State0) ->
     lager:info("Attempting delivery of messages: ~p", [MessageClock]),
 
     case orddict:find(Myself, IncomingOrderBuffer) of
@@ -205,3 +211,7 @@ receive_message({causal, _Node, ServerRef, IncomingOrderBuffer, MessageClock, Me
                     State0#state{buffered_messages=BufferedMessages}
             end
     end.
+
+%% @private
+generate_name(Label) ->
+    list_to_atom(atom_to_list(?MODULE) ++ "_" ++ atom_to_list(Label)).
