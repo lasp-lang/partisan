@@ -18,8 +18,8 @@
 %%
 %% -------------------------------------------------------------------
 
--module(partisan_hyparview_peer_service_manager).
--author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
+-module(partisan_hyparview_xbot_peer_service_manager).
+-author("Bruno Santiago Vazquez <brunosantiagovazquez@gmail.com>").
 
 -behaviour(gen_server).
 -behaviour(partisan_peer_service_manager).
@@ -275,6 +275,9 @@ init([]) ->
 
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
+    
+    %% Schedule periodic execution of xbot algorithm (optimization)
+    schedule_xbot_execution(Myself),
 
     %% Schedule tree peers refresh.
     schedule_tree_refresh(),
@@ -567,6 +570,29 @@ handle_info(passive_view_maintenance,
 
     {noreply, State};
 
+% handle optimization using xbot algorithm
+handle_info(xbot_execution, 
+				#state{myself=Myself,
+					   active=Active,
+					   passive=Passive,
+					   max_active_size=MaxActiveSize,
+					   reserved=Reserved}=InitiatorState) ->
+	
+	% check if active view is full
+	IsFull = is_full({active,Active,Reserved}, MaxActiveSize),
+	case IsFull of
+		% if full, check for candidates and try to optimize
+		true ->
+			Candidates = select_random_sublist(Passive, 2),
+			send_optimization_messages(Active, Candidates, InitiatorState);
+		% in other case, do nothing
+		false -> ok
+	end,
+	
+	%In any case, schedule periodic xbot execution algorithm (optimization)
+	schedule_xbot_execution(Myself),
+	{noreply, InitiatorState};
+	
 handle_info({'EXIT', From, Reason},
             #state{myself=Myself,
                    active=Active0,
@@ -649,6 +675,29 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+% Send optimization messages when apply
+%% @private
+send_optimization_messages(_, [], _) -> ok;
+send_optimization_messages(Active, [Candidate | RestCandidates], InitiatorState) ->
+	% check the first candidate against every node in the active view
+	process_candidate(Active, Candidate, InitiatorState),
+	% do same for every candidate against the active
+	send_optimization_messages(Active, RestCandidates, InitiatorState).
+	
+% check if a candidate is valid and send message to try optimization
+% we only send an optimization messages for one node in active view, once we have sent it we stop searching possibilities
+%% @private
+process_candidate([], _, _) -> ok;
+process_candidate([Old | RestActive],#state{connections=CConnections}=Candidate, InitiatorState) ->
+	IsBetter = is_better(?XPARAM, Old, Candidate),
+	if IsBetter ->
+		% if cadidate is better that first node in active view, send optimization message
+		do_send_message(Candidate,{optimization, undefined, Old, InitiatorState, Candidate, undefined},CConnections);
+	   true -> 
+	    % if not, continue checking against the remaining nodes in active view 
+		process_candidate(RestActive, Candidate, InitiatorState)
+	end.
 
 %% @private
 handle_message({resolve_partition, Reference}, State) ->
@@ -1080,7 +1129,104 @@ handle_message({relay_message, Node, Message}, #state{out_links=OutLinks, connec
     {noreply, State};
 handle_message({forward_message, ServerRef, Message}, State) ->
     ServerRef ! Message,
-    {noreply, State}.
+    {noreply, State};
+    
+%% Optimization Reply
+handle_message({optimization_reply, true, #state{myself=OPeer}, #state{active=Active} = InitiatorState, CandidateState, undefined}, _) ->
+	Check = is_in_active_view(OPeer, Active),
+	if Check ->
+		remove_from_active_view(OPeer, Active)
+	end,
+	move_peer_from_passive_to_active(CandidateState, InitiatorState),
+	add_to_passive_view(OPeer, InitiatorState);
+handle_message({optimization_reply, true, #state{myself=OPeer}, #state{active=Active} = InitiatorState, CandidateState, _}, _) ->
+	Check = is_in_active_view(OPeer, Active),
+	if Check ->
+		remove_from_active_view(OPeer, Active)
+	end,
+	move_peer_from_passive_to_active(CandidateState, InitiatorState); 
+handle_message({optimization_reply, false, _, _, _, _}, _) ->
+	ok;
+
+%% Optimization
+handle_message({optimization, _, OldState, #state{active=Active, reserved=Reserved, max_active_size=MaxActiveSize} = InitiatorState, 
+				#state{myself=CPeer,tag=CTag}=CandidateState, undefined}, #state{connections=Connections}) ->
+	Check = is_full({active, Active, Reserved},MaxActiveSize),
+	if not Check -> 
+			add_to_active_view(CPeer, CTag, InitiatorState), 
+			do_send_message(InitiatorState, {optimization_reply, true, OldState, InitiatorState, CandidateState, undefined}, Connections);
+		true ->
+			DisconnectState = select_disconnect_node(Active),
+			do_send_message(DisconnectState,{replace, undefined, OldState, InitiatorState, CandidateState, undefined}, Connections)
+	end;
+	
+%% Replace Reply
+handle_message({replace_reply, true, OldState, #state{myself=IPeer,tag=ITag,active=Active}=InitiatorState, CandidateState, #state{myself=DPeer}=DisconnectState}, 
+			#state{connections=Connections}) ->
+	remove_from_active_view(DPeer, Active),
+	add_to_active_view(IPeer, ITag, CandidateState), 
+	do_send_message(CandidateState,{optimization_reply, true, OldState, InitiatorState, CandidateState, DisconnectState},Connections);
+handle_message({replace_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, #state{connections=Connections}) ->
+	do_send_message(CandidateState,{optimization_reply, false, OldState, InitiatorState, CandidateState, DisconnectState},Connections);
+
+%% Replace
+handle_message({replace, _, OldState, InitiatorState, CandidateState, DisconnectState}, #state{connections=Connections}) ->
+	Check = is_better(?XPARAM, CandidateState, OldState),
+	if not Check ->
+			do_send_message(CandidateState,{replace_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, Connections);
+		true ->
+			do_send_message(OldState,{switch, undefined, OldState, InitiatorState, CandidateState, DisconnectState}, Connections)
+	end;
+
+%% Switch Reply
+handle_message({switch_reply, true, #state{myself=OPeer}=OldState, #state{active=Active,tag=Tag} = InitiatorState, #state{myself=CPeer}=CandidateState, DisconnectState}, 
+			#state{connections=Connections}) ->
+	remove_from_active_view(CPeer, Active),
+	add_to_active_view(OPeer, Tag, DisconnectState),
+	do_send_message(CandidateState,{replace_reply, true, OldState, InitiatorState, CandidateState, DisconnectState}, Connections);
+handle_message({switch_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, #state{connections=Connections}) ->
+	do_send_message(CandidateState, {replace_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, Connections);
+	
+%% Switch
+handle_message({switch, _, OldState, #state{myself=IPeer,active=Active} = InitiatorState, CandidateState, #state{myself=DPeer, tag=DTag}=DisconnectState},
+			#state{connections=Connections}) ->
+	Check = is_in_active_view(IPeer, Active),
+	if Check -> 
+			remove_from_active_view(IPeer, Active), 
+			add_to_active_view(DPeer, DTag, OldState),  
+			do_send_message(DisconnectState, {switch_reply, true, OldState, InitiatorState, CandidateState, DisconnectState}, Connections);
+		true -> 
+			do_send_message(DisconnectState, {switch_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, Connections)
+	end.
+	
+%% Determine if New node is better than Old node based on ping (latency)
+%% @private
+is_better(latency, #{name := NewNodeName}, #{name := OldNodeName}) ->
+	is_better_node_by_latency(timer:tc(ping, NewNodeName), timer:tc(ping, OldNodeName));
+is_better(true, _, _) ->
+	true.
+	
+%% @private
+is_better_node_by_latency({_, pang}, {_, _}) ->
+	%% if we do not get ping response from new node
+	false;
+is_better_node_by_latency({_, pong}, {_, pang}) ->
+	%% if we cannot get response from old node but we got response from new
+	true;
+is_better_node_by_latency({NewTime, pong}, {OldTime, pong}) ->
+	%% otherwise check lower ping response
+	(OldTime-NewTime) > 0.
+	
+%% @private
+select_disconnect_node([H | T]) ->
+	select_worst_in_active_view(T, H).
+	
+%% @private
+select_worst_in_active_view([], Worst) ->
+	Worst;
+select_worst_in_active_view([H | T], Worst) ->
+	NewWorst = is_better(?XPARAM, H, Worst),
+	select_worst_in_active_view(T, NewWorst).
 
 %% @private
 empty_membership() ->
@@ -1474,6 +1620,12 @@ schedule_passive_view_maintenance() ->
     erlang:send_after(Period,
                       ?MODULE,
                       passive_view_maintenance).
+                      
+%% @private
+schedule_xbot_execution(#{xbot_interval := Interval}) ->
+	erlang:send_after(Interval,
+						?MODULE,
+						xbot_execution).
 
 %% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
 shuffle(L) ->
@@ -1686,7 +1838,6 @@ handle_partition_resolution(Reference,
             [propagate_partition_resolution(Reference, Peer, Connections)
              || Peer <- members(Active)]
     end,
-
     Partitions.
 
 %% @private
