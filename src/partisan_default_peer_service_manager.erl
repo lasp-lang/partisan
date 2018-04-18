@@ -70,11 +70,13 @@
 -type from() :: {pid(), atom()}.
 
 -record(state, {actor :: actor(),
+                vclock :: term(),
                 pending :: pending(),
                 down_functions :: dict:dict(),
                 up_functions :: dict:dict(),
                 membership :: membership(),
                 sync_joins :: [{node_spec(), from()}],
+                unacked :: [term()],
                 connections :: partisan_peer_service_connections:t()}).
 
 -type state_t() :: #state{}.
@@ -153,6 +155,12 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
     %% Attempt to get the partition key, if possible.
     PartitionKey = proplists:get_value(partition_key, Options, ?DEFAULT_PARTITION_KEY),
 
+    %% Use a clock provided by the sender, otherwise, use a generated one.
+    Clock = proplists:get_value(clock, Options, undefined),
+
+    %% Should ack?
+    ShouldAck = proplists:get_value(ack, Options, false),
+
     %% If attempting to forward to the local node, bypass.
     case partisan_peer_service_manager:mynode() of
         Name ->
@@ -168,31 +176,41 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
                     FullMessage = case partisan_config:get(binary_padding, false) of
                         true ->
                             BinaryPadding = partisan_config:get(binary_padding_term, undefined),
-                            {forward_message, Name, Channel, PartitionKey, ServerRef, {'$partisan_padded', BinaryPadding, Message}, Options};
+                            {forward_message, Name, Channel, Clock, PartitionKey, ServerRef, {'$partisan_padded', BinaryPadding, Message}, Options};
                         false ->
-                            {forward_message, Name, Channel, PartitionKey, ServerRef, Message, Options}
+                            {forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options}
                     end,
 
-                    %% Attempt to fast-path through the memoized connection cache.
-                    case partisan_connection_cache:dispatch(FullMessage) of
-                        ok ->
-                            ok;
-                        {error, trap} ->
+                    case ShouldAck of
+                        false ->
+                            %% Attempt to fast-path through the memoized connection cache.
+                            case partisan_connection_cache:dispatch(FullMessage) of
+                                ok ->
+                                    ok;
+                                {error, trap} ->
+                                    gen_server:call(?MODULE, FullMessage, infinity)
+                            end;
+                        true ->
                             gen_server:call(?MODULE, FullMessage, infinity)
-                    end
+                    end                
             end
     end.
 
 %% @doc Receive message from a remote manager.
+receive_message({forward_message, _SourceNode, _MessageClock, _ServerRef, _Message} = FullMessage) ->
+    %% Process the message and generate the acknowledgement.
+    gen_server:call(?MODULE, {receive_message, FullMessage}, infinity);
 receive_message({forward_message, ServerRef, {'$partisan_padded', _Padding, Message}}) ->
     receive_message({forward_message, ServerRef, Message});
 receive_message({forward_message, ServerRef, Message}) ->
+    %% Deliver the message.
     try
         ServerRef ! Message
     catch
         _:Error ->
             lager:error("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
     end,
+
     ok;
 receive_message(Message) ->
     gen_server:call(?MODULE, {receive_message, Message}, infinity).
@@ -263,12 +281,18 @@ init([]) ->
     %% Schedule periodic connections.
     schedule_connections(),
 
+    %% Schedule periodic retransmissionj.
+    schedule_retransmit(),
+
     Actor = gen_actor(),
+    VClock = vclock:fresh(),
     Membership = maybe_load_state_from_disk(Actor),
     Connections = partisan_peer_service_connections:new(),
 
     {ok, #state{actor=Actor,
                 pending=[],
+                unacked=[],
+                vclock=VClock,
                 membership=Membership,
                 connections=Connections,
                 sync_joins=[],
@@ -400,14 +424,35 @@ handle_call({send_message, Name, Channel, Message}, _From,
                              Connections),
     {reply, Result, State};
 
-handle_call({forward_message, Name, Channel, PartitionKey, ServerRef, Message, _Options}, _From,
-            #state{connections=Connections}=State) ->
+handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options}=FullMessage, 
+            _From,
+            #state{unacked=Unacked0, connections=Connections, vclock=VClock0}=State0) ->
+    State = case proplists:get_value(ack, Options, false) of
+        false ->
+            State0;
+        true ->
+            State0#state{unacked=Unacked0 ++ [FullMessage]}
+    end,
+
+    %% Increment the clock.
+    VClock = vclock:increment(myself(), VClock0),
+
+    %% Generate a message clock.
+    MessageClock = case Clock of
+        undefined ->
+            VClock;
+        Clock ->
+            Clock
+    end,
+
+    %% Send message along.
     Result = do_send_message(Name,
                              Channel,
                              PartitionKey,
-                             {forward_message, ServerRef, Message},
+                             {forward_message, myself(), MessageClock, ServerRef, Message},
                              Connections),
-    {reply, Result, State};
+
+    {reply, Result, State#state{vclock=VClock}};
 
 handle_call({receive_message, Message}, _From, State) ->
     handle_message(Message, State);
@@ -443,6 +488,18 @@ handle_info(gossip, #state{pending=Pending,
     do_gossip(Membership, Connections),
     schedule_gossip(),
     {noreply, State#state{connections=Connections}};
+
+handle_info(retransmit, #state{connections=Connections, unacked=Unacked}=State) ->
+    RetransmitFun = fun({forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Message, _Options}) ->
+        do_send_message(Name,
+                        Channel,
+                        PartitionKey,
+                        {forward_message, ServerRef, Message},
+                        Connections)
+    end,
+    lists:foreach(RetransmitFun, Unacked),
+    schedule_retransmit(),
+    {noreply, State};
 
 handle_info(connections, #state{pending=Pending,
                                 membership=Membership,
@@ -697,6 +754,23 @@ handle_message({receive_state, #{name := From}, PeerMembership},
                     {stop, normal, State#state{membership=EmptyMembership}}
             end
     end;
+handle_message({forward_message, SourceNode, MessageClock, ServerRef, Message}, 
+               #state{connections=Connections}=State) ->
+    %% Try to acknowledge.
+    do_send_message(SourceNode,
+                    ?DEFAULT_CHANNEL,
+                    ?DEFAULT_PARTITION_KEY,
+                    {ack, MessageClock},
+                    Connections),
+
+    %% Attempt message delivery.
+    try
+        ServerRef ! Message
+    catch
+        _:Error ->
+            lager:debug("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
+    end,
+    {reply, ok, State};
 handle_message({forward_message, ServerRef, Message}, State) ->
     try
         ServerRef ! Message
@@ -704,7 +778,13 @@ handle_message({forward_message, ServerRef, Message}, State) ->
         _:Error ->
             lager:debug("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
     end,
-    {reply, ok, State}.
+    {reply, ok, State};
+handle_message({ack, MessageClock}, #state{unacked=Unacked0}=State) ->
+    FilterFun = fun({forward_message, _Name, _Channel, Clock, _PartitionKey, _ServerRef, _Message, _Options}) ->
+        Clock =/= MessageClock
+    end,
+    Unacked = lists:filter(FilterFun, Unacked0),
+    {reply, ok, State#state{unacked=Unacked}}.
 
 %% @private
 schedule_gossip() ->
@@ -717,6 +797,11 @@ schedule_gossip() ->
         _ ->
             ok
     end.
+
+%% @private
+schedule_retransmit() ->
+    RetransmitInterval = partisan_config:get(retransmit_interval, 1000),
+    erlang:send_after(RetransmitInterval, ?MODULE, retransmit).
 
 %% @private
 schedule_connections() ->
