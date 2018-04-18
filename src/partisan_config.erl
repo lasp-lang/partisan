@@ -21,7 +21,7 @@
 -module(partisan_config).
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
--include("../include/partisan.hrl").
+-include("partisan.hrl").
 
 -export([init/0,
          channels/0,
