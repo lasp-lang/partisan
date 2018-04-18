@@ -85,6 +85,8 @@ init_per_group(with_no_channels, Config) ->
     [{parallelism, 1}, {channels, []}] ++ Config;
 init_per_group(with_causal_labels, Config) ->
     [{causal_labels, [default]}] ++ Config;
+init_per_group(with_ack, Config) ->
+    [{forward_options, [{ack, true}]}] ++ Config;
 init_per_group(with_tls, Config) ->
     TLSOpts = make_certs(Config),
     [{parallelism, 1}, {tls, true}] ++ TLSOpts ++ Config;
@@ -100,6 +102,8 @@ all() ->
       [{simple, [shuffle]},
        {hyparview, [shuffle]}
       ]},
+
+     {group, with_ack, []},
 
      {group, with_causal_labels, []},
 
@@ -145,6 +149,9 @@ groups() ->
        hyparview_manager_high_active_test,
        hyparview_manager_low_active_test,
        hyparview_manager_high_client_test]},
+
+     {with_ack, [],
+      [default_manager_test]},
 
      {with_causal_labels, [],
       [causal_test]},
