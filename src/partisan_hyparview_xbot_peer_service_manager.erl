@@ -577,7 +577,7 @@ handle_info(xbot_execution,
 					   passive=Passive,
 					   max_active_size=MaxActiveSize,
 					   reserved=Reserved}=InitiatorState) ->
-	
+	lager:debug("XBOT: Starting xbot optimization round at Node ~p", [Myself]),
 	% check if active view is full
 	IsFull = is_full({active,Active,Reserved}, MaxActiveSize),
 	case IsFull of
@@ -693,7 +693,8 @@ process_candidate([Old | RestActive],#state{connections=CConnections}=Candidate,
 	IsBetter = is_better(?XPARAM, Old, Candidate),
 	if IsBetter ->
 		% if cadidate is better that first node in active view, send optimization message
-		do_send_message(Candidate,{optimization, undefined, Old, InitiatorState, Candidate, undefined},CConnections);
+		do_send_message(Candidate,{optimization, undefined, Old, InitiatorState, Candidate, undefined},CConnections),
+		lager:debug("XBOT: Optimizatoin message sent to Node ~p", [Candidate]);
 	   true -> 
 	    % if not, continue checking against the remaining nodes in active view 
 		process_candidate(RestActive, Candidate, InitiatorState)
@@ -1133,70 +1134,89 @@ handle_message({forward_message, ServerRef, Message}, State) ->
     
 %% Optimization Reply
 handle_message({optimization_reply, true, #state{myself=OPeer}, #state{active=Active} = InitiatorState, CandidateState, undefined}, _) ->
+	lager:debug("XBOT: Received optimization reply message at Node ~p from ~p", [InitiatorState, CandidateState]),
 	Check = is_in_active_view(OPeer, Active),
 	if Check ->
 		remove_from_active_view(OPeer, Active)
 	end,
 	move_peer_from_passive_to_active(CandidateState, InitiatorState),
-	add_to_passive_view(OPeer, InitiatorState);
+	add_to_passive_view(OPeer, InitiatorState),
+	lager:debug("XBOT: Finished optimization round started by Node ~p ", [InitiatorState]);
 handle_message({optimization_reply, true, #state{myself=OPeer}, #state{active=Active} = InitiatorState, CandidateState, _}, _) ->
+	lager:debug("XBOT: Received optimization reply message at Node ~p from ~p", [InitiatorState, CandidateState]),
 	Check = is_in_active_view(OPeer, Active),
 	if Check ->
 		remove_from_active_view(OPeer, Active)
 	end,
-	move_peer_from_passive_to_active(CandidateState, InitiatorState); 
+	move_peer_from_passive_to_active(CandidateState, InitiatorState),
+	lager:debug("XBOT: Finished optimization round started by Node ~p ", [InitiatorState]); 
 handle_message({optimization_reply, false, _, _, _, _}, _) ->
 	ok;
 
 %% Optimization
 handle_message({optimization, _, OldState, #state{active=Active, reserved=Reserved, max_active_size=MaxActiveSize} = InitiatorState, 
 				#state{myself=CPeer,tag=CTag}=CandidateState, undefined}, #state{connections=Connections}) ->
+	lager:debug("XBOT: Received optimization message at Node ~p from ~p", [CandidateState, InitiatorState]),
 	Check = is_full({active, Active, Reserved},MaxActiveSize),
 	if not Check -> 
 			add_to_active_view(CPeer, CTag, InitiatorState), 
-			do_send_message(InitiatorState, {optimization_reply, true, OldState, InitiatorState, CandidateState, undefined}, Connections);
+			do_send_message(InitiatorState, {optimization_reply, true, OldState, InitiatorState, CandidateState, undefined}, Connections),
+			lager:debug("XBOT: Sending optimization reply message to Node ~p from ~p", [InitiatorState, CandidateState]);
 		true ->
 			DisconnectState = select_disconnect_node(Active),
-			do_send_message(DisconnectState,{replace, undefined, OldState, InitiatorState, CandidateState, undefined}, Connections)
+			do_send_message(DisconnectState,{replace, undefined, OldState, InitiatorState, CandidateState, undefined}, Connections),
+			lager:debug("XBOT: Sending replace message to Node ~p from ~p", [DisconnectState, CandidateState])
 	end;
 	
 %% Replace Reply
 handle_message({replace_reply, true, OldState, #state{myself=IPeer,tag=ITag,active=Active}=InitiatorState, CandidateState, #state{myself=DPeer}=DisconnectState}, 
 			#state{connections=Connections}) ->
+	lager:debug("XBOT: Received replace reply message at Node ~p from ~p", [CandidateState, DisconnectState]),
 	remove_from_active_view(DPeer, Active),
 	add_to_active_view(IPeer, ITag, CandidateState), 
 	do_send_message(CandidateState,{optimization_reply, true, OldState, InitiatorState, CandidateState, DisconnectState},Connections);
 handle_message({replace_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, #state{connections=Connections}) ->
-	do_send_message(CandidateState,{optimization_reply, false, OldState, InitiatorState, CandidateState, DisconnectState},Connections);
+	lager:debug("XBOT: Received replace reply message at Node ~p from ~p", [CandidateState, DisconnectState]),
+	do_send_message(CandidateState,{optimization_reply, false, OldState, InitiatorState, CandidateState, DisconnectState},Connections),
+	lager:debug("XBOT: Sending optimization reply to Node ~p from ~p", [InitiatorState, CandidateState]);
 
 %% Replace
 handle_message({replace, _, OldState, InitiatorState, CandidateState, DisconnectState}, #state{connections=Connections}) ->
+	lager:debug("XBOT: Received replace message at Node ~p from ~p", [DisconnectState, CandidateState]),
 	Check = is_better(?XPARAM, CandidateState, OldState),
 	if not Check ->
-			do_send_message(CandidateState,{replace_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, Connections);
+			do_send_message(CandidateState,{replace_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, Connections),
+			lager:debug("XBOT: Sending replace reply to Node ~p from ~p", [CandidateState, DisconnectState]);
 		true ->
-			do_send_message(OldState,{switch, undefined, OldState, InitiatorState, CandidateState, DisconnectState}, Connections)
+			do_send_message(OldState,{switch, undefined, OldState, InitiatorState, CandidateState, DisconnectState}, Connections),
+			lager:debug("XBOT: Sending switch to Node ~p from ~p", [OldState, DisconnectState])
 	end;
 
 %% Switch Reply
 handle_message({switch_reply, true, #state{myself=OPeer}=OldState, #state{active=Active,tag=Tag} = InitiatorState, #state{myself=CPeer}=CandidateState, DisconnectState}, 
 			#state{connections=Connections}) ->
+	lager:debug("XBOT: Received switch reply message at Node ~p from ~p", [DisconnectState, OldState]),
 	remove_from_active_view(CPeer, Active),
 	add_to_active_view(OPeer, Tag, DisconnectState),
-	do_send_message(CandidateState,{replace_reply, true, OldState, InitiatorState, CandidateState, DisconnectState}, Connections);
+	do_send_message(CandidateState,{replace_reply, true, OldState, InitiatorState, CandidateState, DisconnectState}, Connections),
+	lager:debug("XBOT: Sending replace reply to Node ~p from ~p", [CandidateState, DisconnectState]);
 handle_message({switch_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, #state{connections=Connections}) ->
-	do_send_message(CandidateState, {replace_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, Connections);
+	do_send_message(CandidateState, {replace_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, Connections),
+	lager:debug("XBOT: Sending replace reply to Node ~p from ~p", [CandidateState, DisconnectState]);
 	
 %% Switch
 handle_message({switch, _, OldState, #state{myself=IPeer,active=Active} = InitiatorState, CandidateState, #state{myself=DPeer, tag=DTag}=DisconnectState},
 			#state{connections=Connections}) ->
+	lager:debug("XBOT: Received switch message at Node ~p from ~p", [OldState, DisconnectState]),
 	Check = is_in_active_view(IPeer, Active),
 	if Check -> 
 			remove_from_active_view(IPeer, Active), 
 			add_to_active_view(DPeer, DTag, OldState),  
-			do_send_message(DisconnectState, {switch_reply, true, OldState, InitiatorState, CandidateState, DisconnectState}, Connections);
+			do_send_message(DisconnectState, {switch_reply, true, OldState, InitiatorState, CandidateState, DisconnectState}, Connections),
+			lager:debug("XBOT: Sending switch reply to Node ~p from ~p", [DisconnectState, OldState]);
 		true -> 
-			do_send_message(DisconnectState, {switch_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, Connections)
+			do_send_message(DisconnectState, {switch_reply, false, OldState, InitiatorState, CandidateState, DisconnectState}, Connections),
+			lager:debug("XBOT: Sending switch reply to Node ~p from ~p", [DisconnectState, OldState])
 	end.
 	
 %% Determine if New node is better than Old node based on ping (latency)

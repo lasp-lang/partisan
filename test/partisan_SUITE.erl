@@ -95,36 +95,38 @@ end_per_group(_, _Config) ->
 all() ->
     [
      {group, default, [parallel],
-      [{simple, [shuffle]},
-       {hyparview, [shuffle]}
-      ]},
+      [%{simple, [shuffle]},
+       %{hyparview, [shuffle]},
+       {hyparview_xbot, [shuffle]}
+      ]}%,
 
-     {group, with_tls, [parallel]},
+     %{group, with_tls, [parallel]},
 
-     {group, with_parallelism, [parallel]},
+     %{group, with_parallelism, [parallel]},
 
-     {group, with_disterl, [parallel]},
+     %{group, with_disterl, [parallel]},
 
-     {group, with_channels, [parallel]},
+     %{group, with_channels, [parallel]},
 
-     {group, with_no_channels, [parallel]},
+     %{group, with_no_channels, [parallel]},
      
-     {group, with_monotonic_channels, [parallel]},
+     %{group, with_monotonic_channels, [parallel]},
 
-     {group, with_sync_join, [parallel]},
+     %{group, with_sync_join, [parallel]},
 
-     {group, with_binary_padding, [parallel]},
+     %{group, with_binary_padding, [parallel]},
 
-     {group, with_partition_key, [parallel]},
+     %{group, with_partition_key, [parallel]},
 
-     {group, with_broadcast, [parallel]}
+     %{group, with_broadcast, [parallel]}
     ].
 
 groups() ->
     [
      {default, [],
       [{group, simple},
-       {group, hyparview}
+       {group, hyparview},
+       {group, hyparview_xbot}
       ]},
 
      {simple, [],
@@ -141,6 +143,12 @@ groups() ->
        hyparview_manager_high_active_test,
        hyparview_manager_low_active_test,
        hyparview_manager_high_client_test]},
+       
+     {hyparview_xbot, [],
+      [ hyparview_xbot_manager_partition_test,
+       hyparview_xbot_manager_high_active_test,
+       hyparview_xbot_manager_low_active_test,
+       hyparview_xbot_manager_high_client_test]},
 
      {with_tls, [],
       [default_manager_test]},
@@ -1274,6 +1282,19 @@ cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
                                omit(Clients, Nodes);
                             {_, _} ->
                                omit([Name], Nodes)
+                        end;
+                     %same as hyparview but for hyparview with xbot integration
+                     partisan_hyparview_xbot_peer_service_manager ->
+                        case {AmIServer, AmIClient} of
+                            {true, false} ->
+                               %% If I'm a server, I connect to both
+                               %% clients and servers!
+                               omit([Name], Nodes);
+                            {false, true} ->
+                               %% I'm a client, pick servers.
+                               omit(Clients, Nodes);
+                            {_, _} ->
+                               omit([Name], Nodes)
                         end
                  end,
     lists:map(fun(OtherNode) -> cluster(Myself, OtherNode, Config) end, OtherNodes).
@@ -1662,3 +1683,411 @@ parallelism() ->
         Config ->
             [{parallelism, list_to_integer(Config)}]
     end.
+
+%% Same test as hyparview but with xbot variant integrated
+%% @private
+hyparview_xbot_membership_check(Nodes) ->
+    Manager = partisan_hyparview_xbot_peer_service_manager,
+    %% Create new digraph.
+    Graph = digraph:new(),
+
+    %% Verify membership.
+    %%
+    %% Every node should know about every other node in this topology
+    %% when the active setting is high.
+    %%
+    ConnectFun =
+        fun({_, Node}) ->
+            {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
+            Active = sets:to_list(ActiveSet),
+
+            %% Add vertexes and edges.
+            [connect(Graph, Node, N) || #{name := N} <- Active]
+         end,
+    %% Build a digraph representing the membership
+    lists:foreach(ConnectFun, Nodes),
+
+    %% Verify connectedness.
+    %% Return a list of node tuples that were found not to be connected,
+    %% empty otherwise
+    ConnectedFails =
+        lists:flatmap(fun({_Name, Node}=Myself) ->
+                lists:filtermap(fun({_, N}) ->
+                    Path = digraph:get_short_path(Graph, Node, N),
+                    case Path of
+                        false ->
+                            %% print out the active view of each node
+                            % lists:foreach(fun({_, N1}) ->
+                            %                     {ok, ActiveSet} = rpc:call(N1, Manager, active, []),
+                            %                     Active = sets:to_list(ActiveSet),
+                            %                     ct:pal("node ~p active view: ~p", [N1, Active])
+                            %                end, Nodes),
+                            {true, {Node, N}};
+                        _ ->
+                            false
+                    end
+                 end, Nodes -- [Myself])
+            end, Nodes),
+
+    %% Verify symmetry.
+    SymmetryFails =
+        lists:flatmap(fun({_, Node1}) ->
+                %% Get first nodes active set.
+                {ok, ActiveSet1} = rpc:call(Node1, Manager, active, []),
+                Active1 = sets:to_list(ActiveSet1),
+
+                lists:filtermap(fun(#{name := Node2}) ->
+                    %% Get second nodes active set.
+                    {ok, ActiveSet2} = rpc:call(Node2, Manager, active, []),
+                    Active2 = sets:to_list(ActiveSet2),
+
+                    case lists:member(Node1, [N || #{name := N} <- Active2]) of
+                        true ->
+                            false;
+                        false ->
+                            {true, {Node1, Node2}}
+                    end
+                end, Active1)
+            end, Nodes),
+
+    {ConnectedFails, SymmetryFails}.
+    
+hyparview_xbot_manager_partition_test(Config) ->
+    %% Use hyparview with xbot integration.
+    Manager = partisan_hyparview_xbot_peer_service_manager,
+
+    %% Specify servers.
+    Servers = node_list(1, "server", Config), %% [server],
+
+    %% Specify clients.
+    Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
+
+    %% Start nodes.
+    Nodes = start(hyparview_manager_partition_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {max_active_size, 5},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    CheckStartedFun = fun() ->
+                        case hyparview_xbot_membership_check(Nodes) of
+                            {[], []} -> true;
+                            {ConnectedFails, []} ->
+                                {connected_check_failed, ConnectedFails};
+                            {[], SymmetryFails} ->
+                                {symmetry_check_failed, SymmetryFails};
+                            {ConnectedFails, SymmetryFails} ->
+                                [{connected_check_failed, ConnectedFails},
+                                 {symmetry_check_failed, SymmetryFails}]
+                        end
+                      end,
+
+    case wait_until(CheckStartedFun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, {false, {connected_check_failed, Nodes}}} ->
+            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p",
+                    [Nodes]);
+        {fail, {false, {symmetry_check_failed, Nodes}}} ->
+            ct:fail("Symmetry is broken (ie. node1 has node2 in it's view but vice-versa is not true) between the following "
+                    "pairs of nodes: ~p", [Nodes]);
+        {fail, {false, [{connected_check_failed, ConnectedFails},
+                        {symmetry_check_failed, SymmetryFails}]}} ->
+            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p, symmetry is broken as well"
+                    "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
+                    "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
+    end,
+
+    ct:pal("Nodes: ~p", [Nodes]),
+
+    %% Inject a partition.
+    {_, PNode} = hd(Nodes),
+    PFullNode = rpc:call(PNode, Manager, myself, []),
+
+    {ok, Reference} = rpc:call(PNode, Manager, inject_partition, [PFullNode, 1]),
+    ct:pal("Partition generated: ~p", [Reference]),
+
+    %% Verify partition.
+    PartitionVerifyFun = fun({_Name, Node}) ->
+        {ok, Partitions} = rpc:call(Node, Manager, partitions, []),
+        ct:pal("Partitions for node ~p: ~p", [Node, Partitions]),
+        {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
+        Active = sets:to_list(ActiveSet),
+        ct:pal("Peers for node ~p: ~p", [Node, Active]),
+        PartitionedPeers = [Peer || {_Reference, Peer} <- Partitions],
+        case PartitionedPeers == Active of
+            true ->
+                ok;
+            false ->
+                ct:fail("Partitions incorrectly generated.")
+        end
+    end,
+    lists:foreach(PartitionVerifyFun, Nodes),
+
+    %% Resolve partition.
+    ok = rpc:call(PNode, Manager, resolve_partition, [Reference]),
+    ct:pal("Partition resolved: ~p", [Reference]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Verify resolved partition.
+    ResolveVerifyFun = fun({_Name, Node}) ->
+        {ok, Partitions} = rpc:call(Node, Manager, partitions, []),
+        ct:pal("Partitions for node ~p: ~p", [Node, Partitions]),
+        case Partitions == [] of
+            true ->
+                ok;
+            false ->
+                ct:fail("Partitions incorrectly resolved.")
+        end
+    end,
+    lists:foreach(ResolveVerifyFun, Nodes),
+
+    %% Verify forward message functionality.
+    lists:foreach(fun({_Name, Node}) ->
+                    ok = check_forward_message(Node, Manager, Nodes)
+                  end, Nodes),
+
+    %% Verify correct behaviour when a node is stopped
+    {_, KilledNode} = N0 = random(Nodes, []),
+    ok = rpc:call(KilledNode, partisan, stop, []),
+    CheckStoppedFun = fun() ->
+                        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
+                            [] -> true;
+                            FailedNodes ->
+                                FailedNodes
+                        end
+                      end,
+    case wait_until(CheckStoppedFun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, FailedNodes} ->
+            ct:fail("~p has been killed, it should not be in membership of nodes ~p",
+                    [KilledNode, FailedNodes])
+    end,
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
+hyparview_xbot_manager_high_active_test(Config) ->
+    %% Use hyparview with xbot integration.
+    Manager = partisan_hyparview_xbot_peer_service_manager,
+
+    %% Specify servers.
+    Servers = node_list(1, "server", Config), %% [server],
+
+    %% Specify clients.
+    Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
+
+    %% Start nodes.
+    Nodes = start(hyparview_xbot_manager_high_active_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {max_active_size, 5},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    CheckStartedFun = fun() ->
+                        case hyparview_xbot_membership_check(Nodes) of
+                            {[], []} -> true;
+                            {ConnectedFails, []} ->
+                                {false, {connected_check_failed, ConnectedFails}};
+                            {[], SymmetryFails} ->
+                                {false, {symmetry_check_failed, SymmetryFails}};
+                            {ConnectedFails, SymmetryFails} ->
+                                {false, [{connected_check_failed, ConnectedFails},
+                                         {symmetry_check_failed, SymmetryFails}]}
+                        end
+                      end,
+
+    case wait_until(CheckStartedFun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, {false, {connected_check_failed, Nodes}}} ->
+            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p",
+                    [Nodes]);
+        {fail, {false, {symmetry_check_failed, Nodes}}} ->
+            ct:fail("Symmetry is broken (ie. node1 has node2 in it's view but vice-versa is not true) between the following "
+                    "pairs of nodes: ~p", [Nodes]);
+        {fail, {false, [{connected_check_failed, ConnectedFails},
+                        {symmetry_check_failed, SymmetryFails}]}} ->
+            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p, symmetry is broken as well"
+                    "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
+                    "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
+    end,
+
+    %% Verify forward message functionality.
+    lists:foreach(fun({_Name, Node}) ->
+                    ok = check_forward_message(Node, Manager, Nodes)
+                  end, Nodes),
+
+    %% Verify correct behaviour when a node is stopped
+    {_, KilledNode} = N0 = random(Nodes, []),
+    ok = rpc:call(KilledNode, partisan, stop, []),
+    CheckStoppedFun = fun() ->
+                        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
+                            [] -> true;
+                            FailedNodes ->
+                                FailedNodes
+                        end
+                      end,
+    case wait_until(CheckStoppedFun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, FailedNodes} ->
+            ct:fail("~p has been killed, it should not be in membership of nodes ~p",
+                    [KilledNode, FailedNodes])
+    end,
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
+hyparview_xbot_manager_low_active_test(Config) ->
+    %% Use hyparview with xbot integration.
+    Manager = partisan_hyparview_xbot_peer_service_manager,
+
+    %% Start nodes.
+    MaxActiveSize = 3,
+
+    Servers = node_list(1, "server", Config), %% [server],
+
+    Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
+
+    Nodes = start(hyparview_xbot_manager_low_active_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {max_active_size, MaxActiveSize},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    CheckStartedFun = fun() ->
+                        case hyparview_xbot_membership_check(Nodes) of
+                            {[], []} -> true;
+                            {ConnectedFails, []} ->
+                                {false, {connected_check_failed, ConnectedFails}};
+                            {[], SymmetryFails} ->
+                                {false, {symmetry_check_failed, SymmetryFails}};
+                            {ConnectedFails, SymmetryFails} ->
+                                {false, [{connected_check_failed, ConnectedFails},
+                                         {symmetry_check_failed, SymmetryFails}]}
+                        end
+                      end,
+
+    case wait_until(CheckStartedFun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, {false, {connected_check_failed, Nodes}}} ->
+            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p",
+                    [Nodes]);
+        {fail, {false, {symmetry_check_failed, Nodes}}} ->
+            ct:fail("Symmetry is broken (ie. node1 has node2 in it's view but vice-versa is not true) between the following "
+                    "pairs of nodes: ~p", [Nodes]);
+        {fail, {false, [{connected_check_failed, ConnectedFails},
+                        {symmetry_check_failed, SymmetryFails}]}} ->
+            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p, symmetry is broken as well"
+                    "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
+                    "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
+    end,
+
+    %% Verify forward message functionality.
+    lists:foreach(fun({_Name, Node}) ->
+                    ok = check_forward_message(Node, Manager, Nodes)
+                  end, Nodes),
+
+    %% Verify correct behaviour when a node is stopped
+    {_, KilledNode} = N0 = random(Nodes, []),
+    ok = rpc:call(KilledNode, partisan, stop, []),
+    CheckStoppedFun = fun() ->
+                        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
+                            [] -> true;
+                            FailedNodes ->
+                                FailedNodes
+                        end
+                      end,
+    case wait_until(CheckStoppedFun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, FailedNodes} ->
+            ct:fail("~p has been killed, it should not be in membership of nodes ~p",
+                    [KilledNode, FailedNodes])
+    end,
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
+hyparview_xbot_manager_high_client_test(Config) ->
+    %% Use hyparview with xbot integration.
+    Manager = partisan_hyparview_xbot_peer_service_manager,
+
+    %% Start clients,.
+    Clients = node_list(11, "client", Config), %% client_list(11),
+
+    %% Start servers.
+    Servers = node_list(1, "server", Config), %% [server],
+
+    Nodes = start(hyparview_xbot_manager_low_active_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    CheckStartedFun = fun() ->
+                        case hyparview_xbot_membership_check(Nodes) of
+                            {[], []} -> true;
+                            {ConnectedFails, []} ->
+                                {false, {connected_check_failed, ConnectedFails}};
+                            {[], SymmetryFails} ->
+                                {false, {symmetry_check_failed, SymmetryFails}};
+                            {ConnectedFails, SymmetryFails} ->
+                                {false, [{connected_check_failed, ConnectedFails},
+                                         {symmetry_check_failed, SymmetryFails}]}
+                        end
+                      end,
+
+    case wait_until(CheckStartedFun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, {false, {connected_check_failed, Nodes}}} ->
+            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p",
+                    [Nodes]);
+        {fail, {false, {symmetry_check_failed, Nodes}}} ->
+            ct:fail("Symmetry is broken (ie. node1 has node2 in it's view but vice-versa is not true) between the following "
+                    "pairs of nodes: ~p", [Nodes]);
+        {fail, {false, [{connected_check_failed, ConnectedFails},
+                        {symmetry_check_failed, SymmetryFails}]}} ->
+            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p, symmetry is broken as well"
+                    "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
+                    "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
+    end,
+    
+    %% Verify forward message functionality.
+    lists:foreach(fun({_Name, Node}) ->
+                    ok = check_forward_message(Node, Manager, Nodes)
+                  end, Nodes),
+
+    %% Verify correct behaviour when a node is stopped
+    {_, KilledNode} = N0 = random(Nodes, []),
+    ok = rpc:call(KilledNode, partisan, stop, []),
+    CheckStoppedFun = fun() ->
+                        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
+                            [] -> true;
+                            FailedNodes ->
+                                FailedNodes
+                        end
+                      end,
+    case wait_until(CheckStoppedFun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, FailedNodes} ->
+            ct:fail("~p has been killed, it should not be in membership of nodes ~p",
+                    [KilledNode, FailedNodes])
+    end,
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
