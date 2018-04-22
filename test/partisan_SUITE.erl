@@ -95,30 +95,30 @@ end_per_group(_, _Config) ->
 all() ->
     [
      {group, default, [parallel],
-      [%{simple, [shuffle]},
-       %{hyparview, [shuffle]},
+      [{simple, [shuffle]},
+       {hyparview, [shuffle]},
        {hyparview_xbot, [shuffle]}
-      ]}%,
+      ]},
 
-     %{group, with_tls, [parallel]},
+     {group, with_tls, [parallel]},
 
-     %{group, with_parallelism, [parallel]},
+     {group, with_parallelism, [parallel]},
 
-     %{group, with_disterl, [parallel]},
+     {group, with_disterl, [parallel]},
 
-     %{group, with_channels, [parallel]},
+     {group, with_channels, [parallel]},
 
-     %{group, with_no_channels, [parallel]},
+     {group, with_no_channels, [parallel]},
      
-     %{group, with_monotonic_channels, [parallel]},
+     {group, with_monotonic_channels, [parallel]},
 
-     %{group, with_sync_join, [parallel]},
+     {group, with_sync_join, [parallel]},
 
-     %{group, with_binary_padding, [parallel]},
+     {group, with_binary_padding, [parallel]},
 
-     %{group, with_partition_key, [parallel]},
+     {group, with_partition_key, [parallel]},
 
-     %{group, with_broadcast, [parallel]}
+     {group, with_broadcast, [parallel]}
     ].
 
 groups() ->
