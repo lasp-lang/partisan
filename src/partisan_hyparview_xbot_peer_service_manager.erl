@@ -681,7 +681,7 @@ code_change(_OldVsn, State, _Extra) ->
 send_optimization_messages(_, [], _) -> ok;
 send_optimization_messages(Active, [Candidate | RestCandidates], InitiatorState) ->
 	% check the first candidate against every node in the active view
-	process_candidate(Active, Candidate, InitiatorState),
+	process_candidate(sets:to_list(Active), Candidate, InitiatorState),
 	% do same for every candidate against the active
 	send_optimization_messages(Active, RestCandidates, InitiatorState).
 	
@@ -1163,7 +1163,7 @@ handle_message({optimization, _, OldState, #state{active=Active, reserved=Reserv
 			do_send_message(InitiatorState, {optimization_reply, true, OldState, InitiatorState, CandidateState, undefined}, Connections),
 			lager:debug("XBOT: Sending optimization reply message to Node ~p from ~p", [InitiatorState, CandidateState]);
 		true ->
-			DisconnectState = select_disconnect_node(Active),
+			DisconnectState = select_disconnect_node(sets:to_list(Active)),
 			do_send_message(DisconnectState,{replace, undefined, OldState, InitiatorState, CandidateState, undefined}, Connections),
 			lager:debug("XBOT: Sending replace message to Node ~p from ~p", [DisconnectState, CandidateState])
 	end;
@@ -1222,8 +1222,8 @@ handle_message({switch, _, OldState, #state{myself=IPeer,active=Active} = Initia
 %% Determine if New node is better than Old node based on ping (latency)
 %% @private
 is_better(latency, #{name := NewNodeName}, #{name := OldNodeName}) ->
-	is_better_node_by_latency(timer:tc(ping, NewNodeName), timer:tc(ping, OldNodeName));
-is_better(true, _, _) ->
+	is_better_node_by_latency(timer:tc(net_adm, ping, [NewNodeName]), timer:tc(net_adm, ping, [OldNodeName]));
+is_better(_, _, _) ->
 	true.
 	
 %% @private
@@ -1231,7 +1231,7 @@ is_better_node_by_latency({_, pang}, {_, _}) ->
 	%% if we do not get ping response from new node
 	false;
 is_better_node_by_latency({_, pong}, {_, pang}) ->
-	%% if we cannot get response from old node but we got response from new
+	%% if we cannot get response from old node but we got response from new (this should never happen, in general)
 	true;
 is_better_node_by_latency({NewTime, pong}, {OldTime, pong}) ->
 	%% otherwise check lower ping response
