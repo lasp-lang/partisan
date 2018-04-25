@@ -134,19 +134,18 @@ groups() ->
        leave_test,
        on_down_test,
        client_server_manager_test,
-       amqp_manager_test,
+       %% amqp_manager_test,
        performance_test,
        rejoin_test]},
        
      {hyparview, [],
-      [ hyparview_manager_partition_test,
+      [ %% hyparview_manager_partition_test,
        hyparview_manager_high_active_test,
        hyparview_manager_low_active_test,
        hyparview_manager_high_client_test]},
        
      {hyparview_xbot, [],
-      [ hyparview_xbot_manager_partition_test,
-       hyparview_xbot_manager_high_active_test,
+      [ hyparview_xbot_manager_high_active_test,
        hyparview_xbot_manager_low_active_test,
        hyparview_xbot_manager_high_client_test]},
 
@@ -1752,126 +1751,6 @@ hyparview_xbot_membership_check(Nodes) ->
 
     {ConnectedFails, SymmetryFails}.
     
-hyparview_xbot_manager_partition_test(Config) ->
-    %% Use hyparview with xbot integration.
-    Manager = partisan_hyparview_xbot_peer_service_manager,
-
-    %% Specify servers.
-    Servers = node_list(1, "server", Config), %% [server],
-
-    %% Specify clients.
-    Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
-
-    %% Start nodes.
-    Nodes = start(hyparview_manager_partition_test, Config,
-                  [{partisan_peer_service_manager, Manager},
-                   {max_active_size, 5},
-                   {servers, Servers},
-                   {clients, Clients}]),
-
-    CheckStartedFun = fun() ->
-                        case hyparview_xbot_membership_check(Nodes) of
-                            {[], []} -> true;
-                            {ConnectedFails, []} ->
-                                {connected_check_failed, ConnectedFails};
-                            {[], SymmetryFails} ->
-                                {symmetry_check_failed, SymmetryFails};
-                            {ConnectedFails, SymmetryFails} ->
-                                [{connected_check_failed, ConnectedFails},
-                                 {symmetry_check_failed, SymmetryFails}]
-                        end
-                      end,
-
-    case wait_until(CheckStartedFun, 60 * 2, 100) of
-        ok ->
-            ok;
-        {fail, {false, {connected_check_failed, Nodes}}} ->
-            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p",
-                    [Nodes]);
-        {fail, {false, {symmetry_check_failed, Nodes}}} ->
-            ct:fail("Symmetry is broken (ie. node1 has node2 in it's view but vice-versa is not true) between the following "
-                    "pairs of nodes: ~p", [Nodes]);
-        {fail, {false, [{connected_check_failed, ConnectedFails},
-                        {symmetry_check_failed, SymmetryFails}]}} ->
-            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p, symmetry is broken as well"
-                    "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
-                    "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
-    end,
-
-    ct:pal("Nodes: ~p", [Nodes]),
-
-    %% Inject a partition.
-    {_, PNode} = hd(Nodes),
-    PFullNode = rpc:call(PNode, Manager, myself, []),
-
-    {ok, Reference} = rpc:call(PNode, Manager, inject_partition, [PFullNode, 1]),
-    ct:pal("Partition generated: ~p", [Reference]),
-
-    %% Verify partition.
-    PartitionVerifyFun = fun({_Name, Node}) ->
-        {ok, Partitions} = rpc:call(Node, Manager, partitions, []),
-        ct:pal("Partitions for node ~p: ~p", [Node, Partitions]),
-        {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
-        Active = sets:to_list(ActiveSet),
-        ct:pal("Peers for node ~p: ~p", [Node, Active]),
-        PartitionedPeers = [Peer || {_Reference, Peer} <- Partitions],
-        case PartitionedPeers == Active of
-            true ->
-                ok;
-            false ->
-                ct:fail("Partitions incorrectly generated.")
-        end
-    end,
-    lists:foreach(PartitionVerifyFun, Nodes),
-
-    %% Resolve partition.
-    ok = rpc:call(PNode, Manager, resolve_partition, [Reference]),
-    ct:pal("Partition resolved: ~p", [Reference]),
-
-    %% Pause for clustering.
-    timer:sleep(1000),
-
-    %% Verify resolved partition.
-    ResolveVerifyFun = fun({_Name, Node}) ->
-        {ok, Partitions} = rpc:call(Node, Manager, partitions, []),
-        ct:pal("Partitions for node ~p: ~p", [Node, Partitions]),
-        case Partitions == [] of
-            true ->
-                ok;
-            false ->
-                ct:fail("Partitions incorrectly resolved.")
-        end
-    end,
-    lists:foreach(ResolveVerifyFun, Nodes),
-
-    %% Verify forward message functionality.
-    lists:foreach(fun({_Name, Node}) ->
-                    ok = check_forward_message(Node, Manager, Nodes)
-                  end, Nodes),
-
-    %% Verify correct behaviour when a node is stopped
-    {_, KilledNode} = N0 = random(Nodes, []),
-    ok = rpc:call(KilledNode, partisan, stop, []),
-    CheckStoppedFun = fun() ->
-                        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
-                            [] -> true;
-                            FailedNodes ->
-                                FailedNodes
-                        end
-                      end,
-    case wait_until(CheckStoppedFun, 60 * 2, 100) of
-        ok ->
-            ok;
-        {fail, FailedNodes} ->
-            ct:fail("~p has been killed, it should not be in membership of nodes ~p",
-                    [KilledNode, FailedNodes])
-    end,
-
-    %% Stop nodes.
-    stop(Nodes),
-
-    ok.
-
 hyparview_xbot_manager_high_active_test(Config) ->
     %% Use hyparview with xbot integration.
     Manager = partisan_hyparview_xbot_peer_service_manager,
