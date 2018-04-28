@@ -76,7 +76,6 @@
                 up_functions :: dict:dict(),
                 membership :: membership(),
                 sync_joins :: [{node_spec(), from()}],
-                unacked :: [term()],
                 connections :: partisan_peer_service_connections:t()}).
 
 -type state_t() :: #state{}.
@@ -291,7 +290,6 @@ init([]) ->
 
     {ok, #state{actor=Actor,
                 pending=[],
-                unacked=[],
                 vclock=VClock,
                 membership=Membership,
                 connections=Connections,
@@ -426,14 +424,7 @@ handle_call({send_message, Name, Channel, Message}, _From,
 
 handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options}=FullMessage, 
             _From,
-            #state{unacked=Unacked0, connections=Connections, vclock=VClock0}=State0) ->
-    State = case proplists:get_value(ack, Options, false) of
-        false ->
-            State0;
-        true ->
-            State0#state{unacked=Unacked0 ++ [FullMessage]}
-    end,
-
+            #state{connections=Connections, vclock=VClock0}=State) ->
     %% Increment the clock.
     VClock = vclock:increment(myself(), VClock0),
 
@@ -443,6 +434,14 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Mes
             VClock;
         Clock ->
             Clock
+    end,
+
+    %% Store for reliability, if necessary.
+    case proplists:get_value(ack, Options, false) of
+        false ->
+            ok;
+        true ->
+            partisan_reliability_backend:store(MessageClock, FullMessage)
     end,
 
     %% Send message along.
@@ -489,15 +488,15 @@ handle_info(gossip, #state{pending=Pending,
     schedule_gossip(),
     {noreply, State#state{connections=Connections}};
 
-handle_info(retransmit, #state{connections=Connections, unacked=Unacked}=State) ->
-    RetransmitFun = fun({forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Message, _Options}) ->
+handle_info(retransmit, #state{connections=Connections}=State) ->
+    RetransmitFun = fun({_, {forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Message, _Options}}) ->
         do_send_message(Name,
                         Channel,
                         PartitionKey,
                         {forward_message, ServerRef, Message},
                         Connections)
     end,
-    lists:foreach(RetransmitFun, Unacked),
+    lists:foreach(RetransmitFun, partisan_reliability_backend:outstanding()),
     schedule_retransmit(),
     {noreply, State};
 
@@ -779,12 +778,9 @@ handle_message({forward_message, ServerRef, Message}, State) ->
             lager:debug("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
     end,
     {reply, ok, State};
-handle_message({ack, MessageClock}, #state{unacked=Unacked0}=State) ->
-    FilterFun = fun({forward_message, _Name, _Channel, Clock, _PartitionKey, _ServerRef, _Message, _Options}) ->
-        Clock =/= MessageClock
-    end,
-    Unacked = lists:filter(FilterFun, Unacked0),
-    {reply, ok, State#state{unacked=Unacked}}.
+handle_message({ack, MessageClock}, State) ->
+    partisan_reliability_backend:ack(MessageClock),
+    {reply, ok, State}.
 
 %% @private
 schedule_gossip() ->
