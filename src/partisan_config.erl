@@ -36,19 +36,6 @@ init() ->
                                              partisan_peer_service_manager,
                                  
                                             ?DEFAULT_PEER_SERVICE_MANAGER),
-    %% Configure the hostname to use.
-    Name = case node() of
-        'nonode@nohost' ->
-            lager:info("Distributed erlang is not enabled, generating UUID for node."),
-            UUID = uuid:to_string(uuid:uuid1()),
-            FQDN = UUID ++ "@localhost",
-            Atomized = list_to_atom(FQDN),
-            lager:info("Setting partisan name to ~p", [Atomized]),
-            Atomized;
-        Other ->
-            Other
-    end,
-    partisan_config:set(name, Name),
 
     PeerService = case os:getenv("PEER_SERVICE", "false") of
                       "false" ->
@@ -56,6 +43,25 @@ init() ->
                       PeerServiceList ->
                           list_to_atom(PeerServiceList)
                   end,
+
+    %% Configure the partisan node name.
+    Name = case node() of
+        nonode@nohost ->
+            lager:info("Distributed Erlang is not enabled, generating UUID."),
+            UUIDState = uuid:new(self()),
+            {UUID, _UUIDState1} = uuid:get_v1(UUIDState),
+            lager:info("Generated UUID: ~p, converting to string.", [UUID]),
+            StringUUID = uuid:uuid_to_string(UUID),
+            NodeName = list_to_atom(StringUUID ++ "@127.0.0.1"),
+            lager:info("Generated name for node: ~p", [NodeName]),
+            NodeName;
+        Other ->
+            lager:info("Using node name: ~p", [Other]),
+            Other
+    end,
+
+    %% Must be done here, before the resolution call is made.
+    partisan_config:set(name, Name),
 
     DefaultTag = case os:getenv("TAG", "false") of
                     "false" ->
@@ -71,8 +77,8 @@ init() ->
     DefaultPeerPort = random_port(),
 
     [env_or_default(Key, Default) ||
-        {Key, Default} <- [{arwl, 6},
-                           {prwl, 6},
+        {Key, Default} <- [{arwl, 5},
+                           {prwl, 30},
                            {binary_padding, false},
                            {broadcast, false},
                            {broadcast_mods, [partisan_plumtree_backend]},
@@ -85,6 +91,7 @@ init() ->
                            {max_active_size, 6},
                            {max_passive_size, 30},
                            {min_active_size, 3},
+                           {name, Name},
                            {passive_view_shuffle_period, 10000},
                            {parallelism, ?PARALLELISM},
                            {partisan_peer_service_manager, PeerService},
@@ -150,7 +157,7 @@ try_get_node_address() ->
 
 %% @private
 get_node_address() ->
-    Name = atom_to_list(node()),
+    Name = atom_to_list(partisan_peer_service_manager:mynode()),
     [_Hostname, FQDN] = string:tokens(Name, "@"),
 
     %% Spawn a process to perform resolution.

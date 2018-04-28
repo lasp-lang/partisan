@@ -131,7 +131,7 @@ exchange(_Peer) ->
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
     %% Seed the process at initialization.
-    rand_compat:seed(erlang:phash2([node()]),
+    rand_compat:seed(erlang:phash2([partisan_peer_service_manager:mynode()]),
                      erlang:monotonic_time(),
                      erlang:unique_integer()),
 
@@ -186,7 +186,7 @@ handle_info(heartbeat, State) ->
     %% identifier: this means that we can have this tree
     %% participate in multiple trees, each rooted at a different
     %% node.
-    Timestamp = {node(), Counter},
+    Timestamp = {partisan_peer_service_manager:mynode(), Counter},
 
     %% Insert a new message into the table.
     true = ets:insert(?MODULE, [{Timestamp, true}]),
