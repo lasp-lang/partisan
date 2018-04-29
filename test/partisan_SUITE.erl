@@ -84,7 +84,9 @@ init_per_group(with_parallelism, Config) ->
 init_per_group(with_no_channels, Config) ->
     [{parallelism, 1}, {channels, []}] ++ Config;
 init_per_group(with_causal_labels, Config) ->
-    [{causal_labels, [vnode]}] ++ Config;
+    [{causal_labels, [vnode, default]}] ++ Config;
+init_per_group(with_causal_send, Config) ->
+    [{causal_labels, [vnode]}, {forward_options, [{causal, vnode}, {ack, true}]}] ++ Config;
 init_per_group(with_ack, Config) ->
     [{forward_options, [{ack, true}]}] ++ Config;
 init_per_group(with_tls, Config) ->
@@ -106,6 +108,8 @@ all() ->
      {group, with_ack, []},
 
      {group, with_causal_labels, []},
+
+     {group, with_causal_send, []},
 
      {group, with_tls, [parallel]},
 
@@ -155,6 +159,10 @@ groups() ->
 
      {with_causal_labels, [],
       [causal_test]},
+
+     {with_causal_send, [],
+      [default_manager_test]},
+
 
      {with_tls, [],
       [default_manager_test]},
