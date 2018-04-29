@@ -163,7 +163,6 @@ groups() ->
      {with_causal_send, [],
       [default_manager_test]},
 
-
      {with_tls, [],
       [default_manager_test]},
 
