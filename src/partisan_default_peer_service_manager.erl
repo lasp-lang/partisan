@@ -496,7 +496,8 @@ handle_info(retransmit, #state{connections=Connections}=State) ->
                         {forward_message, ServerRef, Message},
                         Connections)
     end,
-    lists:foreach(RetransmitFun, partisan_reliability_backend:outstanding()),
+    {ok, Outstanding} = partisan_reliability_backend:outstanding(),
+    lists:foreach(RetransmitFun, Outstanding),
     schedule_retransmit(),
     {noreply, State};
 
