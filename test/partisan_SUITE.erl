@@ -84,7 +84,7 @@ init_per_group(with_parallelism, Config) ->
 init_per_group(with_no_channels, Config) ->
     [{parallelism, 1}, {channels, []}] ++ Config;
 init_per_group(with_causal_labels, Config) ->
-    [{causal_labels, [default]}] ++ Config;
+    [{causal_labels, [vnode]}] ++ Config;
 init_per_group(with_ack, Config) ->
     [{forward_options, [{ack, true}]}] ++ Config;
 init_per_group(with_tls, Config) ->
