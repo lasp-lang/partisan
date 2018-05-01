@@ -37,7 +37,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, {name, label, myself, local_clock, order_buffer, buffered_messages, delivery_fun}).
+-record(state, {name, label, my_node, local_clock, order_buffer, buffered_messages, delivery_fun}).
 
 %%%===================================================================
 %%% API
@@ -67,7 +67,7 @@ set_delivery_fun(Label, DeliveryFun) ->
 %% @private
 init([Label]) ->
     %% Figure out who we are.
-    Myself = partisan_peer_service_manager:myself(),
+    MyNode = partisan_peer_service_manager:mynode(),
 
     %% Generate a local clock that's used to track local dependencies.
     LocalClock = vclock:fresh(),
@@ -98,7 +98,7 @@ init([Label]) ->
                     [] ->
                         lager:info("Using default state.", []),
                         {ok, #state{name=Name,
-                                    myself=Myself,
+                                    my_node=MyNode,
                                     label=Label, 
                                     local_clock=LocalClock, 
                                     order_buffer=OrderBuffer, 
@@ -118,9 +118,9 @@ init([Label]) ->
 %% Generate a message identifier and a payload to be transmitted on the wire.
 handle_call({emit, Node, ServerRef, Message}, 
             _From, 
-            #state{myself=#{name := Myself}, local_clock=LocalClock0, order_buffer=OrderBuffer0}=State) ->
+            #state{my_node=MyNode, local_clock=LocalClock0, order_buffer=OrderBuffer0}=State) ->
     %% Bump our local clock.
-    LocalClock = vclock:increment(Myself, LocalClock0),
+    LocalClock = vclock:increment(MyNode, LocalClock0),
 
     %% Only transmit order buffer containing single clock.
     FilteredOrderBuffer = orddict:filter(fun(Key, _Value) -> Key =:= Node end, OrderBuffer0),
@@ -187,7 +187,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private
-deliver(#state{myself=Myself, local_clock=LocalClock, order_buffer=OrderBuffer, delivery_fun=DeliveryFun}=State0, 
+deliver(#state{my_node=MyNode, local_clock=LocalClock, order_buffer=OrderBuffer, delivery_fun=DeliveryFun}=State0, 
         IncomingOrderBuffer, MessageClock, ServerRef, Message) ->
     %% Merge order buffers.
     MergeFun = fun(_Key, Value1, Value2) ->
@@ -199,7 +199,7 @@ deliver(#state{myself=Myself, local_clock=LocalClock, order_buffer=OrderBuffer, 
     MergedLocalClock = vclock:merge([LocalClock, MessageClock]),
 
     %% Advance our clock.
-    IncrementedLocalClock = vclock:increment(Myself, MergedLocalClock),
+    IncrementedLocalClock = vclock:increment(MyNode, MergedLocalClock),
 
     %% Deliver the actual message.
     case DeliveryFun of
@@ -227,10 +227,10 @@ schedule_delivery(Label) ->
 
 %% @private
 internal_receive_message({causal, _Node, ServerRef, IncomingOrderBuffer, MessageClock, Message}=FullMessage, 
-                         #state{myself=#{name := Myself}, local_clock=LocalClock, buffered_messages=BufferedMessages}=State0) ->
+                         #state{my_node=MyNode, local_clock=LocalClock, buffered_messages=BufferedMessages}=State0) ->
     lager:info("Attempting delivery of messages: ~p", [MessageClock]),
 
-    case orddict:find(Myself, IncomingOrderBuffer) of
+    case orddict:find(MyNode, IncomingOrderBuffer) of
         %% No dependencies.
         error ->
             lager:info("Message ~p has no dependencies, delivering.", [MessageClock]),
