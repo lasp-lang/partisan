@@ -47,6 +47,7 @@
          decode/1,
          reserve/1,
          partitions/0,
+         add_message_filter/2,
          inject_partition/2,
          resolve_partition/1]).
 
@@ -75,6 +76,7 @@
                 down_functions :: dict:dict(),
                 up_functions :: dict:dict(),
                 membership :: membership(),
+                message_filters :: term(),
                 sync_joins :: [{node_spec(), from()}],
                 connections :: partisan_peer_service_connections:t()}).
 
@@ -248,6 +250,10 @@ decode(State) ->
 reserve(Tag) ->
     gen_server:call(?MODULE, {reserve, Tag}, infinity).
 
+%% @doc Add a message filter function.
+add_message_filter(Name, FilterFun) ->
+    gen_server:call(?MODULE, {add_message_filter, Name, FilterFun}, infinity).
+
 %% @doc Inject a partition.
 inject_partition(_Origin, _TTL) ->
     {error, not_implemented}.
@@ -302,6 +308,7 @@ init([]) ->
                 pending=[],
                 vclock=VClock,
                 membership=Membership,
+                message_filters=dict:new(),
                 connections=Connections,
                 sync_joins=[],
                 up_functions=dict:new(),
@@ -325,6 +332,10 @@ handle_call({on_down, Name, Function},
             #state{down_functions=DownFunctions0}=State) ->
     DownFunctions = dict:append(Name, Function, DownFunctions0),
     {reply, ok, State#state{down_functions=DownFunctions}};
+
+handle_call({add_message_filter, Name, FilterFun}, _From, #state{message_filters=MessageFilters0}=State) ->
+    MessageFilters = dict:store(Name, FilterFun, MessageFilters0),
+    {reply, ok, State#state{message_filters=MessageFilters}};
 
 handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State) ->
     % lager:debug("Updating membership with: ~p", [Nodes]),
