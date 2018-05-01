@@ -428,18 +428,38 @@ handle_call({send_message, Name, Channel, Message}, _From,
                              Connections),
     {reply, Result, State};
 
-handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options}=FullMessage, 
+handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options},
             _From,
             #state{connections=Connections, vclock=VClock0}=State) ->
     %% Increment the clock.
     VClock = vclock:increment(myself(), VClock0),
 
-    %% Generate a message clock or use the provided clock.
-    MessageClock = case Clock of
+    %% Are we using causality?
+    CausalLabel = proplists:get_value(causal_label, Options, undefined),
+
+    %% Use local information for message unless it's a causal message.
+    {MessageClock, FullMessage} = case CausalLabel of
         undefined ->
-            {undefined, VClock};
-        Clock ->
-            Clock
+            %% Generate a message clock or use the provided clock.
+            LocalClock = case Clock of
+                undefined ->
+                    {undefined, VClock};
+                Clock ->
+                    Clock
+            end,
+
+            {LocalClock,
+                {forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options}};
+        CausalLabel ->
+            %% Get causality assignment and message buffer.
+            {ok, LocalClock0, CausalMessage} = partisan_causality_backend:emit(CausalLabel, Name, ServerRef, Message),
+
+            %% Wrap the clock wih a scope.
+            %% TODO: Maybe do this wrapping inside of the causality backend.
+            LocalClock = {CausalLabel, LocalClock0},
+
+            {LocalClock,
+                {forward_message, Name, Channel, LocalClock, PartitionKey, ServerRef, CausalMessage, Options}}
     end,
 
     %% Store for reliability, if necessary.
