@@ -48,6 +48,7 @@
          reserve/1,
          partitions/0,
          add_message_filter/2,
+         remove_message_filter/1,
          inject_partition/2,
          resolve_partition/1]).
 
@@ -254,6 +255,10 @@ reserve(Tag) ->
 add_message_filter(Name, FilterFun) ->
     gen_server:call(?MODULE, {add_message_filter, Name, FilterFun}, infinity).
 
+%% @doc Add a message filter function.
+remove_message_filter(Name) ->
+    gen_server:call(?MODULE, {remove_message_filter, Name}, infinity).
+
 %% @doc Inject a partition.
 inject_partition(_Origin, _TTL) ->
     {error, not_implemented}.
@@ -335,6 +340,10 @@ handle_call({on_down, Name, Function},
 
 handle_call({add_message_filter, Name, FilterFun}, _From, #state{message_filters=MessageFilters0}=State) ->
     MessageFilters = dict:store(Name, FilterFun, MessageFilters0),
+    {reply, ok, State#state{message_filters=MessageFilters}};
+
+handle_call({remove_message_filter, Name}, _From, #state{message_filters=MessageFilters0}=State) ->
+    MessageFilters = dict:erase(Name, MessageFilters0),
     {reply, ok, State#state{message_filters=MessageFilters}};
 
 handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State) ->

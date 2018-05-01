@@ -374,7 +374,9 @@ message_filter_test(Config) ->
     ok = rpc:call(Node3, Manager, add_message_filter, [Node4, MessageFilterFun]),
     
     %% Spawn receiver process.
-    Message = message,
+    Message1 = message1,
+    Message2 = message2,
+
     Self = self(),
 
     ReceiverFun = fun() ->
@@ -387,15 +389,32 @@ message_filter_test(Config) ->
     true = rpc:call(Node4, erlang, register, [receiver, Pid]),
 
     %% Send message.
-    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message, []]),
+    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message1, []]),
 
     %% Wait to receive message.
     receive
-        Message ->
+        Message1 ->
             ct:fail("Received message we shouldn't have!")
     after 
         1000 ->
             ok
+    end,
+
+    %% Remove filter.
+    ok = rpc:call(Node3, Manager, remove_message_filter, [Node4]),
+
+    %% Send message.
+    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message2, []]),
+
+    %% Wait to receive message.
+    receive
+        Message1 ->
+            ct:fail("Received message we shouldn't have!");
+        Message2 ->
+            ok
+    after 
+        1000 ->
+            ct:fail("Didn't receive message we should have!")
     end,
 
     %% Stop nodes.
