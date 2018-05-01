@@ -207,16 +207,10 @@ receive_message({forward_message, _SourceNode, _MessageClock, _ServerRef, _Messa
     gen_server:call(?MODULE, {receive_message, FullMessage}, infinity);
 receive_message({forward_message, ServerRef, {'$partisan_padded', _Padding, Message}}) ->
     receive_message({forward_message, ServerRef, Message});
+receive_message({forward_message, _ServerRef, {causal, Label, _, _, _, _, _} = Message}) ->
+    partisan_causality_backend:receive_message(Label, Message);
 receive_message({forward_message, ServerRef, Message}) ->
-    %% Deliver the message.
-    try
-        ServerRef ! Message
-    catch
-        _:Error ->
-            lager:error("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
-    end,
-
-    ok;
+    process_forward(ServerRef, Message);
 receive_message(Message) ->
     gen_server:call(?MODULE, {receive_message, Message}, infinity).
 
@@ -786,7 +780,7 @@ handle_message({receive_state, #{name := From}, PeerMembership},
                     {stop, normal, State#state{membership=EmptyMembership}}
             end
     end;
-handle_message({forward_message, SourceNode, MessageClock, ServerRef, Message}, 
+handle_message({forward_message, SourceNode, MessageClock, ServerRef, {causal, Label, _, _, _, _, _} = Message},
                #state{connections=Connections}=State) ->
     %% Try to acknowledge.
     do_send_message(SourceNode,
@@ -795,25 +789,37 @@ handle_message({forward_message, SourceNode, MessageClock, ServerRef, Message},
                     {ack, MessageClock},
                     Connections),
 
-    %% Attempt message delivery.
-    try
-        ServerRef ! Message
-    catch
-        _:Error ->
-            lager:debug("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
+    case partisan_causality_backend:is_causal_message(Message) of
+        true ->
+            partisan_causality_backend:receive_message(Label, Message);
+        false ->
+            %% Attempt message delivery.
+            process_forward(ServerRef, Message)
     end,
+
     {reply, ok, State};
-handle_message({forward_message, ServerRef, Message}, State) ->
-    try
-        ServerRef ! Message
-    catch
-        _:Error ->
-            lager:debug("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
+handle_message({forward_message, ServerRef, {causal, Label, _, _, _, _, _} = Message}, State) ->
+    case partisan_causality_backend:is_causal_message(Message) of
+        true ->
+            partisan_causality_backend:receive_message(Label, Message);
+        false ->
+            %% Attempt message delivery.
+            process_forward(ServerRef, Message)
     end,
+
     {reply, ok, State};
 handle_message({ack, MessageClock}, State) ->
     partisan_reliability_backend:ack(MessageClock),
     {reply, ok, State}.
+
+%% @private
+process_forward(ServerRef, Message) ->
+    try
+        ServerRef ! Message
+    catch
+        _:Error ->
+            lager:debug("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
+    end.
 
 %% @private
 schedule_gossip() ->
