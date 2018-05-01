@@ -163,8 +163,18 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
     %% Use causality?
     CausalLabel = proplists:get_value(causal_label, Options, undefined),
 
+    %% Use configuration to disable fast forwarding.
+    DisableFastForward = partisan_config:get(disable_fast_forward, false),
+
     %% Should use fast forwarding?
-    FastForward = not (CausalLabel =/= undefined) andalso not ShouldAck,
+    %%
+    %% Conditions:
+    %% - not labeled for causal delivery
+    %% - message does not need acknowledgements
+    %%
+    FastForward = not (CausalLabel =/= undefined) andalso 
+                  not ShouldAck andalso 
+                  not DisableFastForward,
 
     %% If attempting to forward to the local node, bypass.
     case partisan_peer_service_manager:mynode() of
