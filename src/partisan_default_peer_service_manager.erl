@@ -160,6 +160,12 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
     %% Should ack?
     ShouldAck = proplists:get_value(ack, Options, false),
 
+    %% Use causality?
+    CausalLabel = proplists:get_value(causal_label, Options, undefined),
+
+    %% Should use fast forwarding?
+    FastForward = not (CausalLabel =/= undefined) andalso not ShouldAck,
+
     %% If attempting to forward to the local node, bypass.
     case partisan_peer_service_manager:mynode() of
         Name ->
@@ -180,8 +186,8 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
                             {forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options}
                     end,
 
-                    case ShouldAck of
-                        false ->
+                    case FastForward of
+                        true ->
                             %% Attempt to fast-path through the memoized connection cache.
                             case partisan_connection_cache:dispatch(FullMessage) of
                                 ok ->
@@ -189,7 +195,7 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
                                 {error, trap} ->
                                     gen_server:call(?MODULE, FullMessage, infinity)
                             end;
-                        true ->
+                        false ->
                             gen_server:call(?MODULE, FullMessage, infinity)
                     end                
             end
@@ -428,10 +434,10 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Mes
     %% Increment the clock.
     VClock = vclock:increment(myself(), VClock0),
 
-    %% Generate a message clock.
+    %% Generate a message clock or use the provided clock.
     MessageClock = case Clock of
         undefined ->
-            VClock;
+            {undefined, VClock};
         Clock ->
             Clock
     end,
