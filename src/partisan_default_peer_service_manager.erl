@@ -47,6 +47,8 @@
          decode/1,
          reserve/1,
          partitions/0,
+         add_message_filter/2,
+         remove_message_filter/1,
          inject_partition/2,
          resolve_partition/1]).
 
@@ -70,10 +72,12 @@
 -type from() :: {pid(), atom()}.
 
 -record(state, {actor :: actor(),
+                vclock :: term(),
                 pending :: pending(),
                 down_functions :: dict:dict(),
                 up_functions :: dict:dict(),
                 membership :: membership(),
+                message_filters :: term(),
                 sync_joins :: [{node_spec(), from()}],
                 connections :: partisan_peer_service_connections:t()}).
 
@@ -153,6 +157,28 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
     %% Attempt to get the partition key, if possible.
     PartitionKey = proplists:get_value(partition_key, Options, ?DEFAULT_PARTITION_KEY),
 
+    %% Use a clock provided by the sender, otherwise, use a generated one.
+    Clock = proplists:get_value(clock, Options, undefined),
+
+    %% Should ack?
+    ShouldAck = proplists:get_value(ack, Options, false),
+
+    %% Use causality?
+    CausalLabel = proplists:get_value(causal_label, Options, undefined),
+
+    %% Use configuration to disable fast forwarding.
+    DisableFastForward = partisan_config:get(disable_fast_forward, false),
+
+    %% Should use fast forwarding?
+    %%
+    %% Conditions:
+    %% - not labeled for causal delivery
+    %% - message does not need acknowledgements
+    %%
+    FastForward = not (CausalLabel =/= undefined) andalso 
+                  not ShouldAck andalso 
+                  not DisableFastForward,
+
     %% If attempting to forward to the local node, bypass.
     case partisan_peer_service_manager:mynode() of
         Name ->
@@ -168,32 +194,36 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
                     FullMessage = case partisan_config:get(binary_padding, false) of
                         true ->
                             BinaryPadding = partisan_config:get(binary_padding_term, undefined),
-                            {forward_message, Name, Channel, PartitionKey, ServerRef, {'$partisan_padded', BinaryPadding, Message}, Options};
+                            {forward_message, Name, Channel, Clock, PartitionKey, ServerRef, {'$partisan_padded', BinaryPadding, Message}, Options};
                         false ->
-                            {forward_message, Name, Channel, PartitionKey, ServerRef, Message, Options}
+                            {forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options}
                     end,
 
-                    %% Attempt to fast-path through the memoized connection cache.
-                    case partisan_connection_cache:dispatch(FullMessage) of
-                        ok ->
-                            ok;
-                        {error, trap} ->
+                    case FastForward of
+                        true ->
+                            %% Attempt to fast-path through the memoized connection cache.
+                            case partisan_connection_cache:dispatch(FullMessage) of
+                                ok ->
+                                    ok;
+                                {error, trap} ->
+                                    gen_server:call(?MODULE, FullMessage, infinity)
+                            end;
+                        false ->
                             gen_server:call(?MODULE, FullMessage, infinity)
-                    end
+                    end                
             end
     end.
 
 %% @doc Receive message from a remote manager.
+receive_message({forward_message, _SourceNode, _MessageClock, _ServerRef, _Message} = FullMessage) ->
+    %% Process the message and generate the acknowledgement.
+    gen_server:call(?MODULE, {receive_message, FullMessage}, infinity);
 receive_message({forward_message, ServerRef, {'$partisan_padded', _Padding, Message}}) ->
     receive_message({forward_message, ServerRef, Message});
+receive_message({forward_message, _ServerRef, {causal, Label, _, _, _, _, _} = Message}) ->
+    partisan_causality_backend:receive_message(Label, Message);
 receive_message({forward_message, ServerRef, Message}) ->
-    try
-        ServerRef ! Message
-    catch
-        _:Error ->
-            lager:error("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
-    end,
-    ok;
+    process_forward(ServerRef, Message);
 receive_message(Message) ->
     gen_server:call(?MODULE, {receive_message, Message}, infinity).
 
@@ -220,6 +250,14 @@ decode(State) ->
 %% @doc Reserve a slot for the particular tag.
 reserve(Tag) ->
     gen_server:call(?MODULE, {reserve, Tag}, infinity).
+
+%% @doc Add a message filter function.
+add_message_filter(Name, FilterFun) ->
+    gen_server:call(?MODULE, {add_message_filter, Name, FilterFun}, infinity).
+
+%% @doc Add a message filter function.
+remove_message_filter(Name) ->
+    gen_server:call(?MODULE, {remove_message_filter, Name}, infinity).
 
 %% @doc Inject a partition.
 inject_partition(_Origin, _TTL) ->
@@ -263,13 +301,19 @@ init([]) ->
     %% Schedule periodic connections.
     schedule_connections(),
 
+    %% Schedule periodic retransmissionj.
+    schedule_retransmit(),
+
     Actor = gen_actor(),
+    VClock = partisan_vclock:fresh(),
     Membership = maybe_load_state_from_disk(Actor),
     Connections = partisan_peer_service_connections:new(),
 
     {ok, #state{actor=Actor,
                 pending=[],
+                vclock=VClock,
                 membership=Membership,
+                message_filters=dict:new(),
                 connections=Connections,
                 sync_joins=[],
                 up_functions=dict:new(),
@@ -293,6 +337,14 @@ handle_call({on_down, Name, Function},
             #state{down_functions=DownFunctions0}=State) ->
     DownFunctions = dict:append(Name, Function, DownFunctions0),
     {reply, ok, State#state{down_functions=DownFunctions}};
+
+handle_call({add_message_filter, Name, FilterFun}, _From, #state{message_filters=MessageFilters0}=State) ->
+    MessageFilters = dict:store(Name, FilterFun, MessageFilters0),
+    {reply, ok, State#state{message_filters=MessageFilters}};
+
+handle_call({remove_message_filter, Name}, _From, #state{message_filters=MessageFilters0}=State) ->
+    MessageFilters = dict:erase(Name, MessageFilters0),
+    {reply, ok, State#state{message_filters=MessageFilters}};
 
 handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State) ->
     % lager:debug("Updating membership with: ~p", [Nodes]),
@@ -400,14 +452,72 @@ handle_call({send_message, Name, Channel, Message}, _From,
                              Connections),
     {reply, Result, State};
 
-handle_call({forward_message, Name, Channel, PartitionKey, ServerRef, Message, _Options}, _From,
-            #state{connections=Connections}=State) ->
-    Result = do_send_message(Name,
-                             Channel,
-                             PartitionKey,
-                             {forward_message, ServerRef, Message},
-                             Connections),
-    {reply, Result, State};
+handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options},
+            _From,
+            #state{message_filters=MessageFilters, connections=Connections, vclock=VClock0}=State) ->
+    %% Determine if message should be allowed to pass.
+    FoldFun = fun(_FilterName, FilterFun, Status) ->
+        FilterFun({Name, Message}) andalso Status
+    end,
+    FilterStatus = dict:fold(FoldFun, true, MessageFilters),
+
+    case FilterStatus of
+        true ->
+            %% Increment the clock.
+            VClock = partisan_vclock:increment(myself(), VClock0),
+
+            %% Are we using causality?
+            CausalLabel = proplists:get_value(causal_label, Options, undefined),
+
+            %% Use local information for message unless it's a causal message.
+            {MessageClock, FullMessage} = case CausalLabel of
+                undefined ->
+                    %% Generate a message clock or use the provided clock.
+                    LocalClock = case Clock of
+                        undefined ->
+                            {undefined, VClock};
+                        Clock ->
+                            Clock
+                    end,
+
+                    {LocalClock,
+                        {forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options}};
+                CausalLabel ->
+                    %% Get causality assignment and message buffer.
+                    {ok, LocalClock0, CausalMessage} = partisan_causality_backend:emit(CausalLabel, Name, ServerRef, Message),
+
+                    %% Wrap the clock wih a scope.
+                    %% TODO: Maybe do this wrapping inside of the causality backend.
+                    LocalClock = {CausalLabel, LocalClock0},
+
+                    {LocalClock,
+                        {forward_message, Name, Channel, LocalClock, PartitionKey, ServerRef, CausalMessage, Options}}
+            end,
+
+            %% Store for reliability, if necessary.
+            Result = case proplists:get_value(ack, Options, false) of
+                false ->
+                    %% Send message along.
+                    do_send_message(Name,
+                                    Channel,
+                                    PartitionKey,
+                                    {forward_message, ServerRef, Message},
+                                    Connections);
+                true ->
+                    partisan_reliability_backend:store(MessageClock, FullMessage),
+
+                    %% Send message along.
+                    do_send_message(Name,
+                                    Channel,
+                                    PartitionKey,
+                                    {forward_message, myself(), MessageClock, ServerRef, Message},
+                                    Connections)
+            end,
+
+            {reply, Result, State#state{vclock=VClock}};
+        false ->
+            {reply, ok, State}
+    end;
 
 handle_call({receive_message, Message}, _From, State) ->
     handle_message(Message, State);
@@ -443,6 +553,19 @@ handle_info(gossip, #state{pending=Pending,
     do_gossip(Membership, Connections),
     schedule_gossip(),
     {noreply, State#state{connections=Connections}};
+
+handle_info(retransmit, #state{connections=Connections}=State) ->
+    RetransmitFun = fun({_, {forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Message, _Options}}) ->
+        do_send_message(Name,
+                        Channel,
+                        PartitionKey,
+                        {forward_message, ServerRef, Message},
+                        Connections)
+    end,
+    {ok, Outstanding} = partisan_reliability_backend:outstanding(),
+    lists:foreach(RetransmitFun, Outstanding),
+    schedule_retransmit(),
+    {noreply, State};
 
 handle_info(connections, #state{pending=Pending,
                                 membership=Membership,
@@ -697,14 +820,46 @@ handle_message({receive_state, #{name := From}, PeerMembership},
                     {stop, normal, State#state{membership=EmptyMembership}}
             end
     end;
-handle_message({forward_message, ServerRef, Message}, State) ->
+handle_message({forward_message, SourceNode, MessageClock, ServerRef, {causal, Label, _, _, _, _, _} = Message},
+               #state{connections=Connections}=State) ->
+    %% Try to acknowledge.
+    do_send_message(SourceNode,
+                    ?DEFAULT_CHANNEL,
+                    ?DEFAULT_PARTITION_KEY,
+                    {ack, MessageClock},
+                    Connections),
+
+    case partisan_causality_backend:is_causal_message(Message) of
+        true ->
+            partisan_causality_backend:receive_message(Label, Message);
+        false ->
+            %% Attempt message delivery.
+            process_forward(ServerRef, Message)
+    end,
+
+    {reply, ok, State};
+handle_message({forward_message, ServerRef, {causal, Label, _, _, _, _, _} = Message}, State) ->
+    case partisan_causality_backend:is_causal_message(Message) of
+        true ->
+            partisan_causality_backend:receive_message(Label, Message);
+        false ->
+            %% Attempt message delivery.
+            process_forward(ServerRef, Message)
+    end,
+
+    {reply, ok, State};
+handle_message({ack, MessageClock}, State) ->
+    partisan_reliability_backend:ack(MessageClock),
+    {reply, ok, State}.
+
+%% @private
+process_forward(ServerRef, Message) ->
     try
         ServerRef ! Message
     catch
         _:Error ->
             lager:debug("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
-    end,
-    {reply, ok, State}.
+    end.
 
 %% @private
 schedule_gossip() ->
@@ -717,6 +872,11 @@ schedule_gossip() ->
         _ ->
             ok
     end.
+
+%% @private
+schedule_retransmit() ->
+    RetransmitInterval = partisan_config:get(retransmit_interval, 1000),
+    erlang:send_after(RetransmitInterval, ?MODULE, retransmit).
 
 %% @private
 schedule_connections() ->
