@@ -27,7 +27,8 @@
 -export([start_link/1,
          emit/4,
          receive_message/2,
-         set_delivery_fun/2]).
+         set_delivery_fun/2,
+         is_causal_message/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -258,3 +259,9 @@ generate_name(Label) ->
 write_state(#state{name=Name}=State) ->
     ok = dets:insert(Name, {state, State}),
     State.
+
+%% @private
+is_causal_message({causal, _Label, _Node, _ServerRef, _IncomingOrderBuffer, _MessageClock, _Message}) ->
+    true;
+is_causal_message(_) ->
+    false.
