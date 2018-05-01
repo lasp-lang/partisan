@@ -445,59 +445,70 @@ handle_call({send_message, Name, Channel, Message}, _From,
 
 handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options},
             _From,
-            #state{connections=Connections, vclock=VClock0}=State) ->
-    %% Increment the clock.
-    VClock = vclock:increment(myself(), VClock0),
+            #state{message_filters=MessageFilters, connections=Connections, vclock=VClock0}=State) ->
+    %% Determine if message should be allowed to pass.
+    FoldFun = fun(_FilterName, FilterFun, Status) ->
+        FilterFun({Name, Message}) andalso Status
+    end,
+    FilterStatus = dict:fold(FoldFun, true, MessageFilters),
 
-    %% Are we using causality?
-    CausalLabel = proplists:get_value(causal_label, Options, undefined),
+    case FilterStatus of
+        true ->
+            %% Increment the clock.
+            VClock = vclock:increment(myself(), VClock0),
 
-    %% Use local information for message unless it's a causal message.
-    {MessageClock, FullMessage} = case CausalLabel of
-        undefined ->
-            %% Generate a message clock or use the provided clock.
-            LocalClock = case Clock of
+            %% Are we using causality?
+            CausalLabel = proplists:get_value(causal_label, Options, undefined),
+
+            %% Use local information for message unless it's a causal message.
+            {MessageClock, FullMessage} = case CausalLabel of
                 undefined ->
-                    {undefined, VClock};
-                Clock ->
-                    Clock
+                    %% Generate a message clock or use the provided clock.
+                    LocalClock = case Clock of
+                        undefined ->
+                            {undefined, VClock};
+                        Clock ->
+                            Clock
+                    end,
+
+                    {LocalClock,
+                        {forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options}};
+                CausalLabel ->
+                    %% Get causality assignment and message buffer.
+                    {ok, LocalClock0, CausalMessage} = partisan_causality_backend:emit(CausalLabel, Name, ServerRef, Message),
+
+                    %% Wrap the clock wih a scope.
+                    %% TODO: Maybe do this wrapping inside of the causality backend.
+                    LocalClock = {CausalLabel, LocalClock0},
+
+                    {LocalClock,
+                        {forward_message, Name, Channel, LocalClock, PartitionKey, ServerRef, CausalMessage, Options}}
             end,
 
-            {LocalClock,
-                {forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options}};
-        CausalLabel ->
-            %% Get causality assignment and message buffer.
-            {ok, LocalClock0, CausalMessage} = partisan_causality_backend:emit(CausalLabel, Name, ServerRef, Message),
+            %% Store for reliability, if necessary.
+            Result = case proplists:get_value(ack, Options, false) of
+                false ->
+                    %% Send message along.
+                    do_send_message(Name,
+                                    Channel,
+                                    PartitionKey,
+                                    {forward_message, ServerRef, Message},
+                                    Connections);
+                true ->
+                    partisan_reliability_backend:store(MessageClock, FullMessage),
 
-            %% Wrap the clock wih a scope.
-            %% TODO: Maybe do this wrapping inside of the causality backend.
-            LocalClock = {CausalLabel, LocalClock0},
+                    %% Send message along.
+                    do_send_message(Name,
+                                    Channel,
+                                    PartitionKey,
+                                    {forward_message, myself(), MessageClock, ServerRef, Message},
+                                    Connections)
+            end,
 
-            {LocalClock,
-                {forward_message, Name, Channel, LocalClock, PartitionKey, ServerRef, CausalMessage, Options}}
-    end,
-
-    %% Store for reliability, if necessary.
-    Result = case proplists:get_value(ack, Options, false) of
+            {reply, Result, State#state{vclock=VClock}};
         false ->
-            %% Send message along.
-            do_send_message(Name,
-                            Channel,
-                            PartitionKey,
-                            {forward_message, ServerRef, Message},
-                            Connections);
-        true ->
-            partisan_reliability_backend:store(MessageClock, FullMessage),
-
-            %% Send message along.
-            do_send_message(Name,
-                            Channel,
-                            PartitionKey,
-                            {forward_message, myself(), MessageClock, ServerRef, Message},
-                            Connections)
-    end,
-
-    {reply, Result, State#state{vclock=VClock}};
+            {reply, ok, State}
+    end;
 
 handle_call({receive_message, Message}, _From, State) ->
     handle_message(Message, State);
