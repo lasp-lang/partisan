@@ -478,24 +478,23 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Mes
     end,
 
     %% Store for reliability, if necessary.
-    case proplists:get_value(ack, Options, false) of
+    Result = case proplists:get_value(ack, Options, false) of
         false ->
             %% Send message along.
-            Result = do_send_message(Name,
-                                    Channel,
-                                    PartitionKey,
-                                    {forward_message, ServerRef, Message},
-                                    Connections),
-            ok;
+            do_send_message(Name,
+                            Channel,
+                            PartitionKey,
+                            {forward_message, ServerRef, Message},
+                            Connections);
         true ->
-            %% Send message along.
-            Result = do_send_message(Name,
-                                    Channel,
-                                    PartitionKey,
-                                    {forward_message, myself(), MessageClock, ServerRef, Message},
-                                    Connections),
+            partisan_reliability_backend:store(MessageClock, FullMessage),
 
-            partisan_reliability_backend:store(MessageClock, FullMessage)
+            %% Send message along.
+            do_send_message(Name,
+                            Channel,
+                            PartitionKey,
+                            {forward_message, myself(), MessageClock, ServerRef, Message},
+                            Connections)
     end,
 
     {reply, Result, State#state{vclock=VClock}};
