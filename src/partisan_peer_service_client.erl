@@ -69,8 +69,8 @@ init([Peer, ListenAddr, Channel, From]) ->
 
             {ok, #state{from=From, listen_addr=ListenAddr, channel=Channel, socket=Socket, peer=Peer}};
         Error ->
-            lager:error("unable to connect to ~p due to ~p",
-                        [Peer, Error]),
+            lager:warning("unable to connect to ~p due to ~p",
+                          [Peer, Error]),
             {stop, normal}
     end.
 
