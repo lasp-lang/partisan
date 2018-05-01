@@ -71,7 +71,7 @@ init([Label]) ->
     MyNode = partisan_peer_service_manager:mynode(),
 
     %% Generate a local clock that's used to track local dependencies.
-    LocalClock = vclock:fresh(),
+    LocalClock = partisan_vclock:fresh(),
 
     %% Initiaize order buffer.
     OrderBuffer = orddict:new(),
@@ -121,7 +121,7 @@ handle_call({emit, Node, ServerRef, Message},
             _From, 
             #state{my_node=MyNode, label=Label, local_clock=LocalClock0, order_buffer=OrderBuffer0}=State) ->
     %% Bump our local clock.
-    LocalClock = vclock:increment(MyNode, LocalClock0),
+    LocalClock = partisan_vclock:increment(MyNode, LocalClock0),
 
     %% Only transmit order buffer containing single clock.
     FilteredOrderBuffer = orddict:filter(fun(Key, _Value) -> Key =:= Node end, OrderBuffer0),
@@ -192,15 +192,15 @@ deliver(#state{my_node=MyNode, local_clock=LocalClock, order_buffer=OrderBuffer,
         IncomingOrderBuffer, MessageClock, ServerRef, Message) ->
     %% Merge order buffers.
     MergeFun = fun(_Key, Value1, Value2) ->
-        vclock:merge([Value1, Value2])
+        partisan_vclock:merge([Value1, Value2])
     end,
     orddict:merge(MergeFun, IncomingOrderBuffer, OrderBuffer),
 
     %% Merge clocks.
-    MergedLocalClock = vclock:merge([LocalClock, MessageClock]),
+    MergedLocalClock = partisan_vclock:merge([LocalClock, MessageClock]),
 
     %% Advance our clock.
-    IncrementedLocalClock = vclock:increment(MyNode, MergedLocalClock),
+    IncrementedLocalClock = partisan_vclock:increment(MyNode, MergedLocalClock),
 
     %% Deliver the actual message.
     case DeliveryFun of
@@ -238,7 +238,7 @@ internal_receive_message({causal, _Label, _Node, ServerRef, IncomingOrderBuffer,
             deliver(State0#state{buffered_messages=BufferedMessages -- [FullMessage]}, IncomingOrderBuffer, MessageClock, ServerRef, Message);
         %% Dependencies.
         {ok, DependencyClock} ->
-            case vclock:dominates(LocalClock, DependencyClock) of
+            case partisan_vclock:dominates(LocalClock, DependencyClock) of
                 %% Dependencies met.
                 true ->
                     lager:info("Message ~p dependencies met, delivering.", [MessageClock]),

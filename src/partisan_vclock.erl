@@ -32,7 +32,7 @@
 %% pp. 215-226
 %% [http://homes.cs.washington.edu/~arvind/cs425/doc/mattern89virtual.pdf]
 
--module(vclock).
+-module(partisan_vclock).
 
 -export([fresh/0, descends/2, merge/1, get_counter/2, subtract_dots/2,
          increment/2, all_nodes/1, equal/2,

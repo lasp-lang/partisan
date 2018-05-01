@@ -305,7 +305,7 @@ init([]) ->
     schedule_retransmit(),
 
     Actor = gen_actor(),
-    VClock = vclock:fresh(),
+    VClock = partisan_vclock:fresh(),
     Membership = maybe_load_state_from_disk(Actor),
     Connections = partisan_peer_service_connections:new(),
 
@@ -464,7 +464,7 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Mes
     case FilterStatus of
         true ->
             %% Increment the clock.
-            VClock = vclock:increment(myself(), VClock0),
+            VClock = partisan_vclock:increment(myself(), VClock0),
 
             %% Are we using causality?
             CausalLabel = proplists:get_value(causal_label, Options, undefined),
