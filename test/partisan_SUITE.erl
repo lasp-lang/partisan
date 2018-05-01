@@ -87,6 +87,8 @@ init_per_group(with_causal_labels, Config) ->
     [{causal_labels, [default]}] ++ Config;
 init_per_group(with_causal_send, Config) ->
     [{causal_labels, [default]}, {forward_options, [{causal, default}, {ack, true}]}] ++ Config;
+init_per_group(with_message_filters, Config) ->
+    [{disable_fast_forward, true}] ++ Config;
 init_per_group(with_ack, Config) ->
     [{forward_options, [{ack, true}]}] ++ Config;
 init_per_group(with_tls, Config) ->
@@ -110,6 +112,8 @@ all() ->
      {group, with_causal_labels, []},
 
      {group, with_causal_send, []},
+
+     {group, with_message_filters, []},
 
      {group, with_tls, [parallel]},
 
@@ -162,6 +166,9 @@ groups() ->
 
      {with_causal_send, [],
       [default_manager_test]},
+
+     {with_message_filters, [],
+      [message_filter_test]},
 
      {with_tls, [],
       [default_manager_test]},
@@ -326,6 +333,69 @@ causal_test(Config) ->
     after
         10000 ->
             ct:fail("Didn't receive message 2!")
+    end,
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
+message_filter_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = partisan_default_peer_service_manager,
+
+    %% Specify servers.
+    Servers = node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+
+    %% Start nodes.
+    Nodes = start(message_filter_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Test on_down callback.
+    [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
+
+    %% Set message filter.
+    MessageFilterFun = fun({N, _}) ->
+        case N of
+            Node4 ->
+                false;
+            _ ->
+                true
+        end
+    end,
+    ok = rpc:call(Node3, Manager, add_message_filter, [Node4, MessageFilterFun]),
+    
+    %% Spawn receiver process.
+    Message = message,
+    Self = self(),
+
+    ReceiverFun = fun() ->
+        receive 
+            X ->
+                Self ! X
+        end
+    end,
+    Pid = rpc:call(Node4, erlang, spawn, [ReceiverFun]),
+    true = rpc:call(Node4, erlang, register, [receiver, Pid]),
+
+    %% Send message.
+    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message, []]),
+
+    %% Wait to receive message.
+    receive
+        Message ->
+            ct:fail("Received message we shouldn't have!")
+    after 
+        1000 ->
+            ok
     end,
 
     %% Stop nodes.
@@ -1226,6 +1296,15 @@ start(_Case, Config, Options) ->
                           end,
             ct:pal("Setting disterl to: ~p", [Disterl]),
             ok = rpc:call(Node, partisan_config, set, [disterl, Disterl]),
+
+            DisableFastForward = case ?config(disable_fast_forward, Config) of
+                              undefined ->
+                                  false;
+                              FF ->
+                                  FF
+                          end,
+            ct:pal("Setting disable_fast_forward to: ~p", [DisableFastForward]),
+            ok = rpc:call(Node, partisan_config, set, [disable_fast_forward, DisableFastForward]),
 
             BinaryPadding = case ?config(binary_padding, Config) of
                               undefined ->
