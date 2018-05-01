@@ -127,14 +127,14 @@ handle_call({emit, Node, ServerRef, Message},
     FilteredOrderBuffer = orddict:filter(fun(Key, _Value) -> Key =:= Node end, OrderBuffer0),
 
     %% Return the message to be transmitted.
-    FullMessage = {causal, Label, Node, ServerRef, FilteredOrderBuffer, LocalClock, Message},
+    CausalMessage = {causal, Label, Node, ServerRef, FilteredOrderBuffer, LocalClock, Message},
 
     %% Update the order buffer with node and mesage clock.
     OrderBuffer = orddict:store(Node, LocalClock, OrderBuffer0),
 
     lager:info("Emitting message with clock: ~p", [LocalClock]),
 
-    {reply, {ok, FullMessage}, State#state{local_clock=LocalClock, order_buffer=OrderBuffer}};
+    {reply, {ok, LocalClock, CausalMessage}, State#state{local_clock=LocalClock, order_buffer=OrderBuffer}};
 
 %% Receive a causal messag off the wire; deliver or not depending on whether or not
 %% the causal dependencies have been satisfied.
@@ -260,7 +260,7 @@ write_state(#state{name=Name}=State) ->
     ok = dets:insert(Name, {state, State}),
     State.
 
-%% @private
+%% @doc Determine is a message is being sent with causal delivery or not.
 is_causal_message({causal, _Label, _Node, _ServerRef, _IncomingOrderBuffer, _MessageClock, _Message}) ->
     true;
 is_causal_message(_) ->

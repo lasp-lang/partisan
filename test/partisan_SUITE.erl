@@ -285,12 +285,12 @@ causal_test(Config) ->
 
     %% Generate a message and vclock for that message.
     Message1 = message_1,
-    {ok, FullMessage1} = rpc:call(Node3, partisan_causality_backend, emit, [Label, Node4, ServerRef, Message1]),
+    {ok, _, FullMessage1} = rpc:call(Node3, partisan_causality_backend, emit, [Label, Node4, ServerRef, Message1]),
     ct:pal("Generated at node ~p full message: ~p", [Node3, FullMessage1]),
 
     %% Generate a second message, which should depend on the first.
     Message2 = message_2,
-    {ok, FullMessage2} = rpc:call(Node3, partisan_causality_backend, emit, [Label, Node4, ServerRef, Message2]),
+    {ok, _, FullMessage2} = rpc:call(Node3, partisan_causality_backend, emit, [Label, Node4, ServerRef, Message2]),
     ct:pal("Generated at node ~p full message: ~p", [Node3, FullMessage2]),
 
     %% Attempt to deliver message2.
