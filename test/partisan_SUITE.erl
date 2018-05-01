@@ -1767,6 +1767,8 @@ hyparview_xbot_manager_high_active_test(Config) ->
                    {max_active_size, 5},
                    {servers, Servers},
                    {clients, Clients}]),
+                   
+    %%timer:sleep(20000),
 
     CheckStartedFun = fun() ->
                         case hyparview_xbot_membership_check(Nodes) of
