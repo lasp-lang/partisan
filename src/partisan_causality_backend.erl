@@ -118,7 +118,7 @@ init([Label]) ->
 %% Generate a message identifier and a payload to be transmitted on the wire.
 handle_call({emit, Node, ServerRef, Message}, 
             _From, 
-            #state{my_node=MyNode, local_clock=LocalClock0, order_buffer=OrderBuffer0}=State) ->
+            #state{my_node=MyNode, label=Label, local_clock=LocalClock0, order_buffer=OrderBuffer0}=State) ->
     %% Bump our local clock.
     LocalClock = vclock:increment(MyNode, LocalClock0),
 
@@ -126,7 +126,7 @@ handle_call({emit, Node, ServerRef, Message},
     FilteredOrderBuffer = orddict:filter(fun(Key, _Value) -> Key =:= Node end, OrderBuffer0),
 
     %% Return the message to be transmitted.
-    FullMessage = {causal, Node, ServerRef, FilteredOrderBuffer, LocalClock, Message},
+    FullMessage = {causal, Label, Node, ServerRef, FilteredOrderBuffer, LocalClock, Message},
 
     %% Update the order buffer with node and mesage clock.
     OrderBuffer = orddict:store(Node, LocalClock, OrderBuffer0),
@@ -137,9 +137,9 @@ handle_call({emit, Node, ServerRef, Message},
 
 %% Receive a causal messag off the wire; deliver or not depending on whether or not
 %% the causal dependencies have been satisfied.
-handle_call({receive_message, {causal, _Node, _ServerRef, _IncomingOrderBuffer, MessageClock, _Message}=FullMessage}, 
+handle_call({receive_message, {causal, Label, _Node, _ServerRef, _IncomingOrderBuffer, MessageClock, _Message}=FullMessage}, 
             _From, 
-            #state{buffered_messages=BufferedMessages0}=State0) ->
+            #state{label=Label, buffered_messages=BufferedMessages0}=State0) ->
     %% Add to the buffer and try to deliver.
     lager:info("Received message ~p and inserting into buffer.", [MessageClock]),
     BufferedMessages = BufferedMessages0 ++ [FullMessage],
@@ -226,7 +226,7 @@ schedule_delivery(Label) ->
     erlang:send_after(Interval, Name, deliver).
 
 %% @private
-internal_receive_message({causal, _Node, ServerRef, IncomingOrderBuffer, MessageClock, Message}=FullMessage, 
+internal_receive_message({causal, _Label, _Node, ServerRef, IncomingOrderBuffer, MessageClock, Message}=FullMessage, 
                          #state{my_node=MyNode, local_clock=LocalClock, buffered_messages=BufferedMessages}=State0) ->
     lager:info("Attempting delivery of messages: ~p", [MessageClock]),
 
