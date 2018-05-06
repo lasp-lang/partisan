@@ -147,7 +147,8 @@ groups() ->
      {hyparview_xbot, [],
       [ hyparview_xbot_manager_high_active_test,
        hyparview_xbot_manager_low_active_test,
-       hyparview_xbot_manager_high_client_test]},
+       hyparview_xbot_manager_high_client_test
+       ]},
 
      {with_tls, [],
       [default_manager_test]},
@@ -1832,17 +1833,19 @@ hyparview_xbot_manager_low_active_test(Config) ->
     Manager = partisan_hyparview_xbot_peer_service_manager,
 
     %% Start nodes.
-    MaxActiveSize = 3,
+    MaxActiveSize = 2,
 
     Servers = node_list(1, "server", Config), %% [server],
 
-    Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
+    Clients = node_list(8, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     Nodes = start(hyparview_xbot_manager_low_active_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {max_active_size, MaxActiveSize},
                    {servers, Servers},
                    {clients, Clients}]),
+
+	timer:sleep(60000),
 
     CheckStartedFun = fun() ->
                         case hyparview_xbot_membership_check(Nodes) of

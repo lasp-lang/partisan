@@ -15,13 +15,13 @@
 -define(DEFAULT_LAZY_TICK_PERIOD, 1000).
 -define(DEFAULT_EXCHANGE_TICK_PERIOD, 10000).
 
--define(XBOT_MIN_INTERVAL, 10).
--define(XBOT_RANGE_INTERVAL, 50).
+-define(XBOT_MIN_INTERVAL, 5000).
+-define(XBOT_RANGE_INTERVAL, 60000).
 
 % parameter used for xbot optimization
 % - latency (uses ping to check better nodes)
 % - true (always returns true when checking better)
--define(XPARAM, true).
+-define(XPARAM, latency).
 
 -type options() :: [{atom(), term()}].
 
