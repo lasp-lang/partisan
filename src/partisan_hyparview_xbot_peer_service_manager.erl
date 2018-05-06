@@ -1135,6 +1135,8 @@ handle_message({forward_message, ServerRef, Message}, State) ->
     ServerRef ! Message,
     {noreply, State};
     
+    
+    
 %% Optimization Reply
 handle_message({optimization_reply, true, OldNode, InitiatorNode, CandidateNode, undefined}, #state{active=Active}=State) ->
 	#{name := InitiatorName} = InitiatorNode,
@@ -1142,10 +1144,12 @@ handle_message({optimization_reply, true, OldNode, InitiatorNode, CandidateNode,
 	lager:debug("XBOT: Received optimization reply message at Node ~p from ~p", [InitiatorName, CandidateName]),
 	Check = is_in_active_view(OldNode, Active),
 	if Check ->
-		remove_from_active_view(OldNode, Active),
-		add_to_passive_view(OldNode, State)
+		%remove_from_active_view(OldNode, Active),
+		%add_to_passive_view(OldNode, State)
+		do_disconnect(OldNode, State)
 	end,
-	move_peer_from_passive_to_active(CandidateNode, State),
+	%move_peer_from_passive_to_active(CandidateNode, State),
+	send_join(CandidateNode, State),
 	lager:debug("XBOT: Finished optimization round started by Node ~p ", [InitiatorName]),
 	{noreply, State};
 handle_message({optimization_reply, true, OldNode, InitiatorNode, CandidateNode, _}, #state{active=Active}=State) ->
@@ -1154,10 +1158,12 @@ handle_message({optimization_reply, true, OldNode, InitiatorNode, CandidateNode,
 	lager:debug("XBOT: Received optimization reply message at Node ~p from ~p", [InitiatorName, CandidateName]),
 	Check = is_in_active_view(OldNode, Active),
 	if Check ->
-		remove_from_active_view(OldNode, Active);
+		%remove_from_active_view(OldNode, Active);
+		do_disconnect(OldNode, State);
 		true -> ok
 	end,
-	move_peer_from_passive_to_active(CandidateNode, State),
+	%move_peer_from_passive_to_active(CandidateNode, State),
+	send_join(CandidateNode, State),
 	lager:debug("XBOT: Finished optimization round started by Node ~p ", [InitiatorName]),
 	{noreply, State}; 
 handle_message({optimization_reply, false, _, _, _, _}, State) ->
@@ -1165,13 +1171,14 @@ handle_message({optimization_reply, false, _, _, _, _}, State) ->
 
 %% Optimization
 handle_message({optimization, _, OldNode, InitiatorNode, CandidateNode, undefined}, 
-					#state{tag=MyTag, active=Active, max_active_size=MaxActiveSize, reserved=Reserved, connections=Connections}=State) ->
+					#state{ active=Active, max_active_size=MaxActiveSize, reserved=Reserved, connections=Connections}=State) ->
 	#{name := CandidateName} = CandidateNode,
 	#{name := InitiatorName} = InitiatorNode,
 	lager:debug("XBOT: Received optimization message at Node ~p from ~p", [CandidateName, InitiatorName]),
 	Check = is_full({active, Active, Reserved},MaxActiveSize),
 	if not Check -> 
-			add_to_active_view(CandidateNode, MyTag, State), 
+			%add_to_active_view(CandidateNode, MyTag, State), 
+			send_join(InitiatorNode,State), 
 			NodeConnections = partisan_util:maybe_connect(InitiatorNode, Connections),
 			do_send_message(InitiatorNode, {optimization_reply, true, OldNode, InitiatorNode, CandidateNode, undefined}, NodeConnections),
 			lager:debug("XBOT: Sending optimization reply message to Node ~p from ~p", [InitiatorName, CandidateName]);
@@ -1186,13 +1193,15 @@ handle_message({optimization, _, OldNode, InitiatorNode, CandidateNode, undefine
 	
 %% Replace Reply
 handle_message({replace_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, 
-			#state{tag=MyTag, active=Active, connections=Connections}=State) ->
+			#state{ connections=Connections}=State) ->
 	#{name := InitiatorName} = InitiatorNode,
 	#{name := DisconnectName} = DisconnectNode,
 	#{name := CandidateName} = CandidateNode,
 	lager:debug("XBOT: Received replace reply message at Node ~p from ~p", [CandidateName, DisconnectName]),
-	remove_from_active_view(DisconnectNode, Active),
-	add_to_active_view(InitiatorNode, MyTag, State), 
+	%remove_from_active_view(DisconnectNode, Active),
+	do_disconnect(DisconnectNode, State),
+	%add_to_active_view(InitiatorNode, MyTag, State), 
+	send_join(InitiatorNode, State),
 	NodeConnections = partisan_util:maybe_connect(InitiatorNode, Connections),
 	do_send_message(InitiatorNode,{optimization_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode},NodeConnections),
 	lager:debug("XBOT: Sending optimization reply to Node ~p from ~p", [InitiatorName, CandidateName]),
@@ -1227,13 +1236,15 @@ handle_message({replace, _, OldNode, InitiatorNode, CandidateNode, DisconnectNod
 
 %% Switch Reply
 handle_message({switch_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, 
-			#state{active=Active, tag=MyTag, connections=Connections}=State) ->
+			#state{ connections=Connections}=State) ->
 	#{name := DisconnectName} = DisconnectNode,
 	#{name := CandidateName} = CandidateNode,
 	#{name := OldName} = OldNode,
 	lager:debug("XBOT: Received switch reply message at Node ~p from ~p", [DisconnectName, OldName]),
-	remove_from_active_view(CandidateNode, Active),
-	add_to_active_view(OldNode, MyTag, State),
+	%remove_from_active_view(CandidateNode, Active),
+	do_disconnect(CandidateNode, State),
+	%add_to_active_view(OldNode, MyTag, State),
+	send_join(OldNode, State),
 	NodeConnections = partisan_util:maybe_connect(CandidateNode, Connections),
 	do_send_message(CandidateNode,{replace_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, NodeConnections),
 	lager:debug("XBOT: Sending replace reply to Node ~p from ~p", [CandidateName, DisconnectName]),
@@ -1250,14 +1261,16 @@ handle_message({switch_reply, false, OldNode, InitiatorNode, CandidateNode, Disc
 	
 %% Switch
 handle_message({switch, _, OldNode, InitiatorNode, CandidateNode, DisconnectNode},
-			#state{tag=MyTag, active=Active, connections=Connections}=State) ->
+			#state{active=Active, connections=Connections}=State) ->
 	#{name := DisconnectName} = DisconnectNode,
 	#{name := OldName} = OldNode,
 	lager:debug("XBOT: Received switch message at Node ~p from ~p", [OldName, DisconnectName]),
 	Check = is_in_active_view(InitiatorNode, Active),
 	if Check -> 
-			remove_from_active_view(InitiatorNode, Active), 
-			add_to_active_view(DisconnectNode, MyTag, State),  
+			%remove_from_active_view(InitiatorNode, Active), 
+			do_disconnect(InitiatorNode, State),
+			%add_to_active_view(DisconnectNode, MyTag, State),  
+			send_join(DisconnectNode, State),
 			NodeConnections = partisan_util:maybe_connect(DisconnectNode, Connections),
 			do_send_message(DisconnectNode, {switch_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, NodeConnections),
 			lager:debug("XBOT: Sending switch reply to Node ~p from ~p", [DisconnectName, OldName]);
@@ -1299,6 +1312,39 @@ select_worst_in_active_view([H | T], Worst) ->
 	if Check -> select_worst_in_active_view(T, Worst);
 		true -> select_worst_in_active_view(T, H)
 	end.
+	
+%% @private
+send_join(Peer,
+            #state{myself=Myself0,
+                   tag=Tag0,
+                   connections=Connections0,
+                   epoch=Epoch0}=State0) ->
+    %% Trigger connection.
+    Connections = partisan_util:maybe_connect(Peer, Connections0),
+
+    lager:debug("Node ~p sends the JOIN message to ~p", [Myself0, Peer]),
+    %% Send the JOIN message to the peer.
+    do_send_message(Peer,
+                    {join, Myself0, Tag0, Epoch0},
+                    Connections),
+    %% Return.
+    {noreply, State0#state{connections=Connections}}.
+
+%% Send a disconnect message to a peer
+%% @private
+do_disconnect(Peer, #state{active=Active0,
+                                       connections=Connections0}=State0) ->
+    case sets:is_element(Peer, Active0) of
+        true ->
+            %% If a member of the active view, remove it.
+            Active = sets:del_element(Peer, Active0),
+            State = add_to_passive_view(Peer,
+                                        State0#state{active=Active}),
+            Connections = disconnect(Peer, Connections0),
+            {noreply, State#state{connections=Connections}};
+        false ->
+            {noreply, State0}
+    end.
 
 %% @private
 empty_membership() ->
