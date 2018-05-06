@@ -42,17 +42,31 @@ init([]) ->
 
     Children = lists:flatten(
                  [
+                 ?CHILD(partisan_reliability_backend, worker),
                  ?CHILD(Manager, worker),
                  ?CHILD(partisan_peer_service_events, worker),
                  ?CHILD(partisan_plumtree_backend, worker),
                  ?CHILD(partisan_plumtree_broadcast, worker)
                  ]),
 
-    PoolSup = {partisan_pool_sup, {partisan_pool_sup, start_link, []},
-               permanent, 20000, supervisor, [partisan_pool_sup]},
+    %% Run a single backend for each label.
+    CausalLabels = partisan_config:get(causal_labels, []),
+
+    CausalBackendFun = fun(Label) ->
+        {partisan_causality_backend, 
+         {partisan_causality_backend, start_link, [Label]}, 
+          permanent, 5000, worker, [partisan_causality_backend]}
+    end,
+
+    CausalBackends = lists:map(CausalBackendFun, CausalLabels),
+
+    %% Open connection pool.
+    PoolSup = {partisan_pool_sup, 
+               {partisan_pool_sup, start_link, []},
+                permanent, 20000, supervisor, [partisan_pool_sup]},
 
     %% Initialize the connection cache supervised by the supervisor.
     ?CACHE = ets:new(?CACHE, [public, named_table, set, {read_concurrency, true}]),
 
     RestartStrategy = {one_for_one, 10, 10},
-    {ok, {RestartStrategy, Children ++ [PoolSup]}}.
+    {ok, {RestartStrategy, Children ++ CausalBackends ++ [PoolSup]}}.

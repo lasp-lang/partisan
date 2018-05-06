@@ -34,7 +34,7 @@ update(Connections) ->
                       true = ets:insert(?CACHE, [{Name, V}])
               end, [], Connections).
 
-dispatch({forward_message, Name, Channel, PartitionKey, ServerRef, Message, _Options}) ->
+dispatch({forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Message, _Options}) ->
     %% Find a connection for the remote node, if we have one.
     case ets:lookup(?CACHE, Name) of
         [] ->

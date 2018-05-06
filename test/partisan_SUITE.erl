@@ -83,6 +83,14 @@ init_per_group(with_parallelism, Config) ->
     parallelism() ++ [{channels, ?CHANNELS}] ++ Config;
 init_per_group(with_no_channels, Config) ->
     [{parallelism, 1}, {channels, []}] ++ Config;
+init_per_group(with_causal_labels, Config) ->
+    [{causal_labels, [default]}] ++ Config;
+init_per_group(with_causal_send, Config) ->
+    [{causal_labels, [default]}, {forward_options, [{causal, default}, {ack, true}]}] ++ Config;
+init_per_group(with_message_filters, Config) ->
+    [{disable_fast_forward, true}] ++ Config;
+init_per_group(with_ack, Config) ->
+    [{forward_options, [{ack, true}]}] ++ Config;
 init_per_group(with_tls, Config) ->
     TLSOpts = make_certs(Config),
     [{parallelism, 1}, {tls, true}] ++ TLSOpts ++ Config;
@@ -99,6 +107,14 @@ all() ->
        {hyparview, [shuffle]},
        {hyparview_xbot, [shuffle]}
       ]},
+
+     {group, with_ack, []},
+
+     {group, with_causal_labels, []},
+
+     {group, with_causal_send, []},
+
+     {group, with_message_filters, []},
 
      {group, with_tls, [parallel]},
 
@@ -149,6 +165,18 @@ groups() ->
        hyparview_xbot_manager_low_active_test,
        hyparview_xbot_manager_high_client_test
        ]},
+
+     {with_ack, [],
+      [default_manager_test]},
+
+     {with_causal_labels, [],
+      [causal_test]},
+
+     {with_causal_send, [],
+      [default_manager_test]},
+
+     {with_message_filters, [],
+      [message_filter_test]},
 
      {with_tls, [],
       [default_manager_test]},
@@ -229,6 +257,174 @@ amqp_manager_test(Config) ->
     lists:foreach(fun({_Name, Node}) ->
                     ok = check_forward_message(Node, Manager, Nodes)
                   end, Nodes),
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
+causal_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = partisan_default_peer_service_manager,
+
+    %% Specify servers.
+    Servers = node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+
+    %% Start nodes.
+    Nodes = start(causal_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Test on_down callback.
+    [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
+
+    %% Use our process identifier as the message destination.
+    ServerRef = self(),
+
+    %% Use default causal channel label.
+    Label = default,
+
+    %% Set the delivery function on all nodes to send messages here.
+    DeliveryFun = fun(_ServerRef, Message) ->
+        ServerRef ! Message
+    end,
+    lists:foreach(fun({_, N}) ->
+        ok = rpc:call(N, partisan_causality_backend, set_delivery_fun, [Label, DeliveryFun])
+        end, Nodes),
+
+    %% Generate a message and vclock for that message.
+    Message1 = message_1,
+    {ok, _, FullMessage1} = rpc:call(Node3, partisan_causality_backend, emit, [Label, Node4, ServerRef, Message1]),
+    ct:pal("Generated at node ~p full message: ~p", [Node3, FullMessage1]),
+
+    %% Generate a second message, which should depend on the first.
+    Message2 = message_2,
+    {ok, _, FullMessage2} = rpc:call(Node3, partisan_causality_backend, emit, [Label, Node4, ServerRef, Message2]),
+    ct:pal("Generated at node ~p full message: ~p", [Node3, FullMessage2]),
+
+    %% Attempt to deliver message2.
+    ok = rpc:call(Node4, partisan_causality_backend, receive_message, [Label, FullMessage2]),
+    
+    %% Message2 reception.
+    receive
+        Message2 ->
+            ct:fail("Received message 2 first!")
+    after
+        1000 ->
+            ok
+    end,
+
+    %% Attempt to deliver message1.
+    ok = rpc:call(Node4, partisan_causality_backend, receive_message, [Label, FullMessage1]),
+
+    %% Message1 reception.
+    receive
+        Message1 ->
+            ct:pal("Received message 1!"),
+            ok
+    after
+        1000 ->
+            ct:fail("Didn't receive message 1!")
+    end,
+
+    %% See what messages we have received.
+    receive
+        Message2 ->
+            ct:pal("Received message 2!"),
+            ok
+    after
+        10000 ->
+            ct:fail("Didn't receive message 2!")
+    end,
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
+message_filter_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = partisan_default_peer_service_manager,
+
+    %% Specify servers.
+    Servers = node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+
+    %% Start nodes.
+    Nodes = start(message_filter_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Test on_down callback.
+    [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
+
+    %% Set message filter.
+    MessageFilterFun = fun({N, _}) ->
+        case N of
+            Node4 ->
+                false;
+            _ ->
+                true
+        end
+    end,
+    ok = rpc:call(Node3, Manager, add_message_filter, [Node4, MessageFilterFun]),
+    
+    %% Spawn receiver process.
+    Message1 = message1,
+    Message2 = message2,
+
+    Self = self(),
+
+    ReceiverFun = fun() ->
+        receive 
+            X ->
+                Self ! X
+        end
+    end,
+    Pid = rpc:call(Node4, erlang, spawn, [ReceiverFun]),
+    true = rpc:call(Node4, erlang, register, [receiver, Pid]),
+
+    %% Send message.
+    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message1, []]),
+
+    %% Wait to receive message.
+    receive
+        Message1 ->
+            ct:fail("Received message we shouldn't have!")
+    after 
+        1000 ->
+            ok
+    end,
+
+    %% Remove filter.
+    ok = rpc:call(Node3, Manager, remove_message_filter, [Node4]),
+
+    %% Send message.
+    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message2, []]),
+
+    %% Wait to receive message.
+    receive
+        Message1 ->
+            ct:fail("Received message we shouldn't have!");
+        Message2 ->
+            ok
+    after 
+        1000 ->
+            ct:fail("Didn't receive message we should have!")
+    end,
 
     %% Stop nodes.
     stop(Nodes),
@@ -1129,6 +1325,15 @@ start(_Case, Config, Options) ->
             ct:pal("Setting disterl to: ~p", [Disterl]),
             ok = rpc:call(Node, partisan_config, set, [disterl, Disterl]),
 
+            DisableFastForward = case ?config(disable_fast_forward, Config) of
+                              undefined ->
+                                  false;
+                              FF ->
+                                  FF
+                          end,
+            ct:pal("Setting disable_fast_forward to: ~p", [DisableFastForward]),
+            ok = rpc:call(Node, partisan_config, set, [disable_fast_forward, DisableFastForward]),
+
             BinaryPadding = case ?config(binary_padding, Config) of
                               undefined ->
                                   false;
@@ -1155,6 +1360,15 @@ start(_Case, Config, Options) ->
                           end,
             ct:pal("Setting channels to: ~p", [Channels]),
             ok = rpc:call(Node, partisan_config, set, [channels, Channels]),
+
+            CausalLabels = case ?config(causal_labels, Config) of
+                              undefined ->
+                                  [];
+                              CL ->
+                                  CL
+                          end,
+            ct:pal("Setting causal_labels to: ~p", [CausalLabels]),
+            ok = rpc:call(Node, partisan_config, set, [causal_labels, CausalLabels]),
 
             ok = rpc:call(Node, partisan_config, set, [tls, ?config(tls, Config)]),
             Parallelism = case ?config(parallelism, Config) of
