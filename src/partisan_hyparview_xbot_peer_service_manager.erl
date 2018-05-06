@@ -1138,16 +1138,18 @@ handle_message({forward_message, ServerRef, Message}, State) ->
     
     
 %% Optimization Reply
-handle_message({optimization_reply, true, OldNode, InitiatorNode, CandidateNode, undefined}, #state{active=Active}=State) ->
+handle_message({optimization_reply, true, _, InitiatorNode, CandidateNode, undefined}, State) ->%#state{active=Active}=State) ->
 	#{name := InitiatorName} = InitiatorNode,
 	#{name := CandidateName} = CandidateNode,
 	lager:debug("XBOT: Received optimization reply message at Node ~p from ~p", [InitiatorName, CandidateName]),
-	Check = is_in_active_view(OldNode, Active),
-	if Check ->
+	%% Revise this behaviour, when candidate accepts inmediatly because it has availability in his active view
+	%% what to do with old node?? we cannot disconnect from it because maybe it will be isolated
+	%Check = is_in_active_view(OldNode, Active),
+	%if Check ->
 		%remove_from_active_view(OldNode, Active),
 		%add_to_passive_view(OldNode, State)
-		do_disconnect(OldNode, State)
-	end,
+	%	do_disconnect(OldNode, State)
+	%end,
 	%move_peer_from_passive_to_active(CandidateNode, State),
 	send_join(CandidateNode, State),
 	lager:debug("XBOT: Finished optimization round started by Node ~p ", [InitiatorName]),
