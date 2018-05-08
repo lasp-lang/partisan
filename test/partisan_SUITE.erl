@@ -172,7 +172,7 @@ groups() ->
      {with_causal_send, [],
       [default_manager_test]},
 
-     {initiate_reverse, [],
+     {with_initiate_reverse, [],
       [default_manager_test]},
 
      {with_message_filters, [],
