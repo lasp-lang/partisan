@@ -89,6 +89,8 @@ init_per_group(with_causal_send, Config) ->
     [{causal_labels, [default]}, {forward_options, [{causal, default}, {ack, true}]}] ++ Config;
 init_per_group(with_message_filters, Config) ->
     [{disable_fast_forward, true}] ++ Config;
+init_per_group(with_initiate_reverse, Config) ->
+    [{initiate_reverse, true}] ++ Config;
 init_per_group(with_ack, Config) ->
     [{forward_options, [{ack, true}]}] ++ Config;
 init_per_group(with_tls, Config) ->
@@ -114,6 +116,8 @@ all() ->
      {group, with_causal_send, []},
 
      {group, with_message_filters, []},
+
+     {group, with_initiate_reverse, []},
 
      {group, with_tls, [parallel]},
 
@@ -165,6 +169,9 @@ groups() ->
       [causal_test]},
 
      {with_causal_send, [],
+      [default_manager_test]},
+
+     {initiate_reverse, [],
       [default_manager_test]},
 
      {with_message_filters, [],
@@ -1315,6 +1322,15 @@ start(_Case, Config, Options) ->
                           end,
             ct:pal("Setting disterl to: ~p", [Disterl]),
             ok = rpc:call(Node, partisan_config, set, [disterl, Disterl]),
+
+            InitiateReverse = case ?config(initiate_reverse, Config) of
+                              undefined ->
+                                  false;
+                              IR ->
+                                  IR
+                          end,
+            ct:pal("Setting initiate_reverse to: ~p", [InitiateReverse]),
+            ok = rpc:call(Node, partisan_config, set, [initiate_reverse, InitiateReverse]),
 
             DisableFastForward = case ?config(disable_fast_forward, Config) of
                               undefined ->
