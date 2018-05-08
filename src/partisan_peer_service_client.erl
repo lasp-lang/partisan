@@ -213,10 +213,8 @@ handle_message({state, Tag, LocalState},
     %% Notify peer service manager we are done.
     case LocalState of
         {state, _Active, Epoch} ->
-            %% lager:info("Received local state from peer ~p, informing ~p that we're connected.", [Name, From]),
             From ! {connected, Peer, Tag, Epoch, LocalState};
         _Other ->
-            %% lager:info("Received local state ~p from peer ~p.", [Other, Name]),
             From ! {connected, Peer, Tag, LocalState}
     end,
 
