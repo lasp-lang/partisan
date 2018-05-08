@@ -59,6 +59,9 @@ start_link(Peer, ListenAddr, Channel, From) ->
 %% @private
 -spec init([iolist()]) -> {ok, state_t()}.
 init([Peer, ListenAddr, Channel, From]) ->
+    %% #{name := Name} = Peer,
+    %% lager:info("New client connection created for peer: ~p channel: ~p pid: ~p", [Name, Channel, self()]),
+
     case connect(ListenAddr, Channel) of
         {ok, Socket} ->
             %% For debugging, store information in the process dictionary.
@@ -119,6 +122,7 @@ handle_info(Msg, State) ->
 %% @private
 -spec terminate(term(), state_t()) -> term().
 terminate(_Reason, #state{socket=Socket}) ->
+    %% lager:info("Connection terminated: ~p", [self()]),
     ok = partisan_peer_connection:close(Socket),
     ok.
 
@@ -174,15 +178,48 @@ decode(Message) ->
 
 %% @private
 handle_message({state, Tag, LocalState},
-               #state{peer=Peer, from=From}=State) ->
+               #state{peer=Peer, from=From, socket=Socket}=State) ->
+    %% Extract name for readability.
+    #{name := Name} = Peer,
+
+    %% If gossip on the client side is disabled, the server will never learn
+    %% about the clients presence and connect to it, because that's 
+    %% what normally happens in the gossip path.
+    %%
+    %% Therefore, send an explicit message back to the server telling it
+    %% to initiate a connect to the client until it's membership has
+    %% been updated by the external membership oracle.  This is required
+    %% because typically, the external oracle will require partisan for
+    %% node to node communication.
+    %%
+    case partisan_config:get(initiate_reverse, false) of
+        false ->
+            ok;
+        true ->
+            lager:info("Notifying ~p to connect to us at ~p at pid ~p", 
+                       [Name, partisan_peer_service_manager:mynode(), self()]),
+
+            Message = {connect, self(), partisan_peer_service_manager:myself()},
+
+            case partisan_peer_connection:send(Socket, default_encode(Message)) of
+                ok ->
+                    ok;
+                Error ->
+                    lager:info("failed to send hello message to node ~p due to ~p",
+                               [Peer, Error])
+            end
+    end,
+
+    %% Notify peer service manager we are done.
     case LocalState of
         {state, _Active, Epoch} ->
-            lager:debug("got local state from peer ~p, informing ~p that we're connected",
-                       [Peer, From]),
+            %% lager:info("Received local state from peer ~p, informing ~p that we're connected.", [Name, From]),
             From ! {connected, Peer, Tag, Epoch, LocalState};
-        _ ->
+        _Other ->
+            %% lager:info("Received local state ~p from peer ~p.", [Other, Name]),
             From ! {connected, Peer, Tag, LocalState}
     end,
+
     {noreply, State};
 handle_message({hello, Node}, #state{peer=Peer, socket=Socket}=State) ->
     % lager:info("sending hello to ~p", [Node]),
