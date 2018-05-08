@@ -471,7 +471,7 @@ pid_test(Config) ->
         %% Process must stay alive to send the pid.
         receive
             X ->
-                X
+                Self ! X
         end
     end,
     _SenderPid = rpc:call(Node3, erlang, spawn, [SenderFun]),
@@ -480,12 +480,22 @@ pid_test(Config) ->
     receive
         {message, Pid} when is_pid(Pid) ->
             ct:fail("Received incorrect message!");
-        {message, _Name} = Message ->
-            lager:info("Received alternative message: ~p", [Message]),
+        {message, GenSym} = Message ->
+            lager:info("Received correct message: ~p", [Message]),
+            ok = rpc:call(Node4, Manager, forward_message, [GenSym, Message]),
             ok
     after 
         1000 ->
             ct:fail("Didn't receive message!")
+    end,
+
+    %% Wait for response.
+    receive
+        X ->
+            X
+    after
+        1000 ->
+            ct:fail("Didn't receive respoonse.")
     end,
 
     %% Stop nodes.
