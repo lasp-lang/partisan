@@ -59,9 +59,6 @@ start_link(Peer, ListenAddr, Channel, From) ->
 %% @private
 -spec init([iolist()]) -> {ok, state_t()}.
 init([Peer, ListenAddr, Channel, From]) ->
-    %% #{name := Name} = Peer,
-    %% lager:info("New client connection created for peer: ~p channel: ~p pid: ~p", [Name, Channel, self()]),
-
     case connect(ListenAddr, Channel) of
         {ok, Socket} ->
             %% For debugging, store information in the process dictionary.
@@ -122,7 +119,6 @@ handle_info(Msg, State) ->
 %% @private
 -spec terminate(term(), state_t()) -> term().
 terminate(_Reason, #state{socket=Socket}) ->
-    %% lager:info("Connection terminated: ~p", [self()]),
     ok = partisan_peer_connection:close(Socket),
     ok.
 
