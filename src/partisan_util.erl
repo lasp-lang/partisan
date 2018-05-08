@@ -29,6 +29,7 @@
          dispatch_pid/3,
          maybe_connect/2,
          may_disconnect/2,
+         process_forward/2,
          term_to_iolist/1,
          gensym/1,
          pid/0,
@@ -277,13 +278,26 @@ term_to_iolist_(T) ->
     Rest.
 
 gensym(Pid) when is_pid(Pid) ->
-    list_to_atom(pid_to_list(Pid)).
+    {partisan_process_reference, pid_to_list(Pid)}.
 
 pid() ->
     pid(self()).
 
 pid(Pid) ->
     GenSym = gensym(Pid),
-    erlang:register(GenSym, Pid),
     Node = partisan_peer_service_manager:mynode(),
     {partisan_remote_reference, Node, GenSym}.
+
+process_forward(ServerRef, Message) ->
+    try
+        case ServerRef of
+            {partisan_process_reference, ProcessIdentifier} ->
+                Pid = list_to_pid(ProcessIdentifier),
+                Pid ! Message;
+            _ ->
+                ServerRef ! Message
+        end
+    catch
+        _:Error ->
+            lager:debug("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
+    end.

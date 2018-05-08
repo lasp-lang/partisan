@@ -1084,7 +1084,7 @@ handle_message({relay_message, Node, Message}, #state{out_links=OutLinks, connec
 
     {noreply, State};
 handle_message({forward_message, ServerRef, Message}, State) ->
-    ServerRef ! Message,
+    partisan_util:process_forward(ServerRef, Message),
     {noreply, State}.
 
 %% @private
