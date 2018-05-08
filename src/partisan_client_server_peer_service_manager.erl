@@ -38,6 +38,7 @@
          on_down/2,
          update_members/1,
          send_message/2,
+         forward_message/2,
          cast_message/3,
          forward_message/3,
          cast_message/4,
@@ -125,6 +126,10 @@ cast_message(Name, Channel, ServerRef, Message, Options) ->
     FullMessage = {'$gen_cast', Message},
     forward_message(Name, Channel, ServerRef, FullMessage, Options),
     ok.
+
+%% @doc Gensym support for forwarding.
+forward_message({partisan_gensym, Name, ServerRef}, Message) ->
+    forward_message(Name, ?DEFAULT_CHANNEL, ServerRef, Message).
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, ServerRef, Message) ->
