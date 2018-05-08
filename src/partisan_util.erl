@@ -29,7 +29,8 @@
          dispatch_pid/3,
          maybe_connect/2,
          may_disconnect/2,
-         term_to_iolist/1]).
+         term_to_iolist/1,
+         gensym/1]).
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
 %%      works by treating the list as an array-based tree where, for
@@ -265,7 +266,17 @@ term_to_iolist_(T) when is_list(T) ->
         false ->
             [108, <<Len:32/integer-big>>, [[term_to_iolist_(E) || E <- T]], 106]
     end;
+term_to_iolist_(T) when is_pid(T) ->
+    GenSym = gensym(T),
+    Node = partisan_peer_service_manager:mynode(),
+    erlang:register(GenSym, T),
+    %% fallback clause
+    <<131, Rest/binary>> = term_to_binary({partisan_gensym, Node, GenSym}),
+    Rest;
 term_to_iolist_(T) ->
     %% fallback clause
     <<131, Rest/binary>> = term_to_binary(T),
     Rest.
+
+gensym(Pid) when is_pid(Pid) ->
+    list_to_atom(pid_to_list(Pid)).

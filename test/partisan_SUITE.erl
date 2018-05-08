@@ -152,6 +152,7 @@ groups() ->
        leave_test,
        on_down_test,
        client_server_manager_test,
+       pid_test,
        %% amqp_manager_test,
        performance_test,
        rejoin_test]},
@@ -422,6 +423,69 @@ message_filter_test(Config) ->
     after 
         1000 ->
             ct:fail("Didn't receive message we should have!")
+    end,
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
+pid_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = partisan_default_peer_service_manager,
+
+    %% Specify servers.
+    Servers = node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+
+    %% Start nodes.
+    Nodes = start(pid_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Test on_down callback.
+    [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
+
+    %% Spawn sender and receiver processes.
+    Self = self(),
+
+    ReceiverFun = fun() ->
+        receive 
+            X ->
+                Self ! X
+        end
+    end,
+    ReceiverPid = rpc:call(Node4, erlang, spawn, [ReceiverFun]),
+    true = rpc:call(Node4, erlang, register, [receiver, ReceiverPid]),
+
+    %% Send message.
+    SenderFun = fun() ->
+        ok = Manager:forward_message(Node4, undefined, receiver, {message, self()}, []),
+
+        %% Process must stay alive to send the pid.
+        receive
+            X ->
+                X
+        end
+    end,
+    _SenderPid = rpc:call(Node3, erlang, spawn, [SenderFun]),
+
+    %% Wait to receive message.
+    receive
+        {message, Pid} when is_pid(Pid) ->
+            ct:fail("Received incorrect message!");
+        {message, _Name} = Message ->
+            lager:info("Received alternative message: ~p", [Message]),
+            ok
+    after 
+        1000 ->
+            ct:fail("Didn't receive message!")
     end,
 
     %% Stop nodes.
