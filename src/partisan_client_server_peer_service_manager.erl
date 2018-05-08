@@ -128,7 +128,7 @@ cast_message(Name, Channel, ServerRef, Message, Options) ->
     ok.
 
 %% @doc Gensym support for forwarding.
-forward_message({partisan_gensym, Name, ServerRef}, Message) ->
+forward_message({partisan_remote_reference, Name, ServerRef}, Message) ->
     forward_message(Name, ?DEFAULT_CHANNEL, ServerRef, Message).
 
 %% @doc Forward message to registered process on the remote side.
