@@ -440,7 +440,7 @@ handle_call({sync_join, #{name := Name} = Node},
             State = sync_internal_join(Node, From, State0),
 
             %% Return.
-            {reply, ok, State}
+            {noreply, State}
     end;
 
 handle_call({send_message, Name, Channel, Message}, _From,
