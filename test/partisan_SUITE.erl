@@ -180,7 +180,9 @@ groups() ->
       [default_manager_test]},
 
      {with_initiate_reverse, [],
-      [default_manager_test]},
+      [
+        %% default_manager_test
+      ]},
 
      {with_message_filters, [],
       [message_filter_test]},
