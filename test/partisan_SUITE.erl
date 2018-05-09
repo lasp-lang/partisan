@@ -1459,7 +1459,7 @@ start(_Case, Config, Options) ->
 
             PidEncoding = case ?config(pid_encoding, Config) of
                               undefined ->
-                                  [];
+                                  true;
                               PE ->
                                   PE
                           end,
