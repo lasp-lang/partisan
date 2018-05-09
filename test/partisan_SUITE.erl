@@ -83,6 +83,8 @@ init_per_group(with_parallelism, Config) ->
     parallelism() ++ [{channels, ?CHANNELS}] ++ Config;
 init_per_group(with_parallelism_bypass_pid_encoding, Config) ->
     parallelism() ++ [{channels, ?CHANNELS}, {pid_encoding, false}] ++ Config;
+init_per_group(with_partisan_bypass_pid_encoding, Config) ->
+    [{pid_encoding, false}] ++ Config;
 init_per_group(with_no_channels, Config) ->
     [{parallelism, 1}, {channels, []}] ++ Config;
 init_per_group(with_causal_labels, Config) ->
@@ -127,6 +129,8 @@ all() ->
 
      {group, with_parallelism_bypass_pid_encoding, []},
 
+     {group, with_partisan_bypass_pid_encoding, []},
+
      {group, with_disterl, [parallel]},
 
      {group, with_channels, [parallel]},
@@ -158,7 +162,6 @@ groups() ->
        client_server_manager_test,
        pid_test,
        %% amqp_manager_test,
-       performance_test,
        rejoin_test]},
 
      {hyparview, [],
@@ -192,6 +195,9 @@ groups() ->
       [performance_test]},
 
      {with_disterl, [],
+      [performance_test]},
+
+     {with_partisan_bypass_pid_encoding, [],
       [performance_test]},
      
      {with_channels, [],
