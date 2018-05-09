@@ -99,6 +99,7 @@ init() ->
                            {partisan_peer_service_manager, PeerService},
                            {peer_ip, DefaultPeerIP},
                            {peer_port, DefaultPeerPort},
+                           {pid_encoding, true},
                            {random_promotion, true},
                            {reservations, []},
                            {tls, false},

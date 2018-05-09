@@ -81,6 +81,8 @@ init_per_group(with_channels, Config) ->
     [{parallelism, 1}, {channels, [vnode, gossip]}] ++ Config;
 init_per_group(with_parallelism, Config) ->
     parallelism() ++ [{channels, ?CHANNELS}] ++ Config;
+init_per_group(with_parallelism_bypass_pid_encoding, Config) ->
+    parallelism() ++ [{channels, ?CHANNELS}, {pid_encoding, false}] ++ Config;
 init_per_group(with_no_channels, Config) ->
     [{parallelism, 1}, {channels, []}] ++ Config;
 init_per_group(with_causal_labels, Config) ->
@@ -122,6 +124,8 @@ all() ->
      {group, with_tls, [parallel]},
 
      {group, with_parallelism, [parallel]},
+
+     {group, with_parallelism_bypass_pid_encoding, []},
 
      {group, with_disterl, [parallel]},
 
@@ -182,8 +186,10 @@ groups() ->
       [default_manager_test]},
 
      {with_parallelism, [],
-      [default_manager_test,
-       performance_test]},
+      [default_manager_test]},
+
+     {with_parallelism_bypass_pid_encoding, [],
+      [performance_test]},
 
      {with_disterl, [],
       [performance_test]},
@@ -1451,6 +1457,15 @@ start(_Case, Config, Options) ->
             ct:pal("Setting causal_labels to: ~p", [CausalLabels]),
             ok = rpc:call(Node, partisan_config, set, [causal_labels, CausalLabels]),
 
+            PidEncoding = case ?config(pid_encoding, Config) of
+                              undefined ->
+                                  [];
+                              PE ->
+                                  PE
+                          end,
+            ct:pal("Setting pid_encoding to: ~p", [PidEncoding]),
+            ok = rpc:call(Node, partisan_config, set, [pid_encoding, PidEncoding]),
+
             ok = rpc:call(Node, partisan_config, set, [tls, ?config(tls, Config)]),
             Parallelism = case ?config(parallelism, Config) of
                               undefined ->
@@ -1914,7 +1929,9 @@ receiver(_Manager, BenchPid, 0) ->
 receiver(Manager, BenchPid, Count) ->
     receive
         {_Message, _SourceNode, _SourcePid} ->
-            receiver(Manager, BenchPid, Count - 1)
+            receiver(Manager, BenchPid, Count - 1);
+        Other ->
+            lager:warning("Got incorrect message: ~p", [Other])
     end.
 
 sender(_EchoBinary, _Manager, _DestinationNode, _DestinationPid, _PartitionKey, 0) ->

@@ -270,8 +270,14 @@ term_to_iolist_(T) when is_list(T) ->
             [108, <<Len:32/integer-big>>, [[term_to_iolist_(E) || E <- T]], 106]
     end;
 term_to_iolist_(T) when is_pid(T) ->
-    <<131, Rest/binary>> = term_to_binary(pid(T)),
-    Rest;
+    case partisan_config:get(pid_encoding, true) of
+        false ->
+            <<131, Rest/binary>> = term_to_binary(T),
+            Rest;
+        true ->
+            <<131, Rest/binary>> = term_to_binary(pid(T)),
+            Rest
+    end;
 term_to_iolist_(T) ->
     %% fallback clause
     <<131, Rest/binary>> = term_to_binary(T),
