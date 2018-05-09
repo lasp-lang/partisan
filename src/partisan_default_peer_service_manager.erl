@@ -38,6 +38,7 @@
          on_up/2,
          send_message/2,
          cast_message/3,
+         forward_message/2,
          forward_message/3,
          cast_message/4,
          forward_message/4,
@@ -144,6 +145,10 @@ cast_message(Name, Channel, ServerRef, Message, Options) ->
     forward_message(Name, Channel, ServerRef, FullMessage, Options),
     ok.
 
+%% @doc Gensym support for forwarding.
+forward_message({partisan_remote_reference, Name, ServerRef}, Message) ->
+    forward_message(Name, ?DEFAULT_CHANNEL, ServerRef, Message).
+
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, ServerRef, Message) ->
     forward_message(Name, ?DEFAULT_CHANNEL, ServerRef, Message).
@@ -182,13 +187,13 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
     %% If attempting to forward to the local node, bypass.
     case partisan_peer_service_manager:mynode() of
         Name ->
-            ServerRef ! Message,
+            partisan_util:process_forward(ServerRef, Message),
             ok;
         _ ->
             Disterl = partisan_config:get(disterl, false),
             case Disterl of
                 true ->
-                    ServerRef ! Message,
+                    partisan_util:process_forward(ServerRef, Message),
                     ok;
                 false ->
                     FullMessage = case partisan_config:get(binary_padding, false) of
@@ -223,7 +228,7 @@ receive_message({forward_message, ServerRef, {'$partisan_padded', _Padding, Mess
 receive_message({forward_message, _ServerRef, {causal, Label, _, _, _, _, _} = Message}) ->
     partisan_causality_backend:receive_message(Label, Message);
 receive_message({forward_message, ServerRef, Message}) ->
-    process_forward(ServerRef, Message);
+    partisan_util:process_forward(ServerRef, Message);
 receive_message(Message) ->
     gen_server:call(?MODULE, {receive_message, Message}, infinity).
 
@@ -834,7 +839,7 @@ handle_message({forward_message, SourceNode, MessageClock, ServerRef, {causal, L
             partisan_causality_backend:receive_message(Label, Message);
         false ->
             %% Attempt message delivery.
-            process_forward(ServerRef, Message)
+            partisan_util:process_forward(ServerRef, Message)
     end,
 
     {reply, ok, State};
@@ -844,7 +849,7 @@ handle_message({forward_message, ServerRef, {causal, Label, _, _, _, _, _} = Mes
             partisan_causality_backend:receive_message(Label, Message);
         false ->
             %% Attempt message delivery.
-            process_forward(ServerRef, Message)
+            partisan_util:process_forward(ServerRef, Message)
     end,
 
     {reply, ok, State};
@@ -868,15 +873,6 @@ handle_message({connect, ConnectionPid, #{name := Name} = Node}, State0) ->
 handle_message({ack, MessageClock}, State) ->
     partisan_reliability_backend:ack(MessageClock),
     {reply, ok, State}.
-
-%% @private
-process_forward(ServerRef, Message) ->
-    try
-        ServerRef ! Message
-    catch
-        _:Error ->
-            lager:debug("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
-    end.
 
 %% @private
 schedule_gossip() ->

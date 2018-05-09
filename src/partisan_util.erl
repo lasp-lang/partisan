@@ -29,7 +29,11 @@
          dispatch_pid/3,
          maybe_connect/2,
          may_disconnect/2,
-         term_to_iolist/1]).
+         process_forward/2,
+         term_to_iolist/1,
+         gensym/1,
+         pid/0,
+         pid/1]).
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
 %%      works by treating the list as an array-based tree where, for
@@ -265,7 +269,41 @@ term_to_iolist_(T) when is_list(T) ->
         false ->
             [108, <<Len:32/integer-big>>, [[term_to_iolist_(E) || E <- T]], 106]
     end;
+term_to_iolist_(T) when is_pid(T) ->
+    case partisan_config:get(pid_encoding, true) of
+        false ->
+            <<131, Rest/binary>> = term_to_binary(T),
+            Rest;
+        true ->
+            <<131, Rest/binary>> = term_to_binary(pid(T)),
+            Rest
+    end;
 term_to_iolist_(T) ->
     %% fallback clause
     <<131, Rest/binary>> = term_to_binary(T),
     Rest.
+
+gensym(Pid) when is_pid(Pid) ->
+    {partisan_process_reference, pid_to_list(Pid)}.
+
+pid() ->
+    pid(self()).
+
+pid(Pid) ->
+    GenSym = gensym(Pid),
+    Node = partisan_peer_service_manager:mynode(),
+    {partisan_remote_reference, Node, GenSym}.
+
+process_forward(ServerRef, Message) ->
+    try
+        case ServerRef of
+            {partisan_process_reference, ProcessIdentifier} ->
+                Pid = list_to_pid(ProcessIdentifier),
+                Pid ! Message;
+            _ ->
+                ServerRef ! Message
+        end
+    catch
+        _:Error ->
+            lager:debug("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
+    end.

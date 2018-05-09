@@ -42,6 +42,7 @@
          on_down/2,
          on_up/2,
          send_message/2,
+         forward_message/2,
          cast_message/3,
          forward_message/3,
          cast_message/4,
@@ -152,6 +153,10 @@ cast_message(Name, Channel, ServerRef, Message, Options) ->
     FullMessage = {'$gen_cast', Message},
     forward_message(Name, Channel, ServerRef, FullMessage, Options),
     ok.
+
+%% @doc Gensym support for forwarding.
+forward_message({partisan_remote_reference, Name, ServerRef}, Message) ->
+    forward_message(Name, ?DEFAULT_CHANNEL, ServerRef, Message).
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, ServerRef, Message) ->
@@ -1079,7 +1084,7 @@ handle_message({relay_message, Node, Message}, #state{out_links=OutLinks, connec
 
     {noreply, State};
 handle_message({forward_message, ServerRef, Message}, State) ->
-    ServerRef ! Message,
+    partisan_util:process_forward(ServerRef, Message),
     {noreply, State}.
 
 %% @private
