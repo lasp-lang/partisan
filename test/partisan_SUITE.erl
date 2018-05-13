@@ -93,8 +93,6 @@ init_per_group(with_causal_send, Config) ->
     [{causal_labels, [default]}, {forward_options, [{causal, default}, {ack, true}]}] ++ Config;
 init_per_group(with_message_filters, Config) ->
     [{disable_fast_forward, true}] ++ Config;
-init_per_group(with_initiate_reverse, Config) ->
-    [{initiate_reverse, true}] ++ Config;
 init_per_group(with_ack, Config) ->
     [{forward_options, [{ack, true}]}] ++ Config;
 init_per_group(with_tls, Config) ->
@@ -121,8 +119,6 @@ all() ->
      {group, with_causal_send, []},
 
      {group, with_message_filters, []},
-
-     {group, with_initiate_reverse, []},
 
      {group, with_tls, [parallel]},
 
@@ -186,11 +182,6 @@ groups() ->
 
      {with_causal_send, [],
       [default_manager_test]},
-
-     {with_initiate_reverse, [],
-      [
-        %% default_manager_test
-      ]},
 
      {with_message_filters, [],
       [message_filter_test]},
