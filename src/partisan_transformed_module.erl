@@ -30,18 +30,19 @@
 -module(partisan_transformed_module).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
--export([local_send/0,
-         get_pid/0]).
+-export([local_send/1,
+         get_pid/0,
+         send_to_pid/2]).
 
 -compile([{parse_transform, partisan_transform}]).
 
-local_send() ->
+local_send(Message) ->
     Pid = self(),
     lager:info("Local pid is: ~p", [Pid]),
-    Pid ! message,
+    Pid ! Message,
     receive
-        message ->
-            ok
+        Message ->
+            Message
     after
         1000 ->
             error
@@ -49,3 +50,6 @@ local_send() ->
 
 get_pid() ->
     self().
+
+send_to_pid(Pid, Message) ->
+    Pid ! Message.

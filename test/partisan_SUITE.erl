@@ -303,22 +303,67 @@ transform_test(Config) ->
     timer:sleep(1000),
 
     %% Test on_down callback.
-    [{_, _}, {_, _}, {_, Node3}, {_, _}] = Nodes,
+    [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
+
+    %% Generate message.
+    Message = message,
 
     %% Verify local send transformation.
-    case rpc:call(Node3, partisan_transformed_module, local_send, []) of
-        ok ->
+    case rpc:call(Node3, partisan_transformed_module, local_send, [Message]) of
+        Message ->
             ok;
         LocalSendError ->
             ct:fail("Received error: ~p", [LocalSendError])
     end,
 
-    %% Ask node for it's process identifier.
+    %% Get process identifier
     case rpc:call(Node3, partisan_transformed_module, get_pid, []) of
-        {partisan_remote_reference, _Node, _ServerRef} ->
-            ok;
+        {partisan_remote_reference, _, _} = Node3Pid1 ->
+            case rpc:call(Node3, partisan_transformed_module, send_to_pid, [Node3Pid1, Message]) of
+                Message ->
+                    ok;
+                SendToPidError ->
+                    ct:fail("Received error: ~p", [SendToPidError])
+            end;
         GetPidError ->
             ct:fail("Received error: ~p", [GetPidError])
+    end,
+
+    %% Try sending and receiving.
+    RunnerPid = self(),
+
+    GetPidFunction = fun() ->
+        OurPid = partisan_transformed_module:get_pid(),
+
+        %% Send Node3 process to the runner.
+        RunnerPid ! OurPid,
+
+        %% Wait for message from Node4 at Node3. 
+        receive
+            Message ->
+                %% Tell runner that we finished.
+                RunnerPid ! finished
+        after 
+            1000 ->
+                ct:fail("Didn't receive message in time.")
+        end
+    end,
+    _ = rpc:call(Node3, erlang, spawn, [GetPidFunction]),
+
+    receive
+        {partisan_remote_reference, _, _} = Node3Pid2 ->
+            rpc:call(Node4, partisan_transformed_module, send_to_pid, [Node3Pid2, Message])
+    after
+        1000 ->
+            ct:fail("Received no proper response!")
+    end,
+
+    receive
+        finished ->
+            ok
+    after 
+        1000 ->
+            ct:fail("Never received a response.")
     end,
 
     %% Stop nodes.
