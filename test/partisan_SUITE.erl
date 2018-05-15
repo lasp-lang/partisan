@@ -163,13 +163,15 @@ groups() ->
        rejoin_test]},
        
      {hyparview, [],
-      [ %% hyparview_manager_partition_test,
+      [ 
+       %% hyparview_manager_partition_test,
        hyparview_manager_high_active_test,
-       hyparview_manager_low_active_test,
+       %% hyparview_manager_low_active_test,
        hyparview_manager_high_client_test]},
        
      {hyparview_xbot, [],
-      [ hyparview_xbot_manager_high_active_test,
+      [ 
+       hyparview_xbot_manager_high_active_test,
        hyparview_xbot_manager_low_active_test,
        hyparview_xbot_manager_high_client_test
        ]},
