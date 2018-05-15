@@ -59,13 +59,11 @@ walk_body(Acc, [H|T]) ->
 
 %% @private
 transform_statement({op, Line, '!', 
-                     {var, Line, RemotePid}, {Type, Line, Message}} = Stmt) ->
-    io:format("transforming: ~p~n", [Stmt]),
+                     {var, Line, RemotePid}, {Type, Line, Message}}) ->
     {call, Line, {remote, Line, 
                   {atom, Line, partisan_peer_service_manager}, {atom, Line, forward_message}},
         [{var, Line, RemotePid}, {Type, Line, Message}]};
 transform_statement({match, Line, {var, Line, RemotePid}, {call, Line, {atom, Line, self}, []}}) ->
     {match, Line, {var, Line, RemotePid}, {call, Line, {remote, Line, {atom, Line, partisan_util}, {atom, Line, pid}}, []}};
 transform_statement(Stmt) ->
-    io:format("transforming: ~p~n", [Stmt]),
     Stmt.
