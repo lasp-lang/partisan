@@ -160,7 +160,8 @@ groups() ->
        client_server_manager_test,
        pid_test,
        %% amqp_manager_test,
-       rejoin_test]},
+       rejoin_test,
+       transform_test]},
        
      {hyparview, [],
       [ 
@@ -276,6 +277,41 @@ amqp_manager_test(Config) ->
     lists:foreach(fun({_Name, Node}) ->
                     ok = check_forward_message(Node, Manager, Nodes)
                   end, Nodes),
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
+transform_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = partisan_default_peer_service_manager,
+
+    %% Specify servers.
+    Servers = node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+
+    %% Start nodes.
+    Nodes = start(transform_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Test on_down callback.
+    [{_, _}, {_, _}, {_, Node3}, {_, _}] = Nodes,
+
+    %% Verify local send transformation.
+    case rpc:call(Node3, partisan_transformed_module, local_send, []) of
+        ok ->
+            ok;
+        Error ->
+            ct:fail("Received error: ~p", [Error])
+    end,
 
     %% Stop nodes.
     stop(Nodes),

@@ -23,7 +23,9 @@
 
 -include("partisan.hrl").
 
--export([myself/0, mynode/0]).
+-export([myself/0, 
+         mynode/0, 
+         forward_message/2]).
 
 -callback start_link() -> {ok, pid()} | ignore | {error, term()}.
 -callback members() -> [name()].
@@ -75,3 +77,19 @@ myself() ->
 
 mynode() ->
     partisan_config:get(name, node()).
+
+forward_message({partisan_remote_reference, Name, ServerRef} = RemotePid, Message) ->
+    case mynode() of
+        Name ->
+            lager:info("Local pid ~p, routing message accordingly: ~p", [ServerRef, Message]),
+            case ServerRef of
+                {partisan_process_reference, Pid} ->
+                    DeserializedPid = list_to_pid(Pid),
+                    DeserializedPid ! Message;
+                _ ->
+                    ServerRef ! Message
+            end;
+        _ ->
+            Manager = partisan_config:get(partisan_peer_service_manager),
+            Manager:forward_message(RemotePid, Message)
+    end.
