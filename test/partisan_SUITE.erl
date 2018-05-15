@@ -173,9 +173,9 @@ groups() ->
        
      {hyparview_xbot, [],
       [ 
-       hyparview_xbot_manager_high_active_test,
+       %% hyparview_xbot_manager_high_active_test,
        %% hyparview_xbot_manager_low_active_test,
-       hyparview_xbot_manager_high_client_test
+       %% hyparview_xbot_manager_high_client_test
       ]},
 
      {with_ack, [],
