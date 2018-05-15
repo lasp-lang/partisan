@@ -167,14 +167,15 @@ groups() ->
        %% hyparview_manager_partition_test,
        hyparview_manager_high_active_test,
        %% hyparview_manager_low_active_test,
-       hyparview_manager_high_client_test]},
+       hyparview_manager_high_client_test
+      ]},
        
      {hyparview_xbot, [],
       [ 
        hyparview_xbot_manager_high_active_test,
-       hyparview_xbot_manager_low_active_test,
+       %% hyparview_xbot_manager_low_active_test,
        hyparview_xbot_manager_high_client_test
-       ]},
+      ]},
 
      {with_ack, [],
       [default_manager_test]},
@@ -222,7 +223,10 @@ groups() ->
       [default_manager_test]},
 
      {with_broadcast, [],
-      [hyparview_manager_low_active_test]}
+      [
+       % hyparview_manager_low_active_test,
+       hyparview_manager_high_active_test
+      ]}
 
     ].
 
