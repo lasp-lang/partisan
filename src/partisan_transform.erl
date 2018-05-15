@@ -65,5 +65,8 @@ transform_statement({op, Line, '!',
         [{var, Line, RemotePid}, {Type, Line, Message}]};
 transform_statement({match, Line, {var, Line, RemotePid}, {call, Line, {atom, Line, self}, []}}) ->
     {match, Line, {var, Line, RemotePid}, {call, Line, {remote, Line, {atom, Line, partisan_util}, {atom, Line, pid}}, []}};
+transform_statement({call, Line, {atom, Line, self}, []}) ->
+    {call, Line, {remote, Line, {atom, Line, partisan_util}, {atom, Line, pid}}, []};
 transform_statement(Stmt) ->
+    io:format("not transforming: ~p~n", [Stmt]),
     Stmt.

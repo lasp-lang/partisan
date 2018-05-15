@@ -309,8 +309,16 @@ transform_test(Config) ->
     case rpc:call(Node3, partisan_transformed_module, local_send, []) of
         ok ->
             ok;
-        Error ->
-            ct:fail("Received error: ~p", [Error])
+        LocalSendError ->
+            ct:fail("Received error: ~p", [LocalSendError])
+    end,
+
+    %% Ask node for it's process identifier.
+    case rpc:call(Node3, partisan_transformed_module, get_pid, []) of
+        {partisan_remote_reference, _Node, _ServerRef} ->
+            ok;
+        GetPidError ->
+            ct:fail("Received error: ~p", [GetPidError])
     end,
 
     %% Stop nodes.

@@ -30,7 +30,9 @@
 -module(partisan_transformed_module).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
--export([local_send/0]).
+-export([local_send/0,
+         get_pid/0]).
+
 -compile([{parse_transform, partisan_transform}]).
 
 local_send() ->
@@ -44,3 +46,6 @@ local_send() ->
         1000 ->
             error
     end.
+
+get_pid() ->
+    self().
