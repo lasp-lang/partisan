@@ -692,7 +692,7 @@ process_candidate([], _, _) -> ok;
 process_candidate([OldNode | RestActiveNodes], CandidateNode, #state{myself=InitiatorNode, connections=Connections}=InitiatorState) -> 
 	#{name := InitiatorName} = InitiatorNode,
 	#{name := CandidateName} = CandidateNode,
-	IsBetter = is_better(?XPARAM, OldNode, CandidateNode),
+	IsBetter = is_better(?XPARAM, CandidateNode, OldNode),
 	if IsBetter ->
 		NodeConnections = partisan_util:maybe_connect(CandidateNode, Connections),
 		% if cadidate is better that first node in active view, send optimization message
@@ -1224,7 +1224,7 @@ handle_message({replace, _, OldNode, InitiatorNode, CandidateNode, DisconnectNod
 	#{name := CandidateName} = CandidateNode,
 	#{name := OldName} = OldNode,
 	lager:debug("XBOT: Received replace message at Node ~p from ~p", [DisconnectName, CandidateName]),
-	Check = is_better(?XPARAM, CandidateNode, OldNode),
+	Check = is_better(?XPARAM, OldNode, CandidateNode),
 	if not Check ->
 			NodeConnections = partisan_util:maybe_connect(CandidateNode, Connections),
 			do_send_message(CandidateNode,{replace_reply, false, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, NodeConnections),
