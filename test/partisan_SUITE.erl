@@ -81,6 +81,10 @@ init_per_group(with_channels, Config) ->
     [{parallelism, 1}, {channels, [vnode, gossip]}] ++ Config;
 init_per_group(with_parallelism, Config) ->
     parallelism() ++ [{channels, ?CHANNELS}] ++ Config;
+init_per_group(with_parallelism_bypass_pid_encoding, Config) ->
+    parallelism() ++ [{channels, ?CHANNELS}, {pid_encoding, false}] ++ Config;
+init_per_group(with_partisan_bypass_pid_encoding, Config) ->
+    [{pid_encoding, false}] ++ Config;
 init_per_group(with_no_channels, Config) ->
     [{parallelism, 1}, {channels, []}] ++ Config;
 init_per_group(with_causal_labels, Config) ->
@@ -120,6 +124,10 @@ all() ->
 
      {group, with_parallelism, [parallel]},
 
+     {group, with_parallelism_bypass_pid_encoding, []},
+
+     {group, with_partisan_bypass_pid_encoding, []},
+
      {group, with_disterl, [parallel]},
 
      {group, with_channels, [parallel]},
@@ -150,21 +158,24 @@ groups() ->
        leave_test,
        on_down_test,
        client_server_manager_test,
+       pid_test,
        %% amqp_manager_test,
-       performance_test,
        rejoin_test]},
        
      {hyparview, [],
-      [ %% hyparview_manager_partition_test,
+      [ 
+       %% hyparview_manager_partition_test,
        hyparview_manager_high_active_test,
-       hyparview_manager_low_active_test,
-       hyparview_manager_high_client_test]},
+       %% hyparview_manager_low_active_test,
+       hyparview_manager_high_client_test
+      ]},
        
      {hyparview_xbot, [],
-      [ hyparview_xbot_manager_high_active_test,
-       hyparview_xbot_manager_low_active_test,
+      [ 
+       hyparview_xbot_manager_high_active_test,
+       %% hyparview_xbot_manager_low_active_test,
        hyparview_xbot_manager_high_client_test
-       ]},
+      ]},
 
      {with_ack, [],
       [default_manager_test]},
@@ -182,10 +193,15 @@ groups() ->
       [default_manager_test]},
 
      {with_parallelism, [],
-      [default_manager_test,
-       performance_test]},
+      [default_manager_test]},
+
+     {with_parallelism_bypass_pid_encoding, [],
+      [performance_test]},
 
      {with_disterl, [],
+      [performance_test]},
+
+     {with_partisan_bypass_pid_encoding, [],
       [performance_test]},
      
      {with_channels, [],
@@ -207,7 +223,10 @@ groups() ->
       [default_manager_test]},
 
      {with_broadcast, [],
-      [hyparview_manager_low_active_test]}
+      [
+       % hyparview_manager_low_active_test,
+       hyparview_manager_high_active_test
+      ]}
 
     ].
 
@@ -424,6 +443,79 @@ message_filter_test(Config) ->
     after 
         1000 ->
             ct:fail("Didn't receive message we should have!")
+    end,
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
+pid_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = partisan_default_peer_service_manager,
+
+    %% Specify servers.
+    Servers = node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+
+    %% Start nodes.
+    Nodes = start(pid_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Test on_down callback.
+    [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
+
+    %% Spawn sender and receiver processes.
+    Self = self(),
+
+    ReceiverFun = fun() ->
+        receive 
+            X ->
+                Self ! X
+        end
+    end,
+    ReceiverPid = rpc:call(Node4, erlang, spawn, [ReceiverFun]),
+    true = rpc:call(Node4, erlang, register, [receiver, ReceiverPid]),
+
+    %% Send message.
+    SenderFun = fun() ->
+        ok = Manager:forward_message(Node4, undefined, receiver, {message, self()}, []),
+
+        %% Process must stay alive to send the pid.
+        receive
+            X ->
+                Self ! X
+        end
+    end,
+    _SenderPid = rpc:call(Node3, erlang, spawn, [SenderFun]),
+
+    %% Wait to receive message.
+    receive
+        {message, Pid} when is_pid(Pid) ->
+            ct:fail("Received incorrect message!");
+        {message, GenSym} = Message ->
+            lager:info("Received correct message: ~p", [Message]),
+            ok = rpc:call(Node4, Manager, forward_message, [GenSym, Message]),
+            ok
+    after 
+        1000 ->
+            ct:fail("Didn't receive message!")
+    end,
+
+    %% Wait for response.
+    receive
+        X ->
+            X
+    after
+        1000 ->
+            ct:fail("Didn't receive respoonse.")
     end,
 
     %% Stop nodes.
@@ -1325,6 +1417,15 @@ start(_Case, Config, Options) ->
             ct:pal("Setting disterl to: ~p", [Disterl]),
             ok = rpc:call(Node, partisan_config, set, [disterl, Disterl]),
 
+            InitiateReverse = case ?config(initiate_reverse, Config) of
+                              undefined ->
+                                  false;
+                              IR ->
+                                  IR
+                          end,
+            ct:pal("Setting initiate_reverse to: ~p", [InitiateReverse]),
+            ok = rpc:call(Node, partisan_config, set, [initiate_reverse, InitiateReverse]),
+
             DisableFastForward = case ?config(disable_fast_forward, Config) of
                               undefined ->
                                   false;
@@ -1369,6 +1470,15 @@ start(_Case, Config, Options) ->
                           end,
             ct:pal("Setting causal_labels to: ~p", [CausalLabels]),
             ok = rpc:call(Node, partisan_config, set, [causal_labels, CausalLabels]),
+
+            PidEncoding = case ?config(pid_encoding, Config) of
+                              undefined ->
+                                  true;
+                              PE ->
+                                  PE
+                          end,
+            ct:pal("Setting pid_encoding to: ~p", [PidEncoding]),
+            ok = rpc:call(Node, partisan_config, set, [pid_encoding, PidEncoding]),
 
             ok = rpc:call(Node, partisan_config, set, [tls, ?config(tls, Config)]),
             Parallelism = case ?config(parallelism, Config) of
@@ -1847,7 +1957,9 @@ receiver(_Manager, BenchPid, 0) ->
 receiver(Manager, BenchPid, Count) ->
     receive
         {_Message, _SourceNode, _SourcePid} ->
-            receiver(Manager, BenchPid, Count - 1)
+            receiver(Manager, BenchPid, Count - 1);
+        Other ->
+            lager:warning("Got incorrect message: ~p", [Other])
     end.
 
 sender(_EchoBinary, _Manager, _DestinationNode, _DestinationPid, _PartitionKey, 0) ->

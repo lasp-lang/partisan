@@ -206,7 +206,7 @@ deliver(#state{my_node=MyNode, local_clock=LocalClock, order_buffer=OrderBuffer,
     case DeliveryFun of
         undefined ->
             try
-                ServerRef ! Message
+                partisan_util:process_forward(ServerRef, Message)
             catch
                 _:Error ->
                     lager:debug("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])

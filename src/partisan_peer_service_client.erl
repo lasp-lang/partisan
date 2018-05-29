@@ -174,15 +174,46 @@ decode(Message) ->
 
 %% @private
 handle_message({state, Tag, LocalState},
-               #state{peer=Peer, from=From}=State) ->
+               #state{peer=Peer, from=From, socket=Socket}=State) ->
+    %% Extract name for readability.
+    #{name := Name} = Peer,
+
+    %% If gossip on the client side is disabled, the server will never learn
+    %% about the clients presence and connect to it, because that's 
+    %% what normally happens in the gossip path.
+    %%
+    %% Therefore, send an explicit message back to the server telling it
+    %% to initiate a connect to the client until it's membership has
+    %% been updated by the external membership oracle.  This is required
+    %% because typically, the external oracle will require partisan for
+    %% node to node communication.
+    %%
+    case partisan_config:get(initiate_reverse, false) of
+        false ->
+            ok;
+        true ->
+            lager:info("Notifying ~p to connect to us at ~p at pid ~p", 
+                       [Name, partisan_peer_service_manager:mynode(), self()]),
+
+            Message = {connect, self(), partisan_peer_service_manager:myself()},
+
+            case partisan_peer_connection:send(Socket, default_encode(Message)) of
+                ok ->
+                    ok;
+                Error ->
+                    lager:info("failed to send hello message to node ~p due to ~p",
+                               [Peer, Error])
+            end
+    end,
+
+    %% Notify peer service manager we are done.
     case LocalState of
         {state, _Active, Epoch} ->
-            lager:debug("got local state from peer ~p, informing ~p that we're connected",
-                       [Peer, From]),
             From ! {connected, Peer, Tag, Epoch, LocalState};
-        _ ->
+        _Other ->
             From ! {connected, Peer, Tag, LocalState}
     end,
+
     {noreply, State};
 handle_message({hello, Node}, #state{peer=Peer, socket=Socket}=State) ->
     % lager:info("sending hello to ~p", [Node]),

@@ -41,6 +41,8 @@
 -callback send_message(name(), message()) -> ok.
 -callback receive_message(message()) -> ok.
 
+-callback forward_message({partisan_remote_reference, name(), atom()}, message()) -> ok.
+
 -callback cast_message(name(), pid(), message()) -> ok.
 -callback forward_message(name(), pid(), message()) -> ok.
 
