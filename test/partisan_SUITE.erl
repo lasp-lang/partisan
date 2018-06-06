@@ -160,7 +160,8 @@ groups() ->
        client_server_manager_test,
        pid_test,
        %% amqp_manager_test,
-       rejoin_test]},
+       rejoin_test,
+       transform_test]},
        
      {hyparview, [],
       [ 
@@ -172,9 +173,9 @@ groups() ->
        
      {hyparview_xbot, [],
       [ 
-       hyparview_xbot_manager_high_active_test,
+       %% hyparview_xbot_manager_high_active_test,
        %% hyparview_xbot_manager_low_active_test,
-       hyparview_xbot_manager_high_client_test
+       %% hyparview_xbot_manager_high_client_test
       ]},
 
      {with_ack, [],
@@ -276,6 +277,94 @@ amqp_manager_test(Config) ->
     lists:foreach(fun({_Name, Node}) ->
                     ok = check_forward_message(Node, Manager, Nodes)
                   end, Nodes),
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
+transform_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = partisan_default_peer_service_manager,
+
+    %% Specify servers.
+    Servers = node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+
+    %% Start nodes.
+    Nodes = start(transform_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Test on_down callback.
+    [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
+
+    %% Generate message.
+    Message = message,
+
+    %% Verify local send transformation.
+    case rpc:call(Node3, partisan_transformed_module, local_send, [Message]) of
+        Message ->
+            ok;
+        LocalSendError ->
+            ct:fail("Received error: ~p", [LocalSendError])
+    end,
+
+    %% Get process identifier
+    case rpc:call(Node3, partisan_transformed_module, get_pid, []) of
+        {partisan_remote_reference, _, _} = Node3Pid1 ->
+            case rpc:call(Node3, partisan_transformed_module, send_to_pid, [Node3Pid1, Message]) of
+                Message ->
+                    ok;
+                SendToPidError ->
+                    ct:fail("Received error: ~p", [SendToPidError])
+            end;
+        GetPidError ->
+            ct:fail("Received error: ~p", [GetPidError])
+    end,
+
+    %% Try sending and receiving.
+    RunnerPid = self(),
+
+    GetPidFunction = fun() ->
+        OurPid = partisan_transformed_module:get_pid(),
+
+        %% Send Node3 process to the runner.
+        RunnerPid ! OurPid,
+
+        %% Wait for message from Node4 at Node3. 
+        receive
+            Message ->
+                %% Tell runner that we finished.
+                RunnerPid ! finished
+        after 
+            1000 ->
+                ct:fail("Didn't receive message in time.")
+        end
+    end,
+    _ = rpc:call(Node3, erlang, spawn, [GetPidFunction]),
+
+    receive
+        {partisan_remote_reference, _, _} = Node3Pid2 ->
+            rpc:call(Node4, partisan_transformed_module, send_to_pid, [Node3Pid2, Message])
+    after
+        1000 ->
+            ct:fail("Received no proper response!")
+    end,
+
+    receive
+        finished ->
+            ok
+    after 
+        1000 ->
+            ct:fail("Never received a response.")
+    end,
 
     %% Stop nodes.
     stop(Nodes),
