@@ -43,6 +43,15 @@ init() ->
                           list_to_atom(PeerServiceList)
                   end,
 
+    DefaultPeerPort = random_port(),
+
+    PeerPort = case os:getenv("PEER_PORT", "false") of
+                      "false" ->
+                          DefaultPeerPort;
+                      EnvPeerPort ->
+                          list_to_integer(EnvPeerPort)
+                  end,
+
     %% Configure the partisan node name.
     Name = case node() of
         nonode@nohost ->
@@ -73,7 +82,6 @@ init() ->
 
     %% Configure system parameters.
     DefaultPeerIP = try_get_node_address(),
-    DefaultPeerPort = random_port(),
 
     [env_or_default(Key, Default) ||
         {Key, Default} <- [{arwl, 5},
@@ -98,7 +106,7 @@ init() ->
                            {parallelism, ?PARALLELISM},
                            {partisan_peer_service_manager, PeerService},
                            {peer_ip, DefaultPeerIP},
-                           {peer_port, DefaultPeerPort},
+                           {peer_port, PeerPort},
                            {pid_encoding, true},
                            {random_promotion, true},
                            {reservations, []},
