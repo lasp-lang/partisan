@@ -238,7 +238,7 @@ generate_name(Label) ->
 
 %% @private
 write_state(#state{storage=Storage}=State) ->
-    ok = ets:insert(Storage, {state, State}),
+    true = ets:insert(Storage, {state, State}),
     State.
 
 %% @doc Determine is a message is being sent with causal delivery or not.
