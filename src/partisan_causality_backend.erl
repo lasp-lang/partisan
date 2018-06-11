@@ -38,7 +38,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, {name, label, my_node, local_clock, order_buffer, buffered_messages, delivery_fun}).
+-record(state, {name, label, my_node, local_clock, order_buffer, buffered_messages, delivery_fun, storage}).
 
 %%%===================================================================
 %%% API
@@ -86,35 +86,16 @@ init([Label]) ->
     Name = generate_name(Label),
 
     %% Open the storage backend.
-    try
-        File = filename:join(application:get_env(data_root, partisan, dets), atom_to_list(Name)),
-        lager:info("Trying to open backend: ~p", [File]),
-        ok = filelib:ensure_dir(File),
-        case dets:open_file(Name, [{file, File}]) of
-            {ok, Name} ->
-                case dets:lookup(Name, state) of
-                    [{_, State}] ->
-                        lager:info("Read state from disk: ~p", [State]),
-                        {ok, State};
-                    [] ->
-                        lager:info("Using default state.", []),
-                        {ok, #state{name=Name,
-                                    my_node=MyNode,
-                                    label=Label, 
-                                    local_clock=LocalClock, 
-                                    order_buffer=OrderBuffer, 
-                                    buffered_messages=BufferedMessages}}
-                end;
-            {error, Error} ->
-                {stop, Error}
-        end
-    catch
-        _:Reason ->
-            _ = lager:info("Backend initialization failed!"),
-            {stop, Reason}
-    end.
+    Storage = ets:new(Name, [named_table]),
 
-%% @private
+    %% Start server.
+    {ok, #state{name=Name,
+                my_node=MyNode,
+                label=Label, 
+                local_clock=LocalClock, 
+                order_buffer=OrderBuffer, 
+                buffered_messages=BufferedMessages,
+                storage=Storage}}.
 
 %% Generate a message identifier and a payload to be transmitted on the wire.
 handle_call({emit, Node, ServerRef, Message}, 
@@ -256,8 +237,8 @@ generate_name(Label) ->
     list_to_atom(atom_to_list(?MODULE) ++ "_" ++ atom_to_list(Label)).
 
 %% @private
-write_state(#state{name=Name}=State) ->
-    ok = dets:insert(Name, {state, State}),
+write_state(#state{storage=Storage}=State) ->
+    ok = ets:insert(Storage, {state, State}),
     State.
 
 %% @doc Determine is a message is being sent with causal delivery or not.
