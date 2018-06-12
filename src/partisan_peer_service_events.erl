@@ -85,15 +85,15 @@ handle_event({update, LocalState}, State) ->
     (State#state.callback)(LocalState),
     {ok, State};
 handle_event(Event, State) ->
-    lager:info("Unhandled event: ~p", [Event]),
+    lager:info("Unhandled event at module ~p: ~p", [?MODULE, Event]),
     {ok, State}.
 
 handle_call(Request, State) ->
-    lager:info("Unhandled message: ~p", [Request]),
+    lager:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Request]),
     {ok, ok, State}.
 
 handle_info(Info, State) ->
-    lager:info("Unhandled message: ~p", [Info]),
+    lager:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Info]),
     {ok, State}.
 
 terminate(_Reason, _State) ->

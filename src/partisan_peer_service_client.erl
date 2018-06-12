@@ -88,7 +88,7 @@ handle_call({send_message, Message}, _From, #state{channel=_Channel, socket=Sock
             {reply, Error, State}
     end;
 handle_call(Msg, _From, State) ->
-    lager:warning("Unhandled messages: ~p", [Msg]),
+    lager:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
     {reply, ok, State}.
 
 -spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
@@ -102,7 +102,7 @@ handle_cast({send_message, Message}, #state{channel=_Channel, socket=Socket}=Sta
     end,
     {noreply, State};
 handle_cast(Msg, State) ->
-    lager:warning("Unhandled messages: ~p", [Msg]),
+    lager:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
 
 %% @private
@@ -113,7 +113,7 @@ handle_info({Tag, _Socket}, #state{peer = _Peer} = State) when ?CLOSED_MSG(Tag) 
     % lager:info("connection to ~p has been closed", [Peer]),
     {stop, normal, State};
 handle_info(Msg, State) ->
-    lager:warning("Unhandled messages: ~p", [Msg]),
+    lager:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
 
 %% @private
