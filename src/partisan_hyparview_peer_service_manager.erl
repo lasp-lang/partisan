@@ -1201,8 +1201,8 @@ do_send_message(Node, Message, Connections, Options) ->
     %% Find a connection for the remote node, if we have one.
     case partisan_peer_service_connections:find(Node, Connections) of
         {ok, []} ->
-            lager:debug("Node disconnected when sending ~p to ~p!", [Message, Node]),
-            lager:debug("Broadcast mode: ~p, transitive: ~p", [partisan_config:get(broadcast, false), proplists:get_value(transitive, Options, false)]),
+            lager:info("Node disconnected when sending ~p to ~p!", [Message, Node]),
+            lager:info("Broadcast mode: ~p, transitive: ~p", [partisan_config:get(broadcast, false), proplists:get_value(transitive, Options, false)]),
 
             %% We were connected, but we're not anymore.
             case partisan_config:get(broadcast, false) of
@@ -1223,12 +1223,12 @@ do_send_message(Node, Message, Connections, Options) ->
                 gen_server:call(Pid, {send_message, Message})
             catch
                 Reason:Error ->
-                    lager:debug("failed to send a message to ~p due to ~p:~p", [Node, Reason, Error]),
+                    lager:error("failed to send a message to ~p due to ~p:~p", [Node, Reason, Error]),
                     {error, Error}
             end;
         {error, not_found} ->
-            lager:debug("Node not yet connected when sending ~p to ~p!", [Message, Node]),
-            lager:debug("Broadcast mode: ~p, transitive: ~p", [partisan_config:get(broadcast, false), proplists:get_value(transitive, Options, false)]),
+            lager:info("Node not yet connected when sending ~p to ~p!", [Message, Node]),
+            lager:info("Broadcast mode: ~p, transitive: ~p", [partisan_config:get(broadcast, false), proplists:get_value(transitive, Options, false)]),
 
             %% We aren't connected, and it's not sure we will ever be.  Take the list of gossip peers and forward the message down the tree.
             case partisan_config:get(broadcast, false) of
