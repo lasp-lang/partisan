@@ -53,6 +53,7 @@ acceptor_init(_SockName, LSocket, []) ->
     {ok, MRef}.
 
 acceptor_continue(_PeerName, Socket0, MRef) ->
+    put({?MODULE, ingress_delay}, partisan_config:get(ingress_delay, 0)),
     Socket = partisan_peer_connection:accept(Socket0),
     send_message(Socket, {hello, partisan_peer_service_manager:mynode()}),
     gen_server:enter_loop(?MODULE, [], #state{socket=Socket, ref=MRef}).
@@ -74,6 +75,12 @@ handle_cast(Req, State) ->
     {stop, {bad_cast, Req}, State}.
 
 handle_info({Tag, _RawSocket, Data}, State=#state{socket=Socket}) when ?DATA_MSG(Tag) ->
+    case get({?MODULE, ingress_delay}) of
+        0 ->
+            ok;
+        Other ->
+            timer:sleep(Other)
+    end,
     handle_message(decode(Data), State),
     ok = partisan_peer_connection:setopts(Socket, [{active, once}]),
     {noreply, State};

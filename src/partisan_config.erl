@@ -90,6 +90,7 @@ init() ->
                            {fanout, ?FANOUT},
                            {gossip, true},
                            {gossip_interval, 10000},
+                           {ingress_delay, 0},
                            {initiate_reverse, false},
                            {max_active_size, 6},
                            {max_passive_size, 30},

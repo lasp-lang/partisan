@@ -100,6 +100,8 @@ init_per_group(with_tls, Config) ->
     [{parallelism, 1}, {tls, true}] ++ TLSOpts ++ Config;
 init_per_group(with_egress_delay, Config) ->
     [{egress_delay, 100}] ++ Config;
+init_per_group(with_ingress_delay, Config) ->
+    [{ingress_delay, 100}] ++ Config;
 init_per_group(_, Config) ->
     [{parallelism, 1}] ++ Config.
 
@@ -145,6 +147,8 @@ all() ->
      {group, with_partition_key, [parallel]},
 
      {group, with_broadcast, [parallel]},
+
+     {group, with_ingress_delay, [parallel]},
 
      {group, with_egress_delay, [parallel]}
     ].
@@ -225,6 +229,9 @@ groups() ->
       [default_manager_test]},
 
      {with_partition_key, [],
+      [default_manager_test]},
+
+     {with_ingress_delay, [],
       [default_manager_test]},
 
      {with_egress_delay, [],
@@ -1548,6 +1555,15 @@ start(_Case, Config, Options) ->
                           end,
             ct:pal("Setting broadcast to: ~p", [Broadcast]),
             ok = rpc:call(Node, partisan_config, set, [broadcast, Broadcast]),
+
+            IngressDelay = case ?config(ingress_delay, Config) of
+                              undefined ->
+                                  0;
+                              ID ->
+                                  ID
+                          end,
+            ct:pal("Setting ingress_delay to: ~p", [IngressDelay]),
+            ok = rpc:call(Node, partisan_config, set, [ingress_delay, IngressDelay]),
 
             EgressDelay = case ?config(egress_delay, Config) of
                               undefined ->
