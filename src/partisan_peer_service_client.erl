@@ -66,6 +66,7 @@ init([Peer, ListenAddr, Channel, From]) ->
             put({?MODULE, listen_addr}, ListenAddr),
             put({?MODULE, channel}, Channel),
             put({?MODULE, peer}, Peer),
+            put({?MODULE, egress_delay}, partisan_config:get(egress_delay, 0)),
 
             {ok, #state{from=From, listen_addr=ListenAddr, channel=Channel, socket=Socket, peer=Peer}};
         Error ->
@@ -80,6 +81,13 @@ init([Peer, ListenAddr, Channel, From]) ->
 
 %% @private
 handle_call({send_message, Message}, _From, #state{channel=_Channel, socket=Socket}=State) ->
+    case get({?MODULE, egress_delay}) of
+        0 ->
+            ok;
+        Other ->
+            timer:sleep(Other)
+    end,
+
     case partisan_peer_connection:send(Socket, encode(Message)) of
         ok ->
             {reply, ok, State};
