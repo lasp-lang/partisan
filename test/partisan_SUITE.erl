@@ -91,7 +91,7 @@ init_per_group(with_causal_labels, Config) ->
     [{causal_labels, [default]}] ++ Config;
 init_per_group(with_causal_send, Config) ->
     [{causal_labels, [default]}, {forward_options, [{causal, default}, {ack, true}]}] ++ Config;
-init_per_group(with_message_filters, Config) ->
+init_per_group(with_forward_interposition, Config) ->
     [{disable_fast_forward, true}] ++ Config;
 init_per_group(with_ack, Config) ->
     [{forward_options, [{ack, true}]}] ++ Config;
@@ -122,7 +122,7 @@ all() ->
 
      {group, with_causal_send, []},
 
-     {group, with_message_filters, []},
+     {group, with_forward_interposition, []},
 
      {group, with_tls, [parallel]},
 
@@ -195,8 +195,8 @@ groups() ->
      {with_causal_send, [],
       [default_manager_test]},
 
-     {with_message_filters, [],
-      [message_filter_test]},
+     {with_forward_interposition, [],
+      [forward_interposition_test]},
 
      {with_tls, [],
       [default_manager_test]},
@@ -471,7 +471,7 @@ causal_test(Config) ->
 
     ok.
 
-message_filter_test(Config) ->
+forward_interposition_test(Config) ->
     %% Use the default peer service manager.
     Manager = partisan_default_peer_service_manager,
 
@@ -482,7 +482,7 @@ message_filter_test(Config) ->
     Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
-    Nodes = start(message_filter_test, Config,
+    Nodes = start(forward_interposition_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -494,15 +494,18 @@ message_filter_test(Config) ->
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
 
     %% Set message filter.
-    MessageFilterFun = fun({N, _}) ->
-        case N of
-            Node4 ->
-                false;
-            _ ->
-                true
-        end
+    MessageFilterFun = 
+        fun({forward, N, M}) ->
+            case N of
+                Node4 ->
+                    undefined;
+                _ ->
+                    M
+            end;
+            ({_, _, M}) -> 
+                M
     end,
-    ok = rpc:call(Node3, Manager, add_message_filter, [Node4, MessageFilterFun]),
+    ok = rpc:call(Node3, Manager, add_interposition_fun, [Node4, MessageFilterFun]),
     
     %% Spawn receiver process.
     Message1 = message1,
@@ -532,7 +535,7 @@ message_filter_test(Config) ->
     end,
 
     %% Remove filter.
-    ok = rpc:call(Node3, Manager, remove_message_filter, [Node4]),
+    ok = rpc:call(Node3, Manager, remove_interposition_fun, [Node4]),
 
     %% Send message.
     ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message2, []]),
