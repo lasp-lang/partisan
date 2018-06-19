@@ -227,8 +227,13 @@ receive_message({forward_message, ServerRef, {'$partisan_padded', _Padding, Mess
     receive_message({forward_message, ServerRef, Message});
 receive_message({forward_message, _ServerRef, {causal, Label, _, _, _, _, _} = Message}) ->
     partisan_causality_backend:receive_message(Label, Message);
-receive_message({forward_message, ServerRef, Message}) ->
-    partisan_util:process_forward(ServerRef, Message);
+receive_message({forward_message, ServerRef, Message} = FullMessage) ->
+    case partisan_config:get(disable_fast_receive, true) of
+        true ->
+            gen_server:call(?MODULE, {receive_message, FullMessage}, infinity);
+        false ->
+            partisan_util:process_forward(ServerRef, Message)
+    end;
 receive_message(Message) ->
     gen_server:call(?MODULE, {receive_message, Message}, infinity).
 
@@ -462,7 +467,7 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Ori
             #state{interposition_funs=InterpositionFuns, connections=Connections, vclock=VClock0}=State) ->
     %% Determine if message should be allowed to pass.
     FoldFun = fun(_Name, InterpositionFun, M) ->
-        InterpositionFun({forward, Name, M})
+        InterpositionFun({forward_message, Name, M})
     end,
     Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
 
