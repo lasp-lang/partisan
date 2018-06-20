@@ -227,11 +227,15 @@ receive_message(Peer, {forward_message, ServerRef, {'$partisan_padded', _Padding
     receive_message(Peer, {forward_message, ServerRef, Message});
 receive_message(_Peer, {forward_message, _ServerRef, {causal, Label, _, _, _, _, _} = Message}) ->
     partisan_causality_backend:receive_message(Label, Message);
-receive_message(_Peer, {forward_message, ServerRef, Message} = FullMessage) ->
+receive_message(Peer, {forward_message, ServerRef, Message} = FullMessage) ->
+    lager:info("in mesage receive at node ~p for peer ~p", [node(), Peer]),
+
     case partisan_config:get(disable_fast_receive, true) of
         true ->
-            gen_server:call(?MODULE, {receive_message, FullMessage}, infinity);
+            lager:info("in mesage receive at node ~p for peer ~p FAST RECEIVE DISABLE", [node(), Peer]),
+            gen_server:call(?MODULE, {receive_message, Peer, FullMessage}, infinity);
         false ->
+            lager:info("in mesage receive at node ~p for peer ~p FAST RECEIVE NOT DISABLE", [node(), Peer]),
             partisan_util:process_forward(ServerRef, Message)
     end;
 receive_message(_Peer, Message) ->
@@ -529,6 +533,24 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Ori
             {reply, Result, State#state{vclock=VClock}}
     end;
 
+handle_call({receive_message, Peer, OriginalMessage}, _From, #state{interposition_funs=InterpositionFuns} = State) ->
+    lager:info("Inside the receive interposition, message from ~p at node ~p", [Peer, node()]),
+    lager:info("Count of interposition funs: ~p", [dict:size(InterpositionFuns)]),
+
+    %% Determine if message should be allowed to pass.
+    FoldFun = fun(_Name, InterpositionFun, M) ->
+        InterpositionFun({receive_message, Peer, M})
+    end,
+    Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
+
+    lager:info("Message after interposition is: ~p", [Message]),
+
+    case Message of
+        undefined ->
+            {reply, ok, State};
+        _ ->
+            handle_message(Message, State)
+    end;
 handle_call({receive_message, Message}, _From, State) ->
     handle_message(Message, State);
 
@@ -857,6 +879,9 @@ handle_message({forward_message, ServerRef, {causal, Label, _, _, _, _, _} = Mes
             partisan_util:process_forward(ServerRef, Message)
     end,
 
+    {reply, ok, State};
+handle_message({forward_message, ServerRef, Message}, State) ->
+    partisan_util:process_forward(ServerRef, Message),
     {reply, ok, State};
 handle_message({connect, ConnectionPid, #{name := Name} = Node}, State0) ->
     MyNode = partisan_peer_service_manager:mynode(),
