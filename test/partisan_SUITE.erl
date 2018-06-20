@@ -501,7 +501,7 @@ receive_interposition_test(Config) ->
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
 
     %% Set message filter.
-    MessageFilterFun = 
+    InterpositionFun = 
         fun({receive_message, N, M}) ->
             case N of
                 Node3 ->
@@ -512,7 +512,7 @@ receive_interposition_test(Config) ->
             ({_, _, M}) -> 
                 M
     end,
-    ok = rpc:call(Node4, Manager, add_interposition_fun, [Node3, MessageFilterFun]),
+    ok = rpc:call(Node4, Manager, add_interposition_fun, [Node3, InterpositionFun]),
     
     %% Spawn receiver process.
     Message1 = message1,
@@ -586,7 +586,7 @@ forward_interposition_test(Config) ->
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
 
     %% Set message filter.
-    MessageFilterFun = 
+    InterpositionFun = 
         fun({forward_message, N, M}) ->
             case N of
                 Node4 ->
@@ -597,7 +597,7 @@ forward_interposition_test(Config) ->
             ({_, _, M}) -> 
                 M
     end,
-    ok = rpc:call(Node3, Manager, add_interposition_fun, [Node4, MessageFilterFun]),
+    ok = rpc:call(Node3, Manager, add_interposition_fun, [Node4, InterpositionFun]),
     
     %% Spawn receiver process.
     Message1 = message1,
