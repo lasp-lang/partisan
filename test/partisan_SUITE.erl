@@ -495,7 +495,7 @@ forward_interposition_test(Config) ->
 
     %% Set message filter.
     MessageFilterFun = 
-        fun({forward, N, M}) ->
+        fun({forward_message, N, M}) ->
             case N of
                 Node4 ->
                     undefined;
