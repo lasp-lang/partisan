@@ -114,6 +114,9 @@ handle_message({hello, Node},
     %% Get our tag, if set.
     Tag = partisan_config:get(tag, undefined),
 
+    %% Store node in the process dictionary.
+    put({?MODULE, peer}, Node),
+
     %% Connect the node with Distributed Erlang, just for now for
     %% control messaging in the test suite execution.
     case maybe_connect_disterl(Node) of
@@ -131,8 +134,9 @@ handle_message({hello, Node},
             ok
     end;
 handle_message(Message, _State) ->
+    Peer = get({?MODULE, peer}),
     Manager = partisan_peer_service:manager(),
-    Manager:receive_message(Message),
+    Manager:receive_message(Peer, Message),
     ok.
 
 %% @private

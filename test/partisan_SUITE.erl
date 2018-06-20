@@ -112,8 +112,8 @@ all() ->
     [
      {group, default, [parallel],
       [{simple, [shuffle]},
-       {hyparview, [shuffle]},
-       {hyparview_xbot, [shuffle]}
+       {hyparview, [shuffle]}
+       %% {hyparview_xbot, [shuffle]}
       ]},
 
      {group, with_ack, []},
@@ -157,8 +157,8 @@ groups() ->
     [
      {default, [],
       [{group, simple},
-       {group, hyparview},
-       {group, hyparview_xbot}
+       {group, hyparview}
+       %% {group, hyparview_xbot}
       ]},
 
      {simple, [],

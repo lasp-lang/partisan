@@ -49,7 +49,7 @@
          forward_message/4,
          cast_message/5,
          forward_message/5,
-         receive_message/1,
+         receive_message/2,
          decode/1,
          reserve/1,
          partitions/0,
@@ -179,7 +179,7 @@ forward_message(Name, _Channel, ServerRef, Message, Options) ->
     end.
 
 %% @doc Receive message from a remote manager.
-receive_message(Message) ->
+receive_message(_Peer, Message) ->
     gen_server:call(?MODULE, {receive_message, Message}, infinity).
 
 %% @doc Attempt to join a remote node.

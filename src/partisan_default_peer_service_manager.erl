@@ -44,7 +44,7 @@
          forward_message/4,
          cast_message/5,
          forward_message/5,
-         receive_message/1,
+         receive_message/2,
          decode/1,
          reserve/1,
          partitions/0,
@@ -220,21 +220,21 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
     end.
 
 %% @doc Receive message from a remote manager.
-receive_message({forward_message, _SourceNode, _MessageClock, _ServerRef, _Message} = FullMessage) ->
+receive_message(_Peer, {forward_message, _SourceNode, _MessageClock, _ServerRef, _Message} = FullMessage) ->
     %% Process the message and generate the acknowledgement.
     gen_server:call(?MODULE, {receive_message, FullMessage}, infinity);
-receive_message({forward_message, ServerRef, {'$partisan_padded', _Padding, Message}}) ->
-    receive_message({forward_message, ServerRef, Message});
-receive_message({forward_message, _ServerRef, {causal, Label, _, _, _, _, _} = Message}) ->
+receive_message(Peer, {forward_message, ServerRef, {'$partisan_padded', _Padding, Message}}) ->
+    receive_message(Peer, {forward_message, ServerRef, Message});
+receive_message(_Peer, {forward_message, _ServerRef, {causal, Label, _, _, _, _, _} = Message}) ->
     partisan_causality_backend:receive_message(Label, Message);
-receive_message({forward_message, ServerRef, Message} = FullMessage) ->
+receive_message(_Peer, {forward_message, ServerRef, Message} = FullMessage) ->
     case partisan_config:get(disable_fast_receive, true) of
         true ->
             gen_server:call(?MODULE, {receive_message, FullMessage}, infinity);
         false ->
             partisan_util:process_forward(ServerRef, Message)
     end;
-receive_message(Message) ->
+receive_message(_Peer, Message) ->
     gen_server:call(?MODULE, {receive_message, Message}, infinity).
 
 %% @doc Attempt to join a remote node.
