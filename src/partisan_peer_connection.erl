@@ -47,6 +47,13 @@
 -type connection() :: #connection{}.
 -export_type([connection/0]).
 
+%% this macro only exists in OTP-21 and above, where ssl_accept/2 is deprecated
+-ifdef(OTP_RELEASE).
+-define(ssl_accept(TCPSocket, TLSOpts), ssl:handshake(TCPSocket, TLSOpts)).
+-else.
+-define(ssl_accept(TCPSocket, TLSOpts), ssl:ssl_accept(TCPSocket, TLSOpts)).
+-endif.
+
 %% @doc Wraps a TCP socket with the appropriate information for
 %% transceiving on and controlling the socket later. If TLS/SSL is
 %% enabled, this performs the socket upgrade/negotiation before
@@ -61,7 +68,7 @@ accept(TCPSocket) ->
             %% that the server is ready to upgrade by calling this function, else the upgrade
             %% succeeds or does not succeed depending on timing.
             inet:setopts(TCPSocket, [{active, false}]),
-            {ok, TLSSocket} = ssl:ssl_accept(TCPSocket, TLSOpts),
+            {ok, TLSSocket} = ?ssl_accept(TCPSocket, TLSOpts),
             %% restore the expected active once setting
             ssl:setopts(TLSSocket, [{active, once}]),
             #connection{socket = TLSSocket, transport = ssl, control = ssl, monotonic = false};
