@@ -41,7 +41,7 @@
 -callback update_members([node()]) -> ok | {error, not_implemented}.
 
 -callback send_message(name(), message()) -> ok.
--callback receive_message(message()) -> ok.
+-callback receive_message(name(), message()) -> ok.
 
 -callback forward_message({partisan_remote_reference, name(), atom()}, message()) -> ok.
 

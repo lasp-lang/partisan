@@ -44,12 +44,12 @@
          forward_message/4,
          cast_message/5,
          forward_message/5,
-         receive_message/1,
+         receive_message/2,
          decode/1,
          reserve/1,
          partitions/0,
-         add_message_filter/2,
-         remove_message_filter/1,
+         add_interposition_fun/2,
+         remove_interposition_fun/1,
          inject_partition/2,
          resolve_partition/1]).
 
@@ -78,7 +78,7 @@
                 down_functions :: dict:dict(),
                 up_functions :: dict:dict(),
                 membership :: membership(),
-                message_filters :: term(),
+                interposition_funs :: dict:dict(),
                 sync_joins :: [{node_spec(), from()}],
                 connections :: partisan_peer_service_connections:t()}).
 
@@ -220,16 +220,25 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
     end.
 
 %% @doc Receive message from a remote manager.
-receive_message({forward_message, _SourceNode, _MessageClock, _ServerRef, _Message} = FullMessage) ->
+receive_message(_Peer, {forward_message, _SourceNode, _MessageClock, _ServerRef, _Message} = FullMessage) ->
     %% Process the message and generate the acknowledgement.
     gen_server:call(?MODULE, {receive_message, FullMessage}, infinity);
-receive_message({forward_message, ServerRef, {'$partisan_padded', _Padding, Message}}) ->
-    receive_message({forward_message, ServerRef, Message});
-receive_message({forward_message, _ServerRef, {causal, Label, _, _, _, _, _} = Message}) ->
+receive_message(Peer, {forward_message, ServerRef, {'$partisan_padded', _Padding, Message}}) ->
+    receive_message(Peer, {forward_message, ServerRef, Message});
+receive_message(_Peer, {forward_message, _ServerRef, {causal, Label, _, _, _, _, _} = Message}) ->
     partisan_causality_backend:receive_message(Label, Message);
-receive_message({forward_message, ServerRef, Message}) ->
-    partisan_util:process_forward(ServerRef, Message);
-receive_message(Message) ->
+receive_message(Peer, {forward_message, ServerRef, Message} = FullMessage) ->
+    lager:info("in mesage receive at node ~p for peer ~p", [node(), Peer]),
+
+    case partisan_config:get(disable_fast_receive, true) of
+        true ->
+            lager:info("in mesage receive at node ~p for peer ~p FAST RECEIVE DISABLE", [node(), Peer]),
+            gen_server:call(?MODULE, {receive_message, Peer, FullMessage}, infinity);
+        false ->
+            lager:info("in mesage receive at node ~p for peer ~p FAST RECEIVE NOT DISABLE", [node(), Peer]),
+            partisan_util:process_forward(ServerRef, Message)
+    end;
+receive_message(_Peer, Message) ->
     gen_server:call(?MODULE, {receive_message, Message}, infinity).
 
 %% @doc Attempt to join a remote node.
@@ -256,13 +265,13 @@ decode(State) ->
 reserve(Tag) ->
     gen_server:call(?MODULE, {reserve, Tag}, infinity).
 
-%% @doc Add a message filter function.
-add_message_filter(Name, FilterFun) ->
-    gen_server:call(?MODULE, {add_message_filter, Name, FilterFun}, infinity).
+%% @doc
+add_interposition_fun(Name, InterpositionFun) ->
+    gen_server:call(?MODULE, {add_interposition_fun, Name, InterpositionFun}, infinity).
 
-%% @doc Add a message filter function.
-remove_message_filter(Name) ->
-    gen_server:call(?MODULE, {remove_message_filter, Name}, infinity).
+%% @doc
+remove_interposition_fun(Name) ->
+    gen_server:call(?MODULE, {remove_interposition_fun, Name}, infinity).
 
 %% @doc Inject a partition.
 inject_partition(_Origin, _TTL) ->
@@ -318,7 +327,7 @@ init([]) ->
                 pending=[],
                 vclock=VClock,
                 membership=Membership,
-                message_filters=dict:new(),
+                interposition_funs=dict:new(),
                 connections=Connections,
                 sync_joins=[],
                 up_functions=dict:new(),
@@ -343,13 +352,13 @@ handle_call({on_down, Name, Function},
     DownFunctions = dict:append(Name, Function, DownFunctions0),
     {reply, ok, State#state{down_functions=DownFunctions}};
 
-handle_call({add_message_filter, Name, FilterFun}, _From, #state{message_filters=MessageFilters0}=State) ->
-    MessageFilters = dict:store(Name, FilterFun, MessageFilters0),
-    {reply, ok, State#state{message_filters=MessageFilters}};
+handle_call({add_interposition_fun, Name, InterpositionFun}, _From, #state{interposition_funs=InterpositionFuns0}=State) ->
+    InterpositionFuns = dict:store(Name, InterpositionFun, InterpositionFuns0),
+    {reply, ok, State#state{interposition_funs=InterpositionFuns}};
 
-handle_call({remove_message_filter, Name}, _From, #state{message_filters=MessageFilters0}=State) ->
-    MessageFilters = dict:erase(Name, MessageFilters0),
-    {reply, ok, State#state{message_filters=MessageFilters}};
+handle_call({remove_interposition_fun, Name}, _From, #state{interposition_funs=InterpositionFuns0}=State) ->
+    InterpositionFuns = dict:erase(Name, InterpositionFuns0),
+    {reply, ok, State#state{interposition_funs=InterpositionFuns}};
 
 handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State) ->
     % lager:debug("Updating membership with: ~p", [Nodes]),
@@ -457,17 +466,19 @@ handle_call({send_message, Name, Channel, Message}, _From,
                              Connections),
     {reply, Result, State};
 
-handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options},
+handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options},
             _From,
-            #state{message_filters=MessageFilters, connections=Connections, vclock=VClock0}=State) ->
+            #state{interposition_funs=InterpositionFuns, connections=Connections, vclock=VClock0}=State) ->
     %% Determine if message should be allowed to pass.
-    FoldFun = fun(_FilterName, FilterFun, Status) ->
-        FilterFun({Name, Message}) andalso Status
+    FoldFun = fun(_Name, InterpositionFun, M) ->
+        InterpositionFun({forward_message, Name, M})
     end,
-    FilterStatus = dict:fold(FoldFun, true, MessageFilters),
+    Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
 
-    case FilterStatus of
-        true ->
+    case Message of
+        undefined ->
+            {reply, ok, State};
+        Message ->
             %% Increment the clock.
             VClock = partisan_vclock:increment(myself(), VClock0),
 
@@ -519,11 +530,27 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Mes
                                     Connections)
             end,
 
-            {reply, Result, State#state{vclock=VClock}};
-        false ->
-            {reply, ok, State}
+            {reply, Result, State#state{vclock=VClock}}
     end;
 
+handle_call({receive_message, Peer, OriginalMessage}, _From, #state{interposition_funs=InterpositionFuns} = State) ->
+    lager:info("Inside the receive interposition, message from ~p at node ~p", [Peer, node()]),
+    lager:info("Count of interposition funs: ~p", [dict:size(InterpositionFuns)]),
+
+    %% Determine if message should be allowed to pass.
+    FoldFun = fun(_Name, InterpositionFun, M) ->
+        InterpositionFun({receive_message, Peer, M})
+    end,
+    Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
+
+    lager:info("Message after interposition is: ~p", [Message]),
+
+    case Message of
+        undefined ->
+            {reply, ok, State};
+        _ ->
+            handle_message(Message, State)
+    end;
 handle_call({receive_message, Message}, _From, State) ->
     handle_message(Message, State);
 
@@ -852,6 +879,9 @@ handle_message({forward_message, ServerRef, {causal, Label, _, _, _, _, _} = Mes
             partisan_util:process_forward(ServerRef, Message)
     end,
 
+    {reply, ok, State};
+handle_message({forward_message, ServerRef, Message}, State) ->
+    partisan_util:process_forward(ServerRef, Message),
     {reply, ok, State};
 handle_message({connect, ConnectionPid, #{name := Name} = Node}, State0) ->
     MyNode = partisan_peer_service_manager:mynode(),

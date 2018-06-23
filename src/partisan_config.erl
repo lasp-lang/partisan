@@ -86,6 +86,7 @@ init() ->
                            {connect_disterl, false},
                            {connection_jitter, ?CONNECTION_JITTER},
                            {disable_fast_forward, false},
+                           {disable_fast_receive, false},
                            {egress_delay, 0},
                            {fanout, ?FANOUT},
                            {gossip, true},
