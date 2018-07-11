@@ -102,6 +102,13 @@ handle_call(Msg, _From, State) ->
 -spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
 %% @private
 handle_cast({send_message, Message}, #state{channel=_Channel, socket=Socket}=State) ->
+    case get({?MODULE, egress_delay}) of
+        0 ->
+            ok;
+        Other ->
+            timer:sleep(Other)
+    end,
+
     case partisan_peer_connection:send(Socket, encode(Message)) of
         ok ->
             ok;
