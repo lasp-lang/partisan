@@ -1035,7 +1035,7 @@ internal_leave(Node, #state{actor=Actor,
 %% @private
 internal_join(Node, State) when is_atom(Node) ->
     %% Maintain disterl connection for control messages.
-    _ = net_kernel:connect(Node),
+    _ = net_kernel:connect_node(Node),
 
     %% Get listen addresses.
     ListenAddrs = rpc:call(Node, partisan_config, listen_addrs, []),
@@ -1056,7 +1056,7 @@ internal_join(#{name := Name} = Node,
                      connections=Connections0,
                      membership=Membership}=State) ->
     %% Maintain disterl connection for control messages.
-    _ = net_kernel:connect(Name),
+    _ = net_kernel:connect_node(Name),
 
     %% Add to list of pending connections.
     Pending = [Node|Pending0],
@@ -1080,7 +1080,7 @@ sync_internal_join(#{name := Name} = Node,
                      connections=Connections0,
                      membership=Membership}=State) ->
     %% Maintain disterl connection for control messages.
-    _ = net_kernel:connect(Name),
+    _ = net_kernel:connect_node(Name),
 
     %% Add to list of pending connections.
     Pending = [Node|Pending0],
