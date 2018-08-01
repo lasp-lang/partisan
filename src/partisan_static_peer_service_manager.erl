@@ -218,7 +218,7 @@ handle_call({join, #{name := Name}=Node},
             _From,
             #state{pending=Pending0, connections=Connections0}=State) ->
     %% Attempt to join via disterl for control messages during testing.
-    _ = net_kernel:connect(Name),
+    _ = net_kernel:connect_node(Name),
 
     %% Add to list of pending connections.
     Pending = [Node|Pending0],
