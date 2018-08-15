@@ -230,6 +230,8 @@ handle_call({leave, NodeName}, _From,
                             Name ->
                                 sets:del_element(N, L0);
                             _ ->
+                                %% call the net_kernel:disconnect(Node) function to leave erlang network explicitly
+                                rpc:call(NodeName, net_kernel, disconnect, [Name]),
                                 L0
                         end
                 end, Membership0, decode(Membership0)),
