@@ -75,13 +75,18 @@ store(Node, {_ListenAddr, _Channel, _Pids} = Entry, Connections) ->
 -spec prune(pid() | node_spec(),
             Connections :: t()) -> {node_spec(), t()}.
 prune(#{name := _Name} = Node, Connections) ->
-    {Node, dict:store(Node, [], Connections)};
+    {Node, dict:erase(Node, Connections)};
 prune(Pid, Connections) when is_pid(Pid) ->
     dict:fold(fun(Node, Entries, {AccNode, ConnectionsIn}) ->
                     case lists:keymember(Pid, 3, Entries) of
                         true ->
-                            {Node,
-                             dict:store(Node, lists:keydelete(Pid, 3, Entries), ConnectionsIn)};
+                            case lists:keydelete(Pid, 3, Entries) of
+                                [] ->
+                                    {Node, dict:erase(Node, ConnectionsIn)};
+                                LeftEntries ->
+                                    {Node,
+                                     dict:store(Node, LeftEntries, ConnectionsIn)}
+                            end;
                         false ->
                             {AccNode, ConnectionsIn}
                     end
