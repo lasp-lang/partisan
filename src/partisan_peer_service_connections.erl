@@ -176,7 +176,7 @@ prune_connections_test() ->
     ?assertEqual({ok, [node1_bind()]}, find(node1(), Connections3)),
     {#{name := node1, listen_addrs := [#{ip := {127, 0, 0, 1}, port := 80}]},
      Connections4} = prune(self(), Connections3),
-    ?assertEqual({ok, []}, find(node1(), Connections4)),
+    ?assertEqual({error, not_found}, find(node1(), Connections4)),
     Connections5 = store(node1(), node1_bind(), Connections4),
     Connections6 = store(node1(), node1_bind(), Connections5),
     {#{name := node1, listen_addrs := [#{ip := {127, 0, 0, 1}, port := 80}]},
@@ -184,7 +184,7 @@ prune_connections_test() ->
     ?assertEqual({ok, [node1_bind()]}, find(node1, Connections7)),
     {#{name := node1, listen_addrs := [#{ip := {127, 0, 0, 1}, port := 80}]},
      Connections8} = prune(self(), Connections7),
-    ?assertEqual({ok, []}, find(node1, Connections8)).
+    ?assertEqual({error, not_found}, find(node1, Connections8)).
 
 add_remove_add_connection_test() ->
     Connections0 = new(),
@@ -192,11 +192,11 @@ add_remove_add_connection_test() ->
     ?assertEqual({ok, [node1_bind()]}, find(node1, Connections1)),
     {#{name := node1, listen_addrs := [#{ip := {127, 0, 0, 1}, port := 80}]},
      Connections2} = prune(self(), Connections1),
-    ?assertEqual({ok, []}, find(node1, Connections2)),
+    ?assertEqual({error, not_found}, find(node1, Connections2)),
     Connections3 = store(node1(), node1_bind(), Connections2),
     ?assertEqual({ok, [node1_bind()]}, find(node1, Connections3)),
     {#{name := node1, listen_addrs := [#{ip := {127, 0, 0, 1}, port := 80}]},
      Connections4} = prune(node1(), Connections3),
-    ?assertEqual({ok, []}, find(node1, Connections4)).
+    ?assertEqual({error, not_found}, find(node1, Connections4)).
 
 -endif.
