@@ -1172,6 +1172,7 @@ disconnect(Node, Connections0) ->
                 %% Stop;
                 lager:debug("disconnecting node ~p by stopping connection pid ~p",
                            [Node, Pid]),
+                unlink(Pid),
                 gen_server:stop(Pid),
 
                 %% Null out in the dictionary.
