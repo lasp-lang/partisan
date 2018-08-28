@@ -836,7 +836,7 @@ handle_message({receive_state, #{name := From}, PeerMembership},
                     lager:debug("Received updated membership state: ~p from ~p", [Members, From]),
 
                     %% Gossip.
-                    do_gossip(Membership, Connections),
+                    do_gossip(Merged, Connections),
 
                     {reply, ok, State#state{membership=Merged,
                                             connections=Connections}};
