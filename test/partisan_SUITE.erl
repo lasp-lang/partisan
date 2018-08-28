@@ -1465,12 +1465,12 @@ hyparview_manager_high_client_test(Config) ->
     case wait_until(CheckStartedFun, 60 * 2, 100) of
         ok ->
             ok;
-        {fail, {false, {connected_check_failed, Nodes}}} ->
+        {fail, {false, {connected_check_failed, ConnectedFails}}} ->
             ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p",
-                    [Nodes]);
-        {fail, {false, {symmetry_check_failed, Nodes}}} ->
+                    [ConnectedFails]);
+        {fail, {false, {symmetry_check_failed, SymmetryFails}}} ->
             ct:fail("Symmetry is broken (ie. node1 has node2 in it's view but vice-versa is not true) between the following "
-                    "pairs of nodes: ~p", [Nodes]);
+                    "pairs of nodes: ~p", [SymmetryFails]);
         {fail, {false, [{connected_check_failed, ConnectedFails},
                         {symmetry_check_failed, SymmetryFails}]}} ->
             ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p, symmetry is broken as well"
@@ -1966,7 +1966,7 @@ check_forward_message(Node, Manager, Nodes) ->
     Rand = rand:uniform(),
     ok = rpc:call(Node, Manager, forward_message, [RandomMember, undefined, store_proc, {store, Rand}, [{transitive, Transitive}, {forward_options, ForwardOptions}]]),
     %% now fetch the value from the random destination node
-    ok = wait_until(fun() ->
+    case wait_until(fun() ->
                     %% it must match with what we asked the node to forward
                     case rpc:call(RandomMember, application, get_env, [partisan, forward_message_test]) of
                         {ok, R} ->
@@ -1974,8 +1974,12 @@ check_forward_message(Node, Manager, Nodes) ->
                         _ ->
                             false
                     end
-               end, 60 * 2, 500),
-
+               end, 60 * 2, 500) of
+        ok ->
+            ok;
+        {fail, false} ->
+            ct:fail("check_forward_message fail, Node:~p, Manager:~p, Nodes:~p~n ", [Node, Manager, Nodes])
+    end,
     ok.
 
 random(List0, Omit) ->
