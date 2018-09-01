@@ -256,10 +256,13 @@ init([]) ->
     %% Process connection exits.
     process_flag(trap_exit, true),
 
-    {Active, Passive, Epoch} = maybe_load_state_from_disk(),
-    Connections = partisan_peer_service_connections:new(),
+    Epoch = maybe_load_epoch_from_disk(),
+    
     Myself = myself(),
-
+    Active = sets:add_element(Myself, sets:new()),
+    Passive = sets:new(),
+    Connections = partisan_peer_service_connections:new(),
+    
     SentMessageMap = dict:new(),
     RecvMessageMap = dict:new(),
 
@@ -1088,13 +1091,10 @@ handle_message({forward_message, ServerRef, Message}, State) ->
     {noreply, State}.
 
 %% @private
-empty_membership() ->
-    %% Each cluster starts with only itself.
-    Active = sets:add_element(myself(), sets:new()),
-    Passive = sets:new(),
-    LocalState = {Active, Passive, 0},
-    persist_state(LocalState),
-    LocalState.
+zero_epoch() ->
+    Epoch = 0,
+    persist_epoch(Epoch),
+    Epoch.
 
 %% @private
 data_root() ->
@@ -1133,25 +1133,23 @@ delete_state_from_disk() ->
     end.
 
 %% @private
-maybe_load_state_from_disk() ->
+maybe_load_epoch_from_disk() ->
     case data_root() of
         undefined ->
-            empty_membership();
+            zero_epoch();
         Dir ->
             case filelib:is_regular(filename:join(Dir, "cluster_state")) of
                 true ->
                     {ok, Bin} = file:read_file(filename:join(Dir, "cluster_state")),
                     binary_to_term(Bin);
                 false ->
-                    empty_membership()
+                    zero_epoch()
             end
     end.
 
 %% @private
-persist_state({Active, Passive, Epoch}) ->
-    write_state_to_disk({Active, Passive, Epoch});
-persist_state(#state{active=Active, passive=Passive, epoch=Epoch}) ->
-    persist_state({Active, Passive, Epoch}).
+persist_epoch(Epoch) ->
+    write_state_to_disk(Epoch).
 
 %% @private
 members(Set) ->
@@ -1315,7 +1313,7 @@ add_to_active_view(#{name := Name}=Peer, Tag,
                                   passive=Passive,
                                   reserved=Reserved},
 
-            persist_state(State2),
+            persist_epoch(State2#state.epoch),
 
             State2;
         false ->
@@ -1347,7 +1345,7 @@ add_to_passive_view(#{name := Name}=Peer,
             Passive0
     end,
     State = State0#state{passive=Passive},
-    persist_state(State),
+    persist_epoch(State#state.epoch),
     State.
 
 %% @private
