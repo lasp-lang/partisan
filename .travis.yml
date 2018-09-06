@@ -19,5 +19,3 @@ notifications:
       urls:
           - https://webhooks.gitter.im/e/1382c852fbaf2633033a
 sudo: required
-services:
-  - rabbitmq
