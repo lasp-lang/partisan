@@ -6,8 +6,9 @@
 -define(CACHE, partisan_connection_cache).
 -define(PARALLELISM, 1).
 -define(DEFAULT_CHANNEL, undefined).
+-define(RPC_CHANNEL, rpc).
 -define(DEFAULT_PARTITION_KEY, undefined).
--define(CHANNELS, [?DEFAULT_CHANNEL]).
+-define(CHANNELS, [?DEFAULT_CHANNEL, ?RPC_CHANNEL]).
 -define(CONNECTION_JITTER, 1000).
 -define(DEFAULT_PEER_SERVICE_MANAGER, partisan_default_peer_service_manager).
 
