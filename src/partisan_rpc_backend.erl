@@ -51,7 +51,8 @@ call(Name, Module, Function, Arguments, Timeout) ->
     Manager = partisan_config:get(partisan_peer_service_manager),
     Self = self(),
     Options = options(),
-    Manager:forward_message(Name, ?DEFAULT_CHANNEL, ?MODULE, {call, Module, Function, Arguments, Timeout, {origin, Name, Self}}, Options),
+    RpcChannel = rpc_channel(),
+    Manager:forward_message(Name, RpcChannel, ?MODULE, {call, Module, Function, Arguments, Timeout, {origin, Name, Self}}, Options),
 
     %% Wait for response.
     receive
@@ -91,7 +92,8 @@ handle_info({call, Module, Function, Arguments, {origin, Name, Self}}, State) ->
     %% Send the response to execution.
     Manager = partisan_config:get(partisan_peer_service_manager),
     Options = options(),
-    Manager:forward_message(Name, ?DEFAULT_CHANNEL, Self, {response, Response}, Options),
+    RpcChannel = rpc_channel(),
+    Manager:forward_message(Name, RpcChannel, Self, {response, Response}, Options),
 
     {noreply, State};
 
@@ -114,3 +116,12 @@ options() ->
     ForwardOptions = partisan_config:get(forward_options),
     Transitive = partisan_config:get(broadcast, false),
     [{transitive, Transitive}, {forward_options, ForwardOptions}].
+
+rpc_channel() ->
+    Channels = partisan_config:get(channels),
+    case lists:member(rpc, Channels) of
+        true ->
+            ?RPC_CHANNEL;
+        false ->
+            ?DEFAULT_CHANNEL
+    end.
