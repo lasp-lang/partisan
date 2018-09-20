@@ -169,6 +169,7 @@ groups() ->
       [default_manager_test,
        leave_test,
        on_down_test,
+       rpc_test,
        client_server_manager_test,
        pid_test,
        %% amqp_manager_test,
@@ -221,7 +222,8 @@ groups() ->
       [performance_test]},
      
      {with_channels, [],
-      [default_manager_test]},
+      [default_manager_test,
+       rpc_test]},
 
      {with_no_channels, [],
       [default_manager_test]},
@@ -715,6 +717,37 @@ pid_test(Config) ->
         1000 ->
             ct:fail("Didn't receive respoonse.")
     end,
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
+rpc_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = partisan_default_peer_service_manager,
+
+    %% Specify servers.
+    Servers = node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+
+    %% Start nodes.
+    Nodes = start(rpc_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(5000),
+
+    %% Select two of the nodes.
+    [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
+
+    %% Issue RPC.
+    ct:pal("Issuing RPC to remote node: ~p", [Node4]),
+    {_, _, _} = rpc:call(Node3, partisan_rpc_backend, call, [Node4, erlang, now, [], infinity]),
 
     %% Stop nodes.
     stop(Nodes),
