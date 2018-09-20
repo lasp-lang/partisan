@@ -249,7 +249,7 @@ groups() ->
      {with_broadcast, [],
       [
        % hyparview_manager_low_active_test,
-       hyparview_manager_high_active_test
+       % hyparview_manager_high_active_test
       ]}
 
     ].
