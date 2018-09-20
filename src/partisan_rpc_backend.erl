@@ -52,7 +52,8 @@ call(Name, Module, Function, Arguments, Timeout) ->
     Self = self(),
     Options = options(),
     RpcChannel = rpc_channel(),
-    Manager:forward_message(Name, RpcChannel, ?MODULE, {call, Module, Function, Arguments, Timeout, {origin, Name, Self}}, Options),
+    OurName = partisan_peer_service_manager:mynode(),
+    Manager:forward_message(Name, RpcChannel, ?MODULE, {call, Module, Function, Arguments, Timeout, {origin, OurName, Self}}, Options),
 
     %% Wait for response.
     receive
@@ -72,15 +73,15 @@ init([]) ->
     {ok, #state{}}.
 
 %% @private
-handle_call(_Msg, _From, State) ->
+handle_call(Msg, _From, State) ->
     {reply, ok, State}.
 
 %% @private
-handle_cast(_Msg, State) ->
+handle_cast(Msg, State) ->
     {noreply, State}.
 
 %% @private
-handle_info({call, Module, Function, Arguments, {origin, Name, Self}}, State) ->
+handle_info({call, Module, Function, Arguments, _Timeout, {origin, Name, Self}}, State) ->
     %% Execute function.
     Response = try 
         erlang:apply(Module, Function, Arguments)
@@ -93,11 +94,11 @@ handle_info({call, Module, Function, Arguments, {origin, Name, Self}}, State) ->
     Manager = partisan_config:get(partisan_peer_service_manager),
     Options = options(),
     RpcChannel = rpc_channel(),
-    Manager:forward_message(Name, RpcChannel, Self, {response, Response}, Options),
+    ok = Manager:forward_message(Name, RpcChannel, Self, {response, Response}, Options),
 
     {noreply, State};
 
-handle_info(_Msg, State) ->
+handle_info(Msg, State) ->
     {noreply, State}.
 
 %% @private
