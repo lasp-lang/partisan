@@ -5,6 +5,7 @@
 -define(FANOUT, 5).
 -define(CACHE, partisan_connection_cache).
 -define(PARALLELISM, 1).
+-define(RPC_CHANNEL, rpc).
 -define(DEFAULT_CHANNEL, undefined).
 -define(DEFAULT_PARTITION_KEY, undefined).
 -define(CHANNELS, [?DEFAULT_CHANNEL]).

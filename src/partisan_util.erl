@@ -297,6 +297,9 @@ pid(Pid) ->
 process_forward(ServerRef, Message) ->
     try
         case ServerRef of
+            {partisan_remote_reference, _, {partisan_process_reference, ProcessIdentifier}} ->
+                Pid = list_to_pid(ProcessIdentifier),
+                Pid ! Message;
             {partisan_process_reference, ProcessIdentifier} ->
                 Pid = list_to_pid(ProcessIdentifier),
                 Pid ! Message;
