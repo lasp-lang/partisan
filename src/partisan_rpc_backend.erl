@@ -73,11 +73,11 @@ init([]) ->
     {ok, #state{}}.
 
 %% @private
-handle_call(Msg, _From, State) ->
+handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 %% @private
-handle_cast(Msg, State) ->
+handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @private
@@ -98,7 +98,7 @@ handle_info({call, Module, Function, Arguments, _Timeout, {origin, Name, Self}},
 
     {noreply, State};
 
-handle_info(Msg, State) ->
+handle_info(_Msg, State) ->
     {noreply, State}.
 
 %% @private
