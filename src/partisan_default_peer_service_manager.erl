@@ -1023,6 +1023,8 @@ internal_leave(Node, #state{actor=Actor,
                                 {ok, M} = ?SET:mutate({rmv, N}, Actor, M0),
                                 M;
                             _ ->
+                                %% call the net_kernel:disconnect(Node) function to leave erlang network explicitly
+                                rpc:call(Name, net_kernel, disconnect, [Node]),
                                 M0
                         end
                 end, Membership0, members(Membership0)),

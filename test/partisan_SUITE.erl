@@ -857,9 +857,9 @@ rejoin_test(Config) ->
                                 case wait_until(VerifyNodeFun, 60 * 2, 100) of
                                     ok ->
                                         ok;
-                                    {fail, {false, {Node, Expected, Contains}}} ->
+                                    {fail, {false, {IncorrectNode, Expected, Contains}}} ->
                                         ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
-                                                [Node, Expected, Contains])
+                                                [IncorrectNode, Expected, Contains])
                                 end
                         end, Nodes),
 
@@ -1477,7 +1477,7 @@ hyparview_manager_high_client_test(Config) ->
     %% Start servers.
     Servers = node_list(1, "server", Config), %% [server],
 
-    Nodes = start(hyparview_manager_low_active_test, Config,
+    Nodes = start(hyparview_manager_high_client_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -2150,9 +2150,9 @@ verify_leave(Nodes, Manager) ->
                           case wait_until(VerifyNodeFun, 60 * 2, 100) of
                               ok ->
                                   ok;
-                              {fail, {false, {Node, Expected, Contains}}} ->
+                              {fail, {false, {IncorrenectNode, Expected, Contains}}} ->
                                  ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
-                                         [Node, Expected, Contains])
+                                         [IncorrenectNode, Expected, Contains])
                           end
                   end, Nodes),
 
@@ -2194,9 +2194,9 @@ verify_leave(Nodes, Manager) ->
                           case wait_until(VerifyNodeFun, 60 * 2, 100) of
                               ok ->
                                   ok;
-                              {fail, {false, {Node, Expected, Contains}}} ->
+                              {fail, {false, {IncorrectNode, Expected, Contains}}} ->
                                  ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
-                                         [Node, Expected, Contains])
+                                         [IncorrectNode, Expected, Contains])
                           end
                   end, Nodes),
 
