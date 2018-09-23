@@ -237,7 +237,7 @@ decode(Active) ->
     sets:to_list(Active).
 
 %% @doc Debugging.
--spec connections() -> {ok, list({node_spec(), pid()})}. 
+-spec connections() -> {ok, list({node_spec(), pid()})}.
 connections() ->
     gen_server:call(?MODULE, connections, infinity).
 
@@ -256,7 +256,9 @@ init([]) ->
     %% Process connection exits.
     process_flag(trap_exit, true),
 
-    {Active, Passive, Epoch} = maybe_load_state_from_disk(),
+    Epoch = maybe_load_epoch_from_disk(),
+    Active = sets:add_element(myself(), sets:new()),
+    Passive = sets:new(),
     Connections = partisan_peer_service_connections:new(),
     Myself = myself(),
 
@@ -280,7 +282,7 @@ init([]) ->
 
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
-    
+
     %% Schedule periodic execution of xbot algorithm (optimization)
     schedule_xbot_execution(Myself),
 
@@ -576,13 +578,13 @@ handle_info(passive_view_maintenance,
     {noreply, State};
 
 % handle optimization using xbot algorithm
-handle_info(xbot_execution, 
+handle_info(xbot_execution,
 				#state{myself=Myself,
 					   active=Active,
 					   passive=Passive,
 					   max_active_size=MaxActiveSize,
 					   reserved=Reserved}=InitiatorState) ->
-	
+
 	% check if active view is full
 	IsFull = is_full({active,Active,Reserved}, MaxActiveSize),
 	case IsFull of
@@ -593,11 +595,11 @@ handle_info(xbot_execution,
 		% in other case, do nothing
 		false -> ok
 	end,
-	
+
 	%In any case, schedule periodic xbot execution algorithm (optimization)
 	schedule_xbot_execution(Myself),
 	{noreply, InitiatorState};
-	
+
 handle_info({'EXIT', From, Reason},
             #state{myself=Myself,
                    active=Active0,
@@ -689,12 +691,12 @@ send_optimization_messages(Active, [Candidate | RestCandidates], InitiatorState)
 	process_candidate(sets:to_list(Active), Candidate, InitiatorState),
 	% do same for every candidate against the active
 	send_optimization_messages(Active, RestCandidates, InitiatorState).
-	
+
 % check if a candidate is valid and send message to try optimization
 % we only send an optimization messages for one node in active view, once we have sent it we stop searching possibilities
 %% @private
 process_candidate([], _, _) -> ok;
-process_candidate([OldNode | RestActiveNodes], CandidateNode, #state{myself=InitiatorNode, connections=Connections}=InitiatorState) -> 
+process_candidate([OldNode | RestActiveNodes], CandidateNode, #state{myself=InitiatorNode, connections=Connections}=InitiatorState) ->
 	#{name := InitiatorName} = InitiatorNode,
 	#{name := CandidateName} = CandidateNode,
 	IsBetter = is_better(?XPARAM, CandidateNode, OldNode),
@@ -703,8 +705,8 @@ process_candidate([OldNode | RestActiveNodes], CandidateNode, #state{myself=Init
 		% if cadidate is better that first node in active view, send optimization message
 		do_send_message(CandidateNode,{optimization, undefined, OldNode, InitiatorNode, CandidateNode, undefined},NodeConnections),
 		lager:debug("XBOT: Optimization message sent to Node ~p from ~p", [CandidateName, InitiatorName]);
-	   true -> 
-	    % if not, continue checking against the remaining nodes in active view 
+	   true ->
+	    % if not, continue checking against the remaining nodes in active view
 		process_candidate(RestActiveNodes, CandidateNode, InitiatorState)
 	end.
 
@@ -723,6 +725,7 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
                #state{myself=Myself0,
                       active=Active0,
                       tag=Tag0,
+                      connections=Connections0,
                       sent_message_map=SentMessageMap0,
                       recv_message_map=RecvMessageMap0}=State0) ->
     lager:debug("Node ~p received the JOIN message from ~p, epoch ~p",
@@ -732,49 +735,53 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
     NotInActiveView = not sets:is_element(Peer, Active0),
     State = case IsAddable andalso NotInActiveView of
         true ->
-            lager:debug("Adding peer node ~p to the active view",
-                       [Peer]),
-            %% Add to active view.
-            State1 = add_to_active_view(Peer, PeerTag, State0),
-
             %% Establish connections.
-            Connections1 = partisan_util:maybe_connect(Peer, State1#state.connections),
+            Connections1 = partisan_util:maybe_connect(Peer, Connections0),
+            case partisan_peer_service_connections:find(Peer, Connections1) of
+                {ok, _Entries} ->
+                    lager:debug("Adding peer node ~p to the active view",
+                                [Peer]),
+                    %% Add to active view.
+                    State1 = add_to_active_view(Peer, PeerTag, State0#state{connections=Connections1}),
 
-            LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
-            %% Send the NEIGHBOR message to origin, that will update it's view.
-            do_send_message(Peer,
-                            {neighbor, Myself0, Tag0, LastDisconnectId, Peer},
-                            Connections1),
+                    LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
+                    %% Send the NEIGHBOR message to origin, that will update it's view.
+                    do_send_message(Peer,
+                                    {neighbor, Myself0, Tag0, LastDisconnectId, Peer},
+                                    Connections1),
 
-            %% Random walk for forward join.
-            %% Since we might have dropped peers from the active view when
-            %% adding this one we need to use the most up to date active view,
-            %% and that's the one that's currently in the state
-            %% also disregard the the new joiner node
-            Peers = (members(State1#state.active) -- [Myself0]) -- [Peer],
+                    %% Random walk for forward join.
+                    %% Since we might have dropped peers from the active view when
+                    %% adding this one we need to use the most up to date active view,
+                    %% and that's the one that's currently in the state
+                    %% also disregard the the new joiner node
+                    Peers = (members(State1#state.active) -- [Myself0]) -- [Peer],
 
-            Connections = lists:foldl(
-              fun(P, AccConnections0) ->
-                  %% Establish connections.
-                  AccConnections = partisan_util:maybe_connect(P, AccConnections0),
+                    Connections = lists:foldl(
+                                    fun(P, AccConnections0) ->
+                                            %% Establish connections.
+                                            AccConnections = partisan_util:maybe_connect(P, AccConnections0),
 
-                  lager:debug("Forwarding join of ~p to active view peer ~p",
-                             [Peer, P]),
-                  do_send_message(
-                      P,
-                      {forward_join, Peer, PeerTag, PeerEpoch, arwl(), Myself0},
-                      AccConnections),
+                                            lager:debug("Forwarding join of ~p to active view peer ~p",
+                                                        [Peer, P]),
+                                            do_send_message(
+                                              P,
+                                              {forward_join, Peer, PeerTag, PeerEpoch, arwl(), Myself0},
+                                              AccConnections),
 
-                  AccConnections
-              end, Connections1, Peers),
+                                            AccConnections
+                                    end, Connections1, Peers),
 
-            lager:debug("Node ~p active view: ~p", [Myself0, members(State1#state.active)]),
+                    lager:debug("Node ~p active view: ~p", [Myself0, members(State1#state.active)]),
 
-            %% Notify with event.
-            notify(State1#state{connections=Connections}),
+                    %% Notify with event.
+                    notify(State1#state{connections=Connections}),
 
-            %% Return.
-            State1#state{connections=Connections};
+                    %% Return.
+                    State1;
+                {error, not_found} ->
+                    State0
+            end;
         false ->
             lager:debug("Peer node ~p will not be added to the active view",
                        [Peer]),
@@ -796,14 +803,19 @@ handle_message({neighbor, Peer, PeerTag, DisconnectId, _Sender},
                     %% Establish connections.
                     Connections = partisan_util:maybe_connect(Peer, Connections0),
 
-                    %% Add node into the active view.
-                    State1 = add_to_active_view(
-                                Peer,
-                                PeerTag,
-                                State0#state{connections=Connections}),
-                    lager:debug("Node ~p active view: ~p",
-                               [Myself0, members(State1#state.active)]),
-                    State1;
+                    case partisan_peer_service_connections:find(Peer, Connections) of
+                        {ok, _Entries} ->
+                            %% Add node into the active view.
+                            State1 = add_to_active_view(
+                                       Peer,
+                                       PeerTag,
+                                       State0#state{connections=Connections}),
+                            lager:debug("Node ~p active view: ~p",
+                                        [Myself0, members(State1#state.active)]),
+                            State1;
+                        {error, not_found} ->
+                            State0
+                    end;
                 false ->
                     State0
             end,
@@ -835,22 +847,26 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
             NotInActiveView0 = not sets:is_element(Peer, Active0),
             case IsAddable0 andalso NotInActiveView0 of
                 true ->
-                    %% Add to our active view.
-                    State1 = add_to_active_view(Peer, PeerTag, State0),
-
                     %% Establish connections.
-                    Connections1 = partisan_util:maybe_connect(Peer, State1#state.connections),
+                    Connections1 = partisan_util:maybe_connect(Peer, Connections0),
+                    case partisan_peer_service_connections:find(Peer, Connections1) of
+                        {ok, _Entries} ->
+                            %% Add to our active view.
+                            State1 = add_to_active_view(Peer, PeerTag, State0#state{connections=Connections1}),
 
-                    LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
-                    %% Send neighbor message to origin, that will update it's view.
-                    do_send_message(Peer,
-                                    {neighbor, Myself0, Tag0, LastDisconnectId, Peer},
-                                    Connections1),
+                            LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
+                            %% Send neighbor message to origin, that will update it's view.
+                            do_send_message(Peer,
+                                            {neighbor, Myself0, Tag0, LastDisconnectId, Peer},
+                                            Connections1),
 
-                    lager:debug("Node ~p active view: ~p",
-                               [Myself0, members(State1#state.active)]),
+                            lager:debug("Node ~p active view: ~p",
+                                        [Myself0, members(State1#state.active)]),
 
-                    State1#state{connections=Connections1};
+                            State1;
+                        {error, not_found} ->
+                            State0
+                    end;
                 false ->
                     lager:debug("Peer node ~p will not be added to the active view",
                                [Peer]),
@@ -876,26 +892,30 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
                     NotInActiveView1 = not sets:is_element(Peer, Active0),
                     case IsAddable1 andalso NotInActiveView1 of
                         true ->
-                            lager:debug("FORWARD_JOIN: No node for forward, adding ~p to active view",
-                                      [Peer]),
-                            %% Add to our active view.
-                            State3 = add_to_active_view(Peer, PeerTag, State2),
-
                             %% Establish connections.
-                            Connections3 = partisan_util:maybe_connect(Peer, State3#state.connections),
+                            Connections3 = partisan_util:maybe_connect(Peer, State2#state.connections),
 
-                            LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
-                            %% Send neighbor message to origin, that will
-                            %% update it's view.
-                            do_send_message(
-                                Peer,
-                                {neighbor, Myself0, Tag0, LastDisconnectId, Peer},
-                                Connections3),
+                            case partisan_peer_service_connections:find(Peer, Connections3) of
+                                {ok, _Entries} ->
+                                    lager:debug("FORWARD_JOIN: No node for forward, adding ~p to active view",
+                                                [Peer]),
+                                    %% Add to our active view.
+                                    State3 = add_to_active_view(Peer, PeerTag, State2#state{connections = Connections3}),
+                                    LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
+                                    %% Send neighbor message to origin, that will
+                                    %% update it's view.
+                                    do_send_message(
+                                      Peer,
+                                      {neighbor, Myself0, Tag0, LastDisconnectId, Peer},
+                                      Connections3),
 
-                            lager:debug("Node ~p active view: ~p",
-                                       [Myself0, members(State3#state.active)]),
+                                    lager:debug("Node ~p active view: ~p",
+                                                [Myself0, members(State3#state.active)]),
 
-                            State3#state{connections=Connections3};
+                                    State3;
+                                {error, not_found} ->
+                                    State2
+                            end;
                         false ->
                             lager:debug("Peer node ~p will not be added to the active view",
                                        [Peer]),
@@ -1139,9 +1159,9 @@ handle_message({relay_message, Node, Message}, #state{out_links=OutLinks, connec
 handle_message({forward_message, ServerRef, Message}, State) ->
     ServerRef ! Message,
     {noreply, State};
-    
-    
-    
+
+
+
 %% Optimization Reply
 handle_message({optimization_reply, true, _, InitiatorNode, CandidateNode, undefined}, State) ->%#state{active=Active}=State) ->
 	#{name := InitiatorName} = InitiatorNode,
@@ -1172,20 +1192,20 @@ handle_message({optimization_reply, true, OldNode, InitiatorNode, CandidateNode,
 	%move_peer_from_passive_to_active(CandidateNode, State),
 	send_join(CandidateNode, State),
 	lager:debug("XBOT: Finished optimization round started by Node ~p ", [InitiatorName]),
-	{noreply, State}; 
+	{noreply, State};
 handle_message({optimization_reply, false, _, _, _, _}, State) ->
 	{noreply, State};
 
 %% Optimization
-handle_message({optimization, _, OldNode, InitiatorNode, CandidateNode, undefined}, 
+handle_message({optimization, _, OldNode, InitiatorNode, CandidateNode, undefined},
 					#state{ active=Active, max_active_size=MaxActiveSize, reserved=Reserved, connections=Connections}=State) ->
 	#{name := CandidateName} = CandidateNode,
 	#{name := InitiatorName} = InitiatorNode,
 	lager:debug("XBOT: Received optimization message at Node ~p from ~p", [CandidateName, InitiatorName]),
 	Check = is_full({active, Active, Reserved},MaxActiveSize),
-	if not Check -> 
-			%add_to_active_view(CandidateNode, MyTag, State), 
-			send_join(InitiatorNode,State), 
+	if not Check ->
+			%add_to_active_view(CandidateNode, MyTag, State),
+			send_join(InitiatorNode,State),
 			NodeConnections = partisan_util:maybe_connect(InitiatorNode, Connections),
 			do_send_message(InitiatorNode, {optimization_reply, true, OldNode, InitiatorNode, CandidateNode, undefined}, NodeConnections),
 			lager:debug("XBOT: Sending optimization reply message to Node ~p from ~p", [InitiatorName, CandidateName]);
@@ -1197,9 +1217,9 @@ handle_message({optimization, _, OldNode, InitiatorNode, CandidateNode, undefine
 			lager:debug("XBOT: Sending replace message to Node ~p from ~p", [DisconnectName, CandidateName])
 	end,
 	{noreply, State};
-	
+
 %% Replace Reply
-handle_message({replace_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, 
+handle_message({replace_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode},
 			#state{ connections=Connections}=State) ->
 	#{name := InitiatorName} = InitiatorNode,
 	#{name := DisconnectName} = DisconnectNode,
@@ -1207,7 +1227,7 @@ handle_message({replace_reply, true, OldNode, InitiatorNode, CandidateNode, Disc
 	lager:debug("XBOT: Received replace reply message at Node ~p from ~p", [CandidateName, DisconnectName]),
 	%remove_from_active_view(DisconnectNode, Active),
 	do_disconnect(DisconnectNode, State),
-	%add_to_active_view(InitiatorNode, MyTag, State), 
+	%add_to_active_view(InitiatorNode, MyTag, State),
 	send_join(InitiatorNode, State),
 	NodeConnections = partisan_util:maybe_connect(InitiatorNode, Connections),
 	do_send_message(InitiatorNode,{optimization_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode},NodeConnections),
@@ -1242,7 +1262,7 @@ handle_message({replace, _, OldNode, InitiatorNode, CandidateNode, DisconnectNod
 	{noreply, State};
 
 %% Switch Reply
-handle_message({switch_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, 
+handle_message({switch_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode},
 			#state{ connections=Connections}=State) ->
 	#{name := DisconnectName} = DisconnectNode,
 	#{name := CandidateName} = CandidateNode,
@@ -1265,7 +1285,7 @@ handle_message({switch_reply, false, OldNode, InitiatorNode, CandidateNode, Disc
 	do_send_message(CandidateNode, {replace_reply, false, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, NodeConnections),
 	lager:debug("XBOT: Sending replace reply to Node ~p from ~p", [CandidateName, DisconnectName]),
 	{noreply, State};
-	
+
 %% Switch
 handle_message({switch, _, OldNode, InitiatorNode, CandidateNode, DisconnectNode},
 			#state{active=Active, connections=Connections}=State) ->
@@ -1273,28 +1293,28 @@ handle_message({switch, _, OldNode, InitiatorNode, CandidateNode, DisconnectNode
 	#{name := OldName} = OldNode,
 	lager:debug("XBOT: Received switch message at Node ~p from ~p", [OldName, DisconnectName]),
 	Check = is_in_active_view(InitiatorNode, Active),
-	if Check -> 
-			%remove_from_active_view(InitiatorNode, Active), 
+	if Check ->
+			%remove_from_active_view(InitiatorNode, Active),
 			do_disconnect(InitiatorNode, State),
-			%add_to_active_view(DisconnectNode, MyTag, State),  
+			%add_to_active_view(DisconnectNode, MyTag, State),
 			send_join(DisconnectNode, State),
 			NodeConnections = partisan_util:maybe_connect(DisconnectNode, Connections),
 			do_send_message(DisconnectNode, {switch_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, NodeConnections),
 			lager:debug("XBOT: Sending switch reply to Node ~p from ~p", [DisconnectName, OldName]);
-		true -> 
+		true ->
 			NodeConnections = partisan_util:maybe_connect(DisconnectNode, Connections),
 			do_send_message(DisconnectNode, {switch_reply, false, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, NodeConnections),
 			lager:debug("XBOT: Sending switch reply to Node ~p from ~p", [DisconnectName, OldName])
 	end,
 	{noreply, State}.
-	
+
 %% Determine if New node is better than Old node based on ping (latency)
 %% @private
 is_better(latency, #{name := NewNodeName}, #{name := OldNodeName}) ->
 	is_better_node_by_latency(timer:tc(net_adm, ping, [NewNodeName]), timer:tc(net_adm, ping, [OldNodeName]));
 is_better(_, _, _) ->
 	true.
-	
+
 %% @private
 is_better_node_by_latency({_, pang}, {_, _}) ->
 	%% if we do not get ping response from new node
@@ -1306,11 +1326,11 @@ is_better_node_by_latency({NewTime, pong}, {OldTime, pong}) ->
 	lager:debug("XBOT: Checking is better - OldTime ~p - NewTime ~p", [OldTime, NewTime]),
 	%% otherwise check lower ping response
 	(OldTime-NewTime) > 0.
-	
+
 %% @private
 select_disconnect_node([H | T]) ->
 	select_worst_in_active_view(T, H).
-	
+
 %% @private
 select_worst_in_active_view([], Worst) ->
 	Worst;
@@ -1319,7 +1339,7 @@ select_worst_in_active_view([H | T], Worst) ->
 	if Check -> select_worst_in_active_view(T, Worst);
 		true -> select_worst_in_active_view(T, H)
 	end.
-	
+
 %% @private
 send_join(Peer,
             #state{myself=Myself0,
@@ -1354,13 +1374,10 @@ do_disconnect(Peer, #state{active=Active0,
     end.
 
 %% @private
-empty_membership() ->
-    %% Each cluster starts with only itself.
-    Active = sets:add_element(myself(), sets:new()),
-    Passive = sets:new(),
-    LocalState = {Active, Passive, 0},
-    persist_state(LocalState),
-    LocalState.
+zero_epoch() ->
+    Epoch = 0,
+    persist_epoch(Epoch),
+    Epoch.
 
 %% @private
 data_root() ->
@@ -1372,14 +1389,14 @@ data_root() ->
     end.
 
 %% @private
-write_state_to_disk(State) ->
+write_state_to_disk(Epoch) ->
     case data_root() of
         undefined ->
             ok;
         Dir ->
             File = filename:join(Dir, "cluster_state"),
             ok = filelib:ensure_dir(File),
-            ok = file:write_file(File, term_to_binary(State))
+            ok = file:write_file(File, term_to_binary(Epoch))
     end.
 
 %% @private
@@ -1399,25 +1416,23 @@ delete_state_from_disk() ->
     end.
 
 %% @private
-maybe_load_state_from_disk() ->
+maybe_load_epoch_from_disk() ->
     case data_root() of
         undefined ->
-            empty_membership();
+            zero_epoch();
         Dir ->
             case filelib:is_regular(filename:join(Dir, "cluster_state")) of
                 true ->
                     {ok, Bin} = file:read_file(filename:join(Dir, "cluster_state")),
                     binary_to_term(Bin);
                 false ->
-                    empty_membership()
+                    zero_epoch()
             end
     end.
 
 %% @private
-persist_state({Active, Passive, Epoch}) ->
-    write_state_to_disk({Active, Passive, Epoch});
-persist_state(#state{active=Active, passive=Passive, epoch=Epoch}) ->
-    persist_state({Active, Passive, Epoch}).
+persist_epoch(Epoch) ->
+    write_state_to_disk(Epoch).
 
 %% @private
 members(Set) ->
@@ -1581,7 +1596,7 @@ add_to_active_view(#{name := Name}=Peer, Tag,
                                   passive=Passive,
                                   reserved=Reserved},
 
-            persist_state(State2),
+            persist_epoch(State2#state.epoch),
 
             State2;
         false ->
@@ -1613,7 +1628,7 @@ add_to_passive_view(#{name := Name}=Peer,
             Passive0
     end,
     State = State0#state{passive=Passive},
-    persist_state(State),
+    persist_epoch(State#state.epoch),
     State.
 
 %% @private
@@ -1745,7 +1760,7 @@ schedule_passive_view_maintenance() ->
     erlang:send_after(Period,
                       ?MODULE,
                       passive_view_maintenance).
-                      
+
 %% @private
 schedule_xbot_execution(#{xbot_interval := Interval}) ->
 	erlang:send_after(Interval,
