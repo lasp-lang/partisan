@@ -520,7 +520,7 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Ori
                                     {forward_message, ServerRef, Message},
                                     Connections);
                 true ->
-                    partisan_reliability_backend:store(MessageClock, FullMessage),
+                    partisan_acknowledgement_backend:store(MessageClock, FullMessage),
 
                     %% Send message along.
                     do_send_message(Name,
@@ -594,7 +594,7 @@ handle_info(retransmit, #state{connections=Connections}=State) ->
                         {forward_message, ServerRef, Message},
                         Connections)
     end,
-    {ok, Outstanding} = partisan_reliability_backend:outstanding(),
+    {ok, Outstanding} = partisan_acknowledgement_backend:outstanding(),
     lists:foreach(RetransmitFun, Outstanding),
     schedule_retransmit(),
     {noreply, State};
@@ -901,7 +901,7 @@ handle_message({connect, ConnectionPid, #{name := Name} = Node}, State0) ->
     end;
 
 handle_message({ack, MessageClock}, State) ->
-    partisan_reliability_backend:ack(MessageClock),
+    partisan_acknowledgement_backend:ack(MessageClock),
     {reply, ok, State}.
 
 %% @private
