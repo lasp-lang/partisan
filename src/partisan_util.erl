@@ -303,6 +303,9 @@ process_forward(ServerRef, Message) ->
             {partisan_process_reference, ProcessIdentifier} ->
                 Pid = list_to_pid(ProcessIdentifier),
                 Pid ! Message;
+            {global, Name} ->
+                Pid = global:whereis_name(Name),
+                Pid ! Message;
             _ ->
                 ServerRef ! Message
         end
