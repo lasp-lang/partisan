@@ -1081,7 +1081,7 @@ default_manager_test(Config) ->
                                       partisan_default_peer_service_manager,
                                       connections,
                                       []),
-                             ct:pal("Connections: ~p~n", [Connections]),
+                             %% ct:pal("Connections: ~p~n", [Connections]),
                              Connections
                      end,
 
