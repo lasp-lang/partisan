@@ -1063,10 +1063,8 @@ internal_join(#{name := Name} = Node,
     %% Add to list of pending connections.
     Pending = [Node|Pending0],
 
-    %% Sleep before connecting, to avoid a rush on
-    %% connections.
-    ConnectionJitter = partisan_config:get(connection_jitter, ?CONNECTION_JITTER),
-    timer:sleep(rand:uniform(ConnectionJitter)),
+    %% Sleep before connecting, to avoid a rush on connections.
+    avoid_rush(),
 
     %% Trigger connection.
     Connections = establish_connections(Pending,
@@ -1087,10 +1085,8 @@ sync_internal_join(#{name := Name} = Node,
     %% Add to list of pending connections.
     Pending = [Node|Pending0],
 
-    %% Sleep before connecting, to avoid a rush on
-    %% connections.
-    ConnectionJitter = partisan_config:get(connection_jitter, ?CONNECTION_JITTER),
-    timer:sleep(rand:uniform(ConnectionJitter)),
+    %% Sleep before connecting, to avoid a rush on connections.
+    avoid_rush(),
 
     %% Add to sync joins list.
     SyncJoins = SyncJoins0 ++ [{Node, From}],
@@ -1132,3 +1128,14 @@ rand_bits(Bits) ->
         Bytes = (Bits + 7) div 8,
         <<Result:Bits/bits, _/bits>> = crypto:strong_rand_bytes(Bytes),
         Result.
+
+%% @private
+avoid_rush() ->
+    %% Sleep before connecting, to avoid a rush on connections.
+    ConnectionJitter = partisan_config:get(connection_jitter, ?CONNECTION_JITTER),
+    case partisan_config:get(jitter, false) of
+        true ->
+            timer:sleep(rand:uniform(ConnectionJitter));
+        false ->
+            timer:sleep(ConnectionJitter)
+    end.
