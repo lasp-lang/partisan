@@ -1066,7 +1066,7 @@ internal_join(#{name := Name} = Node,
     %% Sleep before connecting, to avoid a rush on
     %% connections.
     ConnectionJitter = partisan_config:get(connection_jitter, ?CONNECTION_JITTER),
-    timer:sleep(ConnectionJitter),
+    timer:sleep(rand:uniform(ConnectionJitter)),
 
     %% Trigger connection.
     Connections = establish_connections(Pending,
@@ -1090,7 +1090,7 @@ sync_internal_join(#{name := Name} = Node,
     %% Sleep before connecting, to avoid a rush on
     %% connections.
     ConnectionJitter = partisan_config:get(connection_jitter, ?CONNECTION_JITTER),
-    timer:sleep(ConnectionJitter),
+    timer:sleep(rand:uniform(ConnectionJitter)),
 
     %% Add to sync joins list.
     SyncJoins = SyncJoins0 ++ [{Node, From}],
