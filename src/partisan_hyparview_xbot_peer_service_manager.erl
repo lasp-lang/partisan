@@ -1762,7 +1762,7 @@ schedule_passive_view_maintenance() ->
                       passive_view_maintenance).
 
 %% @private
-schedule_xbot_execution(#{xbot_interval := Interval}) ->
+schedule_xbot_execution() ->
     Interval = partisan_config:get(xbot_interval),
 
 	erlang:send_after(Interval,
