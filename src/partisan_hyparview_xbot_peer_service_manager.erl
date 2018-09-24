@@ -1763,9 +1763,11 @@ schedule_passive_view_maintenance() ->
 
 %% @private
 schedule_xbot_execution(#{xbot_interval := Interval}) ->
+    Interval = partisan_config:get(xbot_interval),
+
 	erlang:send_after(Interval,
-						?MODULE,
-						xbot_execution).
+				  	  ?MODULE,
+					  xbot_execution).
 
 %% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
 shuffle(L) ->

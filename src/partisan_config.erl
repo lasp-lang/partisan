@@ -75,6 +75,9 @@ init() ->
     DefaultPeerIP = try_get_node_address(),
     DefaultPeerPort = random_port(),
 
+    %% Configure X-BOT interval.
+    XbotInterval = rand:uniform(?XBOT_RANGE_INTERVAL) + ?XBOT_MIN_INTERVAL, 
+
     [env_or_default(Key, Default) ||
         {Key, Default} <- [{arwl, 5},
                            {prwl, 30},
@@ -107,7 +110,8 @@ init() ->
                            {reservations, []},
                            {tls, false},
                            {tls_options, []},
-                           {tag, DefaultTag}]],
+                           {tag, DefaultTag},
+                           {xbot_interval, XbotInterval}]],
 
     %% Setup default listen addr.
     DefaultListenAddrs = [#{ip => ?MODULE:get(peer_ip), port => ?MODULE:get(peer_port)}],
