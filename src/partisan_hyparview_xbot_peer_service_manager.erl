@@ -284,7 +284,7 @@ init([]) ->
     schedule_passive_view_maintenance(),
 
     %% Schedule periodic execution of xbot algorithm (optimization)
-    schedule_xbot_execution(Myself),
+    schedule_xbot_execution(),
 
     %% Schedule tree peers refresh.
     schedule_tree_refresh(),
@@ -579,8 +579,7 @@ handle_info(passive_view_maintenance,
 
 % handle optimization using xbot algorithm
 handle_info(xbot_execution,
-				#state{myself=Myself,
-					   active=Active,
+				#state{active=Active,
 					   passive=Passive,
 					   max_active_size=MaxActiveSize,
 					   reserved=Reserved}=InitiatorState) ->
@@ -597,7 +596,7 @@ handle_info(xbot_execution,
 	end,
 
 	%In any case, schedule periodic xbot execution algorithm (optimization)
-	schedule_xbot_execution(Myself),
+	schedule_xbot_execution(),
 	{noreply, InitiatorState};
 
 handle_info({'EXIT', From, Reason},
@@ -1762,10 +1761,12 @@ schedule_passive_view_maintenance() ->
                       passive_view_maintenance).
 
 %% @private
-schedule_xbot_execution(#{xbot_interval := Interval}) ->
+schedule_xbot_execution() ->
+    Interval = partisan_config:get(xbot_interval),
+
 	erlang:send_after(Interval,
-						?MODULE,
-						xbot_execution).
+				  	  ?MODULE,
+					  xbot_execution).
 
 %% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
 shuffle(L) ->

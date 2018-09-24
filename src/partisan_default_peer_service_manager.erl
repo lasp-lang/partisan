@@ -600,14 +600,29 @@ handle_info(retransmit, #state{connections=Connections}=State) ->
     {noreply, State};
 
 handle_info(connections, #state{pending=Pending,
+                                sync_joins=SyncJoins0,
                                 membership=Membership,
                                 connections=Connections0}=State) ->
     %% Trigger connection.
     Connections = establish_connections(Pending,
                                         Membership,
                                         Connections0),
+
+    %% Advance sync_join's if we have enough open connections to remote host.
+    SyncJoins = lists:foldl(fun({Node, FromPid}, Joins) ->
+            case fully_connected(Node, Connections) of
+                true ->
+                    lager:debug("Node ~p is now fully connected.", [Node]),
+                    gen_server:reply(FromPid, ok),
+                    Joins;
+                _ ->
+                    Joins ++ [{Node, FromPid}]
+            end
+        end, [], SyncJoins0),
+
     schedule_connections(),
     {noreply, State#state{pending=Pending,
+                          sync_joins=SyncJoins,
                           connections=Connections}};
 
 handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
@@ -629,10 +644,10 @@ handle_info({connected, Node, _Tag, RemoteState},
                #state{pending=Pending0,
                       membership=Membership0,
                       sync_joins=SyncJoins0,
-                      connections=Connections}=State) ->
+                      connections=Connections}=State0) ->
     lager:debug("Node ~p connected!", [Node]),
 
-    case lists:member(Node, Pending0) of
+    State = case lists:member(Node, Pending0) of
         true ->
             %% Move out of pending.
             Pending = Pending0 -- [Node],
@@ -654,34 +669,34 @@ handle_info({connected, Node, _Tag, RemoteState},
                 fun(N, Pids) ->
                         case length(Pids -- Pending) =:= 1 of
                             true ->
-                                up(N, State);
+                                up(N, State0);
                             false ->
                                 ok
                         end
                 end, Connections),
 
-            %% Notify for sync join.
-            SyncJoins = case lists:keyfind(Node, 1, SyncJoins0) of
-                {Node, FromPid} ->
-                    case fully_connected(Node, Connections) of
-                        true ->
-                            lager:debug("Node ~p is fully connected.", [Node]),
-                            gen_server:reply(FromPid, ok),
-                            lists:keydelete(FromPid, 2, SyncJoins0);
-                        _ ->
-                            SyncJoins0
-                    end;
-                false ->
-                    SyncJoins0
-            end,
-
             %% Return.
-            {noreply, State#state{pending=Pending,
-                                  sync_joins=SyncJoins,
-                                  membership=Membership}};
+            State0#state{pending=Pending,
+                         membership=Membership};
         false ->
-            {noreply, State}
-    end;
+            State0
+    end,
+
+    %% Notify for sync join.
+    SyncJoins = case lists:keyfind(Node, 1, SyncJoins0) of
+        {Node, FromPid} ->
+            case fully_connected(Node, Connections) of
+                true ->
+                    gen_server:reply(FromPid, ok),
+                    lists:keydelete(FromPid, 2, SyncJoins0);
+                _ ->
+                    SyncJoins0
+            end;
+        false ->
+            SyncJoins0
+    end,
+
+    {noreply, State#state{sync_joins=SyncJoins}};
 
 handle_info(Msg, State) ->
     lager:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Msg]),
@@ -1100,8 +1115,6 @@ sync_internal_join(#{name := Name} = Node,
 
 %% @private
 fully_connected(Node, Connections) ->
-    lager:debug("Checking if node ~p is fully connected.", [Node]),
-
     Parallelism = maps:get(parallelism, Node, ?PARALLELISM),
 
     Channels = case maps:get(channels, Node, [?DEFAULT_CHANNEL]) of
@@ -1117,7 +1130,6 @@ fully_connected(Node, Connections) ->
         {ok, Conns} ->
             Open = length(Conns),
             Required = length(Channels) * Parallelism,
-            lager:debug("Node ~p has ~p open connections, ~p required.", [Node, Open, Required]),
             Open =:= Required;
         _ ->
             false

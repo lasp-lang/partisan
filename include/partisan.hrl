@@ -31,8 +31,7 @@
 -type node_spec() :: #{name => node(),
                        listen_addrs => [listen_addr()],
                        channels => [channel()],
-                       parallelism => non_neg_integer(),
-                       xbot_interval => non_neg_integer()}.
+                       parallelism => non_neg_integer()}.
 -type message() :: term().
 -type name() :: node().
 -type partitions() :: [{reference(), node_spec()}].
