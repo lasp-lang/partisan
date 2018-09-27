@@ -55,7 +55,7 @@ accept(TCPSocket) ->
     case tls_enabled() of
         true ->
             TLSOpts = tls_options(),
-            {ok, TLSSocket} = ssl:ssl_accept(TCPSocket, TLSOpts),
+            {ok, TLSSocket} = ssl:handshake(TCPSocket, TLSOpts),
             #connection{socket = TLSSocket, transport = ssl, control = ssl};
         _ ->
             #connection{socket = TCPSocket, transport = gen_tcp, control = inet}
