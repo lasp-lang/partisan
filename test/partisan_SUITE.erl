@@ -1940,27 +1940,38 @@ check_forward_message(Node, Manager, Nodes) ->
     end,
 
     ForwardOptions = rpc:call(Node, partisan_config, get, [forward_options, []]),
+    ct:pal("Using forward options: ~p", [ForwardOptions]),
+    {ok, DirectMembers} = rpc:call(Node, Manager, members, []),
 
-    RandomMember = random(Members, Node),
-    ct:pal("requesting node ~p to forward message to store_proc on node ~p",
-           [Node, RandomMember]),
-    Rand = rand:uniform(),
-    ok = rpc:call(Node, Manager, forward_message, [RandomMember, undefined, store_proc, {store, Rand}, [{transitive, Transitive}, {forward_options, ForwardOptions}]]),
-    %% now fetch the value from the random destination node
-    case wait_until(fun() ->
-                    %% it must match with what we asked the node to forward
-                    case rpc:call(RandomMember, application, get_env, [partisan, forward_message_test]) of
-                        {ok, R} ->
-                            R =:= Rand;
-                        _ ->
-                            false
-                    end
-               end, 60 * 2, 500) of
-        ok ->
-            ok;
-        {fail, false} ->
-            ct:fail("check_forward_message fail, Node:~p, Manager:~p, Nodes:~p~n ", [Node, Manager, Nodes])
-    end,
+    lists:foreach(fun(Member) ->
+        Rand = rand:uniform(),
+
+        ct:pal("Requesting node ~p to forward message ~p to store_proc on node ~p", [Node, Rand, Member]),
+        ok = rpc:call(Node, Manager, forward_message, [Member, undefined, store_proc, {store, Rand}, [{transitive, Transitive}, {forward_options, ForwardOptions}]]),
+
+        IsDirect = lists:member(Member, DirectMembers),
+        ct:pal("Node ~p is directly connected: ~p; ~p", [Member, IsDirect, DirectMembers]),
+
+        %% now fetch the value from the random destination node
+        case wait_until(fun() ->
+                        %% it must match with what we asked the node to forward
+                        case rpc:call(Member, application, get_env, [partisan, forward_message_test]) of
+                            {ok, R} ->
+                                Test = R =:= Rand,
+                                ct:pal("Received from ~p ~p, should be ~p: ~p", [Member, R, Rand, Test]),
+                                Test;
+                            _Other ->
+                                % ct:pal("Received other, failing: ~p", [Other]),
+                                false
+                        end
+                end, 60 * 2, 500) of
+            ok ->
+                ok;
+            {fail, false} ->
+                ct:fail("Message delivery failed, Node:~p, Manager:~p, Nodes:~p~n ", [Node, Manager, Nodes])
+        end
+    end, Members -- [Node]),
+
     ok.
 
 random(List0, Omit) ->
