@@ -244,7 +244,7 @@ groups() ->
       [default_manager_test]},
 
      {with_egress_delay, [],
-      [default_manager_test]}
+      [default_manager_test]},
 
      {with_broadcast, [],
       [
