@@ -76,9 +76,9 @@ init_per_group(with_binary_padding, Config) ->
 init_per_group(with_sync_join, Config) ->
     [{parallelism, 1}, {sync_join, true}] ++ Config;
 init_per_group(with_monotonic_channels, Config) ->
-    [{parallelism, 1}, {channels, [{monotonic, vnode}, gossip]}] ++ Config;
+    [{parallelism, 1}, {channels, [{monotonic, vnode}, gossip, rpc]}] ++ Config;
 init_per_group(with_channels, Config) ->
-    [{parallelism, 1}, {channels, [vnode, gossip]}] ++ Config;
+    [{parallelism, 1}, {channels, [vnode, gossip, rpc]}] ++ Config;
 init_per_group(with_parallelism, Config) ->
     parallelism() ++ [{channels, ?CHANNELS}] ++ Config;
 init_per_group(with_parallelism_bypass_pid_encoding, Config) ->
