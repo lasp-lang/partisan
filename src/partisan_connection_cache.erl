@@ -35,6 +35,8 @@ update(Connections) ->
               end, [], Connections).
 
 dispatch({forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Message, _Options}) ->
+    lager:info("Dispatching message: ~p", [Message]),
+
     %% Find a connection for the remote node, if we have one.
     case ets:lookup(?CACHE, Name) of
         [] ->
@@ -46,10 +48,13 @@ dispatch({forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Messa
             {error, trap};
         [{Name, Pids}] ->
             Pid = partisan_util:dispatch_pid(PartitionKey, Channel, Pids),
+            lager:info("Dispatching to message: ~p pid: ~p", [Message, Pid]),
             gen_server:cast(Pid, {send_message, {forward_message, ServerRef, Message}})
     end;
 
 dispatch({forward_message, Name, ServerRef, Message, _Options}) ->
+    lager:info("Dispatching message: ~p", [Message]),
+
     %% Find a connection for the remote node, if we have one.
     case ets:lookup(?CACHE, Name) of
         [] ->
@@ -61,5 +66,6 @@ dispatch({forward_message, Name, ServerRef, Message, _Options}) ->
             {error, trap};
         [{Name, Pids}] ->
             Pid = partisan_util:dispatch_pid(Pids),
+            lager:info("Dispatching to message: ~p pid: ~p", [Message, Pid]),
             gen_server:cast(Pid, {send_message, {forward_message, ServerRef, Message}})
     end.

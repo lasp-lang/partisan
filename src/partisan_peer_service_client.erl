@@ -111,9 +111,10 @@ handle_cast({send_message, Message}, #state{channel=_Channel, socket=Socket}=Sta
 
     case partisan_peer_connection:send(Socket, encode(Message)) of
         ok ->
+            lager:info("Dispatched message: ~p", [Message]),
             ok;
         Error ->
-            lager:info("Message failed to send: ~p", [Error])
+            lager:info("Message ~p failed to send: ~p", [Message, Error])
     end,
     {noreply, State};
 handle_cast(Msg, State) ->
