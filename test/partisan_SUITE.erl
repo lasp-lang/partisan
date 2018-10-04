@@ -43,7 +43,7 @@
 
 -define(GOSSIP_INTERVAL, 1000).
 -define(TIMEOUT, 10000).
--define(CLIENT_NUMBER, 3).
+-define(CLIENT_NUMBER, 5).
 
 %% ===================================================================
 %% common_test callbacks
@@ -247,8 +247,8 @@ groups() ->
 
      {with_broadcast, [],
       [
-       hyparview_manager_low_active_test
-       % hyparview_manager_high_active_test
+       hyparview_manager_low_active_test,
+       hyparview_manager_high_active_test
       ]}
 
     ].
