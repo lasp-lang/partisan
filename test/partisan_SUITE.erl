@@ -68,7 +68,7 @@ end_per_testcase(Case, _Config) ->
 init_per_group(with_disterl, Config) ->
     [{disterl, true}] ++ Config;
 init_per_group(with_broadcast, Config) ->
-    [{broadcast, true}] ++ Config;
+    [{broadcast, true}, {forward_options, [{transitive, true}]}] ++ Config;
 init_per_group(with_partition_key, Config) ->
     [{forward_options, [{partition_key, 1}]}] ++ Config;
 init_per_group(with_binary_padding, Config) ->
@@ -177,8 +177,8 @@ groups() ->
        
      {hyparview, [],
       [ 
-       %% hyparview_manager_partition_test,
-       %% hyparview_manager_high_active_test,
+       hyparview_manager_partition_test,
+       hyparview_manager_high_active_test,
        hyparview_manager_low_active_test,
        hyparview_manager_high_client_test
       ]},
@@ -1927,16 +1927,7 @@ make_certs(Config) ->
 
 %% @private
 check_forward_message(Node, Manager, Nodes) ->
-    {Transitive, Members} = case rpc:call(Node, partisan_config, get, [broadcast, false]) of
-        true ->
-            M = lists:usort([N || {_, N} <- Nodes]),
-            ct:pal("Checking forward functionality for all nodes: ~p", [M]),
-            {true, M};
-        false ->
-            {ok, M} = rpc:call(Node, Manager, members, []),
-            ct:pal("Checking forward functionality for subset of nodes: ~p", [M]),
-            {false, M}
-    end,
+    Members = ideally_connected_members(Node, Nodes),
 
     ForwardOptions = rpc:call(Node, partisan_config, get, [forward_options, []]),
     ct:pal("Using forward options: ~p", [ForwardOptions]),
@@ -1951,7 +1942,7 @@ check_forward_message(Node, Manager, Nodes) ->
         %% now fetch the value from the random destination node
         case wait_until(fun() ->
                         ct:pal("Requesting node ~p to forward message ~p to store_proc on node ~p", [Node, Rand, Member]),
-                        ok = rpc:call(Node, Manager, forward_message, [Member, undefined, store_proc, {store, Rand}, [{transitive, Transitive}] ++ ForwardOptions]),
+                        ok = rpc:call(Node, Manager, forward_message, [Member, undefined, store_proc, {store, Rand}, ForwardOptions]),
                         ct:pal("Message dispatched..."),
 
                         ct:pal("Checking ~p for value...", [Member]),
@@ -2524,3 +2515,23 @@ hyparview_xbot_manager_high_client_test(Config) ->
     stop(Nodes),
 
     ok.
+
+%% @private
+ideally_connected_members(Node, Nodes) ->
+    case partisan_config:get(partisan_peer_service_manager) of
+        partisan_default_peer_service_manager ->
+            M = lists:usort([N || {_, N} <- Nodes]),
+            ct:pal("Fully connected: checking forward functionality for all nodes: ~p", [M]),
+            M;
+        Manager ->
+            case rpc:call(Node, partisan_config, get, [broadcast, false]) of
+                true ->
+                    M = lists:usort([N || {_, N} <- Nodes]),
+                    ct:pal("Checking forward functionality for all nodes: ~p", [M]),
+                    M;
+                false ->
+                    {ok, M} = rpc:call(Node, Manager, members, []),
+                    ct:pal("Checking forward functionality for subset of nodes: ~p", [M]),
+                    M
+            end
+    end.
