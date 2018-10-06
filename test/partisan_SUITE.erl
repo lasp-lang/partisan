@@ -43,7 +43,7 @@
 
 -define(GOSSIP_INTERVAL, 1000).
 -define(TIMEOUT, 10000).
--define(CLIENT_NUMBER, 5).
+-define(CLIENT_NUMBER, 3).
 
 %% ===================================================================
 %% common_test callbacks
@@ -179,7 +179,7 @@ groups() ->
       [ 
        %% hyparview_manager_partition_test,
        %% hyparview_manager_high_active_test,
-       %% hyparview_manager_low_active_test,
+       hyparview_manager_low_active_test,
        hyparview_manager_high_client_test
       ]},
        
@@ -1946,22 +1946,25 @@ check_forward_message(Node, Manager, Nodes) ->
     lists:foreach(fun(Member) ->
         Rand = rand:uniform(),
 
-        ct:pal("Requesting node ~p to forward message ~p to store_proc on node ~p", [Node, Rand, Member]),
-        ok = rpc:call(Node, Manager, forward_message, [Member, undefined, store_proc, {store, Rand}, [{transitive, Transitive}, {forward_options, ForwardOptions}]]),
-
         IsDirect = lists:member(Member, DirectMembers),
         ct:pal("Node ~p is directly connected: ~p; ~p", [Member, IsDirect, DirectMembers]),
 
         %% now fetch the value from the random destination node
         case wait_until(fun() ->
+                        ct:pal("Requesting node ~p to forward message ~p to store_proc on node ~p", [Node, Rand, Member]),
+                        ok = rpc:call(Node, Manager, forward_message, [Member, undefined, store_proc, {store, Rand}, [{transitive, Transitive}, {forward_options, ForwardOptions}]]),
+                        ct:pal("Message dispatched..."),
+
+                        ct:pal("Checking ~p for value...", [Member]),
+
                         %% it must match with what we asked the node to forward
                         case rpc:call(Member, application, get_env, [partisan, forward_message_test]) of
                             {ok, R} ->
                                 Test = R =:= Rand,
                                 ct:pal("Received from ~p ~p, should be ~p: ~p", [Member, R, Rand, Test]),
                                 Test;
-                            _Other ->
-                                % ct:pal("Received other, failing: ~p", [Other]),
+                            Other ->
+                                ct:pal("Received other, failing: ~p", [Other]),
                                 false
                         end
                 end, 60 * 2, 500) of
