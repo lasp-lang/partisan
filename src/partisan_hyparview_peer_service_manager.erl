@@ -1521,6 +1521,13 @@ k_passive() ->
 schedule_tree_refresh() ->
     Period = partisan_config:get(tree_refresh, 1000),
     erlang:send_after(Period, ?MODULE, tree_refresh).
+    case partisan_config:get(broadcast, false) of
+        true ->
+            Period = partisan_config:get(tree_refresh, 1000),
+            erlang:send_after(Period, ?MODULE, tree_refresh);
+        false ->
+            ok
+    end.
 
 %% @private
 schedule_passive_view_maintenance() ->
