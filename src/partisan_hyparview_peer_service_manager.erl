@@ -168,7 +168,12 @@ forward_message(Name, Channel, ServerRef, Message) ->
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, _Channel, ServerRef, Message, Options) ->
-    lager:info("About to send message ~p", [Message]),
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("About to send message from ~p to ~p: ~p", [node(), Name, Message]);
+        false ->
+            ok
+    end,
 
     FullMessage = {forward_message, Name, ServerRef, Message, Options},
 
@@ -1113,10 +1118,15 @@ handle_message({relay_message, Node, Message, TTL} = _RelayMessage, #state{out_l
 
     case lists:member(Node, ActiveMembers) of
         true ->
-            %% Attempt to deliver, or recurse and forward on through a relay.
             do_send_message(Node, Message, Connections, [{out_links, OutLinks}, {transitive, true}]);
         false ->
-            do_tree_forward(Node, Message, Connections, [{out_links, OutLinks}], TTL)
+            case TTL of
+                0 ->
+                    %% No longer forward.
+                    ok;
+                _ ->
+                    do_tree_forward(Node, Message, Connections, [{out_links, OutLinks}], TTL)
+            end
     end,
 
     {noreply, State};
@@ -1754,8 +1764,16 @@ do_tree_forward(Node, Message, Connections, Options, TTL) ->
                     []
             end;
         OL ->
-            lager:info("I am ~p and outlinks are ~p for message ~p", [node(), OL, Message]),
-            OL
+            FilteredOL = OL -- [node()],
+            case length(OL) of
+                0 ->
+                    lager:info("No more outlinks left to forward to, dropping message."),
+                    ok;
+                _ ->
+                    lager:info("~p: outlinks are ~p for message ~p", [node(), FilteredOL, Message]),
+                    ok
+            end,
+            FilteredOL
     end,
 
     %% Send messages, but don't attempt to forward again, if we aren't connected.
@@ -1765,7 +1783,7 @@ do_tree_forward(Node, Message, Connections, Options, TTL) ->
 
         RelayMessage = {relay_message, Node, Message, TTL - 1},
         do_send_message(N, RelayMessage, Connections, proplists:delete(transitive, Options))
-        end, OutLinks -- [node()]),
+        end, OutLinks),
     ok.
 
 %% @private
