@@ -307,7 +307,28 @@ process_forward(ServerRef, Message) ->
                 Pid = global:whereis_name(Name),
                 Pid ! Message;
             _ ->
-                ServerRef ! Message
+                ServerRef ! Message,
+                case partisan_config:get(tracing, ?TRACING) of
+                    true ->
+                        case is_pid(ServerRef) of
+                            true ->
+                                case is_process_alive(ServerRef) of
+                                    true ->
+                                        ok;
+                                    false ->
+                                        lager:info("Process ~p is NOT ALIVE.", [ServerRef])
+                                end;
+                            false ->
+                                case whereis(ServerRef) of
+                                    undefined ->
+                                        lager:info("Process ~p is NOT ALIVE.", [ServerRef]);
+                                    _ ->
+                                        ok
+                                end
+                        end;
+                    false ->
+                        ok
+                end
         end
     catch
         _:Error ->
