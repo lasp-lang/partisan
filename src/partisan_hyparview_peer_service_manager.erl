@@ -1130,9 +1130,11 @@ handle_message({relay_message, Node, Message, TTL} = _RelayMessage, #state{out_l
             case TTL of
                 0 ->
                     %% No longer forward.
+                    lager:info("TTL expired, dropping message for node ~p: ~p", [Node, Message]),
                     ok;
                 _ ->
-                    do_tree_forward(Node, Message, Connections, [{out_links, OutLinks}], TTL)
+                    do_tree_forward(Node, Message, Connections, [{out_links, OutLinks}], TTL),
+                    ok
             end
     end,
 

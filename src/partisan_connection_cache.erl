@@ -41,10 +41,10 @@ dispatch({forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Messa
     case ets:lookup(?CACHE, Name) of
         [] ->
             %% Trap back to gen_server.
-            lager:error("Connection cache miss for node: ~p", [Name]),
+            lager:info("Connection cache miss for node: ~p", [Name]),
             {error, trap};
         [{Name, []}] ->
-            lager:error("Connection cache miss for node: ~p", [Name]),
+            lager:info("Connection cache miss for node: ~p", [Name]),
             {error, trap};
         [{Name, Pids}] ->
             Pid = partisan_util:dispatch_pid(PartitionKey, Channel, Pids),
@@ -73,10 +73,10 @@ dispatch({forward_message, Name, ServerRef, Message, _Options}) ->
     case ets:lookup(?CACHE, Name) of
         [] ->
             %% Trap back to gen_server.
-            lager:error("Connection cache miss for node: ~p", [Name]),
+            lager:info("Connection cache miss for node: ~p", [Name]),
             {error, trap};
         [{Name, []}] ->
-            lager:error("Connection cache miss for node: ~p", [Name]),
+            lager:info("Connection cache miss for node: ~p", [Name]),
             {error, trap};
         [{Name, Pids}] ->
             Pid = partisan_util:dispatch_pid(Pids),
