@@ -75,6 +75,13 @@ handle_cast(Req, State) ->
     {stop, {bad_cast, Req}, State}.
 
 handle_info({Tag, _RawSocket, Data}, State=#state{socket=Socket}) when ?DATA_MSG(Tag) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Recevied data from socket: ~p", [decode(Data)]);
+        false ->
+            ok
+    end,
+
     case get({?MODULE, ingress_delay}) of
         0 ->
             ok;
@@ -85,10 +92,16 @@ handle_info({Tag, _RawSocket, Data}, State=#state{socket=Socket}) when ?DATA_MSG
     ok = partisan_peer_connection:setopts(Socket, [{active, once}]),
     {noreply, State};
 handle_info({Tag, _RawSocket, Reason}, State=#state{socket=Socket}) when ?ERROR_MSG(Tag) ->
-    lager:error("connection socket ~p errored out, closing", [Socket]),
+    lager:error("Connection socket ~p errored out, closing", [Socket]),
     {stop, Reason, State};
 handle_info({Tag, _RawSocket}, State=#state{socket=Socket}) when ?CLOSED_MSG(Tag) ->
-    lager:debug("connection socket ~p has been remotely closed", [Socket]),
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Connection socket ~p has been remotely closed", [Socket]);
+        false ->
+            ok
+    end,
+
     {stop, normal, State};
 handle_info({'DOWN', MRef, port, _, _}, State=#state{ref=MRef}) ->
     %% Listen socket closed
@@ -135,8 +148,24 @@ handle_message({hello, Node},
     end;
 handle_message(Message, _State) ->
     Peer = get({?MODULE, peer}),
+
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Received message from peer ~p: ~p", [Peer, Message]);
+        false ->
+            ok
+    end,
+
     Manager = partisan_peer_service:manager(),
     Manager:receive_message(Peer, Message),
+
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Dispatched ~p to manager.", [Message]);
+        false ->
+            ok
+    end,
+
     ok.
 
 %% @private

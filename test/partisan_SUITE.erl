@@ -68,7 +68,7 @@ end_per_testcase(Case, _Config) ->
 init_per_group(with_disterl, Config) ->
     [{disterl, true}] ++ Config;
 init_per_group(with_broadcast, Config) ->
-    [{broadcast, true}] ++ Config;
+    [{broadcast, true}, {forward_options, [{transitive, true}]}] ++ Config;
 init_per_group(with_partition_key, Config) ->
     [{forward_options, [{partition_key, 1}]}] ++ Config;
 init_per_group(with_binary_padding, Config) ->
@@ -76,9 +76,9 @@ init_per_group(with_binary_padding, Config) ->
 init_per_group(with_sync_join, Config) ->
     [{parallelism, 1}, {sync_join, true}] ++ Config;
 init_per_group(with_monotonic_channels, Config) ->
-    [{parallelism, 1}, {channels, [{monotonic, vnode}, gossip]}] ++ Config;
+    [{parallelism, 1}, {channels, [{monotonic, vnode}, gossip, rpc]}] ++ Config;
 init_per_group(with_channels, Config) ->
-    [{parallelism, 1}, {channels, [vnode, gossip]}] ++ Config;
+    [{parallelism, 1}, {channels, [vnode, gossip, rpc]}] ++ Config;
 init_per_group(with_parallelism, Config) ->
     parallelism() ++ [{channels, ?CHANNELS}] ++ Config;
 init_per_group(with_parallelism_bypass_pid_encoding, Config) ->
@@ -90,7 +90,9 @@ init_per_group(with_no_channels, Config) ->
 init_per_group(with_causal_labels, Config) ->
     [{causal_labels, [default]}] ++ Config;
 init_per_group(with_causal_send, Config) ->
-    [{causal_labels, [default]}, {forward_options, [{causal, default}, {ack, true}]}] ++ Config;
+    [{causal_labels, [default]}, {forward_options, [{causal_label, default}]}] ++ Config;
+init_per_group(with_causal_send_and_ack, Config) ->
+    [{causal_labels, [default]}, {forward_options, [{causal_label, default}, {ack, true}]}] ++ Config;
 init_per_group(with_forward_interposition, Config) ->
     [{disable_fast_forward, true}] ++ Config;
 init_per_group(with_receive_interposition, Config) ->
@@ -124,6 +126,8 @@ all() ->
 
      {group, with_causal_send, []},
 
+     {group, with_causal_send_and_ack, []},
+
      {group, with_forward_interposition, []},
 
      {group, with_receive_interposition, []},
@@ -150,7 +154,7 @@ all() ->
 
      {group, with_partition_key, [parallel]},
 
-     %% {group, with_broadcast, [parallel]},
+     {group, with_broadcast, [parallel]},
 
      {group, with_ingress_delay, [parallel]},
 
@@ -172,15 +176,14 @@ groups() ->
        rpc_test,
        client_server_manager_test,
        pid_test,
-       %% amqp_manager_test,
        rejoin_test,
        transform_test]},
        
      {hyparview, [],
       [ 
-       %% hyparview_manager_partition_test,
-       %% hyparview_manager_high_active_test,
-       %% hyparview_manager_low_active_test,
+       hyparview_manager_partition_test,
+       hyparview_manager_high_active_test,
+       hyparview_manager_low_active_test,
        hyparview_manager_high_client_test
       ]},
        
@@ -198,6 +201,9 @@ groups() ->
       [causal_test]},
 
      {with_causal_send, [],
+      [default_manager_test]},
+     
+     {with_causal_send_and_ack, [],
       [default_manager_test]},
 
      {with_forward_interposition, [],
@@ -244,68 +250,19 @@ groups() ->
       [default_manager_test]},
 
      {with_egress_delay, [],
-      [default_manager_test]}
+      [default_manager_test]},
 
-     %% TODO: Re-enable me.
-     %% {with_broadcast, [],
-     %%  [
-     %%   hyparview_manager_low_active_test,
-     %%   hyparview_manager_high_active_test
-     %%  ]}
+     {with_broadcast, [],
+      [
+       hyparview_manager_low_active_test,
+       hyparview_manager_high_active_test
+      ]}
 
     ].
 
 %% ===================================================================
 %% Tests.
 %% ===================================================================
-
-amqp_manager_test(Config) ->
-    %% Use the amqp peer service manager.
-    Manager = partisan_amqp_peer_service_manager,
-
-    %% Specify servers.
-    Servers = node_list(2, "server", Config), %% [server_1, server_2],
-
-    %% Specify clients.
-    Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
-
-    %% Start nodes.
-    Nodes = start(amqp_manager_test, Config,
-                  [{partisan_peer_service_manager, Manager},
-                   {servers, Servers},
-                   {clients, Clients}]),
-
-    %% Pause for gossip.
-    timer:sleep(10000),
-
-    %% Verify membership.
-    %%
-    %% Every node should know about every other node in this topology.
-    %%
-    VerifyFun = fun({_Name, Node}) ->
-            {ok, Members} = rpc:call(Node, Manager, members, []),
-            SortedNodes = lists:usort([N || {_, N} <- Nodes]),
-            SortedMembers = lists:usort(Members),
-            case SortedMembers =:= SortedNodes of
-                true ->
-                    ok;
-                false ->
-                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, SortedNodes, SortedMembers])
-            end
-    end,
-
-    %% Verify the membership is correct.
-    lists:foreach(VerifyFun, Nodes),
-
-    %% Verify forward message functionality.
-    lists:foreach(fun({_Name, Node}) ->
-                    ok = check_forward_message(Node, Manager, Nodes)
-                  end, Nodes),
-
-    %% Stop nodes.
-    stop(Nodes),
-
-    ok.
 
 transform_test(Config) ->
     %% Use the default peer service manager.
@@ -915,7 +872,7 @@ performance_test(Config) ->
     Clients = node_list(1, "client", Config),
 
     %% Start nodes.
-    Nodes = start(default_manager_test, Config,
+    Nodes = start(performance_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -1777,22 +1734,10 @@ start(_Case, Config, Options) ->
     StartFun = fun({_Name, Node}) ->
                         %% Start partisan.
                         {ok, _} = rpc:call(Node, application, ensure_all_started, [partisan]),
-                        %% Start a dummy registered process that saves in the environment
-                        %% whatever message it gets, it will only do this *x* amount of times
-                        %% *x* being the number of nodes present in the cluster
-                        Pid = rpc:call(Node, erlang, spawn,
-                                       [fun() ->
-                                            lists:foreach(fun(_) ->
-                                                receive
-                                                    {store, N} ->
-                                                        %% save the number in the environment
-                                                        application:set_env(partisan, forward_message_test, N)
-                                                end
-                                            end, lists:seq(1, length(NodeNames)))
-                                        end]),
+                        %% Start a dummy registered process that saves in the env whatever message it gets.
+                        Pid = rpc:call(Node, erlang, spawn, [fun() -> store_proc_receiver() end]),
                         true = rpc:call(Node, erlang, register, [store_proc, Pid]),
-                        ct:pal("registered store_proc on pid ~p, node ~p",
-                               [Pid, Node])
+                        ct:pal("Registered store_proc on pid ~p, node ~p", [Pid, Node])
                end,
     lists:foreach(StartFun, Nodes),
 
@@ -1837,9 +1782,6 @@ cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
 
     OtherNodes = case Manager of
                      partisan_default_peer_service_manager ->
-                         %% Omit just ourselves.
-                         omit([Name], Nodes);
-                     partisan_amqp_peer_service_manager ->
                          %% Omit just ourselves.
                          omit([Name], Nodes);
                      partisan_client_server_peer_service_manager ->
@@ -1981,39 +1923,44 @@ make_certs(Config) ->
 
 %% @private
 check_forward_message(Node, Manager, Nodes) ->
-    {Transitive, Members} = case rpc:call(Node, partisan_config, get, [broadcast, false]) of
-        true ->
-            M = lists:usort([N || {_, N} <- Nodes]),
-            ct:pal("Checking forward functionality for all nodes: ~p", [M]),
-            {true, M};
-        false ->
-            {ok, M} = rpc:call(Node, Manager, members, []),
-            ct:pal("Checking forward functionality for subset of nodes: ~p", [M]),
-            {false, M}
-    end,
+    Members = ideally_connected_members(Node, Nodes),
 
     ForwardOptions = rpc:call(Node, partisan_config, get, [forward_options, []]),
+    ct:pal("Using forward options: ~p", [ForwardOptions]),
+    {ok, DirectMembers} = rpc:call(Node, Manager, members, []),
 
-    RandomMember = random(Members, Node),
-    ct:pal("requesting node ~p to forward message to store_proc on node ~p",
-           [Node, RandomMember]),
-    Rand = rand:uniform(),
-    ok = rpc:call(Node, Manager, forward_message, [RandomMember, undefined, store_proc, {store, Rand}, [{transitive, Transitive}, {forward_options, ForwardOptions}]]),
-    %% now fetch the value from the random destination node
-    case wait_until(fun() ->
-                    %% it must match with what we asked the node to forward
-                    case rpc:call(RandomMember, application, get_env, [partisan, forward_message_test]) of
-                        {ok, R} ->
-                            R =:= Rand;
-                        _ ->
-                            false
-                    end
-               end, 60 * 2, 500) of
-        ok ->
-            ok;
-        {fail, false} ->
-            ct:fail("check_forward_message fail, Node:~p, Manager:~p, Nodes:~p~n ", [Node, Manager, Nodes])
-    end,
+    lists:foreach(fun(Member) ->
+        Rand = rand:uniform(),
+
+        IsDirect = lists:member(Member, DirectMembers),
+        ct:pal("Node ~p is directly connected: ~p; ~p", [Member, IsDirect, DirectMembers]),
+
+        %% now fetch the value from the random destination node
+        case wait_until(fun() ->
+                        ct:pal("Requesting node ~p to forward message ~p to store_proc on node ~p", [Node, Rand, Member]),
+                        ok = rpc:call(Node, Manager, forward_message, [Member, undefined, store_proc, {store, Rand}, ForwardOptions]),
+                        ct:pal("Message dispatched..."),
+
+                        ct:pal("Checking ~p for value...", [Member]),
+
+                        %% it must match with what we asked the node to forward
+                        case rpc:call(Member, application, get_env, [partisan, forward_message_test]) of
+                            {ok, R} ->
+                                Test = R =:= Rand,
+                                ct:pal("Received from ~p ~p, should be ~p: ~p", [Member, R, Rand, Test]),
+                                Test;
+                            Other ->
+                                ct:pal("Received other, failing: ~p", [Other]),
+                                false
+                        end
+                end, 60 * 2, 500) of
+            ok ->
+                ok;
+            {fail, false} ->
+                ct:fail("Message delivery failed, Node:~p, Manager:~p, Nodes:~p~n ", [Node, Manager, Nodes])
+        end
+    end, Members -- [Node]),
+
     ok.
 
 random(List0, Omit) ->
@@ -2044,19 +1991,24 @@ wait_until(Fun, Retry, Delay) when Retry > 0 ->
 %% Kill a random node and then return a list of nodes that still have the
 %% killed node in their membership
 %%
-hyparview_check_stopped_member(_, [_Node]) -> {undefined, []};
+hyparview_check_stopped_member(_, [_Node]) -> 
+    {undefined, []};
 hyparview_check_stopped_member(KilledNode, Nodes) ->
+    ct:pal("Killed node ~p.", [KilledNode]),
+
     %% Obtain the membership from all the nodes,
     %% the killed node shouldn't be there
     lists:filtermap(fun({_, Node}) ->
-                        {ok, Members} = rpc:call(Node, partisan_peer_service, members, []),
-                        case lists:member(KilledNode, Members) of
-                            true ->
-                                {true, Node};
-                            false ->
-                                false
-                        end
-                     end, Nodes).
+        ct:pal("Making sure ~p doesn't have ~p in it's membership.", [Node, KilledNode]),
+
+        {ok, Members} = rpc:call(Node, partisan_peer_service, members, []),
+        case lists:member(KilledNode, Members) of
+            true ->
+                {true, Node};
+            false ->
+                false
+        end
+        end, Nodes).
 
 %% @private
 hyparview_membership_check(Nodes) ->
@@ -2399,7 +2351,8 @@ hyparview_xbot_manager_high_active_test(Config) ->
     ok = rpc:call(KilledNode, partisan, stop, []),
     CheckStoppedFun = fun() ->
                         case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
-                            [] -> true;
+                            [] -> 
+                                true;
                             FailedNodes ->
                                 FailedNodes
                         end
@@ -2564,3 +2517,32 @@ hyparview_xbot_manager_high_client_test(Config) ->
     stop(Nodes),
 
     ok.
+
+%% @private
+ideally_connected_members(Node, Nodes) ->
+    case rpc:call(Node, partisan_config, get, [partisan_peer_service_manager]) of
+        partisan_default_peer_service_manager ->
+            M = lists:usort([N || {_, N} <- Nodes]),
+            ct:pal("Fully connected: checking forward functionality for all nodes: ~p", [M]),
+            M;
+        Manager ->
+            case rpc:call(Node, partisan_config, get, [broadcast, false]) of
+                true ->
+                    M = lists:usort([N || {_, N} <- Nodes]),
+                    ct:pal("Checking forward functionality for all nodes: ~p", [M]),
+                    M;
+                false ->
+                    {ok, M} = rpc:call(Node, Manager, members, []),
+                    ct:pal("Checking forward functionality for subset of nodes: ~p", [M]),
+                    M
+            end
+    end.
+
+%% @private
+store_proc_receiver() ->
+    receive
+        {store, N} ->
+            %% save the number in the environment
+            application:set_env(partisan, forward_message_test, N)
+    end,
+    store_proc_receiver().

@@ -35,31 +35,75 @@ update(Connections) ->
               end, [], Connections).
 
 dispatch({forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Message, _Options}) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Dispatching message: ~p", [Message]);
+        false ->
+            ok
+    end,
+
     %% Find a connection for the remote node, if we have one.
     case ets:lookup(?CACHE, Name) of
         [] ->
             %% Trap back to gen_server.
-            lager:error("Connection cache miss for node: ~p", [Name]),
+            lager:info("Connection cache miss for node: ~p", [Name]),
             {error, trap};
         [{Name, []}] ->
-            lager:error("Connection cache miss for node: ~p", [Name]),
+            lager:info("Connection cache miss for node: ~p", [Name]),
             {error, trap};
         [{Name, Pids}] ->
             Pid = partisan_util:dispatch_pid(PartitionKey, Channel, Pids),
+
+            case partisan_config:get(tracing, ?TRACING) of
+                true ->
+                    lager:info("Dispatching to message: ~p pid: ~p", [Message, Pid]),
+
+                    case is_process_alive(Pid) of
+                        true ->
+                            ok;
+                        false ->
+                            lager:info("Dispatching to message: ~p, pid: ~p, process is NOT ALIVE.", [Message, Pid])
+                    end;
+                false ->
+                    ok
+            end,
+
             gen_server:cast(Pid, {send_message, {forward_message, ServerRef, Message}})
     end;
 
 dispatch({forward_message, Name, ServerRef, Message, _Options}) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Dispatching message: ~p", [Message]);
+        false ->
+            ok
+    end,
+
     %% Find a connection for the remote node, if we have one.
     case ets:lookup(?CACHE, Name) of
         [] ->
             %% Trap back to gen_server.
-            lager:error("Connection cache miss for node: ~p", [Name]),
+            lager:info("Connection cache miss for node: ~p", [Name]),
             {error, trap};
         [{Name, []}] ->
-            lager:error("Connection cache miss for node: ~p", [Name]),
+            lager:info("Connection cache miss for node: ~p", [Name]),
             {error, trap};
         [{Name, Pids}] ->
             Pid = partisan_util:dispatch_pid(Pids),
+
+            case partisan_config:get(tracing, ?TRACING) of
+                true ->
+                    lager:info("Dispatching to message: ~p pid: ~p", [Message, Pid]),
+
+                    case is_process_alive(Pid) of
+                        true ->
+                            ok;
+                        false ->
+                            lager:info("Dispatching to message: ~p, pid: ~p, process is NOT ALIVE.", [Message, Pid])
+                    end;
+                false ->
+                    ok
+            end,
+
             gen_server:cast(Pid, {send_message, {forward_message, ServerRef, Message}})
     end.

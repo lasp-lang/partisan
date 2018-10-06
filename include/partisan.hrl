@@ -12,6 +12,9 @@
 -define(CONNECTION_JITTER, 1000).
 -define(DEFAULT_PEER_SERVICE_MANAGER, partisan_default_peer_service_manager).
 
+-define(TRACING, false).
+-define(RELAY_TTL, 5).
+
 -define(UTIL, partisan_plumtree_util).
 -define(DEFAULT_LAZY_TICK_PERIOD, 1000).
 -define(DEFAULT_EXCHANGE_TICK_PERIOD, 10000).

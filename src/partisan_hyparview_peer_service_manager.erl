@@ -168,6 +168,13 @@ forward_message(Name, Channel, ServerRef, Message) ->
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, _Channel, ServerRef, Message, Options) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("About to send message from ~p to ~p: ~p", [node(), Name, Message]);
+        false ->
+            ok
+    end,
+
     FullMessage = {forward_message, Name, ServerRef, Message, Options},
 
     %% Attempt to fast-path through the memoized connection cache.
@@ -179,8 +186,35 @@ forward_message(Name, _Channel, ServerRef, Message, Options) ->
     end.
 
 %% @doc Receive message from a remote manager.
-receive_message(_Peer, Message) ->
-    gen_server:call(?MODULE, {receive_message, Message}, infinity).
+receive_message(Peer, {forward_message, ServerRef, Message} = FullMessage) ->
+    % lager:info("in mesage receive at node ~p for peer ~p", [node(), Peer]),
+
+    case partisan_config:get(disable_fast_receive, true) of
+        true ->
+            % lager:info("in mesage receive at node ~p for peer ~p FAST RECEIVE DISABLE", [node(), Peer]),
+            gen_server:call(?MODULE, {receive_message, Peer, FullMessage}, infinity);
+        false ->
+            % lager:info("in mesage receive at node ~p for peer ~p FAST RECEIVE NOT DISABLE", [node(), Peer]),
+            partisan_util:process_forward(ServerRef, Message)
+    end;
+receive_message(Peer, Message) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Manager received message from peer ~p: ~p", [Peer, Message]);
+        false ->
+            ok
+    end,
+
+    Result = gen_server:call(?MODULE, {receive_message, Message}, infinity),
+
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Processed message from peer ~p: ~p", [Peer, Message]);
+        false ->
+            ok
+    end,
+
+    Result.
 
 %% @doc Attempt to join a remote node.
 join(Node) ->
@@ -521,17 +555,8 @@ handle_info(random_promotion, #state{myself=Myself,
     {noreply, State};
 
 handle_info(tree_refresh, #state{}=State) ->
-    %% Use our tree for the root.
-    Root = partisan_peer_service_manager:mynode(),
-
     %% Get lazily computed outlinks.
-    OutLinks = try partisan_plumtree_broadcast:debug_get_peers(partisan_peer_service_manager:mynode(), Root) of
-        {EagerPeers, _LazyPeers} ->
-            ordsets:to_list(EagerPeers)
-    catch
-        _:_ ->
-            []
-    end,
+    OutLinks = retrieve_outlinks(),
 
     %% Reschedule.
     schedule_tree_refresh(),
@@ -1104,11 +1129,30 @@ handle_message({shuffle, Exchange, TTL, Sender},
     end,
     {noreply, State};
 
-handle_message({relay_message, Node, Message}, #state{out_links=OutLinks, connections=Connections}=State) ->
-    lager:debug("Node ~p received tree relay to ~p", [partisan_peer_service_manager:mynode(), Node]),
+handle_message({relay_message, Node, Message, TTL} = _RelayMessage, #state{out_links=OutLinks, connections=Connections, active=Active}=State) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Node ~p received tree relay to ~p", [partisan_peer_service_manager:mynode(), Node]);
+        false ->
+            ok
+    end,
 
-    %% Attempt to deliver, or recurse and forward on through a relay.
-    ok = do_send_message(Node, Message, Connections, [{out_links, OutLinks}, {transitive, true}]),
+    ActiveMembers = [P || #{name := P} <- members(Active)],
+
+    case lists:member(Node, ActiveMembers) of
+        true ->
+            do_send_message(Node, Message, Connections, [{out_links, OutLinks}, {transitive, true}]);
+        false ->
+            case TTL of
+                0 ->
+                    %% No longer forward.
+                    lager:info("TTL expired, dropping message for node ~p: ~p", [Node, Message]),
+                    ok;
+                _ ->
+                    do_tree_forward(Node, Message, Connections, [{out_links, OutLinks}], TTL),
+                    ok
+            end
+    end,
 
     {noreply, State};
 handle_message({forward_message, ServerRef, Message}, State) ->
@@ -1222,18 +1266,27 @@ do_send_message(Node, Message, Connections) ->
                       Options :: list()) ->
             {error, disconnected} | {error, not_yet_connected} | {error, term()} | ok.
 do_send_message(Node, Message, Connections, Options) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Sending message ~p to ~p", [Message, Node]);
+        false ->
+            ok
+    end,
+
     %% Find a connection for the remote node, if we have one.
     case partisan_peer_service_connections:find(Node, Connections) of
         {ok, []} ->
-            lager:debug("Node disconnected when sending ~p to ~p!", [Message, Node]),
-            lager:debug("Broadcast mode: ~p, transitive: ~p", [partisan_config:get(broadcast, false), proplists:get_value(transitive, Options, false)]),
+            lager:info("Node disconnected when sending ~p to ~p!", [Message, Node]),
+            lager:info("Broadcast mode: ~p, transitive: ~p", [partisan_config:get(broadcast, false), proplists:get_value(transitive, Options, false)]),
 
             %% We were connected, but we're not anymore.
             case partisan_config:get(broadcast, false) of
                 true ->
                     case proplists:get_value(transitive, Options, false) of
                         true ->
-                            do_tree_forward(Node, Message, Connections, Options);
+                            lager:info("Performing tree forward from node ~p to node ~p and message: ~p", [node(), Node, Message]),
+                            TTL = partisan_config:get(relay_ttl, ?RELAY_TTL),
+                            do_tree_forward(Node, Message, Connections, Options, TTL);
                         false ->
                             ok
                     end;
@@ -1243,23 +1296,37 @@ do_send_message(Node, Message, Connections, Options) ->
             end;
         {ok, Entries} ->
             try
+                case partisan_config:get(tracing, ?TRACING) of
+                    true ->
+                        lager:info("Sending message ~p to ~p using pids ~p", [Message, Node, Entries]);
+                    false ->
+                        ok
+                end,
+
                 Pid = partisan_util:dispatch_pid(Entries),
                 gen_server:call(Pid, {send_message, Message})
             catch
                 Reason:Error ->
-                    lager:debug("failed to send a message to ~p due to ~p:~p", [Node, Reason, Error]),
+                    lager:info("Failed to send message: ~p to ~p due to ~p:~p", [Message, Node, Reason, Error]),
                     {error, Error}
             end;
         {error, not_found} ->
-            lager:debug("Node not yet connected when sending ~p to ~p!", [Message, Node]),
-            lager:debug("Broadcast mode: ~p, transitive: ~p", [partisan_config:get(broadcast, false), proplists:get_value(transitive, Options, false)]),
+            lager:info("Node not yet connected when sending ~p to ~p from ~p!", [Message, Node, node()]),
 
             %% We aren't connected, and it's not sure we will ever be.  Take the list of gossip peers and forward the message down the tree.
             case partisan_config:get(broadcast, false) of
                 true ->
                     case proplists:get_value(transitive, Options, false) of
                         true ->
-                            do_tree_forward(Node, Message, Connections, Options);
+                            case partisan_config:get(tracing, ?TRACING) of
+                                true ->
+                                    lager:info("Performing tree forward from node ~p to node ~p and message: ~p", 
+                                               [node(), Node, Message]);
+                                false ->
+                                    ok
+                            end,
+                            TTL = partisan_config:get(relay_ttl, ?RELAY_TTL),
+                            do_tree_forward(Node, Message, Connections, Options, TTL);
                         false ->
                             ok
                     end;
@@ -1493,8 +1560,13 @@ k_passive() ->
 
 %% @private
 schedule_tree_refresh() ->
-    Period = partisan_config:get(tree_refresh, 1000),
-    erlang:send_after(Period, ?MODULE, tree_refresh).
+    case partisan_config:get(broadcast, false) of
+        true ->
+            Period = partisan_config:get(tree_refresh, 1000),
+            erlang:send_after(Period, ?MODULE, tree_refresh);
+        false ->
+            ok
+    end.
 
 %% @private
 schedule_passive_view_maintenance() ->
@@ -1719,8 +1791,14 @@ handle_partition_resolution(Reference,
     Partitions.
 
 %% @private
-do_tree_forward(Node, Message, Connections, Options) ->
-    lager:debug("Attempting to forward message from ~p to ~p.", [partisan_peer_service_manager:mynode(), Node]),
+do_tree_forward(Node, Message, Connections, Options, TTL) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Attempting to forward message ~p from ~p to ~p.", 
+                    [Message, partisan_peer_service_manager:mynode(), Node]);
+        false ->
+            ok
+    end,
 
     %% Preempt with user-supplied outlinks.
     UserOutLinks = proplists:get_value(out_links, Options, undefined),
@@ -1731,28 +1809,54 @@ do_tree_forward(Node, Message, Connections, Options) ->
                 Value ->
                     Value
             catch
-                _:_ ->
-                    lager:error("Outlinks retrieval failed!"),
+                _:Reason ->
+                    lager:error("Outlinks retrieval failed, reason: ~p", [Reason]),
                     []
             end;
         OL ->
-            OL
+            OL -- [node()]
     end,
 
     %% Send messages, but don't attempt to forward again, if we aren't connected.
     lists:foreach(fun(N) ->
-        lager:debug("Forwarding relay message to node ~p for node ~p from node ~p", [N, Node, partisan_peer_service_manager:mynode()]),
+        case partisan_config:get(tracing, ?TRACING) of
+            true ->
+                lager:info("Forwarding relay message ~p to node ~p for node ~p from node ~p", 
+                        [Message, N, Node, partisan_peer_service_manager:mynode()]);
+            false ->
+                ok
+        end,
 
-        RelayMessage = {relay_message, Node, Message},
+        RelayMessage = {relay_message, Node, Message, TTL - 1},
         do_send_message(N, RelayMessage, Connections, proplists:delete(transitive, Options))
         end, OutLinks),
     ok.
 
 %% @private
 retrieve_outlinks() ->
-    %% Use our tree for the root.
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("About to retrieve outlinks...");
+        false ->
+            ok
+    end,
+
     Root = partisan_peer_service_manager:mynode(),
 
-    {EagerPeers, _LazyPeers} = partisan_plumtree_broadcast:debug_get_peers(partisan_peer_service_manager:mynode(), Root),
+    OutLinks = try partisan_plumtree_broadcast:debug_get_peers(partisan_peer_service_manager:mynode(), Root, 1000) of
+        {EagerPeers, _LazyPeers} ->
+            ordsets:to_list(EagerPeers)
+    catch
+        _:_ ->
+            lager:info("Request to get outlinks timed out..."),
+            []
+    end,
 
-    ordsets:to_list(EagerPeers).
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Finished getting outlinks: ~p", [OutLinks]);
+        false ->
+            ok
+    end,
+
+    OutLinks -- [node()].

@@ -70,8 +70,7 @@ init([Peer, ListenAddr, Channel, From]) ->
 
             {ok, #state{from=From, listen_addr=ListenAddr, channel=Channel, socket=Socket, peer=Peer}};
         Error ->
-            lager:warning("unable to connect to ~p due to ~p",
-                          [Peer, Error]),
+            lager:warning("Pid ~p is unable to connect to ~p due to ~p", [self(), Peer, Error]),
             {stop, normal}
     end.
 
@@ -90,9 +89,16 @@ handle_call({send_message, Message}, _From, #state{channel=_Channel, socket=Sock
 
     case partisan_peer_connection:send(Socket, encode(Message)) of
         ok ->
+            case partisan_config:get(tracing, ?TRACING) of
+                true ->
+                    lager:info("Dispatched message: ~p", [Message]);
+                false ->
+                    ok
+            end,
+            
             {reply, ok, State};
         Error ->
-            lager:info("Message failed to send: ~p", [Error]),
+            lager:info("Message ~p failed to send: ~p", [Message, Error]),
             {reply, Error, State}
     end;
 handle_call(Msg, _From, State) ->
@@ -102,6 +108,13 @@ handle_call(Msg, _From, State) ->
 -spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
 %% @private
 handle_cast({send_message, Message}, #state{channel=_Channel, socket=Socket}=State) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Received cast: ~p", [Message]);
+        false ->
+            ok
+    end,
+
     case get({?MODULE, egress_delay}) of
         0 ->
             ok;
@@ -111,9 +124,15 @@ handle_cast({send_message, Message}, #state{channel=_Channel, socket=Socket}=Sta
 
     case partisan_peer_connection:send(Socket, encode(Message)) of
         ok ->
+            case partisan_config:get(tracing, ?TRACING) of
+                true ->
+                    lager:info("Dispatched message: ~p", [Message]);
+                false ->
+                    ok
+            end,
             ok;
         Error ->
-            lager:info("Message failed to send: ~p", [Error])
+            lager:info("Message ~p failed to send: ~p", [Message, Error])
     end,
     {noreply, State};
 handle_cast(Msg, State) ->
@@ -123,9 +142,15 @@ handle_cast(Msg, State) ->
 %% @private
 -spec handle_info(term(), state_t()) -> {noreply, state_t()}.
 handle_info({Tag, _Socket, Data}, State0) when ?DATA_MSG(Tag) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Received info message at ~p: ~p", [self(), decode(Data)]);
+        false ->
+            ok
+    end,
     handle_message(decode(Data), State0);
-handle_info({Tag, _Socket}, #state{peer = _Peer} = State) when ?CLOSED_MSG(Tag) ->
-    % lager:info("connection to ~p has been closed", [Peer]),
+handle_info({Tag, _Socket}, #state{peer = Peer} = State) when ?CLOSED_MSG(Tag) ->
+    lager:info("Connection to ~p has been closed for pid ~p", [Peer, self()]),
     {stop, normal, State};
 handle_info(Msg, State) ->
     lager:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Msg]),
@@ -133,7 +158,13 @@ handle_info(Msg, State) ->
 
 %% @private
 -spec terminate(term(), state_t()) -> term().
-terminate(_Reason, #state{socket=Socket}) ->
+terminate(Reason, #state{socket=Socket}) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Process ~p terminating for reason ~p...", [self(), Reason]);
+        false ->
+            ok
+    end,
     ok = partisan_peer_connection:close(Socket),
     ok.
 
@@ -250,12 +281,12 @@ handle_message({hello, Node}, #state{peer=Peer, socket=Socket}=State) ->
             {noreply, State};
         _ ->
             %% If the peer isn't who it should be, abort.
-            lager:error("Peer ~p isn't ~p.", [Node, Peer]),
+            lager:error("Pid: ~p peer ~p isn't ~p.", [self(), Node, Peer]),
             {stop, {unexpected_peer, Node, Peer}, State}
     end;
 
 handle_message(Message, State) ->
-    lager:info("Invalid message: ~p", [Message]),
+    lager:info("Pid received invalid message: ~p", [self(), Message]),
     {stop, normal, State}.
 
 %% @private
