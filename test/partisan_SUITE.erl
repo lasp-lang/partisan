@@ -1738,7 +1738,7 @@ start(_Case, Config, Options) ->
                                                         %% save the number in the environment
                                                         application:set_env(partisan, forward_message_test, N)
                                                 end
-                                            end, lists:seq(1, length(NodeNames)))
+                                            end, lists:seq(1, length(NodeNames) * length(NodeNames)))
                                         end]),
                         true = rpc:call(Node, erlang, register, [store_proc, Pid]),
                         ct:pal("Registered store_proc on pid ~p, node ~p", [Pid, Node])
