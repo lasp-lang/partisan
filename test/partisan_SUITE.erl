@@ -1991,19 +1991,24 @@ wait_until(Fun, Retry, Delay) when Retry > 0 ->
 %% Kill a random node and then return a list of nodes that still have the
 %% killed node in their membership
 %%
-hyparview_check_stopped_member(_, [_Node]) -> {undefined, []};
+hyparview_check_stopped_member(_, [_Node]) -> 
+    {undefined, []};
 hyparview_check_stopped_member(KilledNode, Nodes) ->
+    ct:pal("Killed node ~p.", [KilledNode]),
+
     %% Obtain the membership from all the nodes,
     %% the killed node shouldn't be there
     lists:filtermap(fun({_, Node}) ->
-                        {ok, Members} = rpc:call(Node, partisan_peer_service, members, []),
-                        case lists:member(KilledNode, Members) of
-                            true ->
-                                {true, Node};
-                            false ->
-                                false
-                        end
-                     end, Nodes).
+        ct:pal("Making sure ~p doesn't have ~p in it's membership.", [Node, KilledNode]),
+
+        {ok, Members} = rpc:call(Node, partisan_peer_service, members, []),
+        case lists:member(KilledNode, Members) of
+            true ->
+                {true, Node};
+            false ->
+                false
+        end
+        end, Nodes).
 
 %% @private
 hyparview_membership_check(Nodes) ->
@@ -2346,7 +2351,8 @@ hyparview_xbot_manager_high_active_test(Config) ->
     ok = rpc:call(KilledNode, partisan, stop, []),
     CheckStoppedFun = fun() ->
                         case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
-                            [] -> true;
+                            [] -> 
+                                true;
                             FailedNodes ->
                                 FailedNodes
                         end
