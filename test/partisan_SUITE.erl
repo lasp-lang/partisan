@@ -1727,19 +1727,8 @@ start(_Case, Config, Options) ->
     StartFun = fun({_Name, Node}) ->
                         %% Start partisan.
                         {ok, _} = rpc:call(Node, application, ensure_all_started, [partisan]),
-                        %% Start a dummy registered process that saves in the environment
-                        %% whatever message it gets, it will only do this *x* amount of times
-                        %% *x* being the number of nodes present in the cluster
-                        Pid = rpc:call(Node, erlang, spawn,
-                                       [fun() ->
-                                            lists:foreach(fun(_) ->
-                                                receive
-                                                    {store, N} ->
-                                                        %% save the number in the environment
-                                                        application:set_env(partisan, forward_message_test, N)
-                                                end
-                                            end, lists:seq(1, length(NodeNames) * length(NodeNames)))
-                                        end]),
+                        %% Start a dummy registered process that saves in the env whatever message it gets.
+                        Pid = rpc:call(Node, erlang, spawn, [fun() -> store_proc_receiver() end]),
                         true = rpc:call(Node, erlang, register, [store_proc, Pid]),
                         ct:pal("Registered store_proc on pid ~p, node ~p", [Pid, Node])
                end,
@@ -2535,3 +2524,12 @@ ideally_connected_members(Node, Nodes) ->
                     M
             end
     end.
+
+%% @private
+store_proc_receiver() ->
+    receive
+        {store, N} ->
+            %% save the number in the environment
+            application:set_env(partisan, forward_message_test, N)
+    end,
+    store_proc_receiver().
