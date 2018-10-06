@@ -90,7 +90,7 @@ init_per_group(with_no_channels, Config) ->
 init_per_group(with_causal_labels, Config) ->
     [{causal_labels, [default]}] ++ Config;
 init_per_group(with_causal_send, Config) ->
-    [{causal_labels, [default]}, {forward_options, [{causal, default}, {ack, true}]}] ++ Config;
+    [{causal_labels, [default]}, {forward_options, [{causal_label, default}]}] ++ Config;
 init_per_group(with_forward_interposition, Config) ->
     [{disable_fast_forward, true}] ++ Config;
 init_per_group(with_receive_interposition, Config) ->
