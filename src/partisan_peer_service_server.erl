@@ -95,7 +95,13 @@ handle_info({Tag, _RawSocket, Reason}, State=#state{socket=Socket}) when ?ERROR_
     lager:error("Connection socket ~p errored out, closing", [Socket]),
     {stop, Reason, State};
 handle_info({Tag, _RawSocket}, State=#state{socket=Socket}) when ?CLOSED_MSG(Tag) ->
-    lager:info("Connection socket ~p has been remotely closed", [Socket]),
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Connection socket ~p has been remotely closed", [Socket]);
+        false ->
+            ok
+    end,
+
     {stop, normal, State};
 handle_info({'DOWN', MRef, port, _, _}, State=#state{ref=MRef}) ->
     %% Listen socket closed

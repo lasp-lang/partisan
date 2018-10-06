@@ -35,7 +35,12 @@ update(Connections) ->
               end, [], Connections).
 
 dispatch({forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Message, _Options}) ->
-    lager:info("Dispatching message: ~p", [Message]),
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Dispatching message: ~p", [Message]);
+        false ->
+            ok
+    end,
 
     %% Find a connection for the remote node, if we have one.
     case ets:lookup(?CACHE, Name) of
@@ -67,7 +72,12 @@ dispatch({forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Messa
     end;
 
 dispatch({forward_message, Name, ServerRef, Message, _Options}) ->
-    lager:info("Dispatching message: ~p", [Message]),
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Dispatching message: ~p", [Message]);
+        false ->
+            ok
+    end,
 
     %% Find a connection for the remote node, if we have one.
     case ets:lookup(?CACHE, Name) of
