@@ -867,6 +867,8 @@ handle_message({receive_state, #{name := From}, PeerMembership},
                     {stop, normal, State#state{membership=EmptyMembership}}
             end
     end;
+
+%% Causal and acknowledged messages.
 handle_message({forward_message, SourceNode, MessageClock, ServerRef, {causal, Label, _, _, _, _, _} = Message},
                #state{connections=Connections}=State) ->
     %% Try to acknowledge.
@@ -885,6 +887,21 @@ handle_message({forward_message, SourceNode, MessageClock, ServerRef, {causal, L
     end,
 
     {reply, ok, State};
+
+%% Acknowledged messages.
+handle_message({forward_message, SourceNode, MessageClock, ServerRef, Message},
+               #state{connections=Connections}=State) ->
+    %% Try to acknowledge.
+    do_send_message(SourceNode,
+                    ?DEFAULT_CHANNEL,
+                    ?DEFAULT_PARTITION_KEY,
+                    {ack, MessageClock},
+                    Connections),
+
+    partisan_util:process_forward(ServerRef, Message),
+    {reply, ok, State};
+
+%% Causal messages.
 handle_message({forward_message, ServerRef, {causal, Label, _, _, _, _, _} = Message}, State) ->
     case partisan_causality_backend:is_causal_message(Message) of
         true ->
@@ -895,9 +912,12 @@ handle_message({forward_message, ServerRef, {causal, Label, _, _, _, _, _} = Mes
     end,
 
     {reply, ok, State};
+
+%% Best-effort messages.
 handle_message({forward_message, ServerRef, Message}, State) ->
     partisan_util:process_forward(ServerRef, Message),
     {reply, ok, State};
+
 handle_message({connect, ConnectionPid, #{name := Name} = Node}, State0) ->
     MyNode = partisan_peer_service_manager:mynode(),
 
