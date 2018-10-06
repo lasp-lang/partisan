@@ -26,6 +26,7 @@
 -export([init/0,
          channels/0,
          parallelism/0,
+         trace/2,
          listen_addrs/0,
          set/2,
          get/1,
@@ -108,6 +109,7 @@ init() ->
                            {pid_encoding, true},
                            {random_promotion, true},
                            {reservations, []},
+                           {tracing, false},
                            {tls, false},
                            {tls_options, []},
                            {tag, DefaultTag},
@@ -118,6 +120,14 @@ init() ->
     env_or_default(listen_addrs, DefaultListenAddrs),
 
     ok.
+
+trace(Message, Args) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info(Message, Args);
+        false ->
+            ok
+    end.
 
 env_or_default(Key, Default) ->
     case application:get_env(partisan, Key) of
