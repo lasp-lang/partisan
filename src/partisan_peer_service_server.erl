@@ -142,8 +142,24 @@ handle_message({hello, Node},
     end;
 handle_message(Message, _State) ->
     Peer = get({?MODULE, peer}),
+
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Received message from peer ~p: ~p", [Peer, Message]);
+        false ->
+            ok
+    end,
+
     Manager = partisan_peer_service:manager(),
     Manager:receive_message(Peer, Message),
+
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Dispatched ~p to manager.", [Message]);
+        false ->
+            ok
+    end,
+
     ok.
 
 %% @private
