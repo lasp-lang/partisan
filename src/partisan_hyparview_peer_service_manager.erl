@@ -544,17 +544,8 @@ handle_info(random_promotion, #state{myself=Myself,
     {noreply, State};
 
 handle_info(tree_refresh, #state{}=State) ->
-    %% Use our tree for the root.
-    Root = partisan_peer_service_manager:mynode(),
-
     %% Get lazily computed outlinks.
-    OutLinks = try partisan_plumtree_broadcast:debug_get_peers(partisan_peer_service_manager:mynode(), Root) of
-        {EagerPeers, _LazyPeers} ->
-            ordsets:to_list(EagerPeers)
-    catch
-        _:_ ->
-            []
-    end,
+    OutLinks = retrieve_outlinks(),
 
     %% Reschedule.
     schedule_tree_refresh(),
