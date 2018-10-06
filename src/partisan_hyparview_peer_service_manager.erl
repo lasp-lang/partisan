@@ -186,8 +186,24 @@ forward_message(Name, _Channel, ServerRef, Message, Options) ->
     end.
 
 %% @doc Receive message from a remote manager.
-receive_message(_Peer, Message) ->
-    gen_server:call(?MODULE, {receive_message, Message}, infinity).
+receive_message(Peer, Message) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Manager received message from peer ~p: ~p", [Peer, Message]);
+        false ->
+            ok
+    end,
+
+    Result = gen_server:call(?MODULE, {receive_message, Message}, infinity),
+
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Processed message from peer ~p: ~p", [Peer, Message]);
+        false ->
+            ok
+    end,
+
+    Result.
 
 %% @doc Attempt to join a remote node.
 join(Node) ->
