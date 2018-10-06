@@ -116,7 +116,7 @@ code_change(_OldVsn, State, _Extra) ->
 options() ->
     ForwardOptions = partisan_config:get(forward_options),
     Transitive = partisan_config:get(broadcast, false),
-    [{transitive, Transitive}, {forward_options, ForwardOptions}].
+    [{transitive, Transitive}] ++ ForwardOptions.
 
 rpc_channel() ->
     Channels = partisan_config:get(channels),
