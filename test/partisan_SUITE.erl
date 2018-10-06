@@ -865,7 +865,7 @@ performance_test(Config) ->
     Clients = node_list(1, "client", Config),
 
     %% Start nodes.
-    Nodes = start(default_manager_test, Config,
+    Nodes = start(performance_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
