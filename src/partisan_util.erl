@@ -322,8 +322,13 @@ process_forward(ServerRef, Message) ->
                                 case whereis(ServerRef) of
                                     undefined ->
                                         lager:info("Process ~p is NOT ALIVE.", [ServerRef]);
-                                    _ ->
-                                        ok
+                                    Pid ->
+                                        case is_process_alive(Pid) of
+                                            true ->
+                                                ok;
+                                            false ->
+                                                lager:info("Process ~p is NOT ALIVE.", [ServerRef])
+                                        end
                                 end
                         end;
                     false ->
@@ -332,5 +337,5 @@ process_forward(ServerRef, Message) ->
         end
     catch
         _:Error ->
-            lager:debug("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
+            lager:info("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
     end.
