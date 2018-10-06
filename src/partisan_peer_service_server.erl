@@ -75,6 +75,13 @@ handle_cast(Req, State) ->
     {stop, {bad_cast, Req}, State}.
 
 handle_info({Tag, _RawSocket, Data}, State=#state{socket=Socket}) when ?DATA_MSG(Tag) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Recevied data from socket: ~p", [decode(Data)]);
+        false ->
+            ok
+    end,
+
     case get({?MODULE, ingress_delay}) of
         0 ->
             ok;
