@@ -109,7 +109,7 @@ init() ->
                            {pid_encoding, true},
                            {random_promotion, true},
                            {reservations, []},
-                           {tracing, true},
+                           {tracing, false},
                            {tls, false},
                            {tls_options, []},
                            {tag, DefaultTag},

@@ -12,7 +12,7 @@
 -define(CONNECTION_JITTER, 1000).
 -define(DEFAULT_PEER_SERVICE_MANAGER, partisan_default_peer_service_manager).
 
--define(TRACING, true).
+-define(TRACING, false).
 -define(RELAY_TTL, 5).
 
 -define(UTIL, partisan_plumtree_util).
