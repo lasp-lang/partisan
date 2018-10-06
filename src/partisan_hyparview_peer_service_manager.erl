@@ -1276,7 +1276,6 @@ do_send_message(Node, Message, Connections, Options) ->
             end;
         {error, not_found} ->
             lager:info("Node not yet connected when sending ~p to ~p from ~p!", [Message, Node, node()]),
-            lager:info("Broadcast mode: ~p, transitive: ~p", [partisan_config:get(broadcast, false), proplists:get_value(transitive, Options, false)]),
 
             %% We aren't connected, and it's not sure we will ever be.  Take the list of gossip peers and forward the message down the tree.
             case partisan_config:get(broadcast, false) of
