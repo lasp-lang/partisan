@@ -1741,8 +1741,7 @@ start(_Case, Config, Options) ->
                                             end, lists:seq(1, length(NodeNames)))
                                         end]),
                         true = rpc:call(Node, erlang, register, [store_proc, Pid]),
-                        ct:pal("registered store_proc on pid ~p, node ~p",
-                               [Pid, Node])
+                        ct:pal("Registered store_proc on pid ~p, node ~p", [Pid, Node])
                end,
     lists:foreach(StartFun, Nodes),
 
@@ -1952,7 +1951,7 @@ check_forward_message(Node, Manager, Nodes) ->
         %% now fetch the value from the random destination node
         case wait_until(fun() ->
                         ct:pal("Requesting node ~p to forward message ~p to store_proc on node ~p", [Node, Rand, Member]),
-                        ok = rpc:call(Node, Manager, forward_message, [Member, undefined, store_proc, {store, Rand}, [{transitive, Transitive}, {forward_options, ForwardOptions}]]),
+                        ok = rpc:call(Node, Manager, forward_message, [Member, undefined, store_proc, {store, Rand}, [{transitive, Transitive}] ++ ForwardOptions]),
                         ct:pal("Message dispatched..."),
 
                         ct:pal("Checking ~p for value...", [Member]),
