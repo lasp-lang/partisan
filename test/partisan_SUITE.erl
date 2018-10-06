@@ -91,6 +91,8 @@ init_per_group(with_causal_labels, Config) ->
     [{causal_labels, [default]}] ++ Config;
 init_per_group(with_causal_send, Config) ->
     [{causal_labels, [default]}, {forward_options, [{causal_label, default}]}] ++ Config;
+init_per_group(with_causal_send_and_ack, Config) ->
+    [{causal_labels, [default]}, {forward_options, [{causal_label, default}, {ack, true}]}] ++ Config;
 init_per_group(with_forward_interposition, Config) ->
     [{disable_fast_forward, true}] ++ Config;
 init_per_group(with_receive_interposition, Config) ->
@@ -123,6 +125,8 @@ all() ->
      {group, with_causal_labels, []},
 
      {group, with_causal_send, []},
+
+     {group, with_causal_send_and_ack, []},
 
      {group, with_forward_interposition, []},
 
@@ -197,6 +201,9 @@ groups() ->
       [causal_test]},
 
      {with_causal_send, [],
+      [default_manager_test]},
+     
+     {with_causal_send_and_ack, [],
       [default_manager_test]},
 
      {with_forward_interposition, [],
