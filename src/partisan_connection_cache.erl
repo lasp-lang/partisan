@@ -48,13 +48,21 @@ dispatch({forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Messa
             {error, trap};
         [{Name, Pids}] ->
             Pid = partisan_util:dispatch_pid(PartitionKey, Channel, Pids),
-            lager:info("Dispatching to message: ~p pid: ~p", [Message, Pid]),
-            case is_process_alive(Pid) of
+
+            case partisan_config:get(tracing, ?TRACING) of
                 true ->
-                    ok;
+                    lager:info("Dispatching to message: ~p pid: ~p", [Message, Pid]),
+
+                    case is_process_alive(Pid) of
+                        true ->
+                            ok;
+                        false ->
+                            lager:info("Dispatching to message: ~p, pid: ~p, process is NOT ALIVE.", [Message, Pid])
+                    end;
                 false ->
-                    lager:info("Dispatching to message: ~p, pid: ~p, process is NOT ALIVE.", [Message, Pid])
+                    ok
             end,
+
             gen_server:cast(Pid, {send_message, {forward_message, ServerRef, Message}})
     end;
 
@@ -72,12 +80,20 @@ dispatch({forward_message, Name, ServerRef, Message, _Options}) ->
             {error, trap};
         [{Name, Pids}] ->
             Pid = partisan_util:dispatch_pid(Pids),
-            lager:info("Dispatching to message: ~p pid: ~p", [Message, Pid]),
-            case is_process_alive(Pid) of
+
+            case partisan_config:get(tracing, ?TRACING) of
                 true ->
-                    ok;
+                    lager:info("Dispatching to message: ~p pid: ~p", [Message, Pid]),
+
+                    case is_process_alive(Pid) of
+                        true ->
+                            ok;
+                        false ->
+                            lager:info("Dispatching to message: ~p, pid: ~p, process is NOT ALIVE.", [Message, Pid])
+                    end;
                 false ->
-                    lager:info("Dispatching to message: ~p, pid: ~p, process is NOT ALIVE.", [Message, Pid])
+                    ok
             end,
+
             gen_server:cast(Pid, {send_message, {forward_message, ServerRef, Message}})
     end.
