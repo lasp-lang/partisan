@@ -1801,9 +1801,29 @@ do_tree_forward(Node, Message, Connections, Options, TTL) ->
 
 %% @private
 retrieve_outlinks() ->
-    %% Use our tree for the root.
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("About to retrieve outlinks...");
+        false ->
+            ok
+    end,
+
     Root = partisan_peer_service_manager:mynode(),
 
-    {EagerPeers, _LazyPeers} = partisan_plumtree_broadcast:debug_get_peers(partisan_peer_service_manager:mynode(), Root),
+    OutLinks = try partisan_plumtree_broadcast:debug_get_peers(partisan_peer_service_manager:mynode(), Root, 1000) of
+        {EagerPeers, _LazyPeers} ->
+            ordsets:to_list(EagerPeers)
+    catch
+        _:_ ->
+            lager:info("Request to get outlinks timed out..."),
+            []
+    end,
 
-    ordsets:to_list(EagerPeers).
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("Finished getting outlinks: ~p", [OutLinks]);
+        false ->
+            ok
+    end,
+
+    OutLinks -- [node()].
