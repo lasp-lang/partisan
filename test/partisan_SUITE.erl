@@ -2518,7 +2518,7 @@ hyparview_xbot_manager_high_client_test(Config) ->
 
 %% @private
 ideally_connected_members(Node, Nodes) ->
-    case partisan_config:get(partisan_peer_service_manager) of
+    case rpc:call(Node, partisan_config, get, [partisan_peer_service_manager]) of
         partisan_default_peer_service_manager ->
             M = lists:usort([N || {_, N} <- Nodes]),
             ct:pal("Fully connected: checking forward functionality for all nodes: ~p", [M]),
