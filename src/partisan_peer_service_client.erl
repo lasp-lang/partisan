@@ -70,7 +70,12 @@ init([Peer, ListenAddr, Channel, From]) ->
 
             {ok, #state{from=From, listen_addr=ListenAddr, channel=Channel, socket=Socket, peer=Peer}};
         Error ->
-            lager:warning("Pid ~p is unable to connect to ~p due to ~p", [self(), Peer, Error]),
+            case partisan_config:get(tracing, ?TRACING) of
+                true ->
+                    lager:warning("Pid ~p is unable to connect to ~p due to ~p", [self(), Peer, Error]);
+                false ->
+                    ok
+            end,
             {stop, normal}
     end.
 
