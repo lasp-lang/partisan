@@ -266,7 +266,7 @@ groups() ->
 
 transform_test(Config) ->
     %% Use the default peer service manager.
-    Manager = partisan_default_peer_service_manager,
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
     Servers = node_list(1, "server", Config),
@@ -354,7 +354,7 @@ transform_test(Config) ->
 
 causal_test(Config) ->
     %% Use the default peer service manager.
-    Manager = partisan_default_peer_service_manager,
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
     Servers = node_list(1, "server", Config),
@@ -440,7 +440,7 @@ causal_test(Config) ->
 
 receive_interposition_test(Config) ->
     %% Use the default peer service manager.
-    Manager = partisan_default_peer_service_manager,
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
     Servers = node_list(1, "server", Config),
@@ -525,7 +525,7 @@ receive_interposition_test(Config) ->
 
 forward_interposition_test(Config) ->
     %% Use the default peer service manager.
-    Manager = partisan_default_peer_service_manager,
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
     Servers = node_list(1, "server", Config),
@@ -610,7 +610,7 @@ forward_interposition_test(Config) ->
 
 pid_test(Config) ->
     %% Use the default peer service manager.
-    Manager = partisan_default_peer_service_manager,
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
     Servers = node_list(1, "server", Config),
@@ -683,7 +683,7 @@ pid_test(Config) ->
 
 rpc_test(Config) ->
     %% Use the default peer service manager.
-    Manager = partisan_default_peer_service_manager,
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
     Servers = node_list(1, "server", Config),
@@ -714,7 +714,7 @@ rpc_test(Config) ->
 
 on_down_test(Config) ->
     %% Use the default peer service manager.
-    Manager = partisan_default_peer_service_manager,
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
     Servers = node_list(1, "server", Config),
@@ -763,7 +763,7 @@ rejoin_test(Config) ->
     case os:getenv("TRAVIS") of
         false ->
             %% Use the default peer service manager.
-            Manager = partisan_default_peer_service_manager,
+            Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
             %% Specify servers.
             Servers = node_list(1, "server", Config),
@@ -835,7 +835,7 @@ leave_test(Config) ->
     case os:getenv("TRAVIS") of
         false ->
         %% Use the default peer service manager.
-        Manager = partisan_default_peer_service_manager,
+        Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
         %% Specify servers.
         Servers = node_list(1, "server", Config),
@@ -863,7 +863,7 @@ leave_test(Config) ->
 
 performance_test(Config) ->
     %% Use the default peer service manager.
-    Manager = partisan_default_peer_service_manager,
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
     Servers = node_list(1, "server", Config),
@@ -972,7 +972,7 @@ performance_test(Config) ->
 
 default_manager_test(Config) ->
     %% Use the default peer service manager.
-    Manager = partisan_default_peer_service_manager,
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
     Servers = node_list(1, "server", Config),
@@ -1035,7 +1035,7 @@ default_manager_test(Config) ->
 
     ConnectionsFun = fun(Node) ->
                              Connections = rpc:call(Node,
-                                      partisan_default_peer_service_manager,
+                                      ?DEFAULT_PEER_SERVICE_MANAGER,
                                       connections,
                                       []),
                              %% ct:pal("Connections: ~p~n", [Connections]),
@@ -1781,7 +1781,7 @@ cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
     AmIClient = lists:member(Name, Clients),
 
     OtherNodes = case Manager of
-                     partisan_default_peer_service_manager ->
+                     ?DEFAULT_PEER_SERVICE_MANAGER ->
                          %% Omit just ourselves.
                          omit([Name], Nodes);
                      partisan_client_server_peer_service_manager ->
@@ -2521,7 +2521,7 @@ hyparview_xbot_manager_high_client_test(Config) ->
 %% @private
 ideally_connected_members(Node, Nodes) ->
     case rpc:call(Node, partisan_config, get, [partisan_peer_service_manager]) of
-        partisan_default_peer_service_manager ->
+        ?DEFAULT_PEER_SERVICE_MANAGER ->
             M = lists:usort([N || {_, N} <- Nodes]),
             ct:pal("Fully connected: checking forward functionality for all nodes: ~p", [M]),
             M;
