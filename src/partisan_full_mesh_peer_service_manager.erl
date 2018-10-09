@@ -1070,24 +1070,6 @@ internal_leave(Node, #state{actor=Actor,
     State#state{membership=Membership}.
 
 %% @private
-internal_join(Node, State) when is_atom(Node) ->
-    %% Maintain disterl connection for control messages.
-    _ = net_kernel:connect_node(Node),
-
-    %% Get listen addresses.
-    ListenAddrs = rpc:call(Node, partisan_config, listen_addrs, []),
-
-    %% Get channels.
-    Channels = rpc:call(Node, partisan_config, channels, []),
-
-    %% Get parallelism.
-    Parallelism = rpc:call(Node, partisan_config, parallelism, []),
-
-    %% Perform the join.
-    internal_join(#{name => Node,
-                    listen_addrs => ListenAddrs,
-                    channels => Channels,
-                    parallelism => Parallelism}, State);
 internal_join(#{name := Name} = Node,
               #state{pending=Pending0,
                      connections=Connections0,
