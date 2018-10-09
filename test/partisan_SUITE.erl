@@ -41,7 +41,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 
--define(GOSSIP_INTERVAL, 1000).
+-define(PERIODIC_INTERVAL, 1000).
 -define(TIMEOUT, 10000).
 -define(CLIENT_NUMBER, 3).
 
@@ -785,7 +785,7 @@ rejoin_test(Config) ->
             ok = rpc:call(Node2, partisan_peer_service, join, [Node4]),
             
             %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
-            timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
+            timer:sleep(?PERIODIC_INTERVAL * length(Nodes) + ?PERIODIC_INTERVAL),
 
             %% TODO: temporary
             timer:sleep(10000),
@@ -1584,7 +1584,7 @@ start(_Case, Config, Options) ->
                           [max_active_size, MaxActiveSize]),
                           
             ok = rpc:call(Node, partisan_config, set,
-                          [gossip_interval, ?GOSSIP_INTERVAL]),
+                          [periodic_interval, ?PERIODIC_INTERVAL]),
 
             ok = rpc:call(Node, application, set_env, [partisan, peer_ip, ?PEER_IP]),
 
@@ -2080,7 +2080,7 @@ hyparview_membership_check(Nodes) ->
 %% @private
 verify_leave(Nodes, Manager) ->
     %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
-    timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
+    timer:sleep(?PERIODIC_INTERVAL * length(Nodes) + ?PERIODIC_INTERVAL),
 
     %% Verify membership.
     %%
@@ -2119,7 +2119,7 @@ verify_leave(Nodes, Manager) ->
     ok = rpc:call(Node2, partisan_peer_service, leave, [Node4]),
     
     %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
-    timer:sleep(?GOSSIP_INTERVAL * length(Nodes) + ?GOSSIP_INTERVAL),
+    timer:sleep(?PERIODIC_INTERVAL * length(Nodes) + ?PERIODIC_INTERVAL),
 
     %% Verify membership.
     %%

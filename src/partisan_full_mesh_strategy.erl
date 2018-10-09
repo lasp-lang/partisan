@@ -26,7 +26,8 @@
 
 -export([init/1,
          join/3,
-         leave/2]).
+         leave/2,
+         periodic/1]).
 
 -define(SET, state_orset).
 
@@ -45,7 +46,7 @@ init(Identity) ->
 join(State0, _Node, NodeState) ->
     State = ?SET:merge(NodeState, State0),
     Membership = sets:to_list(?SET:query(State)),
-    OutgoingMessages = [],
+    OutgoingMessages = gossip_messages(State),
     persist_state(State),
     {ok, Membership, OutgoingMessages, State}.
 
@@ -80,9 +81,34 @@ leave(State0, Node) ->
 
     {ok, Membership, OutgoingMessages, State}.
 
+%% @doc
+periodic(State) ->
+    Membership = sets:to_list(?SET:query(State)),
+    OutgoingMessages = gossip_messages(State),
+
+    {ok, Membership, OutgoingMessages, State}.
+
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+%% @private
+gossip_messages(State) ->
+    Membership = sets:to_list(?SET:query(State)),
+
+    case partisan_config:get(gossip, true) of
+        true ->
+            case Membership of
+                [] ->
+                    [];
+                AllPeers ->
+                    Members = [N || #{name := N} <- Membership],
+                    lager:debug("Sending state with updated membership: ~p", [Members]),
+                    lists:map(fun(Peer) -> {Peer, {protocol, myself(), State}} end, AllPeers)
+            end;
+        _ ->
+            []
+    end.
 
 %% @private
 maybe_load_state_from_disk(Actor) ->

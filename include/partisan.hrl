@@ -14,6 +14,7 @@
 
 -define(TRACING, false).
 -define(RELAY_TTL, 5).
+-define(MEMBERSHIP_PROTOCOL_CHANNEL, membership).
 
 -define(UTIL, partisan_plumtree_util).
 -define(DEFAULT_LAZY_TICK_PERIOD, 1000).

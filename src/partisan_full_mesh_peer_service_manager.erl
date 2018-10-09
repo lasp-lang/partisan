@@ -74,6 +74,7 @@
 -record(state, {actor :: actor(),
                 vclock :: term(),
                 pending :: pending(),
+                membership :: list(),
                 down_functions :: dict:dict(),
                 up_functions :: dict:dict(),
                 interposition_funs :: dict:dict(),
@@ -310,7 +311,7 @@ init([]) ->
     process_flag(trap_exit, true),
 
     %% Schedule periodic gossip.
-    schedule_gossip(),
+    schedule_periodic(),
 
     %% Schedule periodic connections.
     schedule_connections(),
@@ -322,10 +323,11 @@ init([]) ->
     VClock = partisan_vclock:fresh(),
     Connections = partisan_peer_service_connections:new(),
     MembershipStrategy = partisan_full_mesh_strategy,
-    {ok, _Membership, MembershipStrategyState} = MembershipStrategy:init(Actor),
+    {ok, Membership, MembershipStrategyState} = MembershipStrategy:init(Actor),
 
     {ok, #state{actor=Actor,
                 pending=[],
+                membership=Membership,
                 vclock=VClock,
                 interposition_funs=dict:new(),
                 connections=Connections,
@@ -571,17 +573,28 @@ handle_cast(Msg, State) ->
 
 %% @private
 -spec handle_info(term(), state_t()) -> {noreply, state_t()}.
-handle_info(gossip, #state{pending=Pending,
-                           membership_strategy_state=MembershipStrategyState,
-                           connections=Connections0}=State) ->
+handle_info(periodic, #state{pending=Pending,
+                             membership_strategy=MembershipStrategy,
+                             membership_strategy_state=MembershipStrategyState0,
+                             connections=Connections0}=State) ->
     Connections = establish_connections(Pending,
-                                        MembershipStrategyState,
+                                        MembershipStrategyState0,
                                         Connections0),
-    do_gossip(MembershipStrategyState, Connections),
+    {ok, Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:periodic(MembershipStrategyState0),
 
-    schedule_gossip(),
+    lists:foreach(fun({Peer, Message}) ->
+                do_send_message(Peer,
+                                ?MEMBERSHIP_PROTOCOL_CHANNEL,
+                                ?DEFAULT_PARTITION_KEY,
+                                Message,
+                                Connections)
+        end, OutgoingMessages),
 
-    {noreply, State#state{connections=Connections}};
+    schedule_periodic(),
+
+    {noreply, State#state{membership=Membership,
+                          membership_strategy_state=MembershipStrategyState,
+                          connections=Connections}};
 
 handle_info(retransmit, #state{connections=Connections}=State) ->
     RetransmitFun = fun({_, {forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Message, _Options}}) ->
@@ -651,13 +664,19 @@ handle_info({connected, Node, _Tag, RemoteState},
             Pending = Pending0 -- [Node],
 
             %% Update membership by joining with remote membership.
-            {ok, _Membership, _OutgoingMessages, MembershipStrategyState} = MembershipStrategy:join(MembershipStrategyState0, Node, RemoteState),
+            {ok, _Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:join(MembershipStrategyState0, Node, RemoteState),
+
+            %% Gossip the new membership.
+            lists:foreach(fun({Peer, Message}) ->
+                        do_send_message(Peer,
+                                        ?MEMBERSHIP_PROTOCOL_CHANNEL,
+                                        ?DEFAULT_PARTITION_KEY,
+                                        Message,
+                                        Connections)
+                end, OutgoingMessages),
 
             %% Announce to the peer service.
             partisan_peer_service_events:update(MembershipStrategyState),
-
-            %% Gossip the new membership.
-            do_gossip(MembershipStrategyState, Connections),
 
             %% Send up notifications.
             partisan_peer_service_connections:foreach(
@@ -798,7 +817,7 @@ establish_connections(Pending,
     Connections.
 
 %% @private
-handle_message({receive_state, #{name := From}, PeerMembership},
+handle_message({protocol, #{name := From}, PeerMembership},
                #state{actor=Actor,
                       pending=Pending,
                       membership_strategy_state=MembershipStrategyState,
@@ -921,16 +940,9 @@ handle_message({ack, MessageClock}, State) ->
     {reply, ok, State}.
 
 %% @private
-schedule_gossip() ->
-    ShouldGossip = partisan_config:get(gossip, true),
-
-    case ShouldGossip of
-        true ->
-            GossipInterval = partisan_config:get(gossip_interval, 10000),
-            erlang:send_after(GossipInterval, ?MODULE, gossip);
-        _ ->
-            ok
-    end.
+schedule_periodic() ->
+    PeriodicInterval = partisan_config:get(periodic_interval, 10000),
+    erlang:send_after(PeriodicInterval, ?MODULE, periodic).
 
 %% @private
 schedule_retransmit() ->
@@ -964,7 +976,7 @@ do_gossip(Recipients, Membership, Connections) ->
                                 do_send_message(Peer,
                                                 ?DEFAULT_CHANNEL,
                                                 ?DEFAULT_PARTITION_KEY,
-                                                {receive_state, myself(), Membership},
+                                                {protocol, myself(), Membership},
                                                 Connections)
                         end, AllPeers),
                     ok
