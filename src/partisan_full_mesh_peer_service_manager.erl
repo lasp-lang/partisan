@@ -69,7 +69,6 @@
 -define(SET, state_orset).
 
 -type pending() :: [node_spec()].
--type membership() :: ?SET:state_orset().
 -type from() :: {pid(), atom()}.
 
 -record(state, {actor :: actor(),
@@ -77,10 +76,11 @@
                 pending :: pending(),
                 down_functions :: dict:dict(),
                 up_functions :: dict:dict(),
-                membership :: membership(),
                 interposition_funs :: dict:dict(),
                 sync_joins :: [{node_spec(), from()}],
-                connections :: partisan_peer_service_connections:t()}).
+                connections :: partisan_peer_service_connections:t(),
+                membership_strategy :: atom(),
+                membership_strategy_state :: atom()}).
 
 -type state_t() :: #state{}.
 
@@ -320,18 +320,20 @@ init([]) ->
 
     Actor = gen_actor(),
     VClock = partisan_vclock:fresh(),
-    Membership = maybe_load_state_from_disk(Actor),
     Connections = partisan_peer_service_connections:new(),
+    MembershipStrategy = partisan_full_mesh_strategy,
+    {ok, _Membership, MembershipStrategyState} = MembershipStrategy:init(Actor),
 
     {ok, #state{actor=Actor,
                 pending=[],
                 vclock=VClock,
-                membership=Membership,
                 interposition_funs=dict:new(),
                 connections=Connections,
                 sync_joins=[],
                 up_functions=dict:new(),
-                down_functions=dict:new()}}.
+                down_functions=dict:new(),
+                membership_strategy=MembershipStrategy,
+                membership_strategy_state=MembershipStrategyState}}.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, state_t()) ->
@@ -360,11 +362,11 @@ handle_call({remove_interposition_fun, Name}, _From, #state{interposition_funs=I
     InterpositionFuns = dict:erase(Name, InterpositionFuns0),
     {reply, ok, State#state{interposition_funs=InterpositionFuns}};
 
-handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State) ->
+handle_call({update_members, Nodes}, _From, #state{membership_strategy_state=MembershipStrategyState}=State) ->
     % lager:debug("Updating membership with: ~p", [Nodes]),
 
     %% Get the current membership.
-    CurrentMembership = [N || #{name := N} <- sets:to_list(?SET:query(Membership))],
+    CurrentMembership = [N || #{name := N} <- sets:to_list(?SET:query(MembershipStrategyState))],
     % lager:debug("CurrentMembership: ~p", [CurrentMembership]),
 
     %% need to support Nodes as a list of maps or atoms
@@ -420,7 +422,7 @@ handle_call({leave, Node}, From, #state{actor=Actor}=State0) ->
             EmptyMembership = empty_membership(Actor),
             persist_state(EmptyMembership),
 
-            {stop, normal, State#state{membership=EmptyMembership}};
+            {stop, normal, State#state{membership_strategy_state=EmptyMembership}};
         _ ->
             {reply, ok, State}
     end;
@@ -554,15 +556,15 @@ handle_call({receive_message, Peer, OriginalMessage}, _From, #state{interpositio
 handle_call({receive_message, Message}, _From, State) ->
     handle_message(Message, State);
 
-handle_call(members, _From, #state{membership=Membership}=State) ->
-    Members = [P || #{name := P} <- members(Membership)],
+handle_call(members, _From, #state{membership_strategy_state=MembershipStrategyState}=State) ->
+    Members = [P || #{name := P} <- members(MembershipStrategyState)],
     {reply, {ok, Members}, State};
 
 handle_call(connections, _From, #state{connections=Connections}=State) ->
     {reply, {ok, Connections}, State};
 
-handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
-    {reply, {ok, Membership}, State};
+handle_call(get_local_state, _From, #state{membership_strategy_state=MembershipStrategyState}=State) ->
+    {reply, {ok, MembershipStrategyState}, State};
 
 handle_call(Msg, _From, State) ->
     lager:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
@@ -577,13 +579,15 @@ handle_cast(Msg, State) ->
 %% @private
 -spec handle_info(term(), state_t()) -> {noreply, state_t()}.
 handle_info(gossip, #state{pending=Pending,
-                           membership=Membership,
+                           membership_strategy_state=MembershipStrategyState,
                            connections=Connections0}=State) ->
     Connections = establish_connections(Pending,
-                                        Membership,
+                                        MembershipStrategyState,
                                         Connections0),
-    do_gossip(Membership, Connections),
+    do_gossip(MembershipStrategyState, Connections),
+
     schedule_gossip(),
+
     {noreply, State#state{connections=Connections}};
 
 handle_info(retransmit, #state{connections=Connections}=State) ->
@@ -601,11 +605,11 @@ handle_info(retransmit, #state{connections=Connections}=State) ->
 
 handle_info(connections, #state{pending=Pending,
                                 sync_joins=SyncJoins0,
-                                membership=Membership,
+                                membership_strategy_state=MembershipStrategyState,
                                 connections=Connections0}=State) ->
     %% Trigger connection.
     Connections = establish_connections(Pending,
-                                        Membership,
+                                        MembershipStrategyState,
                                         Connections0),
 
     %% Advance sync_join's if we have enough open connections to remote host.
@@ -642,9 +646,10 @@ handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
 
 handle_info({connected, Node, _Tag, RemoteState},
                #state{pending=Pending0,
-                      membership=Membership0,
                       sync_joins=SyncJoins0,
-                      connections=Connections}=State0) ->
+                      connections=Connections,
+                      membership_strategy=MembershipStrategy,
+                      membership_strategy_state=MembershipStrategyState0}=State0) ->
     lager:debug("Node ~p connected!", [Node]),
 
     State = case lists:member(Node, Pending0) of
@@ -653,16 +658,16 @@ handle_info({connected, Node, _Tag, RemoteState},
             Pending = Pending0 -- [Node],
 
             %% Update membership by joining with remote membership.
-            Membership = ?SET:merge(RemoteState, Membership0),
+            {ok, _Membership, _OutgoingMessages, MembershipStrategyState} = MembershipStrategy:join(MembershipStrategyState0, Node, RemoteState),
 
             %% Persist state.
-            persist_state(Membership),
+            persist_state(MembershipStrategyState),
 
             %% Announce to the peer service.
-            partisan_peer_service_events:update(Membership),
+            partisan_peer_service_events:update(MembershipStrategyState),
 
             %% Gossip the new membership.
-            do_gossip(Membership, Connections),
+            do_gossip(MembershipStrategyState, Connections),
 
             %% Send up notifications.
             partisan_peer_service_connections:foreach(
@@ -677,7 +682,7 @@ handle_info({connected, Node, _Tag, RemoteState},
 
             %% Return.
             State0#state{pending=Pending,
-                         membership=Membership};
+                         membership_strategy_state=MembershipStrategyState};
         false ->
             State0
     end,
@@ -764,21 +769,6 @@ write_state_to_disk(State) ->
     end.
 
 %% @private
-maybe_load_state_from_disk(Actor) ->
-    case data_root() of
-        undefined ->
-            empty_membership(Actor);
-        Dir ->
-            case filelib:is_regular(filename:join(Dir, "cluster_state")) of
-                true ->
-                    {ok, Bin} = file:read_file(filename:join(Dir, "cluster_state")),
-                    ?SET:decode(erlang, Bin);
-                false ->
-                    empty_membership(Actor)
-            end
-    end.
-
-%% @private
 persist_state(State) ->
     case partisan_config:get(persist_state, true) of
         true ->
@@ -821,15 +811,15 @@ establish_connections(Pending,
 handle_message({receive_state, #{name := From}, PeerMembership},
                #state{actor=Actor,
                       pending=Pending,
-                      membership=Membership,
+                      membership_strategy_state=MembershipStrategyState,
                       connections=Connections0}=State) ->
-    case ?SET:equal(PeerMembership, Membership) of
+    case ?SET:equal(PeerMembership, MembershipStrategyState) of
         true ->
             %% No change.
             {reply, ok, State};
         false ->
             %% Merge data items.
-            Merged = ?SET:merge(PeerMembership, Membership),
+            Merged = ?SET:merge(PeerMembership, MembershipStrategyState),
 
             %% Persist state.
             persist_state(Merged),
@@ -844,8 +834,9 @@ handle_message({receive_state, #{name := From}, PeerMembership},
             case lists:member(partisan_peer_service_manager:mynode(), Members) of
                 true ->
                     %% Establish any new connections.
+                    %% TODO: Potential bug here by not using merged.
                     Connections = establish_connections(Pending,
-                                                        Membership,
+                                                        MembershipStrategyState,
                                                         Connections0),
 
                     lager:debug("Received updated membership state: ~p from ~p", [Members, From]),
@@ -853,7 +844,7 @@ handle_message({receive_state, #{name := From}, PeerMembership},
                     %% Gossip.
                     do_gossip(Merged, Connections),
 
-                    {reply, ok, State#state{membership=Merged,
+                    {reply, ok, State#state{membership_strategy_state=Merged,
                                             connections=Connections}};
                 false ->
                     lager:debug("Node ~p is no longer part of the cluster, setting empty membership.", [partisan_peer_service_manager:mynode()]),
@@ -864,7 +855,7 @@ handle_message({receive_state, #{name := From}, PeerMembership},
                     EmptyMembership = empty_membership(Actor),
                     persist_state(EmptyMembership),
 
-                    {stop, normal, State#state{membership=EmptyMembership}}
+                    {stop, normal, State#state{membership_strategy_state=EmptyMembership}}
             end
     end;
 
@@ -1047,12 +1038,12 @@ down(Name, #state{down_functions=DownFunctions}) ->
 %% @private
 internal_leave(Node, #state{actor=Actor,
                             connections=Connections,
-                            membership=Membership0}=State) ->
+                            membership_strategy_state=MembershipStrategyState0}=State) ->
     lager:debug("Leaving node ~p at node ~p", [Node, partisan_peer_service_manager:mynode()]),
 
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
-    Membership = lists:foldl(fun(#{name := Name} = N, M0) ->
+    MembershipStrategyState = lists:foldl(fun(#{name := Name} = N, M0) ->
                         case Node of
                             Name ->
                                 {ok, M} = ?SET:mutate({rmv, N}, Actor, M0),
@@ -1062,12 +1053,12 @@ internal_leave(Node, #state{actor=Actor,
                                 rpc:call(Name, net_kernel, disconnect, [Node]),
                                 M0
                         end
-                end, Membership0, members(Membership0)),
+                end, MembershipStrategyState0, members(MembershipStrategyState0)),
 
     %% Gossip new membership to existing members, so they remove themselves.
-    do_gossip(Membership0, Membership, Connections),
+    do_gossip(MembershipStrategyState0, MembershipStrategyState, Connections),
 
-    State#state{membership=Membership}.
+    State#state{membership_strategy_state=MembershipStrategyState}.
 
 %% @private
 internal_join(#{name := Name} = Node,
@@ -1075,7 +1066,7 @@ internal_join(#{name := Name} = Node,
               #state{pending=Pending0,
                      sync_joins=SyncJoins0,
                      connections=Connections0,
-                     membership=Membership}=State) ->
+                     membership_strategy_state=MembershipStrategyState}=State) ->
     %% Maintain disterl connection for control messages.
     _ = net_kernel:connect_node(Name),
 
@@ -1095,7 +1086,7 @@ internal_join(#{name := Name} = Node,
 
     %% Trigger connection.
     Connections = establish_connections(Pending,
-                                        Membership,
+                                        MembershipStrategyState,
                                         Connections0),
 
     State#state{pending=Pending, 
