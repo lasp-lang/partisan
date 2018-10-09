@@ -170,7 +170,7 @@ groups() ->
       ]},
 
      {simple, [],
-      [default_manager_test,
+      [full_mesh_manager_test,
        leave_test,
        on_down_test,
        rpc_test,
@@ -195,16 +195,16 @@ groups() ->
       ]},
 
      {with_ack, [],
-      [default_manager_test]},
+      [full_mesh_manager_test]},
 
      {with_causal_labels, [],
       [causal_test]},
 
      {with_causal_send, [],
-      [default_manager_test]},
+      [full_mesh_manager_test]},
      
      {with_causal_send_and_ack, [],
-      [default_manager_test]},
+      [full_mesh_manager_test]},
 
      {with_forward_interposition, [],
       [forward_interposition_test]},
@@ -213,10 +213,10 @@ groups() ->
       [receive_interposition_test]},
 
      {with_tls, [],
-      [default_manager_test]},
+      [full_mesh_manager_test]},
 
      {with_parallelism, [],
-      [default_manager_test]},
+      [full_mesh_manager_test]},
 
      {with_parallelism_bypass_pid_encoding, [],
       [performance_test]},
@@ -228,29 +228,29 @@ groups() ->
       [performance_test]},
      
      {with_channels, [],
-      [default_manager_test,
+      [full_mesh_manager_test,
        rpc_test]},
 
      {with_no_channels, [],
-      [default_manager_test]},
+      [full_mesh_manager_test]},
 
      {with_monotonic_channels, [],
-      [default_manager_test]},
+      [full_mesh_manager_test]},
 
      {with_sync_join, [],
-      [default_manager_test]},
+      [full_mesh_manager_test]},
 
      {with_binary_padding, [],
-      [default_manager_test]},
+      [full_mesh_manager_test]},
 
      {with_partition_key, [],
-      [default_manager_test]},
+      [full_mesh_manager_test]},
 
      {with_ingress_delay, [],
-      [default_manager_test]},
+      [full_mesh_manager_test]},
 
      {with_egress_delay, [],
-      [default_manager_test]},
+      [full_mesh_manager_test]},
 
      {with_broadcast, [],
       [
@@ -970,7 +970,7 @@ performance_test(Config) ->
 
     ok.
 
-default_manager_test(Config) ->
+full_mesh_manager_test(Config) ->
     %% Use the default peer service manager.
     Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
@@ -981,7 +981,7 @@ default_manager_test(Config) ->
     Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
-    Nodes = start(default_manager_test, Config,
+    Nodes = start(full_mesh_manager_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
