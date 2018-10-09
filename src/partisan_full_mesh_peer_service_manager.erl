@@ -396,7 +396,7 @@ handle_call({update_members, Nodes}, _From, #state{membership=Membership}=State)
 
     %% Issue joins.
     State2=#state{pending=Pending} = lists:foldl(fun(N, S) ->
-                                                         internal_join(N, S)
+                                                         internal_join(N, undefined, S)
                                                  end, State1, JoiningNodes),
 
     %% Compute current pending list.
@@ -434,7 +434,7 @@ handle_call({join, #{name := Name} = Node},
             {reply, ok, State0};
         _ ->
             %% Perform join.
-            State = internal_join(Node, State0),
+            State = internal_join(Node, undefined, State0),
 
             %% Return.
             {reply, ok, State}
@@ -451,7 +451,7 @@ handle_call({sync_join, #{name := Name} = Node},
             {reply, ok, State0};
         _ ->
             %% Perform join.
-            State = sync_internal_join(Node, From, State0),
+            State = internal_join(Node, From, State0),
 
             %% Return.
             {noreply, State}
@@ -929,7 +929,7 @@ handle_message({connect, ConnectionPid, #{name := Name} = Node}, State0) ->
             {noreply, State0};
         _ ->
             %% Perform join.
-            State = internal_join(Node, State0),
+            State = internal_join(Node, undefined, State0),
 
             %% Return.
             {noreply, State}
@@ -1071,26 +1071,6 @@ internal_leave(Node, #state{actor=Actor,
 
 %% @private
 internal_join(#{name := Name} = Node,
-              #state{pending=Pending0,
-                     connections=Connections0,
-                     membership=Membership}=State) ->
-    %% Maintain disterl connection for control messages.
-    _ = net_kernel:connect_node(Name),
-
-    %% Add to list of pending connections.
-    Pending = [Node|Pending0],
-
-    %% Sleep before connecting, to avoid a rush on connections.
-    avoid_rush(),
-
-    %% Trigger connection.
-    Connections = establish_connections(Pending,
-                                        Membership,
-                                        Connections0),
-
-    State#state{pending=Pending, connections=Connections}.
-
-sync_internal_join(#{name := Name} = Node,
               From,
               #state{pending=Pending0,
                      sync_joins=SyncJoins0,
@@ -1106,14 +1086,21 @@ sync_internal_join(#{name := Name} = Node,
     avoid_rush(),
 
     %% Add to sync joins list.
-    SyncJoins = SyncJoins0 ++ [{Node, From}],
+    SyncJoins = case From of 
+        undefined ->
+            SyncJoins0;
+        _ ->
+            SyncJoins0 ++ [{Node, From}]
+    end,
 
     %% Trigger connection.
     Connections = establish_connections(Pending,
                                         Membership,
                                         Connections0),
 
-    State#state{pending=Pending, sync_joins=SyncJoins, connections=Connections}.
+    State#state{pending=Pending, 
+                sync_joins=SyncJoins, 
+                connections=Connections}.
 
 %% @private
 fully_connected(Node, Connections) ->
