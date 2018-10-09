@@ -1036,27 +1036,33 @@ down(Name, #state{down_functions=DownFunctions}) ->
     end.
 
 %% @private
-internal_leave(Node, #state{actor=Actor,
+internal_leave(#{name := Name} = Node, #state{actor=Actor,
                             connections=Connections,
                             membership_strategy_state=MembershipStrategyState0}=State) ->
     lager:debug("Leaving node ~p at node ~p", [Node, partisan_peer_service_manager:mynode()]),
 
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
-    MembershipStrategyState = lists:foldl(fun(#{name := Name} = N, M0) ->
+    MembershipStrategyState = lists:foldl(fun(#{name := Name1} = N, M0) ->
                         case Node of
-                            Name ->
+                            Name1 ->
                                 {ok, M} = ?SET:mutate({rmv, N}, Actor, M0),
                                 M;
                             _ ->
-                                %% call the net_kernel:disconnect(Node) function to leave erlang network explicitly
-                                rpc:call(Name, net_kernel, disconnect, [Node]),
                                 M0
                         end
                 end, MembershipStrategyState0, members(MembershipStrategyState0)),
 
     %% Gossip new membership to existing members, so they remove themselves.
     do_gossip(MembershipStrategyState0, MembershipStrategyState, Connections),
+
+    case partisan_config:get(connect_disterl) of 
+        true ->
+            %% call the net_kernel:disconnect(Node) function to leave erlang network explicitly
+            rpc:call(Name, net_kernel, disconnect, [Node]);
+        false ->
+            ok
+    end,
 
     State#state{membership_strategy_state=MembershipStrategyState}.
 
@@ -1067,8 +1073,13 @@ internal_join(#{name := Name} = Node,
                      sync_joins=SyncJoins0,
                      connections=Connections0,
                      membership_strategy_state=MembershipStrategyState}=State) ->
-    %% Maintain disterl connection for control messages.
-    _ = net_kernel:connect_node(Name),
+    case partisan_config:get(connect_disterl) of 
+        true ->
+            %% Maintain disterl connection for control messages.
+            _ = net_kernel:connect_node(Name);
+        false ->
+            ok
+    end,
 
     %% Add to list of pending connections.
     Pending = [Node|Pending0],
