@@ -80,7 +80,7 @@
                 sync_joins :: [{node_spec(), from()}],
                 connections :: partisan_peer_service_connections:t(),
                 membership_strategy :: atom(),
-                membership_strategy_state :: atom()}).
+                membership_strategy_state :: term()}).
 
 -type state_t() :: #state{}.
 
@@ -408,21 +408,14 @@ handle_call({update_members, Nodes}, _From, #state{membership_strategy_state=Mem
 
     {reply, ok, State2#state{pending=Pending1}};
 
-handle_call({leave, Node}, From, #state{actor=Actor}=State0) ->
+handle_call({leave, Node}, From, State0) ->
     %% Perform leave.
     State = internal_leave(Node, State0),
 
     case partisan_peer_service_manager:mynode() of
         Node ->
             gen_server:reply(From, ok),
-
-            %% Reset membership, normal terminate on the gen_server:
-            %% this will close all connections, restart the gen_server,
-            %% and reboot with empty state, so the node will be isolated.
-            EmptyMembership = empty_membership(Actor),
-            persist_state(EmptyMembership),
-
-            {stop, normal, State#state{membership_strategy_state=EmptyMembership}};
+            {stop, normal, State};
         _ ->
             {reply, ok, State}
     end;
@@ -659,9 +652,6 @@ handle_info({connected, Node, _Tag, RemoteState},
 
             %% Update membership by joining with remote membership.
             {ok, _Membership, _OutgoingMessages, MembershipStrategyState} = MembershipStrategy:join(MembershipStrategyState0, Node, RemoteState),
-
-            %% Persist state.
-            persist_state(MembershipStrategyState),
 
             %% Announce to the peer service.
             partisan_peer_service_events:update(MembershipStrategyState),
@@ -1036,22 +1026,13 @@ down(Name, #state{down_functions=DownFunctions}) ->
     end.
 
 %% @private
-internal_leave(#{name := Name} = Node, #state{actor=Actor,
-                            connections=Connections,
-                            membership_strategy_state=MembershipStrategyState0}=State) ->
+internal_leave(Node, 
+               #state{connections=Connections,
+                      membership_strategy=MembershipStrategy,
+                      membership_strategy_state=MembershipStrategyState0}=State) ->
     lager:debug("Leaving node ~p at node ~p", [Node, partisan_peer_service_manager:mynode()]),
 
-    %% Node may exist in the membership on multiple ports, so we need to
-    %% remove all.
-    MembershipStrategyState = lists:foldl(fun(#{name := Name1} = N, M0) ->
-                        case Node of
-                            Name1 ->
-                                {ok, M} = ?SET:mutate({rmv, N}, Actor, M0),
-                                M;
-                            _ ->
-                                M0
-                        end
-                end, MembershipStrategyState0, members(MembershipStrategyState0)),
+    {ok, _Membership, _OutgoingMessage, MembershipStrategyState} = MembershipStrategy:leave(MembershipStrategyState0, Node),
 
     %% Gossip new membership to existing members, so they remove themselves.
     do_gossip(MembershipStrategyState0, MembershipStrategyState, Connections),
@@ -1059,7 +1040,7 @@ internal_leave(#{name := Name} = Node, #state{actor=Actor,
     case partisan_config:get(connect_disterl) of 
         true ->
             %% call the net_kernel:disconnect(Node) function to leave erlang network explicitly
-            rpc:call(Name, net_kernel, disconnect, [Node]);
+            net_kernel:disconnect(Node);
         false ->
             ok
     end,

@@ -25,7 +25,8 @@
 %% -behaviour(membership_strategy).
 
 -export([init/1,
-         join/3]).
+         join/3,
+         leave/2]).
 
 -define(SET, state_orset).
 
@@ -33,17 +34,50 @@
 %%% API
 %%%===================================================================
 
-%% Initialize the strategy state.
+%% @doc Initialize the strategy state.
 init(Identity) ->
     State = maybe_load_state_from_disk(Identity),
     Membership = sets:to_list(?SET:query(State)),
+    persist_state(State),
     {ok, Membership, State}.
 
-%% When a node is connected, return the state, membership and outgoing message queue to be transmitted.
+%% @doc When a node is connected, return the state, membership and outgoing message queue to be transmitted.
 join(State0, _Node, NodeState) ->
     State = ?SET:merge(NodeState, State0),
     Membership = sets:to_list(?SET:query(State)),
     OutgoingMessages = [],
+    persist_state(State),
+    {ok, Membership, OutgoingMessages, State}.
+
+%% @doc
+leave(State0, Node) ->
+    %% TODO: Actor needs to be part of the state!
+    Actor = gen_actor(),
+
+    %% Node may exist in the membership on multiple ports, so we need to
+    %% remove all.
+    State1 = lists:foldl(fun(#{name := Name} = N, M0) ->
+                        case Node of
+                            Name ->
+                                {ok, M} = ?SET:mutate({rmv, N}, Actor, M0),
+                                M;
+                            _ ->
+                                M0
+                        end
+                end, State0, sets:to_list(?SET:query(State0))),
+
+    %% Self-leave removes our own state and resets it.
+    State = case partisan_peer_service_manager:mynode() of
+        Node ->
+            empty_membership(Actor);
+        _ ->
+            State1
+    end,
+
+    Membership = sets:to_list(?SET:query(State)),
+    OutgoingMessages = [],
+    persist_state(State),
+
     {ok, Membership, OutgoingMessages, State}.
 
 %%%===================================================================
@@ -103,3 +137,11 @@ write_state_to_disk(State) ->
             ok = filelib:ensure_dir(File),
             ok = file:write_file(File, ?SET:encode(erlang, State))
     end.
+
+%% @private
+gen_actor() ->
+    Node = atom_to_list(partisan_peer_service_manager:mynode()),
+    Unique = erlang:unique_integer([positive]),
+    TS = integer_to_list(Unique),
+    Term = Node ++ TS,
+    crypto:hash(sha, Term).
