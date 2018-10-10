@@ -322,7 +322,7 @@ init([]) ->
     Actor = gen_actor(),
     VClock = partisan_vclock:fresh(),
     Connections = partisan_peer_service_connections:new(),
-    MembershipStrategy = partisan_full_mesh_strategy,
+    MembershipStrategy = partisan_config:get(membership_strategy),
     {ok, Membership, MembershipStrategyState} = MembershipStrategy:init(Actor),
 
     {ok, #state{actor=Actor,
