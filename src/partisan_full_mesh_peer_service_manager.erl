@@ -1044,10 +1044,15 @@ internal_leave(Node,
                       membership_strategy_state=MembershipStrategyState0}=State) ->
     lager:debug("Leaving node ~p at node ~p", [Node, partisan_peer_service_manager:mynode()]),
 
-    {ok, _Membership, _OutgoingMessage, MembershipStrategyState} = MembershipStrategy:leave(MembershipStrategyState0, Node),
+    {ok, Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:leave(MembershipStrategyState0, Node),
 
-    %% Gossip new membership to existing members, so they remove themselves.
-    do_gossip(MembershipStrategyState0, MembershipStrategyState, Connections),
+    lists:foreach(fun({Peer, Message}) ->
+                do_send_message(Peer,
+                                ?MEMBERSHIP_PROTOCOL_CHANNEL,
+                                ?DEFAULT_PARTITION_KEY,
+                                Message,
+                                Connections)
+        end, OutgoingMessages),
 
     case partisan_config:get(connect_disterl) of 
         true ->
@@ -1057,7 +1062,8 @@ internal_leave(Node,
             ok
     end,
 
-    State#state{membership_strategy_state=MembershipStrategyState}.
+    State#state{membership=Membership,
+                membership_strategy_state=MembershipStrategyState}.
 
 %% @private
 internal_join(#{name := Name} = Node,

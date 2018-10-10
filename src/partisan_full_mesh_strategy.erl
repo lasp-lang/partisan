@@ -76,7 +76,9 @@ leave(State0, Node) ->
     end,
 
     Membership = sets:to_list(?SET:query(State)),
-    OutgoingMessages = [],
+
+    %% Gossip new membership to existing members, so they remove themselves.
+    OutgoingMessages = gossip_messages(State0, State),
     persist_state(State),
 
     {ok, Membership, OutgoingMessages, State}.
@@ -94,7 +96,11 @@ periodic(State) ->
 
 %% @private
 gossip_messages(State) ->
-    Membership = sets:to_list(?SET:query(State)),
+    gossip_messages(State, State).
+
+%% @private
+gossip_messages(State0, State) ->
+    Membership = sets:to_list(?SET:query(State0)),
 
     case partisan_config:get(gossip, true) of
         true ->
