@@ -810,6 +810,7 @@ handle_message({protocol, ProtocolMessage},
 
     case lists:member(partisan_peer_service_manager:myself(), Membership) of
         false ->
+            lager:info("Shutting down: membership doesn't contain us. ~p not in ~p", [partisan_peer_service_manager:myself(), Membership]),
             %% Shutdown if we've been removed from the cluster.
             {stop, normal, State#state{membership=Membership,
                                        connections=Connections,
