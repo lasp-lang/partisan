@@ -327,13 +327,13 @@ init([]) ->
 
     {ok, #state{actor=Actor,
                 pending=[],
-                membership=Membership,
                 vclock=VClock,
                 interposition_funs=dict:new(),
                 connections=Connections,
                 sync_joins=[],
                 up_functions=dict:new(),
                 down_functions=dict:new(),
+                membership=Membership,
                 membership_strategy=MembershipStrategy,
                 membership_strategy_state=MembershipStrategyState}}.
 
@@ -364,11 +364,13 @@ handle_call({remove_interposition_fun, Name}, _From, #state{interposition_funs=I
     InterpositionFuns = dict:erase(Name, InterpositionFuns0),
     {reply, ok, State#state{interposition_funs=InterpositionFuns}};
 
-handle_call({update_members, Nodes}, _From, #state{membership_strategy_state=MembershipStrategyState}=State) ->
+handle_call({update_members, Nodes}, 
+            _From, 
+            #state{membership=Membership}=State) ->
     % lager:debug("Updating membership with: ~p", [Nodes]),
 
     %% Get the current membership.
-    CurrentMembership = [N || #{name := N} <- sets:to_list(?SET:query(MembershipStrategyState))],
+    CurrentMembership = [N || #{name := N} <- Membership],
     % lager:debug("CurrentMembership: ~p", [CurrentMembership]),
 
     %% need to support Nodes as a list of maps or atoms
@@ -551,8 +553,8 @@ handle_call({receive_message, Peer, OriginalMessage}, _From, #state{interpositio
 handle_call({receive_message, Message}, _From, State) ->
     handle_message(Message, State);
 
-handle_call(members, _From, #state{membership_strategy_state=MembershipStrategyState}=State) ->
-    Members = [P || #{name := P} <- members(MembershipStrategyState)],
+handle_call(members, _From, #state{membership=Membership}=State) ->
+    Members = [P || #{name := P} <- Membership],
     {reply, {ok, Members}, State};
 
 handle_call(connections, _From, #state{connections=Connections}=State) ->
@@ -577,10 +579,11 @@ handle_info(periodic, #state{pending=Pending,
                              membership_strategy=MembershipStrategy,
                              membership_strategy_state=MembershipStrategyState0,
                              connections=Connections0}=State) ->
-    Connections = establish_connections(Pending,
-                                        MembershipStrategyState0,
-                                        Connections0),
     {ok, Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:periodic(MembershipStrategyState0),
+
+    Connections = establish_connections(Pending,
+                                        Membership,
+                                        Connections0),
 
     lists:foreach(fun({Peer, Message}) ->
                 do_send_message(Peer,
@@ -610,12 +613,12 @@ handle_info(retransmit, #state{connections=Connections}=State) ->
     {noreply, State};
 
 handle_info(connections, #state{pending=Pending,
-                                sync_joins=SyncJoins0,
-                                membership_strategy_state=MembershipStrategyState,
+                                membership=Membership,
+                                sync_joins=SyncJoins0, 
                                 connections=Connections0}=State) ->
     %% Trigger connection.
     Connections = establish_connections(Pending,
-                                        MembershipStrategyState,
+                                        Membership,
                                         Connections0),
 
     %% Advance sync_join's if we have enough open connections to remote host.
@@ -631,6 +634,7 @@ handle_info(connections, #state{pending=Pending,
         end, [], SyncJoins0),
 
     schedule_connections(),
+
     {noreply, State#state{pending=Pending,
                           sync_joins=SyncJoins,
                           connections=Connections}};
@@ -753,10 +757,6 @@ gen_actor() ->
     crypto:hash(sha, Term).
 
 %% @private
-members(Membership) ->
-    sets:to_list(?SET:query(Membership)).
-
-%% @private
 without_me(Members) ->
     lists:filter(fun(#{name := Name}) ->
                          case partisan_peer_service_manager:mynode() of
@@ -772,7 +772,7 @@ establish_connections(Pending,
                       Membership,
                       Connections0) ->
     %% Compute list of nodes that should be connected.
-    Peers = without_me(members(Membership) ++ Pending),
+    Peers = without_me(Membership ++ Pending),
 
     %% Reconnect disconnected members and members waiting to join.
     Connections = lists:foldl(fun(Peer, Cs) ->
@@ -793,7 +793,7 @@ handle_message({protocol, ProtocolMessage},
 
     %% Establish any new connections.
     Connections = establish_connections(Pending,
-                                        MembershipStrategyState,
+                                        Membership,
                                         Connections0),
 
     %% Update users of the peer service.
@@ -984,9 +984,9 @@ internal_leave(Node,
 internal_join(#{name := Name} = Node,
               From,
               #state{pending=Pending0,
+                     membership=Membership,
                      sync_joins=SyncJoins0,
-                     connections=Connections0,
-                     membership_strategy_state=MembershipStrategyState}=State) ->
+                     connections=Connections0}=State) ->
     case partisan_config:get(connect_disterl) of 
         true ->
             %% Maintain disterl connection for control messages.
@@ -1011,7 +1011,7 @@ internal_join(#{name := Name} = Node,
 
     %% Trigger connection.
     Connections = establish_connections(Pending,
-                                        MembershipStrategyState,
+                                        Membership,
                                         Connections0),
 
     State#state{pending=Pending, 

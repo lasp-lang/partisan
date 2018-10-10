@@ -39,14 +39,14 @@
 %% @doc Initialize the strategy state.
 init(Identity) ->
     State = maybe_load_state_from_disk(Identity),
-    Membership = sets:to_list(?SET:query(State)),
+    Membership = membership(State),
     persist_state(State),
     {ok, Membership, State}.
 
 %% @doc When a node is connected, return the state, membership and outgoing message queue to be transmitted.
 join(State0, _Node, NodeState) ->
     State = ?SET:merge(NodeState, State0),
-    Membership = sets:to_list(?SET:query(State)),
+    Membership = membership(State),
     OutgoingMessages = gossip_messages(State),
     persist_state(State),
     {ok, Membership, OutgoingMessages, State}.
@@ -66,7 +66,7 @@ leave(State0, Node) ->
                             _ ->
                                 M0
                         end
-                end, State0, sets:to_list(?SET:query(State0))),
+                end, State0, membership(State0)),
 
     %% Self-leave removes our own state and resets it.
     State = case partisan_peer_service_manager:mynode() of
@@ -76,7 +76,7 @@ leave(State0, Node) ->
             State1
     end,
 
-    Membership = sets:to_list(?SET:query(State)),
+    Membership = membership(State),
 
     %% Gossip new membership to existing members, so they remove themselves.
     OutgoingMessages = gossip_messages(State0, State),
@@ -86,7 +86,7 @@ leave(State0, Node) ->
 
 %% @doc
 periodic(State) ->
-    Membership = sets:to_list(?SET:query(State)),
+    Membership = membership(State),
     OutgoingMessages = gossip_messages(State),
 
     {ok, Membership, OutgoingMessages, State}.
@@ -96,13 +96,14 @@ handle_message(State0, {#{name := _From}, NodeState}) ->
     case ?SET:equal(NodeState, State0) of
         true ->
             %% Convergence of gossip at this node.
-            Membership = sets:to_list(?SET:query(State0)),
+            Membership = membership(State0),
             OutgoingMessages = [],
+
             {ok, Membership, OutgoingMessages, State0};
         false ->
             %% Merge, persist, reforward to peers.
             State = ?SET:merge(State0, NodeState),
-            Membership = sets:to_list(?SET:query(State)),
+            Membership = membership(State),
             OutgoingMessages = gossip_messages(State),
             persist_state(State),
 
@@ -114,12 +115,18 @@ handle_message(State0, {#{name := _From}, NodeState}) ->
 %%%===================================================================
 
 %% @private
+membership(State) ->
+    Membership = sets:to_list(?SET:query(State)),
+    lager:info("Membership is now: ~p", [Membership]),
+    Membership.    
+
+%% @private
 gossip_messages(State) ->
     gossip_messages(State, State).
 
 %% @private
 gossip_messages(State0, State) ->
-    Membership = sets:to_list(?SET:query(State0)),
+    Membership = membership(State0),
 
     case partisan_config:get(gossip, true) of
         true ->
