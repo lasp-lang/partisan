@@ -44,7 +44,7 @@
 %% @doc Initialize the strategy state.
 %%      Start with an empty state with only ourselves known.
 init(Identity) ->
-    Membership = sets:new(),
+    Membership = sets:add_element(myself(), sets:new()),
     State = #scamp_v1{membership=Membership, actor=Identity},
     MembershipList = membership_list(State),
     {ok, MembershipList, State}.
@@ -60,19 +60,19 @@ join(#scamp_v1{membership=Membership0}=State0, Node, _NodeState) ->
     %% 2. Notify node to add us to its state. 
     %%    This is lazily done to ensure we can setup the TCP connection both ways, first.
     Myself = partisan_peer_service_manager:myself(),
-    OutgoingMessages1 = OutgoingMessages0 ++ [{Node, {protocol, {add_subscription, [Myself]}}}],
+    OutgoingMessages1 = OutgoingMessages0 ++ [{Node, {protocol, {forward_subscription, [Myself]}}}],
 
     %% 3. Notify all members we know about to add node to their membership.
     OutgoingMessages2 = sets:fold(fun(N, OM) ->
         lager:info("~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N]),
-        OM ++ [{N, {protocol, {forward_subscription, [Node]}}}]
+        OM ++ [{N, {protocol, {forward_subscription, Node}}}]
         end, OutgoingMessages1, Membership0),
 
     %% 4. Use 'c' (failure tolerance value) to send forwarded subscriptions for node.
     C = partisan_config:get(scamp_c, ?C_VALUE),
     ForwardMessages = lists:map(fun(N) ->
         lager:info("~p: Forwarding additional subscription for ~p to node: ~p", [node(), Node, N]),
-        {N, {protocol, {forward_subscription, [Node]}}}
+        {N, {protocol, {forward_subscription, Node}}}
         end, select_random_sublist(State0, C)),
     OutgoingMessages = OutgoingMessages2 ++ ForwardMessages,
 
@@ -112,10 +112,8 @@ handle_message(#scamp_v1{membership=Membership0}=State0, {forward_subscription, 
         false ->
             OutgoingMessages = lists:map(fun(N) ->
                 lager:info("~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N]),
-                {N, {protocol, {forward_subscription, [Node]}}}
+                {N, {protocol, {forward_subscription, Node}}}
                 end, select_random_sublist(State0, 1)),
-            MembershipList0 = membership_list(State0),
-            OutgoingMessages = [],
             {ok, MembershipList0, OutgoingMessages, State0}
     end.
 
@@ -145,3 +143,7 @@ random_0_or_1() ->
         false ->
             0
     end.
+
+%% @private
+myself() ->
+    partisan_peer_service_manager:myself().
