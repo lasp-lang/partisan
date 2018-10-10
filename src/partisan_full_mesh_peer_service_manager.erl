@@ -664,7 +664,7 @@ handle_info({connected, Node, _Tag, RemoteState},
             Pending = Pending0 -- [Node],
 
             %% Update membership by joining with remote membership.
-            {ok, _Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:join(MembershipStrategyState0, Node, RemoteState),
+            {ok, Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:join(MembershipStrategyState0, Node, RemoteState),
 
             %% Gossip the new membership.
             lists:foreach(fun({Peer, Message}) ->
@@ -691,6 +691,7 @@ handle_info({connected, Node, _Tag, RemoteState},
 
             %% Return.
             State0#state{pending=Pending,
+                         membership=Membership,
                          membership_strategy_state=MembershipStrategyState};
         false ->
             State0
@@ -820,6 +821,7 @@ establish_connections(Pending,
 handle_message({protocol, #{name := From}, PeerMembership},
                #state{actor=Actor,
                       pending=Pending,
+                      membership_strategy=MembershipStrategy,
                       membership_strategy_state=MembershipStrategyState,
                       connections=Connections0}=State) ->
     case ?SET:equal(PeerMembership, MembershipStrategyState) of
@@ -850,10 +852,18 @@ handle_message({protocol, #{name := From}, PeerMembership},
 
                     lager:debug("Received updated membership state: ~p from ~p", [Members, From]),
 
-                    %% Gossip.
-                    do_gossip(Merged, Connections),
+                    {ok, Membership, OutgoingMessages, _MembershipStrategyState} = MembershipStrategy:periodic(Merged),
 
-                    {reply, ok, State#state{membership_strategy_state=Merged,
+                    lists:foreach(fun({Peer, Message}) ->
+                                do_send_message(Peer,
+                                                ?MEMBERSHIP_PROTOCOL_CHANNEL,
+                                                ?DEFAULT_PARTITION_KEY,
+                                                Message,
+                                                Connections)
+                        end, OutgoingMessages),
+
+                    {reply, ok, State#state{membership=Membership,
+                                            membership_strategy_state=Merged,
                                             connections=Connections}};
                 false ->
                     lager:debug("Node ~p is no longer part of the cluster, setting empty membership.", [partisan_peer_service_manager:mynode()]),
@@ -864,7 +874,8 @@ handle_message({protocol, #{name := From}, PeerMembership},
                     EmptyMembership = empty_membership(Actor),
                     persist_state(EmptyMembership),
 
-                    {stop, normal, State#state{membership_strategy_state=EmptyMembership}}
+                    {stop, normal, State#state{membership=[],
+                                               membership_strategy_state=EmptyMembership}}
             end
     end;
 
@@ -953,43 +964,6 @@ schedule_retransmit() ->
 schedule_connections() ->
     ConnectionInterval = partisan_config:get(connection_interval, 1000),
     erlang:send_after(ConnectionInterval, ?MODULE, connections).
-
-%% @private
-do_gossip(Membership, Connections) ->
-    do_gossip(Membership, Membership, Connections).
-
-%% @private
-do_gossip(Recipients, Membership, Connections) ->
-    ShouldGossip = partisan_config:get(gossip, true),
-
-    case ShouldGossip of
-        true ->
-            case get_peers(Recipients) of
-                [] ->
-                    ok;
-                AllPeers ->
-                    Members = [N || #{name := N} <- members(Membership)],
-
-                    lager:debug("Sending state with updated membership: ~p", [Members]),
-
-                    lists:foreach(fun(Peer) ->
-                                do_send_message(Peer,
-                                                ?DEFAULT_CHANNEL,
-                                                ?DEFAULT_PARTITION_KEY,
-                                                {protocol, myself(), Membership},
-                                                Connections)
-                        end, AllPeers),
-                    ok
-            end;
-        _ ->
-            ok
-    end.
-
-%% @private
-get_peers(Local) ->
-    Members = members(Local),
-    Peers = [X || #{name := X} <- Members, X /= partisan_peer_service_manager:mynode()],
-    Peers.
 
 %% @private
 -spec do_send_message(Node :: atom() | node_spec(),
