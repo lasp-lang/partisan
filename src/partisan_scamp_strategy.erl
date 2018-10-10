@@ -81,9 +81,21 @@ join(#scamp_v1{membership=Membership0}=State0, Node, _NodeState) ->
     {ok, MembershipList, OutgoingMessages, State}.
 
 %% @doc Leave a node from the cluster.
-leave(State, _Node) ->
+leave(#scamp_v1{membership=Membership0}=State0, Node) ->
+    lager:info("~p: Issuing remove_subscription for node ~p.", [node(), Node]),
+
+    %% Remove node.
+    Membership = sets:del_element(Membership0, Node),
+    MembershipList0 = membership_list(State0),
+
+    %% Gossip to existing cluster members.
+    Message = {remove_subscription, Node},
+    OutgoingMessages = lists:map(fun(Peer) -> {Peer, {protocol, Message}} end, MembershipList0),
+
+    %% Return updated membership.
+    State = State0#scamp_v1{membership=Membership},
     MembershipList = membership_list(State),
-    OutgoingMessages = [],
+
     {ok, MembershipList, OutgoingMessages, State}.
 
 %% @doc Periodic protocol maintenance.
@@ -93,6 +105,28 @@ periodic(State) ->
     {ok, MembershipList, OutgoingMessages, State}.
 
 %% @doc Handling incoming protocol message.
+handle_message(#scamp_v1{membership=Membership0}=State0, {remove_subscription, Node}) ->
+    lager:info("~p: Received remove_subscription for node ~p.", [node(), Node]),
+    MembershipList0 = membership_list(State0),
+
+    case sets:is_element(Node, Membership0) of 
+        true ->
+            %% Remove.
+            Membership = sets:del_element(Membership0, Node),
+
+            %% Gossip removals.
+            Message = {remove_subscription, Node},
+            OutgoingMessages = lists:map(fun(Peer) -> {Peer, {protocol, Message}} end, MembershipList0),
+
+            %% Update state.
+            State = State0#scamp_v1{membership=Membership},
+            MembershipList = membership_list(State),
+
+            {ok, MembershipList, OutgoingMessages, State};
+        false ->
+            OutgoingMessages = [],
+            {ok, MembershipList0, OutgoingMessages, State0}
+    end;
 handle_message(#scamp_v1{membership=Membership0}=State0, {forward_subscription, Node}) ->
     lager:info("~p: Received subscription for node ~p.", [node(), Node]),
     MembershipList0 = membership_list(State0),
