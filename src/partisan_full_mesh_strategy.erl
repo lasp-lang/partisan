@@ -27,7 +27,8 @@
 -export([init/1,
          join/3,
          leave/2,
-         periodic/1]).
+         periodic/1,
+         handle_message/2]).
 
 -define(SET, state_orset).
 
@@ -90,6 +91,24 @@ periodic(State) ->
 
     {ok, Membership, OutgoingMessages, State}.
 
+%% @doc
+handle_message(State0, {#{name := _From}, NodeState}) ->
+    case ?SET:equal(NodeState, State0) of
+        true ->
+            %% Convergence of gossip at this node.
+            Membership = sets:to_list(?SET:query(State0)),
+            OutgoingMessages = [],
+            {ok, Membership, OutgoingMessages, State0};
+        false ->
+            %% Merge, persist, reforward to peers.
+            State = ?SET:merge(State0, NodeState),
+            Membership = sets:to_list(?SET:query(State)),
+            OutgoingMessages = gossip_messages(State),
+            persist_state(State),
+
+            {ok, Membership, OutgoingMessages, State}
+    end.
+
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
@@ -110,7 +129,7 @@ gossip_messages(State0, State) ->
                 AllPeers ->
                     Members = [N || #{name := N} <- Membership],
                     lager:debug("Sending state with updated membership: ~p", [Members]),
-                    lists:map(fun(Peer) -> {Peer, {protocol, myself(), State}} end, AllPeers)
+                    lists:map(fun(Peer) -> {Peer, {protocol, {myself(), State}}} end, AllPeers)
             end;
         _ ->
             []

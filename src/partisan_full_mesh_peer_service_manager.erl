@@ -745,47 +745,12 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private
-empty_membership(Actor) ->
-    {ok, LocalState} = ?SET:mutate({add, myself()}, Actor, ?SET:new()),
-    persist_state(LocalState),
-    LocalState.
-
-%% @private
 gen_actor() ->
     Node = atom_to_list(partisan_peer_service_manager:mynode()),
     Unique = erlang:unique_integer([positive]),
     TS = integer_to_list(Unique),
     Term = Node ++ TS,
     crypto:hash(sha, Term).
-
-%% @private
-data_root() ->
-    case application:get_env(partisan, partisan_data_dir) of
-        {ok, PRoot} ->
-            filename:join(PRoot, "default_peer_service");
-        undefined ->
-            undefined
-    end.
-
-%% @private
-write_state_to_disk(State) ->
-    case data_root() of
-        undefined ->
-            ok;
-        Dir ->
-            File = filename:join(Dir, "cluster_state"),
-            ok = filelib:ensure_dir(File),
-            ok = file:write_file(File, ?SET:encode(erlang, State))
-    end.
-
-%% @private
-persist_state(State) ->
-    case partisan_config:get(persist_state, true) of
-        true ->
-            write_state_to_disk(State);
-        false ->
-            ok
-    end.
 
 %% @private
 members(Membership) ->
@@ -818,65 +783,41 @@ establish_connections(Pending,
     Connections.
 
 %% @private
-handle_message({protocol, #{name := From}, PeerMembership},
-               #state{actor=Actor,
-                      pending=Pending,
+handle_message({protocol, ProtocolMessage},
+               #state{pending=Pending,
+                      connections=Connections0,
                       membership_strategy=MembershipStrategy,
-                      membership_strategy_state=MembershipStrategyState,
-                      connections=Connections0}=State) ->
-    case ?SET:equal(PeerMembership, MembershipStrategyState) of
-        true ->
-            %% No change.
-            {reply, ok, State};
+                      membership_strategy_state=MembershipStrategyState0}=State) ->
+    %% Process the protocol message.
+    {ok, Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:handle_message(MembershipStrategyState0, ProtocolMessage),
+
+    %% Establish any new connections.
+    Connections = establish_connections(Pending,
+                                        MembershipStrategyState,
+                                        Connections0),
+
+    %% Update users of the peer service.
+    partisan_peer_service_events:update(MembershipStrategyState),
+
+    %% Send outgoing messages.
+    lists:foreach(fun({Peer, Message}) ->
+                do_send_message(Peer,
+                                ?MEMBERSHIP_PROTOCOL_CHANNEL,
+                                ?DEFAULT_PARTITION_KEY,
+                                Message,
+                                Connections)
+        end, OutgoingMessages),
+
+    case lists:member(partisan_peer_service_manager:myself(), Membership) of
         false ->
-            %% Merge data items.
-            Merged = ?SET:merge(PeerMembership, MembershipStrategyState),
-
-            %% Persist state.
-            persist_state(Merged),
-
-            %% Update users of the peer service.
-            partisan_peer_service_events:update(Merged),
-
-            %% Compute members.
-            Members = [N || #{name := N} <- members(Merged)],
-
             %% Shutdown if we've been removed from the cluster.
-            case lists:member(partisan_peer_service_manager:mynode(), Members) of
-                true ->
-                    %% Establish any new connections.
-                    %% TODO: Potential bug here by not using merged.
-                    Connections = establish_connections(Pending,
-                                                        MembershipStrategyState,
-                                                        Connections0),
-
-                    lager:debug("Received updated membership state: ~p from ~p", [Members, From]),
-
-                    {ok, Membership, OutgoingMessages, _MembershipStrategyState} = MembershipStrategy:periodic(Merged),
-
-                    lists:foreach(fun({Peer, Message}) ->
-                                do_send_message(Peer,
-                                                ?MEMBERSHIP_PROTOCOL_CHANNEL,
-                                                ?DEFAULT_PARTITION_KEY,
-                                                Message,
-                                                Connections)
-                        end, OutgoingMessages),
-
-                    {reply, ok, State#state{membership=Membership,
-                                            membership_strategy_state=Merged,
-                                            connections=Connections}};
-                false ->
-                    lager:debug("Node ~p is no longer part of the cluster, setting empty membership.", [partisan_peer_service_manager:mynode()]),
-
-                    %% Reset membership, normal terminate on the gen_server:
-                    %% this will close all connections, restart the gen_server,
-                    %% and reboot with empty state, so the node will be isolated.
-                    EmptyMembership = empty_membership(Actor),
-                    persist_state(EmptyMembership),
-
-                    {stop, normal, State#state{membership=[],
-                                               membership_strategy_state=EmptyMembership}}
-            end
+            {stop, normal, State#state{membership=Membership,
+                                       connections=Connections,
+                                       membership_strategy_state=MembershipStrategyState}};
+        true ->
+            {reply, ok, State#state{membership=Membership,
+                                    connections=Connections,
+                                    membership_strategy_state=MembershipStrategyState}}
     end;
 
 %% Causal and acknowledged messages.
