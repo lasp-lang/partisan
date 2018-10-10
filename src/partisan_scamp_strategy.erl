@@ -22,7 +22,7 @@
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
-%% -behaviour(membership_strategy).
+-behaviour(partisan_membership_strategy).
 
 -export([init/1,
          join/3,
@@ -34,6 +34,8 @@
 
 %% @todo Fix me.
 -define(C_VALUE, 5).
+
+%% @todo Setup isolation handling properly.
 
 -record(scamp_v1, {actor, membership}).
 
@@ -85,7 +87,7 @@ leave(#scamp_v1{membership=Membership0}=State0, Node) ->
     lager:info("~p: Issuing remove_subscription for node ~p.", [node(), Node]),
 
     %% Remove node.
-    Membership = sets:del_element(Membership0, Node),
+    Membership = sets:del_element(Node, Membership0),
     MembershipList0 = membership_list(State0),
 
     %% Gossip to existing cluster members.

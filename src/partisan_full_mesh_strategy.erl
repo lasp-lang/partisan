@@ -22,7 +22,7 @@
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
-%% -behaviour(membership_strategy).
+-behaviour(partisan_membership_strategy).
 
 -export([init/1,
          join/3,
