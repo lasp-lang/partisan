@@ -259,6 +259,8 @@ handle_message({state, Tag, LocalState},
 
     %% Notify peer service manager we are done.
     case LocalState of
+        %% TODO: Anything using a three tuple will be caught here.
+        %% TODO: This format is specific to the HyParView manager.
         {state, _Active, Epoch} ->
             From ! {connected, Peer, Tag, Epoch, LocalState};
         _Other ->
