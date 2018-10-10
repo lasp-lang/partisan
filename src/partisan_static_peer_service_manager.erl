@@ -93,7 +93,7 @@ send_message(Name, Message) ->
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, ServerRef, Message) ->
-    gen_server:call(?MODULE, {forward_message, Name, ServerRef, Message}, infinity).
+    gen_server:cast(Name, {forward_message, ServerRef, Message}).
 
 %% @doc Receive message from a remote manager.
 receive_message(Message) ->
@@ -178,13 +178,6 @@ handle_call({join, {_, _, _}=Node}, _From,
 handle_call({send_message, Name, Message}, _From,
             #state{connections=Connections}=State) ->
     Result = do_send_message(Name, Message, Connections),
-    {reply, Result, State};
-
-handle_call({forward_message, Name, ServerRef, Message}, _From,
-            #state{connections=Connections}=State) ->
-    Result = do_send_message(Name,
-                             {forward_message, ServerRef, Message},
-                             Connections),
     {reply, Result, State};
 
 handle_call({receive_message, Message}, _From, State) ->

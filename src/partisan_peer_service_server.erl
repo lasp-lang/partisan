@@ -123,9 +123,8 @@ handle_message({hello, Node},
             send_message(Socket, {hello, {error, pang}}),
             ok
     end;
-handle_message(Message, _State) ->
-    Manager = manager(),
-    Manager:receive_message(Message),
+handle_message({forward_message, ServerRef, Message}, _State) ->
+    gen_server:cast(ServerRef, Message),
     ok.
 
 %% @private
