@@ -19,7 +19,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(partisan_full_mesh_peer_service_manager).
+-module(partisan_pluggable_peer_service_manager).
 
 -behaviour(gen_server).
 -behaviour(partisan_peer_service_manager).

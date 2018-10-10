@@ -174,7 +174,7 @@ groups() ->
       ]},
 
      {simple, [],
-      [full_mesh_manager_test,
+      [basic_test,
        leave_test,
        on_down_test,
        rpc_test,
@@ -202,16 +202,16 @@ groups() ->
       [scamp_strategy_test]},
 
      {with_ack, [],
-      [full_mesh_manager_test]},
+      [basic_test]},
 
      {with_causal_labels, [],
       [causal_test]},
 
      {with_causal_send, [],
-      [full_mesh_manager_test]},
+      [basic_test]},
      
      {with_causal_send_and_ack, [],
-      [full_mesh_manager_test]},
+      [basic_test]},
 
      {with_forward_interposition, [],
       [forward_interposition_test]},
@@ -220,10 +220,10 @@ groups() ->
       [receive_interposition_test]},
 
      {with_tls, [],
-      [full_mesh_manager_test]},
+      [basic_test]},
 
      {with_parallelism, [],
-      [full_mesh_manager_test]},
+      [basic_test]},
 
      {with_parallelism_bypass_pid_encoding, [],
       [performance_test]},
@@ -235,29 +235,29 @@ groups() ->
       [performance_test]},
      
      {with_channels, [],
-      [full_mesh_manager_test,
+      [basic_test,
        rpc_test]},
 
      {with_no_channels, [],
-      [full_mesh_manager_test]},
+      [basic_test]},
 
      {with_monotonic_channels, [],
-      [full_mesh_manager_test]},
+      [basic_test]},
 
      {with_sync_join, [],
-      [full_mesh_manager_test]},
+      [basic_test]},
 
      {with_binary_padding, [],
-      [full_mesh_manager_test]},
+      [basic_test]},
 
      {with_partition_key, [],
-      [full_mesh_manager_test]},
+      [basic_test]},
 
      {with_ingress_delay, [],
-      [full_mesh_manager_test]},
+      [basic_test]},
 
      {with_egress_delay, [],
-      [full_mesh_manager_test]},
+      [basic_test]},
 
      {with_broadcast, [],
       [
@@ -1104,7 +1104,7 @@ scamp_strategy_test(Config) ->
 
     ok.
 
-full_mesh_manager_test(Config) ->
+basic_test(Config) ->
     %% Use the default peer service manager.
     Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
@@ -1115,7 +1115,7 @@ full_mesh_manager_test(Config) ->
     Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
-    Nodes = start(full_mesh_manager_test, Config,
+    Nodes = start(basic_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),

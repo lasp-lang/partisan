@@ -10,11 +10,12 @@
 -define(DEFAULT_PARTITION_KEY, undefined).
 -define(CHANNELS, [?DEFAULT_CHANNEL]).
 -define(CONNECTION_JITTER, 1000).
--define(DEFAULT_PEER_SERVICE_MANAGER, partisan_full_mesh_peer_service_manager).
 
 -define(TRACING, false).
 -define(RELAY_TTL, 5).
 -define(MEMBERSHIP_PROTOCOL_CHANNEL, membership).
+
+-define(DEFAULT_PEER_SERVICE_MANAGER, partisan_pluggable_peer_service_manager).
 -define(DEFAULT_MEMBERSHIP_STRATEGY, partisan_full_mesh_strategy).
 
 -define(UTIL, partisan_plumtree_util).
