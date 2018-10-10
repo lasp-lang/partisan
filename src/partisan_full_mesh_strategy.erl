@@ -51,7 +51,7 @@ join(State0, _Node, NodeState) ->
     persist_state(State),
     {ok, Membership, OutgoingMessages, State}.
 
-%% @doc
+%% @doc Leave a node from the cluster.
 leave(State0, Node) ->
     %% TODO: Actor needs to be part of the state!
     Actor = gen_actor(),
@@ -84,14 +84,14 @@ leave(State0, Node) ->
 
     {ok, Membership, OutgoingMessages, State}.
 
-%% @doc
+%% @doc Periodic protocol maintenance.
 periodic(State) ->
     Membership = membership(State),
     OutgoingMessages = gossip_messages(State),
 
     {ok, Membership, OutgoingMessages, State}.
 
-%% @doc
+%% @doc Handling incoming protocol message.
 handle_message(State0, {#{name := _From}, NodeState}) ->
     case ?SET:equal(NodeState, State0) of
         true ->

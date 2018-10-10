@@ -259,8 +259,8 @@ leave(Node) ->
     gen_server:call(?MODULE, {leave, Node}, infinity).
 
 %% @doc Decode state.
-decode(State) ->
-    sets:to_list(?SET:query(State)).
+decode(Membership) ->
+    Membership.
 
 %% @doc Reserve a slot for the particular tag.
 reserve(Tag) ->
@@ -310,7 +310,7 @@ init([]) ->
     %% Process connection exits.
     process_flag(trap_exit, true),
 
-    %% Schedule periodic gossip.
+    %% Schedule periodic.
     schedule_periodic(),
 
     %% Schedule periodic connections.
@@ -680,7 +680,7 @@ handle_info({connected, Node, _Tag, RemoteState},
                 end, OutgoingMessages),
 
             %% Announce to the peer service.
-            partisan_peer_service_events:update(MembershipStrategyState),
+            partisan_peer_service_events:update(Membership),
 
             %% Send up notifications.
             partisan_peer_service_connections:foreach(
@@ -797,7 +797,7 @@ handle_message({protocol, ProtocolMessage},
                                         Connections0),
 
     %% Update users of the peer service.
-    partisan_peer_service_events:update(MembershipStrategyState),
+    partisan_peer_service_events:update(Membership),
 
     %% Send outgoing messages.
     lists:foreach(fun({Peer, Message}) ->
