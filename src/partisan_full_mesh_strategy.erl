@@ -32,6 +32,8 @@
 
 -define(SET, state_orset).
 
+-record(full_mesh_v1, {actor, membership}).
+
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -39,26 +41,24 @@
 %% @doc Initialize the strategy state.
 init(Identity) ->
     State = maybe_load_state_from_disk(Identity),
-    Membership = membership(State),
+    MembershipList = membership_list(State),
     persist_state(State),
-    {ok, Membership, State}.
+    {ok, MembershipList, State}.
 
 %% @doc When a node is connected, return the state, membership and outgoing message queue to be transmitted.
-join(State0, _Node, NodeState) ->
-    State = ?SET:merge(NodeState, State0),
-    Membership = membership(State),
+join(#full_mesh_v1{membership=Membership0} = State0, _Node, #full_mesh_v1{membership=NodeMembership}) ->
+    Membership = ?SET:merge(Membership0, NodeMembership),
+    State = State0#full_mesh_v1{membership=Membership},
+    MembershipList = membership_list(State),
     OutgoingMessages = gossip_messages(State),
     persist_state(State),
-    {ok, Membership, OutgoingMessages, State}.
+    {ok, MembershipList, OutgoingMessages, State}.
 
 %% @doc Leave a node from the cluster.
-leave(State0, Node) ->
-    %% TODO: Actor needs to be part of the state!
-    Actor = gen_actor(),
-
+leave(#full_mesh_v1{membership=Membership0, actor=Actor}=State0, Node) ->
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
-    State1 = lists:foldl(fun(#{name := Name} = N, M0) ->
+    Membership = lists:foldl(fun(#{name := Name} = N, M0) ->
                         case Node of
                             Name ->
                                 {ok, M} = ?SET:mutate({rmv, N}, Actor, M0),
@@ -66,48 +66,49 @@ leave(State0, Node) ->
                             _ ->
                                 M0
                         end
-                end, State0, membership(State0)),
+                end, Membership0, membership_list(State0)),
 
     %% Self-leave removes our own state and resets it.
     State = case partisan_peer_service_manager:mynode() of
         Node ->
-            empty_membership(Actor);
+            new_state(Actor);
         _ ->
-            State1
+            State0#full_mesh_v1{membership=Membership}
     end,
 
-    Membership = membership(State),
+    MembershipList = membership_list(State),
 
     %% Gossip new membership to existing members, so they remove themselves.
     OutgoingMessages = gossip_messages(State0, State),
     persist_state(State),
 
-    {ok, Membership, OutgoingMessages, State}.
+    {ok, MembershipList, OutgoingMessages, State}.
 
 %% @doc Periodic protocol maintenance.
 periodic(State) ->
-    Membership = membership(State),
+    MembershipList = membership_list(State),
     OutgoingMessages = gossip_messages(State),
 
-    {ok, Membership, OutgoingMessages, State}.
+    {ok, MembershipList, OutgoingMessages, State}.
 
 %% @doc Handling incoming protocol message.
-handle_message(State0, {#{name := _From}, NodeState}) ->
-    case ?SET:equal(NodeState, State0) of
+handle_message(#full_mesh_v1{membership=Membership0}=State0, {#{name := _From}, #full_mesh_v1{membership=NodeMembership}}) ->
+    case ?SET:equal(Membership0, NodeMembership) of
         true ->
             %% Convergence of gossip at this node.
-            Membership = membership(State0),
+            MembershipList = membership_list(State0),
             OutgoingMessages = [],
 
-            {ok, Membership, OutgoingMessages, State0};
+            {ok, MembershipList, OutgoingMessages, State0};
         false ->
             %% Merge, persist, reforward to peers.
-            State = ?SET:merge(State0, NodeState),
-            Membership = membership(State),
+            Membership = ?SET:merge(Membership0, NodeMembership),
+            State = State0#full_mesh_v1{membership=Membership},
+            MembershipList = membership_list(State),
             OutgoingMessages = gossip_messages(State),
             persist_state(State),
 
-            {ok, Membership, OutgoingMessages, State}
+            {ok, MembershipList, OutgoingMessages, State}
     end.
 
 %%%===================================================================
@@ -115,10 +116,8 @@ handle_message(State0, {#{name := _From}, NodeState}) ->
 %%%===================================================================
 
 %% @private
-membership(State) ->
-    Membership = sets:to_list(?SET:query(State)),
-    lager:info("Membership is now: ~p", [Membership]),
-    Membership.    
+membership_list(#full_mesh_v1{membership=Membership}) ->
+    sets:to_list(?SET:query(Membership)).
 
 %% @private
 gossip_messages(State) ->
@@ -126,16 +125,14 @@ gossip_messages(State) ->
 
 %% @private
 gossip_messages(State0, State) ->
-    Membership = membership(State0),
+    MembershipList = membership_list(State0),
 
     case partisan_config:get(gossip, true) of
         true ->
-            case Membership of
+            case MembershipList of
                 [] ->
                     [];
                 AllPeers ->
-                    Members = [N || #{name := N} <- Membership],
-                    lager:debug("Sending state with updated membership: ~p", [Members]),
                     lists:map(fun(Peer) -> {Peer, {protocol, {myself(), State}}} end, AllPeers)
             end;
         _ ->
@@ -146,14 +143,14 @@ gossip_messages(State0, State) ->
 maybe_load_state_from_disk(Actor) ->
     case data_root() of
         undefined ->
-            empty_membership(Actor);
+            new_state(Actor);
         Dir ->
             case filelib:is_regular(filename:join(Dir, "cluster_state")) of
                 true ->
                     {ok, Bin} = file:read_file(filename:join(Dir, "cluster_state")),
-                    ?SET:decode(erlang, Bin);
+                    binary_to_term(Bin);
                 false ->
-                    empty_membership(Actor)
+                    new_state(Actor)
             end
     end.
 
@@ -167,8 +164,9 @@ data_root() ->
     end.
 
 %% @private
-empty_membership(Actor) ->
-    {ok, LocalState} = ?SET:mutate({add, myself()}, Actor, ?SET:new()),
+new_state(Actor) ->
+    {ok, Membership} = ?SET:mutate({add, myself()}, Actor, ?SET:new()),
+    LocalState = #full_mesh_v1{membership=Membership, actor=Actor},
     persist_state(LocalState),
     LocalState.
 
@@ -193,13 +191,5 @@ write_state_to_disk(State) ->
         Dir ->
             File = filename:join(Dir, "cluster_state"),
             ok = filelib:ensure_dir(File),
-            ok = file:write_file(File, ?SET:encode(erlang, State))
+            ok = file:write_file(File, term_to_binary(State))
     end.
-
-%% @private
-gen_actor() ->
-    Node = atom_to_list(partisan_peer_service_manager:mynode()),
-    Unique = erlang:unique_integer([positive]),
-    TS = integer_to_list(Unique),
-    Term = Node ++ TS,
-    crypto:hash(sha, Term).
