@@ -67,6 +67,8 @@ end_per_testcase(Case, _Config) ->
 
 init_per_group(with_disterl, Config) ->
     [{disterl, true}] ++ Config;
+init_per_group(with_scamp_strategy, Config) ->
+    [{membership_strategy, partisan_scamp_strategy}] ++ Config;
 init_per_group(with_broadcast, Config) ->
     [{broadcast, true}, {forward_options, [{transitive, true}]}] ++ Config;
 init_per_group(with_partition_key, Config) ->
@@ -119,6 +121,8 @@ all() ->
        {hyparview, [shuffle]}
        %% {hyparview_xbot, [shuffle]}
       ]},
+
+     {group, with_scamp_strategy, []},
 
      {group, with_ack, []},
 
@@ -193,6 +197,9 @@ groups() ->
        %% hyparview_xbot_manager_low_active_test,
        %% hyparview_xbot_manager_high_client_test
       ]},
+
+     {with_scamp_strategy, [],
+      [scamp_strategy_test]},
 
      {with_ack, [],
       [full_mesh_manager_test]},
@@ -970,6 +977,133 @@ performance_test(Config) ->
 
     ok.
 
+scamp_strategy_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
+
+    %% Specify servers.
+    Servers = node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+
+    %% Start nodes.
+    Nodes = start(scamp_strategy_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {membership_strategy, partisan_scamp_strategy},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Verify membership.
+    %%
+    %% Every node should know about every other node in this topology.
+    %%
+    % VerifyFun = fun({_, Node}) ->
+    %         {ok, Members} = rpc:call(Node, Manager, members, []),
+    %         SortedNodes = lists:usort([N || {_, N} <- Nodes]),
+    %         SortedMembers = lists:usort(Members),
+    %         case SortedMembers =:= SortedNodes of
+    %             true ->
+    %                 true;
+    %             false ->
+    %                 ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
+    %                        [Node, SortedNodes, SortedMembers]),
+    %                 {false, {Node, SortedNodes, SortedMembers}}
+    %         end
+    % end,
+
+    % %% Verify the membership is correct.
+    % lists:foreach(fun(Node) ->
+    %                       VerifyNodeFun = fun() -> VerifyFun(Node) end,
+
+    %                       case wait_until(VerifyNodeFun, 60 * 2, 100) of
+    %                           ok ->
+    %                               ok;
+    %                           {fail, {false, {Node, Expected, Contains}}} ->
+    %                              ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
+    %                                      [Node, Expected, Contains])
+    %                       end
+    %               end, Nodes),
+
+    % %% Verify forward message functionality.
+    % lists:foreach(fun({_Name, Node}) ->
+    %                 ok = check_forward_message(Node, Manager, Nodes)
+    %               end, Nodes),
+
+    % %% Verify parallelism.
+    % ConfigParallelism = proplists:get_value(parallelism, Config, ?PARALLELISM),
+    % ct:pal("Configured parallelism: ~p", [ConfigParallelism]),
+
+    % %% Verify channels.
+    % ConfigChannels = proplists:get_value(channels, Config, ?CHANNELS),
+    % ct:pal("Configured channels: ~p", [ConfigChannels]),
+
+    % ConnectionsFun = fun(Node) ->
+    %                          Connections = rpc:call(Node,
+    %                                   ?DEFAULT_PEER_SERVICE_MANAGER,
+    %                                   connections,
+    %                                   []),
+    %                          %% ct:pal("Connections: ~p~n", [Connections]),
+    %                          Connections
+    %                  end,
+
+    % VerifyConnectionsFun = fun(Node, Channel, Parallelism) ->
+    %                             %% Get list of connections.
+    %                             {ok, Connections} = ConnectionsFun(Node),
+
+    %                             %% Verify we have enough connections.
+    %                             dict:fold(fun(_N, Active, Acc) ->
+    %                                 Filtered = lists:filter(fun({_, C, _}) -> 
+    %                                     case C of
+    %                                         Channel ->
+    %                                             true;
+    %                                         _ ->
+    %                                             false
+    %                                     end
+    %                                 end, Active),
+
+    %                                 case length(Filtered) == Parallelism of
+    %                                     true ->
+    %                                         Acc andalso true;
+    %                                     false ->
+    %                                         Acc andalso false
+    %                                 end
+    %                             end, true, Connections)
+    %                       end,
+
+    % lists:foreach(fun({_Name, Node}) ->
+    %                     %% Get enabled parallelism.
+    %                     Parallelism = rpc:call(Node, partisan_config, get, [parallelism, ?PARALLELISM]),
+    %                     ct:pal("Parallelism is: ~p", [Parallelism]),
+
+    %                     %% Get enabled channels.
+    %                     Channels = rpc:call(Node, partisan_config, get, [channels, ?CHANNELS]),
+    %                     ct:pal("Channels are: ~p", [Channels]),
+
+    %                     lists:foreach(fun(Channel) ->
+    %                         %% Generate fun.
+    %                         VerifyConnectionsNodeFun = fun() ->
+    %                                                         VerifyConnectionsFun(Node, Channel, Parallelism)
+    %                                                 end,
+
+    %                         %% Wait until connections established.
+    %                         case wait_until(VerifyConnectionsNodeFun, 60 * 2, 100) of
+    %                             ok ->
+    %                                 ok;
+    %                             _ ->
+    %                                 ct:fail("Not enough connections have been opened; need: ~p", [Parallelism])
+    %                         end
+    %                     end, Channels)
+    %               end, Nodes),
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
 full_mesh_manager_test(Config) ->
     %% Use the default peer service manager.
     Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
@@ -1596,6 +1730,15 @@ start(_Case, Config, Options) ->
                           end,
             ct:pal("Setting forward_options to: ~p", [ForwardOptions]),
             ok = rpc:call(Node, partisan_config, set, [forward_options, ForwardOptions]),
+
+            MembershipStrategy = case ?config(membership_strategy, Config) of
+                              undefined ->
+                                  ?DEFAULT_MEMBERSHIP_STRATEGY;
+                              S ->
+                                  S
+                          end,
+            ct:pal("Setting membership_strategy to: ~p", [MembershipStrategy]),
+            ok = rpc:call(Node, partisan_config, set, [membership_strategy, MembershipStrategy]),
 
             Disterl = case ?config(disterl, Config) of
                               undefined ->
