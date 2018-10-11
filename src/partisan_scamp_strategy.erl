@@ -62,7 +62,7 @@ join(#scamp_v1{membership=Membership0}=State0, Node, _NodeState) ->
     %% 2. Notify node to add us to its state. 
     %%    This is lazily done to ensure we can setup the TCP connection both ways, first.
     Myself = partisan_peer_service_manager:myself(),
-    OutgoingMessages1 = OutgoingMessages0 ++ [{Node, {protocol, {forward_subscription, [Myself]}}}],
+    OutgoingMessages1 = OutgoingMessages0 ++ [{Node, {protocol, {forward_subscription, Myself}}}],
 
     %% 3. Notify all members we know about to add node to their membership.
     OutgoingMessages2 = sets:fold(fun(N, OM) ->
