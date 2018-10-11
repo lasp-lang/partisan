@@ -1028,10 +1028,10 @@ scamp_strategy_test(Config) ->
     %                       end
     %               end, Nodes),
 
-    % %% Verify forward message functionality.
-    % lists:foreach(fun({_Name, Node}) ->
-    %                 ok = check_forward_message(Node, Manager, Nodes)
-    %               end, Nodes),
+    %% Verify forward message functionality.
+    lists:foreach(fun({_Name, Node}) ->
+                    ok = check_forward_message(Node, Manager, Nodes)
+                  end, Nodes),
 
     % %% Verify parallelism.
     % ConfigParallelism = proplists:get_value(parallelism, Config, ?PARALLELISM),
