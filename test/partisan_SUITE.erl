@@ -199,7 +199,7 @@ groups() ->
       ]},
 
      {with_scamp_strategy, [],
-      [scamp_strategy_test]},
+      [connectivity_test]},
 
      {with_ack, [],
       [basic_test]},
@@ -977,7 +977,7 @@ performance_test(Config) ->
 
     ok.
 
-scamp_strategy_test(Config) ->
+connectivity_test(Config) ->
     %% Use the default peer service manager.
     Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
@@ -988,9 +988,8 @@ scamp_strategy_test(Config) ->
     Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
-    Nodes = start(scamp_strategy_test, Config,
+    Nodes = start(connectivity_test, Config,
                   [{partisan_peer_service_manager, Manager},
-                   {membership_strategy, partisan_scamp_strategy},
                    {servers, Servers},
                    {clients, Clients}]),
 
