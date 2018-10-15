@@ -942,7 +942,13 @@ do_send_message(Node, Channel, PartitionKey, Message, Connections, Options) ->
     %% Find a connection for the remote node, if we have one.
     case partisan_peer_service_connections:find(Node, Connections) of
         {ok, []} ->
-            lager:error("Node ~p was connected, but is now disconnected!", [Node]),
+            %% Tracing.
+            case partisan_config:get(tracing, ?TRACING) of 
+                true ->
+                    lager:info("Node ~p was connected, but is now disconnected!", [Node]),
+                false ->
+                    ok
+            end,
 
             %% We were connected, but we're not anymore.
             case partisan_config:get(broadcast, false) of
@@ -963,7 +969,13 @@ do_send_message(Node, Channel, PartitionKey, Message, Connections, Options) ->
             Pid = partisan_util:dispatch_pid(PartitionKey, Channel, Entries),
             gen_server:cast(Pid, {send_message, Message});
         {error, not_found} ->
-            lager:error("Node ~p is not yet connected during send!", [Node]),
+            %% Tracing.
+            case partisan_config:get(tracing, ?TRACING) of 
+                true ->
+                    lager:info("Node ~p is not directly connected.", [Node]);
+                false ->
+                    ok
+            end,
 
             %% We were connected, but we're not anymore.
             case partisan_config:get(broadcast, false) of
