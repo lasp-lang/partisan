@@ -945,7 +945,7 @@ do_send_message(Node, Channel, PartitionKey, Message, Connections, Options) ->
             %% Tracing.
             case partisan_config:get(tracing, ?TRACING) of 
                 true ->
-                    lager:info("Node ~p was connected, but is now disconnected!", [Node]),
+                    lager:info("Node ~p was connected, but is now disconnected!", [Node]);
                 false ->
                     ok
             end,
