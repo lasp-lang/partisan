@@ -599,10 +599,12 @@ handle_info(periodic, #state{pending=Pending,
                              connections=Connections0}=State) ->
     {ok, Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:periodic(MembershipStrategyState0),
 
+    %% Establish any new connections.
     Connections = establish_connections(Pending,
                                         Membership,
                                         Connections0),
 
+    %% Send outgoing messages.
     lists:foreach(fun({Peer, Message}) ->
                 do_send_message(Peer,
                                 ?MEMBERSHIP_PROTOCOL_CHANNEL,
@@ -1024,13 +1026,20 @@ down(Name, #state{down_functions=DownFunctions}) ->
 
 %% @private
 internal_leave(#{name := Name} = Node,
-               #state{connections=Connections,
+               #state{pending=Pending,
+                      connections=Connections0,
                       membership_strategy=MembershipStrategy,
                       membership_strategy_state=MembershipStrategyState0}=State) ->
     lager:debug("Leaving node ~p at node ~p", [Node, partisan_peer_service_manager:mynode()]),
 
     {ok, Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:leave(MembershipStrategyState0, Node),
 
+    %% Establish any new connections.
+    Connections = establish_connections(Pending,
+                                        Membership,
+                                        Connections0),
+
+    %% Transmit outgoing messages.
     lists:foreach(fun({Peer, Message}) ->
                 do_send_message(Peer,
                                 ?MEMBERSHIP_PROTOCOL_CHANNEL,
