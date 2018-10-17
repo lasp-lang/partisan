@@ -791,7 +791,9 @@ rejoin_test(Config) ->
                         {servers, Servers},
                         {clients, Clients}]),
 
-            verify_leave(Nodes, Manager),
+            NodeToLeave = lists:nth(length(Nodes), Nodes),
+            ct:pal("Verifying leave for ~p", [NodeToLeave]),
+            verify_leave(NodeToLeave, Nodes, Manager),
             
             %% Join a node from the cluster.
             [{_, _}, {_, Node2}, {_, _}, {_, Node4}] = Nodes,
@@ -863,7 +865,9 @@ leave_test(Config) ->
                     {servers, Servers},
                     {clients, Clients}]),
 
-        verify_leave(Nodes, Manager),
+        NodeToLeave = lists:nth(length(Nodes), Nodes),
+        ct:pal("Verifying leave for ~p", [NodeToLeave]),
+        verify_leave(NodeToLeave, Nodes, Manager),
 
         %% Stop nodes.
         stop(Nodes);
@@ -2227,7 +2231,7 @@ hyparview_membership_check(Nodes) ->
     {ConnectedFails, SymmetryFails}.
 
 %% @private
-verify_leave(Nodes, Manager) ->
+verify_leave({_, NodeToLeave}, Nodes, Manager) ->
     %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
     timer:sleep(?PERIODIC_INTERVAL * length(Nodes) + ?PERIODIC_INTERVAL),
 
@@ -2263,10 +2267,10 @@ verify_leave(Nodes, Manager) ->
                   end, Nodes),
 
     %% Remove a node from the cluster.
-    [{_, _}, {_, Node2}, {_, _}, {_, Node4}] = Nodes,
-    Node4Map = rpc:call(Node4, partisan_peer_service_manager, myself, []),
-    ct:pal("Removing node ~p from the cluster with node map: ~p", [Node4, Node4Map]),
-    ok = rpc:call(Node2, partisan_peer_service, leave, [Node4Map]),
+    [{_, _}, {_, Node2}, {_, _}, {_, _}] = Nodes,
+    NodeToLeaveMap = rpc:call(NodeToLeave, partisan_peer_service_manager, myself, []),
+    ct:pal("Removing node ~p from the cluster with node map: ~p", [NodeToLeave, NodeToLeaveMap]),
+    ok = rpc:call(Node2, partisan_peer_service, leave, [NodeToLeaveMap]),
     
     %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
     timer:sleep(?PERIODIC_INTERVAL * length(Nodes) + ?PERIODIC_INTERVAL),
@@ -2278,10 +2282,10 @@ verify_leave(Nodes, Manager) ->
     VerifyRemoveFun = fun({_, Node}) ->
             {ok, Members} = rpc:call(Node, Manager, members, []),
             SortedNodes = case Node of
-                Node4 ->
-                    [Node4];
+                NodeToLeave ->
+                    [NodeToLeave];
                 _ ->
-                    lists:usort([N || {_, N} <- Nodes]) -- [Node4]
+                    lists:usort([N || {_, N} <- Nodes]) -- [NodeToLeave]
             end,
             SortedMembers = lists:usort(Members),
             case SortedMembers =:= SortedNodes of
