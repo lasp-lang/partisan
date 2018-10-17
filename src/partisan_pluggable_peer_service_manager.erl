@@ -417,12 +417,14 @@ handle_call({update_members, Nodes},
 
     {reply, ok, State2#state{pending=Pending1}};
 
-handle_call({leave, Node}, From, State0) ->
+handle_call({leave, #{name := Name} = Node}, 
+            From, 
+            State0) ->
     %% Perform leave.
     State = internal_leave(Node, State0),
 
     case partisan_peer_service_manager:mynode() of
-        Node ->
+        Name ->
             gen_server:reply(From, ok),
             {stop, normal, State};
         _ ->
@@ -1019,7 +1021,7 @@ down(Name, #state{down_functions=DownFunctions}) ->
     end.
 
 %% @private
-internal_leave(Node, 
+internal_leave(#{name := Name} = Node,
                #state{connections=Connections,
                       membership_strategy=MembershipStrategy,
                       membership_strategy_state=MembershipStrategyState0}=State) ->
@@ -1038,7 +1040,7 @@ internal_leave(Node,
     case partisan_config:get(connect_disterl) of 
         true ->
             %% call the net_kernel:disconnect(Node) function to leave erlang network explicitly
-            net_kernel:disconnect(Node);
+            net_kernel:disconnect(Name);
         false ->
             ok
     end,

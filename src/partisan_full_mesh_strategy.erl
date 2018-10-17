@@ -55,11 +55,11 @@ join(#full_mesh_v1{membership=Membership0} = State0, _Node, #full_mesh_v1{member
     {ok, MembershipList, OutgoingMessages, State}.
 
 %% @doc Leave a node from the cluster.
-leave(#full_mesh_v1{membership=Membership0, actor=Actor}=State0, Node) ->
+leave(#full_mesh_v1{membership=Membership0, actor=Actor}=State0, #{name := NameToRemove}) ->
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
     Membership = lists:foldl(fun(#{name := Name} = N, M0) ->
-                        case Node of
+                        case NameToRemove of
                             Name ->
                                 {ok, M} = ?SET:mutate({rmv, N}, Actor, M0),
                                 M;
@@ -70,7 +70,7 @@ leave(#full_mesh_v1{membership=Membership0, actor=Actor}=State0, Node) ->
 
     %% Self-leave removes our own state and resets it.
     State = case partisan_peer_service_manager:mynode() of
-        Node ->
+        NameToRemove ->
             new_state(Actor);
         _ ->
             State0#full_mesh_v1{membership=Membership}
