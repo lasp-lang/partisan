@@ -369,6 +369,7 @@ handle_call({remove_interposition_fun, Name}, _From, #state{interposition_funs=I
     InterpositionFuns = dict:erase(Name, InterpositionFuns0),
     {reply, ok, State#state{interposition_funs=InterpositionFuns}};
 
+%% For compatibility with external membership services.
 handle_call({update_members, Nodes}, 
             _From, 
             #state{membership=Membership}=State) ->
@@ -426,6 +427,7 @@ handle_call({leave, #{name := Name} = Node},
     case partisan_peer_service_manager:mynode() of
         Name ->
             gen_server:reply(From, ok),
+
             {stop, normal, State};
         _ ->
             {reply, ok, State}
