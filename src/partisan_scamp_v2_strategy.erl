@@ -154,7 +154,11 @@ handle_message(#scamp_v2{partial_view=PartialView0}=State0, {forward_subscriptio
             PartialView = [Node|PartialView0],
             State = State0#scamp_v2{partial_view=PartialView},
             PartialViewList = partial_view_list(State),
-            OutgoingMessages = [],
+
+            %% Respond to the node that's joining and tell them to keep us.
+            lager:info("~p: Notifying ~p to keep us: ~p", [Node, node()]),
+            OutgoingMessages = [{Node, {protocol, {keep_subscription, myself()}}}],
+
             {ok, PartialViewList, OutgoingMessages, State};
         false ->
             OutgoingMessages = lists:map(fun(N) ->
@@ -162,7 +166,13 @@ handle_message(#scamp_v2{partial_view=PartialView0}=State0, {forward_subscriptio
                 {N, {protocol, {forward_subscription, Node}}}
                 end, select_random_sublist(State0, 1)),
             {ok, PartialViewList0, OutgoingMessages, State0}
-    end.
+    end;
+handle_message(#scamp_v2{in_view=InView0}=State, {keep_subscription, Node}) ->
+    lager:info("~p: Received keep_subscription for node ~p.", [node(), Node]),
+    PartialViewList = partial_view_list(State),
+    InView = [Node|InView0],
+    OutgoingMessages = [],
+    {ok, PartialViewList, OutgoingMessages, State#scamp_v2{in_view=InView}}.
 
 %%%===================================================================
 %%% Internal functions
