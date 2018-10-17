@@ -39,7 +39,9 @@
 
 -include("partisan.hrl").
 
--record(scamp_v2, {actor, partial_view, in_view}).
+-record(scamp_v2, {actor :: term(), 
+                   partial_view :: [node_spec()], 
+                   in_view :: [node_spec()]}).
 
 %%%===================================================================
 %%% API
@@ -48,8 +50,9 @@
 %% @doc Initialize the strategy state.
 %%      Start with an empty state with only ourselves known.
 init(Identity) ->
-    PartialView = sets:add_element(myself(), sets:new()),
-    State = #scamp_v2{partial_view=PartialView, actor=Identity},
+    PartialView = [myself()],
+    InView = [],
+    State = #scamp_v2{in_view=InView, partial_view=PartialView, actor=Identity},
     PartialViewList = partial_view_list(State),
     {ok, PartialViewList, State}.
 
@@ -59,7 +62,7 @@ join(#scamp_v2{partial_view=PartialView0}=State0, Node, _NodeState) ->
 
     %% 1. Add node to our state.
     lager:info("~p: Adding node ~p to our partial_view.", [node(), Node]),
-    PartialView = sets:add_element(Node, PartialView0),
+    PartialView = [Node|PartialView0],
 
     %% 2. Notify node to add us to its state. 
     %%    This is lazily done to ensure we can setup the TCP connection both ways, first.
@@ -67,7 +70,7 @@ join(#scamp_v2{partial_view=PartialView0}=State0, Node, _NodeState) ->
     OutgoingMessages1 = OutgoingMessages0 ++ [{Node, {protocol, {forward_subscription, Myself}}}],
 
     %% 3. Notify all members we know about to add node to their partial_view.
-    OutgoingMessages2 = sets:fold(fun(N, OM) ->
+    OutgoingMessages2 = lists:foldl(fun(N, OM) ->
         lager:info("~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N]),
         OM ++ [{N, {protocol, {forward_subscription, Node}}}]
         end, OutgoingMessages1, PartialView0),
@@ -95,7 +98,7 @@ leave(#scamp_v2{partial_view=PartialView0}=State0, Node) ->
     lager:info("~p: Issuing remove_subscription for node ~p.", [node(), Node]),
 
     %% Remove node.
-    PartialView = sets:del_element(Node, PartialView0),
+    PartialView = PartialView0 -- [Node],
     PartialViewList0 = partial_view_list(State0),
 
     %% Gossip to existing cluster members.
@@ -119,10 +122,10 @@ handle_message(#scamp_v2{partial_view=PartialView0}=State0, {remove_subscription
     lager:info("~p: Received remove_subscription for node ~p.", [node(), Node]),
     PartialViewList0 = partial_view_list(State0),
 
-    case sets:is_element(Node, PartialView0) of 
+    case lists:member(Node, PartialView0) of 
         true ->
             %% Remove.
-            PartialView = sets:del_element(PartialView0, Node),
+            PartialView = PartialView0 -- [Node],
 
             %% Gossip removals.
             Message = {remove_subscription, Node},
@@ -143,12 +146,12 @@ handle_message(#scamp_v2{partial_view=PartialView0}=State0, {forward_subscriptio
 
     %% Probability: P = 1 / (1 + sizeOf(View))
     Random = random_0_or_1(),
-    Keep = trunc((sets:size(PartialView0) + 1) * Random),
+    Keep = trunc((length(PartialView0) + 1) * Random),
 
     case Keep =:= 0 andalso not lists:member(Node, PartialViewList0) of 
         true ->
             lager:info("~p: Adding subscription for node: ~p", [node(), Node]),
-            PartialView = sets:add_element(Node, PartialView0),
+            PartialView = [Node|PartialView0],
             State = State0#scamp_v2{partial_view=PartialView},
             PartialViewList = partial_view_list(State),
             OutgoingMessages = [],
@@ -167,7 +170,7 @@ handle_message(#scamp_v2{partial_view=PartialView0}=State0, {forward_subscriptio
 
 %% @private
 partial_view_list(#scamp_v2{partial_view=PartialView}) ->
-    sets:to_list(PartialView).
+    PartialView.
 
 %% @private
 select_random_sublist(State, K) ->
