@@ -180,6 +180,7 @@ groups() ->
      {simple, [],
       [basic_test,
        leave_test,
+       self_leave_test,
        on_down_test,
        rpc_test,
        client_server_manager_test,
@@ -846,6 +847,38 @@ rejoin_test(Config) ->
         end,
 
         ok.
+
+self_leave_test(Config) ->
+    case os:getenv("TRAVIS") of
+        false ->
+        %% Use the default peer service manager.
+        Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
+
+        %% Specify servers.
+        Servers = node_list(1, "server", Config),
+
+        %% Specify clients.
+        Clients = node_list(?CLIENT_NUMBER, "client", Config),
+
+        %% Start nodes.
+        Nodes = start(leave_test, Config,
+                    [{partisan_peer_service_manager, Manager},
+                    {servers, Servers},
+                    {clients, Clients}]),
+
+        NodeToLeave = lists:nth(2, Nodes),
+        ct:pal("Verifying leave for ~p", [NodeToLeave]),
+        verify_leave(NodeToLeave, Nodes, Manager),
+
+        %% Stop nodes.
+        stop(Nodes);
+
+    _ ->
+        ok
+
+    end,
+
+    ok.
 
 leave_test(Config) ->
     case os:getenv("TRAVIS") of
