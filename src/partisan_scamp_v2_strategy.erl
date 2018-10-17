@@ -156,7 +156,7 @@ handle_message(#scamp_v2{partial_view=PartialView0}=State0, {forward_subscriptio
             PartialViewList = partial_view_list(State),
 
             %% Respond to the node that's joining and tell them to keep us.
-            lager:info("~p: Notifying ~p to keep us: ~p", [Node, node()]),
+            lager:info("~p: Notifying ~p to keep us: ~p", [node(), Node, node()]),
             OutgoingMessages = [{Node, {protocol, {keep_subscription, myself()}}}],
 
             {ok, PartialViewList, OutgoingMessages, State};
