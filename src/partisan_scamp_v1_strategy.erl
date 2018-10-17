@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(partisan_scamp_strategy).
+-module(partisan_scamp_v1_strategy).
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 

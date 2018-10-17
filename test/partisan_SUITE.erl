@@ -67,8 +67,8 @@ end_per_testcase(Case, _Config) ->
 
 init_per_group(with_disterl, Config) ->
     [{disterl, true}] ++ Config;
-init_per_group(with_scamp_strategy, Config) ->
-    [{membership_strategy, partisan_scamp_strategy}] ++ Config;
+init_per_group(with_scamp_v1_strategy, Config) ->
+    [{membership_strategy, partisan_scamp_v1_strategy}] ++ Config;
 init_per_group(with_broadcast, Config) ->
     [{broadcast, true}, {forward_options, [{transitive, true}]}] ++ Config;
 init_per_group(with_partition_key, Config) ->
@@ -122,7 +122,7 @@ all() ->
        %% {hyparview_xbot, [shuffle]}
       ]},
 
-     {group, with_scamp_strategy, []},
+     {group, with_scamp_v1_strategy, []},
 
      {group, with_ack, []},
 
@@ -198,7 +198,7 @@ groups() ->
        %% hyparview_xbot_manager_high_client_test
       ]},
 
-     {with_scamp_strategy, [],
+     {with_scamp_v1_strategy, [],
       [connectivity_test]},
 
      {with_ack, [],
