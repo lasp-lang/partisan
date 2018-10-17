@@ -865,9 +865,12 @@ handle_message({pong, SourceNode, DestinationNode, SourceTime},
         false ->
             ok
     end,
-                        
+
     %% Update differences.
     DistanceMetrics = dict:store(DestinationNode, Difference, DistanceMetrics0),
+
+    %% Store in pdict.
+    put(distance_metrics, DistanceMetrics),
 
     {reply, ok, State#state{distance_metrics=DistanceMetrics}};
 handle_message({protocol, ProtocolMessage},
