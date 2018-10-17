@@ -2313,6 +2313,7 @@ verify_leave({_, NodeToLeave}, Nodes, Manager) ->
     %% Every node should know about every other node in this topology.
     %%
     VerifyRemoveFun = fun({_, Node}) ->
+        try
             {ok, Members} = rpc:call(Node, Manager, members, []),
             SortedNodes = case Node of
                 NodeToLeave ->
@@ -2329,6 +2330,16 @@ verify_leave({_, NodeToLeave}, Nodes, Manager) ->
                            [Node, SortedNodes, SortedMembers]),
                     {false, {Node, SortedNodes, SortedMembers}}
             end
+        catch
+            _:_ ->
+                case Node of
+                    NodeToLeave ->
+                        %% Node terminated, OK.
+                        true;
+                    _ ->
+                        false
+                end
+        end
     end,
 
     %% Verify the membership is correct.
