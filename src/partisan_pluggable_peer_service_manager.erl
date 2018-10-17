@@ -72,6 +72,7 @@
 -type from() :: {pid(), atom()}.
 
 -record(state, {actor :: actor(),
+                distance_metrics :: dict:dict(),
                 vclock :: term(),
                 pending :: pending(),
                 membership :: list(),
@@ -314,6 +315,9 @@ init([]) ->
     %% Schedule periodic.
     schedule_periodic(),
 
+    %% Schedule distance metric.
+    schedule_distance(),
+
     %% Schedule periodic connections.
     schedule_connections(),
 
@@ -329,11 +333,14 @@ init([]) ->
     MembershipStrategy = partisan_config:get(membership_strategy),
     {ok, Membership, MembershipStrategyState} = MembershipStrategy:init(Actor),
 
+    DistanceMetrics = dict:new(),
+
     {ok, #state{actor=Actor,
                 pending=[],
                 vclock=VClock,
                 interposition_funs=dict:new(),
                 connections=Connections,
+                distance_metrics=DistanceMetrics,
                 sync_joins=[],
                 up_functions=dict:new(),
                 down_functions=dict:new(),
@@ -593,6 +600,32 @@ handle_info(tree_refresh, #state{}=State) ->
 
     {noreply, State#state{out_links=OutLinks}};
 
+handle_info(distance, #state{pending=Pending,
+                             membership=Membership,
+                             connections=Connections0}=State) ->
+    %% Establish any new connections.
+    Connections = establish_connections(Pending,
+                                        Membership,
+                                        Connections0),
+
+    %% Record time.
+    SourceTime = erlang:timestamp(),
+
+    %% Send distance requests.
+    SourceNode = partisan_peer_service_manager:myself(),
+
+    lists:foreach(fun(Peer) ->
+                do_send_message(Peer,
+                                ?MEMBERSHIP_PROTOCOL_CHANNEL,
+                                ?DEFAULT_PARTITION_KEY,
+                                {ping, SourceNode, Peer, SourceTime},
+                                Connections)
+        end, Membership),
+
+    schedule_distance(),
+
+    {noreply, State#state{connections=Connections}};
+
 handle_info(periodic, #state{pending=Pending,
                              membership_strategy=MembershipStrategy,
                              membership_strategy_state=MembershipStrategyState0,
@@ -803,6 +836,40 @@ establish_connections(Pending,
     Connections.
 
 %% @private
+handle_message({ping, SourceNode, DestinationNode, SourceTime},
+               #state{pending=Pending,
+                      connections=Connections0,
+                      membership=Membership}=State) ->
+    %% Establish any new connections.
+    Connections = establish_connections(Pending,
+                                        Membership,
+                                        Connections0),
+
+    %% Send ping response.
+    do_send_message(SourceNode,
+                    ?MEMBERSHIP_PROTOCOL_CHANNEL,
+                    ?DEFAULT_PARTITION_KEY,
+                    {pong, SourceNode, DestinationNode, SourceTime},
+                    Connections),
+
+    {reply, ok, State#state{connections=Connections}};
+handle_message({pong, SourceNode, DestinationNode, SourceTime},
+               #state{distance_metrics=DistanceMetrics0}=State) ->
+    %% Compute difference.
+    ArrivalTime = erlang:timestamp(),
+    Difference = timer:now_diff(ArrivalTime, SourceTime),
+    
+    case partisan_config:get(tracing, ?TRACING) of 
+        true ->
+            lager:info("Updating distance metric for node ~p => ~p communication: ~p", [SourceNode, DestinationNode, Difference]);
+        false ->
+            ok
+    end,
+                        
+    %% Update differences.
+    DistanceMetrics = dict:store(DestinationNode, Difference, DistanceMetrics0),
+
+    {reply, ok, State#state{distance_metrics=DistanceMetrics}};
 handle_message({protocol, ProtocolMessage},
                #state{pending=Pending,
                       connections=Connections0,
@@ -911,6 +978,11 @@ handle_message({connect, ConnectionPid, #{name := Name} = Node}, State0) ->
 handle_message({ack, MessageClock}, State) ->
     partisan_acknowledgement_backend:ack(MessageClock),
     {reply, ok, State}.
+
+%% @private
+schedule_distance() ->
+    DistanceInterval = partisan_config:get(distance_interval, 10000),
+    erlang:send_after(DistanceInterval, ?MODULE, distance).
 
 %% @private
 schedule_periodic() ->
