@@ -69,17 +69,21 @@ leave(#full_mesh_v1{membership=Membership0, actor=Actor}=State0, #{name := NameT
                 end, Membership0, membership_list(State0)),
 
     %% Self-leave removes our own state and resets it.
+    StateToGossip = State0#full_mesh_v1{membership=Membership},
+
     State = case partisan_peer_service_manager:mynode() of
         NameToRemove ->
+            %% Reset our state, store this, but gossip the state with us removed to the remainder of the members.
             new_state(Actor);
         _ ->
-            State0#full_mesh_v1{membership=Membership}
+            %% Gossip state with member removed.
+            StateToGossip
     end,
 
     MembershipList = membership_list(State),
 
     %% Gossip new membership to existing members, so they remove themselves.
-    OutgoingMessages = gossip_messages(State0, State),
+    OutgoingMessages = gossip_messages(State0, StateToGossip),
     persist_state(State),
 
     {ok, MembershipList, OutgoingMessages, State}.
