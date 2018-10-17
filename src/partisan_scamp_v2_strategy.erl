@@ -48,8 +48,8 @@
 %% @doc Initialize the strategy state.
 %%      Start with an empty state with only ourselves known.
 init(Identity) ->
-    Membership = sets:add_element(myself(), sets:new()),
-    State = #scamp_v2{partial_view=Membership, actor=Identity},
+    PartialView = sets:add_element(myself(), sets:new()),
+    State = #scamp_v2{partial_view=PartialView, actor=Identity},
     PartialViewList = partial_view_list(State),
     {ok, PartialViewList, State}.
 
@@ -59,7 +59,7 @@ join(#scamp_v2{partial_view=PartialView0}=State0, Node, _NodeState) ->
 
     %% 1. Add node to our state.
     lager:info("~p: Adding node ~p to our partial_view.", [node(), Node]),
-    Membership = sets:add_element(Node, PartialView0),
+    PartialView = sets:add_element(Node, PartialView0),
 
     %% 2. Notify node to add us to its state. 
     %%    This is lazily done to ensure we can setup the TCP connection both ways, first.
@@ -86,7 +86,7 @@ join(#scamp_v2{partial_view=PartialView0}=State0, Node, _NodeState) ->
         end, select_random_sublist(State0, C - 1)), %% Important difference from scamp_v1: (c - 1) additional copies instead of c!
     OutgoingMessages = OutgoingMessages2 ++ ForwardMessages,
 
-    State = State0#scamp_v2{partial_view=Membership},
+    State = State0#scamp_v2{partial_view=PartialView},
     PartialViewList = partial_view_list(State),
     {ok, PartialViewList, OutgoingMessages, State}.
 
@@ -95,7 +95,7 @@ leave(#scamp_v2{partial_view=PartialView0}=State0, Node) ->
     lager:info("~p: Issuing remove_subscription for node ~p.", [node(), Node]),
 
     %% Remove node.
-    Membership = sets:del_element(Node, PartialView0),
+    PartialView = sets:del_element(Node, PartialView0),
     PartialViewList0 = partial_view_list(State0),
 
     %% Gossip to existing cluster members.
@@ -103,7 +103,7 @@ leave(#scamp_v2{partial_view=PartialView0}=State0, Node) ->
     OutgoingMessages = lists:map(fun(Peer) -> {Peer, {protocol, Message}} end, PartialViewList0),
 
     %% Return updated membership.
-    State = State0#scamp_v2{partial_view=Membership},
+    State = State0#scamp_v2{partial_view=PartialView},
     PartialViewList = partial_view_list(State),
 
     {ok, PartialViewList, OutgoingMessages, State}.
@@ -122,14 +122,14 @@ handle_message(#scamp_v2{partial_view=PartialView0}=State0, {remove_subscription
     case sets:is_element(Node, PartialView0) of 
         true ->
             %% Remove.
-            Membership = sets:del_element(PartialView0, Node),
+            PartialView = sets:del_element(PartialView0, Node),
 
             %% Gossip removals.
             Message = {remove_subscription, Node},
             OutgoingMessages = lists:map(fun(Peer) -> {Peer, {protocol, Message}} end, PartialViewList0),
 
             %% Update state.
-            State = State0#scamp_v2{partial_view=Membership},
+            State = State0#scamp_v2{partial_view=PartialView},
             PartialViewList = partial_view_list(State),
 
             {ok, PartialViewList, OutgoingMessages, State};
@@ -148,8 +148,8 @@ handle_message(#scamp_v2{partial_view=PartialView0}=State0, {forward_subscriptio
     case Keep =:= 0 andalso not lists:member(Node, PartialViewList0) of 
         true ->
             lager:info("~p: Adding subscription for node: ~p", [node(), Node]),
-            Membership = sets:add_element(Node, PartialView0),
-            State = State0#scamp_v2{partial_view=Membership},
+            PartialView = sets:add_element(Node, PartialView0),
+            State = State0#scamp_v2{partial_view=PartialView},
             PartialViewList = partial_view_list(State),
             OutgoingMessages = [],
             {ok, PartialViewList, OutgoingMessages, State};
@@ -166,8 +166,8 @@ handle_message(#scamp_v2{partial_view=PartialView0}=State0, {forward_subscriptio
 %%%===================================================================
 
 %% @private
-partial_view_list(#scamp_v2{partial_view=Membership}) ->
-    sets:to_list(Membership).
+partial_view_list(#scamp_v2{partial_view=PartialView}) ->
+    sets:to_list(PartialView).
 
 %% @private
 select_random_sublist(State, K) ->
