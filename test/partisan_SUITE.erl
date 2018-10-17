@@ -69,6 +69,8 @@ init_per_group(with_disterl, Config) ->
     [{disterl, true}] ++ Config;
 init_per_group(with_scamp_v1_strategy, Config) ->
     [{membership_strategy, partisan_scamp_v1_strategy}] ++ Config;
+init_per_group(with_scamp_v2_strategy, Config) ->
+    [{membership_strategy, partisan_scamp_v2_strategy}] ++ Config;
 init_per_group(with_broadcast, Config) ->
     [{broadcast, true}, {forward_options, [{transitive, true}]}] ++ Config;
 init_per_group(with_partition_key, Config) ->
@@ -123,6 +125,8 @@ all() ->
       ]},
 
      {group, with_scamp_v1_strategy, []},
+
+     {group, with_scamp_v2_strategy, []},
 
      {group, with_ack, []},
 
@@ -200,6 +204,10 @@ groups() ->
 
      {with_scamp_v1_strategy, [],
       [connectivity_test]},
+
+     {with_scamp_v2_strategy, [],
+      [connectivity_test]},
+
 
      {with_ack, [],
       [basic_test]},

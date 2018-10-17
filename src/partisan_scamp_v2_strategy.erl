@@ -18,9 +18,12 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @reference https://people.maths.bris.ac.uk/~maajg/scamp-ngc.pdf
+%% @reference https://people.maths.bris.ac.uk/~maajg/hiscamp-sigops.pdf
 
--module(partisan_scamp_v1_strategy).
+%% @todo Join of InView.
+%% @todo Node unsubscript.
+
+-module(partisan_scamp_v2_strategy).
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
@@ -36,7 +39,7 @@
 
 -include("partisan.hrl").
 
--record(scamp_v1, {actor, membership}).
+-record(scamp_v2, {actor, partial_view, in_view}).
 
 %%%===================================================================
 %%% API
@@ -46,110 +49,116 @@
 %%      Start with an empty state with only ourselves known.
 init(Identity) ->
     Membership = sets:add_element(myself(), sets:new()),
-    State = #scamp_v1{membership=Membership, actor=Identity},
-    MembershipList = membership_list(State),
-    {ok, MembershipList, State}.
+    State = #scamp_v2{partial_view=Membership, actor=Identity},
+    PartialViewList = partial_view_list(State),
+    {ok, PartialViewList, State}.
 
 %% @doc When a remote node is connected, notify that node to add us.  Then, perform forwarding, if necessary.
-join(#scamp_v1{membership=Membership0}=State0, Node, _NodeState) ->
+join(#scamp_v2{partial_view=PartialView0}=State0, Node, _NodeState) ->
     OutgoingMessages0 = [],
 
     %% 1. Add node to our state.
-    lager:info("~p: Adding node ~p to our membership.", [node(), Node]),
-    Membership = sets:add_element(Node, Membership0),
+    lager:info("~p: Adding node ~p to our partial_view.", [node(), Node]),
+    Membership = sets:add_element(Node, PartialView0),
 
     %% 2. Notify node to add us to its state. 
     %%    This is lazily done to ensure we can setup the TCP connection both ways, first.
     Myself = partisan_peer_service_manager:myself(),
     OutgoingMessages1 = OutgoingMessages0 ++ [{Node, {protocol, {forward_subscription, Myself}}}],
 
-    %% 3. Notify all members we know about to add node to their membership.
+    %% 3. Notify all members we know about to add node to their partial_view.
     OutgoingMessages2 = sets:fold(fun(N, OM) ->
         lager:info("~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N]),
         OM ++ [{N, {protocol, {forward_subscription, Node}}}]
-        end, OutgoingMessages1, Membership0),
+        end, OutgoingMessages1, PartialView0),
 
-    %% 4. Use 'c' (failure tolerance value) to send forwarded subscriptions for node.
+    %% 4. Use 'c - 1' (failure tolerance value) to send forwarded subscriptions for node.
+    %% 
+    %% @todo: Ambiguity here: "These forwarded subscriptions may be kept by the neighbours or 
+    %%                        "forwarded, but are not destroyed until some node keeps them?"
+    %% 
+    %% What does this mean?
+    %% 
     C = partisan_config:get(scamp_c, ?SCAMP_C_VALUE),
     ForwardMessages = lists:map(fun(N) ->
         lager:info("~p: Forwarding additional subscription for ~p to node: ~p", [node(), Node, N]),
         {N, {protocol, {forward_subscription, Node}}}
-        end, select_random_sublist(State0, C)),
+        end, select_random_sublist(State0, C - 1)), %% Important difference from scamp_v1: (c - 1) additional copies instead of c!
     OutgoingMessages = OutgoingMessages2 ++ ForwardMessages,
 
-    State = State0#scamp_v1{membership=Membership},
-    MembershipList = membership_list(State),
-    {ok, MembershipList, OutgoingMessages, State}.
+    State = State0#scamp_v2{partial_view=Membership},
+    PartialViewList = partial_view_list(State),
+    {ok, PartialViewList, OutgoingMessages, State}.
 
 %% @doc Leave a node from the cluster.
-leave(#scamp_v1{membership=Membership0}=State0, Node) ->
+leave(#scamp_v2{partial_view=PartialView0}=State0, Node) ->
     lager:info("~p: Issuing remove_subscription for node ~p.", [node(), Node]),
 
     %% Remove node.
-    Membership = sets:del_element(Node, Membership0),
-    MembershipList0 = membership_list(State0),
+    Membership = sets:del_element(Node, PartialView0),
+    PartialViewList0 = partial_view_list(State0),
 
     %% Gossip to existing cluster members.
     Message = {remove_subscription, Node},
-    OutgoingMessages = lists:map(fun(Peer) -> {Peer, {protocol, Message}} end, MembershipList0),
+    OutgoingMessages = lists:map(fun(Peer) -> {Peer, {protocol, Message}} end, PartialViewList0),
 
     %% Return updated membership.
-    State = State0#scamp_v1{membership=Membership},
-    MembershipList = membership_list(State),
+    State = State0#scamp_v2{partial_view=Membership},
+    PartialViewList = partial_view_list(State),
 
-    {ok, MembershipList, OutgoingMessages, State}.
+    {ok, PartialViewList, OutgoingMessages, State}.
 
 %% @doc Periodic protocol maintenance.
 periodic(State) ->
-    MembershipList = membership_list(State),
+    PartialViewList = partial_view_list(State),
     OutgoingMessages = [],
-    {ok, MembershipList, OutgoingMessages, State}.
+    {ok, PartialViewList, OutgoingMessages, State}.
 
 %% @doc Handling incoming protocol message.
-handle_message(#scamp_v1{membership=Membership0}=State0, {remove_subscription, Node}) ->
+handle_message(#scamp_v2{partial_view=PartialView0}=State0, {remove_subscription, Node}) ->
     lager:info("~p: Received remove_subscription for node ~p.", [node(), Node]),
-    MembershipList0 = membership_list(State0),
+    PartialViewList0 = partial_view_list(State0),
 
-    case sets:is_element(Node, Membership0) of 
+    case sets:is_element(Node, PartialView0) of 
         true ->
             %% Remove.
-            Membership = sets:del_element(Membership0, Node),
+            Membership = sets:del_element(PartialView0, Node),
 
             %% Gossip removals.
             Message = {remove_subscription, Node},
-            OutgoingMessages = lists:map(fun(Peer) -> {Peer, {protocol, Message}} end, MembershipList0),
+            OutgoingMessages = lists:map(fun(Peer) -> {Peer, {protocol, Message}} end, PartialViewList0),
 
             %% Update state.
-            State = State0#scamp_v1{membership=Membership},
-            MembershipList = membership_list(State),
+            State = State0#scamp_v2{partial_view=Membership},
+            PartialViewList = partial_view_list(State),
 
-            {ok, MembershipList, OutgoingMessages, State};
+            {ok, PartialViewList, OutgoingMessages, State};
         false ->
             OutgoingMessages = [],
-            {ok, MembershipList0, OutgoingMessages, State0}
+            {ok, PartialViewList0, OutgoingMessages, State0}
     end;
-handle_message(#scamp_v1{membership=Membership0}=State0, {forward_subscription, Node}) ->
+handle_message(#scamp_v2{partial_view=PartialView0}=State0, {forward_subscription, Node}) ->
     lager:info("~p: Received subscription for node ~p.", [node(), Node]),
-    MembershipList0 = membership_list(State0),
+    PartialViewList0 = partial_view_list(State0),
 
     %% Probability: P = 1 / (1 + sizeOf(View))
     Random = random_0_or_1(),
-    Keep = trunc((sets:size(Membership0) + 1) * Random),
+    Keep = trunc((sets:size(PartialView0) + 1) * Random),
 
-    case Keep =:= 0 andalso not lists:member(Node, MembershipList0) of 
+    case Keep =:= 0 andalso not lists:member(Node, PartialViewList0) of 
         true ->
             lager:info("~p: Adding subscription for node: ~p", [node(), Node]),
-            Membership = sets:add_element(Node, Membership0),
-            State = State0#scamp_v1{membership=Membership},
-            MembershipList = membership_list(State),
+            Membership = sets:add_element(Node, PartialView0),
+            State = State0#scamp_v2{partial_view=Membership},
+            PartialViewList = partial_view_list(State),
             OutgoingMessages = [],
-            {ok, MembershipList, OutgoingMessages, State};
+            {ok, PartialViewList, OutgoingMessages, State};
         false ->
             OutgoingMessages = lists:map(fun(N) ->
                 lager:info("~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N]),
                 {N, {protocol, {forward_subscription, Node}}}
                 end, select_random_sublist(State0, 1)),
-            {ok, MembershipList0, OutgoingMessages, State0}
+            {ok, PartialViewList0, OutgoingMessages, State0}
     end.
 
 %%%===================================================================
@@ -157,12 +166,12 @@ handle_message(#scamp_v1{membership=Membership0}=State0, {forward_subscription, 
 %%%===================================================================
 
 %% @private
-membership_list(#scamp_v1{membership=Membership}) ->
+partial_view_list(#scamp_v2{partial_view=Membership}) ->
     sets:to_list(Membership).
 
 %% @private
 select_random_sublist(State, K) ->
-    List = membership_list(State),
+    List = partial_view_list(State),
     lists:sublist(shuffle(List), K).
 
 %% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
