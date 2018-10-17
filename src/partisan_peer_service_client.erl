@@ -155,7 +155,13 @@ handle_info({Tag, _Socket, Data}, State0) when ?DATA_MSG(Tag) ->
     end,
     handle_message(decode(Data), State0);
 handle_info({Tag, _Socket}, #state{peer = Peer} = State) when ?CLOSED_MSG(Tag) ->
-    lager:info("Connection to ~p has been closed for pid ~p", [Peer, self()]),
+    case partisan_config:get(tracing, ?TRACING) of 
+        true ->
+            lager:info("Connection to ~p has been closed for pid ~p", [Peer, self()]);
+        false ->
+            ok
+    end,
+
     {stop, normal, State};
 handle_info(Msg, State) ->
     lager:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Msg]),
