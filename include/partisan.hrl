@@ -23,7 +23,7 @@
 -define(SCAMP_MESSAGE_WINDOW, 10).
 
 -define(DEFAULT_PEER_SERVICE_MANAGER, partisan_pluggable_peer_service_manager).
--define(DEFAULT_MEMBERSHIP_STRATEGY, partisan_full_mesh_strategy).
+-define(DEFAULT_MEMBERSHIP_STRATEGY, partisan_full_mesh_membership_strategy).
 
 -define(UTIL, partisan_plumtree_util).
 -define(DEFAULT_LAZY_TICK_PERIOD, 1000).

@@ -68,14 +68,14 @@ end_per_testcase(Case, _Config) ->
 
 init_per_group(with_disterl, Config) ->
     [{disterl, true}] ++ Config;
-init_per_group(with_scamp_v1_strategy, Config) ->
+init_per_group(with_scamp_v1_membership_strategy, Config) ->
     [{membership_strategy, partisan_scamp_v1_strategy}] ++ Config;
-init_per_group(with_scamp_v1_strategy_high_clients, Config) ->
-    [{membership_strategy, partisan_scamp_v1_strategy}, {clients, ?HIGH_CLIENT_NUMBER}] ++ Config;
-init_per_group(with_scamp_v2_strategy, Config) ->
-    [{membership_strategy, partisan_scamp_v2_strategy}] ++ Config;
-init_per_group(with_scamp_v2_strategy_high_clients, Config) ->
-    [{membership_strategy, partisan_scamp_v2_strategy}, {clients, ?HIGH_CLIENT_NUMBER}] ++ Config;
+init_per_group(with_scamp_v1_membership_strategy_high_clients, Config) ->
+    [{membership_strategy, partisan_scamp_v1_membership_strategy}, {clients, ?HIGH_CLIENT_NUMBER}] ++ Config;
+init_per_group(with_scamp_v2_membership_strategy, Config) ->
+    [{membership_strategy, partisan_scamp_v2_membership_strategy}] ++ Config;
+init_per_group(with_scamp_v2_membership_strategy_high_clients, Config) ->
+    [{membership_strategy, partisan_scamp_v2_membership_strategy}, {clients, ?HIGH_CLIENT_NUMBER}] ++ Config;
 init_per_group(with_broadcast, Config) ->
     [{broadcast, true}, {forward_options, [{transitive, true}]}] ++ Config;
 init_per_group(with_partition_key, Config) ->
@@ -131,15 +131,15 @@ all() ->
 
      %% Scamp v1.
 
-     {group, with_scamp_v1_strategy, []},
+     {group, with_scamp_v1_membership_strategy, []},
 
-     {group, with_scamp_v1_strategy_high_clients, []},
+     {group, with_scamp_v1_membership_strategy_high_clients, []},
 
      %% Scamp v2.
 
-     {group, with_scamp_v2_strategy, []},
+     {group, with_scamp_v2_membership_strategy, []},
 
-     {group, with_scamp_v2_strategy_high_clients, []},
+     {group, with_scamp_v2_membership_strategy_high_clients, []},
 
      %% Features.
 
@@ -224,16 +224,16 @@ groups() ->
        %% hyparview_xbot_manager_high_client_test
       ]},
 
-     {with_scamp_v1_strategy, [],
+     {with_scamp_v1_membership_strategy, [],
       [connectivity_test]},
 
-     {with_scamp_v1_strategy_high_clients, [],
+     {with_scamp_v1_membership_strategy_high_clients, [],
       [connectivity_test]},
 
-     {with_scamp_v2_strategy, [],
+     {with_scamp_v2_membership_strategy, [],
       [connectivity_test]},
 
-     {with_scamp_v2_strategy_high_clients, [],
+     {with_scamp_v2_membership_strategy_high_clients, [],
       [connectivity_test]},
 
      {with_ack, [],

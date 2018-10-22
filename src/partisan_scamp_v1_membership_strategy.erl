@@ -20,7 +20,7 @@
 
 %% @reference https://people.maths.bris.ac.uk/~maajg/scamp-ngc.pdf
 
--module(partisan_scamp_v1_strategy).
+-module(partisan_scamp_v1_membership_strategy).
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 

@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(partisan_full_mesh_strategy).
+-module(partisan_full_mesh_membership_strategy).
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 

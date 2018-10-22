@@ -23,7 +23,7 @@
 %% @todo Join of InView.
 %% @todo Node unsubscript.
 
--module(partisan_scamp_v2_strategy).
+-module(partisan_scamp_v2_membership_strategy).
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 

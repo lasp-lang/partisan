@@ -80,7 +80,7 @@ init() ->
     XbotInterval = rand:uniform(?XBOT_RANGE_INTERVAL) + ?XBOT_MIN_INTERVAL, 
 
     %% Configure membership strategy.
-    MembershipStrategy = partisan_full_mesh_strategy,
+    MembershipStrategy = partisan_full_mesh_membership_strategy,
 
     [env_or_default(Key, Default) ||
         {Key, Default} <- [{arwl, 5},
