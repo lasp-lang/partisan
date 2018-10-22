@@ -79,9 +79,6 @@ init() ->
     %% Configure X-BOT interval.
     XbotInterval = rand:uniform(?XBOT_RANGE_INTERVAL) + ?XBOT_MIN_INTERVAL, 
 
-    %% Configure membership strategy.
-    MembershipStrategy = partisan_full_mesh_membership_strategy,
-
     [env_or_default(Key, Default) ||
         {Key, Default} <- [{arwl, 5},
                            {prwl, 30},
@@ -105,12 +102,13 @@ init() ->
                            {name, Name},
                            {passive_view_shuffle_period, 10000},
                            {parallelism, ?PARALLELISM},
-                           {membership_strategy, MembershipStrategy},
+                           {membership_strategy, ?DEFAULT_MEMBERSHIP_STRATEGY},
                            {partisan_peer_service_manager, PeerService},
                            {peer_ip, DefaultPeerIP},
                            {peer_port, DefaultPeerPort},
                            {periodic_interval, 10000},
                            {pid_encoding, true},
+                           {orchestration_strategy, ?DEFAULT_ORCHESTRATION_STRATEGY},
                            {random_promotion, true},
                            {reservations, []},
                            {tracing, false},
