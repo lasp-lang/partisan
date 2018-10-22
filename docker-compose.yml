@@ -4,16 +4,18 @@ services:
     image: "redis:alpine"
     ports:
       - "6379:6379"
-  partisan-client:
+  client:
     image: "cmeiklejohn/partisan"
     environment:
       - TAG=client
       - REDIS_SERVICE_HOST=redis
       - REDIS_PORT=6379
+      - DOCKER_COMPOSE=true
     build: .
-  partisan-server:
+  server:
     image: "cmeiklejohn/partisan"
     environment:
       - TAG=server
       - REDIS_SERVICE_HOST=redis
       - REDIS_PORT=6379
+      - DOCKER_COMPOSE=true

@@ -8,7 +8,6 @@ if [ ! -z "$DOCKER_COMPOSE" ]; then
   export NODE_NAME=${HOSTNAME}@${IP}
 fi
 
-
 # Assume 127.0.0.1 as bind host.
 if [ -z "$IP" ]; then
   echo "IP address not set; defaulting to 127.0.0.1."
