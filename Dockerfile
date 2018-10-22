@@ -1,14 +1,8 @@
-FROM erlang:20.3
+FROM cmeiklejohn/partisan-base:latest
 
 MAINTAINER Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>
 
-# Build prereq's.
-RUN cd /tmp && \
-    apt-get update && \
-    apt-get -y install wget build-essential make gcc ruby-dev git expect gnuplot tmux strace && \
-    gem install gist
-
-# Build.
+# Build from GitHub.
 RUN cd /opt && \
     (git clone https://github.com/lasp-lang/partisan.git -b rename-backend && cd partisan && make rel);
 
