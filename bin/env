@@ -1,0 +1,32 @@
+#!/bin/bash
+
+export APP=partisan
+
+# Assume 127.0.0.1 as bind host.
+if [ -z "$IP" ]; then
+  echo "IP address not set; defaulting to 127.0.0.1."
+  export IP=127.0.0.1
+fi
+
+if [ -z "$NODE_NAME" ]; then
+  export NODE_NAME=${APP}@${IP}
+fi
+
+if [ -z "$COOKIE" ]; then
+  export COOKIE=${APP}
+fi
+
+export RELX_REPLACE_OS_VARS=true
+
+echo "PEER_PORT: ${PEER_PORT}"
+echo "WEB_PORT: ${WEB_PORT}"
+echo "NODE_NAME: ${NODE_NAME}"
+echo "COOKIE: ${COOKIE}"
+echo "IP: ${IP}"
+echo "HOSTNAME: ${HOSTNAME}"
+
+echo "Printing the environment:"
+env
+
+RELNAME="`dirname \"$0\"`"/${APP}
+exec ${RELNAME} foreground "$@"
