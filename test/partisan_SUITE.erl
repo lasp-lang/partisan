@@ -44,8 +44,9 @@
 -define(PERIODIC_INTERVAL, 1000).
 -define(TIMEOUT, 10000).
 -define(CLIENT_NUMBER, 3).
+-define(HIGH_CLIENT_NUMBER, 10).
 
-%% ===================================================================
+%% ==================================================================
 %% common_test callbacks
 %% ===================================================================
 
@@ -69,8 +70,12 @@ init_per_group(with_disterl, Config) ->
     [{disterl, true}] ++ Config;
 init_per_group(with_scamp_v1_strategy, Config) ->
     [{membership_strategy, partisan_scamp_v1_strategy}] ++ Config;
+init_per_group(with_scamp_v1_strategy_high_clients, Config) ->
+    [{membership_strategy, partisan_scamp_v1_strategy}, {clients, ?HIGH_CLIENT_NUMBER}] ++ Config;
 init_per_group(with_scamp_v2_strategy, Config) ->
     [{membership_strategy, partisan_scamp_v2_strategy}] ++ Config;
+init_per_group(with_scamp_v2_strategy_high_clients, Config) ->
+    [{membership_strategy, partisan_scamp_v2_strategy}, {clients, ?HIGH_CLIENT_NUMBER}] ++ Config;
 init_per_group(with_broadcast, Config) ->
     [{broadcast, true}, {forward_options, [{transitive, true}]}] ++ Config;
 init_per_group(with_partition_key, Config) ->
@@ -124,9 +129,19 @@ all() ->
        %% {hyparview_xbot, [shuffle]}
       ]},
 
+     %% Scamp v1.
+
      {group, with_scamp_v1_strategy, []},
 
+     {group, with_scamp_v1_strategy_high_clients, []},
+
+     %% Scamp v2.
+
      {group, with_scamp_v2_strategy, []},
+
+     {group, with_scamp_v2_strategy_high_clients, []},
+
+     %% Features.
 
      {group, with_ack, []},
 
@@ -135,10 +150,6 @@ all() ->
      {group, with_causal_send, []},
 
      {group, with_causal_send_and_ack, []},
-
-     {group, with_forward_interposition, []},
-
-     {group, with_receive_interposition, []},
 
      {group, with_tls, [parallel]},
 
@@ -150,19 +161,29 @@ all() ->
 
      {group, with_disterl, [parallel]},
 
+     {group, with_sync_join, [parallel]},
+
+     {group, with_partition_key, [parallel]},
+
+     {group, with_broadcast, [parallel]},
+
+      %% Channels.
+
      {group, with_channels, [parallel]},
 
      {group, with_no_channels, [parallel]},
      
      {group, with_monotonic_channels, [parallel]},
 
-     {group, with_sync_join, [parallel]},
+     %% Debug.
 
      {group, with_binary_padding, [parallel]},
 
-     {group, with_partition_key, [parallel]},
+     %% Fault injection.
 
-     {group, with_broadcast, [parallel]},
+     {group, with_forward_interposition, []},
+
+     {group, with_receive_interposition, []},
 
      {group, with_ingress_delay, [parallel]},
 
@@ -206,7 +227,13 @@ groups() ->
      {with_scamp_v1_strategy, [],
       [connectivity_test]},
 
+     {with_scamp_v1_strategy_high_clients, [],
+      [connectivity_test]},
+
      {with_scamp_v2_strategy, [],
+      [connectivity_test]},
+
+     {with_scamp_v2_strategy_high_clients, [],
       [connectivity_test]},
 
      {with_ack, [],
@@ -1026,10 +1053,20 @@ connectivity_test(Config) ->
     Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
-    Servers = node_list(1, "server", Config),
+    Servers = case ?config(servers, Config) of
+        undefined ->
+            node_list(1, "server", Config);
+        NumServers ->
+            node_list(NumServers, "server", Config)
+    end,
 
     %% Specify clients.
-    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+    Clients = case ?config(clients, Config) of
+        undefined ->
+            node_list(?CLIENT_NUMBER, "client", Config);
+        NumClients ->
+            node_list(NumClients, "client", Config)
+    end,
 
     %% Start nodes.
     Nodes = start(connectivity_test, Config,
@@ -1040,107 +1077,10 @@ connectivity_test(Config) ->
     %% Pause for clustering.
     timer:sleep(1000),
 
-    %% Verify membership.
-    %%
-    %% Every node should know about every other node in this topology.
-    %%
-    % VerifyFun = fun({_, Node}) ->
-    %         {ok, Members} = rpc:call(Node, Manager, members, []),
-    %         SortedNodes = lists:usort([N || {_, N} <- Nodes]),
-    %         SortedMembers = lists:usort(Members),
-    %         case SortedMembers =:= SortedNodes of
-    %             true ->
-    %                 true;
-    %             false ->
-    %                 ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
-    %                        [Node, SortedNodes, SortedMembers]),
-    %                 {false, {Node, SortedNodes, SortedMembers}}
-    %         end
-    % end,
-
-    % %% Verify the membership is correct.
-    % lists:foreach(fun(Node) ->
-    %                       VerifyNodeFun = fun() -> VerifyFun(Node) end,
-
-    %                       case wait_until(VerifyNodeFun, 60 * 2, 100) of
-    %                           ok ->
-    %                               ok;
-    %                           {fail, {false, {Node, Expected, Contains}}} ->
-    %                              ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
-    %                                      [Node, Expected, Contains])
-    %                       end
-    %               end, Nodes),
-
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
                     ok = check_forward_message(Node, Manager, Nodes)
                   end, Nodes),
-
-    % %% Verify parallelism.
-    % ConfigParallelism = proplists:get_value(parallelism, Config, ?PARALLELISM),
-    % ct:pal("Configured parallelism: ~p", [ConfigParallelism]),
-
-    % %% Verify channels.
-    % ConfigChannels = proplists:get_value(channels, Config, ?CHANNELS),
-    % ct:pal("Configured channels: ~p", [ConfigChannels]),
-
-    % ConnectionsFun = fun(Node) ->
-    %                          Connections = rpc:call(Node,
-    %                                   ?DEFAULT_PEER_SERVICE_MANAGER,
-    %                                   connections,
-    %                                   []),
-    %                          %% ct:pal("Connections: ~p~n", [Connections]),
-    %                          Connections
-    %                  end,
-
-    % VerifyConnectionsFun = fun(Node, Channel, Parallelism) ->
-    %                             %% Get list of connections.
-    %                             {ok, Connections} = ConnectionsFun(Node),
-
-    %                             %% Verify we have enough connections.
-    %                             dict:fold(fun(_N, Active, Acc) ->
-    %                                 Filtered = lists:filter(fun({_, C, _}) -> 
-    %                                     case C of
-    %                                         Channel ->
-    %                                             true;
-    %                                         _ ->
-    %                                             false
-    %                                     end
-    %                                 end, Active),
-
-    %                                 case length(Filtered) == Parallelism of
-    %                                     true ->
-    %                                         Acc andalso true;
-    %                                     false ->
-    %                                         Acc andalso false
-    %                                 end
-    %                             end, true, Connections)
-    %                       end,
-
-    % lists:foreach(fun({_Name, Node}) ->
-    %                     %% Get enabled parallelism.
-    %                     Parallelism = rpc:call(Node, partisan_config, get, [parallelism, ?PARALLELISM]),
-    %                     ct:pal("Parallelism is: ~p", [Parallelism]),
-
-    %                     %% Get enabled channels.
-    %                     Channels = rpc:call(Node, partisan_config, get, [channels, ?CHANNELS]),
-    %                     ct:pal("Channels are: ~p", [Channels]),
-
-    %                     lists:foreach(fun(Channel) ->
-    %                         %% Generate fun.
-    %                         VerifyConnectionsNodeFun = fun() ->
-    %                                                         VerifyConnectionsFun(Node, Channel, Parallelism)
-    %                                                 end,
-
-    %                         %% Wait until connections established.
-    %                         case wait_until(VerifyConnectionsNodeFun, 60 * 2, 100) of
-    %                             ok ->
-    %                                 ok;
-    %                             _ ->
-    %                                 ct:fail("Not enough connections have been opened; need: ~p", [Parallelism])
-    %                         end
-    %                     end, Channels)
-    %               end, Nodes),
 
     %% Stop nodes.
     stop(Nodes),
@@ -2113,13 +2053,13 @@ check_forward_message(Node, Manager, Nodes) ->
 
     ForwardOptions = rpc:call(Node, partisan_config, get, [forward_options, []]),
     ct:pal("Using forward options: ~p", [ForwardOptions]),
-    {ok, DirectMembers} = rpc:call(Node, Manager, members, []),
 
     lists:foreach(fun(Member) ->
         Rand = rand:uniform(),
 
-        IsDirect = lists:member(Member, DirectMembers),
-        ct:pal("Node ~p is directly connected: ~p; ~p", [Member, IsDirect, DirectMembers]),
+        %% {ok, DirectMembers} = rpc:call(Node, Manager, members, []),
+        %% IsDirect = lists:member(Member, DirectMembers),
+        %% ct:pal("Node ~p is directly connected: ~p; ~p", [Member, IsDirect, DirectMembers]),
 
         %% now fetch the value from the random destination node
         case wait_until(fun() ->
