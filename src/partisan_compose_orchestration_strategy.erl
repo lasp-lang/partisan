@@ -76,7 +76,14 @@ clients(#orchestration_strategy_state{eredis=Eredis}) ->
                 N1 = binary_to_list(N),
                 list_to_atom(string:substr(N1, length(prefix("client/")) + 1, length(N1)))
                 end, Nodes),
-            lager:info("Received client keys from Redis: ~p", [Nodes]),
+
+            case partisan_config:get(tracing, ?TRACING) of 
+                true ->
+                    lager:info("Received client keys from Redis: ~p", [Nodes]);
+                false ->
+                    ok
+            end,
+
             sets:from_list(Nodes1);
         {error,no_connection} ->
             sets:new()
@@ -90,7 +97,14 @@ servers(#orchestration_strategy_state{eredis=Eredis}) ->
                 N1 = binary_to_list(N),
                 list_to_atom(string:substr(N1, length(prefix("server/")) + 1, length(N1)))
                 end, Nodes),
-            lager:info("Received server keys from Redis: ~p", [Nodes]),
+
+            case partisan_config:get(tracing, ?TRACING) of 
+                true ->
+                    lager:info("Received server keys from Redis: ~p", [Nodes]);
+                false ->
+                    ok
+            end,
+
             sets:from_list(Nodes1);
         {error,no_connection} ->
             sets:new()

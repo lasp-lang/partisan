@@ -332,7 +332,8 @@ handle_info(?ARTIFACT_MESSAGE, #orchestration_strategy_state{peer_service=PeerSe
     %% Store membership.
     Node = prefix(atom_to_list(node())),
     Membership = term_to_binary(Nodes),
-    % lager:info("Membership for node ~p: ~p", [Node, Nodes]),
+
+    lager:info("Membership for node ~p: ~p", [Node, Nodes]),
     upload_artifact(State, Node, Membership),
 
     %% Store membership with node tag.
@@ -359,10 +360,10 @@ handle_info(?BUILD_GRAPH_MESSAGE, #orchestration_strategy_state{
     %% Get all running nodes, because we need the list of *everything*
     %% to analyze the graph for connectedness.
     Servers = OrchestrationStrategy:servers(State),
-    % lager:info("Found servers: ~p", [sets:to_list(Servers)]),
+    lager:info("Found servers: ~p", [sets:to_list(Servers)]),
 
     Clients = OrchestrationStrategy:clients(State),
-    % lager:info("Found clients: ~p", [sets:to_list(Clients)]),
+    lager:info("Found clients: ~p", [sets:to_list(Clients)]),
 
     ServerNames = node_names(sets:to_list(Servers)),
     ClientNames = node_names(sets:to_list(Clients)),
