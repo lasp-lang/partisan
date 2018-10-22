@@ -8,8 +8,11 @@ RUN cd /tmp && \
     apt-get -y install wget build-essential make gcc ruby-dev git expect gnuplot tmux strace && \
     gem install gist
 
-# Copy into the container the partisan code.
-COPY . /opt/partisan
+# Build.
+RUN cd /opt && \
+    (git clone https://github.com/lasp-lang/partisan.git -b rename-backend && cd partisan && make rel);
 
-# Verify output.
-CMD ls /opt
+# Run.
+CMD cd /opt/partisan && \
+    chmod 755 /opt/partisan/_build/default/rel/partisan/bin/env && \
+    /opt/partisan/_build/default/rel/partisan/bin/env
