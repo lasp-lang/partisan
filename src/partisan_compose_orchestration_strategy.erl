@@ -34,7 +34,14 @@
 %% @private
 upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Membership) ->
     {ok, <<"OK">>} = eredis:q(Eredis, ["SET", Node, Membership]),
-    lager:info("Pushed artifact to Redis: ~p => ~p", [Node, Membership]),
+
+    case partisan_config:get(tracing, ?TRACING) of 
+        true ->
+            lager:info("Pushed artifact to Redis: ~p => ~p", [Node, Membership]);
+        false ->
+            ok
+    end,
+
     ok.
 
 %% @private
@@ -44,7 +51,13 @@ download_artifact(#orchestration_strategy_state{eredis=Eredis}, Node) ->
     try
         case eredis:q(Eredis, ["GET", Node]) of
             {ok, Membership} ->
-                lager:info("Received artifact from Redis: ~p", [Node]),
+                case partisan_config:get(tracing, ?TRACING) of 
+                    true ->
+                        lager:info("Received artifact from Redis: ~p", [Node]);
+                    false ->
+                        ok
+                end,
+
                 Membership;
             {error,no_connection} ->
                 undefined
