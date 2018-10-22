@@ -4,14 +4,14 @@ services:
     image: "redis:alpine"
     ports:
       - "6379:6379"
-  client:
+  partisan-client:
     image: "cmeiklejohn/partisan"
     environment:
       - TAG=client
       - REDIS_SERVICE_HOST=redis
       - REDIS_PORT=6379
     build: .
-  server:
+  partisan-server:
     image: "cmeiklejohn/partisan"
     environment:
       - TAG=server
