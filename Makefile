@@ -75,3 +75,16 @@ stage:
 DIALYZER_APPS = kernel stdlib erts sasl eunit syntax_tools compiler crypto
 
 include tools.mk
+
+## 
+## Container targets
+##
+
+containerize-deps:
+	docker build -f partisan-base.Dockerfile -t cmeiklejohn/partisan-base .
+
+containerize: containerize-deps
+	docker build --no-cache -f Dockerfile -t cmeiklejohn/partisan .
+
+compose:
+	docker-compose down --rmi local && docker-compose up

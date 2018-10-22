@@ -24,6 +24,7 @@
 
 -define(DEFAULT_PEER_SERVICE_MANAGER, partisan_pluggable_peer_service_manager).
 -define(DEFAULT_MEMBERSHIP_STRATEGY, partisan_full_mesh_membership_strategy).
+-define(DEFAULT_ORCHESTRATION_STRATEGY, undefined).
 
 -define(UTIL, partisan_plumtree_util).
 -define(DEFAULT_LAZY_TICK_PERIOD, 1000).
@@ -50,3 +51,15 @@
 -type partitions() :: [{reference(), node_spec()}].
 -type ttl() :: non_neg_integer().
 -type channel() :: atom().
+
+-record(orchestration_strategy_state, 
+               {orchestration_strategy,
+                is_connected,
+                was_connected,
+                attempted_nodes,
+                peer_service,
+                graph,
+                tree,
+                eredis,
+                servers,
+                nodes}).

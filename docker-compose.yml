@@ -1,0 +1,20 @@
+version: "2"
+services:
+  redis:
+    image: "redis:alpine"
+    ports:
+      - "6379:6379"
+  client:
+    environment:
+      - TAG=client
+      - REDIS_SERVICE_HOST=redis
+      - REDIS_PORT=6379
+      - DOCKER_COMPOSE=true
+    build: .
+  server:
+    environment:
+      - TAG=server
+      - REDIS_SERVICE_HOST=redis
+      - REDIS_PORT=6379
+      - DOCKER_COMPOSE=true
+    build: .
