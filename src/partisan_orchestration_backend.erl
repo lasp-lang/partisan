@@ -271,8 +271,9 @@ handle_info(?REFRESH_MESSAGE, #orchestration_strategy_state{orchestration_strate
     %% only probabilistic.
     %%
     ToConnectNodes = case {Tag, PeerServiceManager} of
-        {_, partisan_default_peer_service_manager} ->
-            %% Full connectivity.
+        {_, partisan_pluggable_peer_service_manager} ->
+            %% By default, full connectivity; but, 
+            %% connect all nodes to all other nodes for now.
             sets:union(Servers, Clients);
         {client, partisan_client_server_peer_service_manager} ->
             %% If we're a client, and we're in client/server mode, then
