@@ -989,7 +989,7 @@ schedule_distance() ->
 
 %% @private
 schedule_periodic() ->
-    PeriodicInterval = partisan_config:get(periodic_interval, 10000),
+    PeriodicInterval = partisan_config:get(periodic_interval, ?PERIODIC_INTERVAL),
     erlang:send_after(PeriodicInterval, ?MODULE, periodic).
 
 %% @private

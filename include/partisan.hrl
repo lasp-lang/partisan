@@ -15,7 +15,12 @@
 -define(RELAY_TTL, 5).
 -define(MEMBERSHIP_PROTOCOL_CHANNEL, membership).
 
+%% Pluggable manager.
+-define(PERIODIC_INTERVAL, 10000).
+
+%% Scamp protocol.
 -define(SCAMP_C_VALUE, 5).
+-define(SCAMP_MESSAGE_WINDOW, 10).
 
 -define(DEFAULT_PEER_SERVICE_MANAGER, partisan_pluggable_peer_service_manager).
 -define(DEFAULT_MEMBERSHIP_STRATEGY, partisan_full_mesh_strategy).
