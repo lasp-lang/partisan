@@ -86,5 +86,5 @@ containerize-deps:
 containerize: containerize-deps
 	docker build --no-cache -f Dockerfile -t cmeiklejohn/partisan .
 
-compose:
-	docker-compose down --rmi local && docker-compose up
+compose: containerize
+	docker-compose down; docker-compose rm; docker-compose up
