@@ -162,7 +162,7 @@ init([]) ->
         undefined ->
             %% Assumes full membership.
             PeerServiceManager = partisan_config:get(peer_service_manager, ?DEFAULT_PEER_SERVICE_MANAGER),
-            {ok, Members} = PeerServiceManager:members(),
+            {ok, Members} = PeerServiceManager:members_for_orchestration(),
             Members;
         _ ->
             []
@@ -261,7 +261,7 @@ handle_info(?REFRESH_MESSAGE, #orchestration_strategy_state{orchestration_strate
     Clients = OrchestrationStrategy:clients(State),
     % lager:info("Found clients: ~p", [sets:to_list(Clients)]),
 
-    % {ok, Membership} = PeerService:members(),
+    % {ok, Membership} = PeerService:members_for_orchestration(),
     % lager:info("Membership (~p) ~p", [length(Membership), Membership]),
 
     %% Get list of nodes to connect to: this specialized logic isn't
@@ -327,7 +327,7 @@ handle_info(?REFRESH_MESSAGE, #orchestration_strategy_state{orchestration_strate
 
 handle_info(?ARTIFACT_MESSAGE, #orchestration_strategy_state{peer_service=PeerService}=State) ->
     %% Get current membership.
-    {ok, Nodes} = PeerService:members(),
+    {ok, Nodes} = PeerService:members_for_orchestration(),
 
     %% Store membership.
     Node = prefix(atom_to_list(node())),
@@ -399,7 +399,7 @@ handle_info(?BUILD_GRAPH_MESSAGE, #orchestration_strategy_state{
             ok;
         false ->
             lager:info("Visited ~p from ~p: ~p", [length(VisitedNames), node(), VisitedNames]),
-            {ok, ServerMembership} = PeerService:members(),
+            {ok, ServerMembership} = PeerService:members_for_orchestration(),
             lager:info("Membership (~p) ~p", [length(ServerMembership), ServerMembership]),
             lager:info("Graph is not connected!"),
             ok
@@ -446,7 +446,7 @@ maybe_connect(PeerService, Nodes, SeenNodes) ->
     %% connect; only attempt to connect once, because node might be
     %% migrated to a passive view of the membership.
     %% If the node is isolated always try to connect.
-    {ok, Membership0} = PeerService:members(),
+    {ok, Membership0} = PeerService:members_for_orchestration(),
     Membership1 = Membership0 -- [node()],
     Isolated = length(Membership1) == 0,
 

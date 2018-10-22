@@ -32,6 +32,7 @@
 %% partisan_peer_service_manager callbacks
 -export([start_link/0,
          members/0,
+         members_for_orchestration/0,
          myself/0,
          get_local_state/0,
          join/1,
@@ -113,6 +114,10 @@ start_link() ->
 %% @doc Return membership list.
 members() ->
     gen_server:call(?MODULE, members, infinity).
+
+%% @doc Return membership list.
+members_for_orchestration() ->
+    gen_server:call(?MODULE, members_for_orchestration, infinity).
 
 %% @doc Return myself.
 myself() ->
@@ -433,6 +438,9 @@ handle_call(members, _From, #state{myself=Myself,
     lager:debug("Node ~p active view: ~p", [Myself, members(Active)]),
     ActiveMembers = [P || #{name := P} <- members(Active)],
     {reply, {ok, ActiveMembers}, State};
+
+handle_call(members_for_orchestration, _From, #state{active=Active}=State) ->
+    {reply, {ok, members(Active)}, State};
 
 handle_call(get_local_state, _From, #state{active=Active,
                                            epoch=Epoch}=State) ->

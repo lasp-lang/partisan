@@ -27,6 +27,7 @@
 %% partisan_peer_service_manager callbacks
 -export([start_link/0,
          members/0,
+         members_for_orchestration/0,
          myself/0,
          get_local_state/0,
          join/1,
@@ -99,6 +100,10 @@ start_link() ->
 %% @doc Return membership list.
 members() ->
     gen_server:call(?MODULE, members, infinity).
+
+%% @doc Return membership list.
+members_for_orchestration() ->
+    gen_server:call(?MODULE, members_for_orchestration, infinity).
 
 %% @doc Return connections list.
 connections() ->
@@ -568,6 +573,9 @@ handle_call({receive_message, Peer, OriginalMessage}, _From, #state{interpositio
     end;
 handle_call({receive_message, Message}, _From, State) ->
     handle_message(Message, State);
+
+handle_call(members_for_orchestration, _From, #state{membership=Membership}=State) ->
+    {reply, {ok, Membership}, State};
 
 handle_call(members, _From, #state{membership=Membership}=State) ->
     Members = [P || #{name := P} <- Membership],
