@@ -48,7 +48,13 @@ upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Payload) ->
     Tag = partisan_config:get(tag, client),
     TaggedNode = prefix(atom_to_list(Tag) ++ "/" ++ atom_to_list(node())),
     {ok, <<"OK">>} = eredis:q(Eredis, ["SET", TaggedNode, MyselfPayload]),
-    lager:info("Pushed additional artifact to Redis: ~p.", [Node]),
+
+    case partisan_config:get(tracing, ?TRACING) of 
+        true ->
+            lager:info("Pushed additional artifact to Redis: ~p.", [Node]);
+        false ->
+            ok
+    end,
 
     ok.
 
@@ -88,19 +94,25 @@ servers(State) ->
 retrieve_keys(#orchestration_strategy_state{eredis=Eredis}, Tag) ->
     case eredis:q(Eredis, ["KEYS", prefix(Tag ++ "/*")]) of
         {ok, Nodes} ->
-            Nodes1 = lists:map(fun(N) ->
-                N1 = binary_to_list(N),
-                list_to_atom(string:substr(N1, length(prefix(Tag ++ "/")) + 1, length(N1)))
-                end, Nodes),
+            Nodes1 = lists:map(fun(N) -> binary_to_list(N) end, Nodes),
+
+            Nodes2 = lists:flatmap(fun(N) ->
+                    case eredis:q(Eredis, ["GET", N]) of
+                        {ok, Myself} ->
+                            [binary_to_term(Myself)];
+                        _ ->
+                            []
+                    end
+                end, Nodes1),
 
             case partisan_config:get(tracing, ?TRACING) of 
                 true ->
-                    lager:info("Received ~p keys from Redis: ~p", [Tag, Nodes]);
+                    lager:info("Received ~p keys from Redis: ~p", [Tag, Nodes2]);
                 false ->
                     ok
             end,
 
-            sets:from_list(Nodes1);
+            sets:from_list(Nodes2);
         {error, no_connection} ->
             sets:new()
     end.
