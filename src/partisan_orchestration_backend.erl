@@ -117,13 +117,6 @@ init([]) ->
         OrchestrationStrategy ->
             lager:info("OrchestrationStrategy: ~p", [OrchestrationStrategy]),
 
-            case OrchestrationStrategy of
-                partisan_marathon_orchestration_strategy ->
-                    configure_s3_bucket(OrchestrationStrategy);
-                _ ->
-                    ok
-            end,
-
             %% Only construct the graph and attempt to repair the graph
             %% from the designated server node.
             case partisan_config:get(tag, client) of
@@ -210,8 +203,6 @@ handle_call(orchestration, _From, #orchestration_strategy_state{orchestration_st
     Result = case OrchestrationStrategy of
         undefined ->
             false;
-        partisan_marathon_orchestration_strategy ->
-            mesos;
         partisan_kubernetes_orchestration_strategy ->
             kubernetes
     end,
@@ -619,28 +610,6 @@ debug_get_tree(Root, Nodes) ->
                  end,
          {Node, Peers}
      end || Node <- Nodes].
-
-%% @private
-configure_s3_bucket(OrchestrationStrategy) ->
-    %% Configure erlcloud.
-    S3Host = "s3-us-west-2.amazonaws.com",
-    AccessKeyId = os:getenv("AWS_ACCESS_KEY_ID"),
-    SecretAccessKey = os:getenv("AWS_SECRET_ACCESS_KEY"),
-    erlcloud_s3:configure(AccessKeyId, SecretAccessKey, S3Host),
-
-    %% Create S3 bucket.
-    try
-        BucketName = OrchestrationStrategy:bucket_name(),
-        lager:info("Creating bucket: ~p", [BucketName]),
-        ok = erlcloud_s3:create_bucket(BucketName),
-        lager:info("Bucket created.")
-    catch
-        _:{aws_error, Error} ->
-            lager:info("Bucket creation failed: ~p", [Error]),
-            ok
-    end,
-
-    lager:info("S3 bucket creation succeeded.").
 
 %% @private
 upload_artifact(#orchestration_strategy_state{orchestration_strategy=OrchestrationStrategy}=State, Node, Membership) ->
