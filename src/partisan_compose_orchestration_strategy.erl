@@ -28,16 +28,16 @@
 
 -export([clients/1,
          servers/1,
-         upload_artifact/4,
+         upload_artifact/3,
          download_artifact/2]).
 
 %% @private
-upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, NodeMyself, Membership) ->
-    {ok, <<"OK">>} = eredis:q(Eredis, ["SET", Node, {NodeMyself, Membership}]),
+upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Payload) ->
+    {ok, <<"OK">>} = eredis:q(Eredis, ["SET", Node, Payload]),
 
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
-            lager:info("Pushed artifact to Redis: ~p => ~p", [Node, Membership]);
+            lager:info("Pushed artifact to Redis: ~p => ~p", [Node, Payload]);
         false ->
             ok
     end,

@@ -613,7 +613,7 @@ debug_get_tree(Root, Nodes) ->
 
 %% @private
 upload_artifact(#orchestration_strategy_state{orchestration_strategy=OrchestrationStrategy}=State, Node, NodeMyself, Membership) ->
-    OrchestrationStrategy:upload_artifact(State, Node, NodeMyself, Membership).
+    OrchestrationStrategy:upload_artifact(State, Node, {NodeMyself, Membership}).
 
 %% @private
 download_artifact(#orchestration_strategy_state{orchestration_strategy=OrchestrationStrategy}=State, Node) ->
