@@ -324,7 +324,7 @@ handle_info(?ARTIFACT_MESSAGE, #orchestration_strategy_state{peer_service=PeerSe
     Node = prefix(atom_to_list(node())),
     Membership = term_to_binary(Nodes),
 
-    lager:info("Membership for node ~p: ~p", [Node, Nodes]),
+    lager:info("Uploading membership for node ~p: ~p", [Node, Nodes]),
     upload_artifact(State, Node, Membership),
 
     %% Store membership with node tag.
@@ -453,8 +453,7 @@ maybe_connect(PeerService, Nodes, SeenNodes) ->
         [] ->
             ok;
         _ ->
-            lager:info("Attempting to connect: ~p",
-                       [sets:to_list(ToConnect)])
+            lager:info("Attempting to connect: ~p", [sets:to_list(ToConnect)])
     end,
 
     %% Attempt connection to any new nodes.
