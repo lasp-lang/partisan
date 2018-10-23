@@ -44,11 +44,11 @@ upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Payload) ->
 
     %% Store membership with node tag.
     Myself = partisan_peer_service_manager:myself(),
+    MyselfPayload = term_to_binary(Myself),
     Tag = partisan_config:get(tag, client),
-    TaggedNode = prefix(atom_to_list(Tag) ++ "/" ++ term_to_binary(Myself)),
-    {ok, <<"OK">>} = eredis:q(Eredis, ["SET", TaggedNode, term_to_binary(Myself)]),
-
-    lager:info("Pushed additional artifact to Redis: ~p.", [TaggedNode]),
+    TaggedNode = prefix(atom_to_list(Tag) ++ "/" ++ atom_to_list(node())),
+    {ok, <<"OK">>} = eredis:q(Eredis, ["SET", TaggedNode, MyselfPayload]),
+    lager:info("Pushed additional artifact to Redis: ~p.", [Node]),
 
     ok.
 
@@ -82,8 +82,7 @@ clients(#orchestration_strategy_state{eredis=Eredis}) ->
         {ok, Nodes} ->
             Nodes1 = lists:map(fun(N) ->
                 N1 = binary_to_list(N),
-                N2 = string:substr(N1, length(prefix("client/")) + 1, length(N1)),
-                binary_to_term(N2)
+                list_to_atom(string:substr(N1, length(prefix("client/")) + 1, length(N1)))
                 end, Nodes),
 
             case partisan_config:get(tracing, ?TRACING) of 
