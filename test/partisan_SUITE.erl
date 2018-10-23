@@ -69,7 +69,7 @@ end_per_testcase(Case, _Config) ->
 init_per_group(with_disterl, Config) ->
     [{disterl, true}] ++ Config;
 init_per_group(with_scamp_v1_membership_strategy, Config) ->
-    [{membership_strategy, partisan_scamp_v1_strategy}] ++ Config;
+    [{membership_strategy, partisan_scamp_v1_membership_strategy}] ++ Config;
 init_per_group(with_scamp_v1_membership_strategy_high_clients, Config) ->
     [{membership_strategy, partisan_scamp_v1_membership_strategy}, {clients, ?HIGH_CLIENT_NUMBER}] ++ Config;
 init_per_group(with_scamp_v2_membership_strategy, Config) ->
