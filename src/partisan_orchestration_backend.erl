@@ -551,7 +551,7 @@ populate_graph(State, Nodes, Graph) ->
                                 add_edges(Node, [], Graph),
                                 [Node|OrphanedNodes];
                             {_NodeMyself, NodeMembership} ->
-                                add_edges(Node, NodeMembership, Graph),
+                                add_edges(Node, node_names(NodeMembership), Graph),
                                 OrphanedNodes
                         end
                 end
