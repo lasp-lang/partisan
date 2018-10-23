@@ -247,10 +247,10 @@ handle_info(?REFRESH_MESSAGE, #orchestration_strategy_state{orchestration_strate
     PeerServiceManager = partisan_config:get(peer_service_manager, ?DEFAULT_PEER_SERVICE_MANAGER),
 
     Servers = OrchestrationStrategy:servers(State),
-    % lager:info("Found servers: ~p", [sets:to_list(Servers)]),
+    lager:info("Refresh found servers: ~p", [sets:to_list(Servers)]),
 
     Clients = OrchestrationStrategy:clients(State),
-    % lager:info("Found clients: ~p", [sets:to_list(Clients)]),
+    lager:info("Refresh found clients: ~p", [sets:to_list(Clients)]),
 
     % {ok, Membership} = PeerService:members_for_orchestration(),
     % lager:info("Membership (~p) ~p", [length(Membership), Membership]),
