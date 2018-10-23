@@ -324,13 +324,14 @@ handle_info(?ARTIFACT_MESSAGE, #orchestration_strategy_state{peer_service=PeerSe
     Node = prefix(atom_to_list(node())),
     Payload = term_to_binary({myself(), Nodes}),
 
-    lager:info("Uploading membership for node ~p: ~p", [Node, Nodes]),
-    upload_artifact(State, Node, Payload),
+    case partisan_config:get(tracing, ?TRACING) of 
+        true ->
+            lager:info("Uploading membership for node ~p: ~p", [Node, Nodes]);
+        false ->
+            ok
+    end,
 
-    %% Store membership with node tag.
-    Tag = partisan_config:get(tag, client),
-    TaggedNode = prefix(atom_to_list(Tag) ++ "/" ++ atom_to_list(node())),
-    upload_artifact(State, TaggedNode, Payload),
+    upload_artifact(State, Node, Payload),
 
     schedule_artifact_upload(),
 

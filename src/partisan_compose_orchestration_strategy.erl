@@ -42,6 +42,14 @@ upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Payload) ->
             ok
     end,
 
+    %% Store membership with node tag.
+    Myself = partisan_peer_service_manager:myself(),
+    Tag = partisan_config:get(tag, client),
+    TaggedNode = prefix(atom_to_list(Tag) ++ "/" ++ term_to_binary(Myself)),
+    {ok, <<"OK">>} = eredis:q(Eredis, ["SET", TaggedNode, term_to_binary(Myself)]),
+
+    lager:info("Pushed additional artifact to Redis: ~p.", [TaggedNode]),
+
     ok.
 
 %% @private
