@@ -322,16 +322,15 @@ handle_info(?ARTIFACT_MESSAGE, #orchestration_strategy_state{peer_service=PeerSe
 
     %% Store membership.
     Node = prefix(atom_to_list(node())),
-    Membership = term_to_binary(Nodes),
+    Payload = term_to_binary({myself(), Nodes}),
 
     lager:info("Uploading membership for node ~p: ~p", [Node, Nodes]),
-    upload_artifact(State, Node, myself(), Membership),
+    upload_artifact(State, Node, Payload),
 
     %% Store membership with node tag.
     Tag = partisan_config:get(tag, client),
     TaggedNode = prefix(atom_to_list(Tag) ++ "/" ++ atom_to_list(node())),
-    Membership = term_to_binary(Nodes),
-    upload_artifact(State, TaggedNode, myself(), Membership),
+    upload_artifact(State, TaggedNode, Payload),
 
     schedule_artifact_upload(),
 
@@ -612,8 +611,8 @@ debug_get_tree(Root, Nodes) ->
      end || Node <- Nodes].
 
 %% @private
-upload_artifact(#orchestration_strategy_state{orchestration_strategy=OrchestrationStrategy}=State, Node, NodeMyself, Membership) ->
-    OrchestrationStrategy:upload_artifact(State, Node, {NodeMyself, Membership}).
+upload_artifact(#orchestration_strategy_state{orchestration_strategy=OrchestrationStrategy}=State, Node, Payload) ->
+    OrchestrationStrategy:upload_artifact(State, Node, Payload).
 
 %% @private
 download_artifact(#orchestration_strategy_state{orchestration_strategy=OrchestrationStrategy}=State, Node) ->
