@@ -77,44 +77,31 @@ download_artifact(#orchestration_strategy_state{eredis=Eredis}, Node) ->
     end.
 
 %% @private
-clients(#orchestration_strategy_state{eredis=Eredis}) ->
-    case eredis:q(Eredis, ["KEYS", prefix("client/*")]) of
+clients(State) ->
+    retrieve_keys(State, "client").
+
+%% @private
+servers(State) ->
+    retrieve_keys(State, "server").
+
+%% @private
+retrieve_keys(#orchestration_strategy_state{eredis=Eredis}, Tag) ->
+    case eredis:q(Eredis, ["KEYS", prefix(Tag ++ "/*")]) of
         {ok, Nodes} ->
             Nodes1 = lists:map(fun(N) ->
                 N1 = binary_to_list(N),
-                list_to_atom(string:substr(N1, length(prefix("client/")) + 1, length(N1)))
+                list_to_atom(string:substr(N1, length(prefix(Tag ++ "/")) + 1, length(N1)))
                 end, Nodes),
 
             case partisan_config:get(tracing, ?TRACING) of 
                 true ->
-                    lager:info("Received client keys from Redis: ~p", [Nodes]);
+                    lager:info("Received ~p keys from Redis: ~p", [Tag, Nodes]);
                 false ->
                     ok
             end,
 
             sets:from_list(Nodes1);
         {error, no_connection} ->
-            sets:new()
-    end.
-
-%% @private
-servers(#orchestration_strategy_state{eredis=Eredis}) ->
-    case eredis:q(Eredis, ["KEYS", prefix("server/*")]) of
-        {ok, Nodes} ->
-            Nodes1 = lists:map(fun(N) ->
-                N1 = binary_to_list(N),
-                list_to_atom(string:substr(N1, length(prefix("server/")) + 1, length(N1)))
-                end, Nodes),
-
-            case partisan_config:get(tracing, ?TRACING) of 
-                true ->
-                    lager:info("Received server keys from Redis: ~p", [Nodes]);
-                false ->
-                    ok
-            end,
-
-            sets:from_list(Nodes1);
-        {error, kno_connection} ->
             sets:new()
     end.
 
