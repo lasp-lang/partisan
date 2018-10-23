@@ -351,10 +351,10 @@ handle_info(?BUILD_GRAPH_MESSAGE, #orchestration_strategy_state{
     %% Get all running nodes, because we need the list of *everything*
     %% to analyze the graph for connectedness.
     Servers = OrchestrationStrategy:servers(State),
-    lager:info("Build graph found servers: ~p", [sets:to_list(Servers)]),
+    %% lager:info("Build graph found servers: ~p", [sets:to_list(Servers)]),
 
     Clients = OrchestrationStrategy:clients(State),
-    lager:info("Build graph found clients: ~p", [sets:to_list(Clients)]),
+    %% lager:info("Build graph found clients: ~p", [sets:to_list(Clients)]),
 
     ServerNames = node_names(sets:to_list(Servers)),
     ClientNames = node_names(sets:to_list(Clients)),
@@ -387,7 +387,12 @@ handle_info(?BUILD_GRAPH_MESSAGE, #orchestration_strategy_state{
 
     case Connected of
         true ->
-            lager:info("Graph is connected!"),
+            case partisan_config:get(tracing, ?TRACING) of 
+                true ->
+                    lager:info("Graph is connected!");
+                false ->
+                    ok
+            end,
             ok;
         false ->
             lager:info("Visited ~p from ~p: ~p", [length(VisitedNames), node(), VisitedNames]),

@@ -60,7 +60,7 @@ upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Payload) ->
 
 %% @private
 download_artifact(#orchestration_strategy_state{eredis=Eredis}, Node) ->
-    lager:info("Retrieving object ~p from redis.", [Node]),
+    %% lager:info("Retrieving object ~p from redis.", [Node]),
 
     try
         case eredis:q(Eredis, ["GET", Node]) of
