@@ -1082,6 +1082,14 @@ connectivity_test(Config) ->
                     ok = check_forward_message(Node, Manager, Nodes)
                   end, Nodes),
 
+    %% Pause for protocol delay and periodic intervals to fire.
+    timer:sleep(10000),
+
+    %% Verify forward message functionality again.
+    lists:foreach(fun({_Name, Node}) ->
+                    ok = check_forward_message(Node, Manager, Nodes)
+                  end, Nodes),
+
     %% Stop nodes.
     stop(Nodes),
 
