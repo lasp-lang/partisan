@@ -82,7 +82,8 @@ clients(#orchestration_strategy_state{eredis=Eredis}) ->
         {ok, Nodes} ->
             Nodes1 = lists:map(fun(N) ->
                 N1 = binary_to_list(N),
-                list_to_atom(string:substr(N1, length(prefix("client/")) + 1, length(N1)))
+                N2 = string:substr(N1, length(prefix("client/")) + 1, length(N1)),
+                binary_to_term(N2)
                 end, Nodes),
 
             case partisan_config:get(tracing, ?TRACING) of 
