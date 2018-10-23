@@ -28,12 +28,12 @@
 
 -export([clients/1,
          servers/1,
-         upload_artifact/3,
+         upload_artifact/4,
          download_artifact/2]).
 
 %% @private
-upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Membership) ->
-    {ok, <<"OK">>} = eredis:q(Eredis, ["SET", Node, Membership]),
+upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, NodeMyself, Membership) ->
+    {ok, <<"OK">>} = eredis:q(Eredis, ["SET", Node, {NodeMyself, Membership}]),
 
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
@@ -50,7 +50,7 @@ download_artifact(#orchestration_strategy_state{eredis=Eredis}, Node) ->
 
     try
         case eredis:q(Eredis, ["GET", Node]) of
-            {ok, Membership} ->
+            {ok, Payload} ->
                 case partisan_config:get(tracing, ?TRACING) of 
                     true ->
                         lager:info("Received artifact from Redis: ~p", [Node]);
@@ -58,7 +58,7 @@ download_artifact(#orchestration_strategy_state{eredis=Eredis}, Node) ->
                         ok
                 end,
 
-                Membership;
+                Payload;
             {error,no_connection} ->
                 undefined
         end
@@ -85,7 +85,7 @@ clients(#orchestration_strategy_state{eredis=Eredis}) ->
             end,
 
             sets:from_list(Nodes1);
-        {error,no_connection} ->
+        {error, no_connection} ->
             sets:new()
     end.
 
@@ -106,7 +106,7 @@ servers(#orchestration_strategy_state{eredis=Eredis}) ->
             end,
 
             sets:from_list(Nodes1);
-        {error,no_connection} ->
+        {error, kno_connection} ->
             sets:new()
     end.
 

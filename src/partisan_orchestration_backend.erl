@@ -325,13 +325,13 @@ handle_info(?ARTIFACT_MESSAGE, #orchestration_strategy_state{peer_service=PeerSe
     Membership = term_to_binary(Nodes),
 
     lager:info("Uploading membership for node ~p: ~p", [Node, Nodes]),
-    upload_artifact(State, Node, Membership),
+    upload_artifact(State, Node, myself(), Membership),
 
     %% Store membership with node tag.
     Tag = partisan_config:get(tag, client),
     TaggedNode = prefix(atom_to_list(Tag) ++ "/" ++ atom_to_list(node())),
     Membership = term_to_binary(Nodes),
-    upload_artifact(State, TaggedNode, Membership),
+    upload_artifact(State, TaggedNode, myself(), Membership),
 
     schedule_artifact_upload(),
 
@@ -544,13 +544,14 @@ populate_graph(State, Nodes, Graph) ->
                     undefined ->
                         OrphanedNodes;
                     Body ->
-                        Membership = binary_to_term(Body),
-                        case Membership of
-                            [Node] ->
+                        Payload = binary_to_term(Body),
+
+                        case Payload of
+                            {_NodeMyself, [Node]} ->
                                 add_edges(Node, [], Graph),
                                 [Node|OrphanedNodes];
-                            _ ->
-                                add_edges(Node, Membership, Graph),
+                            {_NodeMyself, NodeMembership} ->
+                                add_edges(Node, NodeMembership, Graph),
                                 OrphanedNodes
                         end
                 end
@@ -611,9 +612,13 @@ debug_get_tree(Root, Nodes) ->
      end || Node <- Nodes].
 
 %% @private
-upload_artifact(#orchestration_strategy_state{orchestration_strategy=OrchestrationStrategy}=State, Node, Membership) ->
-    OrchestrationStrategy:upload_artifact(State, Node, Membership).
+upload_artifact(#orchestration_strategy_state{orchestration_strategy=OrchestrationStrategy}=State, Node, NodeMyself, Membership) ->
+    OrchestrationStrategy:upload_artifact(State, Node, NodeMyself, Membership).
 
 %% @private
 download_artifact(#orchestration_strategy_state{orchestration_strategy=OrchestrationStrategy}=State, Node) ->
     OrchestrationStrategy:download_artifact(State, Node).
+
+%% @private
+myself() ->
+    partisan_peer_service_manager:myself().

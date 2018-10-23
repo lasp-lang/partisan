@@ -27,12 +27,12 @@
 
 -export([clients/1,
          servers/1,
-         upload_artifact/3,
+         upload_artifact/4,
          download_artifact/2]).
 
 %% @private
-upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Membership) ->
-    {ok, <<"OK">>} = eredis:q(Eredis, ["SET", Node, Membership]),
+upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, NodeMyself, Membership) ->
+    {ok, <<"OK">>} = eredis:q(Eredis, ["SET", Node, {NodeMyself, Membership}]),
     % lager:info("Pushed artifact to Redis: ~p", [Node]),
     ok.
 
@@ -42,9 +42,9 @@ download_artifact(#orchestration_strategy_state{eredis=Eredis}, Node) ->
 
     try
         case eredis:q(Eredis, ["GET", Node]) of
-            {ok, Membership} ->
+            {ok, Payload} ->
                 % lager:info("Received artifact from Redis: ~p", [Node]),
-                Membership;
+                Payload;
             {error,no_connection} ->
                 undefined
         end

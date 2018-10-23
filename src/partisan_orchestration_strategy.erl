@@ -24,4 +24,4 @@
 -callback(clients(term()) -> term()).
 -callback(servers(term()) -> term()).
 -callback(download_artifact(term(), node()) -> term()).
--callback(upload_artifact(term(), node(), term()) -> term()).
+-callback(upload_artifact(term(), node(), term(), term()) -> term()).
