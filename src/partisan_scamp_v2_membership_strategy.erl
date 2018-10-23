@@ -35,13 +35,18 @@
          periodic/1,
          handle_message/2]).
 
-%% @todo Setup isolation handling properly.
+%% Isolation prevention.
+%%
+%% Protocol has no specific description of how detection of recovery or isolation
+%% is performed, so we use the protocol specification for that taken from the
+%% scamp_v1 membership strategy.
 
 -include("partisan.hrl").
 
 -record(scamp_v2, {actor :: term(), 
                    partial_view :: [node_spec()], 
-                   in_view :: [node_spec()]}).
+                   in_view :: [node_spec()],
+                   last_message_time :: term()}).
 
 %%%===================================================================
 %%% API
@@ -112,11 +117,53 @@ leave(#scamp_v2{partial_view=PartialView0}=State0, Node) ->
     {ok, PartialViewList, OutgoingMessages, State}.
 
 %% @doc Periodic protocol maintenance.
-periodic(State) ->
+periodic(#scamp_v2{last_message_time=LastMessageTime}=State) ->
+    SourceNode = myself(),
     PartialViewList = partial_view_list(State),
-    OutgoingMessages = [],
-    {ok, PartialViewList, OutgoingMessages, State}.
 
+    %% Isolation detection: 
+    %%
+    %% Since we do not know the rate of message transmission by other nodes in the system,
+    %% periodically transmit a message to all known nodes.  Each node will keep track of the 
+    %% last message received, and if we don't receive one after X interval, then we know 
+    %% we are isolated.
+    OutgoingPingMessages = lists:map(fun(Peer) -> 
+        {Peer, {protocol, {ping, SourceNode}}}
+    end, PartialViewList),
+
+    Difference = case LastMessageTime of 
+        undefined ->
+            0;
+        _ ->
+            CurrentTime = erlang:timestamp(),
+            timer:now_diff(CurrentTime, LastMessageTime)
+    end,
+
+    OutgoingSubscriptionMessages = case Difference > (?PERIODIC_INTERVAL * ?SCAMP_MESSAGE_WINDOW) of 
+        true ->
+            %% Node is isolated.
+            lager:info("~p: Node is possibily isolated.", [node()]),
+
+            Myself = myself(),
+
+            lists:map(fun(N) ->
+                lager:info("~p: Forwarding additional subscription for ~p to node: ~p", [node(), Myself, N]),
+                {N, {protocol, {forward_subscription, Myself}}}
+            end, select_random_sublist(State, 1));
+        false ->
+            %% Node is not isolated.
+            []
+    end,
+
+    {ok, PartialViewList, OutgoingSubscriptionMessages ++ OutgoingPingMessages, State}.
+
+%% @doc Handling incoming protocol message.
+handle_message(State, {ping, SourceNode}) ->
+    lager:info("~p: Received ping from node ~p.", [node(), SourceNode]),
+    PartialViewList = partial_view_list(State),
+    LastMessageTime = erlang:timestamp(),
+    OutgoingMessages = [],
+    {ok, PartialViewList, OutgoingMessages, State#scamp_v2{last_message_time=LastMessageTime}};
 %% @doc Handling incoming protocol message.
 handle_message(#scamp_v2{partial_view=PartialView0}=State0, {remove_subscription, Node}) ->
     lager:info("~p: Received remove_subscription for node ~p.", [node(), Node]),
