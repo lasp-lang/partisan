@@ -601,7 +601,7 @@ add_edges(Name, Membership, Graph) ->
                             [{node(), {ordsets:ordset(node()), ordsets:ordset(node())}}].
 debug_get_tree(Root, Nodes) ->
     [begin
-         Peers = try plumtree_broadcast:debug_get_peers(Node, Root, 5000)
+         Peers = try partisan_plumtree_broadcast:debug_get_peers(Node, Root, 5000)
                  catch _:Error ->
                            lager:info("Call to node ~p to get root tree ~p failed: ~p", [Node, Root, Error]),
                            down
