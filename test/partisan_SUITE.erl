@@ -41,7 +41,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 
--define(OVERRIDE_PERIODIC_INTERVAL, 1000).
 -define(TIMEOUT, 10000).
 -define(CLIENT_NUMBER, 3).
 -define(HIGH_CLIENT_NUMBER, 10).
@@ -317,7 +316,7 @@ transform_test(Config) ->
     Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
-    Nodes = start(transform_test, Config,
+    Nodes = ?SUPPORT:start(transform_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -390,7 +389,7 @@ transform_test(Config) ->
     end,
 
     %% Stop nodes.
-    stop(Nodes),
+    ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -405,7 +404,7 @@ causal_test(Config) ->
     Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
-    Nodes = start(causal_test, Config,
+    Nodes = ?SUPPORT:start(causal_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -476,7 +475,7 @@ causal_test(Config) ->
     end,
 
     %% Stop nodes.
-    stop(Nodes),
+    ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -491,7 +490,7 @@ receive_interposition_test(Config) ->
     Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
-    Nodes = start(receive_interposition_test, Config,
+    Nodes = ?SUPPORT:start(receive_interposition_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -561,7 +560,7 @@ receive_interposition_test(Config) ->
     end,
 
     %% Stop nodes.
-    stop(Nodes),
+    ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -576,7 +575,7 @@ forward_interposition_test(Config) ->
     Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
-    Nodes = start(forward_interposition_test, Config,
+    Nodes = ?SUPPORT:start(forward_interposition_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -646,7 +645,7 @@ forward_interposition_test(Config) ->
     end,
 
     %% Stop nodes.
-    stop(Nodes),
+    ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -661,7 +660,7 @@ pid_test(Config) ->
     Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
-    Nodes = start(pid_test, Config,
+    Nodes = ?SUPPORT:start(pid_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -719,7 +718,7 @@ pid_test(Config) ->
     end,
 
     %% Stop nodes.
-    stop(Nodes),
+    ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -734,7 +733,7 @@ rpc_test(Config) ->
     Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
-    Nodes = start(rpc_test, Config,
+    Nodes = ?SUPPORT:start(rpc_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -750,7 +749,7 @@ rpc_test(Config) ->
     {_, _, _} = rpc:call(Node3, partisan_rpc_backend, call, [Node4, erlang, now, [], infinity]),
 
     %% Stop nodes.
-    stop(Nodes),
+    ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -765,7 +764,7 @@ on_down_test(Config) ->
     Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
-    Nodes = start(on_down_test, Config,
+    Nodes = ?SUPPORT:start(on_down_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -797,7 +796,7 @@ on_down_test(Config) ->
     end,
 
     %% Stop nodes.
-    stop(Nodes),
+    ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -814,7 +813,7 @@ rejoin_test(Config) ->
             Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
             %% Start nodes.
-            Nodes = start(rejoin_test, Config,
+            Nodes = ?SUPPORT:start(rejoin_test, Config,
                         [{partisan_peer_service_manager, Manager},
                         {servers, Servers},
                         {clients, Clients}]),
@@ -866,7 +865,7 @@ rejoin_test(Config) ->
                         end, Nodes),
 
             %% Stop nodes.
-            stop(Nodes);
+            ?SUPPORT:stop(Nodes);
 
         _ ->
             ok
@@ -888,7 +887,7 @@ self_leave_test(Config) ->
         Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
         %% Start nodes.
-        Nodes = start(leave_test, Config,
+        Nodes = ?SUPPORT:start(leave_test, Config,
                     [{partisan_peer_service_manager, Manager},
                     {servers, Servers},
                     {clients, Clients}]),
@@ -898,7 +897,7 @@ self_leave_test(Config) ->
         verify_leave(NodeToLeave, Nodes, Manager),
 
         %% Stop nodes.
-        stop(Nodes);
+        ?SUPPORT:stop(Nodes);
 
     _ ->
         ok
@@ -920,7 +919,7 @@ leave_test(Config) ->
         Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
         %% Start nodes.
-        Nodes = start(leave_test, Config,
+        Nodes = ?SUPPORT:start(leave_test, Config,
                     [{partisan_peer_service_manager, Manager},
                     {servers, Servers},
                     {clients, Clients}]),
@@ -930,7 +929,7 @@ leave_test(Config) ->
         verify_leave(NodeToLeave, Nodes, Manager),
 
         %% Stop nodes.
-        stop(Nodes);
+        ?SUPPORT:stop(Nodes);
 
     _ ->
         ok
@@ -950,7 +949,7 @@ performance_test(Config) ->
     Clients = node_list(1, "client", Config),
 
     %% Start nodes.
-    Nodes = start(performance_test, Config,
+    Nodes = ?SUPPORT:start(performance_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -1044,7 +1043,7 @@ performance_test(Config) ->
     ct:pal("Time: ~p", [Time]),
 
     %% Stop nodes.
-    stop(Nodes),
+    ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -1069,7 +1068,7 @@ connectivity_test(Config) ->
     end,
 
     %% Start nodes.
-    Nodes = start(connectivity_test, Config,
+    Nodes = ?SUPPORT:start(connectivity_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -1083,7 +1082,7 @@ connectivity_test(Config) ->
                   end, Nodes),
 
     %% Stop nodes.
-    stop(Nodes),
+    ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -1098,7 +1097,7 @@ basic_test(Config) ->
     Clients = node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
-    Nodes = start(basic_test, Config,
+    Nodes = ?SUPPORT:start(basic_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -1209,7 +1208,7 @@ basic_test(Config) ->
                   end, Nodes),
 
     %% Stop nodes.
-    stop(Nodes),
+    ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -1224,7 +1223,7 @@ client_server_manager_test(Config) ->
     Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     %% Start nodes.
-    Nodes = start(client_server_manager_test, Config,
+    Nodes = ?SUPPORT:start(client_server_manager_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -1270,7 +1269,7 @@ client_server_manager_test(Config) ->
                   end, Nodes),
 
     %% Stop nodes.
-    stop(Nodes),
+    ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -1285,7 +1284,7 @@ hyparview_manager_partition_test(Config) ->
     Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     %% Start nodes.
-    Nodes = start(hyparview_manager_partition_test, Config,
+    Nodes = ?SUPPORT:start(hyparview_manager_partition_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {max_active_size, 5},
                    {servers, Servers},
@@ -1390,7 +1389,7 @@ hyparview_manager_partition_test(Config) ->
     end,
 
     %% Stop nodes.
-    stop(Nodes),
+    ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -1405,7 +1404,7 @@ hyparview_manager_high_active_test(Config) ->
     Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     %% Start nodes.
-    Nodes = start(hyparview_manager_high_active_test, Config,
+    Nodes = ?SUPPORT:start(hyparview_manager_high_active_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {max_active_size, 5},
                    {servers, Servers},
@@ -1464,7 +1463,7 @@ hyparview_manager_high_active_test(Config) ->
     end,
 
     %% Stop nodes.
-    stop(Nodes),
+    ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -1479,7 +1478,7 @@ hyparview_manager_low_active_test(Config) ->
 
     Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
 
-    Nodes = start(hyparview_manager_low_active_test, Config,
+    Nodes = ?SUPPORT:start(hyparview_manager_low_active_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {max_active_size, MaxActiveSize},
                    {servers, Servers},
@@ -1538,7 +1537,7 @@ hyparview_manager_low_active_test(Config) ->
     end,
 
     %% Stop nodes.
-    stop(Nodes),
+    ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -1552,7 +1551,7 @@ hyparview_manager_high_client_test(Config) ->
     %% Start servers.
     Servers = node_list(1, "server", Config), %% [server],
 
-    Nodes = start(hyparview_manager_high_client_test, Config,
+    Nodes = ?SUPPORT:start(hyparview_manager_high_client_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -1610,7 +1609,7 @@ hyparview_manager_high_client_test(Config) ->
     end,
 
     %% Stop nodes.
-    stop(Nodes),
+    ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -1618,401 +1617,6 @@ hyparview_manager_high_client_test(Config) ->
 %% ===================================================================
 %% Internal functions.
 %% ===================================================================
-
-%% @private
-start(_Case, Config, Options) ->
-    %% Launch distribution for the test runner.
-    ct:pal("Launching Erlang distribution..."),
-
-    {ok, Hostname} = inet:gethostname(), 
-    os:cmd(os:find_executable("epmd") ++ " -daemon"),
-    case net_kernel:start([list_to_atom("runner@" ++ Hostname), shortnames]) of
-        {ok, _} ->
-            ok;
-        {error, {already_started, _}} ->
-            ok
-    end,
-
-    %% Load sasl.
-    application:load(sasl),
-    ok = application:set_env(sasl,
-                             sasl_error_logger,
-                             false),
-    application:start(sasl),
-
-    %% Load lager.
-    {ok, _} = application:ensure_all_started(lager),
-
-    Servers = proplists:get_value(servers, Options, []),
-    Clients = proplists:get_value(clients, Options, []),
-
-    NodeNames = lists:flatten(Servers ++ Clients),
-
-    %% Start all nodes.
-    InitializerFun = fun(Name) ->
-                            ct:pal("Starting node: ~p", [Name]),
-
-                            NodeConfig = [{monitor_master, true},
-                                          {startup_functions, [{code, set_path, [codepath()]}]}],
-
-                            case ct_slave:start(Name, NodeConfig) of
-                                {ok, Node} ->
-                                    {Name, Node};
-                                Error ->
-                                    ct:fail(Error)
-                            end
-                     end,
-    Nodes = lists:map(InitializerFun, NodeNames),
-
-    %% Load applications on all of the nodes.
-    LoaderFun = fun({_Name, Node}) ->
-                            ct:pal("Loading applications on node: ~p", [Node]),
-
-                            PrivDir = code:priv_dir(?APP),
-                            NodeDir = filename:join([PrivDir, "lager", Node]),
-
-                            %% Manually force sasl loading, and disable the logger.
-                            ok = rpc:call(Node, application, load, [sasl]),
-                            ok = rpc:call(Node, application, set_env,
-                                          [sasl, sasl_error_logger, false]),
-                            ok = rpc:call(Node, application, start, [sasl]),
-
-                            ok = rpc:call(Node, application, load, [partisan]),
-                            ok = rpc:call(Node, application, load, [lager]),
-                            ok = rpc:call(Node, application, set_env, [sasl,
-                                                                       sasl_error_logger,
-                                                                       false]),
-                            ok = rpc:call(Node, application, set_env, [lager,
-                                                                       log_root,
-                                                                       NodeDir])
-                     end,
-    lists:map(LoaderFun, Nodes),
-
-    %% Configure settings.
-    ConfigureFun = fun({Name, Node}) ->
-            %% Configure the peer service.
-            PeerService = proplists:get_value(partisan_peer_service_manager, Options),
-            ct:pal("Setting peer service manager on node ~p to ~p", [Node, PeerService]),
-            ok = rpc:call(Node, partisan_config, set,
-                          [partisan_peer_service_manager, PeerService]),
-
-            MaxActiveSize = proplists:get_value(max_active_size, Options, 5),
-            ok = rpc:call(Node, partisan_config, set,
-                          [max_active_size, MaxActiveSize]),
-                          
-            ok = rpc:call(Node, partisan_config, set,
-                          [periodic_interval, ?OVERRIDE_PERIODIC_INTERVAL]),
-
-            ok = rpc:call(Node, application, set_env, [partisan, peer_ip, ?PEER_IP]),
-
-            ForwardOptions = case ?config(forward_options, Config) of
-                              undefined ->
-                                  [];
-                              FO ->
-                                  FO
-                          end,
-            ct:pal("Setting forward_options to: ~p", [ForwardOptions]),
-            ok = rpc:call(Node, partisan_config, set, [forward_options, ForwardOptions]),
-
-            MembershipStrategy = case ?config(membership_strategy, Config) of
-                              undefined ->
-                                  ?DEFAULT_MEMBERSHIP_STRATEGY;
-                              S ->
-                                  S
-                          end,
-            ct:pal("Setting membership_strategy to: ~p", [MembershipStrategy]),
-            ok = rpc:call(Node, partisan_config, set, [membership_strategy, MembershipStrategy]),
-
-            Disterl = case ?config(disterl, Config) of
-                              undefined ->
-                                  false;
-                              true ->
-                                  true
-                          end,
-            ct:pal("Setting disterl to: ~p", [Disterl]),
-            ok = rpc:call(Node, partisan_config, set, [disterl, Disterl]),
-
-            InitiateReverse = case ?config(initiate_reverse, Config) of
-                              undefined ->
-                                  false;
-                              IR ->
-                                  IR
-                          end,
-            ct:pal("Setting initiate_reverse to: ~p", [InitiateReverse]),
-            ok = rpc:call(Node, partisan_config, set, [initiate_reverse, InitiateReverse]),
-
-            DisableFastReceive = case ?config(disable_fast_receive, Config) of
-                              undefined ->
-                                  false;
-                              FR ->
-                                  FR
-                          end,
-            ct:pal("Setting disable_fast_receive to: ~p", [DisableFastReceive]),
-            ok = rpc:call(Node, partisan_config, set, [disable_fast_receive, DisableFastReceive]),
-
-            DisableFastForward = case ?config(disable_fast_forward, Config) of
-                              undefined ->
-                                  false;
-                              FF ->
-                                  FF
-                          end,
-            ct:pal("Setting disable_fast_forward to: ~p", [DisableFastForward]),
-            ok = rpc:call(Node, partisan_config, set, [disable_fast_forward, DisableFastForward]),
-
-            BinaryPadding = case ?config(binary_padding, Config) of
-                              undefined ->
-                                  false;
-                              BP ->
-                                  BP
-                          end,
-            ct:pal("Setting binary_padding to: ~p", [BinaryPadding]),
-            ok = rpc:call(Node, partisan_config, set, [binary_padding, BinaryPadding]),
-
-            Broadcast = case ?config(broadcast, Config) of
-                              undefined ->
-                                  false;
-                              B ->
-                                  B
-                          end,
-            ct:pal("Setting broadcast to: ~p", [Broadcast]),
-            ok = rpc:call(Node, partisan_config, set, [broadcast, Broadcast]),
-
-            IngressDelay = case ?config(ingress_delay, Config) of
-                              undefined ->
-                                  0;
-                              ID ->
-                                  ID
-                          end,
-            ct:pal("Setting ingress_delay to: ~p", [IngressDelay]),
-            ok = rpc:call(Node, partisan_config, set, [ingress_delay, IngressDelay]),
-
-            EgressDelay = case ?config(egress_delay, Config) of
-                              undefined ->
-                                  0;
-                              ED ->
-                                  ED
-                          end,
-            ct:pal("Setting egress_delay to: ~p", [EgressDelay]),
-            ok = rpc:call(Node, partisan_config, set, [egress_delay, EgressDelay]),
-
-            Channels = case ?config(channels, Config) of
-                              undefined ->
-                                  ?CHANNELS;
-                              C ->
-                                  C
-                          end,
-            ct:pal("Setting channels to: ~p", [Channels]),
-            ok = rpc:call(Node, partisan_config, set, [channels, Channels]),
-
-            CausalLabels = case ?config(causal_labels, Config) of
-                              undefined ->
-                                  [];
-                              CL ->
-                                  CL
-                          end,
-            ct:pal("Setting causal_labels to: ~p", [CausalLabels]),
-            ok = rpc:call(Node, partisan_config, set, [causal_labels, CausalLabels]),
-
-            PidEncoding = case ?config(pid_encoding, Config) of
-                              undefined ->
-                                  true;
-                              PE ->
-                                  PE
-                          end,
-            ct:pal("Setting pid_encoding to: ~p", [PidEncoding]),
-            ok = rpc:call(Node, partisan_config, set, [pid_encoding, PidEncoding]),
-
-            ok = rpc:call(Node, partisan_config, set, [tls, ?config(tls, Config)]),
-            Parallelism = case ?config(parallelism, Config) of
-                              undefined ->
-                                  ?PARALLELISM;
-                              P ->
-                                  P
-                          end,
-            ct:pal("Setting parallelism to: ~p", [Parallelism]),
-            ok = rpc:call(Node, partisan_config, set, [parallelism, Parallelism]),
-
-            Servers = proplists:get_value(servers, Options, []),
-            Clients = proplists:get_value(clients, Options, []),
-
-            %% Configure servers.
-            case lists:member(Name, Servers) of
-                true ->
-                    ok = rpc:call(Node, partisan_config, set, [tag, server]),
-                    ok = rpc:call(Node, partisan_config, set, [tls_options, ?config(tls_server_opts, Config)]);
-                false ->
-                    ok
-            end,
-
-            %% Configure clients.
-            case lists:member(Name, Clients) of
-                true ->
-                    ok = rpc:call(Node, partisan_config, set, [tag, client]),
-                    ok = rpc:call(Node, partisan_config, set, [tls_options, ?config(tls_client_opts, Config)]);
-                false ->
-                    ok
-            end
-    end,
-    lists:foreach(ConfigureFun, Nodes),
-
-    ct:pal("Starting nodes."),
-
-    StartFun = fun({_Name, Node}) ->
-                        %% Start partisan.
-                        {ok, _} = rpc:call(Node, application, ensure_all_started, [partisan]),
-                        %% Start a dummy registered process that saves in the env whatever message it gets.
-                        Pid = rpc:call(Node, erlang, spawn, [fun() -> store_proc_receiver() end]),
-                        true = rpc:call(Node, erlang, register, [store_proc, Pid]),
-                        ct:pal("Registered store_proc on pid ~p, node ~p", [Pid, Node])
-               end,
-    lists:foreach(StartFun, Nodes),
-
-    ct:pal("Clustering nodes."),
-    lists:foreach(fun(Node) -> cluster(Node, Nodes, Options, Config) end, Nodes),
-
-    ct:pal("Partisan fully initialized."),
-
-    Nodes.
-
-%% @private
-omit(OmitNameList, Nodes0) ->
-    FoldFun = fun({Name, _Node} = N, Nodes) ->
-                    case lists:member(Name, OmitNameList) of
-                        true ->
-                            Nodes;
-                        false ->
-                            Nodes ++ [N]
-                    end
-              end,
-    lists:foldl(FoldFun, [], Nodes0).
-
-%% @private
-codepath() ->
-    lists:filter(fun filelib:is_dir/1, code:get_path()).
-
-%% @private
-%%
-%% We have to cluster each node with all other nodes to compute the
-%% correct overlay: for instance, sometimes you'll want to establish a
-%% client/server topology, which requires all nodes talk to every other
-%% node to correctly compute the overlay.
-%%
-cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
-    Manager = proplists:get_value(partisan_peer_service_manager, Options),
-
-    Servers = proplists:get_value(servers, Options, []),
-    Clients = proplists:get_value(clients, Options, []),
-
-    AmIServer = lists:member(Name, Servers),
-    AmIClient = lists:member(Name, Clients),
-
-    OtherNodes = case Manager of
-                     ?DEFAULT_PEER_SERVICE_MANAGER ->
-                         %% Omit just ourselves.
-                         omit([Name], Nodes);
-                     partisan_client_server_peer_service_manager ->
-                         case {AmIServer, AmIClient} of
-                             {true, false} ->
-                                %% If I'm a server, I connect to both
-                                %% clients and servers!
-                                omit([Name], Nodes);
-                             {false, true} ->
-                                %% I'm a client, pick servers.
-                                omit(Clients, Nodes);
-                             {_, _} ->
-                                omit([Name], Nodes)
-                         end;
-                     partisan_hyparview_peer_service_manager ->
-                        case {AmIServer, AmIClient} of
-                            {true, false} ->
-                               %% If I'm a server, I connect to both
-                               %% clients and servers!
-                               omit([Name], Nodes);
-                            {false, true} ->
-                               %% I'm a client, pick servers.
-                               omit(Clients, Nodes);
-                            {_, _} ->
-                               omit([Name], Nodes)
-                        end;
-                     %same as hyparview but for hyparview with xbot integration
-                     partisan_hyparview_xbot_peer_service_manager ->
-                        case {AmIServer, AmIClient} of
-                            {true, false} ->
-                               %% If I'm a server, I connect to both
-                               %% clients and servers!
-                               omit([Name], Nodes);
-                            {false, true} ->
-                               %% I'm a client, pick servers.
-                               omit(Clients, Nodes);
-                            {_, _} ->
-                               omit([Name], Nodes)
-                        end
-                 end,
-    lists:map(fun(OtherNode) -> cluster(Myself, OtherNode, Config) end, OtherNodes).
-cluster({_, Node}, {_, OtherNode}, Config) ->
-    PeerPort = rpc:call(OtherNode,
-                        partisan_config,
-                        get,
-                        [peer_port, ?PEER_PORT]),
-    Parallelism = case ?config(parallelism, Config) of
-                      undefined ->
-                          1;
-                      P ->
-                          P
-                  end,
-    Channels = case ?config(channels, Config) of
-                      undefined ->
-                          [];
-                      C ->
-                          C
-                  end,
-    JoinMethod = case ?config(sync_join, Config) of
-                  undefined ->
-                      join;
-                  true ->
-                      sync_join
-                  end,
-    ct:pal("Joining node: ~p to ~p at port ~p", [Node, OtherNode, PeerPort]),
-    ok = rpc:call(Node,
-                  partisan_peer_service,
-                  JoinMethod,
-                  [#{name => OtherNode,
-                     listen_addrs => [#{ip => {127, 0, 0, 1}, port => PeerPort}],
-                     channels => Channels,
-                     parallelism => Parallelism}]).
-
-%% @private
-stop(Nodes) ->
-    StopFun = fun({Name, _Node}) ->
-        case ct_slave:stop(Name) of
-            {ok, _} ->
-                ok;
-            {error, stop_timeout, _} ->
-                ok;
-            {error, not_started, _} ->
-                ok;
-            Error ->
-                ct:fail(Error)
-        end
-    end,
-    lists:map(StopFun, Nodes),
-    ok.
-
-%% @private
-connect(G, N1, N2) ->
-    %% Add vertex for neighboring node.
-    digraph:add_vertex(G, N1),
-    % ct:pal("Adding vertex: ~p", [N1]),
-
-    %% Add vertex for neighboring node.
-    digraph:add_vertex(G, N2),
-    % ct:pal("Adding vertex: ~p", [N2]),
-
-    %% Add edge to that node.
-    digraph:add_edge(G, N1, N2),
-    % ct:pal("Adding edge from ~p to ~p", [N1, N2]),
-
-    ok.
 
 %% @private
 node_list(0, _Name, _Config) -> 
@@ -2153,7 +1757,7 @@ hyparview_membership_check(Nodes) ->
             Active = sets:to_list(ActiveSet),
 
             %% Add vertexes and edges.
-            [connect(Graph, Node, N) || #{name := N} <- Active]
+            [?SUPPORT:connect(Graph, Node, N) || #{name := N} <- Active]
          end,
     %% Build a digraph representing the membership
     lists:foreach(ConnectFun, Nodes),
@@ -2381,7 +1985,7 @@ hyparview_xbot_membership_check(Nodes) ->
             Active = sets:to_list(ActiveSet),
 
             %% Add vertexes and edges.
-            [connect(Graph, Node, N) || #{name := N} <- Active]
+            [?SUPPORT:connect(Graph, Node, N) || #{name := N} <- Active]
          end,
     %% Build a digraph representing the membership
     lists:foreach(ConnectFun, Nodes),
@@ -2442,7 +2046,7 @@ hyparview_xbot_manager_high_active_test(Config) ->
     Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     %% Start nodes.
-    Nodes = start(hyparview_xbot_manager_high_active_test, Config,
+    Nodes = ?SUPPORT:start(hyparview_xbot_manager_high_active_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {max_active_size, 5},
                    {servers, Servers},
@@ -2504,7 +2108,7 @@ hyparview_xbot_manager_high_active_test(Config) ->
     end,
 
     %% Stop nodes.
-    stop(Nodes),
+    ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -2519,7 +2123,7 @@ hyparview_xbot_manager_low_active_test(Config) ->
 
     Clients = node_list(8, "client", Config), %% client_list(?CLIENT_NUMBER),
 
-    Nodes = start(hyparview_xbot_manager_low_active_test, Config,
+    Nodes = ?SUPPORT:start(hyparview_xbot_manager_low_active_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {max_active_size, MaxActiveSize},
                    {servers, Servers},
@@ -2580,7 +2184,7 @@ hyparview_xbot_manager_low_active_test(Config) ->
     end,
 
     %% Stop nodes.
-    stop(Nodes),
+    ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -2594,7 +2198,7 @@ hyparview_xbot_manager_high_client_test(Config) ->
     %% Start servers.
     Servers = node_list(1, "server", Config), %% [server],
 
-    Nodes = start(hyparview_xbot_manager_low_active_test, Config,
+    Nodes = ?SUPPORT:start(hyparview_xbot_manager_low_active_test, Config,
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -2652,7 +2256,7 @@ hyparview_xbot_manager_high_client_test(Config) ->
     end,
 
     %% Stop nodes.
-    stop(Nodes),
+    ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -2675,12 +2279,3 @@ ideally_connected_members(Node, Nodes) ->
                     M
             end
     end.
-
-%% @private
-store_proc_receiver() ->
-    receive
-        {store, N} ->
-            %% save the number in the environment
-            application:set_env(partisan, forward_message_test, N)
-    end,
-    store_proc_receiver().

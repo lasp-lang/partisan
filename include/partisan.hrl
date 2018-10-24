@@ -24,7 +24,12 @@
 
 -define(DEFAULT_PEER_SERVICE_MANAGER, partisan_pluggable_peer_service_manager).
 -define(DEFAULT_MEMBERSHIP_STRATEGY, partisan_full_mesh_membership_strategy).
+
+%% Test variables.
 -define(DEFAULT_ORCHESTRATION_STRATEGY, undefined).
+-define(SUPPORT, partisan_support).
+
+-define(OVERRIDE_PERIODIC_INTERVAL, 1000).
 
 -define(UTIL, partisan_plumtree_util).
 -define(DEFAULT_LAZY_TICK_PERIOD, 1000).
