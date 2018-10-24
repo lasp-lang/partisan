@@ -153,10 +153,7 @@ init([]) ->
 
     Nodes = case OrchestrationStrategy of
         undefined ->
-            %% Assumes full membership.
-            PeerServiceManager = partisan_config:get(peer_service_manager, ?DEFAULT_PEER_SERVICE_MANAGER),
-            {ok, Members} = PeerServiceManager:members_for_orchestration(),
-            Members;
+            members_for_orchestration();
         _ ->
             []
     end,
@@ -252,9 +249,6 @@ handle_info(?REFRESH_MESSAGE, #orchestration_strategy_state{orchestration_strate
     Clients = OrchestrationStrategy:clients(State),
     %% lager:info("Refresh found clients: ~p", [sets:to_list(Clients)]),
 
-    % {ok, Membership} = PeerService:members_for_orchestration(),
-    % lager:info("Membership (~p) ~p", [length(Membership), Membership]),
-
     %% Get list of nodes to connect to: this specialized logic isn't
     %% required when the node count is small, but is required with a
     %% larger node count to ensure the network stabilizes correctly
@@ -316,9 +310,9 @@ handle_info(?REFRESH_MESSAGE, #orchestration_strategy_state{orchestration_strate
                           servers=ServerNames,
                           attempted_nodes=AttemptedNodes}};
 
-handle_info(?ARTIFACT_MESSAGE, #orchestration_strategy_state{peer_service=PeerService}=State) ->
+handle_info(?ARTIFACT_MESSAGE, State) ->
     %% Get current membership.
-    {ok, Nodes} = PeerService:members_for_orchestration(),
+    Nodes = members_for_orchestration(),
 
     %% Store membership.
     Node = prefix(atom_to_list(node())),
@@ -340,7 +334,6 @@ handle_info(?BUILD_GRAPH_MESSAGE, #orchestration_strategy_state{
                                          orchestration_strategy=OrchestrationStrategy,
                                          graph=Graph0,
                                          tree=Tree0,
-                                         peer_service=PeerService,
                                          was_connected=WasConnected0}=State) ->
     % _ = lager:info("Beginning graph analysis."),
     
@@ -396,7 +389,7 @@ handle_info(?BUILD_GRAPH_MESSAGE, #orchestration_strategy_state{
             ok;
         false ->
             lager:info("Visited ~p from ~p: ~p", [length(VisitedNames), node(), VisitedNames]),
-            {ok, ServerMembership} = PeerService:members_for_orchestration(),
+            ServerMembership = members_for_orchestration(),
             lager:info("Membership (~p) ~p", [length(ServerMembership), ServerMembership]),
             lager:info("Graph is not connected!"),
             ok
@@ -443,7 +436,7 @@ maybe_connect(PeerService, Nodes, SeenNodes) ->
     %% connect; only attempt to connect once, because node might be
     %% migrated to a passive view of the membership.
     %% If the node is isolated always try to connect.
-    {ok, Membership0} = PeerService:members_for_orchestration(),
+    Membership0 = members_for_orchestration(),
     Membership1 = Membership0 -- [node()],
     Isolated = length(Membership1) == 0,
 
@@ -608,7 +601,7 @@ add_edges(Name, Membership, Graph) ->
                             [{node(), {ordsets:ordset(node()), ordsets:ordset(node())}}].
 debug_get_tree(Root, Nodes) ->
     [begin
-         Peers = try plumtree_broadcast:debug_get_peers(Node, Root, 5000)
+         Peers = try partisan_plumtree_broadcast:debug_get_peers(Node, Root, 5000)
                  catch _:Error ->
                            lager:info("Call to node ~p to get root tree ~p failed: ~p", [Node, Root, Error]),
                            down
@@ -627,3 +620,15 @@ download_artifact(#orchestration_strategy_state{orchestration_strategy=Orchestra
 %% @private
 myself() ->
     partisan_peer_service_manager:myself().
+
+%% @private
+members_for_orchestration() ->
+    try
+        %% Assumes full membership.
+        PeerServiceManager = partisan_config:get(peer_service_manager, ?DEFAULT_PEER_SERVICE_MANAGER),
+        {ok, Members} = PeerServiceManager:members_for_orchestration(),
+        Members
+    catch
+        _:_ ->
+            []
+    end.

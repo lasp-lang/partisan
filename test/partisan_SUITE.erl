@@ -68,7 +68,7 @@ end_per_testcase(Case, _Config) ->
 init_per_group(with_disterl, Config) ->
     [{disterl, true}] ++ Config;
 init_per_group(with_scamp_v1_membership_strategy, Config) ->
-    [{membership_strategy, partisan_scamp_v1_strategy}] ++ Config;
+    [{membership_strategy, partisan_scamp_v1_membership_strategy}] ++ Config;
 init_per_group(with_scamp_v1_membership_strategy_high_clients, Config) ->
     [{membership_strategy, partisan_scamp_v1_membership_strategy}, {clients, ?HIGH_CLIENT_NUMBER}] ++ Config;
 init_per_group(with_scamp_v2_membership_strategy, Config) ->
@@ -1077,6 +1077,14 @@ connectivity_test(Config) ->
     timer:sleep(1000),
 
     %% Verify forward message functionality.
+    lists:foreach(fun({_Name, Node}) ->
+                    ok = check_forward_message(Node, Manager, Nodes)
+                  end, Nodes),
+
+    %% Pause for protocol delay and periodic intervals to fire.
+    timer:sleep(10000),
+
+    %% Verify forward message functionality again.
     lists:foreach(fun({_Name, Node}) ->
                     ok = check_forward_message(Node, Manager, Nodes)
                   end, Nodes),

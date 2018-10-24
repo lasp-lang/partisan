@@ -53,7 +53,12 @@ join(#scamp_v1{membership=Membership0}=State0, Node, _NodeState) ->
     OutgoingMessages0 = [],
 
     %% 1. Add node to our state.
-    lager:info("~p: Adding node ~p to our membership.", [node(), Node]),
+    case partisan_config:get(tracing, ?TRACING) of 
+        true ->
+            lager:info("~p: Adding node ~p to our membership.", [node(), Node]);
+        false ->
+            ok
+    end,
     Membership = sets:add_element(Node, Membership0),
 
     %% 2. Notify node to add us to its state. 
@@ -63,15 +68,29 @@ join(#scamp_v1{membership=Membership0}=State0, Node, _NodeState) ->
 
     %% 3. Notify all members we know about to add node to their membership.
     OutgoingMessages2 = sets:fold(fun(N, OM) ->
-        lager:info("~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N]),
+        case partisan_config:get(tracing, ?TRACING) of 
+            true ->
+                lager:info("~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N]);
+            false ->
+                ok
+        end,
+
         OM ++ [{N, {protocol, {forward_subscription, Node}}}]
+
         end, OutgoingMessages1, Membership0),
 
     %% 4. Use 'c' (failure tolerance value) to send forwarded subscriptions for node.
     C = partisan_config:get(scamp_c, ?SCAMP_C_VALUE),
     ForwardMessages = lists:map(fun(N) ->
-        lager:info("~p: Forwarding additional subscription for ~p to node: ~p", [node(), Node, N]),
+        case partisan_config:get(tracing, ?TRACING) of 
+            true ->
+                lager:info("~p: Forwarding additional subscription for ~p to node: ~p", [node(), Node, N]);
+            false ->
+                ok
+        end,
+
         {N, {protocol, {forward_subscription, Node}}}
+
         end, select_random_sublist(State0, C)),
     OutgoingMessages = OutgoingMessages2 ++ ForwardMessages,
 
@@ -81,7 +100,12 @@ join(#scamp_v1{membership=Membership0}=State0, Node, _NodeState) ->
 
 %% @doc Leave a node from the cluster.
 leave(#scamp_v1{membership=Membership0}=State0, Node) ->
-    lager:info("~p: Issuing remove_subscription for node ~p.", [node(), Node]),
+    case partisan_config:get(tracing, ?TRACING) of 
+        true ->
+            lager:info("~p: Issuing remove_subscription for node ~p.", [node(), Node]);
+        false ->
+            ok
+    end,
 
     %% Remove node.
     Membership = sets:del_element(Node, Membership0),
@@ -123,12 +147,23 @@ periodic(#scamp_v1{last_message_time=LastMessageTime} = State) ->
     OutgoingSubscriptionMessages = case Difference > (?PERIODIC_INTERVAL * ?SCAMP_MESSAGE_WINDOW) of 
         true ->
             %% Node is isolated.
-            lager:info("~p: Node is possibily isolated.", [node()]),
+            case partisan_config:get(tracing, ?TRACING) of 
+                true ->
+                    lager:info("~p: Node is possibily isolated.", [node()]);
+                false ->
+                    ok
+            end,
 
             Myself = myself(),
 
             lists:map(fun(N) ->
-                lager:info("~p: Forwarding additional subscription for ~p to node: ~p", [node(), Myself, N]),
+                case partisan_config:get(tracing, ?TRACING) of 
+                    true ->
+                        lager:info("~p: Forwarding additional subscription for ~p to node: ~p", [node(), Myself, N]);
+                    false ->
+                        ok
+                end,
+                
                 {N, {protocol, {forward_subscription, Myself}}}
             end, select_random_sublist(State, 1));
         false ->
@@ -140,7 +175,13 @@ periodic(#scamp_v1{last_message_time=LastMessageTime} = State) ->
 
 %% @doc Handling incoming protocol message.
 handle_message(State, {ping, SourceNode}) ->
-    lager:info("~p: Received ping from node ~p.", [node(), SourceNode]),
+    case partisan_config:get(tracing, ?TRACING) of 
+        true ->
+            lager:info("~p: Received ping from node ~p.", [node(), SourceNode]);
+        false ->
+            ok
+    end,
+
     MembershipList = membership_list(State),
     LastMessageTime = erlang:timestamp(),
     OutgoingMessages = [],
@@ -169,7 +210,13 @@ handle_message(#scamp_v1{membership=Membership0}=State0, {remove_subscription, N
             {ok, MembershipList0, OutgoingMessages, State0}
     end;
 handle_message(#scamp_v1{membership=Membership0}=State0, {forward_subscription, Node}) ->
-    lager:info("~p: Received subscription for node ~p.", [node(), Node]),
+    case partisan_config:get(tracing, ?TRACING) of 
+        true ->
+            lager:info("~p: Received subscription for node ~p.", [node(), Node]);
+        false ->
+            ok
+    end,
+
     MembershipList0 = membership_list(State0),
 
     %% Probability: P = 1 / (1 + sizeOf(View))
@@ -178,7 +225,13 @@ handle_message(#scamp_v1{membership=Membership0}=State0, {forward_subscription, 
 
     case Keep =:= 0 andalso not lists:member(Node, MembershipList0) of 
         true ->
-            lager:info("~p: Adding subscription for node: ~p", [node(), Node]),
+            case partisan_config:get(tracing, ?TRACING) of 
+                true ->
+                    lager:info("~p: Adding subscription for node: ~p", [node(), Node]);
+                false ->
+                    ok
+            end,
+
             Membership = sets:add_element(Node, Membership0),
             State = State0#scamp_v1{membership=Membership},
             MembershipList = membership_list(State),
@@ -186,7 +239,13 @@ handle_message(#scamp_v1{membership=Membership0}=State0, {forward_subscription, 
             {ok, MembershipList, OutgoingMessages, State};
         false ->
             OutgoingMessages = lists:map(fun(N) ->
-                lager:info("~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N]),
+                case partisan_config:get(tracing, ?TRACING) of 
+                    true ->
+                        lager:info("~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N]);
+                    false ->
+                        ok
+                end,
+
                 {N, {protocol, {forward_subscription, Node}}}
                 end, select_random_sublist(State0, 1)),
             {ok, MembershipList0, OutgoingMessages, State0}

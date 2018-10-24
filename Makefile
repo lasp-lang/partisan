@@ -83,6 +83,9 @@ include tools.mk
 containerize-deps:
 	docker build -f partisan-base.Dockerfile -t cmeiklejohn/partisan-base .
 
+containerize-tests: containerize-deps
+	docker build --no-cache -f partisan-test-suite.Dockerfile -t cmeiklejohn/partisan-test-suite .
+
 containerize: containerize-deps
 	docker build --no-cache -f Dockerfile -t cmeiklejohn/partisan .
 
