@@ -58,7 +58,12 @@ start(_Case, Config, Options) ->
     Servers = proplists:get_value(servers, Options, []),
     Clients = proplists:get_value(clients, Options, []),
 
-    NodeNames = lists:flatten(Servers ++ Clients),
+    NodeNames = case proplists:get_value(num_nodes, Options, undefined) of
+        undefined ->
+            lists:flatten(Servers ++ Clients);
+        NumNodes -> 
+            node_list(NumNodes, "node", Config)
+    end,
 
     %% Start all nodes.
     InitializerFun = fun(Name) ->
@@ -367,10 +372,12 @@ cluster({_, Node}, {_, OtherNode}, Config) ->
                           C
                   end,
     JoinMethod = case ?config(sync_join, Config) of
-                  undefined ->
-                      join;
-                  true ->
-                      sync_join
+                    undefined ->
+                        join;
+                    true ->
+                        sync_join;
+                    false ->
+                        join
                   end,
     ct:pal("Joining node: ~p to ~p at port ~p", [Node, OtherNode, PeerPort]),
     ok = rpc:call(Node,
@@ -434,3 +441,21 @@ omit(OmitNameList, Nodes0) ->
                     end
               end,
     lists:foldl(FoldFun, [], Nodes0).
+
+%% @private
+node_list(0, _Name, _Config) -> 
+    [];
+node_list(N, Name, Config) ->
+    case ?config(hash, Config) of
+        undefined ->
+            [ list_to_atom(string:join([Name,
+                                        integer_to_list(X)],
+                                    "_")) ||
+                X <- lists:seq(1, N) ];
+        _ ->
+            [ list_to_atom(string:join([Name,
+                                        integer_to_list(?config(hash, Config)),
+                                        integer_to_list(X)],
+                                    "_")) ||
+                X <- lists:seq(1, N) ]
+    end.

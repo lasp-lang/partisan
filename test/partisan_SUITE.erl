@@ -310,10 +310,10 @@ transform_test(Config) ->
     Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
-    Servers = node_list(1, "server", Config),
+    Servers = ?SUPPORT:node_list(1, "server", Config),
 
     %% Specify clients.
-    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(transform_test, Config,
@@ -398,10 +398,10 @@ causal_test(Config) ->
     Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
-    Servers = node_list(1, "server", Config),
+    Servers = ?SUPPORT:node_list(1, "server", Config),
 
     %% Specify clients.
-    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(causal_test, Config,
@@ -484,10 +484,10 @@ receive_interposition_test(Config) ->
     Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
-    Servers = node_list(1, "server", Config),
+    Servers = ?SUPPORT:node_list(1, "server", Config),
 
     %% Specify clients.
-    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(receive_interposition_test, Config,
@@ -569,10 +569,10 @@ forward_interposition_test(Config) ->
     Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
-    Servers = node_list(1, "server", Config),
+    Servers = ?SUPPORT:node_list(1, "server", Config),
 
     %% Specify clients.
-    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(forward_interposition_test, Config,
@@ -654,10 +654,10 @@ pid_test(Config) ->
     Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
-    Servers = node_list(1, "server", Config),
+    Servers = ?SUPPORT:node_list(1, "server", Config),
 
     %% Specify clients.
-    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(pid_test, Config,
@@ -727,10 +727,10 @@ rpc_test(Config) ->
     Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
-    Servers = node_list(1, "server", Config),
+    Servers = ?SUPPORT:node_list(1, "server", Config),
 
     %% Specify clients.
-    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(rpc_test, Config,
@@ -758,10 +758,10 @@ on_down_test(Config) ->
     Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
-    Servers = node_list(1, "server", Config),
+    Servers = ?SUPPORT:node_list(1, "server", Config),
 
     %% Specify clients.
-    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(on_down_test, Config,
@@ -807,10 +807,10 @@ rejoin_test(Config) ->
             Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
             %% Specify servers.
-            Servers = node_list(1, "server", Config),
+            Servers = ?SUPPORT:node_list(1, "server", Config),
 
             %% Specify clients.
-            Clients = node_list(?CLIENT_NUMBER, "client", Config),
+            Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
 
             %% Start nodes.
             Nodes = ?SUPPORT:start(rejoin_test, Config,
@@ -881,10 +881,10 @@ self_leave_test(Config) ->
         Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
         %% Specify servers.
-        Servers = node_list(1, "server", Config),
+        Servers = ?SUPPORT:node_list(1, "server", Config),
 
         %% Specify clients.
-        Clients = node_list(?CLIENT_NUMBER, "client", Config),
+        Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
 
         %% Start nodes.
         Nodes = ?SUPPORT:start(leave_test, Config,
@@ -913,10 +913,10 @@ leave_test(Config) ->
         Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
         %% Specify servers.
-        Servers = node_list(1, "server", Config),
+        Servers = ?SUPPORT:node_list(1, "server", Config),
 
         %% Specify clients.
-        Clients = node_list(?CLIENT_NUMBER, "client", Config),
+        Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
 
         %% Start nodes.
         Nodes = ?SUPPORT:start(leave_test, Config,
@@ -943,10 +943,10 @@ performance_test(Config) ->
     Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
-    Servers = node_list(1, "server", Config),
+    Servers = ?SUPPORT:node_list(1, "server", Config),
 
     %% Specify clients.
-    Clients = node_list(1, "client", Config),
+    Clients = ?SUPPORT:node_list(1, "client", Config),
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(performance_test, Config,
@@ -1054,17 +1054,17 @@ connectivity_test(Config) ->
     %% Specify servers.
     Servers = case ?config(servers, Config) of
         undefined ->
-            node_list(1, "server", Config);
+            ?SUPPORT:node_list(1, "server", Config);
         NumServers ->
-            node_list(NumServers, "server", Config)
+            ?SUPPORT:node_list(NumServers, "server", Config)
     end,
 
     %% Specify clients.
     Clients = case ?config(clients, Config) of
         undefined ->
-            node_list(?CLIENT_NUMBER, "client", Config);
+            ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config);
         NumClients ->
-            node_list(NumClients, "client", Config)
+            ?SUPPORT:node_list(NumClients, "client", Config)
     end,
 
     %% Start nodes.
@@ -1099,10 +1099,10 @@ basic_test(Config) ->
     Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
-    Servers = node_list(1, "server", Config),
+    Servers = ?SUPPORT:node_list(1, "server", Config),
 
     %% Specify clients.
-    Clients = node_list(?CLIENT_NUMBER, "client", Config),
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(basic_test, Config,
@@ -1225,10 +1225,10 @@ client_server_manager_test(Config) ->
     Manager = partisan_client_server_peer_service_manager,
 
     %% Specify servers.
-    Servers = node_list(2, "server", Config), %% [server_1, server_2],
+    Servers = ?SUPPORT:node_list(2, "server", Config), %% [server_1, server_2],
 
     %% Specify clients.
-    Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(client_server_manager_test, Config,
@@ -1286,10 +1286,10 @@ hyparview_manager_partition_test(Config) ->
     Manager = partisan_hyparview_peer_service_manager,
 
     %% Specify servers.
-    Servers = node_list(1, "server", Config), %% [server],
+    Servers = ?SUPPORT:node_list(1, "server", Config), %% [server],
 
     %% Specify clients.
-    Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(hyparview_manager_partition_test, Config,
@@ -1406,10 +1406,10 @@ hyparview_manager_high_active_test(Config) ->
     Manager = partisan_hyparview_peer_service_manager,
 
     %% Specify servers.
-    Servers = node_list(1, "server", Config), %% [server],
+    Servers = ?SUPPORT:node_list(1, "server", Config), %% [server],
 
     %% Specify clients.
-    Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(hyparview_manager_high_active_test, Config,
@@ -1482,9 +1482,9 @@ hyparview_manager_low_active_test(Config) ->
     %% Start nodes.
     MaxActiveSize = 3,
 
-    Servers = node_list(1, "server", Config), %% [server],
+    Servers = ?SUPPORT:node_list(1, "server", Config), %% [server],
 
-    Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     Nodes = ?SUPPORT:start(hyparview_manager_low_active_test, Config,
                   [{partisan_peer_service_manager, Manager},
@@ -1554,10 +1554,10 @@ hyparview_manager_high_client_test(Config) ->
     Manager = partisan_hyparview_peer_service_manager,
 
     %% Start clients,.
-    Clients = node_list(11, "client", Config), %% client_list(11),
+    Clients = ?SUPPORT:node_list(11, "client", Config), %% client_list(11),
 
     %% Start servers.
-    Servers = node_list(1, "server", Config), %% [server],
+    Servers = ?SUPPORT:node_list(1, "server", Config), %% [server],
 
     Nodes = ?SUPPORT:start(hyparview_manager_high_client_test, Config,
                   [{partisan_peer_service_manager, Manager},
@@ -1625,16 +1625,6 @@ hyparview_manager_high_client_test(Config) ->
 %% ===================================================================
 %% Internal functions.
 %% ===================================================================
-
-%% @private
-node_list(0, _Name, _Config) -> 
-    [];
-node_list(N, Name, Config) ->
-    [ list_to_atom(string:join([Name,
-                                integer_to_list(?config(hash, Config)),
-                                integer_to_list(X)],
-                               "_")) ||
-        X <- lists:seq(1, N) ].
 
 %% @private
 make_certs(Config) ->
@@ -2048,10 +2038,10 @@ hyparview_xbot_manager_high_active_test(Config) ->
     Manager = partisan_hyparview_xbot_peer_service_manager,
 
     %% Specify servers.
-    Servers = node_list(1, "server", Config), %% [server],
+    Servers = ?SUPPORT:node_list(1, "server", Config), %% [server],
 
     %% Specify clients.
-    Clients = node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(hyparview_xbot_manager_high_active_test, Config,
@@ -2127,9 +2117,9 @@ hyparview_xbot_manager_low_active_test(Config) ->
     %% Start nodes.
     MaxActiveSize = 2,
 
-    Servers = node_list(1, "server", Config), %% [server],
+    Servers = ?SUPPORT:node_list(1, "server", Config), %% [server],
 
-    Clients = node_list(8, "client", Config), %% client_list(?CLIENT_NUMBER),
+    Clients = ?SUPPORT:node_list(8, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     Nodes = ?SUPPORT:start(hyparview_xbot_manager_low_active_test, Config,
                   [{partisan_peer_service_manager, Manager},
@@ -2201,10 +2191,10 @@ hyparview_xbot_manager_high_client_test(Config) ->
     Manager = partisan_hyparview_xbot_peer_service_manager,
 
     %% Start clients,.
-    Clients = node_list(11, "client", Config), %% client_list(11),
+    Clients = ?SUPPORT:node_list(11, "client", Config), %% client_list(11),
 
     %% Start servers.
-    Servers = node_list(1, "server", Config), %% [server],
+    Servers = ?SUPPORT:node_list(1, "server", Config), %% [server],
 
     Nodes = ?SUPPORT:start(hyparview_xbot_manager_low_active_test, Config,
                   [{partisan_peer_service_manager, Manager},
