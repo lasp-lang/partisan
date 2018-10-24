@@ -32,7 +32,9 @@
 -compile([export_all]).
 
 %% @private
-start(_Case, Config, Options) ->
+start(Case, Config, Options) ->
+    ct:pal("Beginning test case: ~p", [Case]),
+
     %% Launch distribution for the test runner.
     ct:pal("Launching Erlang distribution..."),
 
@@ -395,6 +397,8 @@ stop(Nodes) ->
             {ok, _} ->
                 ok;
             {error, stop_timeout, _} ->
+                ct:pal("Failed to stop node ~p: stop_timeout!", [Name]),
+                stop(Nodes),
                 ok;
             {error, not_started, _} ->
                 ok;
