@@ -26,7 +26,7 @@
 
 -compile([export_all]).
 
--import(prop_partisan_noop,
+-import(prop_partisan_gossip,
         [node_commands/0,
          node_initial_state/0,
          node_functions/0,
@@ -429,7 +429,9 @@ start_nodes() ->
               {sync_join, false},
               {egress_delay, ?EGRESS_DELAY},
               {ingress_delay, ?INGRESS_DELAY},
-              {disable_fast_forward, true}],
+              {disable_fast_forward, true},
+              {membership_strategy, partisan_full_mesh_membership_strategy}
+              ],
 
     %% Initialize a cluster.
     Nodes = ?SUPPORT:start(prop_partisan,
