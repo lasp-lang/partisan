@@ -884,6 +884,7 @@ handle_message({pong, SourceNode, DestinationNode, SourceTime},
 handle_message({protocol, ProtocolMessage},
                #state{pending=Pending,
                       connections=Connections0,
+                      membership=Membership0,
                       membership_strategy=MembershipStrategy,
                       membership_strategy_state=MembershipStrategyState0}=State) ->
     %% Process the protocol message.
@@ -895,7 +896,12 @@ handle_message({protocol, ProtocolMessage},
                                         Connections0),
 
     %% Update users of the peer service.
-    partisan_peer_service_events:update(Membership),
+    case Membership of
+        Membership0 ->
+            ok;
+        _ ->
+            partisan_peer_service_events:update(Membership)
+    end,
 
     %% Send outgoing messages.
     lists:foreach(fun({Peer, Message}) ->
