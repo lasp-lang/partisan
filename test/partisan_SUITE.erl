@@ -1107,7 +1107,11 @@ gossip_test(Config) ->
     end,
     ReceiverPid = rpc:call(Node4, erlang, spawn, [ReceiverFun]),
 
-    rpc:call(Node2, partisan_gossip, gossip, [ReceiverPid, hello]),
+    %% Register, to bypass pid encoding nonsense.
+    true = rpc:call(Node4, erlang, register, [receiver, ReceiverPid]),
+
+    %% Gossip.
+    ok = rpc:call(Node2, partisan_gossip, gossip, [receiver, hello]),
 
     receive
         hello ->
