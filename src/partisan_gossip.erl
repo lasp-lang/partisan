@@ -105,7 +105,7 @@ handle_cast({gossip, ServerRef, Message}, #state{membership=Membership}=State) -
 
     lists:foreach(fun(N) ->
         Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {gossip, Id, ServerRef, Message})
-    end, select_random_sublist(Membership, ?GOSSIP_FANOUT)),
+    end, GossipMembers),
 
     {noreply, State};
 handle_cast({update, Membership}, State) ->
@@ -121,16 +121,20 @@ handle_info({gossip, Id, Message, ServerRef}, #state{membership=Membership}=Stat
 
     case ets:lookup(?MODULE, Id) of
         [] ->
+            %% Forward to process.
+            partisan_util:process_forward(ServerRef, Message),
+
             %% Store.
             true = ets:insert(?MODULE, {Id, Message}),
 
             %% Forward message.
+            GossipMembers = select_random_sublist(Membership, ?GOSSIP_FANOUT),
+
             lists:foreach(fun(N) ->
                 Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {gossip, Id, ServerRef, Message})
-            end, select_random_sublist(Membership, ?GOSSIP_FANOUT)),
+            end, GossipMembers),
 
-            %% Forward to process.
-            partisan_util:process_forward(ServerRef, Message),
+            lager:info("Forwarding to gossip members: ~p", [GossipMembers]),
 
             ok;
         _ ->
@@ -138,8 +142,7 @@ handle_info({gossip, Id, Message, ServerRef}, #state{membership=Membership}=Stat
     end,
 
     {noreply, State};
-handle_info(Msg, State) ->
-    lager:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Msg]),
+handle_info(_Msg, State) ->
     {noreply, State}.
 
 %% @private
