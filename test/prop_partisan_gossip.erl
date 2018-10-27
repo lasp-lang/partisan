@@ -119,11 +119,7 @@ node_precondition(_State, _Command) ->
 
 %% @private
 gossip(Node, Message) ->
-    Manager = rpc:call(?NAME(Node), partisan_config, get, [partisan_peer_service_manager]),
-
-    lists:foreach(fun(N) ->
-        ok = rpc:call(?NAME(Node), Manager, forward_message, [?NAME(N), ?GOSSIP_RECEIVER, Message])
-        end, names()),
+    ok = rpc:call(?NAME(Node), partisan_gossip, gossip, [?GOSSIP_RECEIVER, Message]),
     ok.
 
 %% @private

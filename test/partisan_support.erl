@@ -33,10 +33,7 @@
 
 %% @private
 start(Case, Config, Options) ->
-    ct:pal("Beginning test case: ~p", [Case]),
-
-    %% Launch distribution for the test runner.
-    ct:pal("Launching Erlang distribution..."),
+    debug("Beginning test case: ~p", [Case]),
 
     {ok, Hostname} = inet:gethostname(), 
     os:cmd(os:find_executable("epmd") ++ " -daemon"),
@@ -69,7 +66,7 @@ start(Case, Config, Options) ->
 
     %% Start all nodes.
     InitializerFun = fun(Name) ->
-                            ct:pal("Starting node: ~p", [Name]),
+                            debug("Starting node: ~p", [Name]),
 
                             NodeConfig = [{monitor_master, true},
                                           {startup_functions, [{code, set_path, [codepath()]}]}],
@@ -85,7 +82,7 @@ start(Case, Config, Options) ->
 
     %% Load applications on all of the nodes.
     LoaderFun = fun({_Name, Node}) ->
-                            ct:pal("Loading applications on node: ~p", [Node]),
+                            debug("Loading applications on node: ~p", [Node]),
 
                             PrivDir = code:priv_dir(?APP),
                             NodeDir = filename:join([PrivDir, "lager", Node]),
@@ -111,7 +108,7 @@ start(Case, Config, Options) ->
     ConfigureFun = fun({Name, Node}) ->
             %% Configure the peer service.
             PeerService = proplists:get_value(partisan_peer_service_manager, Options),
-            ct:pal("Setting peer service manager on node ~p to ~p", [Node, PeerService]),
+            debug("Setting peer service manager on node ~p to ~p", [Node, PeerService]),
             ok = rpc:call(Node, partisan_config, set,
                           [partisan_peer_service_manager, PeerService]),
 
@@ -130,7 +127,7 @@ start(Case, Config, Options) ->
                               FO ->
                                   FO
                           end,
-            ct:pal("Setting forward_options to: ~p", [ForwardOptions]),
+            debug("Setting forward_options to: ~p", [ForwardOptions]),
             ok = rpc:call(Node, partisan_config, set, [forward_options, ForwardOptions]),
 
             MembershipStrategy = case ?config(membership_strategy, Config) of
@@ -139,7 +136,7 @@ start(Case, Config, Options) ->
                               S ->
                                   S
                           end,
-            ct:pal("Setting membership_strategy to: ~p", [MembershipStrategy]),
+            debug("Setting membership_strategy to: ~p", [MembershipStrategy]),
             ok = rpc:call(Node, partisan_config, set, [membership_strategy, MembershipStrategy]),
 
             Disterl = case ?config(disterl, Config) of
@@ -148,7 +145,7 @@ start(Case, Config, Options) ->
                               true ->
                                   true
                           end,
-            ct:pal("Setting disterl to: ~p", [Disterl]),
+            debug("Setting disterl to: ~p", [Disterl]),
             ok = rpc:call(Node, partisan_config, set, [disterl, Disterl]),
 
             InitiateReverse = case ?config(initiate_reverse, Config) of
@@ -157,7 +154,7 @@ start(Case, Config, Options) ->
                               IR ->
                                   IR
                           end,
-            ct:pal("Setting initiate_reverse to: ~p", [InitiateReverse]),
+            debug("Setting initiate_reverse to: ~p", [InitiateReverse]),
             ok = rpc:call(Node, partisan_config, set, [initiate_reverse, InitiateReverse]),
 
             DisableFastReceive = case ?config(disable_fast_receive, Config) of
@@ -166,7 +163,7 @@ start(Case, Config, Options) ->
                               FR ->
                                   FR
                           end,
-            ct:pal("Setting disable_fast_receive to: ~p", [DisableFastReceive]),
+            debug("Setting disable_fast_receive to: ~p", [DisableFastReceive]),
             ok = rpc:call(Node, partisan_config, set, [disable_fast_receive, DisableFastReceive]),
 
             DisableFastForward = case ?config(disable_fast_forward, Config) of
@@ -175,7 +172,7 @@ start(Case, Config, Options) ->
                               FF ->
                                   FF
                           end,
-            ct:pal("Setting disable_fast_forward to: ~p", [DisableFastForward]),
+            debug("Setting disable_fast_forward to: ~p", [DisableFastForward]),
             ok = rpc:call(Node, partisan_config, set, [disable_fast_forward, DisableFastForward]),
 
             BinaryPadding = case ?config(binary_padding, Config) of
@@ -184,7 +181,7 @@ start(Case, Config, Options) ->
                               BP ->
                                   BP
                           end,
-            ct:pal("Setting binary_padding to: ~p", [BinaryPadding]),
+            debug("Setting binary_padding to: ~p", [BinaryPadding]),
             ok = rpc:call(Node, partisan_config, set, [binary_padding, BinaryPadding]),
 
             Broadcast = case ?config(broadcast, Config) of
@@ -193,7 +190,7 @@ start(Case, Config, Options) ->
                               B ->
                                   B
                           end,
-            ct:pal("Setting broadcast to: ~p", [Broadcast]),
+            debug("Setting broadcast to: ~p", [Broadcast]),
             ok = rpc:call(Node, partisan_config, set, [broadcast, Broadcast]),
 
             IngressDelay = case ?config(ingress_delay, Config) of
@@ -202,7 +199,7 @@ start(Case, Config, Options) ->
                               ID ->
                                   ID
                           end,
-            ct:pal("Setting ingress_delay to: ~p", [IngressDelay]),
+            debug("Setting ingress_delay to: ~p", [IngressDelay]),
             ok = rpc:call(Node, partisan_config, set, [ingress_delay, IngressDelay]),
 
             EgressDelay = case ?config(egress_delay, Config) of
@@ -211,7 +208,7 @@ start(Case, Config, Options) ->
                               ED ->
                                   ED
                           end,
-            ct:pal("Setting egress_delay to: ~p", [EgressDelay]),
+            debug("Setting egress_delay to: ~p", [EgressDelay]),
             ok = rpc:call(Node, partisan_config, set, [egress_delay, EgressDelay]),
 
             Channels = case ?config(channels, Config) of
@@ -220,7 +217,7 @@ start(Case, Config, Options) ->
                               C ->
                                   C
                           end,
-            ct:pal("Setting channels to: ~p", [Channels]),
+            debug("Setting channels to: ~p", [Channels]),
             ok = rpc:call(Node, partisan_config, set, [channels, Channels]),
 
             CausalLabels = case ?config(causal_labels, Config) of
@@ -229,7 +226,7 @@ start(Case, Config, Options) ->
                               CL ->
                                   CL
                           end,
-            ct:pal("Setting causal_labels to: ~p", [CausalLabels]),
+            debug("Setting causal_labels to: ~p", [CausalLabels]),
             ok = rpc:call(Node, partisan_config, set, [causal_labels, CausalLabels]),
 
             PidEncoding = case ?config(pid_encoding, Config) of
@@ -238,7 +235,7 @@ start(Case, Config, Options) ->
                               PE ->
                                   PE
                           end,
-            ct:pal("Setting pid_encoding to: ~p", [PidEncoding]),
+            debug("Setting pid_encoding to: ~p", [PidEncoding]),
             ok = rpc:call(Node, partisan_config, set, [pid_encoding, PidEncoding]),
 
             ok = rpc:call(Node, partisan_config, set, [tls, ?config(tls, Config)]),
@@ -248,7 +245,7 @@ start(Case, Config, Options) ->
                               P ->
                                   P
                           end,
-            ct:pal("Setting parallelism to: ~p", [Parallelism]),
+            debug("Setting parallelism to: ~p", [Parallelism]),
             ok = rpc:call(Node, partisan_config, set, [parallelism, Parallelism]),
 
             Servers = proplists:get_value(servers, Options, []),
@@ -274,7 +271,7 @@ start(Case, Config, Options) ->
     end,
     lists:foreach(ConfigureFun, Nodes),
 
-    ct:pal("Starting nodes."),
+    debug("Starting nodes.", []),
 
     StartFun = fun({_Name, Node}) ->
                         %% Start partisan.
@@ -282,14 +279,14 @@ start(Case, Config, Options) ->
                         %% Start a dummy registered process that saves in the env whatever message it gets.
                         Pid = rpc:call(Node, erlang, spawn, [fun() -> store_proc_receiver() end]),
                         true = rpc:call(Node, erlang, register, [store_proc, Pid]),
-                        ct:pal("Registered store_proc on pid ~p, node ~p", [Pid, Node])
+                        debug("Registered store_proc on pid ~p, node ~p", [Pid, Node])
                end,
     lists:foreach(StartFun, Nodes),
 
-    ct:pal("Clustering nodes."),
+    debug("Clustering nodes.", []),
     lists:foreach(fun(Node) -> cluster(Node, Nodes, Options, Config) end, Nodes),
 
-    ct:pal("Partisan fully initialized."),
+    debug("Partisan fully initialized.", []),
 
     Nodes.
 
@@ -381,7 +378,7 @@ cluster({_, Node}, {_, OtherNode}, Config) ->
                     false ->
                         join
                   end,
-    ct:pal("Joining node: ~p to ~p at port ~p", [Node, OtherNode, PeerPort]),
+    debug("Joining node: ~p to ~p at port ~p", [Node, OtherNode, PeerPort]),
     ok = rpc:call(Node,
                   partisan_peer_service,
                   JoinMethod,
@@ -397,7 +394,7 @@ stop(Nodes) ->
             {ok, _} ->
                 ok;
             {error, stop_timeout, _} ->
-                %% ct:pal("Failed to stop node ~p: stop_timeout!", [Name]),
+                %% debug("Failed to stop node ~p: stop_timeout!", [Name]),
                 stop(Nodes),
                 ok;
             {error, not_started, _} ->
@@ -413,15 +410,15 @@ stop(Nodes) ->
 connect(G, N1, N2) ->
     %% Add vertex for neighboring node.
     digraph:add_vertex(G, N1),
-    % ct:pal("Adding vertex: ~p", [N1]),
+    % debug("Adding vertex: ~p", [N1]),
 
     %% Add vertex for neighboring node.
     digraph:add_vertex(G, N2),
-    % ct:pal("Adding vertex: ~p", [N2]),
+    % debug("Adding vertex: ~p", [N2]),
 
     %% Add edge to that node.
     digraph:add_edge(G, N1, N2),
-    % ct:pal("Adding edge from ~p to ~p", [N1, N2]),
+    % debug("Adding edge from ~p to ~p", [N1, N2]),
 
     ok.
 
@@ -462,4 +459,13 @@ node_list(N, Name, Config) ->
                                         integer_to_list(X)],
                                     "_")) ||
                 X <- lists:seq(1, N) ]
+    end.
+
+%% @private
+debug(Message, Format) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            ct:print(Message, Format);
+        false ->
+            ok
     end.

@@ -430,8 +430,7 @@ start_nodes() ->
               {egress_delay, ?EGRESS_DELAY},
               {ingress_delay, ?INGRESS_DELAY},
               {disable_fast_forward, true},
-              {membership_strategy, partisan_scamp_v1_membership_strategy}
-              ],
+              {membership_strategy, partisan_full_mesh_membership_strategy}],
 
     %% Initialize a cluster.
     Nodes = ?SUPPORT:start(prop_partisan,
@@ -440,7 +439,7 @@ start_nodes() ->
                            {num_nodes, ?NUM_NODES},
                            {cluster_nodes, ?CLUSTER_NODES}]),
 
-    ct:pal("Started nodes: ~p", [Nodes]),
+    lager:info("Started nodes: ~p", [Nodes]),
 
     %% Insert all nodes into group for all nodes.
     true = ets:insert(?MODULE, {nodes, Nodes}),
