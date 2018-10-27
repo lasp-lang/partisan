@@ -8,7 +8,8 @@
 -define(RPC_CHANNEL, rpc).
 -define(DEFAULT_CHANNEL, undefined).
 -define(DEFAULT_PARTITION_KEY, undefined).
--define(CHANNELS, [?DEFAULT_CHANNEL, ?MEMBERSHIP_PROTOCOL_CHANNEL, ?GOSSIP_CHANNEL]).
+%% -define(CHANNELS, [?DEFAULT_CHANNEL, ?MEMBERSHIP_PROTOCOL_CHANNEL, ?GOSSIP_CHANNEL]).
+-define(CHANNELS, [?DEFAULT_CHANNEL]).
 -define(CONNECTION_JITTER, 1000).
 
 -define(TRACING, false).
@@ -26,11 +27,12 @@
 -define(SCAMP_C_VALUE, 5). %% TODO: FIX ME.
 -define(SCAMP_MESSAGE_WINDOW, 10).
 
+%% Defaults.
 -define(DEFAULT_PEER_SERVICE_MANAGER, partisan_pluggable_peer_service_manager).
 -define(DEFAULT_MEMBERSHIP_STRATEGY, partisan_full_mesh_membership_strategy).
+-define(DEFAULT_ORCHESTRATION_STRATEGY, undefined).
 
 %% Test variables.
--define(DEFAULT_ORCHESTRATION_STRATEGY, undefined).
 -define(SUPPORT, partisan_support).
 
 -define(OVERRIDE_PERIODIC_INTERVAL, 1000).
