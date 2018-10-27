@@ -397,7 +397,7 @@ stop(Nodes) ->
             {ok, _} ->
                 ok;
             {error, stop_timeout, _} ->
-                ct:pal("Failed to stop node ~p: stop_timeout!", [Name]),
+                %% ct:pal("Failed to stop node ~p: stop_timeout!", [Name]),
                 stop(Nodes),
                 ok;
             {error, not_started, _} ->

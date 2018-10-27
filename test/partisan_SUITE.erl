@@ -128,6 +128,10 @@ all() ->
        %% {hyparview_xbot, [shuffle]}
       ]},
 
+     %% Full mesh.
+
+     {group, with_full_mesh_membership_strategy, []},
+
      %% Scamp v1.
 
      {group, with_scamp_v1_membership_strategy, []},
@@ -223,14 +227,21 @@ groups() ->
        %% hyparview_xbot_manager_high_client_test
       ]},
 
+     {with_full_mesh_membership_strategy, [],
+      [connectivity_test,
+       gossip_test]},
+
      {with_scamp_v1_membership_strategy, [],
-      [connectivity_test]},
+      [connectivity_test,
+       gossip_test]},
 
      {with_scamp_v1_membership_strategy_high_clients, [],
-      [connectivity_test]},
+      [connectivity_test,
+       gossip_test]},
 
      {with_scamp_v2_membership_strategy, [],
-      [connectivity_test]},
+      [connectivity_test,
+       gossip_test]},
 
      {with_scamp_v2_membership_strategy_high_clients, [],
       [connectivity_test]},
@@ -1041,6 +1052,70 @@ performance_test(Config) ->
     file:close(FileHandle),
 
     ct:pal("Time: ~p", [Time]),
+
+    %% Stop nodes.
+    ?SUPPORT:stop(Nodes),
+
+    ok.
+
+gossip_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
+
+    %% Specify servers.
+    Servers = case ?config(servers, Config) of
+        undefined ->
+            ?SUPPORT:node_list(1, "server", Config);
+        NumServers ->
+            ?SUPPORT:node_list(NumServers, "server", Config)
+    end,
+
+    %% Specify clients.
+    Clients = case ?config(clients, Config) of
+        undefined ->
+            ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config);
+        NumClients ->
+            ?SUPPORT:node_list(NumClients, "client", Config)
+    end,
+
+    %% Start nodes.
+    Nodes = ?SUPPORT:start(gossip_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Verify forward message functionality.
+    lists:foreach(fun({_Name, Node}) ->
+                    ok = check_forward_message(Node, Manager, Nodes)
+                  end, Nodes),
+
+    %% Pause for protocol delay and periodic intervals to fire.
+    timer:sleep(10000),
+
+    %% Gossip.
+    [{_, _}, {_, Node2}, {_, _}, {_, Node4}] = Nodes,
+    Self = self(),
+
+    ReceiverFun = fun() ->
+        receive
+            hello ->
+                Self ! hello
+        end
+    end,
+    ReceiverPid = rpc:call(Node4, erlang, spawn, [ReceiverFun]),
+
+    rpc:call(Node2, partisan_gossip, gossip, [ReceiverPid, hello]),
+
+    receive
+        hello ->
+            ok
+    after
+        10000 ->
+            ct:fail("Didn't receive message!")
+    end,
 
     %% Stop nodes.
     ?SUPPORT:stop(Nodes),

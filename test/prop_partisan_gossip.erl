@@ -138,12 +138,15 @@ check_mailbox(Node) ->
             {ok, Messages}
     after 
         10000 ->
+            ct:pal("Didn't receive response!", []),
             error
     end.
 
 %% @private
 spawn_gossip_receiver(Node) ->
     node_debug("Spwaning gossip receiver on node ~p", [Node]),
+
+    Self = self(),
 
     RemoteFun = fun() ->
         %% Create ETS table for the results.
@@ -153,11 +156,11 @@ spawn_gossip_receiver(Node) ->
         %% Define loop function for receiving and registering values.
         ReceiverFun = fun(F) ->
             receive
-                {received, Self} ->
+                {received, Sender} ->
                     lager:info("Received request for stored values..."),
                     Received = ets:foldl(fun(Term, Acc) -> Acc ++ [Term] end, [], ?GOSSIP_TABLE),
                     lager:info("Received request for stored values: ~p", [Received]),
-                    Self ! Received;
+                    Sender ! Received;
                 {Id, Value} ->
                     lager:info("Received id ~p and value: ~p", [Id, Value]),
                     true = ets:insert(?GOSSIP_TABLE, {Id, Value})
@@ -171,12 +174,22 @@ spawn_gossip_receiver(Node) ->
         %% Register name.
         erlang:register(?GOSSIP_RECEIVER, Pid),
 
+        %% Prevent races by notifying process is registered.
+        Self ! ready,
+
         %% Block indefinitely so the table doesn't close.
         loop()
     end,
-
+    
     Pid = rpc:call(?NAME(Node), erlang, spawn, [RemoteFun]),
-    {ok, Pid}.
+
+    receive
+        ready ->
+            {ok, Pid}
+    after 
+        10000 ->
+            error
+    end.
 
 %% Should we do node debugging?
 node_debug(Line, Args) ->

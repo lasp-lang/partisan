@@ -430,7 +430,7 @@ start_nodes() ->
               {egress_delay, ?EGRESS_DELAY},
               {ingress_delay, ?INGRESS_DELAY},
               {disable_fast_forward, true},
-              {membership_strategy, partisan_full_mesh_membership_strategy}
+              {membership_strategy, partisan_scamp_v1_membership_strategy}
               ],
 
     %% Initialize a cluster.

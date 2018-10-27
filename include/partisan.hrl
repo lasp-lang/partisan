@@ -8,18 +8,22 @@
 -define(RPC_CHANNEL, rpc).
 -define(DEFAULT_CHANNEL, undefined).
 -define(DEFAULT_PARTITION_KEY, undefined).
--define(CHANNELS, [?DEFAULT_CHANNEL]).
+-define(CHANNELS, [?DEFAULT_CHANNEL, ?MEMBERSHIP_PROTOCOL_CHANNEL, ?GOSSIP_CHANNEL]).
 -define(CONNECTION_JITTER, 1000).
 
 -define(TRACING, false).
 -define(RELAY_TTL, 5).
 -define(MEMBERSHIP_PROTOCOL_CHANNEL, membership).
 
+%% Gossip.
+-define(GOSSIP_CHANNEL, gossip).
+-define(GOSSIP_FANOUT, 5). %% TODO: FIX ME.
+
 %% Pluggable manager.
 -define(PERIODIC_INTERVAL, 10000).
 
 %% Scamp protocol.
--define(SCAMP_C_VALUE, 5).
+-define(SCAMP_C_VALUE, 5). %% TODO: FIX ME.
 -define(SCAMP_MESSAGE_WINDOW, 10).
 
 -define(DEFAULT_PEER_SERVICE_MANAGER, partisan_pluggable_peer_service_manager).
