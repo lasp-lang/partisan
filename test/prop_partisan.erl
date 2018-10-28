@@ -51,6 +51,7 @@
 
 %% Debug.
 -define(DEBUG, true).
+-define(PARTITION_DEBUG, false).
 -define(INITIAL_STATE_DEBUG, false).
 -define(PRECONDITION_DEBUG, false).
 -define(POSTCONDITION_DEBUG, false).
@@ -319,7 +320,7 @@ postcondition(#state{minority_nodes=MinorityNodes, partition_filters=PartitionFi
                             false
                     end;
                 false ->
-                    debug("request went to majority node, node: ~p response: ~p", [Node, Res]),
+                    postcondition_debug("request went to majority node, node: ~p response: ~p", [Node, Res]),
 
                     %% One partitioned node may make a quorum of 2 fail.
                     case is_involved_in_x_partitions(Node, 1, PartitionFilters) of
@@ -604,7 +605,7 @@ is_involved_in_x_partitions(Node, X, PartitionFilters) ->
                     AccIn
             end
         end, 0, PartitionFilters),
-    debug("is_involved_in_x_partitions is ~p and should be ~p", [Count, X]),
+    postcondition_debug("is_involved_in_x_partitions is ~p and should be ~p", [Count, X]),
     Count >= X.
 
 is_valid_partition(SourceNode, DestinationNode) ->
@@ -638,7 +639,7 @@ resolve_byzantine_message_corruption_fault(SourceNode, DestinationNode0) ->
     rpc:call(name_to_nodename(SourceNode), ?MANAGER, remove_interposition_fun, [{corruption, DestinationNode}]).
 
 induce_async_partition(SourceNode, DestinationNode0) ->
-    debug("induce_async_partition: source_node ~p destination_node ~p", [SourceNode, DestinationNode0]),
+    partition_debug("induce_async_partition: source_node ~p destination_node ~p", [SourceNode, DestinationNode0]),
 
     %% Convert to real node name and not symbolic name.
     DestinationNode = name_to_nodename(DestinationNode0),
@@ -657,7 +658,7 @@ induce_async_partition(SourceNode, DestinationNode0) ->
     rpc:call(name_to_nodename(SourceNode), ?MANAGER, add_interposition_fun, [{async, DestinationNode}, InterpositionFun]).
 
 resolve_async_partition(SourceNode, DestinationNode0) ->
-    debug("resolve_async_partition: source_node ~p destination_node ~p", [SourceNode, DestinationNode0]),
+    partition_debug("resolve_async_partition: source_node ~p destination_node ~p", [SourceNode, DestinationNode0]),
 
     %% Convert to real node name and not symbolic name.
     DestinationNode = name_to_nodename(DestinationNode0),
@@ -665,7 +666,7 @@ resolve_async_partition(SourceNode, DestinationNode0) ->
     rpc:call(name_to_nodename(SourceNode), ?MANAGER, remove_interposition_fun, [{async, DestinationNode}]).
 
 induce_sync_partition(SourceNode, DestinationNode) ->
-    debug("induce_sync_partition: source_node ~p destination_node ~p", [SourceNode, DestinationNode]),
+    partition_debug("induce_sync_partition: source_node ~p destination_node ~p", [SourceNode, DestinationNode]),
     SourceResult = induce_async_partition(SourceNode, DestinationNode),
     DestinationResult = induce_async_partition(DestinationNode, SourceNode),
     all_to_ok_or_error([SourceResult, DestinationResult]).
@@ -739,6 +740,14 @@ enough_nodes_connected(Nodes) ->
 
 enough_nodes_connected_to_issue_remove(Nodes) ->
     length(Nodes) > 3.
+
+partition_debug(Line, Args) ->
+    case ?PARTITION_DEBUG of
+        true ->
+            lager:info(Line, Args);
+        false ->
+            ok
+    end.
 
 initial_state_debug(Line, Args) ->
     case ?INITIAL_STATE_DEBUG of
