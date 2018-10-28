@@ -138,7 +138,7 @@ handle_info({gossip, Id, ServerRef, Message}, #state{membership=Membership}=Stat
 
             %% Drop oldest message.
             Info = ets:info(?MODULE),
-            case proplists:get(size, Info) of
+            case proplists:get_value(size, Info, undefined) of
                 undefined ->
                     ok;
                 Size ->
