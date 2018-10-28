@@ -110,6 +110,7 @@ handle_cast({gossip, ServerRef, Message}, #state{membership=Membership}=State) -
     lager:info("About to gossip to members: ~p", [GossipMembers]),
 
     lists:foreach(fun(N) ->
+        lager:info("~p: sending gossip message to node ~p: ~p", [node(), N, Message]),
         Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {gossip, Id, ServerRef, Message})
     end, GossipMembers),
 
@@ -137,6 +138,7 @@ handle_info({gossip, Id, ServerRef, Message}, #state{membership=Membership}=Stat
             GossipMembers = select_random_sublist(Membership, ?GOSSIP_FANOUT),
 
             lists:foreach(fun(N) ->
+                lager:info("~p: forwarding gossip message to node ~p: ~p", [node(), N, Message]),
                 Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {gossip, Id, ServerRef, Message})
             end, GossipMembers),
 
