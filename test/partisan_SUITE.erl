@@ -69,12 +69,8 @@ init_per_group(with_disterl, Config) ->
     [{disterl, true}] ++ Config;
 init_per_group(with_scamp_v1_membership_strategy, Config) ->
     [{membership_strategy, partisan_scamp_v1_membership_strategy}] ++ Config;
-init_per_group(with_scamp_v1_membership_strategy_high_clients, Config) ->
-    [{membership_strategy, partisan_scamp_v1_membership_strategy}, {clients, ?HIGH_CLIENT_NUMBER}] ++ Config;
 init_per_group(with_scamp_v2_membership_strategy, Config) ->
     [{membership_strategy, partisan_scamp_v2_membership_strategy}] ++ Config;
-init_per_group(with_scamp_v2_membership_strategy_high_clients, Config) ->
-    [{membership_strategy, partisan_scamp_v2_membership_strategy}, {clients, ?HIGH_CLIENT_NUMBER}] ++ Config;
 init_per_group(with_broadcast, Config) ->
     [{broadcast, true}, {forward_options, [{transitive, true}]}] ++ Config;
 init_per_group(with_partition_key, Config) ->
@@ -235,16 +231,9 @@ groups() ->
       [connectivity_test,
        gossip_test]},
 
-     {with_scamp_v1_membership_strategy_high_clients, [],
-      [connectivity_test,
-       gossip_test]},
-
      {with_scamp_v2_membership_strategy, [],
       [connectivity_test,
        gossip_test]},
-
-     {with_scamp_v2_membership_strategy_high_clients, [],
-      [connectivity_test]},
 
      {with_ack, [],
       [basic_test]},
