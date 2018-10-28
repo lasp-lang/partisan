@@ -74,8 +74,8 @@ node_postcondition(_State, {call, ?MODULE, spawn_gossip_receiver, [_Node]}, {ok,
     true;
 node_postcondition(_State, {call, ?MODULE, gossip, [_Node, _Message]}, _Result) ->
     true;
-node_postcondition(#state{sent=Sent}, {call, ?MODULE, check_mailbox, [_Node]}, {ok, Messages}) ->
-    ct:pal("Verifying mailbox: Sent: ~p, Received: ~p", [Sent, Messages]),
+node_postcondition(#state{sent=Sent}, {call, ?MODULE, check_mailbox, [Node]}, {ok, Messages}) ->
+    node_debug("verifying mailbox at node ~p: sent: ~p, received: ~p", [Node, Sent, Messages]),
     lists:all(fun(M) -> lists:member(M, Messages) end, Sent);
 node_postcondition(_State, _Command, _Response) ->
     false.
@@ -119,6 +119,7 @@ node_precondition(_State, _Command) ->
 
 %% @private
 gossip(Node, Message) ->
+    node_debug("gossiping from node ~p message: ~p", [Node, Message]),
     ok = rpc:call(?NAME(Node), partisan_gossip, gossip, [?GOSSIP_RECEIVER, Message]),
     ok.
 
@@ -134,31 +135,28 @@ check_mailbox(Node) ->
             {ok, Messages}
     after 
         10000 ->
-            ct:pal("Didn't receive response!", []),
-            error
+            {error, no_response_from_mailbox}
     end.
 
 %% @private
 spawn_gossip_receiver(Node) ->
-    node_debug("Spwaning gossip receiver on node ~p", [Node]),
+    node_debug("spawning gossip receiver on node ~p", [Node]),
 
     Self = self(),
 
     RemoteFun = fun() ->
         %% Create ETS table for the results.
         ?GOSSIP_TABLE = ets:new(?GOSSIP_TABLE, [set, named_table, public]),
-        lager:info("Gossip table opened."),
 
         %% Define loop function for receiving and registering values.
         ReceiverFun = fun(F) ->
             receive
                 {received, Sender} ->
-                    lager:info("Received request for stored values..."),
                     Received = ets:foldl(fun(Term, Acc) -> Acc ++ [Term] end, [], ?GOSSIP_TABLE),
-                    lager:info("Received request for stored values: ~p", [Received]),
+                    node_debug("node ~p received request for stored values: ~p", [Node, Received]),
                     Sender ! Received;
                 {Id, Value} ->
-                    lager:info("Received id ~p and value: ~p", [Id, Value]),
+                    node_debug("node ~p received id ~p and value: ~p", [Node, Id, Value]),
                     true = ets:insert(?GOSSIP_TABLE, {Id, Value})
             end,
             F(F)
