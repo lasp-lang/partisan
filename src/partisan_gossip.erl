@@ -136,20 +136,6 @@ handle_info({gossip, Id, ServerRef, Message}, #state{membership=Membership}=Stat
 
             lager:info("Forwarding to gossip members: ~p", [GossipMembers]),
 
-            %% Drop oldest message.
-            case ets:first(?MODULE) of
-                '$end_of_table' ->
-                    ok;
-                Key ->
-                    case ets:last(?MODULE) of
-                        Key ->
-                            ok;
-                        _ ->
-                            lager:info("node ~p evicting value ~p", [node(), Key]),
-                            true = ets:delete(?MODULE, Key)
-                    end
-            end,
-
             ok;
         _ ->
             ok
