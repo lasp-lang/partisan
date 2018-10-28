@@ -30,7 +30,7 @@
 
 %% Defaults.
 -define(DEFAULT_PEER_SERVICE_MANAGER, partisan_pluggable_peer_service_manager).
--define(DEFAULT_MEMBERSHIP_STRATEGY, partisan_full_mesh_membership_strategy).
+-define(DEFAULT_MEMBERSHIP_STRATEGY, partisan_full_membership_strategy).
 -define(DEFAULT_ORCHESTRATION_STRATEGY, undefined).
 
 %% Test variables.

@@ -437,7 +437,7 @@ start_nodes() ->
               {ingress_delay, ?INGRESS_DELAY},
               {disable_fast_forward, true},
               {disable_fast_receive, true},
-              {membership_strategy, partisan_full_mesh_membership_strategy}],
+              {membership_strategy, partisan_full_membership_strategy}],
 
     %% Initialize a cluster.
     Nodes = ?SUPPORT:start(prop_partisan,

@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(partisan_full_mesh_membership_strategy).
+-module(partisan_full_membership_strategy).
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
@@ -32,7 +32,7 @@
 
 -define(SET, state_orset).
 
--record(full_mesh_v1, {actor, membership}).
+-record(full_v1, {actor, membership}).
 
 %%%===================================================================
 %%% API
@@ -46,16 +46,16 @@ init(Identity) ->
     {ok, MembershipList, State}.
 
 %% @doc When a node is connected, return the state, membership and outgoing message queue to be transmitted.
-join(#full_mesh_v1{membership=Membership0} = State0, _Node, #full_mesh_v1{membership=NodeMembership}) ->
+join(#full_v1{membership=Membership0} = State0, _Node, #full_v1{membership=NodeMembership}) ->
     Membership = ?SET:merge(Membership0, NodeMembership),
-    State = State0#full_mesh_v1{membership=Membership},
+    State = State0#full_v1{membership=Membership},
     MembershipList = membership_list(State),
     OutgoingMessages = gossip_messages(State),
     persist_state(State),
     {ok, MembershipList, OutgoingMessages, State}.
 
 %% @doc Leave a node from the cluster.
-leave(#full_mesh_v1{membership=Membership0, actor=Actor}=State0, #{name := NameToRemove}) ->
+leave(#full_v1{membership=Membership0, actor=Actor}=State0, #{name := NameToRemove}) ->
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
     Membership = lists:foldl(fun(#{name := Name} = N, M0) ->
@@ -69,7 +69,7 @@ leave(#full_mesh_v1{membership=Membership0, actor=Actor}=State0, #{name := NameT
                 end, Membership0, membership_list(State0)),
 
     %% Self-leave removes our own state and resets it.
-    StateToGossip = State0#full_mesh_v1{membership=Membership},
+    StateToGossip = State0#full_v1{membership=Membership},
 
     State = case partisan_peer_service_manager:mynode() of
         NameToRemove ->
@@ -96,7 +96,7 @@ periodic(State) ->
     {ok, MembershipList, OutgoingMessages, State}.
 
 %% @doc Handling incoming protocol message.
-handle_message(#full_mesh_v1{membership=Membership0}=State0, {#{name := _From}, #full_mesh_v1{membership=NodeMembership}}) ->
+handle_message(#full_v1{membership=Membership0}=State0, {#{name := _From}, #full_v1{membership=NodeMembership}}) ->
     case ?SET:equal(Membership0, NodeMembership) of
         true ->
             %% Convergence of gossip at this node.
@@ -107,7 +107,7 @@ handle_message(#full_mesh_v1{membership=Membership0}=State0, {#{name := _From}, 
         false ->
             %% Merge, persist, reforward to peers.
             Membership = ?SET:merge(Membership0, NodeMembership),
-            State = State0#full_mesh_v1{membership=Membership},
+            State = State0#full_v1{membership=Membership},
             MembershipList = membership_list(State),
             OutgoingMessages = gossip_messages(State),
             persist_state(State),
@@ -120,7 +120,7 @@ handle_message(#full_mesh_v1{membership=Membership0}=State0, {#{name := _From}, 
 %%%===================================================================
 
 %% @private
-membership_list(#full_mesh_v1{membership=Membership}) ->
+membership_list(#full_v1{membership=Membership}) ->
     sets:to_list(?SET:query(Membership)).
 
 %% @private
@@ -170,7 +170,7 @@ data_root() ->
 %% @private
 new_state(Actor) ->
     {ok, Membership} = ?SET:mutate({add, myself()}, Actor, ?SET:new()),
-    LocalState = #full_mesh_v1{membership=Membership, actor=Actor},
+    LocalState = #full_v1{membership=Membership, actor=Actor},
     persist_state(LocalState),
     LocalState.
 

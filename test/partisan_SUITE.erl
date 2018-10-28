@@ -124,9 +124,9 @@ all() ->
        %% {hyparview_xbot, [shuffle]}
       ]},
 
-     %% Full mesh.
+     %% Full.
 
-     {group, with_full_mesh_membership_strategy, []},
+     {group, with_full_membership_strategy, []},
 
      %% Scamp v1.
 
@@ -219,7 +219,7 @@ groups() ->
        %% hyparview_xbot_manager_high_client_test
       ]},
 
-     {with_full_mesh_membership_strategy, [],
+     {with_full_membership_strategy, [],
       [connectivity_test,
        gossip_test]},
 
