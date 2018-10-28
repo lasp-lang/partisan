@@ -58,6 +58,7 @@ node_commands() ->
 
 %% What should the initial node state be.
 node_initial_state() ->
+    node_debug("initializing", []),
     Receivers = dict:new(),
     Sent = [],
     #state{receivers=Receivers, sent=Sent}.
@@ -189,7 +190,7 @@ spawn_gossip_receiver(Node) ->
 node_debug(Line, Args) ->
     case ?NODE_DEBUG of
         true ->
-            lager:info(Line, Args);
+            lager:info("~p: " ++ Line, [?MODULE|Args]);
         false ->
             ok
     end.
