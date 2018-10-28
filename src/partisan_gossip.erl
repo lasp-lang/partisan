@@ -116,7 +116,7 @@ handle_cast(Msg, State) ->
 
 %% @private
 %% Incoming messages.
-handle_info({gossip, Id, Message, ServerRef}, #state{membership=Membership}=State) ->
+handle_info({gossip, Id, ServerRef, Message}, #state{membership=Membership}=State) ->
     Manager = manager(),
 
     case ets:lookup(?MODULE, Id) of
@@ -141,7 +141,13 @@ handle_info({gossip, Id, Message, ServerRef}, #state{membership=Membership}=Stat
                 '$end_of_table' ->
                     ok;
                 Key ->
-                    true = ets:delete(?MODULE, Key)
+                    case ets:last(?MODULE) of
+                        Key ->
+                            ok;
+                        _ ->
+                            lager:info("node ~p evicting value ~p", [node(), Key]),
+                            true = ets:delete(?MODULE, Key)
+                    end
             end,
 
             ok;
