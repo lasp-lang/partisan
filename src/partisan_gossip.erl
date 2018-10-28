@@ -136,6 +136,25 @@ handle_info({gossip, Id, ServerRef, Message}, #state{membership=Membership}=Stat
 
             lager:info("Forwarding to gossip members: ~p", [GossipMembers]),
 
+            %% Drop oldest message.
+            Info = ets:info(?MODULE),
+            case proplists:get(size, Info) of
+                undefined ->
+                    ok;
+                Size ->
+                    case Size > ?GOSSIP_GC_MIN_SIZE of
+                        true ->
+                            case ets:first(?MODULE) of
+                                '$end_of_table' ->
+                                    ok;
+                                Key ->
+                                    ets:delete(?MODULE, Key)
+                            end;
+                        false ->
+                            ok
+                    end
+            end,
+
             ok;
         _ ->
             ok

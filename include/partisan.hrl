@@ -19,6 +19,7 @@
 %% Gossip.
 -define(GOSSIP_CHANNEL, gossip).
 -define(GOSSIP_FANOUT, 5). %% TODO: FIX ME.
+-define(GOSSIP_GC_MIN_SIZE, 10).
 
 %% Pluggable manager.
 -define(PERIODIC_INTERVAL, 10000).
