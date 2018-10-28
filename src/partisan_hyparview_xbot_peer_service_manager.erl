@@ -253,10 +253,8 @@ connections() ->
 %% @private
 -spec init([]) -> {ok, state_t()}.
 init([]) ->
-    %% Seed the process at initialization.
-    rand:seed(exsplus, {erlang:phash2([partisan_peer_service_manager:mynode()]),
-                        erlang:monotonic_time(),
-                        erlang:unique_integer()}),
+    %% Seed the random number generator.
+    partisan_config:seed(),
 
     %% Process connection exits.
     process_flag(trap_exit, true),

@@ -29,6 +29,7 @@
          trace/2,
          listen_addrs/0,
          set/2,
+         seed/0,
          get/1,
          get/2]).
 
@@ -109,6 +110,7 @@ init() ->
                            {periodic_interval, 10000},
                            {pid_encoding, true},
                            {orchestration_strategy, ?DEFAULT_ORCHESTRATION_STRATEGY},
+                           {random_seed, random_seed()},
                            {random_promotion, true},
                            {reservations, []},
                            {tracing, false},
@@ -122,6 +124,20 @@ init() ->
     env_or_default(listen_addrs, DefaultListenAddrs),
 
     ok.
+
+%% Seed the process.
+seed() ->
+    RandomSeed = random_seed(),
+    rand:seed(exsplus, RandomSeed).
+
+%% Return a random seed, either from the environment or one that's generated for the run.
+random_seed() ->
+    case partisan_config:get(random_seed, undefined) of
+        undefined ->
+            {erlang:phash2([partisan_peer_service_manager:mynode()]), erlang:monotonic_time(), erlang:unique_integer()};
+        Other ->
+            Other
+    end.
 
 trace(Message, Args) ->
     case partisan_config:get(tracing, ?TRACING) of

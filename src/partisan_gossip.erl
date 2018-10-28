@@ -73,6 +73,9 @@ update(LocalState0) ->
 
 %% @private
 init([]) ->
+    %% Seed the random number generator.
+    partisan_config:seed(),
+
     %% Register membership update callback.
     partisan_peer_service:add_sup_callback(fun ?MODULE:update/1),
 
