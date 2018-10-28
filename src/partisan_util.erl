@@ -163,6 +163,8 @@ dispatch_pid(PartitionKey, Channel, Entries) ->
             %% Entries for channel.
             ChannelEntries = lists:filter(fun({_, C, _}) ->
                 case C of
+                    {monotonic, Channel} ->
+                        true;
                     Channel ->
                         true;
                     _ ->
