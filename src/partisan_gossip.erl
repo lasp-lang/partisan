@@ -100,6 +100,9 @@ handle_cast({gossip, ServerRef, Message}, #state{membership=Membership}=State) -
     MyNode = partisan_peer_service_manager:mynode(),
     Id = {MyNode, erlang:unique_integer([monotonic, positive])},
 
+    %% Forward to process.
+    partisan_util:process_forward(ServerRef, Message),
+
     %% Store outgoing message.
     true = ets:insert(?MODULE, {Id, Message}),
 
