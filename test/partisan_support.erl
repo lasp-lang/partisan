@@ -142,6 +142,8 @@ start(Case, Config, Options) ->
             Disterl = case ?config(disterl, Config) of
                               undefined ->
                                   false;
+                              false ->
+                                  false;
                               true ->
                                   true
                           end,
@@ -366,7 +368,7 @@ cluster({_, Node}, {_, OtherNode}, Config) ->
                   end,
     Channels = case ?config(channels, Config) of
                       undefined ->
-                          [];
+                          ?CHANNELS;
                       C ->
                           C
                   end,
