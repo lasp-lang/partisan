@@ -84,8 +84,8 @@ handle_call(Request, State) ->
     lager:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Request]),
     {ok, ok, State}.
 
-handle_info(Info, State) ->
-    lager:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Info]),
+handle_info(_Info, State) ->
+    %% lager:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Info]),
     {ok, State}.
 
 terminate(_Reason, _State) ->
