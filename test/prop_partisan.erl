@@ -48,7 +48,12 @@
 -define(COMMAND_MULTIPLE, 10).
 -define(CLUSTER_NODES, true).
 -define(MANAGER, partisan_pluggable_peer_service_manager).
+
+%% Debug.
 -define(DEBUG, true).
+-define(INITIAL_STATE_DEBUG, false).
+-define(PRECONDITION_DEBUG, false).
+-define(POSTCONDITION_DEBUG, false).
 
 %% Partisan connection and forwarding settings.
 -define(EGRESS_DELAY, 0).                           %% How many milliseconds to delay outgoing messages?
@@ -144,7 +149,7 @@ initial_state() ->
     MajorityNodes = [],
 
     %% Debug message.
-    debug("initial_state: nodes ~p joined_nodes ~p", [Nodes, JoinedNodes]),
+    initial_state_debug("initial_state: nodes ~p joined_nodes ~p", [Nodes, JoinedNodes]),
 
     #state{joined_nodes=JoinedNodes, 
            nodes=Nodes,
@@ -188,57 +193,57 @@ precondition(#state{partition_filters=PartitionFilters}, {call, _Mod, resolve_cl
     end, MajorityNodes);
 precondition(#state{nodes=Nodes, joined_nodes=JoinedNodes}, {call, _Mod, join_cluster, [Node, JoinedNodes]}) -> 
     %% Only allow dropping of the first unjoined node in the nodes list, for ease of debugging.
-    debug("precondition join_cluster: invoked for node ~p joined_nodes ~p", [Node, JoinedNodes]),
+    precondition_debug("precondition join_cluster: invoked for node ~p joined_nodes ~p", [Node, JoinedNodes]),
 
     ToBeJoinedNodes = Nodes -- JoinedNodes,
-    debug("precondition join_cluster: remaining nodes to be joined are: ~p", [ToBeJoinedNodes]),
+    precondition_debug("precondition join_cluster: remaining nodes to be joined are: ~p", [ToBeJoinedNodes]),
 
     case length(ToBeJoinedNodes) > 0 of
         true ->
             ToBeJoinedNode = hd(ToBeJoinedNodes),
-            debug("precondition join_cluster: attempting to join ~p", [ToBeJoinedNode]),
+            precondition_debug("precondition join_cluster: attempting to join ~p", [ToBeJoinedNode]),
             case ToBeJoinedNode of
                 Node ->
-                    debug("precondition join_cluster: YES attempting to join ~p is ~p", [ToBeJoinedNode, Node]),
+                    precondition_debug("precondition join_cluster: YES attempting to join ~p is ~p", [ToBeJoinedNode, Node]),
                     true;
                 OtherNode ->
-                    debug("precondition join_cluster: NO attempting to join ~p not ~p", [ToBeJoinedNode, OtherNode]),
+                    precondition_debug("precondition join_cluster: NO attempting to join ~p not ~p", [ToBeJoinedNode, OtherNode]),
                     false
             end;
         false ->
-            debug("precondition join_cluster: no nodes left to join.", []),
+            precondition_debug("precondition join_cluster: no nodes left to join.", []),
             false %% Might need to be changed when there's no read/write operations.
     end;
 precondition(#state{joined_nodes=JoinedNodes}, {call, _Mod, leave_cluster, [Node, JoinedNodes]}) -> 
     %% Only allow dropping of the last node in the join list, for ease of debugging.
-    debug("precondition leave_cluster: invoked for node ~p joined_nodes ~p", [Node, JoinedNodes]),
+    precondition_debug("precondition leave_cluster: invoked for node ~p joined_nodes ~p", [Node, JoinedNodes]),
 
     ToBeRemovedNodes = JoinedNodes,
-    debug("precondition leave_cluster: remaining nodes to be removed are: ~p", [ToBeRemovedNodes]),
+    precondition_debug("precondition leave_cluster: remaining nodes to be removed are: ~p", [ToBeRemovedNodes]),
 
     case length(ToBeRemovedNodes) > 3 of
         true ->
             ToBeRemovedNode = lists:last(ToBeRemovedNodes),
-            debug("precondition leave_cluster: attempting to leave ~p", [ToBeRemovedNode]),
+            precondition_debug("precondition leave_cluster: attempting to leave ~p", [ToBeRemovedNode]),
             case ToBeRemovedNode of
                 Node ->
-                    debug("precondition leave_cluster: YES attempting to leave ~p is ~p", [ToBeRemovedNode, Node]),
+                    precondition_debug("precondition leave_cluster: YES attempting to leave ~p is ~p", [ToBeRemovedNode, Node]),
                     true;
                 OtherNode ->
-                    debug("precondition leave_cluster: NO attempting to leave ~p not ~p", [ToBeRemovedNode, OtherNode]),
+                    precondition_debug("precondition leave_cluster: NO attempting to leave ~p not ~p", [ToBeRemovedNode, OtherNode]),
                     false
             end;
         false ->
-            debug("precondition leave_cluster: no nodes left to remove.", []),
+            precondition_debug("precondition leave_cluster: no nodes left to remove.", []),
             false %% Might need to be changed when there's no read/write operations.
     end;
 precondition(#state{majority_nodes=MajorityNodes, minority_nodes=MinorityNodes, node_state=NodeState, joined_nodes=JoinedNodes}, {call, Mod, Fun, [Node|_]=Args}=Call) -> 
-    debug("precondition fired for node function: ~p, majority_nodes: ~p, minority_nodes ~p", [Fun, MajorityNodes, MinorityNodes]),
+    precondition_debug("precondition fired for node function: ~p, majority_nodes: ~p, minority_nodes ~p", [Fun, MajorityNodes, MinorityNodes]),
     case lists:member(Fun, node_functions()) of
         true ->
             case ?BIAS_MINORITY andalso length(MinorityNodes) > 0 of
                 true ->
-                    debug("precondition fired for node function where minority is biased: ~p, bias_minority: ~p, checking whether node ~p is in minority", [Fun, ?BIAS_MINORITY, Node]),
+                    precondition_debug("precondition fired for node function where minority is biased: ~p, bias_minority: ~p, checking whether node ~p is in minority", [Fun, ?BIAS_MINORITY, Node]),
                     case lists:member(Node, MinorityNodes) of
                         true ->
                             debug("=> bias towards minority, write is going to node ~p in minority", [Node]),
@@ -262,43 +267,43 @@ precondition(#state{majority_nodes=MajorityNodes, minority_nodes=MinorityNodes, 
 %% determine whether the result `Res' (coming from the actual system)
 %% makes sense.
 postcondition(_State, {call, ?MODULE, induce_byzantine_message_corruption_fault, [_SourceNode, _DestinationNode, _Value]}, ok) ->
-    debug("postcondition induce_byzantine_message_corruption_fault: succeeded", []),
+    postcondition_debug("postcondition induce_byzantine_message_corruption_fault: succeeded", []),
     %% Added message filter.
     true;
 postcondition(_State, {call, ?MODULE, resolve_byzantine_message_corruption_fault, [_SourceNode, _DestinationNode]}, ok) ->
-    debug("postcondition resolve_byzantine_message_corruption_fault: succeeded", []),
+    postcondition_debug("postcondition resolve_byzantine_message_corruption_fault: succeeded", []),
     %% Remove message filter.
     true;
 postcondition(_State, {call, ?MODULE, induce_async_partition, [_SourceNode, _DestinationNode]}, ok) ->
-    debug("postcondition induce_async_partition: succeeded", []),
+    postcondition_debug("postcondition induce_async_partition: succeeded", []),
     %% Added message filter.
     true;
 postcondition(_State, {call, ?MODULE, resolve_async_partition, [_SourceNode, _DestinationNode]}, ok) ->
-    debug("postcondition resolve_async_partition: succeeded", []),
+    postcondition_debug("postcondition resolve_async_partition: succeeded", []),
     %% Removed message filter.
     true;
 postcondition(_State, {call, ?MODULE, induce_sync_partition, [_SourceNode, _DestinationNode]}, ok) ->
-    debug("postcondition induce_sync_partition: succeeded", []),
+    postcondition_debug("postcondition induce_sync_partition: succeeded", []),
     %% Added message filter.
     true;
 postcondition(_State, {call, ?MODULE, resolve_sync_partition, [_SourceNode, _DestinationNode]}, ok) ->
-    debug("postcondition resolve_sync_partition: succeeded", []),
+    postcondition_debug("postcondition resolve_sync_partition: succeeded", []),
     %% Removed message filter.
     true;
 postcondition(_State, {call, ?MODULE, induce_cluster_partition, [_MajorityNodes, _MinorityNodes]}, ok) ->
-    debug("postcondition induce_cluster_partition: succeeded", []),
+    postcondition_debug("postcondition induce_cluster_partition: succeeded", []),
     %% Added message filter.
     true;
 postcondition(_State, {call, ?MODULE, resolve_cluster_partition, [_MajorityNodes, _MinorityNodes]}, ok) ->
-    debug("postcondition resolve_cluster_partition: succeeded", []),
+    postcondition_debug("postcondition resolve_cluster_partition: succeeded", []),
     %% Removed message filter.
     true;
 postcondition(_State, {call, ?MODULE, join_cluster, [_Node, _JoinedNodes]}, ok) ->
-    debug("postcondition join_cluster: succeeded", []),
+    postcondition_debug("postcondition join_cluster: succeeded", []),
     %% Accept joins that succeed.
     true;
 postcondition(_State, {call, ?MODULE, leave_cluster, [_Node, _JoinedNodes]}, ok) ->
-    debug("postcondition leave_cluster: succeeded", []),
+    postcondition_debug("postcondition leave_cluster: succeeded", []),
     %% Accept leaves that succeed.
     true;
 postcondition(#state{minority_nodes=MinorityNodes, partition_filters=PartitionFilters, node_state=NodeState}, {call, Mod, Fun, [Node|_]=_Args}=Call, Res) -> 
@@ -310,7 +315,7 @@ postcondition(#state{minority_nodes=MinorityNodes, partition_filters=PartitionFi
                         {error, _} ->
                             true;
                         _ ->
-                            debug("node postcondition for ~p, operation succeeded, should have failed.", [Fun]),
+                            postcondition_debug("node postcondition for ~p, operation succeeded, should have failed.", [Fun]),
                             false
                     end;
                 false ->
@@ -332,7 +337,7 @@ postcondition(#state{minority_nodes=MinorityNodes, partition_filters=PartitionFi
                     end
         end;
     false ->
-            debug("general postcondition fired for ~p:~p with response ~p", [Mod, Fun, Res]),
+            postcondition_debug("general postcondition fired for ~p:~p with response ~p", [Mod, Fun, Res]),
             %% All other commands pass.
             false
     end.
@@ -446,7 +451,7 @@ start_nodes() ->
                            {num_nodes, ?NUM_NODES},
                            {cluster_nodes, ?CLUSTER_NODES}]),
 
-    lager:info("Started nodes: ~p", [Nodes]),
+    %% lager:info("Started nodes: ~p", [Nodes]),
 
     %% Insert all nodes into group for all nodes.
     true = ets:insert(?MODULE, {nodes, Nodes}),
@@ -734,6 +739,30 @@ enough_nodes_connected(Nodes) ->
 
 enough_nodes_connected_to_issue_remove(Nodes) ->
     length(Nodes) > 3.
+
+initial_state_debug(Line, Args) ->
+    case ?INITIAL_STATE_DEBUG of
+        true ->
+            lager:info(Line, Args);
+        false ->
+            ok
+    end.
+
+precondition_debug(Line, Args) ->
+    case ?PRECONDITION_DEBUG of
+        true ->
+            lager:info(Line, Args);
+        false ->
+            ok
+    end.
+
+postcondition_debug(Line, Args) ->
+    case ?POSTCONDITION_DEBUG of
+        true ->
+            lager:info(Line, Args);
+        false ->
+            ok
+    end.
 
 debug(Line, Args) ->
     case ?DEBUG of
