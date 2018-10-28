@@ -132,13 +132,9 @@ all() ->
 
      {group, with_scamp_v1_membership_strategy, []},
 
-     {group, with_scamp_v1_membership_strategy_high_clients, []},
-
      %% Scamp v2.
 
      {group, with_scamp_v2_membership_strategy, []},
-
-     {group, with_scamp_v2_membership_strategy_high_clients, []},
 
      %% Features.
 
