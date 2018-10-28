@@ -56,7 +56,8 @@
 -define(VNODE_PARTITIONING, false).                 %% Should communication be partitioned by vnode identifier?
 -define(PARALLELISM, 1).                            %% How many connections should exist between nodes?
 -define(CHANNELS, 
-        [broadcast, vnode, {monotonic, gossip}]).   %% What channels should be established?
+        [undefined, broadcast, vnode, {monotonic,gossip}]).   
+                                                    %% What channels should be established?
 -define(CAUSAL_LABELS, []).                         %% What causal channels should be established?
 
 %% Only one of the modes below should be selected for efficient, proper shriking.
@@ -427,9 +428,15 @@ start_nodes() ->
               {causal_labels, ?CAUSAL_LABELS},
               {pid_encoding, false},
               {sync_join, false},
+              {forward_options, []},
+              {initiate_reverse, false},
+              {broadcast, false},
+              {disterl, false},
+              {hash, undefined},
               {egress_delay, ?EGRESS_DELAY},
               {ingress_delay, ?INGRESS_DELAY},
               {disable_fast_forward, true},
+              {disable_fast_receive, true},
               {membership_strategy, partisan_full_mesh_membership_strategy}],
 
     %% Initialize a cluster.
@@ -612,7 +619,8 @@ induce_byzantine_message_corruption_fault(SourceNode, DestinationNode0, Value) -
             OtherNode ->
                 lager:info("Allowing message, doesn't match interposition as destination is ~p and not ~p", [OtherNode, DestinationNode]),
                 Message
-        end
+        end;
+        ({receive_message, _N, Message}) -> Message
     end,
     rpc:call(name_to_nodename(SourceNode), ?MANAGER, add_interposition_fun, [{corruption, DestinationNode}, InterpositionFun]).
 
@@ -638,7 +646,8 @@ induce_async_partition(SourceNode, DestinationNode0) ->
             OtherNode ->
                 lager:info("Allowing message, doesn't match interposition as destination is ~p and not ~p", [OtherNode, DestinationNode]),
                 Message
-        end
+        end;
+        ({receive_message, _N, Message}) -> Message
     end,
     rpc:call(name_to_nodename(SourceNode), ?MANAGER, add_interposition_fun, [{async, DestinationNode}, InterpositionFun]).
 
