@@ -51,7 +51,7 @@
 
 %% Debug.
 -define(DEBUG, true).
--define(PARTITION_DEBUG, false).
+-define(PARTITION_DEBUG, true).
 -define(INITIAL_STATE_DEBUG, false).
 -define(PRECONDITION_DEBUG, false).
 -define(POSTCONDITION_DEBUG, false).
@@ -612,7 +612,7 @@ is_valid_partition(SourceNode, DestinationNode) ->
     SourceNode =/= DestinationNode.
 
 induce_byzantine_message_corruption_fault(SourceNode, DestinationNode0, Value) ->
-    debug("induce_byzantine_message_corruption_fault: source_node ~p destination_node ~p value ~p", [SourceNode, DestinationNode0, Value]),
+    partition_debug("induce_byzantine_message_corruption_fault: source_node ~p destination_node ~p value ~p", [SourceNode, DestinationNode0, Value]),
 
     %% Convert to real node name and not symbolic name.
     DestinationNode = name_to_nodename(DestinationNode0),
@@ -620,10 +620,10 @@ induce_byzantine_message_corruption_fault(SourceNode, DestinationNode0, Value) -
     InterpositionFun = fun({forward_message, N, Message}) ->
         case N of
             DestinationNode ->
-                lager:info("Rewriting packet from ~p to ~p for message from ~p to ~p due to interposition.", [Message, Value, SourceNode, DestinationNode]),
+                lager:info("~p: rewriting packet from ~p to ~p for message from ~p to ~p due to interposition.", [node(), Message, Value, SourceNode, DestinationNode]),
                 Value;
             OtherNode ->
-                lager:info("Allowing message, doesn't match interposition as destination is ~p and not ~p", [OtherNode, DestinationNode]),
+                lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
                 Message
         end;
         ({receive_message, _N, Message}) -> Message
@@ -631,7 +631,7 @@ induce_byzantine_message_corruption_fault(SourceNode, DestinationNode0, Value) -
     rpc:call(name_to_nodename(SourceNode), ?MANAGER, add_interposition_fun, [{corruption, DestinationNode}, InterpositionFun]).
 
 resolve_byzantine_message_corruption_fault(SourceNode, DestinationNode0) ->
-    debug("resolve_byzantine_message_corruption_fault: source_node ~p destination_node ~p", [SourceNode, DestinationNode0]),
+    partition_debug("resolve_byzantine_message_corruption_fault: source_node ~p destination_node ~p", [SourceNode, DestinationNode0]),
 
     %% Convert to real node name and not symbolic name.
     DestinationNode = name_to_nodename(DestinationNode0),
@@ -647,10 +647,10 @@ induce_async_partition(SourceNode, DestinationNode0) ->
     InterpositionFun = fun({forward_message, N, Message}) ->
         case N of
             DestinationNode ->
-                lager:info("Dropping packet from ~p to ~p due to interposition.", [SourceNode, DestinationNode]),
+                lager:info("~p: dropping packet from ~p to ~p due to interposition.", [node(), SourceNode, DestinationNode]),
                 undefined;
             OtherNode ->
-                lager:info("Allowing message, doesn't match interposition as destination is ~p and not ~p", [OtherNode, DestinationNode]),
+                lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
                 Message
         end;
         ({receive_message, _N, Message}) -> Message
@@ -672,7 +672,7 @@ induce_sync_partition(SourceNode, DestinationNode) ->
     all_to_ok_or_error([SourceResult, DestinationResult]).
 
 resolve_sync_partition(SourceNode, DestinationNode) ->
-    debug("resolve_sync_partition: source_node ~p destination_node ~p", [SourceNode, DestinationNode]),
+    partition_debug("resolve_sync_partition: source_node ~p destination_node ~p", [SourceNode, DestinationNode]),
     SourceResult = resolve_async_partition(SourceNode, DestinationNode),
     DestinationResult = resolve_async_partition(DestinationNode, SourceNode),
     all_to_ok_or_error([SourceResult, DestinationResult]).
