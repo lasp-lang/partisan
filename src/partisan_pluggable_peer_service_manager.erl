@@ -552,8 +552,8 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Ori
     end;
 
 handle_call({receive_message, Peer, OriginalMessage}, _From, #state{interposition_funs=InterpositionFuns} = State) ->
-    lager:info("Inside the receive interposition, message from ~p at node ~p", [Peer, node()]),
-    lager:info("Count of interposition funs: ~p", [dict:size(InterpositionFuns)]),
+    lager:info("~p: Inside the receive interposition, message from ~p at node ~p", [node(), Peer, node()]),
+    lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
 
     %% Determine if message should be allowed to pass.
     FoldFun = fun(_Name, InterpositionFun, M) ->
@@ -561,7 +561,7 @@ handle_call({receive_message, Peer, OriginalMessage}, _From, #state{interpositio
     end,
     Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
 
-    lager:info("Message after interposition is: ~p", [Message]),
+    lager:info("~p: Message after receive interposition is: ~p", [node(), Message]),
 
     case Message of
         undefined ->
