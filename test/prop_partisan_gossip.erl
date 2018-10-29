@@ -33,7 +33,9 @@
 %%%===================================================================
 
 message() ->
-    ?LET(Id, erlang:unique_integer([positive, monotonic]), {Id, integer()}).
+    ?LET(Id, erlang:unique_integer([positive, monotonic]), 
+        ?LET(Timestamp, erlang:timestamp(),
+            {Id, Timestamp})).
 
 node_name() ->
     ?LET(Names, names(), oneof(Names)).
@@ -77,7 +79,33 @@ node_postcondition(_State, {call, ?MODULE, gossip, [_Node, _Message]}, _Result) 
     true;
 node_postcondition(#state{sent=Sent}, {call, ?MODULE, check_mailbox, [Node]}, {ok, Messages}) ->
     node_debug("verifying mailbox at node ~p: sent: ~p, received: ~p", [Node, Sent, Messages]),
-    lists:all(fun(M) -> lists:member(M, Messages) end, Sent);
+
+    Now = erlang:timestamp(),
+
+    FilteredSent = lists:filter(fun({_Id, Timestamp} = Message) ->
+        %% At least a second old.
+        TimerDifferenceMs = timer:now_diff(Now, Timestamp) / 1000,
+        node_debug("time difference for message ~p in milliseconds: ~p", [Message, TimerDifferenceMs]),
+
+        case TimerDifferenceMs > 2000 of
+            true ->
+                true;
+            false ->
+                %% Delay.
+                false
+            end
+        end, Sent),
+    node_debug("verifying filered sends at node ~p: ~p", [Node, FilteredSent]),
+
+    Result = lists:all(fun(M) -> lists:member(M, Messages) end, FilteredSent),
+    case Result of 
+        true ->
+            true;
+        false ->
+            Missing = Sent -- Messages,
+            node_debug("verification of mailbox failed, missing: ~p", [Missing]),
+            false
+    end;
 node_postcondition(_State, _Command, _Response) ->
     false.
 
@@ -190,7 +218,7 @@ spawn_gossip_receiver(Node) ->
 node_debug(Line, Args) ->
     case ?NODE_DEBUG of
         true ->
-            lager:info("~p: " ++ Line, [?MODULE|Args]);
+            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
