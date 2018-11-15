@@ -73,7 +73,7 @@
                                                     %% ie. groups of nodes at a time.
 -define(PERFORM_ASYNC_PARTITIONS, false).           %% Whether or not we should partition using asymmetric partitions
                                                     %% ie. nodes can send but not receive from other nodes
--define(PERFORM_SYNC_PARTITIONS, false).            %% Whether or not we should use symmetric partitions: most common.
+-define(PERFORM_SYNC_PARTITIONS, true).             %% Whether or not we should use symmetric partitions: most common.
                                                     %% ie. two-way communication prohibited between different nodes.
 -define(PERFORM_BYZANTINE_MESSAGE_FAULTS, false).   %% Whether or not we should use cluster byzantine faults:
                                                     %% ie. message corruption, etc.
@@ -460,14 +460,14 @@ start_nodes() ->
     lager:info("~p: ~p started nodes: ~p", [?MODULE, Self, Nodes]),
 
     %% Reset trace.
-    ok = partisan_test_orchestrator:reset(),
+    ok = partisan_trace_orchestrator:reset(),
 
     %% Add send and receive interposition functions.
     InterpositionFun = fun({Type, N, Message}) ->
         SourceNode = node(),
 
         ok = rpc:call(Self, 
-                      partisan_test_orchestrator, 
+                      partisan_trace_orchestrator, 
                       record, 
                       [SourceNode, N, Type, Message]),
 
@@ -500,7 +500,7 @@ stop_nodes() ->
     [{nodes, Nodes}] = ets:lookup(?MODULE, nodes),
 
     %% Print trace.
-    partisan_test_orchestrator:print(),
+    partisan_trace_orchestrator:print(),
 
     %% Stop nodes.
     ?SUPPORT:stop(Nodes),
@@ -877,4 +877,4 @@ name_to_nodename(Name) ->
     NodeName.
 
 start_tracing() ->
-    {ok, _Pid} = partisan_test_orchestrator:start_link().
+    {ok, _Pid} = partisan_trace_orchestrator:start_link().

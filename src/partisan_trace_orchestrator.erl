@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(partisan_test_orchestrator).
+-module(partisan_trace_orchestrator).
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -behaviour(gen_server).
@@ -88,16 +88,14 @@ handle_call(reset, _From, State) ->
     lager:info("~p: resetting trace.", [?MODULE]),
     {reply, ok, State#state{trace=[]}};
 handle_call(print, _From, #state{trace=Trace}=State) ->
-    lager:info("~p: printing test trace.", [?MODULE]),
-
     lists:foreach(fun({SourceNode, DestinationNode, Type, Message}) ->
         case Type of
             receive_message ->
-                lager:info("~p: => Node ~p received message from node ~p: ~p", [?MODULE, SourceNode, DestinationNode, Message]);
+                lager:info("~p: Node ~p received message from node ~p: ~p", [?MODULE, SourceNode, DestinationNode, Message]);
             forward_message ->
-                lager:info("~p: => Node ~p sent message to node ~p: ~p", [?MODULE, SourceNode, DestinationNode, Message]);
+                lager:info("~p: Node ~p sent message to node ~p: ~p", [?MODULE, SourceNode, DestinationNode, Message]);
             _ ->
-                lager:info("~p: => Unknown message type.", [?MODULE])
+                lager:info("~p: Unknown message type.", [?MODULE])
         end
     end, Trace),
 
