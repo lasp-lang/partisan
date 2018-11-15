@@ -34,8 +34,8 @@
 
 message() ->
     ?LET(Id, erlang:unique_integer([positive, monotonic]), 
-        ?LET(Timestamp, erlang:timestamp(),
-            {Id, Timestamp})).
+        ?LET(Random, integer(),
+            {Id, Random})).
 
 node_name() ->
     ?LET(Names, names(), oneof(Names)).
@@ -80,37 +80,64 @@ node_postcondition(_State, {call, ?MODULE, gossip, [_Node, _Message]}, _Result) 
 node_postcondition(#state{sent=Sent}, {call, ?MODULE, check_mailbox, [Node]}, {ok, Messages}) ->
     node_debug("verifying mailbox at node ~p: sent: ~p, received: ~p", [Node, Sent, Messages]),
 
-    Now = erlang:timestamp(),
+    %% Intuition. 
+    %%
+    %% We should receive messages roughly in the order they are sent, but that's not necessarily true.
+    %% We should receive messages from each origin in roughly the order they are sent, assuming they take the same path, but that also might not be true.
+    %%
 
-    FilteredSent = lists:filter(fun({_Id, Timestamp} = Message) ->
-        %% At least a second old.
-        TimerDifferenceMs = timer:now_diff(Now, Timestamp) / 1000,
-        node_debug("time difference for message ~p in milliseconds: ~p", [Message, TimerDifferenceMs]),
-
-        case TimerDifferenceMs > 2000 of
-            true ->
-                true;
-            false ->
-                %% Delay.
-                false
+    %% Filter out messages that originated from us.
+    FilteredSent = lists:filter(fun({{SourceNode, _Id}, _Value}) ->
+        case SourceNode of
+            Node ->
+                false;
+            _ ->
+                true
             end
         end, Sent),
-    node_debug("verifying filered sends at node ~p: ~p", [Node, FilteredSent]),
 
-    Result = lists:all(fun(M) -> lists:member(M, Messages) end, FilteredSent),
+    %% Figure out which messages we have.
+    Results = lists:map(fun(M) -> lists:member(M, Messages) end, FilteredSent),
+
+    %% Ensure we have a prefix of messages.
+    Result = lists:foldl(fun(X, {_SeenPrefix, SeenFirstOmission}) ->
+        case SeenFirstOmission of
+            false ->
+                %% If we haven't seen an omission yet.
+                case X of
+                    true ->
+                        {true, false};
+                    false ->
+                        %% This is our first omission, we've seen a prefix, but we've also started seeing omissions.
+                        {true, true}
+                end;
+            true ->
+                case X of
+                    true ->
+                        %% We've seen omissions and now we have a value, mark seen prefix as false.
+                        {false, true};
+                    false ->
+                        %% Seen prefix, started seeing omissions.
+                        {true, true}
+                end
+            end
+        end, {true, false}, Results),
+
     case Result of 
-        true ->
+        {true, _} ->
+            node_debug("verification of mailbox at node ~p complete.", [Node]),
             true;
-        false ->
+        _ ->
             Missing = Sent -- Messages,
-            node_debug("verification of mailbox failed, missing: ~p", [Missing]),
+            node_debug("verification of mailbox at node ~p failed, missing: ~p, received: ~p", [Node, Missing, Messages]),
             false
     end;
 node_postcondition(_State, _Command, _Response) ->
     false.
 
 %% Next state.
-node_next_state(#state{sent=Sent0}=State, _Result, {call, ?MODULE, gossip, [_Node, Message]}) ->
+node_next_state(#state{sent=Sent0}=State, _Result, {call, ?MODULE, gossip, [Node, {Id, Value}]}) ->
+    Message = {{Node, Id}, Value},
     Sent = Sent0 ++ [Message],
     State#state{sent=Sent};
 node_next_state(#state{receivers=Receivers0}=State, Result, {call, ?MODULE, spawn_gossip_receiver, [Node]}) ->
@@ -147,9 +174,10 @@ node_precondition(_State, _Command) ->
 -define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
 
 %% @private
-gossip(Node, Message) ->
-    node_debug("gossiping from node ~p message: ~p", [Node, Message]),
-    ok = rpc:call(?NAME(Node), partisan_gossip, gossip, [?GOSSIP_RECEIVER, Message]),
+gossip(Node, {Id, Value}) ->
+    FullMessage = {{Node, Id}, Value},
+    node_debug("gossiping from node ~p message: ~p", [Node, FullMessage]),
+    ok = rpc:call(?NAME(Node), partisan_gossip, gossip, [?GOSSIP_RECEIVER, FullMessage]),
     ok.
 
 %% @private
@@ -184,9 +212,9 @@ spawn_gossip_receiver(Node) ->
                     Received = ets:foldl(fun(Term, Acc) -> Acc ++ [Term] end, [], ?GOSSIP_TABLE),
                     node_debug("node ~p received request for stored values: ~p", [Node, Received]),
                     Sender ! Received;
-                {Id, Value} ->
-                    node_debug("node ~p received id ~p and value: ~p", [Node, Id, Value]),
-                    true = ets:insert(?GOSSIP_TABLE, {Id, Value})
+                {{SourceNode, Id}, Value} ->
+                    node_debug("node ~p received origin: ~p id ~p and value: ~p", [Node, SourceNode, Id, Value]),
+                    true = ets:insert(?GOSSIP_TABLE, {{SourceNode, Id}, Value})
             end,
             F(F)
         end,

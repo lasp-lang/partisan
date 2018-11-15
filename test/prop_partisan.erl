@@ -73,7 +73,7 @@
                                                     %% ie. groups of nodes at a time.
 -define(PERFORM_ASYNC_PARTITIONS, false).           %% Whether or not we should partition using asymmetric partitions
                                                     %% ie. nodes can send but not receive from other nodes
--define(PERFORM_SYNC_PARTITIONS, true).             %% Whether or not we should use symmetric partitions: most common.
+-define(PERFORM_SYNC_PARTITIONS, false).            %% Whether or not we should use symmetric partitions: most common.
                                                     %% ie. two-way communication prohibited between different nodes.
 -define(PERFORM_BYZANTINE_MESSAGE_FAULTS, false).   %% Whether or not we should use cluster byzantine faults:
                                                     %% ie. message corruption, etc.
@@ -92,6 +92,8 @@
 %%%===================================================================
 
 prop_sequential() ->
+    start_tracing(),
+
     ?FORALL(Cmds, more_commands(?COMMAND_MULTIPLE, commands(?MODULE)), 
         begin
             start_nodes(),
@@ -103,6 +105,8 @@ prop_sequential() ->
         end).
 
 prop_parallel() ->
+    start_tracing(),
+
     ?FORALL(Cmds, more_commands(?COMMAND_MULTIPLE, parallel_commands(?MODULE)), 
         begin
             start_nodes(),
@@ -452,7 +456,31 @@ start_nodes() ->
                            {num_nodes, ?NUM_NODES},
                            {cluster_nodes, ?CLUSTER_NODES}]),
 
-    %% lager:info("Started nodes: ~p", [Nodes]),
+    Self = node(),
+    lager:info("~p: ~p started nodes: ~p", [?MODULE, Self, Nodes]),
+
+    %% Reset trace.
+    ok = partisan_test_orchestrator:reset(),
+
+    %% Add send and receive interposition functions.
+    InterpositionFun = fun({Type, N, Message}) ->
+        SourceNode = node(),
+
+        ok = rpc:call(Self, 
+                      partisan_test_orchestrator, 
+                      record, 
+                      [SourceNode, N, Type, Message]),
+
+        Message
+    end, 
+    % end,
+
+    lists:foreach(fun({_Name, Node}) ->
+        rpc:call(Node, 
+                 ?MANAGER, 
+                 add_interposition_fun, 
+                 ['$tracing', InterpositionFun])
+        end, Nodes),
 
     %% Insert all nodes into group for all nodes.
     true = ets:insert(?MODULE, {nodes, Nodes}),
@@ -470,6 +498,9 @@ stop_nodes() ->
     %% Get list of nodes that were started at the start
     %% of the test.
     [{nodes, Nodes}] = ets:lookup(?MODULE, nodes),
+
+    %% Print trace.
+    partisan_test_orchestrator:print(),
 
     %% Stop nodes.
     ?SUPPORT:stop(Nodes),
@@ -744,7 +775,7 @@ enough_nodes_connected_to_issue_remove(Nodes) ->
 partition_debug(Line, Args) ->
     case ?PARTITION_DEBUG of
         true ->
-            lager:info(Line, Args);
+            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
@@ -844,3 +875,6 @@ cluster_commands(#state{joined_nodes=JoinedNodes}) ->
 name_to_nodename(Name) ->
     [{_, NodeName}] = ets:lookup(?MODULE, Name),
     NodeName.
+
+start_tracing() ->
+    {ok, _Pid} = partisan_test_orchestrator:start_link().
