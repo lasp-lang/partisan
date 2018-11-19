@@ -80,51 +80,11 @@ node_postcondition(_State, {call, ?MODULE, gossip, [_Node, _Message]}, _Result) 
 node_postcondition(#state{sent=Sent}, {call, ?MODULE, check_mailbox, [Node]}, {ok, Messages}) ->
     node_debug("verifying mailbox at node ~p: sent: ~p, received: ~p", [Node, Sent, Messages]),
 
-    %% Intuition. 
-    %%
-    %% We should receive messages roughly in the order they are sent, but that's not necessarily true.
-    %% We should receive messages from each origin in roughly the order they are sent, assuming they take the same path, but that also might not be true.
-    %%
-
-    %% Filter out messages that originated from us.
-    FilteredSent = lists:filter(fun({{SourceNode, _Id}, _Value}) ->
-        case SourceNode of
-            Node ->
-                false;
-            _ ->
-                true
-            end
-        end, Sent),
-
     %% Figure out which messages we have.
-    Results = lists:map(fun(M) -> lists:member(M, Messages) end, FilteredSent),
-
-    %% Ensure we have a prefix of messages.
-    Result = lists:foldl(fun(X, {_SeenPrefix, SeenFirstOmission}) ->
-        case SeenFirstOmission of
-            false ->
-                %% If we haven't seen an omission yet.
-                case X of
-                    true ->
-                        {true, false};
-                    false ->
-                        %% This is our first omission, we've seen a prefix, but we've also started seeing omissions.
-                        {true, true}
-                end;
-            true ->
-                case X of
-                    true ->
-                        %% We've seen omissions and now we have a value, mark seen prefix as false.
-                        {false, true};
-                    false ->
-                        %% Seen prefix, started seeing omissions.
-                        {true, true}
-                end
-            end
-        end, {true, false}, Results),
+    Result = lists:all(fun(M) -> lists:member(M, Messages) end, Sent),
 
     case Result of 
-        {true, _} ->
+        true ->
             node_debug("verification of mailbox at node ~p complete.", [Node]),
             true;
         _ ->
@@ -183,6 +143,9 @@ gossip(Node, {Id, Value}) ->
 %% @private
 check_mailbox(Node) ->
     Self = self(),
+
+    node_debug("waiting for message quiescence at node ~p", [Node]),
+    timer:sleep(10000),
 
     %% Ask for what messages they have received.
     erlang:send({?GOSSIP_RECEIVER, ?NAME(Node)}, {received, Self}),
