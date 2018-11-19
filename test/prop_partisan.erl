@@ -459,8 +459,18 @@ start_nodes() ->
     Self = node(),
     lager:info("~p: ~p started nodes: ~p", [?MODULE, Self, Nodes]),
 
+    %% Deterministically seed the random number generator.
+    Seed = partisan_config:seed(),
+    lager:info("~p: seed generated: ~p", [?MODULE, Seed]),
+
     %% Reset trace.
     ok = partisan_trace_orchestrator:reset(),
+
+    %% Identify trace.
+    TraceRandomNumber = rand:uniform(100000),
+    lager:info("~p: trace random generated: ~p", [?MODULE, TraceRandomNumber]),
+    TraceIdentifier = atom_to_list(prop_partisan_gossip) ++ "_" ++ integer_to_list(TraceRandomNumber),
+    ok = partisan_trace_orchestrator:identify(TraceIdentifier),
 
     %% Add send and receive interposition functions.
     InterpositionFun = fun({Type, N, Message}) ->
