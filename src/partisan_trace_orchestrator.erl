@@ -30,6 +30,7 @@
          start_link/1,
          record/4,
          reset/0,
+         identify/1,
          print/0]).
 
 %% gen_server callbacks
@@ -40,7 +41,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, {trace=[]}).
+-record(state, {trace=[], identifier=undefined}).
 
 %%%===================================================================
 %%% API
@@ -68,6 +69,10 @@ reset() ->
 print() ->
     gen_server:call(?MODULE, print, infinity).
 
+%% @doc Identify trace.
+identify(Identifier) ->
+    gen_server:call(?MODULE, {identify, Identifier}, infinity).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -86,7 +91,10 @@ handle_call({record, {_SourceNode, _DestinationNode, _Type, _Message} = TraceMes
     {reply, ok, State#state{trace=Trace0++[TraceMessage]}};
 handle_call(reset, _From, State) ->
     lager:info("~p: resetting trace.", [?MODULE]),
-    {reply, ok, State#state{trace=[]}};
+    {reply, ok, State#state{trace=[], identifier=undefined}};
+handle_call({identify, Identifier}, _From, State) ->
+    lager:info("~p: identifying trace: ~p", [?MODULE, Identifier]),
+    {reply, ok, State#state{identifier=Identifier}};
 handle_call(print, _From, #state{trace=Trace}=State) ->
     lists:foreach(fun({SourceNode, DestinationNode, Type, Message}) ->
         case Type of
