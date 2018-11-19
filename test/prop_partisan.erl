@@ -92,7 +92,7 @@
 %%%===================================================================
 
 prop_sequential() ->
-    start_tracing(),
+    ensure_tracing_started(),
 
     ?FORALL(Cmds, more_commands(?COMMAND_MULTIPLE, commands(?MODULE)), 
         begin
@@ -105,7 +105,7 @@ prop_sequential() ->
         end).
 
 prop_parallel() ->
-    start_tracing(),
+    ensure_tracing_started(),
 
     ?FORALL(Cmds, more_commands(?COMMAND_MULTIPLE, parallel_commands(?MODULE)), 
         begin
@@ -886,5 +886,5 @@ name_to_nodename(Name) ->
     [{_, NodeName}] = ets:lookup(?MODULE, Name),
     NodeName.
 
-start_tracing() ->
-    {ok, _Pid} = partisan_trace_orchestrator:start_link().
+ensure_tracing_started() ->
+    partisan_trace_orchestrator:start_link().
