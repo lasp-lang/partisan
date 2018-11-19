@@ -130,7 +130,10 @@ start(Case, Config, Options) ->
             debug("Setting forward_options to: ~p", [ForwardOptions]),
             ok = rpc:call(Node, partisan_config, set, [forward_options, ForwardOptions]),
 
-            %% Configure random seed.
+            %% Configure random seed on the runner.
+            ok = partisan_config:set(random_seed, {1, 1, 1}),
+
+            %% Configure random seed on the nodes.
             ok = rpc:call(Node, partisan_config, set, [random_seed, {1, 1, 1}]),
 
             MembershipStrategy = case ?config(membership_strategy, Config) of
