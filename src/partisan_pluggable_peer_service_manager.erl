@@ -49,8 +49,12 @@
          decode/1,
          reserve/1,
          partitions/0,
+         add_pre_interposition_fun/2,
+         remove_pre_interposition_fun/1,
          add_interposition_fun/2,
          remove_interposition_fun/1,
+         add_post_interposition_fun/2,
+         remove_post_interposition_fun/1,
          inject_partition/2,
          resolve_partition/1]).
 
@@ -80,7 +84,9 @@
                 down_functions :: dict:dict(),
                 up_functions :: dict:dict(),
                 out_links :: [term()],
+                pre_interposition_funs :: dict:dict(),
                 interposition_funs :: dict:dict(),
+                post_interposition_funs :: dict:dict(),
                 sync_joins :: [{node_spec(), from()}],
                 connections :: partisan_peer_service_connections:t(),
                 membership_strategy :: atom(),
@@ -274,12 +280,28 @@ reserve(Tag) ->
     gen_server:call(?MODULE, {reserve, Tag}, infinity).
 
 %% @doc
+add_pre_interposition_fun(Name, PreInterpositionFun) ->
+    gen_server:call(?MODULE, {add_pre_interposition_fun, Name, PreInterpositionFun}, infinity).
+
+%% @doc
+remove_pre_interposition_fun(Name) ->
+    gen_server:call(?MODULE, {remove_pre_interposition_fun, Name}, infinity).
+
+%% @doc
 add_interposition_fun(Name, InterpositionFun) ->
     gen_server:call(?MODULE, {add_interposition_fun, Name, InterpositionFun}, infinity).
 
 %% @doc
 remove_interposition_fun(Name) ->
     gen_server:call(?MODULE, {remove_interposition_fun, Name}, infinity).
+
+%% @doc
+add_post_interposition_fun(Name, PostInterpositionFun) ->
+    gen_server:call(?MODULE, {add_post_interposition_fun, Name, PostInterpositionFun}, infinity).
+
+%% @doc
+remove_post_interposition_fun(Name) ->
+    gen_server:call(?MODULE, {remove_post_interposition_fun, Name}, infinity).
 
 %% @doc Inject a partition.
 inject_partition(_Origin, _TTL) ->
@@ -341,7 +363,9 @@ init([]) ->
     {ok, #state{actor=Actor,
                 pending=[],
                 vclock=VClock,
+                pre_interposition_funs=dict:new(),
                 interposition_funs=dict:new(),
+                post_interposition_funs=dict:new(),
                 connections=Connections,
                 distance_metrics=DistanceMetrics,
                 sync_joins=[],
@@ -371,6 +395,14 @@ handle_call({on_down, Name, Function},
     DownFunctions = dict:append(Name, Function, DownFunctions0),
     {reply, ok, State#state{down_functions=DownFunctions}};
 
+handle_call({add_pre_interposition_fun, Name, PreInterpositionFun}, _From, #state{pre_interposition_funs=PreInterpositionFuns0}=State) ->
+    PreInterpositionFuns = dict:store(Name, PreInterpositionFun, PreInterpositionFuns0),
+    {reply, ok, State#state{pre_interposition_funs=PreInterpositionFuns}};
+
+handle_call({remove_pre_interposition_fun, Name}, _From, #state{pre_interposition_funs=PreInterpositionFuns0}=State) ->
+    PreInterpositionFuns = dict:erase(Name, PreInterpositionFuns0),
+    {reply, ok, State#state{pre_interposition_funs=PreInterpositionFuns}};
+
 handle_call({add_interposition_fun, Name, InterpositionFun}, _From, #state{interposition_funs=InterpositionFuns0}=State) ->
     InterpositionFuns = dict:store(Name, InterpositionFun, InterpositionFuns0),
     {reply, ok, State#state{interposition_funs=InterpositionFuns}};
@@ -378,6 +410,14 @@ handle_call({add_interposition_fun, Name, InterpositionFun}, _From, #state{inter
 handle_call({remove_interposition_fun, Name}, _From, #state{interposition_funs=InterpositionFuns0}=State) ->
     InterpositionFuns = dict:erase(Name, InterpositionFuns0),
     {reply, ok, State#state{interposition_funs=InterpositionFuns}};
+
+handle_call({add_post_interposition_fun, Name, PostInterpositionFun}, _From, #state{post_interposition_funs=PostInterpositionFuns0}=State) ->
+    PostInterpositionFuns = dict:store(Name, PostInterpositionFun, PostInterpositionFuns0),
+    {reply, ok, State#state{post_interposition_funs=PostInterpositionFuns}};
+
+handle_call({remove_post_interposition_fun, Name}, _From, #state{post_interposition_funs=PostInterpositionFuns0}=State) ->
+    PostInterpositionFuns = dict:erase(Name, PostInterpositionFuns0),
+    {reply, ok, State#state{post_interposition_funs=PostInterpositionFuns}};
 
 %% For compatibility with external membership services.
 handle_call({update_members, Nodes}, 
@@ -486,15 +526,33 @@ handle_call({send_message, Name, Channel, Message}, _From,
 
 handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options},
             _From,
-            #state{interposition_funs=InterpositionFuns, connections=Connections, vclock=VClock0}=State) ->
+            #state{pre_interposition_funs=PreInterpositionFuns, 
+                   interposition_funs=InterpositionFuns, 
+                   post_interposition_funs=PostInterpositionFuns, 
+                   connections=Connections, 
+                   vclock=VClock0}=State) ->
     lager:info("~p: Inside the send interposition, message from ~p at node ~p", [node(), Name, node()]),
     lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
 
-    %% Determine if message should be allowed to pass.
+    %% Fire pre-interposition functions.
+    PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
+        PreInterpositionFun({forward_message, Name, OriginalMessage}),
+        ok
+    end,
+    dict:fold(PreFoldFun, ok, PreInterpositionFuns),
+
+    %% Filter messages using interposition functions.
     FoldFun = fun(_Name, InterpositionFun, M) ->
         InterpositionFun({forward_message, Name, M})
     end,
     Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
+
+    %% Fire post-interposition functions.
+    PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
+        PostInterpositionFun({forward_message, Name, OriginalMessage}, {forward_message, Name, Message}),
+        ok
+    end,
+    dict:fold(PostFoldFun, ok, PostInterpositionFuns),
 
     lager:info("~p: Message after send interposition is: ~p", [node(), Message]),
 
@@ -556,15 +614,33 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Ori
             {reply, Result, State#state{vclock=VClock}}
     end;
 
-handle_call({receive_message, Peer, OriginalMessage}, _From, #state{interposition_funs=InterpositionFuns} = State) ->
+handle_call({receive_message, Peer, OriginalMessage}, 
+            _From, 
+            #state{pre_interposition_funs=PreInterpositionFuns,
+                   interposition_funs=InterpositionFuns,
+                   post_interposition_funs=PostInterpositionFuns} = State) ->
     lager:info("~p: Inside the receive interposition, message from ~p at node ~p", [node(), Peer, node()]),
     lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
 
-    %% Determine if message should be allowed to pass.
+    %% Fire pre-interposition functions.
+    PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
+        PreInterpositionFun({receive_message, Peer, OriginalMessage}),
+        ok
+    end,
+    dict:fold(PreFoldFun, ok, PreInterpositionFuns),
+
+    %% Filter messages using interposition functions.
     FoldFun = fun(_Name, InterpositionFun, M) ->
         InterpositionFun({receive_message, Peer, M})
     end,
     Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
+
+    %% Fire post-interposition functions.
+    PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
+        PostInterpositionFun({receive_message, Peer, OriginalMessage}, {receive_message, Peer, Message}),
+        ok
+    end,
+    dict:fold(PostFoldFun, ok, PostInterpositionFuns),
 
     lager:info("~p: Message after receive interposition is: ~p", [node(), Message]),
 
