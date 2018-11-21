@@ -27,6 +27,7 @@
 -compile([export_all]).
 
 -define(NUM_NODES, 3).
+-define(ASSERT_MAILBOX, false).
 
 %%%===================================================================
 %%% Generators
@@ -54,9 +55,19 @@ names() ->
 
 %% What node-specific operations should be called.
 node_commands() ->
-    [{call, ?MODULE, spawn_gossip_receiver, [node_name()]},
-     {call, ?MODULE, check_mailbox, [node_name()]},
-     {call, ?MODULE, gossip, [node_name(), message()]}].
+    CoreCommands = [
+        {call, ?MODULE, spawn_gossip_receiver, [node_name()]},
+        {call, ?MODULE, check_mailbox, [node_name()]}
+        ],
+
+    AssertionCommands = case ?ASSERT_MAILBOX of
+        true ->
+            [{call, ?MODULE, gossip, [node_name(), message()]}];
+        false ->
+            []
+    end,
+
+    AssertionCommands ++ CoreCommands.
 
 %% What should the initial node state be.
 node_initial_state() ->
