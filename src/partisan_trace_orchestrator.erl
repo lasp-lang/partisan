@@ -99,7 +99,7 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
     lists:foreach(fun({SourceNode, DestinationNode, Type, Message}) ->
         case Type of
             receive_message ->
-                lager:info("~p: ~p <= ~p: ~p", [?MODULE, DestinationNode, SourceNode, Message]);
+                lager:info("~p: ~p <- ~p: ~p", [?MODULE, DestinationNode, SourceNode, Message]);
             forward_message ->
                 lager:info("~p: ~p => ~p: ~p", [?MODULE, SourceNode, DestinationNode, Message]);
             _ ->
