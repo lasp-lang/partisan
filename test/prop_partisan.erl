@@ -73,7 +73,7 @@
                                                     %% ie. groups of nodes at a time.
 -define(PERFORM_ASYNC_PARTITIONS, false).           %% Whether or not we should partition using asymmetric partitions
                                                     %% ie. nodes can send but not receive from other nodes
--define(PERFORM_SYNC_PARTITIONS, false).            %% Whether or not we should use symmetric partitions: most common.
+-define(PERFORM_SYNC_PARTITIONS, true).             %% Whether or not we should use symmetric partitions: most common.
                                                     %% ie. two-way communication prohibited between different nodes.
 -define(PERFORM_BYZANTINE_MESSAGE_FAULTS, false).   %% Whether or not we should use cluster byzantine faults:
                                                     %% ie. message corruption, etc.
