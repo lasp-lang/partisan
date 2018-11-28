@@ -32,7 +32,10 @@
          node_functions/0,
          node_precondition/2,
          node_postcondition/3,
-         node_next_state/3]).
+         node_next_state/3,
+         begin_property/0,
+         begin_case/0,
+         end_case/0]).
 
 -define(SUPPORT, partisan_support).
 
@@ -92,12 +95,14 @@
 %%%===================================================================
 
 prop_sequential() ->
-    ensure_tracing_started(),
+    begin_property(),
 
     ?FORALL(Cmds, more_commands(?COMMAND_MULTIPLE, commands(?MODULE)), 
         begin
             start_nodes(),
+            begin_case(),
             {History, State, Result} = run_commands(?MODULE, Cmds), 
+            end_case(),
             stop_nodes(),
             ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
                                 [History,State,Result]),
@@ -105,12 +110,14 @@ prop_sequential() ->
         end).
 
 prop_parallel() ->
-    ensure_tracing_started(),
-
+    begin_property(),
+    
     ?FORALL(Cmds, more_commands(?COMMAND_MULTIPLE, parallel_commands(?MODULE)), 
         begin
             start_nodes(),
+            begin_case(),
             {History, State, Result} = run_parallel_commands(?MODULE, Cmds), 
+            end_case(),
             stop_nodes(),
             ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
                                 [History,State,Result]),

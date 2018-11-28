@@ -232,3 +232,15 @@ loop() ->
             ok
     end,
     loop().
+
+%% @private
+begin_property() ->
+    partisan_trace_orchestrator:start_link().
+
+%% @private
+begin_case() ->
+    ok.
+
+%% @private
+end_case() ->
+    ok.
