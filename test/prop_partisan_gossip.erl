@@ -57,12 +57,12 @@ names() ->
 node_commands() ->
     CoreCommands = [
         {call, ?MODULE, spawn_gossip_receiver, [node_name()]},
-        {call, ?MODULE, check_mailbox, [node_name()]}
+        {call, ?MODULE, gossip, [node_name(), message()]}
         ],
 
     AssertionCommands = case ?ASSERT_MAILBOX of
         true ->
-            [{call, ?MODULE, gossip, [node_name(), message()]}];
+            [{call, ?MODULE, check_mailbox, [node_name()]}];
         false ->
             []
     end,
@@ -263,6 +263,19 @@ end_case() ->
     TotalMessages = length(lists:usort(lists:flatten(NodeMessages))),
     node_debug("total messages sent: ~p", [TotalMessages]),
 
-    %% TODO: Keep percentage of nodes that have received all messages.
+    %% Keep percentage of nodes that have received all messages.
+    NodeCount = length(Nodes),
+
+    NodesRececivedAll = lists:foldl(fun(M, Acc) ->
+        case length(M) =:= TotalMessages of
+            true ->
+                Acc + 1;
+            false ->
+                Acc
+        end
+    end, 0, NodeMessages),
+
+    Percentage = NodesRececivedAll / NodeCount,
+    node_debug("nodes received all: ~p, total nodes: ~p, percentage received: ~p", [NodesRececivedAll, NodeCount, Percentage]),
 
     ok.
