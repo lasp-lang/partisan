@@ -10,6 +10,7 @@ script:
   - make test
   - make xref
   - make dialyzer
+  - make proper
 notifications:
   email: christopher.meiklejohn@gmail.com
   slack: lasp-lang:hiPRNnbUa3zdGrrXZfGRAF7D

@@ -159,7 +159,7 @@ check_mailbox(Node) ->
     timer:sleep(10000),
 
     %% Ask for what messages they have received.
-    erlang:send({?GOSSIP_RECEIVER, ?NAME(Node)}, {received, Self}),
+    erlang:send({?GOSSIP_RECEIVER, Node}, {received, Self}),
 
     receive
         Messages ->
@@ -243,4 +243,26 @@ begin_case() ->
 
 %% @private
 end_case() ->
+    %% Get nodes.
+    %% TODO: Pass me in.
+    [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
+
+    %% Aggregate the results from the run.
+    NodeMessages = lists:map(fun({_Name, Node}) ->
+        case check_mailbox(Node) of 
+            {ok, Messages} ->
+                node_debug("messages received at node ~p are ~p: ~p", [Node, length(Messages), Messages]),
+                Messages;
+            {error, _} ->
+                node_debug("cannot get messages received at node ~p", [Node]),
+                []
+        end
+    end, Nodes),
+
+    %% Compute total messages.
+    TotalMessages = length(lists:usort(lists:flatten(NodeMessages))),
+    node_debug("total messages sent: ~p", [TotalMessages]),
+
+    %% TODO: Keep percentage of nodes that have received all messages.
+
     ok.
