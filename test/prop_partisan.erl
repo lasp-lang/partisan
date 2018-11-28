@@ -69,7 +69,7 @@
                                                     %% What channels should be established?
 -define(CAUSAL_LABELS, []).                         %% What causal channels should be established?
 
-%% Only one of the modes below should be selected for efficient, proper shriking.
+%% Only one of the modes below should be selected for efficient, proper shrinking.
 -define(PERFORM_LEAVES_AND_JOINS, false).           %% Do we allow cluster transitions during test execution:
                                                     %% EXTREMELY slow, given a single join can take ~30 seconds.
 -define(PERFORM_CLUSTER_PARTITIONS, false).         %% Whether or not we should partition at the cluster level 
@@ -81,6 +81,7 @@
 -define(PERFORM_BYZANTINE_MESSAGE_FAULTS, false).   %% Whether or not we should use cluster byzantine faults:
                                                     %% ie. message corruption, etc.
 
+%% Fault bounds.
 -define(MAXIMUM_ACTIVE_FAULTS, 10).                 %% Number of active faults allowed.                                                
 
 %% Alternative configurations.
