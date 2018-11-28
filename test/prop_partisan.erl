@@ -81,6 +81,8 @@
 -define(PERFORM_BYZANTINE_MESSAGE_FAULTS, false).   %% Whether or not we should use cluster byzantine faults:
                                                     %% ie. message corruption, etc.
 
+-define(MAXIMUM_ACTIVE_FAULTS, 10).                 %% Number of active faults allowed.                                                
+
 %% Alternative configurations.
 -define(BIAS_MINORITY, false).                      %% Bias requests to minority partitions.
 
@@ -178,26 +180,28 @@ command(State) ->
     ?LET(Commands, cluster_commands(State) ++ node_commands(), oneof(Commands)).
 
 %% Picks whether a command should be valid under the current state.
-precondition(#state{byzantine_faults=ByzantineFaults}, {call, _Mod, induce_byzantine_message_corruption_fault, [SourceNode, DestinationNode, _Value]}) -> 
-    not is_involved_in_byzantine_fault(SourceNode, DestinationNode, ByzantineFaults);
+precondition(#state{byzantine_faults=ByzantineFaults, active_faults=ActiveFaults}, {call, _Mod, induce_byzantine_message_corruption_fault, [SourceNode, DestinationNode, _Value]}) -> 
+    not is_involved_in_byzantine_fault(SourceNode, DestinationNode, ByzantineFaults) andalso not_maximum_active_faults(1, ActiveFaults);
 precondition(#state{byzantine_faults=ByzantineFaults}, {call, _Mod, resolve_byzantine_message_corruption_fault, [SourceNode, DestinationNode]}) -> 
     is_involved_in_byzantine_fault(SourceNode, DestinationNode, ByzantineFaults);
-precondition(#state{partition_filters=PartitionFilters}, {call, _Mod, induce_async_partition, [SourceNode, DestinationNode]}) -> 
-    not is_involved_in_partition(SourceNode, DestinationNode, PartitionFilters);
+precondition(#state{partition_filters=PartitionFilters, active_faults=ActiveFaults}, {call, _Mod, induce_async_partition, [SourceNode, DestinationNode]}) -> 
+    not is_involved_in_partition(SourceNode, DestinationNode, PartitionFilters) andalso not_maximum_active_faults(1, ActiveFaults);
 precondition(#state{partition_filters=PartitionFilters}, {call, _Mod, resolve_async_partition, [SourceNode, DestinationNode]}) -> 
     is_involved_in_partition(SourceNode, DestinationNode, PartitionFilters);
-precondition(#state{partition_filters=PartitionFilters}, {call, _Mod, induce_sync_partition, [SourceNode, DestinationNode]}) -> 
-    not is_involved_in_partition(SourceNode, DestinationNode, PartitionFilters) andalso is_valid_partition(SourceNode, DestinationNode);
+precondition(#state{partition_filters=PartitionFilters, active_faults=ActiveFaults}, {call, _Mod, induce_sync_partition, [SourceNode, DestinationNode]}) -> 
+    not is_involved_in_partition(SourceNode, DestinationNode, PartitionFilters) andalso is_valid_partition(SourceNode, DestinationNode) andalso not_maximum_active_faults(2, ActiveFaults);
 precondition(#state{partition_filters=PartitionFilters}, {call, _Mod, resolve_sync_partition, [SourceNode, DestinationNode]}) -> 
     is_involved_in_partition(SourceNode, DestinationNode, PartitionFilters);
-precondition(#state{partition_filters=PartitionFilters}, {call, _Mod, induce_cluster_partition, [MajorityNodes, AllNodes]}) -> 
+precondition(#state{partition_filters=PartitionFilters, active_faults=ActiveFaults}, {call, _Mod, induce_cluster_partition, [MajorityNodes, AllNodes]}) -> 
     MinorityNodes = AllNodes -- MajorityNodes,
 
-    lists:all(fun(SourceNode) -> 
+    Result = lists:all(fun(SourceNode) -> 
         lists:all(fun(DestinationNode) ->
             not is_involved_in_partition(SourceNode, DestinationNode, PartitionFilters)
         end, MinorityNodes)
-    end, MajorityNodes);
+    end, MajorityNodes),
+
+    Result andalso not_maximum_active_faults(length(MinorityNodes * 2), ActiveFaults);
 precondition(#state{partition_filters=PartitionFilters}, {call, _Mod, resolve_cluster_partition, [MajorityNodes, AllNodes]}) -> 
     MinorityNodes = AllNodes -- MajorityNodes,
 
@@ -898,3 +902,7 @@ name_to_nodename(Name) ->
 
 ensure_tracing_started() ->
     partisan_trace_orchestrator:start_link().
+
+%% @private
+not_maximum_active_faults(NewFaults, ActiveFaults) ->
+    (ActiveFaults + NewFaults) < ?MAXIMUM_ACTIVE_FAULTS.

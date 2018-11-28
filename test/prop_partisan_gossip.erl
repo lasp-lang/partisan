@@ -244,7 +244,6 @@ begin_case() ->
 %% @private
 end_case() ->
     %% Get nodes.
-    %% TODO: Pass me in.
     [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
 
     %% Aggregate the results from the run.
