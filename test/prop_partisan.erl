@@ -135,7 +135,8 @@ prop_parallel() ->
                 partition_filters :: dict:dict(),
                 minority_nodes :: [node()], 
                 majority_nodes :: [node()], 
-                byzantine_faults :: dict:dict()
+                byzantine_faults :: dict:dict(),
+                active_faults :: non_neg_integer()
             }).
 
 %% Initial model value at system start. Should be deterministic.
@@ -159,6 +160,7 @@ initial_state() ->
     ByzantineFaults = dict:new(),
     MinorityNodes = [],
     MajorityNodes = [],
+    ActiveFaults = 0,
 
     %% Debug message.
     initial_state_debug("initial_state: nodes ~p joined_nodes ~p", [Nodes, JoinedNodes]),
@@ -167,7 +169,8 @@ initial_state() ->
            nodes=Nodes,
            minority_nodes=MinorityNodes,
            majority_nodes=MajorityNodes, 
-           node_state=NodeState, 
+           node_state=NodeState,
+           active_faults=ActiveFaults, 
            byzantine_faults=ByzantineFaults,
            partition_filters=PartitionFilters}.
 
@@ -356,18 +359,18 @@ postcondition(#state{minority_nodes=MinorityNodes, partition_filters=PartitionFi
 
 %% Assuming the postcondition for a call was true, update the model
 %% accordingly for the test to proceed.
-next_state(#state{byzantine_faults=ByzantineFaults0}=State, _Res, {call, ?MODULE, induce_byzantine_message_corruption_fault, [SourceNode, DestinationNode, Value]}) -> 
+next_state(#state{byzantine_faults=ByzantineFaults0, active_faults=ActiveFaults}=State, _Res, {call, ?MODULE, induce_byzantine_message_corruption_fault, [SourceNode, DestinationNode, Value]}) -> 
     ByzantineFaults = add_byzantine_fault(SourceNode, DestinationNode, Value, ByzantineFaults0),
-    State#state{byzantine_faults=ByzantineFaults};
-next_state(#state{byzantine_faults=ByzantineFaults0}=State, _Res, {call, ?MODULE, resolve_byzantine_message_corruption_fault, [SourceNode, DestinationNode]}) -> 
+    State#state{byzantine_faults=ByzantineFaults, active_faults=ActiveFaults + 1};
+next_state(#state{byzantine_faults=ByzantineFaults0, active_faults=ActiveFaults}=State, _Res, {call, ?MODULE, resolve_byzantine_message_corruption_fault, [SourceNode, DestinationNode]}) -> 
     ByzantineFaults = delete_byzantine_fault(SourceNode, DestinationNode, ByzantineFaults0),
-    State#state{byzantine_faults=ByzantineFaults};
-next_state(#state{partition_filters=PartitionFilters0}=State, _Res, {call, ?MODULE, induce_async_partition, [SourceNode, DestinationNode]}) -> 
+    State#state{byzantine_faults=ByzantineFaults, active_faults=ActiveFaults - 1};
+next_state(#state{partition_filters=PartitionFilters0, active_faults=ActiveFaults}=State, _Res, {call, ?MODULE, induce_async_partition, [SourceNode, DestinationNode]}) -> 
     PartitionFilters = add_async_partition(SourceNode, DestinationNode, PartitionFilters0),
-    State#state{partition_filters=PartitionFilters};
-next_state(#state{partition_filters=PartitionFilters0}=State, _Res, {call, ?MODULE, resolve_async_partition, [SourceNode, DestinationNode]}) -> 
+    State#state{partition_filters=PartitionFilters, active_faults=ActiveFaults + 1};
+next_state(#state{partition_filters=PartitionFilters0, active_faults=ActiveFaults}=State, _Res, {call, ?MODULE, resolve_async_partition, [SourceNode, DestinationNode]}) -> 
     PartitionFilters = delete_async_partition(SourceNode, DestinationNode, PartitionFilters0),
-    State#state{partition_filters=PartitionFilters};
+    State#state{partition_filters=PartitionFilters, active_faults=ActiveFaults - 1};
 next_state(#state{partition_filters=PartitionFilters0}=State, _Res, {call, ?MODULE, induce_sync_partition, [SourceNode, DestinationNode]}) -> 
     PartitionFilters = add_sync_partition(SourceNode, DestinationNode, PartitionFilters0),
     State#state{partition_filters=PartitionFilters};
