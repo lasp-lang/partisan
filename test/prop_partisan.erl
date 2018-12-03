@@ -493,12 +493,11 @@ start_nodes() ->
 
         ok = rpc:call(Self, 
                       partisan_trace_orchestrator, 
-                      record, 
-                      [SourceNode, N, Type, Message]),
+                      trace, 
+                      [interposition_fun, {SourceNode, N, Type, Message}]),
 
         Message
     end, 
-    % end,
 
     lists:foreach(fun({_Name, Node}) ->
         rpc:call(Node, 

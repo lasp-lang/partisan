@@ -28,7 +28,7 @@
 %% API
 -export([start_link/0,
          start_link/1,
-         record/4,
+         trace/2,
          reset/0,
          identify/1,
          print/0]).
@@ -57,9 +57,9 @@ start_link() ->
 start_link(Opts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
 
-%% @doc Record message for trace.
-record(SourceNode, DestinationNode, Type, Message) ->
-    gen_server:call(?MODULE, {record, {SourceNode, DestinationNode, Type, Message}}, infinity).
+%% @doc Record trace message.
+trace(Type, Message) ->
+    gen_server:call(?MODULE, {trace, Type, Message}, infinity).
 
 %% @doc Reset trace.
 reset() ->
@@ -86,9 +86,9 @@ init([]) ->
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
-handle_call({record, {_SourceNode, _DestinationNode, _Type, _Message} = TraceMessage}, _From, #state{trace=Trace0}=State) ->
-    %% lager:info("~p: recording trace message: ~p", [?MODULE, TraceMessage]),
-    {reply, ok, State#state{trace=Trace0++[TraceMessage]}};
+handle_call({trace, Type, Message}, _From, #state{trace=Trace0}=State) ->
+    %% lager:info("~p: recording trace type: ~p message: ~p", [?MODULE, Type, Message]),
+    {reply, ok, State#state{trace=Trace0++[{Type, Message}]}};
 handle_call(reset, _From, State) ->
     lager:info("~p: resetting trace.", [?MODULE]),
     {reply, ok, State#state{trace=[], identifier=undefined}};
@@ -96,14 +96,23 @@ handle_call({identify, Identifier}, _From, State) ->
     lager:info("~p: identifying trace: ~p", [?MODULE, Identifier]),
     {reply, ok, State#state{identifier=Identifier}};
 handle_call(print, _From, #state{trace=Trace}=State) ->
-    lists:foreach(fun({SourceNode, DestinationNode, Type, Message}) ->
+    lager:info("~p: printing trace", [?MODULE]),
+
+    lists:foreach(fun({Type, Message}) ->
         case Type of
-            receive_message ->
-                lager:info("~p: ~p <- ~p: ~p", [?MODULE, DestinationNode, SourceNode, Message]);
-            forward_message ->
-                lager:info("~p: ~p => ~p: ~p", [?MODULE, SourceNode, DestinationNode, Message]);
+            interposition_fun ->
+                %% Destructure message.
+                {SourceNode, DestinationNode, InterpositionType, MessagePayload} = Message,
+
+                %% Format trace accordingly.
+                case InterpositionType of
+                    receive_message ->
+                        lager:info("~p: ~p <- ~p: ~p", [?MODULE, DestinationNode, SourceNode, MessagePayload]);
+                    forward_message ->
+                        lager:info("~p: ~p => ~p: ~p", [?MODULE, SourceNode, DestinationNode, MessagePayload])
+                end;
             _ ->
-                lager:info("~p: Unknown message type.", [?MODULE])
+                lager:info("~p: unknown message type: ~p, message: ~p", [?MODULE, Type, Message])
         end
     end, Trace),
 
