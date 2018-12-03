@@ -102,14 +102,45 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
         case Type of
             interposition_fun ->
                 %% Destructure message.
-                {SourceNode, DestinationNode, InterpositionType, MessagePayload} = Message,
+                {TracingNode, OriginNode, InterpositionType, MessagePayload} = Message,
 
                 %% Format trace accordingly.
                 case InterpositionType of
                     receive_message ->
-                        lager:info("~p: ~p <- ~p: ~p", [?MODULE, DestinationNode, SourceNode, MessagePayload]);
+                        lager:info("~p: ~p <- ~p: ~p", [?MODULE, OriginNode, TracingNode, MessagePayload]);
                     forward_message ->
-                        lager:info("~p: ~p => ~p: ~p", [?MODULE, SourceNode, DestinationNode, MessagePayload])
+                        lager:info("~p: ~p => ~p: ~p", [?MODULE, TracingNode, OriginNode, MessagePayload])
+                end;
+            post_interposition_fun ->
+                %% Destructure message.
+                {TracingNode, OriginNode, InterpositionType, MessagePayload, RewrittenMessagePayload} = Message,
+
+                %% Format trace accordingly.
+                case MessagePayload =:= RewrittenMessagePayload of 
+                    true ->
+                        case InterpositionType of
+                            receive_message ->
+                                lager:info("~p: ~p <- ~p: ~p", [?MODULE, OriginNode, TracingNode, MessagePayload]);
+                            forward_message ->
+                                lager:info("~p: ~p => ~p: ~p", [?MODULE, TracingNode, OriginNode, MessagePayload])
+                        end;
+                    false ->
+                        case RewrittenMessagePayload of 
+                            undefined ->
+                                case InterpositionType of
+                                    receive_message ->
+                                        lager:info("~p: ~p <- ~p: DROPPED ~p", [?MODULE, OriginNode, TracingNode, MessagePayload]);
+                                    forward_message ->
+                                        lager:info("~p: ~p => ~p: DROPPED ~p", [?MODULE, TracingNode, OriginNode, MessagePayload])
+                                end;
+                            _ ->
+                                case InterpositionType of
+                                    receive_message ->
+                                        lager:info("~p: ~p <- ~p: REWROTE ~p to ~p", [?MODULE, OriginNode, TracingNode, MessagePayload, RewrittenMessagePayload]);
+                                    forward_message ->
+                                        lager:info("~p: ~p => ~p: REWROTE ~p to ~p", [?MODULE, TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload])
+                                end
+                        end
                 end;
             _ ->
                 lager:info("~p: unknown message type: ~p, message: ~p", [?MODULE, Type, Message])

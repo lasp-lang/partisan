@@ -487,23 +487,23 @@ start_nodes() ->
     TraceIdentifier = atom_to_list(prop_partisan_gossip) ++ "_" ++ integer_to_list(TraceRandomNumber),
     ok = partisan_trace_orchestrator:identify(TraceIdentifier),
 
-    %% Add send and receive interposition functions.
-    InterpositionFun = fun({Type, N, Message}) ->
-        SourceNode = node(),
+    %% Add send and receive post-interposition functions.
+    PostInterpositionFun = fun({Type, OriginNode, OriginalMessage}, {Type, OriginNode, RewrittenMessage}) ->
+        TracingNode = node(),
 
         ok = rpc:call(Self, 
                       partisan_trace_orchestrator, 
                       trace, 
-                      [interposition_fun, {SourceNode, N, Type, Message}]),
+                      [post_interposition_fun, {TracingNode, OriginNode, Type, OriginalMessage, RewrittenMessage}]),
 
-        Message
+        ok
     end, 
 
     lists:foreach(fun({_Name, Node}) ->
         rpc:call(Node, 
                  ?MANAGER, 
-                 add_interposition_fun, 
-                 ['$tracing', InterpositionFun])
+                 add_post_interposition_fun, 
+                 ['$tracing', PostInterpositionFun])
         end, Nodes),
 
     %% Insert all nodes into group for all nodes.
