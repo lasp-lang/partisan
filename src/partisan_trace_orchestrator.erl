@@ -148,7 +148,7 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
 
         %% Advance line number.
         Count + 1
-    end, 0, Trace),
+    end, 1, Trace),
 
     {reply, ok, State};
 handle_call(Msg, _From, State) ->
