@@ -115,7 +115,8 @@ handle_cast({gossip, ServerRef, Message}, #state{membership=Membership}=State) -
     end, GossipMembers -- [MyNode]),
 
     {noreply, State};
-handle_cast({update, Membership}, State) ->
+handle_cast({update, Membership0}, State) ->
+    Membership = lists:usort(Membership0), %% Must sort list or random selection with seed is *nondeterministic.*
     {noreply, State#state{membership=Membership}};
 handle_cast(Msg, State) ->
     lager:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
@@ -138,6 +139,7 @@ handle_info({gossip, Id, ServerRef, Message}, #state{membership=Membership}=Stat
             %% Forward message.
             MyNode = partisan_peer_service_manager:mynode(),
             GossipMembers = select_random_sublist(Membership, ?GOSSIP_FANOUT),
+            lager:info("~p: forwarding gossip message, selecting from members: ~p, gossip members: ~p", [node(), Membership, GossipMembers]),
 
             lists:foreach(fun(N) ->
                 lager:info("~p: forwarding gossip message to node ~p: ~p", [node(), N, Message]),
