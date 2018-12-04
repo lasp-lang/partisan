@@ -100,6 +100,17 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
 
     lists:foldl(fun({Type, Message}, Count) ->
         case Type of
+            pre_interposition_fun ->
+                %% Destructure message.
+                {InterpositionPoint, TracingNode, _OriginNode, _InterpositionType, MessagePayload} = Message,
+
+                %% Format trace accordingly.
+                case InterpositionPoint of
+                    entering ->
+                        lager:info("~p: ~p: ~p ENTERING check for messsage ~p", [?MODULE, Count, TracingNode, MessagePayload]);
+                    exiting ->
+                        lager:info("~p: ~p: ~p EXITING check for message: ~p", [?MODULE, Count, TracingNode, MessagePayload])
+                end;
             interposition_fun ->
                 %% Destructure message.
                 {TracingNode, OriginNode, InterpositionType, MessagePayload} = Message,
