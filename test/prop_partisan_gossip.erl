@@ -27,7 +27,7 @@
 -compile([export_all]).
 
 -define(NUM_NODES, 3).
--define(ASSERT_MAILBOX, false).
+-define(ASSERT_MAILBOX, true).
 
 %%%===================================================================
 %%% Generators
