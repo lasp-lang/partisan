@@ -487,7 +487,7 @@ start_nodes() ->
     TraceIdentifier = atom_to_list(prop_partisan_gossip) ++ "_" ++ integer_to_list(TraceRandomNumber),
     ok = partisan_trace_orchestrator:identify(TraceIdentifier),
 
-    %% Add send and receive post-interposition functions.
+    %% Add send and receive post-interposition functions to perform tracing.
     PostInterpositionFun = fun({Type, OriginNode, OriginalMessage}, {Type, OriginNode, RewrittenMessage}) ->
         TracingNode = node(),
 
