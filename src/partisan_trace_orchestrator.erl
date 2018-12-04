@@ -98,7 +98,7 @@ handle_call({identify, Identifier}, _From, State) ->
 handle_call(print, _From, #state{trace=Trace}=State) ->
     lager:info("~p: printing trace", [?MODULE]),
 
-    lists:foreach(fun({Type, Message}) ->
+    lists:foldl(fun({Type, Message}, Count) ->
         case Type of
             interposition_fun ->
                 %% Destructure message.
@@ -107,9 +107,9 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
                 %% Format trace accordingly.
                 case InterpositionType of
                     receive_message ->
-                        lager:info("~p: ~p <- ~p: ~p", [?MODULE, OriginNode, TracingNode, MessagePayload]);
+                        lager:info("~p: ~p: ~p <- ~p: ~p", [?MODULE, Count, TracingNode, OriginNode, MessagePayload]);
                     forward_message ->
-                        lager:info("~p: ~p => ~p: ~p", [?MODULE, TracingNode, OriginNode, MessagePayload])
+                        lager:info("~p: ~p: ~p => ~p: ~p", [?MODULE, Count, TracingNode, OriginNode, MessagePayload])
                 end;
             post_interposition_fun ->
                 %% Destructure message.
@@ -120,32 +120,35 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
                     true ->
                         case InterpositionType of
                             receive_message ->
-                                lager:info("~p: ~p <- ~p: ~p", [?MODULE, OriginNode, TracingNode, MessagePayload]);
+                                lager:info("~p: ~p: ~p <- ~p: ~p", [?MODULE, Count, TracingNode, OriginNode, MessagePayload]);
                             forward_message ->
-                                lager:info("~p: ~p => ~p: ~p", [?MODULE, TracingNode, OriginNode, MessagePayload])
+                                lager:info("~p: ~p: ~p => ~p: ~p", [?MODULE, Count, TracingNode, OriginNode, MessagePayload])
                         end;
                     false ->
                         case RewrittenMessagePayload of 
                             undefined ->
                                 case InterpositionType of
                                     receive_message ->
-                                        lager:info("~p: ~p <- ~p: DROPPED ~p", [?MODULE, OriginNode, TracingNode, MessagePayload]);
+                                        lager:info("~p: ~p: ~p <- ~p: DROPPED ~p", [?MODULE, Count, TracingNode, OriginNode, MessagePayload]);
                                     forward_message ->
-                                        lager:info("~p: ~p => ~p: DROPPED ~p", [?MODULE, TracingNode, OriginNode, MessagePayload])
+                                        lager:info("~p: ~p: ~p => ~p: DROPPED ~p", [?MODULE, Count, TracingNode, OriginNode, MessagePayload])
                                 end;
                             _ ->
                                 case InterpositionType of
                                     receive_message ->
-                                        lager:info("~p: ~p <- ~p: REWROTE ~p to ~p", [?MODULE, OriginNode, TracingNode, MessagePayload, RewrittenMessagePayload]);
+                                        lager:info("~p: ~p: ~p <- ~p: REWROTE ~p to ~p", [?MODULE, Count, TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload]);
                                     forward_message ->
-                                        lager:info("~p: ~p => ~p: REWROTE ~p to ~p", [?MODULE, TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload])
+                                        lager:info("~p: ~p: ~p => ~p: REWROTE ~p to ~p", [?MODULE, Count, TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload])
                                 end
                         end
                 end;
             _ ->
-                lager:info("~p: unknown message type: ~p, message: ~p", [?MODULE, Type, Message])
-        end
-    end, Trace),
+                lager:info("~p: ~p: unknown message type: ~p, message: ~p", [?MODULE, Count, Type, Message])
+        end,
+
+        %% Advance line number.
+        Count + 1
+    end, 0, Trace),
 
     {reply, ok, State};
 handle_call(Msg, _From, State) ->
