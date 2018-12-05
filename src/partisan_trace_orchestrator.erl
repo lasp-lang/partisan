@@ -117,6 +117,8 @@ handle_call({replay, Type, Message}, _From, #state{previous_trace=PreviousTrace,
         true ->
             [{NextType, NextMessage}|Rest] = PreviousTrace, 
 
+            lager:info("~p: ******************************************************", [?MODULE]),
+
             lager:info("~p: in replay for message ~p", [?MODULE, {Type, Message}]),
 
             case {Type, Message} of 
@@ -125,9 +127,18 @@ handle_call({replay, Type, Message}, _From, #state{previous_trace=PreviousTrace,
                     ok;
                 {_, _} ->
                     lager:info("~p: DID NOT RECEIVE expected message: expected: ~p, got: ~p", 
-                            [?MODULE, {NextType, NextMessage}, {Type, Message}]),
-                    ok
+                               [?MODULE, {NextType, NextMessage}, {Type, Message}]),
+                    case lists:member({NextType, NextMessage}, PreviousTrace) of 
+                        true ->
+                            lager:info("~p: message is scheduled for future delivery, blocking!", [?MODULE]),
+                            ok;
+                        false ->
+                            lager:info("~p: message should not have arrived!", [?MODULE]),
+                            ok
+                    end
             end,
+
+            lager:info("~p: ******************************************************", [?MODULE]),
 
             {reply, ok, State#state{previous_trace=Rest}};
         false ->
