@@ -491,17 +491,17 @@ start_nodes() ->
     PreInterpositionFun = fun({Type, OriginNode, OriginalMessage}) ->
         TracingNode = node(),
 
-        %% Log entry point.
+        %% Record message incoming and outgoing messages.
         ok = rpc:call(Self, 
                       partisan_trace_orchestrator, 
                       trace, 
-                      [pre_interposition_fun, {entering, TracingNode, Type, OriginNode, OriginalMessage}]),
+                      [pre_interposition_fun, {TracingNode, Type, OriginNode, OriginalMessage}]),
 
-        %% Log exit point.
+        %% Under replay ensure they match the trace order (but only for pre-interposition messages).
         ok = rpc:call(Self, 
                       partisan_trace_orchestrator, 
-                      trace, 
-                      [pre_interposition_fun, {exiting, TracingNode, Type, OriginNode, OriginalMessage}]),
+                      replay, 
+                      [pre_interposition_fun, {TracingNode, Type, OriginNode, OriginalMessage}]),
 
         ok
     end, 

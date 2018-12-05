@@ -29,6 +29,7 @@
 -export([start_link/0,
          start_link/1,
          trace/2,
+         replay/2,
          reset/0,
          identify/1,
          print/0]).
@@ -44,8 +45,9 @@
 -record(state, {previous_trace=[],
                 trace=[], 
                 replay=false,
-                identifier=undefined, 
-                current_trace_file=undefined}).
+                identifier=undefined}).
+
+-define(FILENAME, "/tmp/partisan.trace").
 
 %%%===================================================================
 %%% API
@@ -64,6 +66,10 @@ start_link(Opts) ->
 %% @doc Record trace message.
 trace(Type, Message) ->
     gen_server:call(?MODULE, {trace, Type, Message}, infinity).
+
+%% @doc Replay trace.
+replay(Type, Message) ->
+    gen_server:call(?MODULE, {replay, Type, Message}, infinity).
 
 %% @doc Reset trace.
 reset() ->
@@ -86,27 +92,17 @@ identify(Identifier) ->
 init([]) ->
     lager:info("Test orchestrator started on node: ~p", [node()]),
 
-    %% Trace file.
-    FileName = "/tmp/partisan.trace",
-
     case os:getenv("REPLAY") of 
         false ->
             %% This is not a replay, so store the current trace.
             lager:info("~p: recording trace to file.", [?MODULE]),
-
-            case file:open(FileName, [write]) of
-                {ok, TraceFile} ->
-                    {ok, #state{trace=[], current_trace_file=TraceFile}};
-                {error, Error} ->
-                    lager:error("couldn't open current trace file for writing."),
-                    {stop, Error}
-            end;
+            {ok, #state{trace=[]}};
         _ ->
             %% This is a replay, so load the previous trace.
             lager:info("~p: loading previous trace for replay.", [?MODULE]),
 
-            {ok, Data} = file:read_file(FileName),
-            Lines = binary:split(Data, [<<"\n">>], [global]),
+            {ok, Bin} = file:read_file(?FILENAME),
+            Lines = binary_to_term(Bin),
             {ok, #state{previous_trace=Lines, replay=true}}
     end.
 
@@ -116,28 +112,40 @@ init([]) ->
 handle_call({trace, Type, Message}, _From, #state{trace=Trace0}=State) ->
     %% lager:info("~p: recording trace type: ~p message: ~p", [?MODULE, Type, Message]),
     {reply, ok, State#state{trace=Trace0++[{Type, Message}]}};
+handle_call({replay, Type, Message}, _From, #state{previous_trace=PreviousTrace, replay=Replay}=State) ->
+    case Replay of 
+        true ->
+            [{NextType, NextMessage}|Rest] = PreviousTrace, 
+
+            lager:info("~p: in replay for message ~p", [?MODULE, {Type, Message}]),
+
+            case {Type, Message} of 
+                {NextType, NextMessage} ->
+                    lager:info("~p: received expected message!", [?MODULE]),
+                    ok;
+                {_, _} ->
+                    lager:info("~p: DID NOT RECEIVE expected message: expected: ~p, got: ~p", 
+                            [?MODULE, {NextType, NextMessage}, {Type, Message}]),
+                    ok
+            end,
+
+            {reply, ok, State#state{previous_trace=Rest}};
+        false ->
+            {reply, ok, State}
+    end;
 handle_call(reset, _From, State) ->
     lager:info("~p: resetting trace.", [?MODULE]),
     {reply, ok, State#state{trace=[], identifier=undefined}};
 handle_call({identify, Identifier}, _From, State) ->
     lager:info("~p: identifying trace: ~p", [?MODULE, Identifier]),
     {reply, ok, State#state{identifier=Identifier}};
-handle_call(print, _From, #state{trace=Trace, replay=Replay, current_trace_file=CurrentTraceFile}=State) ->
+handle_call(print, _From, #state{trace=Trace, replay=Replay}=State) ->
     lager:info("~p: printing trace", [?MODULE]),
 
     lists:foldl(fun({Type, Message}, Count) ->
         case Type of
             pre_interposition_fun ->
-                %% Destructure message.
-                {InterpositionPoint, TracingNode, _OriginNode, _InterpositionType, MessagePayload} = Message,
-
-                %% Format trace accordingly.
-                case InterpositionPoint of
-                    entering ->
-                        lager:info("~p: ~p: ~p ENTERING check for messsage ~p", [?MODULE, Count, TracingNode, MessagePayload]);
-                    exiting ->
-                        lager:info("~p: ~p: ~p EXITING check for message: ~p", [?MODULE, Count, TracingNode, MessagePayload])
-                end;
+                ok;
             interposition_fun ->
                 %% Destructure message.
                 {TracingNode, OriginNode, InterpositionType, MessagePayload} = Message,
@@ -194,11 +202,16 @@ handle_call(print, _From, #state{trace=Trace, replay=Replay, current_trace_file=
             lager:info("~p: not writing trace, replay mode.", [?MODULE]),
             ok;
         false ->
+            FilteredTrace = lists:filter(fun({Type, _Message}) ->
+                case Type of 
+                    pre_interposition_fun ->
+                        true;
+                    _ ->
+                        false
+                end
+            end, Trace),
             lager:info("~p: writing trace.", [?MODULE]),
-
-            lists:foreach(fun(Line) ->
-                io:format(CurrentTraceFile, "~p~n", [Line])
-                end, Trace)
+            ok = file:write_file(?FILENAME, term_to_binary(FilteredTrace))
     end,
 
     {reply, ok, State};
