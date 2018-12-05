@@ -41,7 +41,11 @@
          terminate/2,
          code_change/3]).
 
--record(state, {trace=[], identifier=undefined, current_trace_file=undefined}).
+-record(state, {previous_trace=[],
+                trace=[], 
+                replay=false,
+                identifier=undefined, 
+                current_trace_file=undefined}).
 
 %%%===================================================================
 %%% API
@@ -82,13 +86,28 @@ identify(Identifier) ->
 init([]) ->
     lager:info("Test orchestrator started on node: ~p", [node()]),
 
-    %% Open trace file for writing.
-    case file:open("/tmp/partisan.trace", [write]) of
-        {ok, CurrentTraceFile} ->
-            {ok, #state{trace=[], current_trace_file=CurrentTraceFile}};
-        {error, Error} ->
-            lager:error("couldn't open trace file for writing."),
-            {stop, Error}
+    %% Trace file.
+    FileName = "/tmp/partisan.trace",
+
+    case os:getenv("REPLAY") of 
+        false ->
+            %% This is not a replay, so store the current trace.
+            lager:info("~p: recording trace to file.", [?MODULE]),
+
+            case file:open(FileName, [write]) of
+                {ok, TraceFile} ->
+                    {ok, #state{trace=[], current_trace_file=TraceFile}};
+                {error, Error} ->
+                    lager:error("couldn't open current trace file for writing."),
+                    {stop, Error}
+            end;
+        _ ->
+            %% This is a replay, so load the previous trace.
+            lager:info("~p: loading previous trace for replay.", [?MODULE]),
+
+            {ok, Data} = file:read_file(FileName),
+            Lines = binary:split(Data, [<<"\n">>], [global]),
+            {ok, #state{previous_trace=Lines, replay=true}}
     end.
 
 %% @private
@@ -103,7 +122,7 @@ handle_call(reset, _From, State) ->
 handle_call({identify, Identifier}, _From, State) ->
     lager:info("~p: identifying trace: ~p", [?MODULE, Identifier]),
     {reply, ok, State#state{identifier=Identifier}};
-handle_call(print, _From, #state{trace=Trace, current_trace_file=CurrentTraceFile}=State) ->
+handle_call(print, _From, #state{trace=Trace, replay=Replay, current_trace_file=CurrentTraceFile}=State) ->
     lager:info("~p: printing trace", [?MODULE]),
 
     lists:foldl(fun({Type, Message}, Count) ->
@@ -170,9 +189,17 @@ handle_call(print, _From, #state{trace=Trace, current_trace_file=CurrentTraceFil
     end, 1, Trace),
 
     %% Write trace.
-    lists:foreach(fun(Line) ->
-        io:format(CurrentTraceFile, "~p", [Line])
-        end, Trace),
+    case Replay of 
+        true ->
+            lager:info("~p: not writing trace, replay mode.", [?MODULE]),
+            ok;
+        false ->
+            lager:info("~p: writing trace.", [?MODULE]),
+
+            lists:foreach(fun(Line) ->
+                io:format(CurrentTraceFile, "~p~n", [Line])
+                end, Trace)
+    end,
 
     {reply, ok, State};
 handle_call(Msg, _From, State) ->
