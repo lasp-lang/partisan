@@ -45,6 +45,7 @@
 -record(state, {previous_trace=[],
                 trace=[], 
                 replay=false,
+                blocked_processes=[],
                 identifier=undefined}).
 
 -define(FILENAME, "/tmp/partisan.trace").
@@ -96,14 +97,21 @@ init([]) ->
         false ->
             %% This is not a replay, so store the current trace.
             lager:info("~p: recording trace to file.", [?MODULE]),
-            {ok, #state{trace=[]}};
+            {ok, #state{trace=[], blocked_processes=[]}};
         _ ->
             %% This is a replay, so load the previous trace.
             lager:info("~p: loading previous trace for replay.", [?MODULE]),
 
             {ok, Bin} = file:read_file(?FILENAME),
             Lines = binary_to_term(Bin),
-            {ok, #state{previous_trace=Lines, replay=true}}
+
+            lists:foreach(fun(Line) ->
+                lager:info("~p: ~p", [?MODULE, Line])
+            end, Lines),
+
+            lager:info("~p: trace loaded.", [?MODULE]),
+
+            {ok, #state{previous_trace=Lines, replay=true, blocked_processes=[]}}
     end.
 
 %% @private
@@ -112,35 +120,25 @@ init([]) ->
 handle_call({trace, Type, Message}, _From, #state{trace=Trace0}=State) ->
     %% lager:info("~p: recording trace type: ~p message: ~p", [?MODULE, Type, Message]),
     {reply, ok, State#state{trace=Trace0++[{Type, Message}]}};
-handle_call({replay, Type, Message}, _From, #state{previous_trace=PreviousTrace, replay=Replay}=State) ->
+handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0, replay=Replay, blocked_processes=BlockedProcesses0}=State) ->
     case Replay of 
         true ->
-            [{NextType, NextMessage}|Rest] = PreviousTrace, 
+            %% Find next message that should arrive based on the trace.
+            %% Can we process immediately?
+            case can_deliver_based_on_trace({Type, Message}, PreviousTrace0) of 
+                true ->
+                    %% Deliver as much as we can.
+                    {PreviousTrace, BlockedProcesses} = trace_deliver(PreviousTrace0, BlockedProcesses0),
 
-            lager:info("~p: ******************************************************", [?MODULE]),
+                    %% Record new trace position and new list of blocked processes.
+                    {reply, ok, State#state{blocked_processes=BlockedProcesses, previous_trace=PreviousTrace}};
+                false ->
+                    %% If not, store message, block caller until processed.
+                    BlockedProcesses = [{{Type, Message}, From} | BlockedProcesses0],
 
-            lager:info("~p: in replay for message ~p", [?MODULE, {Type, Message}]),
-
-            case {Type, Message} of 
-                {NextType, NextMessage} ->
-                    lager:info("~p: received expected message!", [?MODULE]),
-                    ok;
-                {_, _} ->
-                    lager:info("~p: DID NOT RECEIVE expected message: expected: ~p, got: ~p", 
-                               [?MODULE, {NextType, NextMessage}, {Type, Message}]),
-                    case lists:member({NextType, NextMessage}, PreviousTrace) of 
-                        true ->
-                            lager:info("~p: message is scheduled for future delivery, blocking!", [?MODULE]),
-                            ok;
-                        false ->
-                            lager:info("~p: message should not have arrived!", [?MODULE]),
-                            ok
-                    end
-            end,
-
-            lager:info("~p: ******************************************************", [?MODULE]),
-
-            {reply, ok, State#state{previous_trace=Rest}};
+                    %% Block the process.
+                    {noreply, State#state{blocked_processes=BlockedProcesses}}
+            end;
         false ->
             {reply, ok, State}
     end;
@@ -255,3 +253,65 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+%% @private 
+can_deliver_based_on_trace({Type, Message}, PreviousTrace) ->
+    lager:info("~p: determining if message ~p: ~p can be delivered.", [?MODULE, Type, Message]),
+
+    [{NextType, NextMessage} | _] = PreviousTrace,
+
+    case {NextType, NextMessage} of 
+        {Type, Message} ->
+            lager:info("~p: => YES!", [?MODULE]),
+            true;
+        _ ->
+            lager:info("~p: => NO, waiting for message: ~p: ~p", [?MODULE, NextType, NextMessage]),
+            false
+    end.
+
+%% @private
+trace_deliver([{_, _} | Trace], BlockedProcesses) ->
+    lager:info("~p: delivering single message!", [?MODULE]),
+
+    %% Advance the trace, then try to flush the blocked processes.
+    trace_deliver_log_flush(Trace, BlockedProcesses).
+
+%% @private
+trace_deliver_log_flush(Trace0, BlockedProcesses0) ->
+    lager:info("~p: attempting to flush blocked messages!", [?MODULE]),
+
+    %% Iterate blocked processes in an attempt to remove one.
+    {ND, T, BP} = lists:foldl(fun({{NextType, NextMessage}, Pid} = BP, {NumDelivered1, Trace1, BlockedProcesses1}) ->
+        case can_deliver_based_on_trace({NextType, NextMessage}, Trace1) of 
+            true ->
+                lager:info("~p: pid ~p can be unblocked!", [?MODULE, Pid]),
+
+                %% Advance the trace.
+                [{_, _} | RestOfTrace] = Trace1,
+
+                %% Advance the count of delivered messages.
+                NewNumDelivered = NumDelivered1 + 1,
+
+                %% Unblock the process.
+                gen_server:reply(Pid, ok),
+
+                %% Remove from the blocked processes list.
+                NewBlockedProcesses = BlockedProcesses1 -- [BP],
+
+                {NewNumDelivered, RestOfTrace, NewBlockedProcesses};
+            false ->
+                lager:info("~p: pid ~p CANNOT be unblocked yet, unmet dependencies!", [?MODULE, Pid]),
+
+                {NumDelivered1, Trace1, BlockedProcesses1}
+        end
+    end, {0, Trace0, BlockedProcesses0}, BlockedProcesses0),
+
+    %% Did we deliver something?  If so, try again.
+    case ND > 0 of 
+        true ->
+            lager:info("~p: was able to deliver a message, trying again", [?MODULE]),
+            trace_deliver_log_flush(T, BP);
+        false ->
+            lager:info("~p: flush attempt finished.", [?MODULE]),
+            {T, BP}
+    end.
