@@ -41,7 +41,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, {trace=[], identifier=undefined, file=undefined}).
+-record(state, {trace=[], identifier=undefined, current_trace_file=undefined}).
 
 %%%===================================================================
 %%% API
@@ -84,8 +84,8 @@ init([]) ->
 
     %% Open trace file for writing.
     case file:open("/tmp/partisan.trace", [write]) of
-        {ok, File} ->
-            {ok, #state{trace=[], file=File}};
+        {ok, CurrentTraceFile} ->
+            {ok, #state{trace=[], current_trace_file=CurrentTraceFile}};
         {error, Error} ->
             lager:error("couldn't open trace file for writing."),
             {stop, Error}
@@ -103,7 +103,7 @@ handle_call(reset, _From, State) ->
 handle_call({identify, Identifier}, _From, State) ->
     lager:info("~p: identifying trace: ~p", [?MODULE, Identifier]),
     {reply, ok, State#state{identifier=Identifier}};
-handle_call(print, _From, #state{trace=Trace, file=File}=State) ->
+handle_call(print, _From, #state{trace=Trace, current_trace_file=CurrentTraceFile}=State) ->
     lager:info("~p: printing trace", [?MODULE]),
 
     lists:foldl(fun({Type, Message}, Count) ->
@@ -171,7 +171,7 @@ handle_call(print, _From, #state{trace=Trace, file=File}=State) ->
 
     %% Write trace.
     lists:foreach(fun(Line) ->
-        io:format(File, "~p", [Line])
+        io:format(CurrentTraceFile, "~p", [Line])
         end, Trace),
 
     {reply, ok, State};
