@@ -41,7 +41,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, {trace=[], identifier=undefined}).
+-record(state, {trace=[], identifier=undefined, file=undefined}).
 
 %%%===================================================================
 %%% API
@@ -81,7 +81,15 @@ identify(Identifier) ->
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
     lager:info("Test orchestrator started on node: ~p", [node()]),
-    {ok, #state{trace=[]}}.
+
+    %% Open trace file for writing.
+    case file:open("/tmp/partisan.trace", [write]) of
+        {ok, File} ->
+            {ok, #state{trace=[], file=File}};
+        {error, Error} ->
+            lager:error("couldn't open trace file for writing."),
+            {stop, Error}
+    end.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
@@ -95,7 +103,7 @@ handle_call(reset, _From, State) ->
 handle_call({identify, Identifier}, _From, State) ->
     lager:info("~p: identifying trace: ~p", [?MODULE, Identifier]),
     {reply, ok, State#state{identifier=Identifier}};
-handle_call(print, _From, #state{trace=Trace}=State) ->
+handle_call(print, _From, #state{trace=Trace, file=File}=State) ->
     lager:info("~p: printing trace", [?MODULE]),
 
     lists:foldl(fun({Type, Message}, Count) ->
@@ -160,6 +168,11 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
         %% Advance line number.
         Count + 1
     end, 1, Trace),
+
+    %% Write trace.
+    lists:foreach(fun(Line) ->
+        io:format(File, "~p", [Line])
+        end, Trace),
 
     {reply, ok, State};
 handle_call(Msg, _From, State) ->
