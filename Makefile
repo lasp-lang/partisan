@@ -30,6 +30,12 @@ packageclean:
 ## Test targets
 ##
 
+jungleboogie:
+	rm -rf priv/lager; pkill -9 beam.smp; pkill -9 epmd; ${REBAR} ct --readable=false -v --suite=partisan_SUITE --case=connectivity_test --group=with_scamp_v1_membership_strategy
+
+hana:
+	rm -rf priv/lager; pkill -9 beam.smp; pkill -9 epmd; ${REBAR} ct --readable=false -v --suite=partisan_SUITE --case=connectivity_test --group=with_hiscamp_membership_strategy
+
 proper:
 	pkill -9 beam.smp; rm -rf priv/lager; ./rebar3 proper -m prop_partisan -p prop_sequential --noshrink -n 10
 

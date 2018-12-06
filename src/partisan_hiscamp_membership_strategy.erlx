@@ -1,0 +1,273 @@
+-module(hiScamp).
+-author("Hana Frluckaj <hanafrla@cmu.edu>").
+-behavior(partisan_membership_strategy).
+%%from PQ module
+-export([init/1, distance/2, hierarchial_clustering/2]).
+-include("partisan.hrl").
+
+-record(hiScamp, {membership, actor, heap, clusters}).
+
+%%initialize, distance method, compute distance, build priority queue,
+%%compute centroid two clusters, compute centroid, hierarchial clustering,
+%%valid heap node, add heap entry, evaluate, load data, loaded dataset,
+%%display, main method
+
+%%initialize state
+init(_Identity) -> 
+% make sure input isnt larger than existing number of clusters
+%% init a heap; note: erlang heap size limit is 233 words
+    Heap = [],
+    Clusters = [],
+    Membership = sets:add_element(myself(), sets:new()),
+    State = #hiScamp{membership=Membership, actor=Identity, heap=Heap, clusters=Clusters},
+    MembershipList = membership_list(State),
+    {ok, MembershipList, State}.
+
+%% remote node connects, notify node to us. perform forwarding?
+%% Membership0 is a set of node elements
+join(#hiScamp{membership=Memberhsip0}=State0, Node, _NodeState) ->
+    OutgoingMessages0 = [],
+    MembershipList = file_info{size = 233, type=Other, access=Read_write},
+    Member_size = len(MembershipList);
+    case (Member_size == 0) of
+        true ->
+            lager:info("Input file doesn't contain data"),
+            halt();
+        false ->
+            ok
+    Dimension = len(MembershipList[0]["data"])
+    case (Dimension == 0) of
+        true ->
+            lager:info("Dimension for dataset cannot be zero"),
+            halt();
+        false ->
+            ok
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("~p: Adding node ~p to our membership.", [node90, Node]);
+        false ->
+            ok
+    end,
+    Membership = sets:add_element(Node, Membership0),
+
+%% notify node to add us to its state.
+    Myself = partisan_peer_service_manager:myself(),
+    OutgoingMessages1 = OutgoingMessages0 ++ [{Node, {protocol, {forward_subscription, Myself}}}],
+    OutgoingMessages2 = sets:fold(fun(N, OM) ->
+        %% tracing is a macro
+        case partisan_config:get(tracing, ?TRACING) of
+            true ->
+                lager:info("~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N);
+            false ->
+                ok
+            end,
+            OM ++ [{N, {protocol, {forward_subscription, Node}}}]
+            end, OutgoingMessages1, Membership0),
+    C = partisan_config:get(scamp_c, ?SCAMP_C_VALUE),
+    ForwardMessages = lists:map(fun(N) ->
+        case partisan_config:get(tracing, ?TRACING) of
+            true ->
+                lager:info("~p: Forwarding additional subs. for ~p to node: ~p", [node(), Node, N]);
+            false ->
+                ok
+        end,
+        {N, {protocol, {forward_subscription, Node}}}
+        end, select_random_sublist(state0, C)),
+    OutgoingMessages = OutgoingMessages2 ++ ForwardMessages,
+    State = State0#scamp_v1{membership=Membership},
+    MembershipList = membership_list(State),
+    {ok, Membership, OutgoingMessages, State}.
+
+distance(#hiScamp{membership=Membership0}=_State0, Node) ->
+    %%put(distance)
+    Dict = get(Membership0, Node),
+    fetch(Node, Dict).
+
+build_priority_queue(#hiScamp{membership=Membership0}=State0, DistanceList) ->
+    %%call heapq to get distance
+    Heap = from_list(DistanceList).
+
+get_centroid_two_clusters(#hiScamp{membership=Membership0} =State0, CurrentClusters, DataPointIndex) ->
+    Size = len(DataPointIndex),
+    Dim = Dimension,
+    Centroid = [0.0]*Dim,
+    NumIndex = len(DataPointIndex),
+%% this is supposed to be a for loop to populate the list, dont think its right
+    while NumIndex > 0 ->
+        DimData = CurrentClusters[str(index)]["centroid"];
+        %%indexing with a for loop???
+        while Dim > 0 ->
+            Centroid[i] = Centroid[i] + float(DimData[i]),
+            Dim = Dim-1;
+        end,
+        Centorid,
+        NumIndex = NumIndex-1,
+    end,
+    while Dim > 0 ->
+        Centroid[i] = Centroid[i] / Size,
+        Dim = Dim - 1;
+    end,
+    Centroid.
+
+compute_centroid(#hiScamp{membership=Membership0} =State0, MembershipList, DataPointIndex) ->
+    Size = len(DataPointIndex),
+    Dim = Dimension,
+    Centroid = [0.0]*Dim,
+    NumIndex = len(DataPointIndex),
+%% this is supposed to be a for loop to populate the list, dont think its right
+    while NumIndex > 0 ->
+        DimData = MembershipList[str(index)]["data"],
+        %%indexing with a for loop???
+        while Dim > 0 ->
+            Centroid[i] = Centroid[i] + float(DimData[i]),
+            Dim = DimIndex-1;
+        end,
+        Centorid,
+        NumIndex = NumIndex-1,
+    end,
+    while Dim > 0 ->
+        Centroid[i] = Centroid[i] /Size,
+        Dim = Dim -1;
+    end,
+    Centroid.
+
+hierarchial_clustering(#hiScamp{membership=Membership0}=State0, CurrentClusters) ->
+    Clusters = CurrentClusters,
+    OldClusters = [],
+    Heap = distance(MembershipList),
+    Heap = from_list(Heap),
+    while len(CurrentClusters) > Input ->
+        delete_min({Heap, {_, Sub}, N}) -> Min,
+        PairDATA = Min[1],
+        set() -> NewC,
+        sum(PairDATA, []) -> NewCElems,
+        sort(NewCElems) -> NewCElems,
+        DATALen = len(PairDATA),
+        while DATALen > 0 ->
+            % append to Old clusters list
+            append([OldClusters|Tail],PairItem]) ->
+                [OldClusters|append(PairItem, Tail)],
+            remove(CurrentClusterslists:lists:flatten([io_lib:format("~p", PairItem)])),
+            DATALen = DATALen - 1;
+        end,
+        add(NewCluster, {priorq, Heap, CurrentCluster}) -> 
+        sort(CurrentClusters) ->
+        CurrentClusters.
+
+add_heap_entry() ->
+    ok.
+% for loop going through exclusters in currentcluster values
+%new heap entry
+%dist, append dist to heap entry, push dist and ("elements", exclusters[elements]"
+
+evaluate() ->
+    ok.
+%iterate through current clusters list
+
+
+leave(#scamp_v1{membership=Membership0}=State0, Node) ->
+    case partisan_config:get(tracing, ?TRACING) of 
+        true ->
+            lager:info("~p: Issuing remove_subscription for node ~p.", [node(), Node]);
+        false ->
+            ok
+    end,
+    Membership = sets:del_element(Node, Membership0),
+    MembershipList0 = membership_list(State0),
+%% Gossip
+    Message = {remove_subscription, Node},
+    OutgoingMessages = lists:map(fun(Peer) -> {Peer, {protocol, Message}} end, MembershipList0),
+    State = State0#scamp_v1{membership=Membership},
+    MembershipList = membership_list(State),
+    {ok, MembershipList, OutgoingMessages, State).
+
+periodic(#scamp_v1{last_message_time = LastMessageTime} = State) ->
+    SourceNode = myself(),
+    MembershipList = membership_list(State),
+    OutgoingPingMessages = lists:map(fun(Peer) ->
+                                             {Peer, {protocol, {ping, SourceNode}}}
+    end, MembershipList),
+    Difference = case LastMessageTime of
+                     undefined ->
+                         0;
+                     _ ->
+                         CurrentTime = erlang:timestamp(),
+                         timer:now_diff(CurrentTime, LastMessageTime)
+    end,
+    OutgoingSubscriptionMessages = case Difference > (?PERIODIC_INTERVAL * ?SCAMP_MESSAGE_WINDOW) of
+        true ->
+            case partisan_config: get(tracing, ?TRACING) of
+                true ->
+                    lager:info("~p: Node is possibly isolated.", [node()]);
+                false ->
+                    ok
+            end,
+            Myself = myself(),
+            lists:map(fun(N) ->
+                case partisan_config:get(tracing, ?TRACING) of
+                    true ->
+                        lager:info("~p: Forwarding add'l subs for ~p to node: ~p", [node(), Myself, N]);
+                    false ->
+                        ok
+                end,
+                {N, {protocol, {forward_subscription, Myself}}}
+            end, select_random_sublist(State, 1));
+        false ->
+            []
+    end,
+    {ok, MemberhsipList, OutgoingSubscriptionMessages + OutgoingPingMessages, State}.
+
+handle_message(#scamp_v1{membership=Membership0}=State0, {remove_subscription, Node}) ->
+    lager:info("~p: Recieved remove_subscription for node ~p.", [node(), Node]),
+    MembershipList0 = membership_list(state0),
+    case sets:is_element(Node, Membership0) of 
+        true ->
+            Membership = sets:del_element(Membership0, Node),
+            Message = {remove_subscription, Node},
+            OutgoingMessages = lists:map(fun(Peer) -> {Peer, {protocol, Message}} end, MembershipList0),
+            State = State0#scamp_v1{membership=Membership},
+            MembershipList = membership_list(state),
+            {ok, MembershipList, OutgoingMessages, State};
+        false ->
+            OutgoingMessages = [],
+            {ok, MembershipList0, OutgoingMessages, State0}
+    end;
+
+handle_message(#scamp_v1{membership=Membership0}=State0, {forward_subscription, Node}) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("~p: Recieved subscription for node ~p.", [node(), Node]);
+        false ->
+            ok
+    end,
+    MembershipList0 = membership_list(state0),
+    Random = random_0_or_1(),
+    Keep = trunc((sets:size(Membership0) + 1)*Random),
+    case Keep =:= 0 andalso not lists:member(node, MembershipList0) of
+        true ->
+            case partisan_config:get(tracing, ?TRACING) of
+                true ->
+                    lager:info("~p:Adding subscription for node: ~p", [node(), Node]);
+                false -> 
+                    ok
+            end,
+            Membership = sets:add_element(Node, Membership0),
+            State = State0#scamp_v1{membership=Membership},
+            MembershipList = membership_list(State),
+            OutgoingMessages = [],
+            {ok, MembershipList, OutgoingMessages, State};
+        false ->
+            OutgoingMessages = lists:map(fun(N) ->
+                case partisan_config:get(tracing, ?TRACING) of
+                    true -> 
+                        lager:info("~p: Forwarding subs for ~p to node: ~p", [node(), Node, N]);
+                    false ->
+                        ok
+                end,
+                {N, {protocol, {forward_subscription, Node}}}
+                end, select_random_sublist(State0, 1)),
+            {ok, MembershipList0, OutgoingMessages, State0}
+    end.
+
+    
+
