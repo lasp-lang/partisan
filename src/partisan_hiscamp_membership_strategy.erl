@@ -12,8 +12,6 @@
 %fix this
 -record(hiScamp, {membership, actor, heap, clusters}).
 
-% how is the data inserted?
-
 %%initialize state
 init(Identity) -> 
     Heap = heaps:new(),
@@ -100,89 +98,23 @@ get_centroid_two_clusters(#hiScamp{membership=Membership0, heap=Heap, clusters=C
                     erlang:setcookie(Min1, Min2);
                 false ->
                     %merge the two different clusters, and reflect that in second level
-                    Level2 = heaps:merge(from_list(sets:to_list(Clusters0), sets:to_list(Clusters1))),
-                    Heap = heaps:merge(Heap, Level2)
+                    Level2 = heaps:merge(heaps:from_list(sets:to_list(Clusters0), sets:to_list(Clusters1))),
+                    sets:add(sets:from_list(heaps:to_list(Level2)), Clusters)
             end
     end,
     Clusters.
 
-%do I use Membership as Data?
-insert_data(#hiScamp{membership=Membership0}=State0, Data, Table) ->
-    Folding = fun(Item, N) ->
-                      insert(Table, N, Item),
-                      N = N+1
-    end, 
-    lists:foldl(Folding, 1, DataItems).
-
-level1(N, P, L, _M) ->
-    insert(P, N+1, N+1),
-    insert(L, N+1, infinity).
-
-level2(N, _P, _L, M, Data, DistFun) ->
-    Folding = fun(I)->
-                      % fix line 22
-                      Dist = distance(#hiScamp{membership=Membership}, Node, Heap, Clusters),
-                      insert(M, I, Dist)
-    end,
-    lists:foreach(Folding, lists:seq(1, N)).
-            
-level3(N, P, L, M) ->
-    Folding = fun(I) ->
-                      PI = lookup(P, I),
-                      LI = lookup(L, I),
-                      MI = lookup(M, I),
-                      case MI < LI of
-                          true ->
-                              insert(M, PI, min(lookup(M, PI), LI)),
-                              insert(L, I, lookup(M, I)),
-                              insert(P, I, N + 1);
-                          false ->
-                              insert(M, PI, min(lookup(M, PI), MI))
-                      end
-    end, 
-    lists:foreach(Folding, lists:seq(1, N)).
-
-%set Data = Membership??
-cluster(#hiScamp{membership=Membership0}=State0, Data) ->
-    cluster(Data, fetch(Node, get(Membership0, Node))).
-cluster(#hiScamp{membership=Membership0}=State0, Data, DistFun) ->
-    DataTable = ets:new(dc_d, [set, private]),
-    insert_data(Data, DataTable),
-    P = ets:new(dc_p, [set, private]),
-    insert(P,1,1),
-    L = ets:new(dc_l, [set, private]),
-    insert(L, 1, infinity),
-    M = ets:new(dc_m, [set, private]),
-    Folding = fun(N) ->
-                      level1(N, P, L, M),
-                      level2(N, P, DataTable, DistFun),
-                      level3(N, P, L, M)
-    end,
-    lists:foreach(Folding, lists:seq(1, length(Data)-1)),
-    Cluster = hierarchial_clustering(L, P, DataTable),
-    [ets:delete(T)||T<-[DataTable,P,L,M]],
-    Cluster.
-
-hierarchial_clustering(#hiScamp{membership=Membership0}=State0, Clusters) ->
-    DataList = ets:tab2list(DataTable),
-    DataNoDist = dict:from_list(lists:map(fun({I, {_V, Data}}) -> {I, Data} end, DataList)),
-    %iterate over indices by distance
-    DistIndexMap = lists:sort([{Dist, I} || {I, Dist} <- ets:tab2list(LDict)]),
-    MapFun = fun({Distance, Index}, Clusters) ->
-                     case Distance =:= infinity of
-                         true -> Clusters;
-                         false ->
-                             Item = dict:fetch(Index, Clusters),
-                             IndexSibling = lookup(PDict, Index),
-                             Sibling = dict:fetch(IndexSibling, Clusters),
-                             Clusters1 = dict:erase(Index, Clusters),
-                             NewCluster = {Distance, [Item, Sibling]},
-                             dict:store(IndexSibling, NewCluster, Clusters1)
-                     end
-    end,
-    ClusterAsDict = lists:foldl(MapFun, DataNoVectors, DistIndexMap),
-    [{_, ClusterAsList}] = dict:to_list(ClusterAsDict),
-    ClusterAsList.
+hierarchial_clustering(#hiScamp{membership=Memberhsip0, heap=Heap, clusters=Clusters}=State0) ->
+    ListC0 = lists:foreach(erlang:setcookie, (sets:to_list(Clusters0))),
+    ListC1 = lists:foreach(erlang:setcookie, (sets:to_list(Clusters1))),
+    ListL2 = lists:foreach(erlang:setcookie, (sets:to_list(Level2))),
+    MapC0 = maps:from_list(ListC0),
+    MapC1 = maps:from_list(ListC1),
+    MapL2 = maps:from_list(ListL2),
+    maps:update_with(maps:iterator(MapC0), elrang:setcookie, MapL2), 
+    maps:update_with(maps:iterator(MapC1), elrang:setcookie, MapL2), 
+    Clusters = sets:from_list(maps:to_list(MapL2)),
+    Clusters.
 
 leave(#hiScamp{membership=Membership0}=State0, Node) ->
     case partisan_config:get(tracing, ?TRACING) of 
