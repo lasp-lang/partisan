@@ -10,22 +10,23 @@
 -include("partisan.hrl").
 
 %fix this
--record(hiScamp, {membership, actor, heap, clusters}).
+-record(hiScamp, {membership, actor, heap, level1, level2}).
 
 %%initialize state
 init(Identity) -> 
     Heap = heaps:new(),
-    Clusters = sets:new(),
+    L1 = sets:new(),
+    L2 = sets:new(),
     %dataset and data size
     %gold standard
     Membership = sets:add_element(myself(), sets:new()),
-    State = #hiScamp{membership=Membership, actor=Identity, heap=Heap, clusters=Clusters},
+    State = #hiScamp{membership=Membership, actor=Identity, heap=Heap, level1 = L1, level2 = L2},
     MembershipList = membership_list(State),
     {ok, MembershipList, State}.
 
 %% remote node connects, notify node to us. perform forwarding?
 %% Membership0 is a set of node elements
-join(#hiScamp{membership=Membership0, clusters=Clusters0}=State0, Node, _NodeState) ->
+join(#hiScamp{membership=Membership0, level1=L1, level2=L2}=State0, Node, _NodeState) ->
     OutgoingMessages0 = [],
     case partisan_config:get(tracing, ?TRACING) of
         true ->
@@ -34,9 +35,6 @@ join(#hiScamp{membership=Membership0, clusters=Clusters0}=State0, Node, _NodeSta
             ok
     end,
     Membership = sets:add_element(Node, Membership0),
-    % have 2 levels of clusters, those within threshold and those outside
-    Clusters1 = sets:add_element(Node, Clusters0),
-    Clusters = sets:add_element(undefined, Clusters1),
 %% notify node to add us to its state.
     Myself = partisan_peer_service_manager:myself(),
     OutgoingMessages1 = OutgoingMessages0 ++ [{Node, {protocol, {forward_subscription, Myself}}}],
@@ -61,60 +59,56 @@ join(#hiScamp{membership=Membership0, clusters=Clusters0}=State0, Node, _NodeSta
         {N, {protocol, {forward_subscription, Node}}}
         end, select_random_sublist(state0, C)),
     OutgoingMessages = OutgoingMessages2 ++ ForwardMessages,
-    State = State0#hiScamp{membership=Membership, clusters = Clusters},
+    State = State0#hiScamp{membership=Membership},
     MembershipList = membership_list(State),
     {ok, Membership, OutgoingMessages, State}.
 
-distance(#hiScamp{membership=Membership0, heap=Heap, clusters=Clusters}=_State0, Node) ->
+distance(#hiScamp{membership=Membership0, heap=Heap, level1=L1, level2=L2}=_State0, Node) ->
     % A node j joins the system by sending a subscription request to the node s which is closest to it
-    Dict = get(Membership0, Node),
     Threshold = 3,
-    Dist = dict:fetch(Node, Dict),
+    Dict = get(distance_metrics),
+    Dist = dict:find(Node, Dict),
+    % handle errors
     case Threshold > Dist of
         true -> 
             % process this case using Scamp within this cluster
             % subscription at level 1
             %need to send copies out to other nodes -> gossip protocol
-            sets:add(Node, Cluster0);
+            sets:add(Node, L1);
         false ->
+                       % search through set to find another set
+                       % store two sets in the record
             % subscription at level 2
-            sets:add(Node, Cluster1)
+                       %input Cluster0
+            sets:add(Node, L2)
     end,
-    heaps:add(Dist, Heap),
-    Clusters.
+    heaps:add(Dist, Heap).
 
-get_centroid_two_clusters(#hiScamp{membership=Membership0, heap=Heap, clusters=Clusters} =State0) ->
+get_centroid_two_clusters(#hiScamp{membership=Membership0, heap=Heap, level1=L1, level2=L2} =State0) ->
     Min1 = heaps:min(Heap),
     Heap = heaps:delete_min(Heap),
     Min2 = heaps:min(Heap),
-    case sets:is_element(Min1, Clusters0) andalso sets:is_element(Min2, Clusters0) of
-        true ->
+    case sets:is_element(Min1, L1) andalso sets:is_element(Min2, L1) of
+        ok
+        %true ->
             % can group nodes as theyre the closest within the same threshold
-            erlang:setcookie(Min1, Min2);
-        false -> 
-            case sets:is_element(Min2, Clusters1) andalso sets:is_element(Min2, Clusters1) of
+        %% NODE CONNECTIONS
+        %    ok;
+        %false -> 
+            case sets:is_element(Min2, L2) andalso sets:is_element(Min2, L2) of
                 true ->
                     % group nodes as theyre in the same threshold
-                    erlang:setcookie(Min1, Min2);
+                    %% NODE CONNECTIONS?
+                    ok;
                 false ->
                     %merge the two different clusters, and reflect that in second level
-                    Level2 = heaps:merge(heaps:from_list(sets:to_list(Clusters0), sets:to_list(Clusters1))),
-                    sets:add(sets:from_list(heaps:to_list(Level2)), Clusters)
+                    L2 = heaps:merge(heaps:from_list(sets:to_list(L2), sets:to_list(L1))),
             end
     end,
-    Clusters.
+    L2.
 
-hierarchial_clustering(#hiScamp{membership=Memberhsip0, heap=Heap, clusters=Clusters}=State0) ->
-    ListC0 = lists:foreach(erlang:setcookie, (sets:to_list(Clusters0))),
-    ListC1 = lists:foreach(erlang:setcookie, (sets:to_list(Clusters1))),
-    ListL2 = lists:foreach(erlang:setcookie, (sets:to_list(Level2))),
-    MapC0 = maps:from_list(ListC0),
-    MapC1 = maps:from_list(ListC1),
-    MapL2 = maps:from_list(ListL2),
-    maps:update_with(maps:iterator(MapC0), elrang:setcookie, MapL2), 
-    maps:update_with(maps:iterator(MapC1), elrang:setcookie, MapL2), 
-    Clusters = sets:from_list(maps:to_list(MapL2)),
-    Clusters.
+hierarchial_clustering(#hiScamp{membership=Memberhsip0, heap=Heap, level1=L1, level2=L2}=State0) ->
+    ok.
 
 leave(#hiScamp{membership=Membership0}=State0, Node) ->
     case partisan_config:get(tracing, ?TRACING) of 
