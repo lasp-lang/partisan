@@ -2,8 +2,6 @@
 -author("Hana Frluckaj <hanafrla@cmu.edu>").
 -behavior(partisan_membership_strategy).
 %%import Heap stuff
--import(heaps, [add/2, delete_min/1, from_list/1, empty/1, merge/2, new/0, min/1,
-                sort/1, to_list/1]).
 %change size to heaps:size()
 % change export list
 %-export([init/1, distance/2, hierarchial_clustering/2]).
@@ -67,8 +65,11 @@ distance(#hiScamp{membership=Membership0, heap=Heap, level1=L1, level2=L2}=_Stat
     % A node j joins the system by sending a subscription request to the node s which is closest to it
     Threshold = 3,
     Dict = get(distance_metrics),
-    Dist = dict:find(Node, Dict),
-    % handle errors
+    try dict:find(Node, Dict) of
+        {ok, Dist} -> Dist
+    catch
+         error:E -> {"Error computing distance");
+    end,
     case Threshold > Dist of
         true -> 
             % process this case using Scamp within this cluster
@@ -88,24 +89,16 @@ get_centroid_two_clusters(#hiScamp{membership=Membership0, heap=Heap, level1=L1,
     Min1 = heaps:min(Heap),
     Heap = heaps:delete_min(Heap),
     Min2 = heaps:min(Heap),
-    case sets:is_element(Min1, L1) andalso sets:is_element(Min2, L1) of
-        ok
-        %true ->
+    case (sets:is_element(Min1, L1) andalso sets:is_element(Min2, L1) orelse 
+         (sets:is_element(Min1, L2) andalso sets:is_element(Min2, L2))) of
+        true ->
             % can group nodes as theyre the closest within the same threshold
         %% NODE CONNECTIONS
-        %    ok;
-        %false -> 
-            case sets:is_element(Min2, L2) andalso sets:is_element(Min2, L2) of
-                true ->
-                    % group nodes as theyre in the same threshold
-                    %% NODE CONNECTIONS?
-                    ok;
-                false ->
-                    %merge the two different clusters, and reflect that in second level
-                    L2 = heaps:merge(heaps:from_list(sets:to_list(L2), sets:to_list(L1))),
-            end
+            ok;
+        false -> 
+            Heap = heaps:merge(heaps:from_list(sets:to_list(L2), sets:to_list(L1))),
     end,
-    L2.
+    Heap.
 
 hierarchial_clustering(#hiScamp{membership=Memberhsip0, heap=Heap, level1=L1, level2=L2}=State0) ->
     ok.
