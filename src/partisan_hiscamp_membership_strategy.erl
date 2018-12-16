@@ -18,7 +18,7 @@ init(Identity) ->
     %dataset and data size
     %gold standard
     Membership = sets:add_element(myself(), sets:new()),
-    State = #hiScamp{membership=Membership, actor=Identity, heap=Heap, level1 = L1, level2 = L2},
+    State = #hiScamp{membership=Membership, actor=Identity, heap=Heap, level1 = L1, level2 = L2, distance=Dist},
     MembershipList = membership_list(State),
     {ok, MembershipList, State}.
 
@@ -61,14 +61,23 @@ join(#hiScamp{membership=Membership0, level1=L1, level2=L2}=State0, Node, _NodeS
     MembershipList = membership_list(State),
     {ok, Membership, OutgoingMessages, State}.
 
-distance(#hiScamp{membership=Membership0, heap=Heap, level1=L1, level2=L2}=_State0, Node) ->
-    % A node j joins the system by sending a subscription request to the node s which is closest to it
-    Threshold = 3,
+try_distance(#hiScamp{membership=Membership0, distance=Dist}=_State0, Node) ->
     Dict = get(distance_metrics),
     try dict:find(Node, Dict) of
         {ok, Dist} -> Dist
     catch
          error:E -> {"Error computing distance"}
+    end.
+    
+
+distance(#hiScamp{membership=Membership0, heap=Heap, level1=L1, level2=L2, distance = Dist}=_State0, Node) ->
+    % A node j joins the system by sending a subscription request to the node s which is closest to it
+    Threshold = 3,
+    try try_distance() of
+        Dis -> Dis
+    catch
+        error: Error ->
+            Error
     end,
     case Threshold > Dist of
         true -> 
