@@ -8,7 +8,7 @@
 -include("partisan.hrl").
 
 %fix this
--record(hiScamp, {membership, actor, heap, level1, level2}).
+-record(hiScamp, {membership, actor, heap, level1, level2, distance}).
 
 %%initialize state
 init(Identity) -> 
@@ -62,11 +62,12 @@ join(#hiScamp{membership=Membership0, level1=L1, level2=L2}=State0, Node, _NodeS
     {ok, Membership, OutgoingMessages, State}.
 
 try_distance(#hiScamp{membership=Membership0, distance=Dist}=_State0, Node) ->
+    Dist = 0,
     Dict = get(distance_metrics),
     try dict:find(Node, Dict) of
         {ok, Dist} -> Dist
     catch
-         error:E -> {"Error computing distance"}
+        {error, Error} -> Error
     end.
     
 
@@ -74,7 +75,7 @@ distance(#hiScamp{membership=Membership0, heap=Heap, level1=L1, level2=L2, dista
     % A node j joins the system by sending a subscription request to the node s which is closest to it
     Threshold = 3,
     try try_distance() of
-        Dis -> Dis
+        Dist -> Dist
     catch
         error: Error ->
             Error
