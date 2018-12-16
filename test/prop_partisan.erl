@@ -833,7 +833,7 @@ partition_debug(Line, Args) ->
 initial_state_debug(Line, Args) ->
     case ?INITIAL_STATE_DEBUG of
         true ->
-            lager:info(Line, Args);
+            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
@@ -841,7 +841,7 @@ initial_state_debug(Line, Args) ->
 precondition_debug(Line, Args) ->
     case ?PRECONDITION_DEBUG of
         true ->
-            lager:info(Line, Args);
+            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
@@ -849,7 +849,7 @@ precondition_debug(Line, Args) ->
 postcondition_debug(Line, Args) ->
     case ?POSTCONDITION_DEBUG of
         true ->
-            lager:info(Line, Args);
+            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
@@ -857,7 +857,7 @@ postcondition_debug(Line, Args) ->
 debug(Line, Args) ->
     case ?DEBUG of
         true ->
-            lager:info(Line, Args);
+            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
