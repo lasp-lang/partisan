@@ -68,7 +68,7 @@ distance(#hiScamp{membership=Membership0, heap=Heap, level1=L1, level2=L2}=_Stat
     try dict:find(Node, Dict) of
         {ok, Dist} -> Dist
     catch
-         error:E -> {"Error computing distance");
+         error:E -> {"Error computing distance"}
     end,
     case Threshold > Dist of
         true -> 
@@ -96,9 +96,8 @@ get_centroid_two_clusters(#hiScamp{membership=Membership0, heap=Heap, level1=L1,
         %% NODE CONNECTIONS
             ok;
         false -> 
-            Heap = heaps:merge(heaps:from_list(sets:to_list(L2), sets:to_list(L1))),
-    end,
-    Heap.
+            Heap = heaps:merge(heaps:from_list(sets:to_list(L2), sets:to_list(L1)))
+    end.
 
 hierarchial_clustering(#hiScamp{membership=Memberhsip0, heap=Heap, level1=L1, level2=L2}=State0) ->
     ok.
