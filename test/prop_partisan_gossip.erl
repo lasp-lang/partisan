@@ -250,7 +250,7 @@ end_case() ->
     NodeMessages = lists:map(fun({_Name, Node}) ->
         case check_mailbox(Node) of 
             {ok, Messages} ->
-                node_debug("messages received at node ~p are ~p: ~p", [Node, length(Messages), Messages]),
+                node_debug("received at node ~p are ~p: ~p", [Node, length(Messages), Messages]),
                 Messages;
             {error, _} ->
                 node_debug("cannot get messages received at node ~p", [Node]),
