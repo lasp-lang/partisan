@@ -475,8 +475,7 @@ start_nodes() ->
     lager:info("~p: ~p started nodes: ~p", [?MODULE, Self, Nodes]),
 
     %% Deterministically seed the random number generator.
-    Seed = partisan_config:seed(),
-    lager:info("~p: seed generated: ~p", [?MODULE, Seed]),
+    partisan_config:seed(),
 
     %% Reset trace.
     ok = partisan_trace_orchestrator:reset(),
