@@ -48,8 +48,6 @@
                 blocked_processes=[],
                 identifier=undefined}).
 
--define(FILENAME, "/tmp/partisan.trace").
-
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -92,27 +90,8 @@ identify(Identifier) ->
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
     lager:info("Test orchestrator started on node: ~p", [node()]),
-
-    case os:getenv("REPLAY") of 
-        false ->
-            %% This is not a replay, so store the current trace.
-            lager:info("~p: recording trace to file.", [?MODULE]),
-            {ok, #state{trace=[], blocked_processes=[]}};
-        _ ->
-            %% This is a replay, so load the previous trace.
-            lager:info("~p: loading previous trace for replay.", [?MODULE]),
-
-            {ok, Bin} = file:read_file(?FILENAME),
-            Lines = binary_to_term(Bin),
-
-            lists:foreach(fun(Line) ->
-                lager:info("~p: ~p", [?MODULE, Line])
-            end, Lines),
-
-            lager:info("~p: trace loaded.", [?MODULE]),
-
-            {ok, #state{previous_trace=Lines, replay=true, blocked_processes=[]}}
-    end.
+    State = initialize_state(),
+    {ok, State}.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
@@ -125,7 +104,7 @@ handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0,
         true ->
             %% Find next message that should arrive based on the trace.
             %% Can we process immediately?
-            case can_deliver_based_on_trace({Type, Message}, PreviousTrace0) of 
+            case can_deliver_based_on_trace({Type, Message}, PreviousTrace0, BlockedProcesses0) of 
                 true ->
                     %% Deliver as much as we can.
                     {PreviousTrace, BlockedProcesses} = trace_deliver(PreviousTrace0, BlockedProcesses0),
@@ -142,13 +121,14 @@ handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0,
         false ->
             {reply, ok, State}
     end;
-handle_call(reset, _From, State) ->
+handle_call(reset, _From, _State) ->
     lager:info("~p: resetting trace.", [?MODULE]),
-    {reply, ok, State#state{trace=[], identifier=undefined}};
+    State = initialize_state(),
+    {reply, ok, State};
 handle_call({identify, Identifier}, _From, State) ->
     lager:info("~p: identifying trace: ~p", [?MODULE, Identifier]),
     {reply, ok, State#state{identifier=Identifier}};
-handle_call(print, _From, #state{trace=Trace, replay=Replay}=State) ->
+handle_call(print, _From, #state{trace=Trace}=State) ->
     lager:info("~p: printing trace", [?MODULE]),
 
     lists:foldl(fun({Type, Message}, Count) ->
@@ -206,22 +186,18 @@ handle_call(print, _From, #state{trace=Trace, replay=Replay}=State) ->
     end, 1, Trace),
 
     %% Write trace.
-    case Replay of 
-        true ->
-            lager:info("~p: not writing trace, replay mode.", [?MODULE]),
-            ok;
-        false ->
-            FilteredTrace = lists:filter(fun({Type, _Message}) ->
-                case Type of 
-                    pre_interposition_fun ->
-                        true;
-                    _ ->
-                        false
-                end
-            end, Trace),
-            lager:info("~p: writing trace.", [?MODULE]),
-            ok = file:write_file(?FILENAME, term_to_binary(FilteredTrace))
-    end,
+    FilteredTrace = lists:filter(fun({Type, _Message}) ->
+        case Type of 
+            pre_interposition_fun ->
+                true;
+            _ ->
+                false
+        end
+    end, Trace),
+
+    lager:info("~p: writing trace.", [?MODULE]),
+    TraceFile = trace_file(),
+    ok = file:write_file(TraceFile, term_to_binary(FilteredTrace)),
 
     {reply, ok, State};
 handle_call(Msg, _From, State) ->
@@ -255,19 +231,23 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private 
-can_deliver_based_on_trace({Type, Message}, PreviousTrace) ->
+can_deliver_based_on_trace({Type, Message}, PreviousTrace, BlockedProcesses) ->
     lager:info("~p: determining if message ~p: ~p can be delivered.", [?MODULE, Type, Message]),
 
     [{NextType, NextMessage} | _] = PreviousTrace,
 
-    case {NextType, NextMessage} of 
+    CanDeliver = case {NextType, NextMessage} of 
         {Type, Message} ->
             lager:info("~p: => YES!", [?MODULE]),
             true;
         _ ->
             lager:info("~p: => NO, waiting for message: ~p: ~p", [?MODULE, NextType, NextMessage]),
             false
-    end.
+    end,
+
+    lager:info("~p: can deliver: ~p blocked processes: ~p", [?MODULE, CanDeliver, BlockedProcesses]),
+
+    CanDeliver.
 
 %% @private
 trace_deliver([{_, _} | Trace], BlockedProcesses) ->
@@ -282,7 +262,7 @@ trace_deliver_log_flush(Trace0, BlockedProcesses0) ->
 
     %% Iterate blocked processes in an attempt to remove one.
     {ND, T, BP} = lists:foldl(fun({{NextType, NextMessage}, Pid} = BP, {NumDelivered1, Trace1, BlockedProcesses1}) ->
-        case can_deliver_based_on_trace({NextType, NextMessage}, Trace1) of 
+        case can_deliver_based_on_trace({NextType, NextMessage}, Trace1, BlockedProcesses0) of 
             true ->
                 lager:info("~p: pid ~p can be unblocked!", [?MODULE, Pid]),
 
@@ -306,7 +286,7 @@ trace_deliver_log_flush(Trace0, BlockedProcesses0) ->
         end
     end, {0, Trace0, BlockedProcesses0}, BlockedProcesses0),
 
-    %% Did we deliver something?  If so, try again.
+    %% Did we deliver something? If so, try again.
     case ND > 0 of 
         true ->
             lager:info("~p: was able to deliver a message, trying again", [?MODULE]),
@@ -314,4 +294,46 @@ trace_deliver_log_flush(Trace0, BlockedProcesses0) ->
         false ->
             lager:info("~p: flush attempt finished.", [?MODULE]),
             {T, BP}
+    end.
+
+%% @private
+trace_file() ->
+    case os:getenv("TRACE_FILE") of
+        false ->
+            "/tmp/partisan-latest.trace";
+        Other ->
+            Other
+    end.
+
+%% @private
+replay_trace_file() ->
+    case os:getenv("REPLAY_TRACE_FILE") of
+        false ->
+            "/tmp/partisan-latest.trace";
+        Other ->
+            Other
+    end.
+
+%% @private
+initialize_state() ->
+    case os:getenv("REPLAY") of 
+        false ->
+            %% This is not a replay, so store the current trace.
+            lager:info("~p: recording trace to file.", [?MODULE]),
+            #state{trace=[], blocked_processes=[], identifier=undefined};
+        _ ->
+            %% This is a replay, so load the previous trace.
+            lager:info("~p: loading previous trace for replay.", [?MODULE]),
+
+            ReplayTraceFile = replay_trace_file(),
+            {ok, Bin} = file:read_file(ReplayTraceFile),
+            Lines = binary_to_term(Bin),
+
+            lists:foreach(fun(Line) ->
+                lager:info("~p: ~p", [?MODULE, Line])
+            end, Lines),
+
+            lager:info("~p: trace loaded.", [?MODULE]),
+
+            #state{trace=[], previous_trace=Lines, replay=true, blocked_processes=[], identifier=undefined}
     end.
