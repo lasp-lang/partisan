@@ -17,8 +17,9 @@ init(Identity) ->
     L2 = sets:new(),
     %dataset and data size
     %gold standard
+    Dist = 0,
     Membership = sets:add_element(myself(), sets:new()),
-    State = #hiScamp{membership=Membership, actor=Identity, heap=Heap, level1 = L1, level2 = L2, distance=Dist},
+    State = #hiScamp{membership=Membership, actor=Identity, heap=Heap, level1=L1, level2=L2, distance=Dist},
     MembershipList = membership_list(State),
     {ok, MembershipList, State}.
 
@@ -61,26 +62,23 @@ join(#hiScamp{membership=Membership0, level1=L1, level2=L2}=State0, Node, _NodeS
     MembershipList = membership_list(State),
     {ok, Membership, OutgoingMessages, State}.
 
-try_distance(#hiScamp{membership=Membership0, distance=Dist}=_State0, Node) ->
-    Dist = 0,
+try_distance(#hiScamp{membership=Membership0, distance=Dist}=_State0, Node, Dict) ->
     Dict = get(distance_metrics),
-    try dict:find(Node, Dict) of
-        {ok, Dist} -> Dist
-    catch
-        {error, Error} -> Error
-    end.
+    case dict:find(Node, Dict) == error of
+        true ->
+            erlang:error("Cannot attain node distain");
+        false ->
+            {ok, Dist} -> Dist
+    end,
+    Dist = element{2, Dist}.
     
 
-distance(#hiScamp{membership=Membership0, heap=Heap, level1=L1, level2=L2, distance = Dist}=_State0, Node) ->
+distance(#hiScamp{membership=Membership0, heap=Heap, level1=L1, level2=L2, distance=Dist}=_State0, Node) ->
     % A node j joins the system by sending a subscription request to the node s which is closest to it
+    Dict = dict:new(),
     Threshold = 3,
-    try try_distance() of
-        Dist -> Dist
-    catch
-        error: Error ->
-            Error
-    end,
-    case Threshold > Dist of
+    Dist = try_distance(Node, Dict),
+    case Threshold > element{2, Dist} of
         true -> 
             % process this case using Scamp within this cluster
             % subscription at level 1
@@ -97,7 +95,7 @@ distance(#hiScamp{membership=Membership0, heap=Heap, level1=L1, level2=L2, dista
 
 get_centroid_two_clusters(#hiScamp{membership=Membership0, heap=Heap, level1=L1, level2=L2} =State0) ->
     Min1 = heaps:min(Heap),
-    Heap = heaps:delete_min(Heap),
+    heaps:delete_min(Heap),
     Min2 = heaps:min(Heap),
     case (sets:is_element(Min1, L1) andalso sets:is_element(Min2, L1) orelse 
          (sets:is_element(Min1, L2) andalso sets:is_element(Min2, L2))) of
@@ -106,13 +104,13 @@ get_centroid_two_clusters(#hiScamp{membership=Membership0, heap=Heap, level1=L1,
         %% NODE CONNECTIONS
             ok;
         false -> 
-            Heap = heaps:merge(heaps:from_list(sets:to_list(L2), sets:to_list(L1)))
+            heaps:merge(heaps:from_list(sets:to_list(L2), sets:to_list(L1)))
     end.
 
-hierarchial_clustering(#hiScamp{membership=Memberhsip0, heap=Heap, level1=L1, level2=L2}=State0) ->
-    ok.
+% hierarchial_clustering(#hiScamp{membership=Memberhsip0, heap=Heap, level1=L1, level2=L2}=State0) ->
+  %  ok.
 
-leave(#hiScamp{membership=Membership0}=State0, Node) ->
+leave(#hiScamp{membership=Membership0, level1=L1, level2=L2}=State0, Node) ->
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
             lager:info("~p: Issuing remove_subscription for node ~p.", [node(), Node]);
