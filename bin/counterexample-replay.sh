@@ -2,10 +2,11 @@
 
 TRACE_FILE=/tmp/partisan-latest.trace
 REPLAY_TRACE_FILE=/tmp/partisan-replay.trace
-COUNTEREXAMPLE_FILE=/tmp/partisan.counterexample
+COUNTEREXAMPLE_CONSULT_FILE=/tmp/partisan-counterexample.consult
+REBAR_COUNTEREXAMPLE_CONSULT_FILE=_build/test/rebar3_proper-counterexamples.consult
 
-if [ ! -f ${COUNTEREXAMPLE_FILE} ]; then
-    echo "No counterexample!"
+if [ ! -f ${COUNTEREXAMPLE_CONSULT_FILE} ]; then
+    echo "No counterexample consult file!"
     exit 1
 fi
 
@@ -16,8 +17,9 @@ fi
 
 # Replay counterexample.
 echo "Replaying counterexample..."
-mv ${TRACE_FILE} ${REPLAY_TRACE_FILE}
-pkill -9 beam.smp; rm -rf priv/lager; REPLAY=true REPLAY_TRACE_FILE=${REPLAY_TRACE_FILE} TRACE_FILE=${TRACE_FILE} ./rebar3 proper --retry
+cp ${TRACE_FILE} ${REPLAY_TRACE_FILE}
+cp ${COUNTEREXAMPLE_CONSULT_FILE} ${REBAR_COUNTEREXAMPLE_CONSULT_FILE}
+make kill; pkill -9 beam.smp; rm -rf priv/lager; REPLAY=true REPLAY_TRACE_FILE=${REPLAY_TRACE_FILE} TRACE_FILE=${TRACE_FILE} ./rebar3 proper --retry
 
 RETVAL=$?
 
