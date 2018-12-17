@@ -185,19 +185,7 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
         Count + 1
     end, 1, Trace),
 
-    %% Write trace.
-    FilteredTrace = lists:filter(fun({Type, _Message}) ->
-        case Type of 
-            pre_interposition_fun ->
-                true;
-            _ ->
-                false
-        end
-    end, Trace),
-
-    lager:info("~p: writing trace.", [?MODULE]),
-    TraceFile = trace_file(),
-    ok = file:write_file(TraceFile, term_to_binary(FilteredTrace)),
+    write_trace(Trace),
 
     {reply, ok, State};
 handle_call(Msg, _From, State) ->
@@ -326,14 +314,31 @@ initialize_state() ->
             lager:info("~p: loading previous trace for replay.", [?MODULE]),
 
             ReplayTraceFile = replay_trace_file(),
-            {ok, Bin} = file:read_file(ReplayTraceFile),
-            Lines = binary_to_term(Bin),
+            {ok, [Lines]} = file:consult(ReplayTraceFile),
 
-            lists:foreach(fun(Line) ->
-                lager:info("~p: ~p", [?MODULE, Line])
-            end, Lines),
+            lists:foreach(fun(Line) -> lager:info("~p: ~p", [?MODULE, Line]) end, Lines),
 
             lager:info("~p: trace loaded.", [?MODULE]),
 
             #state{trace=[], previous_trace=Lines, replay=true, blocked_processes=[], identifier=undefined}
     end.
+
+%% @private
+write_trace(Trace) ->
+    %% Write trace.
+    FilteredTrace = lists:filter(fun({Type, _Message}) ->
+        case Type of 
+            pre_interposition_fun ->
+                true;
+            _ ->
+                false
+        end
+    end, Trace),
+
+    TraceFile = trace_file(),
+    lager:info("~p: writing trace.", [?MODULE]),
+    {ok, Io} = file:open(TraceFile, [write, {encoding, utf8}]),
+    io:format(Io, "~p.~n", [FilteredTrace]),
+    file:close(Io),
+
+    ok.
