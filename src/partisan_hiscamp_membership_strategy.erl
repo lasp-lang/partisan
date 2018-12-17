@@ -66,11 +66,11 @@ try_distance(#hiScamp{membership=Membership0, distance=Dist}=_State0, Node, Dict
     Dict = get(distance_metrics),
     case dict:find(Node, Dict) == error of
         true ->
-            erlang:error("Cannot attain node distain");
+            erlang:error("Cannot attain node distance");
         false ->
-            {ok, Dist} -> Dist
+            Val = {ok, Value}
     end,
-    Dist = element{2, Dist}.
+    Dist = element{2, Val}.
     
 
 distance(#hiScamp{membership=Membership0, heap=Heap, level1=L1, level2=L2, distance=Dist}=_State0, Node) ->
@@ -93,7 +93,10 @@ distance(#hiScamp{membership=Membership0, heap=Heap, level1=L1, level2=L2, dista
     end,
     heaps:add(Dist, Heap).
 
-get_centroid_two_clusters(#hiScamp{membership=Membership0, heap=Heap, level1=L1, level2=L2} =State0) ->
+% algorithm can operate without knowing this 
+% this needs to be changed
+get_centroid_two_clusters(#hiScamp{membership=Membership0, heap=Heap, level1=L1, level2=L2} =State0, Node) ->
+    distance(Node),
     Min1 = heaps:min(Heap),
     heaps:delete_min(Heap),
     Min2 = heaps:min(Heap),
@@ -102,29 +105,28 @@ get_centroid_two_clusters(#hiScamp{membership=Membership0, heap=Heap, level1=L1,
         true ->
             % can group nodes as theyre the closest within the same threshold
         %% NODE CONNECTIONS
+            % join(Min1, Min2)
             ok;
         false -> 
             heaps:merge(heaps:from_list(sets:to_list(L2), sets:to_list(L1)))
     end.
 
-% hierarchial_clustering(#hiScamp{membership=Memberhsip0, heap=Heap, level1=L1, level2=L2}=State0) ->
-  %  ok.
-
-leave(#hiScamp{membership=Membership0, level1=L1, level2=L2}=State0, Node) ->
-    case partisan_config:get(tracing, ?TRACING) of 
-        true ->
-            lager:info("~p: Issuing remove_subscription for node ~p.", [node(), Node]);
-        false ->
-            ok
-    end,
-    Membership = sets:del_element(Node, Membership0),
-    MembershipList0 = membership_list(State0),
+%change to leave_levels?
+ %leave(#hiScamp{membership=Membership0, level1=L1, level2=L2}=State0, Node) ->
+  %  case partisan_config:get(tracing, ?TRACING) of 
+   %     true ->
+    %        lager:info("~p: Issuing remove_subscription for node ~p.", [node(), Node]);
+     %   false ->
+      %      ok
+%    end,
+ %   Membership = sets:del_element(Node, Membership0),
+  %  MembershipList0 = membership_list(State0),
 %% Gossip
-    Message = {remove_subscription, Node},
-    OutgoingMessages = lists:map(fun(Peer) -> {Peer, {protocol, Message}} end, MembershipList0),
-    State = State0#hiScamp{membership=Membership},
-    MembershipList = membership_list(State),
-    {ok, MembershipList, OutgoingMessages, State}.
+%    Message = {remove_subscription, Node},
+ %   OutgoingMessages = lists:map(fun(Peer) -> {Peer, {protocol, Message}} end, MembershipList0),
+  %  State = State0#hiScamp{membership=Membership},
+   % MembershipList = membership_list(State),
+   % {ok, MembershipList, OutgoingMessages, State}.
 
 periodic(#hiScamp{last_message_time = LastMessageTime} = State) ->
     SourceNode = myself(),
