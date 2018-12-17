@@ -353,7 +353,17 @@ postcondition(#state{minority_nodes=MinorityNodes, partition_filters=PartitionFi
                                     true
                             end;
                         false ->
-                            node_postcondition(NodeState, Call, Res)
+                            PostconditionResult = node_postcondition(NodeState, Call, Res),
+
+                            case PostconditionResult of 
+                                false ->
+                                    debug("postcondition result: ~p", [PostconditionResult]),
+                                    ok;
+                                true ->
+                                    ok
+                            end,
+
+                            PostconditionResult
                     end
         end;
     false ->
