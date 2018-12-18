@@ -326,47 +326,21 @@ postcondition(_State, {call, ?MODULE, leave_cluster, [_Node, _JoinedNodes]}, ok)
     postcondition_debug("postcondition leave_cluster: succeeded", []),
     %% Accept leaves that succeed.
     true;
-postcondition(#state{minority_nodes=MinorityNodes, partition_filters=PartitionFilters, node_state=NodeState}, {call, Mod, Fun, [Node|_]=_Args}=Call, Res) -> 
+postcondition(#state{node_state=NodeState}, {call, Mod, Fun, _Args}=Call, Res) -> 
     case lists:member(Fun, node_functions()) of
         true ->
-            case lists:member(Node, MinorityNodes) of
-                true ->
-                    case Res of
-                        {error, _} ->
-                            true;
-                        _ ->
-                            postcondition_debug("node postcondition for ~p, operation succeeded, should have failed.", [Fun]),
-                            false
-                    end;
+            PostconditionResult = node_postcondition(NodeState, Call, Res),
+
+            case PostconditionResult of 
                 false ->
-                    postcondition_debug("request went to majority node, node: ~p response: ~p", [Node, Res]),
+                    debug("postcondition result: ~p", [PostconditionResult]),
+                    ok;
+                true ->
+                    ok
+            end,
 
-                    %% One partitioned node may make a quorum of 2 fail.
-                    case is_involved_in_x_partitions(Node, 1, PartitionFilters) of
-                        true ->
-                            case Res of
-                                {error, _} ->
-                                    true;
-                                ok ->
-                                    true;
-                                {ok, _} ->
-                                    true
-                            end;
-                        false ->
-                            PostconditionResult = node_postcondition(NodeState, Call, Res),
-
-                            case PostconditionResult of 
-                                false ->
-                                    debug("postcondition result: ~p", [PostconditionResult]),
-                                    ok;
-                                true ->
-                                    ok
-                            end,
-
-                            PostconditionResult
-                    end
-        end;
-    false ->
+            PostconditionResult;
+        false ->
             postcondition_debug("general postcondition fired for ~p:~p with response ~p", [Mod, Fun, Res]),
             %% All other commands pass.
             false
