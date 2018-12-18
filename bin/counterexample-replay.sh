@@ -15,10 +15,13 @@ if [ ! -f ${TRACE_FILE} ]; then
     exit 1
 fi
 
-# Replay counterexample.
-echo "Replaying counterexample..."
+# Stage counterexample.
+echo "Staging counterexample..."
 cp ${TRACE_FILE} ${REPLAY_TRACE_FILE}
 cp ${COUNTEREXAMPLE_CONSULT_FILE} ${REBAR_COUNTEREXAMPLE_CONSULT_FILE}
+
+# Replay counterexample.
+echo "Replaying counterexample..."
 make kill; pkill -9 beam.smp; rm -rf priv/lager; REPLAY=true REPLAY_TRACE_FILE=${REPLAY_TRACE_FILE} TRACE_FILE=${TRACE_FILE} ./rebar3 proper --retry
 
 RETVAL=$?
