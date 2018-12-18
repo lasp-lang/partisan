@@ -245,6 +245,8 @@ begin_case() ->
 
 %% @private
 end_case() ->
+    node_debug("ending case", []),
+
     %% Get nodes.
     [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
 
