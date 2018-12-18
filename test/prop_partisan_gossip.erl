@@ -188,7 +188,9 @@ spawn_gossip_receiver(Node) ->
                     Sender ! Received;
                 {{SourceNode, Id}, Value} ->
                     node_debug("node ~p received origin: ~p id ~p and value: ~p", [Node, SourceNode, Id, Value]),
-                    true = ets:insert(?GOSSIP_TABLE, {{SourceNode, Id}, Value})
+                    true = ets:insert(?GOSSIP_TABLE, {{SourceNode, Id}, Value});
+                Other ->
+                    node_debug("node ~p received other: ~p", [Node, Other])
             end,
             F(F)
         end,
