@@ -45,6 +45,7 @@
 -record(state, {previous_trace=[],
                 trace=[], 
                 replay=false,
+                shrinking=false,
                 blocked_processes=[],
                 identifier=undefined}).
 
@@ -99,15 +100,15 @@ init([]) ->
 handle_call({trace, Type, Message}, _From, #state{trace=Trace0}=State) ->
     %% lager:info("~p: recording trace type: ~p message: ~p", [?MODULE, Type, Message]),
     {reply, ok, State#state{trace=Trace0++[{Type, Message}]}};
-handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0, replay=Replay, blocked_processes=BlockedProcesses0}=State) ->
+handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0, replay=Replay, shrinking=Shrinking, blocked_processes=BlockedProcesses0}=State) ->
     case Replay of 
         true ->
             %% Find next message that should arrive based on the trace.
             %% Can we process immediately?
-            case can_deliver_based_on_trace({Type, Message}, PreviousTrace0, BlockedProcesses0) of 
+            case can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace0, BlockedProcesses0) of 
                 true ->
                     %% Deliver as much as we can.
-                    {PreviousTrace, BlockedProcesses} = trace_deliver(PreviousTrace0, BlockedProcesses0),
+                    {PreviousTrace, BlockedProcesses} = trace_deliver(Shrinking, {Type, Message}, PreviousTrace0, BlockedProcesses0),
 
                     %% Record new trace position and new list of blocked processes.
                     {reply, ok, State#state{blocked_processes=BlockedProcesses, previous_trace=PreviousTrace}};
@@ -219,38 +220,75 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private 
-can_deliver_based_on_trace({Type, Message}, PreviousTrace, BlockedProcesses) ->
+can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace, BlockedProcesses) ->
     lager:info("~p: determining if message ~p: ~p can be delivered.", [?MODULE, Type, Message]),
 
-    [{NextType, NextMessage} | _] = PreviousTrace,
+    case PreviousTrace of 
+        [{NextType, NextMessage} | _] ->
+            CanDeliver = case {NextType, NextMessage} of 
+                {Type, Message} ->
+                    lager:info("~p: => YES!", [?MODULE]),
+                    true;
+                _ ->
+                    %% But, does the message actually exist in the trace?
+                    case lists:member({Type, Message}, PreviousTrace) of 
+                        true ->
+                            lager:info("~p: => NO, waiting for message: ~p: ~p", [?MODULE, NextType, NextMessage]),
+                            false;
+                        false ->
+                            %% new messages in the middle of the trace.
+                            %% this *should* be the common case if we shrink from the start of the trace forward (foldl)
+                            case Shrinking of 
+                                true ->
+                                    lager:info("~p: => CONDITIONAL YES, message doesn't exist in previous trace, but shrinking: ~p ~p", [?MODULE, Type, Message]),
+                                    true;
+                                false ->
+                                    lager:info("~p: => NO, waiting for message: ~p: ~p", [?MODULE, NextType, NextMessage]),
+                                    false
+                            end
+                    end
+            end,
 
-    CanDeliver = case {NextType, NextMessage} of 
-        {Type, Message} ->
-            lager:info("~p: => YES!", [?MODULE]),
-            true;
-        _ ->
-            lager:info("~p: => NO, waiting for message: ~p: ~p", [?MODULE, NextType, NextMessage]),
-            false
-    end,
+            lager:info("~p: can deliver: ~p blocked processes: ~p", [?MODULE, CanDeliver, BlockedProcesses]),
 
-    lager:info("~p: can deliver: ~p blocked processes: ~p", [?MODULE, CanDeliver, BlockedProcesses]),
-
-    CanDeliver.
+            CanDeliver;
+        [] ->
+            %% end of trace, but we are still receiving messages. 
+            %% this *should* be the common case if we shrink from the back of the trace forward (foldr)
+            case Shrinking of 
+                true ->
+                    lager:info("~p: => CONDITIONAL YES, message doesn't exist in previous trace, but shrinking: ~p ~p", [?MODULE, Type, Message]),
+                    true;
+                false ->
+                    lager:info("~p: => message should not have been delivered, blocking.", [?MODULE]),
+                    false
+            end
+    end.
 
 %% @private
-trace_deliver([{_, _} | Trace], BlockedProcesses) ->
+trace_deliver(Shrinking, {Type, Message}, [{Type, Message} | Trace], BlockedProcesses) ->
     lager:info("~p: delivering single message!", [?MODULE]),
 
     %% Advance the trace, then try to flush the blocked processes.
-    trace_deliver_log_flush(Trace, BlockedProcesses).
+    trace_deliver_log_flush(Shrinking, Trace, BlockedProcesses);
+trace_deliver(_Shrinking, {_, _}, [{_, _} | Trace], BlockedProcesses) ->
+    lager:info("~p: delivering single message (not in the trace)!", [?MODULE]),
+
+    %% Advance the trace, don't flush blocked processes, since we weren't in the trace, nothing is blocked.
+    {Trace, BlockedProcesses};
+trace_deliver(_Shrinking, {_, _}, [], BlockedProcesses) ->
+    lager:info("~p: delivering single message (not in the trace -- end of trace)!", [?MODULE]),
+
+    %% No trace to advance.
+    {[], BlockedProcesses}.
 
 %% @private
-trace_deliver_log_flush(Trace0, BlockedProcesses0) ->
+trace_deliver_log_flush(Shrinking, Trace0, BlockedProcesses0) ->
     lager:info("~p: attempting to flush blocked messages!", [?MODULE]),
 
     %% Iterate blocked processes in an attempt to remove one.
     {ND, T, BP} = lists:foldl(fun({{NextType, NextMessage}, Pid} = BP, {NumDelivered1, Trace1, BlockedProcesses1}) ->
-        case can_deliver_based_on_trace({NextType, NextMessage}, Trace1, BlockedProcesses0) of 
+        case can_deliver_based_on_trace(Shrinking, {NextType, NextMessage}, Trace1, BlockedProcesses0) of 
             true ->
                 lager:info("~p: pid ~p can be unblocked!", [?MODULE, Pid]),
 
@@ -278,7 +316,7 @@ trace_deliver_log_flush(Trace0, BlockedProcesses0) ->
     case ND > 0 of 
         true ->
             lager:info("~p: was able to deliver a message, trying again", [?MODULE]),
-            trace_deliver_log_flush(T, BP);
+            trace_deliver_log_flush(Shrinking, T, BP);
         false ->
             lager:info("~p: flush attempt finished.", [?MODULE]),
             {T, BP}
@@ -320,7 +358,14 @@ initialize_state() ->
 
             lager:info("~p: trace loaded.", [?MODULE]),
 
-            #state{trace=[], previous_trace=Lines, replay=true, blocked_processes=[], identifier=undefined}
+            Shrinking = case os:getenv("SHRINKING") of 
+                false ->
+                    false;
+                _ ->
+                    true
+            end,
+
+            #state{trace=[], previous_trace=Lines, replay=true, shrinking=Shrinking, blocked_processes=[], identifier=undefined}
     end.
 
 %% @private
