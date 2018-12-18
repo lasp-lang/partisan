@@ -159,7 +159,7 @@ check_mailbox(Node) ->
     timer:sleep(10000),
 
     %% Ask for what messages they have received.
-    erlang:send({?GOSSIP_RECEIVER, Node}, {received, Self}),
+    erlang:send({?GOSSIP_RECEIVER, ?NAME(Node)}, {received, Self}),
 
     receive
         Messages ->
