@@ -251,13 +251,13 @@ end_case() ->
     [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
 
     %% Aggregate the results from the run.
-    NodeMessages = lists:map(fun({_Name, Node}) ->
-        case check_mailbox(Node) of 
+    NodeMessages = lists:map(fun({Name, _Node}) ->
+        case check_mailbox(Name) of 
             {ok, Messages} ->
-                node_debug("received at node ~p are ~p: ~p", [Node, length(Messages), Messages]),
+                node_debug("received at node ~p are ~p: ~p", [Name, length(Messages), Messages]),
                 Messages;
             {error, _} ->
-                node_debug("cannot get messages received at node ~p", [Node]),
+                node_debug("cannot get messages received at node ~p", [Name]),
                 []
         end
     end, Nodes),
