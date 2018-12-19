@@ -49,7 +49,7 @@
                 blocked_processes=[],
                 identifier=undefined}).
 
--define(REPLAY_DEBUG, false).
+-define(REPLAY_DEBUG, true).
 
 %%%===================================================================
 %%% API

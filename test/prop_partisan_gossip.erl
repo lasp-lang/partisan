@@ -108,7 +108,7 @@ node_postcondition(_State, _Command, _Response) ->
 
 %% Next state.
 node_next_state(#state{sent=Sent0}=State, _Result, {call, ?MODULE, gossip, [Node, {Id, Value}]}) ->
-    Message = {{Node, Id}, Value},
+    Message = {Id, Node, Value},
     Sent = Sent0 ++ [Message],
     State#state{sent=Sent};
 node_next_state(#state{receivers=Receivers0}=State, Result, {call, ?MODULE, spawn_gossip_receiver, [Node]}) ->
@@ -146,7 +146,7 @@ node_precondition(_State, _Command) ->
 
 %% @private
 gossip(Node, {Id, Value}) ->
-    FullMessage = {{Node, Id}, Value},
+    FullMessage = {Id, Node, Value},
     node_debug("gossiping from node ~p message: ~p", [Node, FullMessage]),
     ok = rpc:call(?NAME(Node), partisan_gossip, gossip, [?GOSSIP_RECEIVER, FullMessage]),
     ok.
@@ -184,11 +184,12 @@ spawn_gossip_receiver(Node) ->
             receive
                 {received, Sender} ->
                     Received = ets:foldl(fun(Term, Acc) -> Acc ++ [Term] end, [], ?GOSSIP_TABLE),
-                    node_debug("node ~p received request for stored values: ~p", [Node, Received]),
-                    Sender ! Received;
-                {{SourceNode, Id}, Value} ->
+                    Sorted = lists:keysort(1, Received),
+                    node_debug("node ~p received request for stored values: ~p", [Node, Sorted]),
+                    Sender ! Sorted;
+                {Id, SourceNode, Value} ->
                     node_debug("node ~p received origin: ~p id ~p and value: ~p", [Node, SourceNode, Id, Value]),
-                    true = ets:insert(?GOSSIP_TABLE, {{SourceNode, Id}, Value});
+                    true = ets:insert(?GOSSIP_TABLE, {Id, SourceNode, Value});
                 Other ->
                     node_debug("node ~p received other: ~p", [Node, Other])
             end,

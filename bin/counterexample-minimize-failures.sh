@@ -15,14 +15,9 @@ if [ ! -f ${TRACE_FILE} ]; then
     exit 1
 fi
 
-# Backup trace and counterexample consult file.
-# echo "Backing up trace and counterexample consult file..."
-# cp ${TRACE_FILE} ${TRACE_FILE}.orig
-# cp ${COUNTEREXAMPLE_CONSULT_FILE} ${COUNTEREXAMPLE_CONSULT_FILE}.orig
-
 # Shrink counterexample, which should copy files in place.
 echo "Staging shrunk counterexample..."
-bin/counterexample-stage-shrink.escript ${TRACE_FILE} ${REPLAY_TRACE_FILE} ${COUNTEREXAMPLE_CONSULT_FILE} ${REBAR_COUNTEREXAMPLE_CONSULT_FILE}
+bin/counterexample-minimize-failures.escript ${TRACE_FILE} ${REPLAY_TRACE_FILE} ${COUNTEREXAMPLE_CONSULT_FILE} ${REBAR_COUNTEREXAMPLE_CONSULT_FILE}
 
 # Replay counterexample.
 echo "Replaying counterexample..."
