@@ -193,6 +193,8 @@ precondition(#state{partition_filters=PartitionFilters, active_faults=ActiveFaul
     not is_involved_in_partition(SourceNode, DestinationNode, PartitionFilters) andalso is_valid_partition(SourceNode, DestinationNode) andalso not_maximum_active_faults(2, ActiveFaults);
 precondition(#state{partition_filters=PartitionFilters}, {call, _Mod, resolve_sync_partition, [SourceNode, DestinationNode]}) -> 
     is_involved_in_partition(SourceNode, DestinationNode, PartitionFilters);
+precondition(#state{partition_filters=PartitionFilters}, {call, _Mod, delayed_resolve_sync_partition, [_Timeout, SourceNode, DestinationNode]}) -> 
+    is_involved_in_partition(SourceNode, DestinationNode, PartitionFilters);
 precondition(#state{partition_filters=PartitionFilters, active_faults=ActiveFaults}, {call, _Mod, induce_cluster_partition, [MajorityNodes, AllNodes]}) -> 
     MinorityNodes = AllNodes -- MajorityNodes,
 
@@ -310,6 +312,10 @@ postcondition(_State, {call, ?MODULE, resolve_sync_partition, [_SourceNode, _Des
     postcondition_debug("postcondition resolve_sync_partition: succeeded", []),
     %% Removed message filter.
     true;
+postcondition(_State, {call, ?MODULE, delayed_resolve_sync_partition, [_Timeout, _SourceNode, _DestinationNode]}, ok) ->
+    postcondition_debug("postcondition delayed_resolve_sync_partition: succeeded", []),
+    %% Removed message filter.
+    true;
 postcondition(_State, {call, ?MODULE, induce_cluster_partition, [_MajorityNodes, _MinorityNodes]}, ok) ->
     postcondition_debug("postcondition induce_cluster_partition: succeeded", []),
     %% Added message filter.
@@ -364,6 +370,9 @@ next_state(#state{partition_filters=PartitionFilters0}=State, _Res, {call, ?MODU
     PartitionFilters = add_sync_partition(SourceNode, DestinationNode, PartitionFilters0),
     State#state{partition_filters=PartitionFilters};
 next_state(#state{partition_filters=PartitionFilters0}=State, _Res, {call, ?MODULE, resolve_sync_partition, [SourceNode, DestinationNode]}) -> 
+    PartitionFilters = delete_sync_partition(SourceNode, DestinationNode, PartitionFilters0),
+    State#state{partition_filters=PartitionFilters};
+next_state(#state{partition_filters=PartitionFilters0}=State, _Res, {call, ?MODULE, delayed_resolve_sync_partition, [_Timeout, SourceNode, DestinationNode]}) -> 
     PartitionFilters = delete_sync_partition(SourceNode, DestinationNode, PartitionFilters0),
     State#state{partition_filters=PartitionFilters};
 next_state(#state{partition_filters=PartitionFilters0}=State, _Res, {call, ?MODULE, induce_cluster_partition, [MajorityNodes, AllNodes]}) -> 
@@ -737,6 +746,13 @@ induce_sync_partition(SourceNode, DestinationNode) ->
 
 resolve_sync_partition(SourceNode, DestinationNode) ->
     partition_debug("resolve_sync_partition: source_node ~p destination_node ~p", [SourceNode, DestinationNode]),
+    SourceResult = resolve_async_partition(SourceNode, DestinationNode),
+    DestinationResult = resolve_async_partition(DestinationNode, SourceNode),
+    all_to_ok_or_error([SourceResult, DestinationResult]).
+
+delayed_resolve_sync_partition(Timeout, SourceNode, DestinationNode) ->
+    partition_debug("delayed_resolve_sync_partition: source_node ~p destination_node ~p", [SourceNode, DestinationNode]),
+    timer:sleep(Timeout),
     SourceResult = resolve_async_partition(SourceNode, DestinationNode),
     DestinationResult = resolve_async_partition(DestinationNode, SourceNode),
     all_to_ok_or_error([SourceResult, DestinationResult]).
