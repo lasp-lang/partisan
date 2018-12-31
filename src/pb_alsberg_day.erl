@@ -76,8 +76,7 @@ handle_call({write, Key, Value}, From, #state{nodes=[Primary, Collaborator|_Rest
 
             %% Forward to collaboration message.
             FromNode = partisan_peer_service_manager:myself(),
-            Manager = partisan_config:get(partisan_peer_service_manager),
-            ok = Manager:forward_message(Collaborator, undefined, ?MODULE, {collaborate, From, FromNode, Key, Value}, []),
+            forward_message(Collaborator, {collaborate, From, FromNode, Key, Value}),
             lager:info("~p: node ~p sent replication request for key ~p with value ~p", [?MODULE, node(), Key, Value]),
 
             %% Wait for collaboration ack before proceeding for n-host resilience (n = 2).
@@ -124,13 +123,12 @@ handle_info({collaborate, From, FromNode, Key, Value}, #state{nodes=[_Primary, _
     lager:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     %% Send write acknowledgement.
-    Manager = partisan_config:get(partisan_peer_service_manager),
-    ok = Manager:forward_message(FromNode, undefined, ?MODULE, {collaborate_ack, From, Key, Value}, []),
+    forward_message(FromNode, {collaborate_ack, From, Key, Value}),
     lager:info("~p: node ~p acknowledging value for key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     %% Send backup message to backups.
     lists:foreach(fun(Backup) ->
-        ok = Manager:forward_message(Backup, undefined, ?MODULE, {backup, From, Key, Value}, [])
+        forward_message(Backup, {backup, From, Key, Value})
     end, Backups),
 
     %% On ack, reply to caller.
@@ -157,3 +155,8 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+%% @private
+forward_message(Destination, Message) ->
+    Manager = partisan_config:get(partisan_peer_service_manager),
+    Manager:forward_message(Destination, undefined, ?MODULE, Message, [{ack, true}]).
