@@ -26,11 +26,11 @@
 
 -compile([export_all]).
 
--define(NUM_NODES, 2).
+-define(NUM_NODES, 3).
 -define(NODE_DEBUG, true).
 -define(ETS, prop_partisan).
 -define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
--define(PB_MODULE, pb1_host).
+-define(PB_MODULE, pb_alsberg_day).
 
 %%%===================================================================
 %%% Generators
@@ -59,8 +59,10 @@ names() ->
 
 %% What node-specific operations should be called.
 node_commands() ->
-    [{call, ?MODULE, write, [node_name(), key(), value()]},
-     {call, ?MODULE, read, [node_name(), key()]}].
+    [
+     {call, ?MODULE, read, [node_name(), key()]},
+     {call, ?MODULE, write, [node_name(), key(), value()]}
+    ].
 
 %% What should the initial node state be.
 node_initial_state() ->
