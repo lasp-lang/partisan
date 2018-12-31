@@ -65,9 +65,9 @@ init([Nodes]) ->
     {ok, #state{nodes=Nodes, store=Store}}.
 
 %% @private
-handle_call({write, Key, Value}, From, #state{nodes=[Node, Collaborator|_Rest], store=Store0}=State) ->
+handle_call({write, Key, Value}, From, #state{nodes=[Primary, Collaborator|_Rest], store=Store0}=State) ->
     case node() of 
-        Node ->
+        Primary ->
             lager:info("~p: node ~p received write for key ~p with value ~p", [?MODULE, node(), Key, Value]),
 
             %% Write value locally.
@@ -81,11 +81,11 @@ handle_call({write, Key, Value}, From, #state{nodes=[Node, Collaborator|_Rest], 
 
             {noreply, State#state{store=Store}};
         _ ->
-            {reply, {error, {primary, Node}}, State}
+            {reply, {error, {primary, Primary}}, State}
     end;
-handle_call({read, Key}, _From, #state{nodes=[Node|_Rest], store=Store}=State) ->
+handle_call({read, Key}, _From, #state{nodes=[Primary|_Rest], store=Store}=State) ->
     case node() of 
-        Node ->
+        Primary ->
             Value = case dict:find(Key, Store) of 
                 {ok, V} ->
                     V;
@@ -95,7 +95,7 @@ handle_call({read, Key}, _From, #state{nodes=[Node|_Rest], store=Store}=State) -
             lager:info("~p: node ~p received read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
             {reply, {ok, Value}, State};
         _ ->
-            {reply, {error, {primary, Node}}, State}
+            {reply, {error, {primary, Primary}}, State}
     end;
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
@@ -109,7 +109,7 @@ handle_info({collaborate_ack, _From, Key, Value}, State) ->
     lager:info("~p: node ~p ack received for key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     {noreply, State};
-handle_info({collaborate, From, FromNode, Key, Value}, #state{nodes=[_Node, _Collaborator | Backups], store=Store0}=State) ->
+handle_info({collaborate, From, FromNode, Key, Value}, #state{nodes=[_Primary, _Collaborator | Backups], store=Store0}=State) ->
     %% Write value locally.
     Store = dict:store(Key, Value, Store0),
     lager:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
