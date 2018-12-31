@@ -85,25 +85,35 @@ handle_call({write, Key, Value}, From, #state{nodes=[Primary, Collaborator|_Rest
                     lager:info("~p: node ~p ack received for key ~p value ~p", [?MODULE, node(), Key, Value]),
                     {reply, ok, State#state{store=Store}}
             after
+                %% We have to timeout, otherwise we block the gen_server.
                 ?PB_RETRY_TIMEOUT ->
                     {reply, {error, timeout}, State}
             end;
         _ ->
             {reply, {error, {primary, Primary}}, State}
     end;
-handle_call({read, Key}, _From, #state{nodes=[Primary|_Rest], store=Store}=State) ->
+handle_call({read, Key}, From, #state{nodes=[Primary|_Rest], store=Store}=State) ->
     case node() of 
         Primary ->
-            Value = case dict:find(Key, Store) of 
-                {ok, V} ->
-                    V;
-                error ->
-                    not_found
-            end,
+            Value = read(Key, Store),
             lager:info("~p: node ~p received read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
             {reply, {ok, Value}, State};
         _ ->
-            {reply, {error, {primary, Primary}}, State}
+            FromNode = partisan_peer_service_manager:myself(),
+            forward_message(Primary, {forwarded_read, From, FromNode, Key}),
+
+            %% Wait for acknowledgement that read was serviced before unblocking gen_server.
+            receive
+                {forwarded_read_ack, From, Key, Value} ->
+                    lager:info("~p: node ~p ack received for forwarded read of key ~p with value ~p", [?MODULE, node(), Key, Value]),
+
+                    %% Response was sent by the primary directly.
+                    {noreply, State}
+            after
+                %% We have to timeout, otherwise we block the gen_server.
+                ?PB_RETRY_TIMEOUT ->
+                    {reply, {error, timeout}, State}
+            end
     end;
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
@@ -127,9 +137,7 @@ handle_info({collaborate, From, FromNode, Key, Value}, #state{nodes=[_Primary, _
     lager:info("~p: node ~p acknowledging value for key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     %% Send backup message to backups.
-    lists:foreach(fun(Backup) ->
-        forward_message(Backup, {backup, From, Key, Value})
-    end, Backups),
+    lists:foreach(fun(Backup) -> forward_message(Backup, {backup, From, Key, Value}) end, Backups),
 
     %% On ack, reply to caller.
     gen_server:reply(From, ok),
@@ -141,6 +149,19 @@ handle_info({backup, _From, _FromNode, Key, Value}, #state{store=Store0}=State) 
     lager:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     {noreply, State#state{store=Store}};
+handle_info({forwarded_read, From, FromNode, Key}, #state{store=Store}=State) ->
+    Value = read(Key, Store),
+
+    lager:info("~p: node ~p received forwarded read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
+
+    %% Notify forwarder that read was serviced.
+    forward_message(FromNode, {forwarded_read_ack, From, Key, Value}),
+    lager:info("~p: node ~p acknowledging forwarded read for key ~p value ~p", [?MODULE, node(), Key, Value]),
+
+    %% Reply to caller.
+    gen_server:reply(From, {ok, Value}),
+
+    {noreply, State};
 handle_info(_Msg, State) ->
     {noreply, State}.
 
@@ -160,3 +181,12 @@ code_change(_OldVsn, State, _Extra) ->
 forward_message(Destination, Message) ->
     Manager = partisan_config:get(partisan_peer_service_manager),
     Manager:forward_message(Destination, undefined, ?MODULE, Message, [{ack, true}]).
+
+%% @private
+read(Key, Store) ->
+    case dict:find(Key, Store) of 
+        {ok, V} ->
+            V;
+        error ->
+            not_found
+    end.
