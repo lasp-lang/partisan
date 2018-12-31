@@ -109,7 +109,7 @@ handle_info({collaborate_ack, _From, Key, Value}, State) ->
     lager:info("~p: node ~p ack received for key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     {noreply, State};
-handle_info({collaborate, From, FromNode, Key, Value}, #state{store=Store0}=State) ->
+handle_info({collaborate, From, FromNode, Key, Value}, #state{nodes=[_Node, _Collaborator | Backups], store=Store0}=State) ->
     %% Write value locally.
     Store = dict:store(Key, Value, Store0),
     lager:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
@@ -119,8 +119,19 @@ handle_info({collaborate, From, FromNode, Key, Value}, #state{store=Store0}=Stat
     ok = Manager:forward_message(FromNode, undefined, ?MODULE, {collaborate_ack, From, Key, Value}, []),
     lager:info("~p: node ~p acknowledging value for key ~p value ~p", [?MODULE, node(), Key, Value]),
 
+    %% Send backup message to backups.
+    lists:foreach(fun(Backup) ->
+        ok = Manager:forward_message(Backup, undefined, ?MODULE, {backup, From, Key, Value}, [])
+    end, Backups),
+
     %% On ack, reply to caller.
     gen_server:reply(From, ok),
+
+    {noreply, State#state{store=Store}};
+handle_info({backup, _From, _FromNode, Key, Value}, #state{store=Store0}=State) ->
+    %% Write value locally.
+    Store = dict:store(Key, Value, Store0),
+    lager:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     {noreply, State#state{store=Store}};
 handle_info(_Msg, State) ->
