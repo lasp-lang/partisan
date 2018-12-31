@@ -94,6 +94,9 @@ node_next_state(State, _Response, _Command) ->
 node_postcondition(_State, {call, ?MODULE, write, [Node, Key, Value]}, ok) ->
     node_debug("node ~p: writing key ~p with value ~p", [Node, Key, Value]),
     true;
+node_postcondition(_State, {call, ?MODULE, write, [Node, Key, Value]}, {timeout, _Call}) ->
+    node_debug("node ~p: timeout while writing key ~p with value ~p", [Node, Key, Value]),
+    false;
 node_postcondition(#state{store=Store}=_State, {call, ?MODULE, read, [Node, Key]}, {ok, Value}) ->
     case dict:find(Key, Store) of 
         {ok, Value} ->
@@ -115,7 +118,11 @@ node_postcondition(#state{store=Store}=_State, {call, ?MODULE, read, [Node, Key]
 node_postcondition(_State, _Command, {error, {primary, _Node}}) ->
     %% Ignore failures from contacting the wrong node -- should this be a precondition?
     true;
-node_postcondition(_State, _Command, _Response) ->
+node_postcondition(_State, {call, ?MODULE, _Fun, [Node|_Rest]}=Command, Response) ->
+    node_debug("node ~p: failed postcondition for command: ~p response: ~p", [Node, Command, Response]),
+    false;
+node_postcondition(_State, Command, Response) ->
+    node_debug("fallthrough postcondition failed for command: ~p response: ~p", [Command, Response]),
     false.
 
 %%%===================================================================
@@ -123,7 +130,12 @@ node_postcondition(_State, _Command, _Response) ->
 %%%===================================================================
 
 write(Node, Key, Value) ->
-    rpc:call(?NAME(Node), ?PB_MODULE, write, [Key, Value]).
+    case rpc:call(?NAME(Node), ?PB_MODULE, write, [Key, Value]) of 
+        {badrpc, {'EXIT', Error}} ->
+            Error;
+        Other ->
+            Other
+    end.
 
 read(Node, Key) ->
     rpc:call(?NAME(Node), ?PB_MODULE, read, [Key]).
