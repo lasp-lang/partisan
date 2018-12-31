@@ -332,14 +332,14 @@ postcondition(_State, {call, ?MODULE, leave_cluster, [_Node, _JoinedNodes]}, ok)
     postcondition_debug("postcondition leave_cluster: succeeded", []),
     %% Accept leaves that succeed.
     true;
-postcondition(#state{node_state=NodeState}, {call, Mod, Fun, _Args}=Call, Res) -> 
+postcondition(#state{node_state=NodeState}, {call, Mod, Fun, Args}=Call, Res) -> 
     case lists:member(Fun, node_functions()) of
         true ->
             PostconditionResult = node_postcondition(NodeState, Call, Res),
 
             case PostconditionResult of 
                 false ->
-                    debug("postcondition result: ~p", [PostconditionResult]),
+                    debug("postcondition result: ~p; command: ~p:~p(~p)", [PostconditionResult, Mod, Fun, Args]),
                     ok;
                 true ->
                     ok
