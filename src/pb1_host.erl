@@ -65,10 +65,13 @@ init([Nodes]) ->
     {ok, #state{nodes=Nodes, store=Store}}.
 
 %% @private
-handle_call({write, Key, Value}, From, #state{nodes=[Node|Rest]}=State) ->
+handle_call({write, Key, Value}, From, #state{nodes=[Node|Rest], store=Store0}=State) ->
     case node() of 
         Node ->
             lager:info("~p: node ~p received write for key ~p with value ~p", [?MODULE, node(), Key, Value]),
+
+            %% Write value locally.
+            Store = dict:store(Key, Value, Store0),
 
             %% Forward to replicas and wait for reply, then write locally and return.
             FromNode = partisan_peer_service_manager:myself(),
@@ -79,21 +82,24 @@ handle_call({write, Key, Value}, From, #state{nodes=[Node|Rest]}=State) ->
             end, Rest),
             lager:info("~p: node ~p sent replication request for key ~p with value ~p", [?MODULE, node(), Key, Value]),
 
-            {noreply, State};
+            {noreply, State#state{store=Store}};
         _ ->
             {reply, {error, {primary, Node}}, State}
     end;
-handle_call({read, Key}, _From, #state{store=Store}=State) ->
-    %% Allow reads from the backup node.
-    Value = case dict:find(Key, Store) of 
-        {ok, V} ->
-            V;
-        error ->
-            not_found
-    end,
-    lager:info("~p: node ~p received read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
-
-    {reply, {ok, Value}, State};
+handle_call({read, Key}, _From, #state{nodes=[Node|_Rest], store=Store}=State) ->
+    case node() of 
+        Node ->
+            Value = case dict:find(Key, Store) of 
+                {ok, V} ->
+                    V;
+                error ->
+                    not_found
+            end,
+            lager:info("~p: node ~p received read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
+            {reply, {ok, Value}, State};
+        _ ->
+            {reply, {error, {primary, Node}}, State}
+    end;
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
@@ -102,16 +108,13 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @private
-handle_info({ack, From, Key, Value}, #state{store=Store0}=State) ->
+handle_info({ack, From, Key, Value}, State) ->
     lager:info("~p: node ~p ack received for key ~p value ~p", [?MODULE, node(), Key, Value]),
-
-    %% On replica acknowledgement, store the value locally.
-    Store = dict:store(Key, Value, Store0),
 
     %% On ack, reply to caller.
     gen_server:reply(From, ok),
 
-    {noreply, State#state{store=Store}};
+    {noreply, State};
 handle_info({update, From, FromNode, Key, Value}, #state{store=Store0}=State) ->
     %% Write value locally.
     Store = dict:store(Key, Value, Store0),
