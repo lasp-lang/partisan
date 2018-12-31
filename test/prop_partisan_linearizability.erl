@@ -96,9 +96,12 @@ node_next_state(State, _Response, _Command) ->
 node_postcondition(_State, {call, ?MODULE, write, [Node, Key, Value]}, ok) ->
     node_debug("node ~p: writing key ~p with value ~p", [Node, Key, Value]),
     true;
-node_postcondition(_State, {call, ?MODULE, write, [Node, Key, Value]}, {timeout, _Call}) ->
+node_postcondition(_State, {call, ?MODULE, write, [Node, Key, Value]}, {error, timeout}) ->
     node_debug("node ~p: timeout while writing key ~p with value ~p", [Node, Key, Value]),
-    false;
+    true;
+node_postcondition(_State, {call, ?MODULE, write, [Node, Key, Value]}, {timeout, _Call}) ->
+    node_debug("node ~p: gen_server timeout while writing key ~p with value ~p", [Node, Key, Value]),
+    true;
 node_postcondition(#state{store=Store}=_State, {call, ?MODULE, read, [Node, Key]}, {ok, Value}) ->
     case dict:find(Key, Store) of 
         {ok, Value} ->
@@ -131,6 +134,7 @@ node_postcondition(_State, Command, Response) ->
 %%% Helper Functions
 %%%===================================================================
 
+%% @private
 write(Node, Key, Value) ->
     case rpc:call(?NAME(Node), ?PB_MODULE, write, [Key, Value]) of 
         {badrpc, {'EXIT', Error}} ->
@@ -139,9 +143,11 @@ write(Node, Key, Value) ->
             Other
     end.
 
+%% @private
 read(Node, Key) ->
     rpc:call(?NAME(Node), ?PB_MODULE, read, [Key]).
 
+%% @private
 node_debug(Line, Args) ->
     case ?NODE_DEBUG of
         true ->
