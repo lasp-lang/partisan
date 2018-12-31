@@ -65,7 +65,7 @@ init([Nodes]) ->
     {ok, #state{nodes=Nodes, store=Store}}.
 
 %% @private
-handle_call({write, Key, Value}, From, #state{nodes=[Node|Rest], store=Store0}=State) ->
+handle_call({write, Key, Value}, From, #state{nodes=[Node, Collaborator|_Rest], store=Store0}=State) ->
     case node() of 
         Node ->
             lager:info("~p: node ~p received write for key ~p with value ~p", [?MODULE, node(), Key, Value]),
@@ -73,13 +73,10 @@ handle_call({write, Key, Value}, From, #state{nodes=[Node|Rest], store=Store0}=S
             %% Write value locally.
             Store = dict:store(Key, Value, Store0),
 
-            %% Forward to replicas and wait for reply, then write locally and return.
+            %% Forward to collaboration message.
             FromNode = partisan_peer_service_manager:myself(),
             Manager = partisan_config:get(partisan_peer_service_manager),
-
-            lists:foreach(fun(N) ->
-                ok = Manager:forward_message(N, undefined, ?MODULE, {update, From, FromNode, Key, Value}, [])
-            end, Rest),
+            ok = Manager:forward_message(Collaborator, undefined, ?MODULE, {collaborate, From, FromNode, Key, Value}, []),
             lager:info("~p: node ~p sent replication request for key ~p with value ~p", [?MODULE, node(), Key, Value]),
 
             {noreply, State#state{store=Store}};
@@ -108,21 +105,21 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @private
-handle_info({ack, From, Key, Value}, State) ->
+handle_info({collaborate_ack, From, Key, Value}, State) ->
     lager:info("~p: node ~p ack received for key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     %% On ack, reply to caller.
     gen_server:reply(From, ok),
 
     {noreply, State};
-handle_info({update, From, FromNode, Key, Value}, #state{store=Store0}=State) ->
+handle_info({collaborate, From, FromNode, Key, Value}, #state{store=Store0}=State) ->
     %% Write value locally.
     Store = dict:store(Key, Value, Store0),
     lager:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     %% Send write acknowledgement.
     Manager = partisan_config:get(partisan_peer_service_manager),
-    ok = Manager:forward_message(FromNode, undefined, ?MODULE, {ack, From, Key, Value}, []),
+    ok = Manager:forward_message(FromNode, undefined, ?MODULE, {collaborate_ack, From, Key, Value}, []),
     lager:info("~p: node ~p acknowledging value for key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     {noreply, State#state{store=Store}};
