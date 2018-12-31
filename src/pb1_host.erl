@@ -65,26 +65,21 @@ init([Nodes]) ->
     {ok, #state{nodes=Nodes, store=Store}}.
 
 %% @private
-handle_call({write, Key, Value}, _From, #state{nodes=[Node|Rest], store=Store0}=State) ->
+handle_call({write, Key, Value}, From, #state{nodes=[Node|Rest]}=State) ->
     case node() of 
         Node ->
             lager:info("~p: node ~p received write for key ~p with value ~p", [?MODULE, node(), Key, Value]),
 
             %% Forward to replicas and wait for reply, then write locally and return.
-            From = self(),
+            FromNode = partisan_peer_service_manager:myself(),
             Manager = partisan_config:get(partisan_peer_service_manager),
 
             lists:foreach(fun(N) ->
-                ok = Manager:forward_message(N, undefined, ?MODULE, {replicate, From, Key, Value}, [])
+                ok = Manager:forward_message(N, undefined, ?MODULE, {replicate, From, FromNode, Key, Value}, [])
             end, Rest),
-
             lager:info("~p: node ~p sent replication request for key ~p with value ~p", [?MODULE, node(), Key, Value]),
 
-            %% Write value.
-            Store = dict:store(Key, Value, Store0),
-            lager:info("~p: node ~p stored key ~p with value ~p", [?MODULE, node(), Key, Value]),
-
-            {reply, ok, State#state{store=Store}};
+            {noreply, State};
         _ ->
             {reply, {error, {primary, Node}}, State}
     end;
@@ -107,8 +102,26 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @private
-handle_info({replicate, _From, Key, Value}, #state{store=Store0}=State) ->
+handle_info({ack, From, Key, Value}, #state{store=Store0}=State) ->
+    lager:info("~p: node ~p ack received for key ~p value ~p", [?MODULE, node(), Key, Value]),
+
+    %% On replica acknowledgement, store the value locally.
     Store = dict:store(Key, Value, Store0),
+
+    %% On ack, reply to caller.
+    gen_server:reply(From, ok),
+
+    {noreply, State#state{store=Store}};
+handle_info({replicate, From, FromNode, Key, Value}, #state{store=Store0}=State) ->
+    %% Write value locally.
+    Store = dict:store(Key, Value, Store0),
+    lager:info("~p: node ~p storing replicated value key ~p value ~p", [?MODULE, node(), Key, Value]),
+
+    %% Send write acknowledgement.
+    Manager = partisan_config:get(partisan_peer_service_manager),
+    ok = Manager:forward_message(FromNode, undefined, ?MODULE, {ack, From, Key, Value}, []),
+    lager:info("~p: node ~p acknowledging value for key ~p value ~p", [?MODULE, node(), Key, Value]),
+
     {noreply, State#state{store=Store}};
 handle_info(_Msg, State) ->
     {noreply, State}.
