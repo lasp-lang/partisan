@@ -75,7 +75,7 @@ handle_call({write, Key, Value}, From, #state{nodes=[Node|Rest]}=State) ->
             Manager = partisan_config:get(partisan_peer_service_manager),
 
             lists:foreach(fun(N) ->
-                ok = Manager:forward_message(N, undefined, ?MODULE, {replicate, From, FromNode, Key, Value}, [])
+                ok = Manager:forward_message(N, undefined, ?MODULE, {update, From, FromNode, Key, Value}, [])
             end, Rest),
             lager:info("~p: node ~p sent replication request for key ~p with value ~p", [?MODULE, node(), Key, Value]),
 
@@ -112,10 +112,10 @@ handle_info({ack, From, Key, Value}, #state{store=Store0}=State) ->
     gen_server:reply(From, ok),
 
     {noreply, State#state{store=Store}};
-handle_info({replicate, From, FromNode, Key, Value}, #state{store=Store0}=State) ->
+handle_info({update, From, FromNode, Key, Value}, #state{store=Store0}=State) ->
     %% Write value locally.
     Store = dict:store(Key, Value, Store0),
-    lager:info("~p: node ~p storing replicated value key ~p value ~p", [?MODULE, node(), Key, Value]),
+    lager:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     %% Send write acknowledgement.
     Manager = partisan_config:get(partisan_peer_service_manager),
