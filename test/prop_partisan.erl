@@ -26,7 +26,7 @@
 
 -compile([export_all]).
 
--import(prop_partisan_gossip,
+-import(prop_partisan_linearizability,
         [node_commands/0,
          node_initial_state/0,
          node_functions/0,
