@@ -105,11 +105,8 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @private
-handle_info({collaborate_ack, From, Key, Value}, State) ->
+handle_info({collaborate_ack, _From, Key, Value}, State) ->
     lager:info("~p: node ~p ack received for key ~p value ~p", [?MODULE, node(), Key, Value]),
-
-    %% On ack, reply to caller.
-    gen_server:reply(From, ok),
 
     {noreply, State};
 handle_info({collaborate, From, FromNode, Key, Value}, #state{store=Store0}=State) ->
@@ -121,6 +118,9 @@ handle_info({collaborate, From, FromNode, Key, Value}, #state{store=Store0}=Stat
     Manager = partisan_config:get(partisan_peer_service_manager),
     ok = Manager:forward_message(FromNode, undefined, ?MODULE, {collaborate_ack, From, Key, Value}, []),
     lager:info("~p: node ~p acknowledging value for key ~p value ~p", [?MODULE, node(), Key, Value]),
+
+    %% On ack, reply to caller.
+    gen_server:reply(From, ok),
 
     {noreply, State#state{store=Store}};
 handle_info(_Msg, State) ->
