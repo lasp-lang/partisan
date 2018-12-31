@@ -123,10 +123,6 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @private
-handle_info({collaborate_ack, _From, Key, Value}, State) ->
-    lager:info("~p: node ~p ack received for key ~p value ~p", [?MODULE, node(), Key, Value]),
-
-    {noreply, State};
 handle_info({collaborate, From, FromNode, Key, Value}, #state{nodes=[_Primary, _Collaborator | Backups], store=Store0}=State) ->
     %% Write value locally.
     Store = dict:store(Key, Value, Store0),
