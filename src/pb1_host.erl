@@ -68,17 +68,21 @@ init([Nodes]) ->
 handle_call({write, Key, Value}, _From, #state{nodes=[Node|Rest], store=Store0}=State) ->
     case node() of 
         Node ->
-            Store = dict:store(Key, Value, Store0),
-
             lager:info("~p: node ~p received write for key ~p with value ~p", [?MODULE, node(), Key, Value]),
 
-            %% Forward to replicas.
+            %% Forward to replicas and wait for reply, then write locally and return.
             From = self(),
             Manager = partisan_config:get(partisan_peer_service_manager),
 
             lists:foreach(fun(N) ->
                 ok = Manager:forward_message(N, undefined, ?MODULE, {replicate, From, Key, Value}, [])
             end, Rest),
+
+            lager:info("~p: node ~p sent replication request for key ~p with value ~p", [?MODULE, node(), Key, Value]),
+
+            %% Write value.
+            Store = dict:store(Key, Value, Store0),
+            lager:info("~p: node ~p stored key ~p with value ~p", [?MODULE, node(), Key, Value]),
 
             {reply, ok, State#state{store=Store}};
         _ ->
