@@ -40,7 +40,8 @@
 
 -include("partisan.hrl").
 
--define(PB_TIMEOUT, 1000).
+-define(PB_TIMEOUT,       1000).
+-define(PB_RETRY_TIMEOUT, 100).
 
 %%%===================================================================
 %%% API
@@ -79,7 +80,15 @@ handle_call({write, Key, Value}, From, #state{nodes=[Primary, Collaborator|_Rest
             ok = Manager:forward_message(Collaborator, undefined, ?MODULE, {collaborate, From, FromNode, Key, Value}, []),
             lager:info("~p: node ~p sent replication request for key ~p with value ~p", [?MODULE, node(), Key, Value]),
 
-            {noreply, State#state{store=Store}};
+            %% Wait for collaboration ack before proceeding for n-host resilience (n = 2).
+            receive
+                {collaborate_ack, From, Key, Value} ->
+                    lager:info("~p: node ~p ack received for key ~p value ~p", [?MODULE, node(), Key, Value]),
+                    {reply, ok, State#state{store=Store}}
+            after
+                ?PB_RETRY_TIMEOUT ->
+                    {reply, {error, timeout}, State}
+            end;
         _ ->
             {reply, {error, {primary, Primary}}, State}
     end;
