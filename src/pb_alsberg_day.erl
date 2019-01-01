@@ -92,14 +92,19 @@ handle_call({write, Key, Value}, From, #state{nodes=[Primary, Collaborator|_Rest
         _ ->
             {reply, {error, {primary, Primary}}, State}
     end;
-handle_call({read, Key}, _From, #state{nodes=[Primary|_Rest], store=Store}=State) ->
+handle_call({read, Key}, From, #state{nodes=[Primary|_Rest], store=Store}=State) ->
     case node() of 
         Primary ->
             Value = read(Key, Store),
             lager:info("~p: node ~p received read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
             {reply, {ok, Value}, State};
         _ ->
-            {reply, {error, {primary, Primary}}, State}
+            %% Forward the read request to the primary.
+            forward_message(Primary, {forwarded_read, From, Key}),
+
+            %% Return control, because backup requests may arrive before response does 
+            %% undre concurrent scheduling.
+            {noreply, State}
     end;
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
@@ -107,6 +112,19 @@ handle_call(_Msg, _From, State) ->
 %% @private
 handle_cast(_Msg, State) ->
     {noreply, State}.
+
+%% @private
+handle_info({forwarded_read, From, Key}, #state{store=Store}=State) ->
+    Value = read(Key, Store),
+    lager:info("~p: node ~p received forwarded read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
+
+    %% Send the response to the caller.
+    gen_server:reply(From, {ok, Value}),
+
+    %% No need to send acknowledgement back to the forwarder: 
+    %%  - not needed for control flow.
+
+    {noreply, State};
 
 %% @private
 handle_info({collaborate, From, SourceNode, Key, Value}, #state{nodes=[_Primary, _Collaborator | Backups], store=Store0}=State) ->
