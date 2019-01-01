@@ -51,7 +51,18 @@ start_link(Nodes) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [Nodes], []).
 
 write(Key, Value) ->
-    gen_server:call(?MODULE, {write, Key, Value}, ?PB_TIMEOUT).
+    %% Get partisan-compatible reference to ourself.
+    From = pself(),
+
+    gen_server:cast(?MODULE, {write, From, Key, Value}),
+
+    receive
+        Response ->
+            Response
+    after
+        ?PB_TIMEOUT ->
+            {error, timeout}
+    end.
 
 read(Key) ->
     %% Get partisan-compatible reference to ourself.
@@ -81,7 +92,11 @@ init([Nodes]) ->
     {ok, #state{nodes=Nodes, store=Store}}.
 
 %% @private
-handle_call({write, Key, Value}, From, #state{nodes=[Primary, Collaborator|_Rest], store=Store0}=State) ->
+handle_call(_Msg, _From, State) ->
+    {reply, ok, State}.
+
+%% @private
+handle_cast({write, From, Key, Value}, #state{nodes=[Primary, Collaborator|_Rest], store=Store0}=State) ->
     case node() of 
         Primary ->
             lager:info("~p: node ~p received write for key ~p with value ~p", [?MODULE, node(), Key, Value]),
@@ -98,11 +113,19 @@ handle_call({write, Key, Value}, From, #state{nodes=[Primary, Collaborator|_Rest
             receive
                 {collaborate_ack, From, Key, Value} ->
                     lager:info("~p: node ~p ack received for key ~p value ~p", [?MODULE, node(), Key, Value]),
-                    {reply, ok, State#state{store=Store}}
+
+                    %% Reply to caller.
+                    preply(From, ok),
+
+                    {noreply, State#state{store=Store}}
             after
                 %% We have to timeout, otherwise we block the gen_server.
                 ?PB_RETRY_TIMEOUT ->
-                    {reply, {error, timeout}, State}
+
+                    %% Reply to caller.
+                    preply(From, {error, timeout}),
+
+                    {noreply, State}
             end;
         _ ->
             %% Forward the write request to the primary.
@@ -112,9 +135,6 @@ handle_call({write, Key, Value}, From, #state{nodes=[Primary, Collaborator|_Rest
             %% under concurrent scheduling.
             {noreply, State}
     end;
-handle_call(_Msg, _From, State) ->
-    {reply, ok, State}.
-
 %% @private
 handle_cast({read, From, Key}, #state{nodes=[Primary|_Rest], store=Store}=State) ->
     case node() of 
@@ -148,7 +168,7 @@ handle_info({forwarded_write, From, Key, Value}, #state{nodes=[_Primary|Backups]
     lists:foreach(fun(Backup) -> psend(Backup, {backup, From, Key, Value}) end, Backups),
 
     %% Send the response to the caller.
-    gen_server:reply(From, ok),
+    preply(From, ok),
 
     %% No need to send acknowledgement back to the forwarder: 
     %%  - not needed for control flow.
@@ -175,7 +195,7 @@ handle_info({collaborate, From, SourceNode, Key, Value}, #state{nodes=[_Primary,
     lager:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     %% On ack, reply to caller.
-    gen_server:reply(From, ok),
+    preply(From, ok),
 
     %% Send write acknowledgement.
     psend(SourceNode, {collaborate_ack, From, Key, Value}),
