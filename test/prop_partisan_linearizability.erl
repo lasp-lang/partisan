@@ -40,7 +40,7 @@ key() ->
     oneof([key_1, key_2, key_3]).
 
 value() ->
-    binary().
+    non_neg_integer().
 
 node_name() ->
     ?LET(Names, names(), oneof(Names)).
@@ -171,8 +171,8 @@ begin_case() ->
 
     %% Start the backend.
     lists:foreach(fun({ShortName, _}) ->
-        {ok, _Pid} = rpc:call(?NAME(ShortName), ?PB_MODULE, start_link, [SublistNodeProjection]),
-        node_debug("starting ~p at node ~p with node list ~p ", [?PB_MODULE, ShortName, SublistNodeProjection])
+        %% node_debug("starting ~p at node ~p with node list ~p ", [?PB_MODULE, ShortName, SublistNodeProjection]),
+        {ok, _Pid} = rpc:call(?NAME(ShortName), ?PB_MODULE, start_link, [SublistNodeProjection])
     end, Nodes),
 
     ok.
