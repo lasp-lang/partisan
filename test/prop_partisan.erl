@@ -475,7 +475,7 @@ start_nodes() ->
 
     %% Identify trace.
     TraceRandomNumber = rand:uniform(100000),
-    lager:info("~p: trace random generated: ~p", [?MODULE, TraceRandomNumber]),
+    %% lager:info("~p: trace random generated: ~p", [?MODULE, TraceRandomNumber]),
     TraceIdentifier = atom_to_list(prop_partisan_gossip) ++ "_" ++ integer_to_list(TraceRandomNumber),
     ok = partisan_trace_orchestrator:identify(TraceIdentifier),
 
