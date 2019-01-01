@@ -72,11 +72,11 @@ handle_call({write, Key, Value}, From, #state{nodes=[Primary, Collaborator|_Rest
             lager:info("~p: node ~p received write for key ~p with value ~p", [?MODULE, node(), Key, Value]),
 
             %% Write value locally.
-            Store = dict:store(Key, Value, Store0),
+            Store = write(Key, Value, Store0),
 
             %% Forward to collaboration message.
-            FromNode = partisan_peer_service_manager:myself(),
-            forward_message(Collaborator, {collaborate, From, FromNode, Key, Value}),
+            Myself = myself(),
+            forward_message(Collaborator, {collaborate, From, Myself, Key, Value}),
             lager:info("~p: node ~p sent replication request for key ~p with value ~p", [?MODULE, node(), Key, Value]),
 
             %% Wait for collaboration ack before proceeding for n-host resilience (n = 2).
@@ -99,8 +99,8 @@ handle_call({read, Key}, From, #state{nodes=[Primary|_Rest], store=Store}=State)
             lager:info("~p: node ~p received read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
             {reply, {ok, Value}, State};
         _ ->
-            FromNode = partisan_peer_service_manager:myself(),
-            forward_message(Primary, {forwarded_read, From, FromNode, Key}),
+            Myself = myself(),
+            forward_message(Primary, {forwarded_read, From, Myself, Key}),
 
             %% Wait for acknowledgement that read was serviced before unblocking gen_server.
             receive
@@ -125,7 +125,7 @@ handle_cast(_Msg, State) ->
 %% @private
 handle_info({collaborate, From, FromNode, Key, Value}, #state{nodes=[_Primary, _Collaborator | Backups], store=Store0}=State) ->
     %% Write value locally.
-    Store = dict:store(Key, Value, Store0),
+    Store = write(Key, Value, Store0),
     lager:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     %% Send write acknowledgement.
@@ -141,7 +141,7 @@ handle_info({collaborate, From, FromNode, Key, Value}, #state{nodes=[_Primary, _
     {noreply, State#state{store=Store}};
 handle_info({backup, _From, _FromNode, Key, Value}, #state{store=Store0}=State) ->
     %% Write value locally.
-    Store = dict:store(Key, Value, Store0),
+    Store = write(Key, Value, Store0),
     lager:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     {noreply, State#state{store=Store}};
@@ -150,12 +150,12 @@ handle_info({forwarded_read, From, FromNode, Key}, #state{store=Store}=State) ->
 
     lager:info("~p: node ~p received forwarded read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
 
+    %% Reply to caller.
+    gen_server:reply(From, {ok, Value}),
+
     %% Notify forwarder that read was serviced.
     forward_message(FromNode, {forwarded_read_ack, From, Key, Value}),
     lager:info("~p: node ~p acknowledging forwarded read for key ~p value ~p", [?MODULE, node(), Key, Value]),
-
-    %% Reply to caller.
-    gen_server:reply(From, {ok, Value}),
 
     {noreply, State};
 handle_info(_Msg, State) ->
@@ -186,3 +186,11 @@ read(Key, Store) ->
         error ->
             not_found
     end.
+
+%% @private
+write(Key, Value, Store) ->
+    dict:store(Key, Value, Store).
+
+%% @private
+myself() ->
+    partisan_peer_service_manager:myself().
