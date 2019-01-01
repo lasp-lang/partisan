@@ -54,7 +54,18 @@ write(Key, Value) ->
     gen_server:call(?MODULE, {write, Key, Value}, ?PB_TIMEOUT).
 
 read(Key) ->
-    gen_server:call(?MODULE, {read, Key}, ?PB_TIMEOUT).
+    %% Get partisan-compatible reference to ourself.
+    From = pself(),
+
+    gen_server:cast(?MODULE, {read, From, Key}),
+
+    receive
+        Response ->
+            Response
+    after
+        ?PB_TIMEOUT ->
+            {error, timeout}
+    end.
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -63,6 +74,10 @@ read(Key) ->
 %% @private
 init([Nodes]) ->
     Store = dict:new(),
+
+    %% Seed the random number generator using the deterministic seed.
+    partisan_config:seed(),
+
     {ok, #state{nodes=Nodes, store=Store}}.
 
 %% @private
@@ -75,8 +90,8 @@ handle_call({write, Key, Value}, From, #state{nodes=[Primary, Collaborator|_Rest
             Store = write(Key, Value, Store0),
 
             %% Forward to collaboration message.
-            Myself = myself(),
-            forward_message(Collaborator, {collaborate, From, Myself, Key, Value}),
+            Myself = pnode(),
+            psend(Collaborator, {collaborate, From, Myself, Key, Value}),
             lager:info("~p: node ~p sent replication request for key ~p with value ~p", [?MODULE, node(), Key, Value]),
 
             %% Wait for collaboration ack before proceeding for n-host resilience (n = 2).
@@ -91,21 +106,7 @@ handle_call({write, Key, Value}, From, #state{nodes=[Primary, Collaborator|_Rest
             end;
         _ ->
             %% Forward the write request to the primary.
-            forward_message(Primary, {forwarded_write, From, Key, Value}),
-
-            %% Return control, because backup requests may arrive before response does 
-            %% under concurrent scheduling.
-            {noreply, State}
-    end;
-handle_call({read, Key}, From, #state{nodes=[Primary|_Rest], store=Store}=State) ->
-    case node() of 
-        Primary ->
-            Value = read(Key, Store),
-            lager:info("~p: node ~p received read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
-            {reply, {ok, Value}, State};
-        _ ->
-            %% Forward the read request to the primary.
-            forward_message(Primary, {forwarded_read, From, Key}),
+            psend(Primary, {forwarded_write, From, Key, Value}),
 
             %% Return control, because backup requests may arrive before response does 
             %% under concurrent scheduling.
@@ -115,6 +116,24 @@ handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 %% @private
+handle_cast({read, From, Key}, #state{nodes=[Primary|_Rest], store=Store}=State) ->
+    case node() of 
+        Primary ->
+            Value = read(Key, Store),
+            lager:info("~p: node ~p received read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
+
+            %% Send the response back to the user.
+            preply(From, {ok, Value}),
+
+            {noreply, State};
+        _ ->
+            %% Forward the read request to the primary.
+            psend(Primary, {forwarded_read, From, Key}),
+
+            %% Return control, because backup requests may arrive before response does 
+            %% under concurrent scheduling.
+            {noreply, State}
+    end;
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -126,7 +145,7 @@ handle_info({forwarded_write, From, Key, Value}, #state{nodes=[_Primary|Backups]
     lager:info("~p: node ~p received forwarded write for key ~p with value ~p", [?MODULE, node(), Key, Value]),
 
     %% Send backup message to backups.
-    lists:foreach(fun(Backup) -> forward_message(Backup, {backup, From, Key, Value}) end, Backups),
+    lists:foreach(fun(Backup) -> psend(Backup, {backup, From, Key, Value}) end, Backups),
 
     %% Send the response to the caller.
     gen_server:reply(From, ok),
@@ -142,7 +161,7 @@ handle_info({forwarded_read, From, Key}, #state{store=Store}=State) ->
     lager:info("~p: node ~p received forwarded read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
 
     %% Send the response to the caller.
-    gen_server:reply(From, {ok, Value}),
+    preply(From, {ok, Value}),
 
     %% No need to send acknowledgement back to the forwarder: 
     %%  - not needed for control flow.
@@ -159,11 +178,11 @@ handle_info({collaborate, From, SourceNode, Key, Value}, #state{nodes=[_Primary,
     gen_server:reply(From, ok),
 
     %% Send write acknowledgement.
-    forward_message(SourceNode, {collaborate_ack, From, Key, Value}),
+    psend(SourceNode, {collaborate_ack, From, Key, Value}),
     lager:info("~p: node ~p acknowledging value for key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     %% Send backup message to backups.
-    lists:foreach(fun(Backup) -> forward_message(Backup, {backup, From, Key, Value}) end, Backups),
+    lists:foreach(fun(Backup) -> psend(Backup, {backup, From, Key, Value}) end, Backups),
 
     {noreply, State#state{store=Store}};
 
@@ -190,11 +209,23 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private
-forward_message(Destination, Message) ->
-    Manager = partisan_config:get(partisan_peer_service_manager),
+pmanager() ->
+    partisan_config:get(partisan_peer_service_manager).
 
-    %% [{ack, true}] ensures all messages are retried until acknowledged in the runtime
-    %% so, no retry logic is required.
+%% @private
+%%
+%% [{ack, true}] ensures all messages are retried until acknowledged in the runtime
+%% so, no retry logic is required.
+preply({partisan_remote_reference, Destination, ServerRef}, Message) ->
+    Manager = pmanager(),
+    Manager:forward_message(Destination, undefined, ServerRef, Message, [{ack, true}]).
+
+%% @private
+%%
+%% [{ack, true}] ensures all messages are retried until acknowledged in the runtime
+%% so, no retry logic is required.
+psend(Destination, Message) ->
+    Manager = pmanager(),
     Manager:forward_message(Destination, undefined, ?MODULE, Message, [{ack, true}]).
 
 %% @private
@@ -211,5 +242,9 @@ write(Key, Value, Store) ->
     dict:store(Key, Value, Store).
 
 %% @private
-myself() ->
+pnode() ->
     node().
+
+%% @private
+pself() ->
+    partisan_util:pid().
