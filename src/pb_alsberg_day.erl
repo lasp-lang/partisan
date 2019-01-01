@@ -51,13 +51,13 @@ start_link(Nodes) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [Nodes], []).
 
 write(Key, Value) ->
-    %% Get partisan-compatible reference to ourself.
     From = pself(),
+    RequestId = prequestid(),
 
-    gen_server:cast(?MODULE, {write, From, Key, Value}),
+    gen_server:cast(?MODULE, {write, {From, RequestId}, Key, Value}),
 
     receive
-        Response ->
+        {response, RequestId, Response} ->
             Response
     after
         ?PB_TIMEOUT ->
@@ -65,13 +65,13 @@ write(Key, Value) ->
     end.
 
 read(Key) ->
-    %% Get partisan-compatible reference to ourself.
     From = pself(),
+    RequestId = prequestid(),
 
-    gen_server:cast(?MODULE, {read, From, Key}),
+    gen_server:cast(?MODULE, {read, {From, RequestId}, Key}),
 
     receive
-        Response ->
+        {response, RequestId, Response} ->
             Response
     after
         ?PB_TIMEOUT ->
@@ -96,7 +96,7 @@ handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 %% @private
-handle_cast({write, From, Key, Value}, #state{nodes=[Primary, Collaborator|_Rest], store=Store0}=State) ->
+handle_cast({write, {FromPid, FromRequestId}=From, Key, Value}, #state{nodes=[Primary, Collaborator|_Rest], store=Store0}=State) ->
     case node() of 
         Primary ->
             lager:info("~p: node ~p received write for key ~p with value ~p", [?MODULE, node(), Key, Value]),
@@ -115,7 +115,7 @@ handle_cast({write, From, Key, Value}, #state{nodes=[Primary, Collaborator|_Rest
                     lager:info("~p: node ~p ack received for key ~p value ~p", [?MODULE, node(), Key, Value]),
 
                     %% Reply to caller.
-                    preply(From, ok),
+                    psend(FromPid, {response, FromRequestId, ok}),
 
                     {noreply, State#state{store=Store}}
             after
@@ -123,7 +123,7 @@ handle_cast({write, From, Key, Value}, #state{nodes=[Primary, Collaborator|_Rest
                 ?PB_RETRY_TIMEOUT ->
 
                     %% Reply to caller.
-                    preply(From, {error, timeout}),
+                    psend(FromPid, {response, FromRequestId, {error, timeout}}),
 
                     {noreply, State}
             end;
@@ -136,14 +136,14 @@ handle_cast({write, From, Key, Value}, #state{nodes=[Primary, Collaborator|_Rest
             {noreply, State}
     end;
 %% @private
-handle_cast({read, From, Key}, #state{nodes=[Primary|_Rest], store=Store}=State) ->
+handle_cast({read, {FromPid, FromRequestId}=From, Key}, #state{nodes=[Primary|_Rest], store=Store}=State) ->
     case node() of 
         Primary ->
             Value = read(Key, Store),
             lager:info("~p: node ~p received read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
 
             %% Send the response back to the user.
-            preply(From, {ok, Value}),
+            psend(FromPid, {response, FromRequestId, {ok, Value}}),
 
             {noreply, State};
         _ ->
@@ -158,7 +158,7 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @private
-handle_info({forwarded_write, From, Key, Value}, #state{nodes=[_Primary|Backups], store=Store0}=State) ->
+handle_info({forwarded_write, {FromPid, FromRequestId}=From, Key, Value}, #state{nodes=[_Primary|Backups], store=Store0}=State) ->
     %% Figure 2c: I think this algorithm is not correct, but we'll see.
 
     Store = write(Key, Value, Store0),
@@ -168,7 +168,7 @@ handle_info({forwarded_write, From, Key, Value}, #state{nodes=[_Primary|Backups]
     lists:foreach(fun(Backup) -> psend(Backup, {backup, From, Key, Value}) end, Backups),
 
     %% Send the response to the caller.
-    preply(From, ok),
+    psend(FromPid, {response, FromRequestId, ok}),
 
     %% No need to send acknowledgement back to the forwarder: 
     %%  - not needed for control flow.
@@ -176,12 +176,12 @@ handle_info({forwarded_write, From, Key, Value}, #state{nodes=[_Primary|Backups]
     {noreply, State#state{store=Store}};
 
 %% @private
-handle_info({forwarded_read, From, Key}, #state{store=Store}=State) ->
+handle_info({forwarded_read, {FromPid, FromRequestId}, Key}, #state{store=Store}=State) ->
     Value = read(Key, Store),
     lager:info("~p: node ~p received forwarded read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
 
     %% Send the response to the caller.
-    preply(From, {ok, Value}),
+    psend(FromPid, {response, FromRequestId, {ok, Value}}),
 
     %% No need to send acknowledgement back to the forwarder: 
     %%  - not needed for control flow.
@@ -189,13 +189,13 @@ handle_info({forwarded_read, From, Key}, #state{store=Store}=State) ->
     {noreply, State};
 
 %% @private
-handle_info({collaborate, From, SourceNode, Key, Value}, #state{nodes=[_Primary, _Collaborator | Backups], store=Store0}=State) ->
+handle_info({collaborate, {FromPid, FromRequestId}=From, SourceNode, Key, Value}, #state{nodes=[_Primary, _Collaborator | Backups], store=Store0}=State) ->
     %% Write value locally.
     Store = write(Key, Value, Store0),
     lager:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     %% On ack, reply to caller.
-    preply(From, ok),
+    psend(FromPid, {response, FromRequestId, ok}),
 
     %% Send write acknowledgement.
     psend(SourceNode, {collaborate_ack, From, Key, Value}),
@@ -225,7 +225,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%%===================================================================
-%%% Internal functions
+%%% Partisan functions
 %%%===================================================================
 
 %% @private
@@ -236,17 +236,34 @@ pmanager() ->
 %%
 %% [{ack, true}] ensures all messages are retried until acknowledged in the runtime
 %% so, no retry logic is required.
-preply({partisan_remote_reference, Destination, ServerRef}, Message) ->
+psend({partisan_remote_reference, Destination, ServerRef}, Message) ->
     Manager = pmanager(),
-    Manager:forward_message(Destination, undefined, ServerRef, Message, [{ack, true}]).
-
-%% @private
-%%
-%% [{ack, true}] ensures all messages are retried until acknowledged in the runtime
-%% so, no retry logic is required.
+    Manager:forward_message(Destination, undefined, ServerRef, Message, [{ack, true}]);
 psend(Destination, Message) ->
     Manager = pmanager(),
     Manager:forward_message(Destination, undefined, ?MODULE, Message, [{ack, true}]).
+
+%% @private
+pnode() ->
+    node().
+
+%% @private
+pself() ->
+    partisan_util:pid().
+
+%% @private
+%%
+%% If a process is always calling this with each request, then the 
+%% numbers will be good enough: stringly increasing integers for 
+%% each message that is sent.
+%%
+%% This is an approximation of the references normally used.
+prequestid() ->
+    erlang:unique_integer([monotonic, positive]).
+
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================
 
 %% @private
 read(Key, Store) ->
@@ -260,11 +277,3 @@ read(Key, Store) ->
 %% @private
 write(Key, Value, Store) ->
     dict:store(Key, Value, Store).
-
-%% @private
-pnode() ->
-    node().
-
-%% @private
-pself() ->
-    partisan_util:pid().
