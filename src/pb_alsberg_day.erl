@@ -92,28 +92,14 @@ handle_call({write, Key, Value}, From, #state{nodes=[Primary, Collaborator|_Rest
         _ ->
             {reply, {error, {primary, Primary}}, State}
     end;
-handle_call({read, Key}, From, #state{nodes=[Primary|_Rest], store=Store}=State) ->
+handle_call({read, Key}, _From, #state{nodes=[Primary|_Rest], store=Store}=State) ->
     case node() of 
         Primary ->
             Value = read(Key, Store),
             lager:info("~p: node ~p received read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
             {reply, {ok, Value}, State};
         _ ->
-            Myself = myself(),
-            forward_message(Primary, {forwarded_read, From, Myself, Key}),
-
-            %% Wait for acknowledgement that read was serviced before unblocking gen_server.
-            receive
-                {forwarded_read_ack, From, Key, Value} ->
-                    lager:info("~p: node ~p ack received for forwarded read of key ~p with value ~p", [?MODULE, node(), Key, Value]),
-
-                    %% Response was sent by the primary directly.
-                    {noreply, State}
-            after
-                %% We have to timeout, otherwise we block the gen_server.
-                ?PB_RETRY_TIMEOUT ->
-                    {reply, {error, timeout}, State}
-            end
+            {reply, {error, {primary, Primary}}, State}
     end;
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
@@ -123,41 +109,30 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @private
-handle_info({collaborate, From, FromNode, Key, Value}, #state{nodes=[_Primary, _Collaborator | Backups], store=Store0}=State) ->
+handle_info({collaborate, From, SourceNode, Key, Value}, #state{nodes=[_Primary, _Collaborator | Backups], store=Store0}=State) ->
     %% Write value locally.
     Store = write(Key, Value, Store0),
     lager:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
 
+    %% On ack, reply to caller.
+    gen_server:reply(From, ok),
+
     %% Send write acknowledgement.
-    forward_message(FromNode, {collaborate_ack, From, Key, Value}),
+    forward_message(SourceNode, {collaborate_ack, From, Key, Value}),
     lager:info("~p: node ~p acknowledging value for key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     %% Send backup message to backups.
     lists:foreach(fun(Backup) -> forward_message(Backup, {backup, From, Key, Value}) end, Backups),
 
-    %% On ack, reply to caller.
-    gen_server:reply(From, ok),
-
     {noreply, State#state{store=Store}};
-handle_info({backup, _From, _FromNode, Key, Value}, #state{store=Store0}=State) ->
+
+handle_info({backup, _From, _SourceNode, Key, Value}, #state{store=Store0}=State) ->
     %% Write value locally.
     Store = write(Key, Value, Store0),
     lager:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     {noreply, State#state{store=Store}};
-handle_info({forwarded_read, From, FromNode, Key}, #state{store=Store}=State) ->
-    Value = read(Key, Store),
 
-    lager:info("~p: node ~p received forwarded read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
-
-    %% Reply to caller.
-    gen_server:reply(From, {ok, Value}),
-
-    %% Notify forwarder that read was serviced.
-    forward_message(FromNode, {forwarded_read_ack, From, Key, Value}),
-    lager:info("~p: node ~p acknowledging forwarded read for key ~p value ~p", [?MODULE, node(), Key, Value]),
-
-    {noreply, State};
 handle_info(_Msg, State) ->
     {noreply, State}.
 
@@ -193,4 +168,4 @@ write(Key, Value, Store) ->
 
 %% @private
 myself() ->
-    partisan_peer_service_manager:myself().
+    node().
