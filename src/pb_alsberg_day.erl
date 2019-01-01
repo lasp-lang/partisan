@@ -50,6 +50,7 @@
 start_link(Nodes) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [Nodes], []).
 
+%% @doc Issue write operations.
 write(Key, Value) ->
     From = pself(),
     RequestId = prequestid(),
@@ -64,6 +65,7 @@ write(Key, Value) ->
             {error, timeout}
     end.
 
+%% @doc Issue read operations.
 read(Key) ->
     From = pself(),
     RequestId = prequestid(),
@@ -258,6 +260,7 @@ pself() ->
 %% each message that is sent.
 %%
 %% This is an approximation of the references normally used.
+%%
 prequestid() ->
     erlang:unique_integer([monotonic, positive]).
 
