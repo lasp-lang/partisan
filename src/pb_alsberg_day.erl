@@ -123,7 +123,6 @@ handle_cast({write, {FromPid, FromRequestId}=From, Key, Value}, #state{nodes=[Pr
             after
                 %% We have to timeout, otherwise we block the gen_server.
                 ?PB_RETRY_TIMEOUT ->
-
                     %% Reply to caller.
                     psend(FromPid, {response, FromRequestId, {error, timeout}}),
 
@@ -208,6 +207,7 @@ handle_info({collaborate, {FromPid, FromRequestId}=From, SourceNode, Key, Value}
 
     {noreply, State#state{store=Store}};
 
+%% @private
 handle_info({backup, _From, _SourceNode, Key, Value}, #state{store=Store0}=State) ->
     %% Write value locally.
     Store = write(Key, Value, Store0),
@@ -215,6 +215,7 @@ handle_info({backup, _From, _SourceNode, Key, Value}, #state{store=Store0}=State
 
     {noreply, State#state{store=Store}};
 
+%% @private
 handle_info(_Msg, State) ->
     {noreply, State}.
 
