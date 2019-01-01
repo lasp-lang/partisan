@@ -90,7 +90,12 @@ handle_call({write, Key, Value}, From, #state{nodes=[Primary, Collaborator|_Rest
                     {reply, {error, timeout}, State}
             end;
         _ ->
-            {reply, {error, {primary, Primary}}, State}
+            %% Forward the write request to the primary.
+            forward_message(Primary, {forwarded_write, From, Key, Value}),
+
+            %% Return control, because backup requests may arrive before response does 
+            %% under concurrent scheduling.
+            {noreply, State}
     end;
 handle_call({read, Key}, From, #state{nodes=[Primary|_Rest], store=Store}=State) ->
     case node() of 
@@ -103,7 +108,7 @@ handle_call({read, Key}, From, #state{nodes=[Primary|_Rest], store=Store}=State)
             forward_message(Primary, {forwarded_read, From, Key}),
 
             %% Return control, because backup requests may arrive before response does 
-            %% undre concurrent scheduling.
+            %% under concurrent scheduling.
             {noreply, State}
     end;
 handle_call(_Msg, _From, State) ->
@@ -112,6 +117,24 @@ handle_call(_Msg, _From, State) ->
 %% @private
 handle_cast(_Msg, State) ->
     {noreply, State}.
+
+%% @private
+handle_info({forwarded_write, From, Key, Value}, #state{nodes=[_Primary|Backups], store=Store0}=State) ->
+    %% Figure 2c: I think this algorithm is not correct, but we'll see.
+
+    Store = write(Key, Value, Store0),
+    lager:info("~p: node ~p received forwarded write for key ~p with value ~p", [?MODULE, node(), Key, Value]),
+
+    %% Send backup message to backups.
+    lists:foreach(fun(Backup) -> forward_message(Backup, {backup, From, Key, Value}) end, Backups),
+
+    %% Send the response to the caller.
+    gen_server:reply(From, ok),
+
+    %% No need to send acknowledgement back to the forwarder: 
+    %%  - not needed for control flow.
+
+    {noreply, State#state{store=Store}};
 
 %% @private
 handle_info({forwarded_read, From, Key}, #state{store=Store}=State) ->
@@ -169,6 +192,9 @@ code_change(_OldVsn, State, _Extra) ->
 %% @private
 forward_message(Destination, Message) ->
     Manager = partisan_config:get(partisan_peer_service_manager),
+
+    %% [{ack, true}] ensures all messages are retried until acknowledged in the runtime
+    %% so, no retry logic is required.
     Manager:forward_message(Destination, undefined, ?MODULE, Message, [{ack, true}]).
 
 %% @private

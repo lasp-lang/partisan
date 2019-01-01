@@ -120,9 +120,6 @@ node_postcondition(#state{store=Store}=_State, {call, ?MODULE, read, [Node, Key]
                     false
             end
     end;
-node_postcondition(_State, _Command, {error, {primary, _Node}}) ->
-    %% Ignore failures from contacting the wrong node -- should this be a precondition?
-    true;
 node_postcondition(_State, {call, ?MODULE, _Fun, [Node|_Rest]}=Command, Response) ->
     node_debug("node ~p: failed postcondition for command: ~p response: ~p", [Node, Command, Response]),
     false;
