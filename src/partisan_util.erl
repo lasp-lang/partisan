@@ -33,7 +33,8 @@
          term_to_iolist/1,
          gensym/1,
          pid/0,
-         pid/1]).
+         pid/1,
+         registered_name/1]).
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
 %%      works by treating the list as an array-based tree where, for
@@ -285,6 +286,8 @@ term_to_iolist_(T) ->
     <<131, Rest/binary>> = term_to_binary(T),
     Rest.
 
+gensym(Name) when is_atom(Name) ->
+    {partisan_registered_name_reference, atom_to_list(Name)};
 gensym(Pid) when is_pid(Pid) ->
     {partisan_process_reference, pid_to_list(Pid)}.
 
@@ -293,6 +296,11 @@ pid() ->
 
 pid(Pid) ->
     GenSym = gensym(Pid),
+    Node = partisan_peer_service_manager:mynode(),
+    {partisan_remote_reference, Node, GenSym}.
+
+registered_name(Name) ->
+    GenSym = gensym(Name),
     Node = partisan_peer_service_manager:mynode(),
     {partisan_remote_reference, Node, GenSym}.
 
