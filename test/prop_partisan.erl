@@ -524,6 +524,14 @@ start_nodes() ->
                  ['$tracing', PostInterpositionFun])
         end, Nodes),
 
+    %% Enable tracing.
+    lists:foreach(fun({_Name, Node}) ->
+        rpc:call(Node, 
+                 partisan_config,
+                 set,
+                 [tracing, true])
+        end, Nodes),
+
     %% Insert all nodes into group for all nodes.
     true = ets:insert(?MODULE, {nodes, Nodes}),
 

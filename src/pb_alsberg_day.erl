@@ -250,20 +250,27 @@ psend(Destination, Message) ->
 pnode() ->
     node().
 
-%% @private
-pself() ->
-    partisan_util:pid().
+%%%===================================================================
+%%% Conditional support for determinism
+%%%===================================================================
 
 %% @private
-%%
-%% If a process is always calling this with each request, then the 
-%% numbers will be good enough: stringly increasing integers for 
-%% each message that is sent.
-%%
-%% This is an approximation of the references normally used.
-%%
 prequestid() ->
-    erlang:unique_integer([monotonic, positive]).
+    case partisan_config:get(tracing, false) of 
+        true ->
+            99999;
+        false ->
+            erlang:unique_integer([monotonic, positive])
+    end.
+
+%% @private
+pself() ->
+    case partisan_config:get(tracing, false) of 
+        true ->
+            proxy;
+        false ->
+            partisan_util:pid()
+    end.
 
 %%%===================================================================
 %%% Internal functions
