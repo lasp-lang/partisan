@@ -49,8 +49,6 @@
                 blocked_processes=[],
                 identifier=undefined}).
 
--define(REPLAY_DEBUG, false).
-
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -389,9 +387,4 @@ write_trace(Trace) ->
 
 %% Should we do replay debugging?
 replay_debug(Line, Args) ->
-    case ?REPLAY_DEBUG of
-        true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
-        false ->
-            ok
-    end.
+    lager:info("~p: " ++ Line, [?MODULE] ++ Args).
