@@ -26,7 +26,7 @@
 
 -compile([export_all]).
 
--define(MODEL, prop_partisan_linearizability).
+-define(MODEL, prop_partisan_reliable_broadcast).
 
 -import(?MODEL,
         [node_commands/0,

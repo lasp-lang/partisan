@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_partisan_gossip).
+-module(prop_partisan_reliable_broadcast).
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
@@ -56,8 +56,8 @@ names() ->
 %% What node-specific operations should be called.
 node_commands() ->
     CoreCommands = [
-        {call, ?MODULE, spawn_gossip_receiver, [node_name()]},
-        {call, ?MODULE, gossip, [node_name(), message()]}
+        {call, ?MODULE, spawn_receiver, [node_name()]},
+        {call, ?MODULE, broadcast, [node_name(), message()]}
         ],
 
     AssertionCommands = case ?ASSERT_MAILBOX of
@@ -82,11 +82,11 @@ node_functions() ->
     lists:map(fun({call, _Mod, Fun, _Args}) -> Fun end, node_commands()).
 
 %% Postconditions for node commands.
-node_postcondition(_State, {call, ?MODULE, spawn_gossip_receiver, [_Node]}, {error, _}) ->
+node_postcondition(_State, {call, ?MODULE, spawn_receiver, [_Node]}, {error, _}) ->
     false;
-node_postcondition(_State, {call, ?MODULE, spawn_gossip_receiver, [_Node]}, {ok, _}) ->
+node_postcondition(_State, {call, ?MODULE, spawn_receiver, [_Node]}, {ok, _}) ->
     true;
-node_postcondition(_State, {call, ?MODULE, gossip, [_Node, _Message]}, _Result) ->
+node_postcondition(_State, {call, ?MODULE, broadcast, [_Node, _Message]}, _Result) ->
     true;
 node_postcondition(#state{sent=Sent}, {call, ?MODULE, check_mailbox, [Node]}, {ok, Messages}) ->
     node_debug("verifying mailbox at node ~p: sent: ~p, received: ~p", [Node, Sent, Messages]),
@@ -107,25 +107,25 @@ node_postcondition(_State, _Command, _Response) ->
     false.
 
 %% Next state.
-node_next_state(#state{sent=Sent0}=State, _Result, {call, ?MODULE, gossip, [Node, {Id, Value}]}) ->
+node_next_state(#state{sent=Sent0}=State, _Result, {call, ?MODULE, broadcast, [Node, {Id, Value}]}) ->
     Message = {Id, Node, Value},
     Sent = Sent0 ++ [Message],
     State#state{sent=Sent};
-node_next_state(#state{receivers=Receivers0}=State, Result, {call, ?MODULE, spawn_gossip_receiver, [Node]}) ->
+node_next_state(#state{receivers=Receivers0}=State, Result, {call, ?MODULE, spawn_receiver, [Node]}) ->
     Receivers = dict:store(Node, Result, Receivers0),
     State#state{receivers=Receivers};
 node_next_state(State, _Response, _Command) ->
     State.
 
 %% Precondition.
-node_precondition(#state{receivers=Receivers}, {call, ?MODULE, spawn_gossip_receiver, [Node]}) ->
+node_precondition(#state{receivers=Receivers}, {call, ?MODULE, spawn_receiver, [Node]}) ->
     case dict:find(Node, Receivers) of
         {ok, _} ->
             false;
         error ->
             true
     end;
-node_precondition(#state{receivers=Receivers}, {call, ?MODULE, gossip, [_Node, _Message]}) ->
+node_precondition(#state{receivers=Receivers}, {call, ?MODULE, broadcast, [_Node, _Message]}) ->
     length(dict:to_list(Receivers)) == length(names());
 node_precondition(#state{receivers=Receivers}, {call, ?MODULE, check_mailbox, [_Node]}) ->
     length(dict:to_list(Receivers)) == length(names());
@@ -136,8 +136,8 @@ node_precondition(_State, _Command) ->
 %%% Helper Functions
 %%%===================================================================
 
--define(GOSSIP_TABLE, gossip_table).
--define(GOSSIP_RECEIVER, gossip_receiver).
+-define(TABLE, table).
+-define(RECEIVER, receiver).
 
 -define(NODE_DEBUG, true).
 
@@ -145,10 +145,10 @@ node_precondition(_State, _Command) ->
 -define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
 
 %% @private
-gossip(Node, {Id, Value}) ->
+broadcast(Node, {Id, Value}) ->
     FullMessage = {Id, Node, Value},
-    node_debug("gossiping from node ~p message: ~p", [Node, FullMessage]),
-    ok = rpc:call(?NAME(Node), partisan_gossip, gossip, [?GOSSIP_RECEIVER, FullMessage]),
+    node_debug("broadcast from node ~p message: ~p", [Node, FullMessage]),
+    ok = rpc:call(?NAME(Node), partisan_gossip, gossip, [?RECEIVER, FullMessage]),
     ok.
 
 %% @private
@@ -159,7 +159,7 @@ check_mailbox(Node) ->
     timer:sleep(10000),
 
     %% Ask for what messages they have received.
-    erlang:send({?GOSSIP_RECEIVER, ?NAME(Node)}, {received, Self}),
+    erlang:send({?RECEIVER, ?NAME(Node)}, {received, Self}),
 
     receive
         Messages ->
@@ -170,26 +170,26 @@ check_mailbox(Node) ->
     end.
 
 %% @private
-spawn_gossip_receiver(Node) ->
-    node_debug("spawning gossip receiver on node ~p", [Node]),
+spawn_receiver(Node) ->
+    node_debug("spawning broadcast receiver on node ~p", [Node]),
 
     Self = self(),
 
     RemoteFun = fun() ->
         %% Create ETS table for the results.
-        ?GOSSIP_TABLE = ets:new(?GOSSIP_TABLE, [set, named_table, public]),
+        ?TABLE = ets:new(?TABLE, [set, named_table, public]),
 
         %% Define loop function for receiving and registering values.
         ReceiverFun = fun(F) ->
             receive
                 {received, Sender} ->
-                    Received = ets:foldl(fun(Term, Acc) -> Acc ++ [Term] end, [], ?GOSSIP_TABLE),
+                    Received = ets:foldl(fun(Term, Acc) -> Acc ++ [Term] end, [], ?TABLE),
                     Sorted = lists:keysort(1, Received),
                     node_debug("node ~p received request for stored values: ~p", [Node, Sorted]),
                     Sender ! Sorted;
                 {Id, SourceNode, Value} ->
                     node_debug("node ~p received origin: ~p id ~p and value: ~p", [Node, SourceNode, Id, Value]),
-                    true = ets:insert(?GOSSIP_TABLE, {Id, SourceNode, Value});
+                    true = ets:insert(?TABLE, {Id, SourceNode, Value});
                 Other ->
                     node_debug("node ~p received other: ~p", [Node, Other])
             end,
@@ -200,7 +200,7 @@ spawn_gossip_receiver(Node) ->
         Pid = erlang:spawn(fun() -> ReceiverFun(ReceiverFun) end),
 
         %% Register name.
-        erlang:register(?GOSSIP_RECEIVER, Pid),
+        erlang:register(?RECEIVER, Pid),
 
         %% Prevent races by notifying process is registered.
         Self ! ready,
