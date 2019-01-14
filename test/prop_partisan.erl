@@ -478,7 +478,7 @@ start_nodes() ->
     %% Identify trace.
     TraceRandomNumber = rand:uniform(100000),
     %% lager:info("~p: trace random generated: ~p", [?MODULE, TraceRandomNumber]),
-    TraceIdentifier = atom_to_list(prop_partisan_gossip) ++ "_" ++ integer_to_list(TraceRandomNumber),
+    TraceIdentifier = atom_to_list(?MODEL) ++ "_" ++ integer_to_list(TraceRandomNumber),
     ok = partisan_trace_orchestrator:identify(TraceIdentifier),
 
     %% Add send and receive pre-interposition functions to enforce message ordering.
