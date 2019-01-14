@@ -18,4 +18,7 @@ RETVAL=$?
 if [ $RETVAL -ne 0 ]; then
     echo "Copying the rebar3 counterexample file..."
     cp ${REBAR_COUNTEREXAMPLE_CONSULT_FILE} ${COUNTEREXAMPLE_CONSULT_FILE}
+    exit 1
 fi
+
+exit 0
