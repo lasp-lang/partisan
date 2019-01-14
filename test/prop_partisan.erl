@@ -26,7 +26,9 @@
 
 -compile([export_all]).
 
--import(prop_partisan_linearizability,
+-define(MODEL, prop_partisan_linearizability).
+
+-import(?MODEL,
         [node_commands/0,
          node_initial_state/0,
          node_functions/0,
