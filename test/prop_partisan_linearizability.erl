@@ -162,14 +162,10 @@ begin_case() ->
     %% Get nodes.
     [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
 
-    %% Get list of FQDNs.
-    NodeProjection = lists:map(fun({ShortName, _}) -> ?NAME(ShortName) end, Nodes),
-    SublistNodeProjection = lists:sublist(NodeProjection, 1, ?NUM_NODES),
-
     %% Start the backend.
     lists:foreach(fun({ShortName, _}) ->
-        %% node_debug("starting ~p at node ~p with node list ~p ", [?PB_MODULE, ShortName, SublistNodeProjection]),
-        {ok, _Pid} = rpc:call(?NAME(ShortName), ?PB_MODULE, start_link, [SublistNodeProjection])
+        node_debug("starting ~p at node ~p", [?PB_MODULE, ShortName]),
+        {ok, _Pid} = rpc:call(?NAME(ShortName), ?PB_MODULE, start_link, [])
     end, Nodes),
 
     ok.
