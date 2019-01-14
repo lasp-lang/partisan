@@ -25,8 +25,7 @@
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 %% API
--export([start_link/0,
-         start_link/1,
+-export([start_link/1,
          gossip/2,
          broadcast/2,
          update/1]).
@@ -45,15 +44,8 @@
 %%% API
 %%%===================================================================
 
-%% @doc Same as start_link([]).
--spec start_link() -> {ok, pid()} | ignore | {error, term()}.
-start_link() ->
-    start_link([]).
-
-%% @doc Start and link to calling process.
--spec start_link(list())-> {ok, pid()} | ignore | {error, term()}.
-start_link(Opts) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
+start_link(Nodes) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [Nodes], []).
 
 %% @doc Gossip.
 %% 
@@ -81,18 +73,18 @@ update(LocalState0) ->
 %%%===================================================================
 
 %% @private
-init([]) ->
+init([Nodes]) ->
     %% Seed the random number generator.
     partisan_config:seed(),
 
     %% Register membership update callback.
-    partisan_peer_service:add_sup_callback(fun ?MODULE:update/1),
+    %% partisan_peer_service:add_sup_callback(fun ?MODULE:update/1),
 
     %% Open ETS table to track received messages.
     ?MODULE = ets:new(?MODULE, [set, named_table, public]),
 
     %% Start with empty membership.
-    Membership = [],
+    Membership = Nodes,
 
     {ok, #state{membership=Membership}}.
 

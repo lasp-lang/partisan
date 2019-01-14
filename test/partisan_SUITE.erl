@@ -1069,6 +1069,9 @@ gossip_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
+    %% Get the list of node names to initialize the protocol with.
+    Membership = lists:map(fun({_Name, Node}) -> Node end, Nodes),
+
     %% Pause for clustering.
     timer:sleep(1000),
 
@@ -1076,6 +1079,12 @@ gossip_test(Config) ->
     lists:foreach(fun({_Name, Node}) ->
                     ok = check_forward_message(Node, Manager, Nodes)
                   end, Nodes),
+
+    %% Start gossip backend on all nodes.
+    lists:foreach(fun({_Name, Node}) ->
+        ct:pal("Starting gossip backend on node ~p with nodes: ~p", [Node, Membership]),
+        {ok, _Pid} = rpc:call(Node, gossip_demers, start_link, [Membership])
+    end, Nodes),
 
     %% Pause for protocol delay and periodic intervals to fire.
     timer:sleep(10000),
@@ -1087,6 +1096,7 @@ gossip_test(Config) ->
     ReceiverFun = fun() ->
         receive
             hello ->
+                lager:info("received value from gossip receiver", []),
                 Self ! hello
         end
     end,
@@ -1096,7 +1106,8 @@ gossip_test(Config) ->
     true = rpc:call(Node4, erlang, register, [receiver, ReceiverPid]),
 
     %% Gossip.
-    ok = rpc:call(Node2, partisan_gossip, gossip, [receiver, hello]),
+    ct:pal("Broadcasting hello from node ~p", [Node2]),
+    ok = rpc:call(Node2, gossip_demers, broadcast, [receiver, hello]),
 
     receive
         hello ->

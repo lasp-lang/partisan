@@ -318,6 +318,7 @@ process_forward(ServerRef, Message) ->
                 Pid ! Message;
             _ ->
                 ServerRef ! Message,
+
                 case partisan_config:get(tracing, ?TRACING) of
                     true ->
                         case is_pid(ServerRef) of
