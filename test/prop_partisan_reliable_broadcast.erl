@@ -179,12 +179,12 @@ begin_case() ->
 
     %% Start the backend.
     lists:foreach(fun({ShortName, _}) ->
-        node_debug("starting ~p at node ~p", [?BROADCAST_MODULE, ShortName]),
+        %% node_debug("starting ~p at node ~p", [?BROADCAST_MODULE, ShortName]),
         {ok, _Pid} = rpc:call(?NAME(ShortName), ?BROADCAST_MODULE, start_link, [])
     end, Nodes),
 
     lists:foreach(fun({ShortName, _}) ->
-        node_debug("spawning broadcast receiver on node ~p", [ShortName]),
+        %% node_debug("spawning broadcast receiver on node ~p", [ShortName]),
 
         Self = self(),
 
