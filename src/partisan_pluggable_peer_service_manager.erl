@@ -547,17 +547,17 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Ori
     end,
     Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
 
-    %% Fire post-interposition functions.
-    PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
-        PostInterpositionFun({forward_message, Name, OriginalMessage}, {forward_message, Name, Message}),
-        ok
-    end,
-    dict:fold(PostFoldFun, ok, PostInterpositionFuns),
-
-    lager:info("~p: Message after send interposition is: ~p", [node(), Message]),
-
     case Message of
         undefined ->
+            %% Fire post-interposition functions.
+            PostFoldFunUndefined = fun(_Name, PostInterpositionFun, ok) ->
+                PostInterpositionFun({forward_message, Name, OriginalMessage}, {forward_message, Name, Message}),
+                ok
+            end,
+            dict:fold(PostFoldFunUndefined, ok, PostInterpositionFuns),
+
+            lager:info("~p: Message after send interposition is: ~p", [node(), Message]),
+
             {reply, ok, State};
         Message ->
             %% Increment the clock.
@@ -594,20 +594,47 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Ori
             %% Store for reliability, if necessary.
             Result = case proplists:get_value(ack, Options, false) of
                 false ->
+                    %% Tracing.
+                    WrappedMessage =  {forward_message, ServerRef, Message},
+                    WrappedOriginalMessage =  {forward_message, ServerRef, OriginalMessage},
+
+                    %% Fire post-interposition functions -- trace after wrapping!
+                    PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
+                        PostInterpositionFun({forward_message, Name, WrappedOriginalMessage}, {forward_message, Name, WrappedMessage}),
+                        ok
+                    end,
+                    dict:fold(PostFoldFun, ok, PostInterpositionFuns),
+
+                    lager:info("~p: Message after send interposition is: ~p", [node(), Message]),
+
                     %% Send message along.
                     do_send_message(Name,
                                     Channel,
                                     PartitionKey,
-                                    {forward_message, ServerRef, Message},
+                                    WrappedMessage,
                                     Connections);
                 true ->
+                    %% Tracing.
+                    WrappedOriginalMessage = {forward_message, myself(), MessageClock, ServerRef, OriginalMessage},
+                    WrappedMessage = {forward_message, myself(), MessageClock, ServerRef, Message},
+
+                    %% Fire post-interposition functions -- trace after wrapping!
+                    PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
+                        PostInterpositionFun({forward_message, Name, WrappedOriginalMessage}, {forward_message, Name, WrappedMessage}),
+                        ok
+                    end,
+                    dict:fold(PostFoldFun, ok, PostInterpositionFuns),
+
+                    lager:info("~p: Message after send interposition is: ~p", [node(), Message]),
+
+                    %% Acknowledgements.
                     partisan_acknowledgement_backend:store(MessageClock, FullMessage),
 
                     %% Send message along.
                     do_send_message(Name,
                                     Channel,
                                     PartitionKey,
-                                    {forward_message, myself(), MessageClock, ServerRef, Message},
+                                    WrappedMessage,
                                     Connections)
             end,
 
