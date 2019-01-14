@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(partisan_gossip).
+-module(gossip_demers).
 
 -include("partisan.hrl").
 
@@ -28,6 +28,7 @@
 -export([start_link/0,
          start_link/1,
          gossip/2,
+         broadcast/2,
          update/1]).
 
 %% gen_server callbacks
@@ -53,6 +54,14 @@ start_link() ->
 -spec start_link(list())-> {ok, pid()} | ignore | {error, term()}.
 start_link(Opts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
+
+%% @doc Gossip.
+%% 
+%% Given the membership known at this node, select `fanout' nodes
+%% uniformly from the membership to transmit the message to.
+%%
+broadcast(ServerRef, Message) ->
+    gossip(ServerRef, Message).
 
 %% @doc Gossip.
 %% 

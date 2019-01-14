@@ -28,6 +28,7 @@
 
 -define(NUM_NODES, 3).
 -define(ASSERT_MAILBOX, true).
+-define(BROADCAST_MODULE, gossip_demers).
 
 %%%===================================================================
 %%% Generators
@@ -51,14 +52,11 @@ names() ->
 %%% Node Functions
 %%%===================================================================
 
--record(state, {receivers, sent}).
+-record(state, {sent}).
 
 %% What node-specific operations should be called.
 node_commands() ->
-    CoreCommands = [
-        {call, ?MODULE, spawn_receiver, [node_name()]},
-        {call, ?MODULE, broadcast, [node_name(), message()]}
-        ],
+    CoreCommands = [{call, ?MODULE, broadcast, [node_name(), message()]}],
 
     AssertionCommands = case ?ASSERT_MAILBOX of
         true ->
@@ -72,9 +70,8 @@ node_commands() ->
 %% What should the initial node state be.
 node_initial_state() ->
     node_debug("initializing", []),
-    Receivers = dict:new(),
     Sent = [],
-    #state{receivers=Receivers, sent=Sent}.
+    #state{sent=Sent}.
 
 %% Names of the node functions so we kow when we can dispatch to the node
 %% pre- and postconditions.
@@ -82,11 +79,7 @@ node_functions() ->
     lists:map(fun({call, _Mod, Fun, _Args}) -> Fun end, node_commands()).
 
 %% Postconditions for node commands.
-node_postcondition(_State, {call, ?MODULE, spawn_receiver, [_Node]}, {error, _}) ->
-    false;
-node_postcondition(_State, {call, ?MODULE, spawn_receiver, [_Node]}, {ok, _}) ->
-    true;
-node_postcondition(_State, {call, ?MODULE, broadcast, [_Node, _Message]}, _Result) ->
+node_postcondition(_State, {call, ?MODULE, broadcast, [_Node, _Message]}, ok) ->
     true;
 node_postcondition(#state{sent=Sent}, {call, ?MODULE, check_mailbox, [Node]}, {ok, Messages}) ->
     node_debug("verifying mailbox at node ~p: sent: ~p, received: ~p", [Node, Sent, Messages]),
@@ -111,24 +104,14 @@ node_next_state(#state{sent=Sent0}=State, _Result, {call, ?MODULE, broadcast, [N
     Message = {Id, Node, Value},
     Sent = Sent0 ++ [Message],
     State#state{sent=Sent};
-node_next_state(#state{receivers=Receivers0}=State, Result, {call, ?MODULE, spawn_receiver, [Node]}) ->
-    Receivers = dict:store(Node, Result, Receivers0),
-    State#state{receivers=Receivers};
 node_next_state(State, _Response, _Command) ->
     State.
 
 %% Precondition.
-node_precondition(#state{receivers=Receivers}, {call, ?MODULE, spawn_receiver, [Node]}) ->
-    case dict:find(Node, Receivers) of
-        {ok, _} ->
-            false;
-        error ->
-            true
-    end;
-node_precondition(#state{receivers=Receivers}, {call, ?MODULE, broadcast, [_Node, _Message]}) ->
-    length(dict:to_list(Receivers)) == length(names());
-node_precondition(#state{receivers=Receivers}, {call, ?MODULE, check_mailbox, [_Node]}) ->
-    length(dict:to_list(Receivers)) == length(names());
+node_precondition(_State, {call, ?MODULE, broadcast, [_Node, _Message]}) ->
+    true;
+node_precondition(_State, {call, ?MODULE, check_mailbox, [_Node]}) ->
+    true;
 node_precondition(_State, _Command) ->
     false.
 
@@ -148,8 +131,7 @@ node_precondition(_State, _Command) ->
 broadcast(Node, {Id, Value}) ->
     FullMessage = {Id, Node, Value},
     node_debug("broadcast from node ~p message: ~p", [Node, FullMessage]),
-    ok = rpc:call(?NAME(Node), partisan_gossip, gossip, [?RECEIVER, FullMessage]),
-    ok.
+    rpc:call(?NAME(Node), ?BROADCAST_MODULE, broadcast, [?RECEIVER, FullMessage]).
 
 %% @private
 check_mailbox(Node) ->
@@ -167,56 +149,6 @@ check_mailbox(Node) ->
     after 
         10000 ->
             {error, no_response_from_mailbox}
-    end.
-
-%% @private
-spawn_receiver(Node) ->
-    node_debug("spawning broadcast receiver on node ~p", [Node]),
-
-    Self = self(),
-
-    RemoteFun = fun() ->
-        %% Create ETS table for the results.
-        ?TABLE = ets:new(?TABLE, [set, named_table, public]),
-
-        %% Define loop function for receiving and registering values.
-        ReceiverFun = fun(F) ->
-            receive
-                {received, Sender} ->
-                    Received = ets:foldl(fun(Term, Acc) -> Acc ++ [Term] end, [], ?TABLE),
-                    Sorted = lists:keysort(1, Received),
-                    node_debug("node ~p received request for stored values: ~p", [Node, Sorted]),
-                    Sender ! Sorted;
-                {Id, SourceNode, Value} ->
-                    node_debug("node ~p received origin: ~p id ~p and value: ~p", [Node, SourceNode, Id, Value]),
-                    true = ets:insert(?TABLE, {Id, SourceNode, Value});
-                Other ->
-                    node_debug("node ~p received other: ~p", [Node, Other])
-            end,
-            F(F)
-        end,
-
-        %% Spawn locally.
-        Pid = erlang:spawn(fun() -> ReceiverFun(ReceiverFun) end),
-
-        %% Register name.
-        erlang:register(?RECEIVER, Pid),
-
-        %% Prevent races by notifying process is registered.
-        Self ! ready,
-
-        %% Block indefinitely so the table doesn't close.
-        loop()
-    end,
-    
-    Pid = rpc:call(?NAME(Node), erlang, spawn, [RemoteFun]),
-
-    receive
-        ready ->
-            {ok, Pid}
-    after 
-        10000 ->
-            error
     end.
 
 %% Should we do node debugging?
@@ -242,6 +174,65 @@ begin_property() ->
 
 %% @private
 begin_case() ->
+    %% Get nodes.
+    [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
+
+    %% Start the backend.
+    lists:foreach(fun({ShortName, _}) ->
+        node_debug("starting ~p at node ~p", [?BROADCAST_MODULE, ShortName]),
+        {ok, _Pid} = rpc:call(?NAME(ShortName), ?BROADCAST_MODULE, start_link, [])
+    end, Nodes),
+
+    lists:foreach(fun({ShortName, _}) ->
+        node_debug("spawning broadcast receiver on node ~p", [ShortName]),
+
+        Self = self(),
+
+        RemoteFun = fun() ->
+            %% Create ETS table for the results.
+            ?TABLE = ets:new(?TABLE, [set, named_table, public]),
+
+            %% Define loop function for receiving and registering values.
+            ReceiverFun = fun(F) ->
+                receive
+                    {received, Sender} ->
+                        Received = ets:foldl(fun(Term, Acc) -> Acc ++ [Term] end, [], ?TABLE),
+                        Sorted = lists:keysort(1, Received),
+                        node_debug("node ~p received request for stored values: ~p", [ShortName, Sorted]),
+                        Sender ! Sorted;
+                    {Id, SourceNode, Value} ->
+                        node_debug("node ~p received origin: ~p id ~p and value: ~p", [ShortName, SourceNode, Id, Value]),
+                        true = ets:insert(?TABLE, {Id, SourceNode, Value});
+                    Other ->
+                        node_debug("node ~p received other: ~p", [ShortName, Other])
+                end,
+                F(F)
+            end,
+
+            %% Spawn locally.
+            Pid = erlang:spawn(fun() -> ReceiverFun(ReceiverFun) end),
+
+            %% Register name.
+            erlang:register(?RECEIVER, Pid),
+
+            %% Prevent races by notifying process is registered.
+            Self ! ready,
+
+            %% Block indefinitely so the table doesn't close.
+            loop()
+        end,
+        
+        Pid = rpc:call(?NAME(ShortName), erlang, spawn, [RemoteFun]),
+
+        receive
+            ready ->
+                {ok, Pid}
+        after 
+            10000 ->
+                error
+        end
+    end, Nodes),
+
     ok.
 
 %% @private
