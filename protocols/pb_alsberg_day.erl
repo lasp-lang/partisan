@@ -24,9 +24,10 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1,
+-export([start_link/0,
          write/2,
-         read/1]).
+         read/1,
+         update/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -36,7 +37,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, {store, nodes=[]}).
+-record(state, {store, membership=[]}).
 
 -include("partisan.hrl").
 
@@ -47,8 +48,13 @@
 %%% API
 %%%===================================================================
 
-start_link(Nodes) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [Nodes], []).
+start_link() ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+%% @doc Notifies us of membership update.
+update(LocalState0) ->
+    LocalState = partisan_peer_service:decode(LocalState0),
+    gen_server:cast(?MODULE, {update, LocalState}).
 
 %% @doc Issue write operations.
 write(Key, Value) ->
@@ -85,20 +91,31 @@ read(Key) ->
 %%%===================================================================
 
 %% @private
-init([Nodes]) ->
+init([]) ->
     Store = dict:new(),
 
     %% Seed the random number generator using the deterministic seed.
     partisan_config:seed(),
 
-    {ok, #state{nodes=Nodes, store=Store}}.
+    %% Register membership update callback.
+    partisan_peer_service:add_sup_callback(fun ?MODULE:update/1),
+
+    %% Start with initial membership.
+    {ok, Membership} = partisan_peer_service:members(),
+    lager:info("Starting with membership: ~p", [Membership]),
+
+    {ok, #state{membership=Membership, store=Store}}.
 
 %% @private
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 %% @private
-handle_cast({write, {FromPid, FromRequestId}=From, Key, Value}, #state{nodes=[Primary, Collaborator|_Rest], store=Store0}=State) ->
+handle_cast({update, Membership0}, State) ->
+    Membership = lists:usort(Membership0), %% Must sort list or random selection with seed is *nondeterministic.*
+    {noreply, State#state{membership=Membership}};
+
+handle_cast({write, {FromPid, FromRequestId}=From, Key, Value}, #state{membership=[Primary, Collaborator|_Rest], store=Store0}=State) ->
     case node() of 
         Primary ->
             lager:info("~p: node ~p received write for key ~p with value ~p", [?MODULE, node(), Key, Value]),
@@ -137,7 +154,7 @@ handle_cast({write, {FromPid, FromRequestId}=From, Key, Value}, #state{nodes=[Pr
             {noreply, State}
     end;
 %% @private
-handle_cast({read, {FromPid, FromRequestId}=From, Key}, #state{nodes=[Primary|_Rest], store=Store}=State) ->
+handle_cast({read, {FromPid, FromRequestId}=From, Key}, #state{membership=[Primary|_Rest], store=Store}=State) ->
     case node() of 
         Primary ->
             Value = read(Key, Store),
@@ -159,7 +176,7 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @private
-handle_info({forwarded_write, {FromPid, FromRequestId}=From, Key, Value}, #state{nodes=[_Primary|Backups], store=Store0}=State) ->
+handle_info({forwarded_write, {FromPid, FromRequestId}=From, Key, Value}, #state{membership=[_Primary|Backups], store=Store0}=State) ->
     %% Figure 2c: I think this algorithm is not correct, but we'll see.
 
     Store = write(Key, Value, Store0),
@@ -190,7 +207,7 @@ handle_info({forwarded_read, {FromPid, FromRequestId}, Key}, #state{store=Store}
     {noreply, State};
 
 %% @private
-handle_info({collaborate, {FromPid, FromRequestId}=From, SourceNode, Key, Value}, #state{nodes=[_Primary, _Collaborator | Backups], store=Store0}=State) ->
+handle_info({collaborate, {FromPid, FromRequestId}=From, SourceNode, Key, Value}, #state{membership=[_Primary, _Collaborator | Backups], store=Store0}=State) ->
     %% Write value locally.
     Store = write(Key, Value, Store0),
     lager:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
