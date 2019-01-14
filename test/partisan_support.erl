@@ -146,7 +146,7 @@ start(Case, Config, Options) ->
             ok = rpc:call(Node, partisan_config, set, [membership_strategy, MembershipStrategy]),
 
             debug("Enabling tracing since we are in test mode....", []),
-            ok = rpc:call(Node, partisan_config, set, [tracing, true]),
+            ok = rpc:call(Node, partisan_config, set, [tracing, false]),
 
             Disterl = case ?config(disterl, Config) of
                               undefined ->

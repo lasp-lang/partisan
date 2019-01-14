@@ -1069,9 +1069,6 @@ gossip_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Get the list of node names to initialize the protocol with.
-    Membership = lists:map(fun({_Name, Node}) -> Node end, Nodes),
-
     %% Pause for clustering.
     timer:sleep(1000),
 
@@ -1082,8 +1079,8 @@ gossip_test(Config) ->
 
     %% Start gossip backend on all nodes.
     lists:foreach(fun({_Name, Node}) ->
-        ct:pal("Starting gossip backend on node ~p with nodes: ~p", [Node, Membership]),
-        {ok, _Pid} = rpc:call(Node, gossip_demers, start_link, [Membership])
+        ct:pal("Starting gossip backend on node ~p", [Node]),
+        {ok, _Pid} = rpc:call(Node, gossip_demers, start_link, [])
     end, Nodes),
 
     %% Pause for protocol delay and periodic intervals to fire.
