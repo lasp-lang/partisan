@@ -61,7 +61,8 @@ fault_commands() ->
      {call, ?MODULE, crash, [node_name()]},
 
      %% Send omission failures.
-     {call, ?MODULE, begin_send_omission, [node_name(), node_name()]}
+     {call, ?MODULE, begin_send_omission, [node_name(), node_name()]},
+     {call, ?MODULE, end_send_omission, [node_name(), node_name()]}
     ].
 
 %% Names of the node functions so we kow when we can dispatch to the node
@@ -88,6 +89,15 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelStat
     %% Both nodes have to be non-crashed.
     not lists:member(SourceNode, CrashedNodes) andalso not lists:member(DestinationNode, CrashedNodes);
 
+fault_precondition(#fault_model_state{send_omissions=SendOmissions}, {call, _Mod, end_send_omission, [SourceNode, DestinationNode]}) ->
+    %% We must be in the middle of a send omission to resolve it.
+    case dict:find({SourceNode, DestinationNode}, SendOmissions) of 
+        {ok, _} ->
+            true;
+        _ ->
+            false
+    end;
+
 %% Crash failures.
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelState, {call, _Mod, crash, [Node]}=Call) ->
     %% Fault must be allowed at this moment.
@@ -105,6 +115,10 @@ fault_next_state(#fault_model_state{active_faults=ActiveFaults, send_omissions=S
     SendOmissions = dict:store({SourceNode, DestinationNode}, true, SendOmissions0),
     FaultModelState#fault_model_state{active_faults=ActiveFaults + 1, send_omissions=SendOmissions};
 
+fault_next_state(#fault_model_state{active_faults=ActiveFaults, send_omissions=SendOmissions0} = FaultModelState, _Res, {call, _Mod, end_send_omission, [SourceNode, DestinationNode]}) ->
+    SendOmissions = dict:erase({SourceNode, DestinationNode}, SendOmissions0),
+    FaultModelState#fault_model_state{active_faults=ActiveFaults - 1, send_omissions=SendOmissions};
+
 %% Crashing a node adds a node to the crashed state.
 fault_next_state(#fault_model_state{active_faults=ActiveFaults, crashed_nodes=CrashedNodes} = FaultModelState, _Res, {call, _Mod, crash, [Node]}) ->
     FaultModelState#fault_model_state{active_faults=ActiveFaults + 1, crashed_nodes=CrashedNodes ++ [Node]};
@@ -114,6 +128,9 @@ fault_next_state(FaultModelState, _Res, _Call) ->
 
 %% Send omission.
 fault_postcondition(_FaultModelState, {call, _Mod, begin_send_omission, [_SourceNode, _DestinationNode]}, ok) ->
+    true;
+
+fault_postcondition(_FaultModelState, {call, _Mod, end_send_omission, [_SourceNode, _DestinationNode]}, ok) ->
     true;
 
 %% Crashes are allowed.
@@ -195,3 +212,12 @@ begin_send_omission(SourceNode, DestinationNode0) ->
         ({receive_message, _N, Message}) -> Message
     end,
     rpc:call(?NAME(SourceNode), ?MANAGER, add_interposition_fun, [{send_omission, DestinationNode}, InterpositionFun]).
+
+%% End send omission failure period.
+end_send_omission(SourceNode, DestinationNode0) ->
+    fault_debug("end_send_omission: source_node ~p destination_node ~p", [SourceNode, DestinationNode0]),
+
+    %% Convert to real node name and not symbolic name.
+    DestinationNode = ?NAME(DestinationNode0),
+
+    rpc:call(?NAME(SourceNode), ?MANAGER, remove_interposition_fun, [{send_omission, DestinationNode}]).
