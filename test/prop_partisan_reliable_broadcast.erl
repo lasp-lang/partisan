@@ -169,11 +169,11 @@ loop() ->
     loop().
 
 %% @private
-begin_property() ->
+node_begin_property() ->
     partisan_trace_orchestrator:start_link().
 
 %% @private
-begin_case() ->
+node_begin_case() ->
     %% Get nodes.
     [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
 
@@ -236,7 +236,7 @@ begin_case() ->
     ok.
 
 %% @private
-end_case() ->
+node_end_case() ->
     node_debug("ending case", []),
 
     %% Get nodes.

@@ -26,18 +26,31 @@
 
 -compile([export_all]).
 
--define(MODEL, prop_partisan_reliable_broadcast).
+%% System model.
+-define(SYSTEM_MODEL, prop_partisan_reliable_broadcast).
 
--import(?MODEL,
+-import(?SYSTEM_MODEL,
         [node_commands/0,
          node_initial_state/0,
          node_functions/0,
          node_precondition/2,
          node_postcondition/3,
          node_next_state/3,
-         begin_property/0,
-         begin_case/0,
-         end_case/0]).
+         node_begin_property/0,
+         node_begin_case/0,
+         node_end_case/0]).
+
+%% Fault model.
+-define(FAULT_MODEL, prop_partisan_crash_fault_model).
+
+-import(?FAULT_MODEL,
+        [fault_commands/0,
+         fault_initial_state/0,
+         fault_functions/0,
+         fault_precondition/2,
+         fault_postcondition/3,
+         fault_next_state/3,
+         fault_is_crashed/2]).
 
 -define(SUPPORT, partisan_support).
 
@@ -100,14 +113,14 @@
 %%%===================================================================
 
 prop_sequential() ->
-    begin_property(),
+    node_begin_property(),
 
     ?FORALL(Cmds, more_commands(?COMMAND_MULTIPLE, commands(?MODULE)), 
         begin
             start_nodes(),
-            begin_case(),
+            node_begin_case(),
             {History, State, Result} = run_commands(?MODULE, Cmds), 
-            end_case(),
+            node_end_case(),
             stop_nodes(),
             ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
                                 [History,State,Result]),
@@ -115,14 +128,14 @@ prop_sequential() ->
         end).
 
 prop_parallel() ->
-    begin_property(),
+    node_begin_property(),
     
     ?FORALL(Cmds, more_commands(?COMMAND_MULTIPLE, parallel_commands(?MODULE)), 
         begin
             start_nodes(),
-            begin_case(),
+            node_begin_case(),
             {History, State, Result} = run_parallel_commands(?MODULE, Cmds), 
-            end_case(),
+            node_end_case(),
             stop_nodes(),
             ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
                                 [History,State,Result]),
@@ -137,6 +150,7 @@ prop_parallel() ->
                 joined_nodes :: [node()],
                 nodes :: [node()],
                 node_state :: {dict:dict(), dict:dict()}, 
+                fault_model_state :: term(),
                 partition_filters :: dict:dict(),
                 minority_nodes :: [node()], 
                 majority_nodes :: [node()], 
@@ -148,6 +162,9 @@ prop_parallel() ->
 initial_state() -> 
     %% Initialize empty dictionary for process state.
     NodeState = node_initial_state(),
+
+    %% Initialize fault model.
+    FaultModelState = fault_initial_state(),
 
     %% Get the list of nodes.
     Nodes = names(),
@@ -175,12 +192,23 @@ initial_state() ->
            minority_nodes=MinorityNodes,
            majority_nodes=MajorityNodes, 
            node_state=NodeState,
+           fault_model_state=FaultModelState,
            active_faults=ActiveFaults, 
            byzantine_faults=ByzantineFaults,
            partition_filters=PartitionFilters}.
 
 command(State) -> 
-    ?LET(Commands, cluster_commands(State) ++ node_commands(), oneof(Commands)).
+    ?LET(Commands, 
+        %% Cluster maintenance commands.
+        cluster_commands(State) ++ 
+
+        %% Fault model commands.
+        fault_commands() ++
+
+        %% System model commands.
+        node_commands(), 
+
+        oneof(Commands)).
 
 %% Picks whether a command should be valid under the current state.
 precondition(#state{byzantine_faults=ByzantineFaults, active_faults=ActiveFaults}, {call, _Mod, induce_byzantine_message_corruption_fault, [SourceNode, DestinationNode, _Value]}) -> 
@@ -261,8 +289,9 @@ precondition(#state{joined_nodes=JoinedNodes}, {call, _Mod, leave_cluster, [Node
             precondition_debug("precondition leave_cluster: no nodes left to remove.", []),
             false %% Might need to be changed when there's no read/write operations.
     end;
-precondition(#state{majority_nodes=MajorityNodes, minority_nodes=MinorityNodes, node_state=NodeState, joined_nodes=JoinedNodes}, {call, Mod, Fun, [Node|_]=Args}=Call) -> 
+precondition(#state{majority_nodes=MajorityNodes, minority_nodes=MinorityNodes, fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes}, {call, Mod, Fun, [Node|_]=Args}=Call) -> 
     precondition_debug("precondition fired for node function: ~p, majority_nodes: ~p, minority_nodes ~p", [Fun, MajorityNodes, MinorityNodes]),
+
     case lists:member(Fun, node_functions()) of
         true ->
             case ?BIAS_MINORITY andalso length(MinorityNodes) > 0 of
@@ -273,85 +302,27 @@ precondition(#state{majority_nodes=MajorityNodes, minority_nodes=MinorityNodes, 
                             debug("=> bias towards minority, write is going to node ~p in minority", [Node]),
                             ClusterCondition = enough_nodes_connected(JoinedNodes) andalso is_joined(Node, JoinedNodes),
                             NodePrecondition = node_precondition(NodeState, Call),
-                            ClusterCondition andalso NodePrecondition;
+                            FaultPrecondition = not fault_is_crashed(FaultModelState, Node),
+                            ClusterCondition andalso NodePrecondition andalso FaultPrecondition;
                         false ->
                             false
                     end;
                 false ->
                     ClusterCondition = enough_nodes_connected(JoinedNodes) andalso is_joined(Node, JoinedNodes),
                     NodePrecondition = node_precondition(NodeState, Call),
-                    ClusterCondition andalso NodePrecondition
+                    FaultPrecondition = not fault_is_crashed(FaultModelState, Node),
+                    ClusterCondition andalso NodePrecondition andalso FaultPrecondition
             end;
         false ->
-            debug("general precondition fired for mod ~p and fun ~p and args ~p", [Mod, Fun, Args]),
-            false
-    end.
-
-%% Given the state `State' *prior* to the call `{call, Mod, Fun, Args}',
-%% determine whether the result `Res' (coming from the actual system)
-%% makes sense.
-postcondition(_State, {call, ?MODULE, induce_byzantine_message_corruption_fault, [_SourceNode, _DestinationNode, _Value]}, ok) ->
-    postcondition_debug("postcondition induce_byzantine_message_corruption_fault: succeeded", []),
-    %% Added message filter.
-    true;
-postcondition(_State, {call, ?MODULE, resolve_byzantine_message_corruption_fault, [_SourceNode, _DestinationNode]}, ok) ->
-    postcondition_debug("postcondition resolve_byzantine_message_corruption_fault: succeeded", []),
-    %% Remove message filter.
-    true;
-postcondition(_State, {call, ?MODULE, induce_async_partition, [_SourceNode, _DestinationNode]}, ok) ->
-    postcondition_debug("postcondition induce_async_partition: succeeded", []),
-    %% Added message filter.
-    true;
-postcondition(_State, {call, ?MODULE, resolve_async_partition, [_SourceNode, _DestinationNode]}, ok) ->
-    postcondition_debug("postcondition resolve_async_partition: succeeded", []),
-    %% Removed message filter.
-    true;
-postcondition(_State, {call, ?MODULE, induce_sync_partition, [_SourceNode, _DestinationNode]}, ok) ->
-    postcondition_debug("postcondition induce_sync_partition: succeeded", []),
-    %% Added message filter.
-    true;
-postcondition(_State, {call, ?MODULE, resolve_sync_partition, [_SourceNode, _DestinationNode]}, ok) ->
-    postcondition_debug("postcondition resolve_sync_partition: succeeded", []),
-    %% Removed message filter.
-    true;
-postcondition(_State, {call, ?MODULE, delayed_resolve_sync_partition, [_Timeout, _SourceNode, _DestinationNode]}, ok) ->
-    postcondition_debug("postcondition delayed_resolve_sync_partition: succeeded", []),
-    %% Removed message filter.
-    true;
-postcondition(_State, {call, ?MODULE, induce_cluster_partition, [_MajorityNodes, _MinorityNodes]}, ok) ->
-    postcondition_debug("postcondition induce_cluster_partition: succeeded", []),
-    %% Added message filter.
-    true;
-postcondition(_State, {call, ?MODULE, resolve_cluster_partition, [_MajorityNodes, _MinorityNodes]}, ok) ->
-    postcondition_debug("postcondition resolve_cluster_partition: succeeded", []),
-    %% Removed message filter.
-    true;
-postcondition(_State, {call, ?MODULE, join_cluster, [_Node, _JoinedNodes]}, ok) ->
-    postcondition_debug("postcondition join_cluster: succeeded", []),
-    %% Accept joins that succeed.
-    true;
-postcondition(_State, {call, ?MODULE, leave_cluster, [_Node, _JoinedNodes]}, ok) ->
-    postcondition_debug("postcondition leave_cluster: succeeded", []),
-    %% Accept leaves that succeed.
-    true;
-postcondition(#state{node_state=NodeState}, {call, Mod, Fun, Args}=Call, Res) -> 
-    case lists:member(Fun, node_functions()) of
-        true ->
-            PostconditionResult = node_postcondition(NodeState, Call, Res),
-
-            case PostconditionResult of 
-                false ->
-                    debug("postcondition result: ~p; command: ~p:~p(~p)", [PostconditionResult, Mod, Fun, Args]),
-                    ok;
+            case lists:member(Fun, fault_functions()) of 
                 true ->
-                    ok
-            end,
-
-            PostconditionResult;
-        false ->
-            postcondition_debug("general postcondition fired for ~p:~p with response ~p", [Mod, Fun, Res]),
-            %% All other commands pass.
-            false
+                    ClusterCondition = enough_nodes_connected(JoinedNodes) andalso is_joined(Node, JoinedNodes),
+                    FaultModelPrecondition = fault_precondition(FaultModelState, Call),
+                    ClusterCondition andalso FaultModelPrecondition;
+                false ->
+                    debug("general precondition fired for mod ~p and fun ~p and args ~p", [Mod, Fun, Args]),
+                    false
+            end
     end.
 
 %% Assuming the postcondition for a call was true, update the model
@@ -403,14 +374,102 @@ next_state(#state{joined_nodes=JoinedNodes}=State, _Res, {call, ?MODULE, leave_c
             %% no-op for the leave
             State
     end;
-next_state(#state{node_state=NodeState0}=State, Res, {call, _Mod, Fun, _Args}=Call) -> 
+next_state(#state{fault_model_state=FaultModelState0, node_state=NodeState0}=State, Res, {call, _Mod, Fun, _Args}=Call) -> 
     case lists:member(Fun, node_functions()) of
         true ->
             NodeState = node_next_state(NodeState0, Res, Call),
             State#state{node_state=NodeState};
         false ->
-            debug("general next_state fired", []),
-            State
+            case lists:member(Fun, fault_functions()) of 
+                true ->
+                    FaultModelState = fault_next_state(FaultModelState0, Res, Call),
+                    State#state{fault_model_state=FaultModelState};
+                false ->
+                    debug("general next_state fired", []),
+                    State
+            end
+    end.
+
+%% Given the state `State' *prior* to the call `{call, Mod, Fun, Args}',
+%% determine whether the result `Res' (coming from the actual system)
+%% makes sense.
+postcondition(_State, {call, ?MODULE, induce_byzantine_message_corruption_fault, [_SourceNode, _DestinationNode, _Value]}, ok) ->
+    postcondition_debug("postcondition induce_byzantine_message_corruption_fault: succeeded", []),
+    %% Added message filter.
+    true;
+postcondition(_State, {call, ?MODULE, resolve_byzantine_message_corruption_fault, [_SourceNode, _DestinationNode]}, ok) ->
+    postcondition_debug("postcondition resolve_byzantine_message_corruption_fault: succeeded", []),
+    %% Remove message filter.
+    true;
+postcondition(_State, {call, ?MODULE, induce_async_partition, [_SourceNode, _DestinationNode]}, ok) ->
+    postcondition_debug("postcondition induce_async_partition: succeeded", []),
+    %% Added message filter.
+    true;
+postcondition(_State, {call, ?MODULE, resolve_async_partition, [_SourceNode, _DestinationNode]}, ok) ->
+    postcondition_debug("postcondition resolve_async_partition: succeeded", []),
+    %% Removed message filter.
+    true;
+postcondition(_State, {call, ?MODULE, induce_sync_partition, [_SourceNode, _DestinationNode]}, ok) ->
+    postcondition_debug("postcondition induce_sync_partition: succeeded", []),
+    %% Added message filter.
+    true;
+postcondition(_State, {call, ?MODULE, resolve_sync_partition, [_SourceNode, _DestinationNode]}, ok) ->
+    postcondition_debug("postcondition resolve_sync_partition: succeeded", []),
+    %% Removed message filter.
+    true;
+postcondition(_State, {call, ?MODULE, delayed_resolve_sync_partition, [_Timeout, _SourceNode, _DestinationNode]}, ok) ->
+    postcondition_debug("postcondition delayed_resolve_sync_partition: succeeded", []),
+    %% Removed message filter.
+    true;
+postcondition(_State, {call, ?MODULE, induce_cluster_partition, [_MajorityNodes, _MinorityNodes]}, ok) ->
+    postcondition_debug("postcondition induce_cluster_partition: succeeded", []),
+    %% Added message filter.
+    true;
+postcondition(_State, {call, ?MODULE, resolve_cluster_partition, [_MajorityNodes, _MinorityNodes]}, ok) ->
+    postcondition_debug("postcondition resolve_cluster_partition: succeeded", []),
+    %% Removed message filter.
+    true;
+postcondition(_State, {call, ?MODULE, join_cluster, [_Node, _JoinedNodes]}, ok) ->
+    postcondition_debug("postcondition join_cluster: succeeded", []),
+    %% Accept joins that succeed.
+    true;
+postcondition(_State, {call, ?MODULE, leave_cluster, [_Node, _JoinedNodes]}, ok) ->
+    postcondition_debug("postcondition leave_cluster: succeeded", []),
+    %% Accept leaves that succeed.
+    true;
+postcondition(#state{fault_model_state=FaultModelState, node_state=NodeState}, {call, Mod, Fun, Args}=Call, Res) -> 
+    case lists:member(Fun, node_functions()) of
+        true ->
+            PostconditionResult = node_postcondition(NodeState, Call, Res),
+
+            case PostconditionResult of 
+                false ->
+                    debug("postcondition result: ~p; command: ~p:~p(~p)", [PostconditionResult, Mod, Fun, Args]),
+                    ok;
+                true ->
+                    ok
+            end,
+
+            PostconditionResult;
+        false ->
+            case lists:member(Fun, fault_functions()) of 
+                true ->
+                    PostconditionResult = fault_postcondition(FaultModelState, Call, Res),
+
+                    case PostconditionResult of 
+                        false ->
+                            debug("postcondition result: ~p; command: ~p:~p(~p)", [PostconditionResult, Mod, Fun, Args]),
+                            ok;
+                        true ->
+                            ok
+                    end,
+
+                    PostconditionResult;
+                false ->
+                    postcondition_debug("general postcondition fired for ~p:~p with response ~p", [Mod, Fun, Res]),
+                    %% All other commands pass.
+                    false
+            end
     end.
 
 %%%===================================================================
@@ -478,7 +537,7 @@ start_nodes() ->
     %% Identify trace.
     TraceRandomNumber = rand:uniform(100000),
     %% lager:info("~p: trace random generated: ~p", [?MODULE, TraceRandomNumber]),
-    TraceIdentifier = atom_to_list(?MODEL) ++ "_" ++ integer_to_list(TraceRandomNumber),
+    TraceIdentifier = atom_to_list(?SYSTEM_MODEL) ++ "_" ++ integer_to_list(TraceRandomNumber),
     ok = partisan_trace_orchestrator:identify(TraceIdentifier),
 
     %% Add send and receive pre-interposition functions to enforce message ordering.
