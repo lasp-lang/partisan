@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(pb_alsberg_day).
+-module(alsberg_day).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -behaviour(gen_server).

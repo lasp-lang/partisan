@@ -30,7 +30,7 @@
 -define(NODE_DEBUG, true).
 -define(ETS, prop_partisan).
 -define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
--define(PB_MODULE, pb_alsberg_day).
+-define(PB_MODULE, alsberg_day).
 
 %%%===================================================================
 %%% Generators
