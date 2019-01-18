@@ -28,7 +28,7 @@
 
 -define(NUM_NODES, 3).
 -define(ASSERT_MAILBOX, true).
--define(BROADCAST_MODULE, gossip_demers).
+-define(BROADCAST_MODULE, demers_direct_mail).
 
 %%%===================================================================
 %%% Generators

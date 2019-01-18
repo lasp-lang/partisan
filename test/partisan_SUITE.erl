@@ -1080,7 +1080,7 @@ gossip_test(Config) ->
     %% Start gossip backend on all nodes.
     lists:foreach(fun({_Name, Node}) ->
         ct:pal("Starting gossip backend on node ~p", [Node]),
-        {ok, _Pid} = rpc:call(Node, gossip_demers, start_link, [])
+        {ok, _Pid} = rpc:call(Node, demers_direct_mail, start_link, [])
     end, Nodes),
 
     %% Pause for protocol delay and periodic intervals to fire.
@@ -1104,7 +1104,7 @@ gossip_test(Config) ->
 
     %% Gossip.
     ct:pal("Broadcasting hello from node ~p", [Node2]),
-    ok = rpc:call(Node2, gossip_demers, broadcast, [receiver, hello]),
+    ok = rpc:call(Node2, demers_direct_mail, broadcast, [receiver, hello]),
 
     receive
         hello ->
