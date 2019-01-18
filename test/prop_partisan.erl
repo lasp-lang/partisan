@@ -63,7 +63,7 @@
 
 %% General test configuration
 -define(NUM_NODES, 3).
--define(COMMAND_MULTIPLE, 10).
+-define(COMMAND_MULTIPLE, 1).
 -define(CLUSTER_NODES, true).
 -define(MANAGER, partisan_pluggable_peer_service_manager).
 
