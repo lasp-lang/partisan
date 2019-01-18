@@ -71,9 +71,8 @@
 -define(INGRESS_DELAY, 0).                          %% How many millisconds to delay incoming messages?
 -define(VNODE_PARTITIONING, false).                 %% Should communication be partitioned by vnode identifier?
 -define(PARALLELISM, 1).                            %% How many connections should exist between nodes?
--define(CHANNELS, 
+-define(CHANNELS,                                   %% What channels should be established?
         [undefined, broadcast, vnode, {monotonic, gossip}]).   
-                                                    %% What channels should be established?
 -define(CAUSAL_LABELS, []).                         %% What causal channels should be established?
 
 %% Only one of the modes below should be selected for efficient, proper shrinking.
@@ -162,10 +161,10 @@ command(State) ->
         lists:map(fun(Command) -> {1, Command} end, cluster_commands(State)) ++ 
 
         %% Fault model commands.
-        lists:map(fun(Command) -> {1, Command} end, fault_commands()) ++
+        lists:map(fun(Command) -> {5, Command} end, fault_commands()) ++
 
-        %% System model commands: 10:1 ratio.
-        lists:map(fun(Command) -> {5, Command} end, node_commands()), 
+        %% System model commands.
+        lists:map(fun(Command) -> {20, Command} end, node_commands()), 
 
         frequency(Commands)).
 
