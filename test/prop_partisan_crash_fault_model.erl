@@ -53,7 +53,8 @@ names() ->
 
 -record(fault_model_state, {active_faults,
                             crashed_nodes,
-                            send_omissions}).
+                            send_omissions,
+                            receive_omissions}).
 
 fault_commands() ->
     [
@@ -62,7 +63,11 @@ fault_commands() ->
 
      %% Send omission failures.
      {call, ?MODULE, begin_send_omission, [node_name(), node_name()]},
-     {call, ?MODULE, end_send_omission, [node_name(), node_name()]}
+     {call, ?MODULE, end_send_omission, [node_name(), node_name()]},
+
+     %% Receive omission failures.
+     {call, ?MODULE, begin_receive_omission, [node_name(), node_name()]},
+     {call, ?MODULE, end_receive_omission, [node_name(), node_name()]}
     ].
 
 %% Names of the node functions so we kow when we can dispatch to the node
@@ -74,9 +79,31 @@ fault_initial_state() ->
     ActiveFaults = 0,
     CrashedNodes = [],
     SendOmissions = dict:new(),
+    ReceiveOmissions = dict:new(),
+
     #fault_model_state{active_faults=ActiveFaults, 
                        crashed_nodes=CrashedNodes, 
-                       send_omissions=SendOmissions}.
+                       send_omissions=SendOmissions,
+                       receive_omissions=ReceiveOmissions}.
+%% Receive omission.
+fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelState, {call, _Mod, begin_receive_omission, [SourceNode, DestinationNode]}=Call) ->
+    %% Fault must be allowed at this moment.
+    fault_allowed(Call, FaultModelState) andalso 
+
+    %% Nodes must not be the same node.
+    SourceNode =/= DestinationNode andalso
+
+    %% Both nodes have to be non-crashed.
+    not lists:member(SourceNode, CrashedNodes) andalso not lists:member(DestinationNode, CrashedNodes);
+
+fault_precondition(#fault_model_state{receive_omissions=ReceiveOmissions}, {call, _Mod, end_receive_omission, [SourceNode, DestinationNode]}) ->
+    %% We must be in the middle of a send omission to resolve it.
+    case dict:find({SourceNode, DestinationNode}, ReceiveOmissions) of 
+        {ok, _Value} ->
+            true;
+        error ->
+            false
+    end;
 
 %% Send omission.
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelState, {call, _Mod, begin_send_omission, [SourceNode, DestinationNode]}=Call) ->
@@ -92,9 +119,9 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelStat
 fault_precondition(#fault_model_state{send_omissions=SendOmissions}, {call, _Mod, end_send_omission, [SourceNode, DestinationNode]}) ->
     %% We must be in the middle of a send omission to resolve it.
     case dict:find({SourceNode, DestinationNode}, SendOmissions) of 
-        {ok, _} ->
+        {ok, _Value} ->
             true;
-        _ ->
+        error ->
             false
     end;
 
@@ -110,6 +137,15 @@ fault_precondition(_FaultModelState, {call, Mod, Fun, [_Node|_]=Args}) ->
     fault_debug("fault precondition fired for ~p:~p(~p)", [Mod, Fun, Args]),
     false.
 
+%% Receive omission.
+fault_next_state(#fault_model_state{active_faults=ActiveFaults, receive_omissions=ReceiveOmissions0} = FaultModelState, _Res, {call, _Mod, begin_receive_omission, [SourceNode, DestinationNode]}) ->
+    ReceiveOmissions = dict:store({SourceNode, DestinationNode}, true, ReceiveOmissions0),
+    FaultModelState#fault_model_state{active_faults=ActiveFaults + 1, receive_omissions=ReceiveOmissions};
+
+fault_next_state(#fault_model_state{active_faults=ActiveFaults, receive_omissions=ReceiveOmissions0} = FaultModelState, _Res, {call, _Mod, end_receive_omission, [SourceNode, DestinationNode]}) ->
+    ReceiveOmissions = dict:erase({SourceNode, DestinationNode}, ReceiveOmissions0),
+    FaultModelState#fault_model_state{active_faults=ActiveFaults - 1, receive_omissions=ReceiveOmissions};
+
 %% Send omission.
 fault_next_state(#fault_model_state{active_faults=ActiveFaults, send_omissions=SendOmissions0} = FaultModelState, _Res, {call, _Mod, begin_send_omission, [SourceNode, DestinationNode]}) ->
     SendOmissions = dict:store({SourceNode, DestinationNode}, true, SendOmissions0),
@@ -120,11 +156,36 @@ fault_next_state(#fault_model_state{active_faults=ActiveFaults, send_omissions=S
     FaultModelState#fault_model_state{active_faults=ActiveFaults - 1, send_omissions=SendOmissions};
 
 %% Crashing a node adds a node to the crashed state.
-fault_next_state(#fault_model_state{active_faults=ActiveFaults, crashed_nodes=CrashedNodes} = FaultModelState, _Res, {call, _Mod, crash, [Node]}) ->
-    FaultModelState#fault_model_state{active_faults=ActiveFaults + 1, crashed_nodes=CrashedNodes ++ [Node]};
+fault_next_state(#fault_model_state{receive_omissions=ReceiveOmissions0, send_omissions=SendOmissions0, active_faults=ActiveFaults0, crashed_nodes=CrashedNodes} = FaultModelState, _Res, {call, _Mod, crash, [Node]}) ->
+    SendOmissions = lists:map(fun({Omission, true}) -> Omission end, dict:to_list(SendOmissions0)),
+    ReceiveOmissions = lists:map(fun({Omission, true}) -> Omission end, dict:to_list(ReceiveOmissions0)),
+
+    ActiveFaults = case lists:keymember(Node, 1, SendOmissions) of 
+        true ->
+            %% Crashing a send-omission faulted node doesn't increase the fault count.
+            ActiveFaults0;
+        false ->
+            case lists:keymember(Node, 2, ReceiveOmissions) of 
+                true ->
+                    %% Crashing a receive-omission faulted node doesn't increase the fault count.
+                    ActiveFaults0;
+                false ->
+                    %% Otherwise, increase active fault count.
+                    ActiveFaults0 + 1
+            end
+    end,
+
+    FaultModelState#fault_model_state{active_faults=ActiveFaults, crashed_nodes=CrashedNodes ++ [Node]};
 
 fault_next_state(FaultModelState, _Res, _Call) ->
     FaultModelState.
+
+%% Receive omission.
+fault_postcondition(_FaultModelState, {call, _Mod, begin_receive_omission, [_SourceNode, _DestinationNode]}, ok) ->
+    true;
+
+fault_postcondition(_FaultModelState, {call, _Mod, end_receive_omission, [_SourceNode, _DestinationNode]}, ok) ->
+    true;
 
 %% Send omission.
 fault_postcondition(_FaultModelState, {call, _Mod, begin_send_omission, [_SourceNode, _DestinationNode]}, ok) ->
@@ -155,16 +216,27 @@ fault_is_crashed(#fault_model_state{crashed_nodes=CrashedNodes}, Name) ->
     lists:member(Name, CrashedNodes).
 
 %% Is this fault allowed?
+fault_allowed({call, _Mod, begin_receive_omission, _Args}, #fault_model_state{active_faults=ActiveFaults}) ->
+    Tolerance = ?NUM_NODES - 1,       %% Assumed N+1 fault-tolerance.
+    ActiveFaults =< Tolerance;        %% We can tolerate another failure.
+
 fault_allowed({call, _Mod, begin_send_omission, _Args}, #fault_model_state{active_faults=ActiveFaults}) ->
     Tolerance = ?NUM_NODES - 1,       %% Assumed N+1 fault-tolerance.
     ActiveFaults =< Tolerance;        %% We can tolerate another failure.
 
-fault_allowed({call, _Mod, crash, [Node]}, #fault_model_state{active_faults=ActiveFaults, crashed_nodes=CrashedNodes}) ->
+fault_allowed({call, _Mod, crash, [Node]}, #fault_model_state{active_faults=ActiveFaults, send_omissions=SendOmissions0, receive_omissions=ReceiveOmissions0}) ->
+    SendOmissions = lists:map(fun({Omission, true}) -> Omission end, dict:to_list(SendOmissions0)),
+    ReceiveOmissions = lists:map(fun({Omission, true}) -> Omission end, dict:to_list(ReceiveOmissions0)),
+
     Tolerance = ?NUM_NODES - 1,       %% Assumed N+1 fault-tolerance.
     ActiveFaults =< Tolerance orelse  %% We can tolerate another failure.
 
-    %% or, a send omission can be turned into a crash.
-    (ActiveFaults =:= Tolerance andalso lists:member(Node, CrashedNodes)).
+    %% Or, an omission can be turned into a crash.
+    (ActiveFaults =:= Tolerance andalso 
+
+        %% Destination node of receive omissions and source node of send omissions:
+        %% Idea: crash where the existing fault is already occuring.
+        (lists:keymember(Node, 2, ReceiveOmissions) orelse lists:keymember(Node, 1, SendOmissions))).
 
 %% Should we do node debugging?
 fault_debug(Line, Args) ->
@@ -192,6 +264,35 @@ crash(Name) ->
         Error ->
             ct:fail(Error)
     end.
+
+%% Create a receive omission failure.
+begin_receive_omission(SourceNode0, DestinationNode) ->
+    fault_debug("begin_receive_omission: source_node ~p destination_node ~p", [SourceNode0, DestinationNode]),
+
+    %% Convert to real node name and not symbolic name.
+    SourceNode = ?NAME(SourceNode0),
+
+    InterpositionFun = fun({receive_message, N, Message}) ->
+        case N of
+            SourceNode ->
+                lager:info("~p: dropping packet from ~p to ~p due to interposition.", [node(), SourceNode, DestinationNode]),
+                undefined;
+            OtherNode ->
+                lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
+                Message
+        end;
+        ({forward_message, _N, Message}) -> Message
+    end,
+    rpc:call(?NAME(DestinationNode), ?MANAGER, add_interposition_fun, [{receive_omission, SourceNode}, InterpositionFun]).
+
+%% End receive omission failure period.
+end_receive_omission(SourceNode0, DestinationNode) ->
+    fault_debug("end_receive_omission: source_node ~p destination_node ~p", [SourceNode0, DestinationNode]),
+
+    %% Convert to real node name and not symbolic name.
+    SourceNode = ?NAME(SourceNode0),
+
+    rpc:call(?NAME(DestinationNode), ?MANAGER, remove_interposition_fun, [{receive_omission, SourceNode}]).
 
 %% Create a send omission failure.
 begin_send_omission(SourceNode, DestinationNode0) ->
