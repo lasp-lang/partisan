@@ -138,7 +138,7 @@ check_mailbox(Node) ->
     Self = self(),
 
     node_debug("waiting for message quiescence at node ~p", [Node]),
-    timer:sleep(10000),
+    timer:sleep(20000),
 
     %% Ask for what messages they have received.
     erlang:send({?RECEIVER, ?NAME(Node)}, {received, Self}),

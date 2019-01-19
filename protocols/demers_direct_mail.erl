@@ -74,7 +74,7 @@ init([]) ->
     {ok, Membership} = partisan_peer_service:members(),
     lager:info("Starting with membership: ~p", [Membership]),
 
-    {ok, #state{membership=Membership}}.
+    {ok, #state{membership=membership(Membership)}}.
 
 %% @private
 handle_call(Msg, _From, State) ->
@@ -98,11 +98,11 @@ handle_cast({broadcast, ServerRef, Message}, #state{membership=Membership}=State
     lists:foreach(fun(N) ->
         lager:info("~p: sending broadcast message to node ~p: ~p", [node(), N, Message]),
         Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {broadcast, Id, ServerRef, Message})
-    end, Membership -- [MyNode]),
+    end, membership(Membership) -- [MyNode]),
 
     {noreply, State};
 handle_cast({update, Membership0}, State) ->
-    Membership = lists:usort(Membership0), %% Must sort list or random selection with seed is *nondeterministic.*
+    Membership = membership(Membership0),
     {noreply, State#state{membership=Membership}};
 handle_cast(Msg, State) ->
     lager:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
@@ -145,3 +145,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% @private
 manager() ->
     partisan_config:get(partisan_peer_service_manager).
+
+%% @private -- sort to remove nondeterminism in node selection.
+membership(Membership) ->
+    lists:usort(Membership).

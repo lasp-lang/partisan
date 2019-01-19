@@ -93,14 +93,16 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelStat
     %% Both nodes have to be non-crashed.
     not lists:member(SourceNode, CrashedNodes) andalso not lists:member(DestinationNode, CrashedNodes);
 
-fault_precondition(#fault_model_state{receive_omissions=ReceiveOmissions}, {call, _Mod, end_receive_omission, [SourceNode, DestinationNode]}) ->
+fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, receive_omissions=ReceiveOmissions}, {call, _Mod, end_receive_omission, [SourceNode, DestinationNode]}) ->
     %% We must be in the middle of a send omission to resolve it.
-    case dict:find({SourceNode, DestinationNode}, ReceiveOmissions) of 
+    EndCondition = case dict:find({SourceNode, DestinationNode}, ReceiveOmissions) of 
         {ok, _Value} ->
             true;
         error ->
             false
-    end;
+    end,
+
+    EndCondition andalso not lists:member(DestinationNode, CrashedNodes);
 
 %% Send omission.
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelState, {call, _Mod, begin_send_omission, [SourceNode, DestinationNode]}=Call) ->
@@ -113,14 +115,16 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelStat
     %% Both nodes have to be non-crashed.
     not lists:member(SourceNode, CrashedNodes) andalso not lists:member(DestinationNode, CrashedNodes);
 
-fault_precondition(#fault_model_state{send_omissions=SendOmissions}, {call, _Mod, end_send_omission, [SourceNode, DestinationNode]}) ->
+fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, send_omissions=SendOmissions}, {call, _Mod, end_send_omission, [SourceNode, DestinationNode]}) ->
     %% We must be in the middle of a send omission to resolve it.
-    case dict:find({SourceNode, DestinationNode}, SendOmissions) of 
+    EndCondition = case dict:find({SourceNode, DestinationNode}, SendOmissions) of 
         {ok, _Value} ->
             true;
         error ->
             false
-    end;
+    end,
+
+    EndCondition andalso not lists:member(SourceNode, CrashedNodes);
 
 %% Crash failures.
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelState, {call, _Mod, crash, [Node]}=Call) ->
@@ -208,8 +212,8 @@ fault_is_crashed(#fault_model_state{crashed_nodes=CrashedNodes}, Name) ->
 
 %% Is this fault allowed?
 fault_allowed({call, _Mod, _Fun, _Args}, FaultModelState) ->
-    Tolerance = ?NUM_NODES - 1,                             %% Assumed N+1 fault-tolerance.
-    num_active_faults(FaultModelState) =< Tolerance.        %% We can tolerate another failure.
+    Tolerance = 1,
+    num_active_faults(FaultModelState) < Tolerance.        %% We can tolerate another failure.
 
 %% Should we do node debugging?
 fault_debug(Line, Args) ->

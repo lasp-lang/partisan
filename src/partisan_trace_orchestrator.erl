@@ -387,4 +387,4 @@ write_trace(Trace) ->
 
 %% Should we do replay debugging?
 replay_debug(Line, Args) ->
-    lager:info("~p: " ++ Line, [?MODULE] ++ Args).
+    lager:info("~p: ~p: " ++ Line, [?MODULE, node()] ++ Args).

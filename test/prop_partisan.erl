@@ -56,7 +56,7 @@
 
 %% General test configuration
 -define(NUM_NODES, 3).
--define(COMMAND_MULTIPLE, 1).
+-define(COMMAND_MULTIPLE, 10).
 -define(CLUSTER_NODES, true).
 -define(MANAGER, partisan_pluggable_peer_service_manager).
 
@@ -161,10 +161,10 @@ command(State) ->
         lists:map(fun(Command) -> {1, Command} end, cluster_commands(State)) ++ 
 
         %% Fault model commands.
-        lists:map(fun(Command) -> {5, Command} end, fault_commands()) ++
+        lists:map(fun(Command) -> {1, Command} end, fault_commands()) ++
 
         %% System model commands.
-        lists:map(fun(Command) -> {20, Command} end, node_commands()), 
+        lists:map(fun(Command) -> {1, Command} end, node_commands()), 
 
         frequency(Commands)).
 
