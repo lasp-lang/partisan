@@ -173,6 +173,8 @@ forward_message(Name, Channel, ServerRef, Message) ->
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, Channel, ServerRef, Message, Options) ->
+    lager:info("Entering forward_message at ~p for message: ~p ~p", [node(), Name, Message]),
+
     %% Attempt to get the partition key, if possible.
     PartitionKey = proplists:get_value(partition_key, Options, ?DEFAULT_PARTITION_KEY),
 
@@ -524,18 +526,80 @@ handle_call({send_message, Name, Channel, Message}, _From,
                              Connections),
     {reply, Result, State};
 
-handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options},
-            _From,
+handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options}, From, State) ->
+    gen_server:cast(?MODULE, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options}),
+    {noreply, State};
+
+handle_call({receive_message, Peer, OriginalMessage}, 
+            _From, 
+            #state{pre_interposition_funs=PreInterpositionFuns,
+                   interposition_funs=InterpositionFuns,
+                   post_interposition_funs=PostInterpositionFuns} = State) ->
+    lager:info("~p: Inside the receive interposition, message from ~p at node ~p", [node(), Peer, node()]),
+    lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
+
+    %% Fire pre-interposition functions.
+    PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
+        PreInterpositionFun({receive_message, Peer, OriginalMessage}),
+        ok
+    end,
+    dict:fold(PreFoldFun, ok, PreInterpositionFuns),
+
+    %% Filter messages using interposition functions.
+    FoldFun = fun(_Name, InterpositionFun, M) ->
+        InterpositionFun({receive_message, Peer, M})
+    end,
+    Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
+
+    %% Fire post-interposition functions.
+    PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
+        PostInterpositionFun({receive_message, Peer, OriginalMessage}, {receive_message, Peer, Message}),
+        ok
+    end,
+    dict:fold(PostFoldFun, ok, PostInterpositionFuns),
+
+    lager:info("~p: Message after receive interposition is: ~p", [node(), Message]),
+
+    case Message of
+        undefined ->
+            {reply, ok, State};
+        _ ->
+            handle_message(Message, State)
+    end;
+handle_call({receive_message, Message}, _From, State) ->
+    handle_message(Message, State);
+
+handle_call(members_for_orchestration, _From, #state{membership=Membership}=State) ->
+    {reply, {ok, Membership}, State};
+
+handle_call(members, _From, #state{membership=Membership}=State) ->
+    Members = [P || #{name := P} <- Membership],
+    {reply, {ok, Members}, State};
+
+handle_call(connections, _From, #state{connections=Connections}=State) ->
+    {reply, {ok, Connections}, State};
+
+handle_call(get_local_state, _From, #state{membership_strategy_state=MembershipStrategyState}=State) ->
+    {reply, {ok, MembershipStrategyState}, State};
+
+handle_call(Msg, _From, State) ->
+    lager:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
+    {reply, ok, State}.
+
+%% @private
+-spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
+handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options},
             #state{pre_interposition_funs=PreInterpositionFuns, 
                    interposition_funs=InterpositionFuns, 
                    post_interposition_funs=PostInterpositionFuns, 
                    connections=Connections, 
                    vclock=VClock0}=State) ->
-    lager:info("~p: Inside the send interposition, message from ~p at node ~p", [node(), Name, node()]),
+    lager:info("~p: Inside the send interposition, message ~p from ~p at node ~p", [node(), OriginalMessage, Name, node()]),
     lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
 
     %% Fire pre-interposition functions.
     PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
+        lager:info("firing preinterposition fun for original message: ~p", [OriginalMessage]),
         PreInterpositionFun({forward_message, Name, OriginalMessage}),
         ok
     end,
@@ -558,7 +622,9 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Ori
 
             lager:info("~p: Message after send interposition is: ~p", [node(), Message]),
 
-            {reply, ok, State};
+            gen_server:reply(From, ok),
+
+            {noreply, State};
         Message ->
             %% Increment the clock.
             VClock = partisan_vclock:increment(myself(), VClock0),
@@ -638,67 +704,10 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Ori
                                     Connections)
             end,
 
-            {reply, Result, State#state{vclock=VClock}}
+            gen_server:reply(From, Result),
+
+            {noreply, State#state{vclock=VClock}}
     end;
-
-handle_call({receive_message, Peer, OriginalMessage}, 
-            _From, 
-            #state{pre_interposition_funs=PreInterpositionFuns,
-                   interposition_funs=InterpositionFuns,
-                   post_interposition_funs=PostInterpositionFuns} = State) ->
-    lager:info("~p: Inside the receive interposition, message from ~p at node ~p", [node(), Peer, node()]),
-    lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
-
-    %% Fire pre-interposition functions.
-    PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
-        PreInterpositionFun({receive_message, Peer, OriginalMessage}),
-        ok
-    end,
-    dict:fold(PreFoldFun, ok, PreInterpositionFuns),
-
-    %% Filter messages using interposition functions.
-    FoldFun = fun(_Name, InterpositionFun, M) ->
-        InterpositionFun({receive_message, Peer, M})
-    end,
-    Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
-
-    %% Fire post-interposition functions.
-    PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
-        PostInterpositionFun({receive_message, Peer, OriginalMessage}, {receive_message, Peer, Message}),
-        ok
-    end,
-    dict:fold(PostFoldFun, ok, PostInterpositionFuns),
-
-    lager:info("~p: Message after receive interposition is: ~p", [node(), Message]),
-
-    case Message of
-        undefined ->
-            {reply, ok, State};
-        _ ->
-            handle_message(Message, State)
-    end;
-handle_call({receive_message, Message}, _From, State) ->
-    handle_message(Message, State);
-
-handle_call(members_for_orchestration, _From, #state{membership=Membership}=State) ->
-    {reply, {ok, Membership}, State};
-
-handle_call(members, _From, #state{membership=Membership}=State) ->
-    Members = [P || #{name := P} <- Membership],
-    {reply, {ok, Members}, State};
-
-handle_call(connections, _From, #state{connections=Connections}=State) ->
-    {reply, {ok, Connections}, State};
-
-handle_call(get_local_state, _From, #state{membership_strategy_state=MembershipStrategyState}=State) ->
-    {reply, {ok, MembershipStrategyState}, State};
-
-handle_call(Msg, _From, State) ->
-    lager:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
-    {reply, ok, State}.
-
-%% @private
--spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
 handle_cast(Msg, State) ->
     lager:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
