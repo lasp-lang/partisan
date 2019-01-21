@@ -98,7 +98,7 @@ init([]) ->
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
 handle_call({trace, Type, Message}, _From, #state{trace=Trace0}=State) ->
-    %% lager:info("~p: recording trace type: ~p message: ~p", [?MODULE, Type, Message]),
+    %% replay_debug("recording trace type: ~p message: ~p", [Type, Message]),
     {reply, ok, State#state{trace=Trace0++[{Type, Message}]}};
 handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0, replay=Replay, shrinking=Shrinking, blocked_processes=BlockedProcesses0}=State) ->
     case Replay of 
@@ -123,17 +123,29 @@ handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0,
             {reply, ok, State}
     end;
 handle_call(reset, _From, _State) ->
-    lager:info("~p: resetting trace.", [?MODULE]),
+    replay_debug("resetting trace.", []),
     State = initialize_state(),
     {reply, ok, State};
 handle_call({identify, Identifier}, _From, State) ->
-    lager:info("~p: identifying trace: ~p", [?MODULE, Identifier]),
+    replay_debug("identifying trace: ~p", [Identifier]),
     {reply, ok, State#state{identifier=Identifier}};
 handle_call(print, _From, #state{trace=Trace}=State) ->
-    lager:info("~p: printing trace", [?MODULE]),
+    replay_debug("printing trace", []),
 
     lists:foreach(fun({Type, Message}) ->
         case Type of
+            enter_command ->
+                %% Destructure message.
+                {TracingNode, Command} = Message,
+
+                %% Format trace accordingly.
+                replay_debug("~p entering command: ~p", [TracingNode, Command]);
+            exit_command ->
+                %% Destructure message.
+                {TracingNode, Command} = Message,
+
+                %% Format trace accordingly.
+                replay_debug("~p leaving command: ~p", [TracingNode, Command]);
             pre_interposition_fun ->
                 ok;
             interposition_fun ->
@@ -143,9 +155,9 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
                 %% Format trace accordingly.
                 case InterpositionType of
                     receive_message ->
-                        lager:info("~p: ~p <- ~p: ~p", [?MODULE, TracingNode, OriginNode, MessagePayload]);
+                        replay_debug("~p <- ~p: ~p", [TracingNode, OriginNode, MessagePayload]);
                     forward_message ->
-                        lager:info("~p: ~p => ~p: ~p", [?MODULE, TracingNode, OriginNode, MessagePayload])
+                        replay_debug("~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload])
                 end;
             post_interposition_fun ->
                 %% Destructure message.
@@ -156,30 +168,30 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
                     true ->
                         case InterpositionType of
                             receive_message ->
-                                lager:info("~p: ~p <- ~p: ~p", [?MODULE, TracingNode, OriginNode, MessagePayload]);
+                                replay_debug("~p <- ~p: ~p", [TracingNode, OriginNode, MessagePayload]);
                             forward_message ->
-                                lager:info("~p: ~p => ~p: ~p", [?MODULE, TracingNode, OriginNode, MessagePayload])
+                                replay_debug("~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload])
                         end;
                     false ->
                         case RewrittenMessagePayload of 
                             undefined ->
                                 case InterpositionType of
                                     receive_message ->
-                                        lager:info("~p: ~p <- ~p: DROPPED ~p", [?MODULE, TracingNode, OriginNode, MessagePayload]);
+                                        replay_debug("~p <- ~p: DROPPED ~p", [TracingNode, OriginNode, MessagePayload]);
                                     forward_message ->
-                                        lager:info("~p: ~p => ~p: DROPPED ~p", [?MODULE, TracingNode, OriginNode, MessagePayload])
+                                        replay_debug("~p => ~p: DROPPED ~p", [TracingNode, OriginNode, MessagePayload])
                                 end;
                             _ ->
                                 case InterpositionType of
                                     receive_message ->
-                                        lager:info("~p: ~p <- ~p: REWROTE ~p to ~p", [?MODULE, TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload]);
+                                        replay_debug("~p <- ~p: REWROTE ~p to ~p", [TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload]);
                                     forward_message ->
-                                        lager:info("~p: ~p => ~p: REWROTE ~p to ~p", [?MODULE, TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload])
+                                        replay_debug("~p => ~p: REWROTE ~p to ~p", [TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload])
                                 end
                         end
                 end;
             _ ->
-                lager:info("~p: unknown message type: ~p, message: ~p", [?MODULE, Type, Message])
+                replay_debug("unknown message type: ~p, message: ~p", [Type, Message])
         end
     end, Trace),
 
@@ -187,19 +199,19 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
 
     {reply, ok, State};
 handle_call(Msg, _From, State) ->
-    lager:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
+    replay_debug("Unhandled call messages: ~p", [Msg]),
     {reply, ok, State}.
 
 %% @private
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
 handle_cast(Msg, State) ->
-    lager:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
+    replay_debug("Unhandled cast messages: ~p", [Msg]),
     {noreply, State}.
 
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
 handle_info(Msg, State) ->
-    lager:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Msg]),
+    replay_debug("Unhandled info messages: ~p", [Msg]),
     {noreply, State}.
 
 %% @private
@@ -218,35 +230,36 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private 
 can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace, BlockedProcesses) ->
-    replay_debug("~p: determining if message ~p: ~p can be delivered.", [?MODULE, Type, Message]),
+    replay_debug("determining if message ~p: ~p can be delivered.", [Type, Message]),
 
     case PreviousTrace of 
         [{NextType, NextMessage} | _] ->
             CanDeliver = case {NextType, NextMessage} of 
                 {Type, Message} ->
-                    replay_debug("~p: => YES!", [?MODULE]),
+                    replay_debug("=> YES!", []),
                     true;
                 _ ->
                     %% But, does the message actually exist in the trace?
                     case lists:member({Type, Message}, PreviousTrace) of 
                         true ->
-                            replay_debug("~p: => NO, waiting for message: ~p: ~p", [?MODULE, NextType, NextMessage]),
+                            replay_debug("=> NO, waiting for message: ~p: ~p", [NextType, NextMessage]),
                             false;
                         false ->
                             %% new messages in the middle of the trace.
                             %% this *should* be the common case if we shrink from the start of the trace forward (foldl)
                             case Shrinking of 
                                 true ->
-                                    replay_debug("~p: => CONDITIONAL YES, message doesn't exist in previous trace, but shrinking: ~p ~p", [?MODULE, Type, Message]),
+                                    replay_debug("=> CONDITIONAL YES, message doesn't exist in previous trace, but shrinking: ~p ~p", [Type, Message]),
                                     true;
                                 false ->
-                                    replay_debug("~p: => NO, waiting for message: ~p: ~p", [?MODULE, NextType, NextMessage]),
+                                    replay_debug("=> NO, waiting for message: ~p: ~p", [NextType, NextMessage]),
                                     false
                             end
                     end
             end,
 
-            replay_debug("~p: can deliver: ~p blocked processes: ~p", [?MODULE, CanDeliver, BlockedProcesses]),
+            replay_debug("can deliver: ~p", [CanDeliver]),
+            replay_debug("blocked processes: ~p", [length(BlockedProcesses)]),
 
             CanDeliver;
         [] ->
@@ -254,40 +267,40 @@ can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace, BlockedPro
             %% this *should* be the common case if we shrink from the back of the trace forward (foldr)
             case Shrinking of 
                 true ->
-                    replay_debug("~p: => CONDITIONAL YES, message doesn't exist in previous trace, but shrinking: ~p ~p", [?MODULE, Type, Message]),
+                    replay_debug("=> CONDITIONAL YES, message doesn't exist in previous trace, but shrinking: ~p ~p", [Type, Message]),
                     true;
                 false ->
-                    replay_debug("~p: => message should not have been delivered, blocking.", [?MODULE]),
+                    replay_debug("=> message should not have been delivered, blocking.", []),
                     false
             end
     end.
 
 %% @private
 trace_deliver(Shrinking, {Type, Message}, [{Type, Message} | Trace], BlockedProcesses) ->
-    replay_debug("~p: delivering single message!", [?MODULE]),
+    replay_debug("delivering single message!", []),
 
     %% Advance the trace, then try to flush the blocked processes.
     trace_deliver_log_flush(Shrinking, Trace, BlockedProcesses);
 trace_deliver(_Shrinking, {_, _}, [{_, _} | Trace], BlockedProcesses) ->
-    replay_debug("~p: delivering single message (not in the trace)!", [?MODULE]),
+    replay_debug("delivering single message (not in the trace)!", []),
 
     %% Advance the trace, don't flush blocked processes, since we weren't in the trace, nothing is blocked.
     {Trace, BlockedProcesses};
 trace_deliver(_Shrinking, {_, _}, [], BlockedProcesses) ->
-    replay_debug("~p: delivering single message (not in the trace -- end of trace)!", [?MODULE]),
+    replay_debug("delivering single message (not in the trace -- end of trace)!", []),
 
     %% No trace to advance.
     {[], BlockedProcesses}.
 
 %% @private
 trace_deliver_log_flush(Shrinking, Trace0, BlockedProcesses0) ->
-    replay_debug("~p: attempting to flush blocked messages!", [?MODULE]),
+    replay_debug("attempting to flush blocked messages!", []),
 
     %% Iterate blocked processes in an attempt to remove one.
     {ND, T, BP} = lists:foldl(fun({{NextType, NextMessage}, Pid} = BP, {NumDelivered1, Trace1, BlockedProcesses1}) ->
         case can_deliver_based_on_trace(Shrinking, {NextType, NextMessage}, Trace1, BlockedProcesses0) of 
             true ->
-                replay_debug("~p: pid ~p can be unblocked!", [?MODULE, Pid]),
+                replay_debug("message ~p ~p can be unblocked!", [NextType, NextMessage]),
 
                 %% Advance the trace.
                 [{_, _} | RestOfTrace] = Trace1,
@@ -303,7 +316,7 @@ trace_deliver_log_flush(Shrinking, Trace0, BlockedProcesses0) ->
 
                 {NewNumDelivered, RestOfTrace, NewBlockedProcesses};
             false ->
-                replay_debug("~p: pid ~p CANNOT be unblocked yet, unmet dependencies!", [?MODULE, Pid]),
+                replay_debug("pid ~p CANNOT be unblocked yet, unmet dependencies!", [Pid]),
 
                 {NumDelivered1, Trace1, BlockedProcesses1}
         end
@@ -312,10 +325,10 @@ trace_deliver_log_flush(Shrinking, Trace0, BlockedProcesses0) ->
     %% Did we deliver something? If so, try again.
     case ND > 0 of 
         true ->
-            replay_debug("~p: was able to deliver a message, trying again", [?MODULE]),
+            %% replay_debug("was able to deliver a message, trying again", []),
             trace_deliver_log_flush(Shrinking, T, BP);
         false ->
-            replay_debug("~p: flush attempt finished.", [?MODULE]),
+            replay_debug("flush attempt finished.", []),
             {T, BP}
     end.
 
@@ -342,18 +355,18 @@ initialize_state() ->
     case os:getenv("REPLAY") of 
         false ->
             %% This is not a replay, so store the current trace.
-            lager:info("~p: recording trace to file.", [?MODULE]),
+            replay_debug("recording trace to file.", []),
             #state{trace=[], blocked_processes=[], identifier=undefined};
         _ ->
             %% This is a replay, so load the previous trace.
-            lager:info("~p: loading previous trace for replay.", [?MODULE]),
+            replay_debug("loading previous trace for replay.", []),
 
             ReplayTraceFile = replay_trace_file(),
             {ok, [Lines]} = file:consult(ReplayTraceFile),
 
-            lists:foreach(fun(Line) -> replay_debug("~p: ~p", [?MODULE, Line]) end, Lines),
+            lists:foreach(fun(Line) -> replay_debug("~p", [Line]) end, Lines),
 
-            lager:info("~p: trace loaded.", [?MODULE]),
+            replay_debug("trace loaded.", []),
 
             Shrinking = case os:getenv("SHRINKING") of 
                 false ->
@@ -372,13 +385,17 @@ write_trace(Trace) ->
         case Type of 
             pre_interposition_fun ->
                 true;
+            enter_command ->
+                true;
+            exit_command ->
+                true;
             _ ->
                 false
         end
     end, Trace),
 
     TraceFile = trace_file(),
-    lager:info("~p: writing trace.", [?MODULE]),
+    replay_debug("writing trace.", []),
     {ok, Io} = file:open(TraceFile, [write, {encoding, utf8}]),
     io:format(Io, "~p.~n", [FilteredTrace]),
     file:close(Io),
@@ -387,4 +404,4 @@ write_trace(Trace) ->
 
 %% Should we do replay debugging?
 replay_debug(Line, Args) ->
-    lager:info("~p: ~p: " ++ Line, [?MODULE, node()] ++ Args).
+    lager:info("~p: " ++ Line, [?MODULE] ++ Args).

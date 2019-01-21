@@ -116,25 +116,37 @@ node_precondition(_State, _Command) ->
     false.
 
 %%%===================================================================
-%%% Helper Functions
+%%% Commands
 %%%===================================================================
+
+-define(PROPERTY_MODULE, prop_partisan).
 
 -define(TABLE, table).
 -define(RECEIVER, receiver).
-
--define(NODE_DEBUG, true).
 
 -define(ETS, prop_partisan).
 -define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
 
 %% @private
 broadcast(Node, {Id, Value}) ->
+    node_debug("executing broadcast command: ~p => ~p", [Node, {Id, Value}]),
+
+    ?PROPERTY_MODULE:command_preamble(Node, {broadcast, Node, Id, Value}),
+
     FullMessage = {Id, Node, Value},
     node_debug("broadcast from node ~p message: ~p", [Node, FullMessage]),
-    rpc:call(?NAME(Node), ?BROADCAST_MODULE, broadcast, [?RECEIVER, FullMessage]).
+    Result = rpc:call(?NAME(Node), ?BROADCAST_MODULE, broadcast, [?RECEIVER, FullMessage]),
+
+    ?PROPERTY_MODULE:command_conclusion(Node, {broadcast, Node, Id, Value}),
+
+    Result.
 
 %% @private
 check_mailbox(Node) ->
+    node_debug("executing check mailbox command: ~p", [Node]),
+
+    ?PROPERTY_MODULE:command_preamble(Node, {check_mailbox, Node}),
+
     Self = self(),
 
     node_debug("waiting for message quiescence at node ~p", [Node]),
@@ -143,13 +155,23 @@ check_mailbox(Node) ->
     %% Ask for what messages they have received.
     erlang:send({?RECEIVER, ?NAME(Node)}, {received, Self}),
 
-    receive
+    Result = receive
         Messages ->
             {ok, Messages}
     after 
         10000 ->
             {error, no_response_from_mailbox}
-    end.
+    end,
+
+    ?PROPERTY_MODULE:command_conclusion(Node, {check_mailbox, Node}),
+
+    Result.
+
+%%%===================================================================
+%%% Helper Functions
+%%%===================================================================
+
+-define(NODE_DEBUG, true).
 
 %% Should we do node debugging?
 node_debug(Line, Args) ->
@@ -239,38 +261,38 @@ node_begin_case() ->
 node_end_case() ->
     node_debug("ending case", []),
 
-    %% Get nodes.
-    [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
+    % %% Get nodes.
+    % [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
 
-    %% Aggregate the results from the run.
-    NodeMessages = lists:map(fun({Name, _Node}) ->
-        case check_mailbox(Name) of 
-            {ok, Messages} ->
-                node_debug("received at node ~p are ~p: ~p", [Name, length(Messages), Messages]),
-                Messages;
-            {error, _} ->
-                node_debug("cannot get messages received at node ~p", [Name]),
-                []
-        end
-    end, Nodes),
+    % %% Aggregate the results from the run.
+    % NodeMessages = lists:map(fun({Name, _Node}) ->
+    %     case check_mailbox(Name) of 
+    %         {ok, Messages} ->
+    %             node_debug("received at node ~p are ~p: ~p", [Name, length(Messages), Messages]),
+    %             Messages;
+    %         {error, _} ->
+    %             node_debug("cannot get messages received at node ~p", [Name]),
+    %             []
+    %     end
+    % end, Nodes),
 
-    %% Compute total messages.
-    TotalMessages = length(lists:usort(lists:flatten(NodeMessages))),
-    node_debug("total messages sent: ~p", [TotalMessages]),
+    % %% Compute total messages.
+    % TotalMessages = length(lists:usort(lists:flatten(NodeMessages))),
+    % node_debug("total messages sent: ~p", [TotalMessages]),
 
-    %% Keep percentage of nodes that have received all messages.
-    NodeCount = length(Nodes),
+    % %% Keep percentage of nodes that have received all messages.
+    % NodeCount = length(Nodes),
 
-    NodesRececivedAll = lists:foldl(fun(M, Acc) ->
-        case length(M) =:= TotalMessages of
-            true ->
-                Acc + 1;
-            false ->
-                Acc
-        end
-    end, 0, NodeMessages),
+    % NodesRececivedAll = lists:foldl(fun(M, Acc) ->
+    %     case length(M) =:= TotalMessages of
+    %         true ->
+    %             Acc + 1;
+    %         false ->
+    %             Acc
+    %     end
+    % end, 0, NodeMessages),
 
-    Percentage = NodesRececivedAll / NodeCount,
-    node_debug("nodes received all: ~p, total nodes: ~p, percentage received: ~p", [NodesRececivedAll, NodeCount, Percentage]),
+    % Percentage = NodesRececivedAll / NodeCount,
+    % node_debug("nodes received all: ~p, total nodes: ~p, percentage received: ~p", [NodesRececivedAll, NodeCount, Percentage]),
 
     ok.

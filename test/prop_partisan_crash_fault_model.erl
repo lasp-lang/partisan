@@ -48,7 +48,124 @@ names() ->
     lists:map(NameFun, lists:seq(1, ?NUM_NODES)).
 
 %%%===================================================================
-%%% Fault Functions
+%%% Commands
+%%%===================================================================
+
+-define(PROPERTY_MODULE, prop_partisan).
+
+-define(FAULT_DEBUG, true).
+
+-define(ETS, prop_partisan).
+-define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
+
+%% Crash the node.
+%% Crash is a stop that doesn't wait for all members to know about the crash.
+crash(Name) ->
+    ?PROPERTY_MODULE:command_preamble(Name, crash),
+
+    fault_debug("crashing node: ~p", [Name]),
+
+    Result = case ct_slave:stop(Name) of
+        {ok, _} ->
+            ok;
+        {error, stop_timeout, _} ->
+            fault_debug("Failed to stop node ~p: stop_timeout!", [Name]),
+            crash(Name),
+            ok;
+        {error, not_started, _} ->
+            ok;
+        Error ->
+            ct:fail(Error)
+    end,
+
+    ?PROPERTY_MODULE:command_conclusion(Name, crash),
+
+    Result.
+
+%% Create a receive omission failure.
+begin_receive_omission(SourceNode0, DestinationNode) ->
+    ?PROPERTY_MODULE:command_preamble(DestinationNode, {begin_receive_omission, SourceNode0}),
+
+    fault_debug("begin_receive_omission: source_node ~p destination_node ~p", [SourceNode0, DestinationNode]),
+
+    %% Convert to real node name and not symbolic name.
+    SourceNode = ?NAME(SourceNode0),
+
+    InterpositionFun = fun({receive_message, N, Message}) ->
+        case N of
+            SourceNode ->
+                lager:info("~p: dropping packet from ~p to ~p due to interposition.", [node(), SourceNode, DestinationNode]),
+                undefined;
+            OtherNode ->
+                lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
+                Message
+        end;
+        ({forward_message, _N, Message}) -> Message
+    end,
+    Result = rpc:call(?NAME(DestinationNode), ?MANAGER, add_interposition_fun, [{receive_omission, SourceNode}, InterpositionFun]),
+
+    ?PROPERTY_MODULE:command_conclusion(DestinationNode, {begin_receive_omission, SourceNode0}),
+
+    Result.
+
+%% End receive omission failure period.
+end_receive_omission(SourceNode0, DestinationNode) ->
+    ?PROPERTY_MODULE:command_preamble(DestinationNode, {end_receive_omission, SourceNode0}),
+
+    fault_debug("end_receive_omission: source_node ~p destination_node ~p", [SourceNode0, DestinationNode]),
+
+    %% Convert to real node name and not symbolic name.
+    SourceNode = ?NAME(SourceNode0),
+
+    Result = rpc:call(?NAME(DestinationNode), ?MANAGER, remove_interposition_fun, [{receive_omission, SourceNode}]),
+
+    ?PROPERTY_MODULE:command_conclusion(DestinationNode, {end_receive_omission, SourceNode0}),
+
+    Result.
+
+%% Create a send omission failure.
+begin_send_omission(SourceNode, DestinationNode0) ->
+    ?PROPERTY_MODULE:command_preamble(SourceNode, {begin_send_omission, DestinationNode0}),
+
+    fault_debug("begin_send_omission: source_node ~p destination_node ~p", [SourceNode, DestinationNode0]),
+
+    %% Convert to real node name and not symbolic name.
+    DestinationNode = ?NAME(DestinationNode0),
+
+    InterpositionFun = fun({forward_message, N, Message}) ->
+        case N of
+            DestinationNode ->
+                lager:info("~p: dropping packet from ~p to ~p due to interposition.", [node(), SourceNode, DestinationNode]),
+                undefined;
+            OtherNode ->
+                lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
+                Message
+        end;
+        ({receive_message, _N, Message}) -> Message
+    end,
+    Result = rpc:call(?NAME(SourceNode), ?MANAGER, add_interposition_fun, [{send_omission, DestinationNode}, InterpositionFun]),
+
+    ?PROPERTY_MODULE:command_conclusion(SourceNode, {begin_send_omission, DestinationNode0}),
+
+    Result.
+
+%% End send omission failure period.
+end_send_omission(SourceNode, DestinationNode0) ->
+    ?PROPERTY_MODULE:command_preamble(SourceNode, {end_send_omission, DestinationNode0}),
+
+    fault_debug("end_send_omission: source_node ~p destination_node ~p", [SourceNode, DestinationNode0]),
+
+    %% Convert to real node name and not symbolic name.
+    DestinationNode = ?NAME(DestinationNode0),
+
+    Result = rpc:call(?NAME(SourceNode), ?MANAGER, remove_interposition_fun, [{send_omission, DestinationNode}]),
+
+    ?PROPERTY_MODULE:command_conclusion(SourceNode, {end_send_omission, DestinationNode0}),
+
+    Result.
+
+%%%===================================================================
+%%% Fault Model
 %%%===================================================================
 
 -record(fault_model_state, {crashed_nodes,
@@ -189,11 +306,6 @@ fault_postcondition(_FaultModelState, {call, Mod, Fun, [_Node|_]=Args}, Res) ->
 %%% Helper Functions
 %%%===================================================================
 
--define(FAULT_DEBUG, true).
-
--define(ETS, prop_partisan).
--define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
-
 %% The number of active faults.
 num_active_faults(FaultModelState) ->
     length(active_faults(FaultModelState)).
@@ -223,79 +335,3 @@ fault_debug(Line, Args) ->
         false ->
             ok
     end.
-
-%% Crash the node.
-%% Crash is a stop that doesn't wait for all members to know about the crash.
-crash(Name) ->
-    fault_debug("crashing node: ~p", [Name]),
-
-    case ct_slave:stop(Name) of
-        {ok, _} ->
-            ok;
-        {error, stop_timeout, _} ->
-            fault_debug("Failed to stop node ~p: stop_timeout!", [Name]),
-            crash(Name),
-            ok;
-        {error, not_started, _} ->
-            ok;
-        Error ->
-            ct:fail(Error)
-    end.
-
-%% Create a receive omission failure.
-begin_receive_omission(SourceNode0, DestinationNode) ->
-    fault_debug("begin_receive_omission: source_node ~p destination_node ~p", [SourceNode0, DestinationNode]),
-
-    %% Convert to real node name and not symbolic name.
-    SourceNode = ?NAME(SourceNode0),
-
-    InterpositionFun = fun({receive_message, N, Message}) ->
-        case N of
-            SourceNode ->
-                lager:info("~p: dropping packet from ~p to ~p due to interposition.", [node(), SourceNode, DestinationNode]),
-                undefined;
-            OtherNode ->
-                lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
-                Message
-        end;
-        ({forward_message, _N, Message}) -> Message
-    end,
-    rpc:call(?NAME(DestinationNode), ?MANAGER, add_interposition_fun, [{receive_omission, SourceNode}, InterpositionFun]).
-
-%% End receive omission failure period.
-end_receive_omission(SourceNode0, DestinationNode) ->
-    fault_debug("end_receive_omission: source_node ~p destination_node ~p", [SourceNode0, DestinationNode]),
-
-    %% Convert to real node name and not symbolic name.
-    SourceNode = ?NAME(SourceNode0),
-
-    rpc:call(?NAME(DestinationNode), ?MANAGER, remove_interposition_fun, [{receive_omission, SourceNode}]).
-
-%% Create a send omission failure.
-begin_send_omission(SourceNode, DestinationNode0) ->
-    fault_debug("begin_send_omission: source_node ~p destination_node ~p", [SourceNode, DestinationNode0]),
-
-    %% Convert to real node name and not symbolic name.
-    DestinationNode = ?NAME(DestinationNode0),
-
-    InterpositionFun = fun({forward_message, N, Message}) ->
-        case N of
-            DestinationNode ->
-                lager:info("~p: dropping packet from ~p to ~p due to interposition.", [node(), SourceNode, DestinationNode]),
-                undefined;
-            OtherNode ->
-                lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
-                Message
-        end;
-        ({receive_message, _N, Message}) -> Message
-    end,
-    rpc:call(?NAME(SourceNode), ?MANAGER, add_interposition_fun, [{send_omission, DestinationNode}, InterpositionFun]).
-
-%% End send omission failure period.
-end_send_omission(SourceNode, DestinationNode0) ->
-    fault_debug("end_send_omission: source_node ~p destination_node ~p", [SourceNode, DestinationNode0]),
-
-    %% Convert to real node name and not symbolic name.
-    DestinationNode = ?NAME(DestinationNode0),
-
-    rpc:call(?NAME(SourceNode), ?MANAGER, remove_interposition_fun, [{send_omission, DestinationNode}]).

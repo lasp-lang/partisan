@@ -63,7 +63,7 @@
 -define(PERFORM_LEAVES_AND_JOINS, false).           %% Do we allow cluster transitions during test execution:
                                                     %% EXTREMELY slow, given a single join can take ~30 seconds.
 
--define(PERFORM_FAULT_INJECTION, false).            %% Do we perform fault-injection?                                            
+-define(PERFORM_FAULT_INJECTION, true).             %% Do we perform fault-injection?                                            
 
 %% Debug.
 -define(DEBUG, true).
@@ -159,7 +159,14 @@ initial_state() ->
 command(State) -> 
     ?LET(Commands, 
         %% Cluster maintenance commands.
-        lists:map(fun(Command) -> {1, Command} end, cluster_commands(State)) ++ 
+        lists:flatmap(fun(Command) -> 
+            case ?PERFORM_LEAVES_AND_JOINS of 
+                true ->
+                    [{1, Command}];
+                false ->
+                    []
+            end
+        end, cluster_commands(State)) ++ 
 
         %% Fault model commands.
         lists:flatmap(fun(Command) -> 
@@ -344,7 +351,107 @@ names() ->
     lists:map(NameFun, lists:seq(1, ?NUM_NODES)).
 
 %%%===================================================================
-%%% Cluster Functions
+%%% Trace Support
+%%%===================================================================
+
+command_preamble(Node, Command) ->
+    debug("command preamble fired for command at node ~p: ~p", [Node, Command]),
+
+    %% Log command entrance trace.
+    partisan_trace_orchestrator:trace(enter_command, {Node, Command}),
+
+    %% Under replay, perform the trace replay.
+    partisan_trace_orchestrator:replay(enter_command, {Node, Command}),
+
+    ok.
+
+command_conclusion(Node, Command) ->
+    debug("command conclusion fired for command at node ~p: ~p", [Node, Command]),
+
+    %% Log command entrance trace.
+    partisan_trace_orchestrator:trace(exit_command, {Node, Command}),
+
+    %% Under replay, perform the trace replay.
+    partisan_trace_orchestrator:replay(exit_command, {Node, Command}),
+
+    ok.
+
+%%%===================================================================
+%%% Commands
+%%%===================================================================
+
+join_cluster(Name, [JoinedName|_]=JoinedNames) ->
+    command_preamble(Name, {join_cluster, JoinedNames}),
+
+    Result = case is_joined(Name, JoinedNames) of
+        true ->
+            ok;
+        false ->
+            Node = name_to_nodename(Name),
+            JoinedNode = name_to_nodename(JoinedName),
+            debug("join_cluster: joining node ~p to node ~p", [Node, JoinedNode]),
+
+            %% Stage join.
+            ok = ?SUPPORT:staged_join(Node, JoinedNode),
+
+            %% Plan will only succeed once the ring has been gossiped.
+            ok = ?SUPPORT:plan_and_commit(JoinedNode),
+
+            %% Verify appropriate number of connections.
+            NewCluster = lists:map(fun name_to_nodename/1, JoinedNames ++ [Name]),
+
+            %% Ensure each node owns a portion of the ring
+            ConvergeFun = fun() ->
+                ok = ?SUPPORT:wait_until_all_connections(NewCluster),
+                ok = ?SUPPORT:wait_until_nodes_agree_about_ownership(NewCluster),
+                ok = ?SUPPORT:wait_until_no_pending_changes(NewCluster),
+                ok = ?SUPPORT:wait_until_ring_converged(NewCluster)
+            end,
+            {ConvergeTime, _} = timer:tc(ConvergeFun),
+
+            debug("join_cluster: converged at ~p", [ConvergeTime]),
+            ok
+    end,
+
+    command_conclusion(Name, {join_cluster, JoinedNames}),
+
+    Result.
+
+leave_cluster(Name, JoinedNames) ->
+    command_preamble(Name, {leave_cluster, JoinedNames}),
+
+    Node = name_to_nodename(Name),
+    debug("leave_cluster: leaving node ~p from cluster with members ~p", [Node, JoinedNames]),
+
+    Result = case enough_nodes_connected_to_issue_remove(JoinedNames) of
+        false ->
+            ok;
+        true ->
+            %% Issue remove.
+            ok = ?SUPPORT:leave(Node),
+
+            %% Verify appropriate number of connections.
+            NewCluster = lists:map(fun name_to_nodename/1, JoinedNames -- [Name]),
+
+            %% Ensure each node owns a portion of the ring
+            ConvergeFun = fun() ->
+                ok = ?SUPPORT:wait_until_all_connections(NewCluster),
+                ok = ?SUPPORT:wait_until_nodes_agree_about_ownership(NewCluster),
+                ok = ?SUPPORT:wait_until_no_pending_changes(NewCluster),
+                ok = ?SUPPORT:wait_until_ring_converged(NewCluster)
+            end,
+            {ConvergeTime, _} = timer:tc(ConvergeFun),
+
+            debug("leave_cluster: converged at ~p", [ConvergeTime]),
+            ok
+    end,
+
+    command_conclusion(Name, {leave_cluster, JoinedNames}),
+
+    Result.
+
+%%%===================================================================
+%%% Helper Functions
 %%%===================================================================
 
 start_nodes() ->
@@ -444,7 +551,7 @@ start_nodes() ->
         rpc:call(Node, 
                  partisan_config,
                  set,
-                 [tracing, true])
+                 [tracing, false])
         end, Nodes),
 
     %% Insert all nodes into group for all nodes.
@@ -490,64 +597,6 @@ majority_nodes() ->
         ?LET(Names, names(), 
             ?LET(Sublist, lists:sublist(Names, trunc(MajorityCount)), Sublist))).
 
-leave_cluster(Name, JoinedNames) ->
-    Node = name_to_nodename(Name),
-    debug("leave_cluster: leaving node ~p from cluster with members ~p", [Node, JoinedNames]),
-
-    case enough_nodes_connected_to_issue_remove(JoinedNames) of
-        false ->
-            ok;
-        true ->
-            %% Issue remove.
-            ok = ?SUPPORT:leave(Node),
-
-            %% Verify appropriate number of connections.
-            NewCluster = lists:map(fun name_to_nodename/1, JoinedNames -- [Name]),
-
-            %% Ensure each node owns a portion of the ring
-            ConvergeFun = fun() ->
-                ok = ?SUPPORT:wait_until_all_connections(NewCluster),
-                ok = ?SUPPORT:wait_until_nodes_agree_about_ownership(NewCluster),
-                ok = ?SUPPORT:wait_until_no_pending_changes(NewCluster),
-                ok = ?SUPPORT:wait_until_ring_converged(NewCluster)
-            end,
-            {ConvergeTime, _} = timer:tc(ConvergeFun),
-
-            debug("leave_cluster: converged at ~p", [ConvergeTime]),
-            ok
-    end.
-
-join_cluster(Name, [JoinedName|_]=JoinedNames) ->
-    case is_joined(Name, JoinedNames) of
-        true ->
-            ok;
-        false ->
-            Node = name_to_nodename(Name),
-            JoinedNode = name_to_nodename(JoinedName),
-            debug("join_cluster: joining node ~p to node ~p", [Node, JoinedNode]),
-
-            %% Stage join.
-            ok = ?SUPPORT:staged_join(Node, JoinedNode),
-
-            %% Plan will only succeed once the ring has been gossiped.
-            ok = ?SUPPORT:plan_and_commit(JoinedNode),
-
-            %% Verify appropriate number of connections.
-            NewCluster = lists:map(fun name_to_nodename/1, JoinedNames ++ [Name]),
-
-            %% Ensure each node owns a portion of the ring
-            ConvergeFun = fun() ->
-                ok = ?SUPPORT:wait_until_all_connections(NewCluster),
-                ok = ?SUPPORT:wait_until_nodes_agree_about_ownership(NewCluster),
-                ok = ?SUPPORT:wait_until_no_pending_changes(NewCluster),
-                ok = ?SUPPORT:wait_until_ring_converged(NewCluster)
-            end,
-            {ConvergeTime, _} = timer:tc(ConvergeFun),
-
-            debug("join_cluster: converged at ~p", [ConvergeTime]),
-            ok
-    end.
-
 enough_nodes_connected(Nodes) ->
     length(Nodes) >= 3.
 
@@ -590,17 +639,10 @@ is_joined(Node, Cluster) ->
     lists:member(Node, Cluster).
 
 cluster_commands(#state{joined_nodes=JoinedNodes}) ->
-    MemberCommands = case ?PERFORM_LEAVES_AND_JOINS of
-        true ->
-            [
-            {call, ?MODULE, join_cluster, [node_name(), JoinedNodes]},
-            {call, ?MODULE, leave_cluster, [node_name(), JoinedNodes]}
-            ];
-        false ->
-            []
-    end,
-
-    MemberCommands.
+    [
+    {call, ?MODULE, join_cluster, [node_name(), JoinedNodes]},
+    {call, ?MODULE, leave_cluster, [node_name(), JoinedNodes]}
+    ].
 
 name_to_nodename(Name) ->
     [{_, NodeName}] = ets:lookup(?MODULE, Name),
