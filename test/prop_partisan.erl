@@ -60,6 +60,11 @@
 -define(CLUSTER_NODES, true).
 -define(MANAGER, partisan_pluggable_peer_service_manager).
 
+-define(PERFORM_LEAVES_AND_JOINS, false).           %% Do we allow cluster transitions during test execution:
+                                                    %% EXTREMELY slow, given a single join can take ~30 seconds.
+
+-define(PERFORM_FAULT_INJECTION, false).            %% Do we perform fault-injection?                                            
+
 %% Debug.
 -define(DEBUG, true).
 -define(INITIAL_STATE_DEBUG, false).
@@ -74,10 +79,6 @@
 -define(CHANNELS,                                   %% What channels should be established?
         [undefined, broadcast, vnode, {monotonic, gossip}]).   
 -define(CAUSAL_LABELS, []).                         %% What causal channels should be established?
-
-%% Only one of the modes below should be selected for efficient, proper shrinking.
--define(PERFORM_LEAVES_AND_JOINS, false).           %% Do we allow cluster transitions during test execution:
-                                                    %% EXTREMELY slow, given a single join can take ~30 seconds.
 
 -export([command/1, 
          initial_state/0, 
@@ -161,7 +162,14 @@ command(State) ->
         lists:map(fun(Command) -> {1, Command} end, cluster_commands(State)) ++ 
 
         %% Fault model commands.
-        lists:map(fun(Command) -> {1, Command} end, fault_commands()) ++
+        lists:flatmap(fun(Command) -> 
+            case ?PERFORM_FAULT_INJECTION of 
+                true ->
+                    [{1, Command}];
+                false ->
+                    []
+            end
+        end, fault_commands()) ++
 
         %% System model commands.
         lists:map(fun(Command) -> {1, Command} end, node_commands()), 
