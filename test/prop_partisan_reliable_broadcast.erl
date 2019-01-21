@@ -30,6 +30,8 @@
 -define(ASSERT_MAILBOX, true).
 -define(BROADCAST_MODULE, demers_direct_mail).
 
+-define(PERFORM_SUMMARY, false).
+
 %%%===================================================================
 %%% Generators
 %%%===================================================================
@@ -261,38 +263,43 @@ node_begin_case() ->
 node_end_case() ->
     node_debug("ending case", []),
 
-    % %% Get nodes.
-    % [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
+    case ?PERFORM_SUMMARY of 
+        true ->
+            %% Get nodes.
+            [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
 
-    % %% Aggregate the results from the run.
-    % NodeMessages = lists:map(fun({Name, _Node}) ->
-    %     case check_mailbox(Name) of 
-    %         {ok, Messages} ->
-    %             node_debug("received at node ~p are ~p: ~p", [Name, length(Messages), Messages]),
-    %             Messages;
-    %         {error, _} ->
-    %             node_debug("cannot get messages received at node ~p", [Name]),
-    %             []
-    %     end
-    % end, Nodes),
+            %% Aggregate the results from the run.
+            NodeMessages = lists:map(fun({Name, _Node}) ->
+                case check_mailbox(Name) of 
+                    {ok, Messages} ->
+                        node_debug("received at node ~p are ~p: ~p", [Name, length(Messages), Messages]),
+                        Messages;
+                    {error, _} ->
+                        node_debug("cannot get messages received at node ~p", [Name]),
+                        []
+                end
+            end, Nodes),
 
-    % %% Compute total messages.
-    % TotalMessages = length(lists:usort(lists:flatten(NodeMessages))),
-    % node_debug("total messages sent: ~p", [TotalMessages]),
+            %% Compute total messages.
+            TotalMessages = length(lists:usort(lists:flatten(NodeMessages))),
+            node_debug("total messages sent: ~p", [TotalMessages]),
 
-    % %% Keep percentage of nodes that have received all messages.
-    % NodeCount = length(Nodes),
+            %% Keep percentage of nodes that have received all messages.
+            NodeCount = length(Nodes),
 
-    % NodesRececivedAll = lists:foldl(fun(M, Acc) ->
-    %     case length(M) =:= TotalMessages of
-    %         true ->
-    %             Acc + 1;
-    %         false ->
-    %             Acc
-    %     end
-    % end, 0, NodeMessages),
+            NodesRececivedAll = lists:foldl(fun(M, Acc) ->
+                case length(M) =:= TotalMessages of
+                    true ->
+                        Acc + 1;
+                    false ->
+                        Acc
+                end
+            end, 0, NodeMessages),
 
-    % Percentage = NodesRececivedAll / NodeCount,
-    % node_debug("nodes received all: ~p, total nodes: ~p, percentage received: ~p", [NodesRececivedAll, NodeCount, Percentage]),
+            Percentage = NodesRececivedAll / NodeCount,
+            node_debug("nodes received all: ~p, total nodes: ~p, percentage received: ~p", [NodesRececivedAll, NodeCount, Percentage]);
+        false ->
+            ok
+    end,
 
     ok.
