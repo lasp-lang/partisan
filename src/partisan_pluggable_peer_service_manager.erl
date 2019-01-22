@@ -555,43 +555,35 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Ori
     {noreply, State};
 
 handle_call({receive_message, Peer, OriginalMessage}, 
-            _From, 
-            #state{pre_interposition_funs=PreInterpositionFuns,
-                   interposition_funs=InterpositionFuns,
-                   post_interposition_funs=PostInterpositionFuns} = State) ->
-    lager:info("~p: Inside the receive interposition, message from ~p at node ~p", [node(), Peer, node()]),
-    lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
+            From, 
+            #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
+    %% Run all interposition functions.
+    DeliveryFun = fun() ->
+        %% Fire pre-interposition functions.
+        PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
+            lager:info("firing preinterposition fun for original message: ~p", [OriginalMessage]),
+            PreInterpositionFun({receive_message, Peer, OriginalMessage}),
+            ok
+        end,
+        dict:fold(PreFoldFun, ok, PreInterpositionFuns),
 
-    %% Fire pre-interposition functions.
-    PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
-        PreInterpositionFun({receive_message, Peer, OriginalMessage}),
-        ok
+        %% Once pre-interposition returns, then schedule for delivery.
+        gen_server:cast(?MODULE, {receive_message, From, Peer, OriginalMessage})
     end,
-    dict:fold(PreFoldFun, ok, PreInterpositionFuns),
 
-    %% Filter messages using interposition functions.
-    FoldFun = fun(_Name, InterpositionFun, M) ->
-        InterpositionFun({receive_message, Peer, M})
+    case partisan_config:get(replaying, false) of 
+        false ->
+            %% Fire all pre-interposition functions, and then deliver, preserving serial order of messages.
+            DeliveryFun();
+        true ->
+            %% Allow the system to proceed, and the message will be delivered once pre-interposition is done.
+            spawn_link(DeliveryFun)
     end,
-    Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
 
-    %% Fire post-interposition functions.
-    PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
-        PostInterpositionFun({receive_message, Peer, OriginalMessage}, {receive_message, Peer, Message}),
-        ok
-    end,
-    dict:fold(PostFoldFun, ok, PostInterpositionFuns),
+    {noreply, State};
 
-    lager:info("~p: Message after receive interposition is: ~p", [node(), Message]),
-
-    case Message of
-        undefined ->
-            {reply, ok, State};
-        _ ->
-            handle_message(Message, State)
-    end;
-handle_call({receive_message, Message}, _From, State) ->
-    handle_message(Message, State);
+handle_call({receive_message, Message}, From, State) ->
+    handle_message(Message, From, State);
 
 handle_call(members_for_orchestration, _From, #state{membership=Membership}=State) ->
     {reply, {ok, Membership}, State};
@@ -612,6 +604,36 @@ handle_call(Msg, _From, State) ->
 
 %% @private
 -spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
+handle_cast({receive_message, From, Peer, OriginalMessage}, 
+            #state{pre_interposition_funs=PreInterpositionFuns,
+                   interposition_funs=InterpositionFuns,
+                   post_interposition_funs=PostInterpositionFuns} = State) ->
+    lager:info("~p: Inside the receive interposition, message from ~p at node ~p", [node(), Peer, node()]),
+    lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
+
+    %% Filter messages using interposition functions.
+    FoldFun = fun(_Name, InterpositionFun, M) ->
+        InterpositionFun({receive_message, Peer, M})
+    end,
+    Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
+
+    %% Fire post-interposition functions.
+    PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
+        PostInterpositionFun({receive_message, Peer, OriginalMessage}, {receive_message, Peer, Message}),
+        ok
+    end,
+    dict:fold(PostFoldFun, ok, PostInterpositionFuns),
+
+    lager:info("~p: Message after receive interposition is: ~p", [node(), Message]),
+
+    case Message of
+        undefined ->
+            gen_server:reply(From, ok),
+            {noreply, State};
+        _ ->
+            handle_message(Message, From, State)
+    end;
+
 handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options},
             #state{interposition_funs=InterpositionFuns, 
                    post_interposition_funs=PostInterpositionFuns, 
@@ -975,6 +997,7 @@ establish_connections(Pending,
 
 %% @private
 handle_message({ping, SourceNode, DestinationNode, SourceTime},
+               From,
                #state{pending=Pending,
                       connections=Connections0,
                       membership=Membership}=State) ->
@@ -990,8 +1013,11 @@ handle_message({ping, SourceNode, DestinationNode, SourceTime},
                     {pong, SourceNode, DestinationNode, SourceTime},
                     Connections),
 
-    {reply, ok, State#state{connections=Connections}};
+    gen_server:reply(From, ok),
+
+    {noreply, State#state{connections=Connections}};
 handle_message({pong, SourceNode, DestinationNode, SourceTime},
+               From,
                #state{distance_metrics=DistanceMetrics0}=State) ->
     %% Compute difference.
     ArrivalTime = erlang:timestamp(),
@@ -1010,8 +1036,11 @@ handle_message({pong, SourceNode, DestinationNode, SourceTime},
     %% Store in pdict.
     put(distance_metrics, DistanceMetrics),
 
-    {reply, ok, State#state{distance_metrics=DistanceMetrics}};
+    gen_server:reply(From, ok),
+
+    {noreply, State#state{distance_metrics=DistanceMetrics}};
 handle_message({protocol, ProtocolMessage},
+               From,
                #state{pending=Pending,
                       connections=Connections0,
                       membership=Membership0,
@@ -1050,13 +1079,16 @@ handle_message({protocol, ProtocolMessage},
                                        connections=Connections,
                                        membership_strategy_state=MembershipStrategyState}};
         true ->
-            {reply, ok, State#state{membership=Membership,
-                                    connections=Connections,
-                                    membership_strategy_state=MembershipStrategyState}}
+            gen_server:reply(From, ok),
+
+            {noreply, State#state{membership=Membership,
+                                  connections=Connections,
+                                  membership_strategy_state=MembershipStrategyState}}
     end;
 
 %% Causal and acknowledged messages.
 handle_message({forward_message, SourceNode, MessageClock, ServerRef, {causal, Label, _, _, _, _, _} = Message},
+               From,
                #state{connections=Connections}=State) ->
     %% Try to acknowledge.
     do_send_message(SourceNode,
@@ -1073,10 +1105,13 @@ handle_message({forward_message, SourceNode, MessageClock, ServerRef, {causal, L
             partisan_util:process_forward(ServerRef, Message)
     end,
 
-    {reply, ok, State};
+    gen_server:reply(From, ok),
+
+    {noreply, State};
 
 %% Acknowledged messages.
 handle_message({forward_message, SourceNode, MessageClock, ServerRef, Message},
+               From,
                #state{connections=Connections}=State) ->
     %% Try to acknowledge.
     do_send_message(SourceNode,
@@ -1086,10 +1121,15 @@ handle_message({forward_message, SourceNode, MessageClock, ServerRef, Message},
                     Connections),
 
     partisan_util:process_forward(ServerRef, Message),
-    {reply, ok, State};
+
+    gen_server:reply(From, ok),
+
+    {noreply, State};
 
 %% Causal messages.
-handle_message({forward_message, ServerRef, {causal, Label, _, _, _, _, _} = Message}, State) ->
+handle_message({forward_message, ServerRef, {causal, Label, _, _, _, _, _} = Message}, 
+               From,
+               State) ->
     case partisan_causality_backend:is_causal_message(Message) of
         true ->
             partisan_causality_backend:receive_message(Label, Message);
@@ -1098,16 +1138,24 @@ handle_message({forward_message, ServerRef, {causal, Label, _, _, _, _, _} = Mes
             partisan_util:process_forward(ServerRef, Message)
     end,
 
-    {reply, ok, State};
+    gen_server:reply(From, ok),
+
+    {noreply, State};
 
 %% Best-effort messages.
-handle_message({forward_message, ServerRef, Message}, State) ->
+handle_message({forward_message, ServerRef, Message}, 
+               From,
+               State) ->
     partisan_util:process_forward(ServerRef, Message),
-    {reply, ok, State};
+    gen_server:reply(From, ok),
+    {noreply, State};
 
-handle_message({ack, MessageClock}, State) ->
+handle_message({ack, MessageClock}, 
+               From,
+               State) ->
     partisan_acknowledgement_backend:ack(MessageClock),
-    {reply, ok, State}.
+    gen_server:reply(From, ok),
+    {noreply, State}.
 
 %% @private
 schedule_distance() ->
