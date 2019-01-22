@@ -69,9 +69,27 @@ init() ->
                         undefined;
                     TagList ->
                         Tag = list_to_atom(TagList),
-                        application:set_env(partisan, tag, Tag),
+                        application:set_env(?APP, tag, Tag),
                         Tag
                 end,
+
+    %% Determine if we are replaying.
+    case os:getenv("REPLAY", "false") of 
+        "false" ->
+            false;
+        _ ->
+            application:set_env(?APP, replaying, true),
+            true
+    end,
+
+    %% Determine if we are shrinking.
+    case os:getenv("SHRINKING", "false") of 
+        "false" ->
+            false;
+        _ ->
+            application:set_env(?APP, shrinking, true),
+            true
+    end,
 
     %% Configure system parameters.
     DefaultPeerIP = try_get_node_address(),
@@ -112,7 +130,9 @@ init() ->
                            {orchestration_strategy, ?DEFAULT_ORCHESTRATION_STRATEGY},
                            {random_seed, random_seed()},
                            {random_promotion, true},
+                           {replaying, false},
                            {reservations, []},
+                           {shrinking, false},
                            {tracing, false},
                            {tls, false},
                            {tls_options, []},
