@@ -526,8 +526,32 @@ handle_call({send_message, Name, Channel, Message}, _From,
                              Connections),
     {reply, Result, State};
 
-handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options}, From, State) ->
-    gen_server:cast(?MODULE, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options}),
+handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options}, 
+            From, 
+            #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
+    %% Run all interposition functions.
+    DeliveryFun = fun() ->
+        %% Fire pre-interposition functions.
+        PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
+            lager:info("firing preinterposition fun for original message: ~p", [OriginalMessage]),
+            PreInterpositionFun({forward_message, Name, OriginalMessage}),
+            ok
+        end,
+        dict:fold(PreFoldFun, ok, PreInterpositionFuns),
+
+        %% Once pre-interposition returns, then schedule for delivery.
+        gen_server:cast(?MODULE, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options})
+    end,
+
+    case partisan_config:get(replaying, false) of 
+        false ->
+            %% Fire all pre-interposition functions, and then deliver, preserving serial order of messages.
+            DeliveryFun();
+        true ->
+            %% Allow the system to proceed, and the message will be delivered once pre-interposition is done.
+            spawn_link(DeliveryFun)
+    end,
+
     {noreply, State};
 
 handle_call({receive_message, Peer, OriginalMessage}, 
@@ -589,21 +613,12 @@ handle_call(Msg, _From, State) ->
 %% @private
 -spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
 handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options},
-            #state{pre_interposition_funs=PreInterpositionFuns, 
-                   interposition_funs=InterpositionFuns, 
+            #state{interposition_funs=InterpositionFuns, 
                    post_interposition_funs=PostInterpositionFuns, 
                    connections=Connections, 
                    vclock=VClock0}=State) ->
     lager:info("~p: Inside the send interposition, message ~p from ~p at node ~p", [node(), OriginalMessage, Name, node()]),
     lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
-
-    %% Fire pre-interposition functions.
-    PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
-        lager:info("firing preinterposition fun for original message: ~p", [OriginalMessage]),
-        PreInterpositionFun({forward_message, Name, OriginalMessage}),
-        ok
-    end,
-    dict:fold(PreFoldFun, ok, PreInterpositionFuns),
 
     %% Filter messages using interposition functions.
     FoldFun = fun(_Name, InterpositionFun, M) ->
