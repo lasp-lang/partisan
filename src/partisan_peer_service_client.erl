@@ -231,10 +231,7 @@ decode(Message) ->
 
 %% @private
 handle_message({state, Tag, LocalState},
-               #state{peer=Peer, from=From, socket=Socket}=State) ->
-    %% Extract name for readability.
-    #{name := Name} = Peer,
-
+               #state{peer=Peer, from=From, socket=_Socket}=State) ->
     %% Notify peer service manager we are done.
     case LocalState of
         %% TODO: Anything using a three tuple will be caught here.
