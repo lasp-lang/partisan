@@ -63,7 +63,7 @@
 -define(PERFORM_LEAVES_AND_JOINS, false).           %% Do we allow cluster transitions during test execution:
                                                     %% EXTREMELY slow, given a single join can take ~30 seconds.
 
--define(PERFORM_FAULT_INJECTION, true).             %% Do we perform fault-injection?                                            
+-define(PERFORM_FAULT_INJECTION, false).            %% Do we perform fault-injection?                                            
 
 %% Debug.
 -define(DEBUG, true).
