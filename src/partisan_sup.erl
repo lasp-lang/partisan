@@ -44,6 +44,7 @@ init([]) ->
                  [
                  ?CHILD(partisan_rpc_backend, worker),
                  ?CHILD(partisan_acknowledgement_backend, worker),
+                 ?CHILD(partisan_orchestration_backend, worker),
                  ?CHILD(Manager, worker),
                  ?CHILD(partisan_peer_service_events, worker),
                  ?CHILD(partisan_plumtree_backend, worker),

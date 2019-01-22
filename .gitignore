@@ -31,3 +31,4 @@ fprof.trace
 test/*/RAND
 .DS_Store
 results.csv
+erl_crash.dump

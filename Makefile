@@ -3,7 +3,7 @@ VERSION         ?= $(shell git describe --tags)
 BASE_DIR         = $(shell pwd)
 ERLANG_BIN       = $(shell dirname $(shell which erl))
 REBAR            = $(shell pwd)/rebar3
-MAKE						 = make
+MAKE			 = make
 CONCURRENCY 	 ?= 4
 LATENCY 		 ?= 0
 SIZE 			 ?= 1024
@@ -29,6 +29,9 @@ packageclean:
 ##
 ## Test targets
 ##
+
+proper:
+	pkill -9 beam.smp; rm -rf priv/lager; ./rebar3 proper -m prop_partisan -p prop_sequential --noshrink -n 10
 
 perf:
 	pkill -9 beam.smp; pkill -9 epmd; SIZE=${SIZE} LATENCY=${LATENCY} CONCURRENCY=${CONCURRENCY} ${REBAR} ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=with_disterl
@@ -75,3 +78,19 @@ stage:
 DIALYZER_APPS = kernel stdlib erts sasl eunit syntax_tools compiler crypto
 
 include tools.mk
+
+## 
+## Container targets
+##
+
+containerize-deps:
+	docker build -f partisan-base.Dockerfile -t cmeiklejohn/partisan-base .
+
+containerize-tests: containerize-deps
+	docker build --no-cache -f partisan-test-suite.Dockerfile -t cmeiklejohn/partisan-test-suite .
+
+containerize: containerize-deps
+	docker build --no-cache -f Dockerfile -t cmeiklejohn/partisan .
+
+compose: containerize
+	docker-compose down; docker-compose rm; docker-compose up

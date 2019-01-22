@@ -28,7 +28,8 @@
          forward_message/2]).
 
 -callback start_link() -> {ok, pid()} | ignore | {error, term()}.
--callback members() -> [name()].
+-callback members() -> [name()]. %% TODO: Deprecate me.
+-callback members_for_orchestration() -> [node_spec()].
 -callback myself() -> node_spec().
 
 -callback get_local_state() -> term().
