@@ -358,6 +358,9 @@ initialize_state() ->
             replay_debug("recording trace to file.", []),
             #state{trace=[], blocked_processes=[], identifier=undefined};
         _ ->
+            %% Mark that we are in replay mode.
+            partisan_config:set(replaying, true),
+
             %% This is a replay, so load the previous trace.
             replay_debug("loading previous trace for replay.", []),
 
@@ -372,6 +375,9 @@ initialize_state() ->
                 false ->
                     false;
                 _ ->
+                    %% Mark that we are in shrinking mode.
+                    partisan_config:set(shrinking, true),
+
                     true
             end,
 
