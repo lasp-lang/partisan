@@ -469,7 +469,6 @@ start_nodes() ->
               {pid_encoding, false},
               {sync_join, false},
               {forward_options, []},
-              {initiate_reverse, false},
               {broadcast, false},
               {disterl, false},
               {hash, undefined},

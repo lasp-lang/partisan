@@ -114,7 +114,6 @@ init() ->
                            {fanout, ?FANOUT},
                            {gossip, true},
                            {ingress_delay, 0},
-                           {initiate_reverse, false},
                            {max_active_size, 6},
                            {max_passive_size, 30},
                            {min_active_size, 3},

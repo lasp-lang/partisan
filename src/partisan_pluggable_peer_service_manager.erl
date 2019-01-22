@@ -1105,23 +1105,6 @@ handle_message({forward_message, ServerRef, Message}, State) ->
     partisan_util:process_forward(ServerRef, Message),
     {reply, ok, State};
 
-handle_message({connect, ConnectionPid, #{name := Name} = Node}, State0) ->
-    MyNode = partisan_peer_service_manager:mynode(),
-
-    lager:info("Received connection request at node ~p for node ~p from remote pid: ~p", [MyNode, Name, ConnectionPid]),
-
-    case MyNode of
-        Name ->
-            %% Ignoring self join.
-            {noreply, State0};
-        _ ->
-            %% Perform join.
-            State = internal_join(Node, undefined, State0),
-
-            %% Return.
-            {noreply, State}
-    end;
-
 handle_message({ack, MessageClock}, State) ->
     partisan_acknowledgement_backend:ack(MessageClock),
     {reply, ok, State}.

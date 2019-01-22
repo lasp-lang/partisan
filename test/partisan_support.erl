@@ -159,15 +159,6 @@ start(Case, Config, Options) ->
             debug("Setting disterl to: ~p", [Disterl]),
             ok = rpc:call(Node, partisan_config, set, [disterl, Disterl]),
 
-            InitiateReverse = case ?config(initiate_reverse, Config) of
-                              undefined ->
-                                  false;
-                              IR ->
-                                  IR
-                          end,
-            debug("Setting initiate_reverse to: ~p", [InitiateReverse]),
-            ok = rpc:call(Node, partisan_config, set, [initiate_reverse, InitiateReverse]),
-
             DisableFastReceive = case ?config(disable_fast_receive, Config) of
                               undefined ->
                                   false;
