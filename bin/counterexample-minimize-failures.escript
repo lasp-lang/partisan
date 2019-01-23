@@ -36,6 +36,25 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     %% If we removed a partition resolution command, then we need to remove
     %% the partition introduction itself.
     {TestSecondRemovedCommand, TestFinalCommands} = case TestRemovedCommand of 
+        {set, _Var, {call, ?CRASH_MODULE, end_receive_omission, Args}} ->
+            io:format(" Found elimination of partition, looking for introduction call...~n", []),
+
+            {_, SRC, FC} = lists:foldr(fun(TestCommand, {RY, RC, AC}) ->
+                case RY of 
+                    false ->
+                        case TestCommand of 
+                            {set, _Var1, {call, ?CRASH_MODULE, begin_receive_omission, Args}} ->
+                                io:format(" Removing the ASSOCIATED command from the trace:~n", []),
+                                io:format("  ~p~n", [TestCommand]),
+                                {true, TestCommand, AC};
+                            _ ->
+                                {false, RC, [TestCommand] ++ AC}
+                        end;
+                    true ->
+                        {RY, RC, [TestCommand] ++ AC}
+                end
+            end, {false, undefined, []}, TestAlteredCommands),
+            {SRC, FC};
         {set, _Var, {call, ?CRASH_MODULE, end_send_omission, Args}} ->
             io:format(" Found elimination of partition, looking for introduction call...~n", []),
 
