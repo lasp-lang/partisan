@@ -133,13 +133,13 @@ node_precondition(_State, _Command) ->
 broadcast(Node, {Id, Value}) ->
     node_debug("executing broadcast command: ~p => ~p", [Node, {Id, Value}]),
 
-    ?PROPERTY_MODULE:command_preamble(Node, {broadcast, Node, Id, Value}),
+    ?PROPERTY_MODULE:command_preamble(Node, [broadcast, Node, Id, Value]),
 
     FullMessage = {Id, Node, Value},
     node_debug("broadcast from node ~p message: ~p", [Node, FullMessage]),
     Result = rpc:call(?NAME(Node), ?BROADCAST_MODULE, broadcast, [?RECEIVER, FullMessage]),
 
-    ?PROPERTY_MODULE:command_conclusion(Node, {broadcast, Node, Id, Value}),
+    ?PROPERTY_MODULE:command_conclusion(Node, [broadcast, Node, Id, Value]),
 
     Result.
 
@@ -147,7 +147,7 @@ broadcast(Node, {Id, Value}) ->
 check_mailbox(Node) ->
     node_debug("executing check mailbox command: ~p", [Node]),
 
-    ?PROPERTY_MODULE:command_preamble(Node, {check_mailbox, Node}),
+    ?PROPERTY_MODULE:command_preamble(Node, [check_mailbox, Node]),
 
     Self = self(),
 
@@ -165,7 +165,7 @@ check_mailbox(Node) ->
             {error, no_response_from_mailbox}
     end,
 
-    ?PROPERTY_MODULE:command_conclusion(Node, {check_mailbox, Node}),
+    ?PROPERTY_MODULE:command_conclusion(Node, [check_mailbox, Node]),
 
     Result.
 

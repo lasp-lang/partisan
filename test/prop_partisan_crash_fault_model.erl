@@ -61,7 +61,7 @@ names() ->
 %% Crash the node.
 %% Crash is a stop that doesn't wait for all members to know about the crash.
 crash(Name) ->
-    ?PROPERTY_MODULE:command_preamble(Name, crash),
+    ?PROPERTY_MODULE:command_preamble(Name, [crash]),
 
     fault_debug("crashing node: ~p", [Name]),
 
@@ -78,13 +78,13 @@ crash(Name) ->
             ct:fail(Error)
     end,
 
-    ?PROPERTY_MODULE:command_conclusion(Name, crash),
+    ?PROPERTY_MODULE:command_conclusion(Name, [crash]),
 
     Result.
 
 %% Create a receive omission failure.
 begin_receive_omission(SourceNode0, DestinationNode) ->
-    ?PROPERTY_MODULE:command_preamble(DestinationNode, {begin_receive_omission, SourceNode0}),
+    ?PROPERTY_MODULE:command_preamble(DestinationNode, [begin_receive_omission, SourceNode0]),
 
     fault_debug("begin_receive_omission: source_node ~p destination_node ~p", [SourceNode0, DestinationNode]),
 
@@ -104,13 +104,13 @@ begin_receive_omission(SourceNode0, DestinationNode) ->
     end,
     Result = rpc:call(?NAME(DestinationNode), ?MANAGER, add_interposition_fun, [{receive_omission, SourceNode}, InterpositionFun]),
 
-    ?PROPERTY_MODULE:command_conclusion(DestinationNode, {begin_receive_omission, SourceNode0}),
+    ?PROPERTY_MODULE:command_conclusion(DestinationNode, [begin_receive_omission, SourceNode0]),
 
     Result.
 
 %% End receive omission failure period.
 end_receive_omission(SourceNode0, DestinationNode) ->
-    ?PROPERTY_MODULE:command_preamble(DestinationNode, {end_receive_omission, SourceNode0}),
+    ?PROPERTY_MODULE:command_preamble(DestinationNode, [end_receive_omission, SourceNode0]),
 
     fault_debug("end_receive_omission: source_node ~p destination_node ~p", [SourceNode0, DestinationNode]),
 
@@ -119,13 +119,13 @@ end_receive_omission(SourceNode0, DestinationNode) ->
 
     Result = rpc:call(?NAME(DestinationNode), ?MANAGER, remove_interposition_fun, [{receive_omission, SourceNode}]),
 
-    ?PROPERTY_MODULE:command_conclusion(DestinationNode, {end_receive_omission, SourceNode0}),
+    ?PROPERTY_MODULE:command_conclusion(DestinationNode, [end_receive_omission, SourceNode0]),
 
     Result.
 
 %% Create a send omission failure.
 begin_send_omission(SourceNode, DestinationNode0) ->
-    ?PROPERTY_MODULE:command_preamble(SourceNode, {begin_send_omission, DestinationNode0}),
+    ?PROPERTY_MODULE:command_preamble(SourceNode, [begin_send_omission, DestinationNode0]),
 
     fault_debug("begin_send_omission: source_node ~p destination_node ~p", [SourceNode, DestinationNode0]),
 
@@ -145,13 +145,13 @@ begin_send_omission(SourceNode, DestinationNode0) ->
     end,
     Result = rpc:call(?NAME(SourceNode), ?MANAGER, add_interposition_fun, [{send_omission, DestinationNode}, InterpositionFun]),
 
-    ?PROPERTY_MODULE:command_conclusion(SourceNode, {begin_send_omission, DestinationNode0}),
+    ?PROPERTY_MODULE:command_conclusion(SourceNode, [begin_send_omission, DestinationNode0]),
 
     Result.
 
 %% End send omission failure period.
 end_send_omission(SourceNode, DestinationNode0) ->
-    ?PROPERTY_MODULE:command_preamble(SourceNode, {end_send_omission, DestinationNode0}),
+    ?PROPERTY_MODULE:command_preamble(SourceNode, [end_send_omission, DestinationNode0]),
 
     fault_debug("end_send_omission: source_node ~p destination_node ~p", [SourceNode, DestinationNode0]),
 
@@ -160,7 +160,7 @@ end_send_omission(SourceNode, DestinationNode0) ->
 
     Result = rpc:call(?NAME(SourceNode), ?MANAGER, remove_interposition_fun, [{send_omission, DestinationNode}]),
 
-    ?PROPERTY_MODULE:command_conclusion(SourceNode, {end_send_omission, DestinationNode0}),
+    ?PROPERTY_MODULE:command_conclusion(SourceNode, [end_send_omission, DestinationNode0]),
 
     Result.
 

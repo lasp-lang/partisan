@@ -381,7 +381,7 @@ command_conclusion(Node, Command) ->
 %%%===================================================================
 
 join_cluster(Name, [JoinedName|_]=JoinedNames) ->
-    command_preamble(Name, {join_cluster, JoinedNames}),
+    command_preamble(Name, [join_cluster, JoinedNames]),
 
     Result = case is_joined(Name, JoinedNames) of
         true ->
@@ -413,12 +413,12 @@ join_cluster(Name, [JoinedName|_]=JoinedNames) ->
             ok
     end,
 
-    command_conclusion(Name, {join_cluster, JoinedNames}),
+    command_conclusion(Name, [join_cluster, JoinedNames]),
 
     Result.
 
 leave_cluster(Name, JoinedNames) ->
-    command_preamble(Name, {leave_cluster, JoinedNames}),
+    command_preamble(Name, [leave_cluster, JoinedNames]),
 
     Node = name_to_nodename(Name),
     debug("leave_cluster: leaving node ~p from cluster with members ~p", [Node, JoinedNames]),
@@ -446,7 +446,7 @@ leave_cluster(Name, JoinedNames) ->
             ok
     end,
 
-    command_conclusion(Name, {leave_cluster, JoinedNames}),
+    command_conclusion(Name, [leave_cluster, JoinedNames]),
 
     Result.
 
