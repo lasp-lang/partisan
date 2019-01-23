@@ -281,11 +281,11 @@ trace_deliver(Shrinking, {Type, Message}, [{Type, Message} | Trace], BlockedProc
 
     %% Advance the trace, then try to flush the blocked processes.
     trace_deliver_log_flush(Shrinking, Trace, BlockedProcesses);
-trace_deliver(_Shrinking, {_, _}, [{_, _} | Trace], BlockedProcesses) ->
+trace_deliver(_Shrinking, {_, _}, [{_, _} = NextMessage | Trace], BlockedProcesses) ->
     replay_debug("delivering single message (not in the trace)!", []),
 
     %% Advance the trace, don't flush blocked processes, since we weren't in the trace, nothing is blocked.
-    {Trace, BlockedProcesses};
+    {[NextMessage|Trace], BlockedProcesses};
 trace_deliver(_Shrinking, {_, _}, [], BlockedProcesses) ->
     replay_debug("delivering single message (not in the trace -- end of trace)!", []),
 
