@@ -267,7 +267,7 @@ join(Node) ->
 
 %% @doc Leave the cluster.
 leave() ->
-    gen_server:call(?MODULE, {leave, partisan_peer_service_manager:mynode()}, infinity).
+    gen_server:call(?MODULE, {leave, partisan_peer_service_manager:myself()}, infinity).
 
 %% @doc Remove another node from the cluster.
 leave(Node) ->
@@ -1279,7 +1279,7 @@ internal_leave(#{name := Name} = Node,
                       connections=Connections0,
                       membership_strategy=MembershipStrategy,
                       membership_strategy_state=MembershipStrategyState0}=State) ->
-    lager:debug("Leaving node ~p at node ~p", [Node, partisan_peer_service_manager:mynode()]),
+    lager:info("Leaving node ~p at node ~p", [Node, partisan_peer_service_manager:mynode()]),
 
     {ok, Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:leave(MembershipStrategyState0, Node),
 
