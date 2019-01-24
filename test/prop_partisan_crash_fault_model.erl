@@ -22,11 +22,12 @@
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+-include("partisan.hrl").
+
 -include_lib("proper/include/proper.hrl").
 
 -compile([export_all]).
 
--define(NUM_NODES, 3).
 -define(MANAGER, partisan_pluggable_peer_service_manager).
 
 %%%===================================================================
@@ -45,7 +46,7 @@ names() ->
     NameFun = fun(N) -> 
         list_to_atom("node_" ++ integer_to_list(N)) 
     end,
-    lists:map(NameFun, lists:seq(1, ?NUM_NODES)).
+    lists:map(NameFun, lists:seq(1, ?TEST_NUM_NODES)).
 
 %%%===================================================================
 %%% Commands

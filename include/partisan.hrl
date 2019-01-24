@@ -4,17 +4,20 @@
 -define(PEER_SERVICE_SERVER, partisan_peer_service_server).
 -define(FANOUT, 5).
 -define(CACHE, partisan_connection_cache).
--define(PARALLELISM, 1).
--define(RPC_CHANNEL, rpc).
--define(DEFAULT_CHANNEL, undefined).
--define(DEFAULT_PARTITION_KEY, undefined).
-%% -define(CHANNELS, [?DEFAULT_CHANNEL, ?MEMBERSHIP_PROTOCOL_CHANNEL, ?GOSSIP_CHANNEL]).
--define(CHANNELS, [?DEFAULT_CHANNEL]).
 -define(CONNECTION_JITTER, 1000).
-
 -define(TRACING, false).
 -define(RELAY_TTL, 5).
 -define(MEMBERSHIP_PROTOCOL_CHANNEL, membership).
+
+%% Optimizations.
+-define(RPC_CHANNEL, rpc).
+-define(DEFAULT_CHANNEL, undefined).
+-define(DEFAULT_PARTITION_KEY, undefined).
+-define(PARALLELISM, 1).                            %% How many connections should exist between nodes?
+% -define(CHANNELS,                                 %% What channels should be established?
+%         [undefined, broadcast, vnode, {monotonic, gossip}]).   
+-define(CHANNELS, [?DEFAULT_CHANNEL]).
+-define(CAUSAL_LABELS, []).                         %% What causal channels should be established?
 
 %% Gossip.
 -define(GOSSIP_CHANNEL, gossip).
@@ -34,6 +37,8 @@
 -define(DEFAULT_ORCHESTRATION_STRATEGY, undefined).
 
 %% Test variables.
+-define(TEST_NUM_NODES, 3).
+
 -define(SUPPORT, partisan_support).
 
 -define(OVERRIDE_PERIODIC_INTERVAL, 1000).

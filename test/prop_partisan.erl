@@ -22,6 +22,8 @@
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+-include("partisan.hrl").
+
 -include_lib("proper/include/proper.hrl").
 
 -compile([export_all]).
@@ -52,10 +54,7 @@
          fault_next_state/3,
          fault_is_crashed/2]).
 
--define(SUPPORT, partisan_support).
-
 %% General test configuration
--define(NUM_NODES, 3).
 -define(COMMAND_MULTIPLE, 10).
 -define(CLUSTER_NODES, true).
 -define(MANAGER, partisan_pluggable_peer_service_manager).
@@ -75,10 +74,6 @@
 -define(EGRESS_DELAY, 0).                           %% How many milliseconds to delay outgoing messages?
 -define(INGRESS_DELAY, 0).                          %% How many millisconds to delay incoming messages?
 -define(VNODE_PARTITIONING, false).                 %% Should communication be partitioned by vnode identifier?
--define(PARALLELISM, 1).                            %% How many connections should exist between nodes?
--define(CHANNELS,                                   %% What channels should be established?
-        [undefined, broadcast, vnode, {monotonic, gossip}]).   
--define(CAUSAL_LABELS, []).                         %% What causal channels should be established?
 
 -export([command/1, 
          initial_state/0, 
@@ -348,7 +343,7 @@ names() ->
     NameFun = fun(N) -> 
         list_to_atom("node_" ++ integer_to_list(N)) 
     end,
-    lists:map(NameFun, lists:seq(1, ?NUM_NODES)).
+    lists:map(NameFun, lists:seq(1, ?TEST_NUM_NODES)).
 
 %%%===================================================================
 %%% Trace Support
@@ -381,7 +376,7 @@ command_conclusion(Node, Command) ->
 %%%===================================================================
 
 join_cluster(Name, [JoinedName|_]=JoinedNames) ->
-    command_preamble(Name, [join_cluster, JoinedNames]),
+    command_preamble(Name, {join_cluster, JoinedNames}),
 
     Result = case is_joined(Name, JoinedNames) of
         true ->
@@ -413,12 +408,12 @@ join_cluster(Name, [JoinedName|_]=JoinedNames) ->
             ok
     end,
 
-    command_conclusion(Name, [join_cluster, JoinedNames]),
+    command_conclusion(Name, {join_cluster, JoinedNames}),
 
     Result.
 
 leave_cluster(Name, JoinedNames) ->
-    command_preamble(Name, [leave_cluster, JoinedNames]),
+    command_preamble(Name, {leave_cluster, JoinedNames}),
 
     Node = name_to_nodename(Name),
     debug("leave_cluster: leaving node ~p from cluster with members ~p", [Node, JoinedNames]),
@@ -446,7 +441,7 @@ leave_cluster(Name, JoinedNames) ->
             ok
     end,
 
-    command_conclusion(Name, [leave_cluster, JoinedNames]),
+    command_conclusion(Name, {leave_cluster, JoinedNames}),
 
     Result.
 
@@ -482,7 +477,7 @@ start_nodes() ->
     Nodes = ?SUPPORT:start(prop_partisan,
                            Config,
                            [{partisan_peer_service_manager, ?MANAGER},
-                           {num_nodes, ?NUM_NODES},
+                           {num_nodes, ?TEST_NUM_NODES},
                            {cluster_nodes, ?CLUSTER_NODES}]),
 
     Self = node(),
@@ -592,7 +587,7 @@ all_to_ok_or_error(List) ->
 
 %% Select a random grouping of nodes.
 majority_nodes() ->
-    ?LET(MajorityCount, ?NUM_NODES / 2 + 1,
+    ?LET(MajorityCount, ?TEST_NUM_NODES / 2 + 1,
         ?LET(Names, names(), 
             ?LET(Sublist, lists:sublist(Names, trunc(MajorityCount)), Sublist))).
 
