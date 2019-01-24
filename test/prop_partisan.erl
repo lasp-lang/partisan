@@ -59,21 +59,29 @@
 -define(CLUSTER_NODES, true).
 -define(MANAGER, partisan_pluggable_peer_service_manager).
 
--define(PERFORM_LEAVES_AND_JOINS, false).           %% Do we allow cluster transitions during test execution:
+-define(PERFORM_LEAVES_AND_JOINS, true).            %% Do we allow cluster transitions during test execution:
                                                     %% EXTREMELY slow, given a single join can take ~30 seconds.
 
--define(PERFORM_FAULT_INJECTION, true).             %% Do we perform fault-injection?                                            
+-define(PERFORM_FAULT_INJECTION, false).            %% Do we perform fault-injection?                                            
 
 %% Debug.
 -define(DEBUG, true).
 -define(INITIAL_STATE_DEBUG, false).
--define(PRECONDITION_DEBUG, false).
+-define(PRECONDITION_DEBUG, true).
 -define(POSTCONDITION_DEBUG, false).
 
 %% Partisan connection and forwarding settings.
 -define(EGRESS_DELAY, 0).                           %% How many milliseconds to delay outgoing messages?
 -define(INGRESS_DELAY, 0).                          %% How many millisconds to delay incoming messages?
 -define(VNODE_PARTITIONING, false).                 %% Should communication be partitioned by vnode identifier?
+
+%%%===================================================================
+%%% Helper Macros
+%%%===================================================================
+
+-define(ETS, prop_partisan).
+
+-define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
 
 -export([command/1, 
          initial_state/0, 
@@ -211,19 +219,20 @@ precondition(#state{joined_nodes=JoinedNodes}, {call, _Mod, leave_cluster, [Node
 
     case length(ToBeRemovedNodes) > 3 of
         true ->
-            ToBeRemovedNode = lists:last(ToBeRemovedNodes),
-            precondition_debug("precondition leave_cluster: attempting to leave ~p", [ToBeRemovedNode]),
-            case ToBeRemovedNode of
-                Node ->
-                    precondition_debug("precondition leave_cluster: YES attempting to leave ~p is ~p", [ToBeRemovedNode, Node]),
+            TotalNodes = length(ToBeRemovedNodes),
+            CanBeRemovedNodes = lists:sublist(ToBeRemovedNodes, 4, TotalNodes),
+            precondition_debug("precondition leave_cluster: attempting to leave ny of ~p", [CanBeRemovedNodes]),
+            case lists:member(Node, CanBeRemovedNodes) of
+                true ->
+                    precondition_debug("precondition leave_cluster: YES attempting to leave ~p is in ~p", [Node, CanBeRemovedNodes]),
                     true;
-                OtherNode ->
-                    precondition_debug("precondition leave_cluster: NO attempting to leave ~p not ~p", [ToBeRemovedNode, OtherNode]),
+                _ ->
+                    precondition_debug("precondition leave_cluster: NO attempting to leave ~p is not in ~p", [Node, CanBeRemovedNodes]),
                     false
             end;
         false ->
             precondition_debug("precondition leave_cluster: no nodes left to remove.", []),
-            false %% Might need to be changed when there's no read/write operations.
+            false
     end;
 precondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes}, {call, Mod, Fun, [Node|_]=Args}=Call) -> 
     precondition_debug("precondition fired for node function: ~p", [Fun]),
@@ -376,7 +385,7 @@ command_conclusion(Node, Command) ->
 %%%===================================================================
 
 join_cluster(Name, [JoinedName|_]=JoinedNames) ->
-    command_preamble(Name, {join_cluster, JoinedNames}),
+    command_preamble(Name, [join_cluster, JoinedNames]),
 
     Result = case is_joined(Name, JoinedNames) of
         true ->
@@ -408,40 +417,24 @@ join_cluster(Name, [JoinedName|_]=JoinedNames) ->
             ok
     end,
 
-    command_conclusion(Name, {join_cluster, JoinedNames}),
+    command_conclusion(Name, [join_cluster, JoinedNames]),
 
     Result.
 
-leave_cluster(Name, JoinedNames) ->
-    command_preamble(Name, {leave_cluster, JoinedNames}),
+leave_cluster(Node, JoinedNodes) ->
+    command_preamble(Node, [leave_cluster, JoinedNodes]),
 
-    Node = name_to_nodename(Name),
-    debug("leave_cluster: leaving node ~p from cluster with members ~p", [Node, JoinedNames]),
+    debug("leave_cluster: leaving node ~p from cluster with members ~p", [Node, JoinedNodes]),
 
-    Result = case enough_nodes_connected_to_issue_remove(JoinedNames) of
+    Result = case enough_nodes_connected_to_issue_remove(JoinedNodes) of
         false ->
             ok;
         true ->
             %% Issue remove.
-            ok = ?SUPPORT:leave(Node),
-
-            %% Verify appropriate number of connections.
-            NewCluster = lists:map(fun name_to_nodename/1, JoinedNames -- [Name]),
-
-            %% Ensure each node owns a portion of the ring
-            ConvergeFun = fun() ->
-                ok = ?SUPPORT:wait_until_all_connections(NewCluster),
-                ok = ?SUPPORT:wait_until_nodes_agree_about_ownership(NewCluster),
-                ok = ?SUPPORT:wait_until_no_pending_changes(NewCluster),
-                ok = ?SUPPORT:wait_until_ring_converged(NewCluster)
-            end,
-            {ConvergeTime, _} = timer:tc(ConvergeFun),
-
-            debug("leave_cluster: converged at ~p", [ConvergeTime]),
-            ok
+            rpc:call(?NAME(Node), ?MANAGER, leave, [])
     end,
 
-    command_conclusion(Name, {leave_cluster, JoinedNames}),
+    command_conclusion(Node, [leave_cluster, JoinedNodes]),
 
     Result.
 
