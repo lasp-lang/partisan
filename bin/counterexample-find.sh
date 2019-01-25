@@ -16,7 +16,7 @@ make kill; rm -rf priv/lager; TRACE_FILE=${TRACE_FILE} ./rebar3 proper -m prop_p
 RETVAL=$?
 
 if [ $RETVAL -ne 0 ]; then
-    echo "Copying the rebar3 counterexample file..."
+    echo "Storing the rebar3 counterexample file..."
     cp ${REBAR_COUNTEREXAMPLE_CONSULT_FILE} ${COUNTEREXAMPLE_CONSULT_FILE}
     exit 1
 fi
