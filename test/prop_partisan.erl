@@ -46,9 +46,9 @@
 -define(FAULT_MODEL, prop_partisan_crash_fault_model).
 
 -import(?FAULT_MODEL,
-        [fault_commands/0,
+        [fault_commands/1,
          fault_initial_state/0,
-         fault_functions/0,
+         fault_functions/1,
          fault_precondition/2,
          fault_postcondition/3,
          fault_next_state/3,
@@ -59,15 +59,15 @@
 -define(CLUSTER_NODES, true).
 -define(MANAGER, partisan_pluggable_peer_service_manager).
 
--define(PERFORM_LEAVES_AND_JOINS, true).            %% Do we allow cluster transitions during test execution:
+-define(PERFORM_LEAVES_AND_JOINS, false).           %% Do we allow cluster transitions during test execution:
                                                     %% EXTREMELY slow, given a single join can take ~30 seconds.
 
--define(PERFORM_FAULT_INJECTION, false).            %% Do we perform fault-injection?                                            
+-define(PERFORM_FAULT_INJECTION, true).             %% Do we perform fault-injection?                                            
 
 %% Debug.
 -define(DEBUG, true).
 -define(INITIAL_STATE_DEBUG, false).
--define(PRECONDITION_DEBUG, true).
+-define(PRECONDITION_DEBUG, false).
 -define(POSTCONDITION_DEBUG, false).
 
 %% Partisan connection and forwarding settings.
@@ -159,7 +159,7 @@ initial_state() ->
            nodes=Nodes,
            node_state=NodeState}.
 
-command(State) -> 
+command(#state{joined_nodes=JoinedNodes}=State) -> 
     ?LET(Commands, 
         %% Cluster maintenance commands.
         lists:flatmap(fun(Command) -> 
@@ -179,7 +179,7 @@ command(State) ->
                 false ->
                     []
             end
-        end, fault_commands()) ++
+        end, fault_commands(JoinedNodes)) ++
 
         %% System model commands.
         lists:map(fun(Command) -> {1, Command} end, node_commands()), 
@@ -245,7 +245,7 @@ precondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joi
             FaultPrecondition = not fault_is_crashed(FaultModelState, Node),
             ClusterCondition andalso NodePrecondition andalso FaultPrecondition;
         false ->
-            case lists:member(Fun, fault_functions()) of 
+            case lists:member(Fun, fault_functions(JoinedNodes)) of 
                 true ->
                     ClusterCondition = enough_nodes_connected(JoinedNodes) andalso is_joined(Node, JoinedNodes),
                     FaultModelPrecondition = fault_precondition(FaultModelState, Call),
@@ -276,13 +276,13 @@ next_state(#state{joined_nodes=JoinedNodes}=State, _Res, {call, ?MODULE, sync_le
             %% no-op for the leave
             State
     end;
-next_state(#state{fault_model_state=FaultModelState0, node_state=NodeState0}=State, Res, {call, _Mod, Fun, _Args}=Call) -> 
+next_state(#state{fault_model_state=FaultModelState0, node_state=NodeState0, joined_nodes=JoinedNodes}=State, Res, {call, _Mod, Fun, _Args}=Call) -> 
     case lists:member(Fun, node_functions()) of
         true ->
             NodeState = node_next_state(NodeState0, Res, Call),
             State#state{node_state=NodeState};
         false ->
-            case lists:member(Fun, fault_functions()) of 
+            case lists:member(Fun, fault_functions(JoinedNodes)) of 
                 true ->
                     FaultModelState = fault_next_state(FaultModelState0, Res, Call),
                     State#state{fault_model_state=FaultModelState};
@@ -303,7 +303,7 @@ postcondition(_State, {call, ?MODULE, sync_leave_cluster, [_Node, _JoinedNodes]}
     postcondition_debug("postcondition sync_leave_cluster: succeeded", []),
     %% Accept leaves that succeed.
     true;
-postcondition(#state{fault_model_state=FaultModelState, node_state=NodeState}, {call, Mod, Fun, Args}=Call, Res) -> 
+postcondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes}, {call, Mod, Fun, Args}=Call, Res) -> 
     case lists:member(Fun, node_functions()) of
         true ->
             PostconditionResult = node_postcondition(NodeState, Call, Res),
@@ -318,7 +318,7 @@ postcondition(#state{fault_model_state=FaultModelState, node_state=NodeState}, {
 
             PostconditionResult;
         false ->
-            case lists:member(Fun, fault_functions()) of 
+            case lists:member(Fun, fault_functions(JoinedNodes)) of 
                 true ->
                     PostconditionResult = fault_postcondition(FaultModelState, Call, Res),
 

@@ -59,10 +59,39 @@ names() ->
 -define(ETS, prop_partisan).
 -define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
 
+%% Stop the node.
+%% Fail-stop model, assume synchronous failure detection.
+stop(Name, JoinedNames) ->
+    ?PROPERTY_MODULE:command_preamble(Name, [stop, JoinedNames]),
+
+    fault_debug("stopping node: ~p", [Name]),
+
+    Result = case ct_slave:stop(Name) of
+        {ok, _} ->
+            ok;
+        {error, stop_timeout, _} ->
+            fault_debug("Failed to stop node ~p: stop_timeout!", [Name]),
+            crash(Name, JoinedNames),
+            ok;
+        {error, not_started, _} ->
+            ok;
+        Error ->
+            ct:fail(Error)
+    end,
+
+    %% Wait for all nodes to detect failure.
+    %% TODO: This needs to be done using the on_down callback, but whatever for now.
+    timer:sleep(20000),
+
+    ?PROPERTY_MODULE:command_conclusion(Name, [stop, JoinedNames]),
+
+    Result.
+
 %% Crash the node.
 %% Crash is a stop that doesn't wait for all members to know about the crash.
-crash(Name) ->
-    ?PROPERTY_MODULE:command_preamble(Name, [crash]),
+%% Crash-stop, assume asynchronous failure detection.
+crash(Name, JoinedNames) ->
+    ?PROPERTY_MODULE:command_preamble(Name, [crash, JoinedNames]),
 
     fault_debug("crashing node: ~p", [Name]),
 
@@ -71,7 +100,7 @@ crash(Name) ->
             ok;
         {error, stop_timeout, _} ->
             fault_debug("Failed to stop node ~p: stop_timeout!", [Name]),
-            crash(Name),
+            crash(Name, JoinedNames),
             ok;
         {error, not_started, _} ->
             ok;
@@ -79,7 +108,7 @@ crash(Name) ->
             ct:fail(Error)
     end,
 
-    ?PROPERTY_MODULE:command_conclusion(Name, [crash]),
+    ?PROPERTY_MODULE:command_conclusion(Name, [crash, JoinedNames]),
 
     Result.
 
@@ -173,10 +202,13 @@ end_send_omission(SourceNode, DestinationNode0) ->
                             send_omissions,
                             receive_omissions}).
 
-fault_commands() ->
+fault_commands(JoinedNodes) ->
     [
-     %% Simulate crash failures.
-     {call, ?MODULE, crash, [node_name()]},
+     %% Crashes.
+     {call, ?MODULE, crash, [node_name(), JoinedNodes]},
+
+     %% Failures: fail-stop.
+     {call, ?MODULE, stop, [node_name(), JoinedNodes]},
 
      %% Send omission failures.
      {call, ?MODULE, begin_send_omission, [node_name(), node_name()]},
@@ -189,8 +221,8 @@ fault_commands() ->
 
 %% Names of the node functions so we kow when we can dispatch to the node
 %% pre- and postconditions.
-fault_functions() ->
-    lists:map(fun({call, _Mod, Fun, _Args}) -> Fun end, fault_commands()).
+fault_functions(JoinedNodes) ->
+    lists:map(fun({call, _Mod, Fun, _Args}) -> Fun end, fault_commands(JoinedNodes)).
 
 fault_initial_state() ->
     CrashedNodes = [],
@@ -244,8 +276,16 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, send_omissions
 
     EndCondition andalso not lists:member(SourceNode, CrashedNodes);
 
+%% Stop failures.
+fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelState, {call, _Mod, stop, [Node, _JoinedNames]}=Call) ->
+    %% Fault must be allowed at this moment.
+    fault_allowed(Call, FaultModelState) andalso 
+
+    %% Node to crash must be online at the time.
+    not lists:member(Node, CrashedNodes);
+
 %% Crash failures.
-fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelState, {call, _Mod, crash, [Node]}=Call) ->
+fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelState, {call, _Mod, crash, [Node, _JoinedNames]}=Call) ->
     %% Fault must be allowed at this moment.
     fault_allowed(Call, FaultModelState) andalso 
 
@@ -275,7 +315,11 @@ fault_next_state(#fault_model_state{send_omissions=SendOmissions0} = FaultModelS
     FaultModelState#fault_model_state{send_omissions=SendOmissions};
 
 %% Crashing a node adds a node to the crashed state.
-fault_next_state(#fault_model_state{crashed_nodes=CrashedNodes} = FaultModelState, _Res, {call, _Mod, crash, [Node]}) ->
+fault_next_state(#fault_model_state{crashed_nodes=CrashedNodes} = FaultModelState, _Res, {call, _Mod, crash, [Node, _JoinedNodes]}) ->
+    FaultModelState#fault_model_state{crashed_nodes=CrashedNodes ++ [Node]};
+
+%% Stopping a node assumes a crash that's immediately detected.
+fault_next_state(#fault_model_state{crashed_nodes=CrashedNodes} = FaultModelState, _Res, {call, _Mod, stop, [Node, _JoinedNodes]}) ->
     FaultModelState#fault_model_state{crashed_nodes=CrashedNodes ++ [Node]};
 
 fault_next_state(FaultModelState, _Res, _Call) ->
@@ -295,8 +339,12 @@ fault_postcondition(_FaultModelState, {call, _Mod, begin_send_omission, [_Source
 fault_postcondition(_FaultModelState, {call, _Mod, end_send_omission, [_SourceNode, _DestinationNode]}, ok) ->
     true;
 
+%% Stops are allowed.
+fault_postcondition(_FaultModelState, {call, _Mod, stop, [_Node, _JoinedNodes]}, ok) ->
+    true;
+
 %% Crashes are allowed.
-fault_postcondition(_FaultModelState, {call, _Mod, crash, [_Node]}, ok) ->
+fault_postcondition(_FaultModelState, {call, _Mod, crash, [_Node, _JoinedNodes]}, ok) ->
     true;
 
 fault_postcondition(_FaultModelState, {call, Mod, Fun, [_Node|_]=Args}, Res) ->
@@ -335,4 +383,58 @@ fault_debug(Line, Args) ->
             lager:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
+    end.
+
+wait_until_nodes_agree_on_membership(Nodes) ->
+    AgreementFun = fun(Node) ->
+        %% Get membership at node.
+        {ok, Members} = rpc:call(?NAME(Node), ?MANAGER, members, []),
+
+        %% Convert started nodes to longnames.
+        Names = lists:map(fun(N) -> ?NAME(N) end, Nodes),
+
+        %% Sort.
+        SortedNames = lists:usort(Names),
+        SortedMembers = lists:usort(Members),
+
+        %% Ensure the lists are the same -- barrier for proceeding.
+        case SortedNames =:= SortedMembers of
+            true ->
+                fault_debug("node ~p agrees on membership: ~p", [Node, SortedMembers]),
+                true;
+            false ->
+                fault_debug("node ~p disagrees on membership: ~p != ~p", [Node, SortedMembers, SortedNames]),
+                error
+        end
+    end,
+    [ok = wait_until(Node, AgreementFun) || Node <- Nodes],
+    lager:info("All nodes agree on membership!"),
+    ok.
+
+%% @private
+wait_until(Fun) when is_function(Fun) ->
+    MaxTime = 600000, %% @TODO use config,
+        Delay = 1000, %% @TODO use config,
+        Retry = MaxTime div Delay,
+    wait_until(Fun, Retry, Delay).
+
+%% @private
+wait_until(Node, Fun) when is_atom(Node), is_function(Fun) ->
+    wait_until(fun() -> Fun(Node) end).
+
+%% @private
+wait_until(Fun, Retry, Delay) when Retry > 0 ->
+    wait_until_result(Fun, true, Retry, Delay).
+
+%% @private
+wait_until_result(Fun, Result, Retry, Delay) when Retry > 0 ->
+    Res = Fun(),
+    case Res of
+        Result ->
+            ok;
+        _ when Retry == 1 ->
+            {fail, Res};
+        _ ->
+            timer:sleep(Delay),
+            wait_until_result(Fun, Result, Retry-1, Delay)
     end.
