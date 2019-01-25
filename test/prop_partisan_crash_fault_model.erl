@@ -198,7 +198,8 @@ end_send_omission(SourceNode, DestinationNode0) ->
 %%% Fault Model
 %%%===================================================================
 
--record(fault_model_state, {crashed_nodes,
+-record(fault_model_state, {tolerance,
+                            crashed_nodes,
                             send_omissions,
                             receive_omissions}).
 
@@ -224,14 +225,26 @@ fault_commands(_JoinedNodes) ->
 fault_functions(JoinedNodes) ->
     lists:map(fun({call, _Mod, Fun, _Args}) -> Fun end, fault_commands(JoinedNodes)).
 
+%% Initialize failure state.
 fault_initial_state() ->
+    Tolerance = case os:getenv("FAULT_TOLERANCE") of 
+        false ->
+            1;
+        ToleranceString ->
+            list_to_integer(ToleranceString)
+    end,
+
+    fault_debug("setting fault tolerance level to: ~p", [Tolerance]),
+
     CrashedNodes = [],
     SendOmissions = dict:new(),
     ReceiveOmissions = dict:new(),
 
-    #fault_model_state{crashed_nodes=CrashedNodes, 
+    #fault_model_state{tolerance=Tolerance,
+                       crashed_nodes=CrashedNodes, 
                        send_omissions=SendOmissions,
                        receive_omissions=ReceiveOmissions}.
+
 %% Receive omission.
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelState, {call, _Mod, begin_receive_omission, [SourceNode, DestinationNode]}=Call) ->
     %% Fault must be allowed at this moment.
@@ -372,9 +385,9 @@ fault_is_crashed(#fault_model_state{crashed_nodes=CrashedNodes}, Name) ->
     lists:member(Name, CrashedNodes).
 
 %% Is this fault allowed?
-fault_allowed({call, _Mod, _Fun, _Args}, FaultModelState) ->
-    Tolerance = 1,
-    num_active_faults(FaultModelState) < Tolerance.        %% We can tolerate another failure.
+fault_allowed({call, _Mod, _Fun, _Args}, #fault_model_state{tolerance=Tolerance}=FaultModelState) ->
+    %% We can tolerate another failure.
+    num_active_faults(FaultModelState) < Tolerance.        
 
 %% Should we do node debugging?
 fault_debug(Line, Args) ->
