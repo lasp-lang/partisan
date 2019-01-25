@@ -202,13 +202,13 @@ end_send_omission(SourceNode, DestinationNode0) ->
                             send_omissions,
                             receive_omissions}).
 
-fault_commands(JoinedNodes) ->
+fault_commands(_JoinedNodes) ->
     [
      %% Crashes.
-     {call, ?MODULE, crash, [node_name(), JoinedNodes]},
+     %% {call, ?MODULE, crash, [node_name(), JoinedNodes]},
 
      %% Failures: fail-stop.
-     {call, ?MODULE, stop, [node_name(), JoinedNodes]},
+     %% {call, ?MODULE, stop, [node_name(), JoinedNodes]},
 
      %% Send omission failures.
      {call, ?MODULE, begin_send_omission, [node_name(), node_name()]},
