@@ -394,8 +394,11 @@ sync_join_cluster(Node, [JoinedNode|_]=JoinedNodes) ->
         false ->
             debug("sync_join_cluster: joining node ~p to node ~p", [Node, JoinedNode]),
 
+            %% Get my information.
+            Myself = rpc:call(?NAME(Node), partisan_peer_service_manager, myself, []),
+
             %% Issue join.
-            ok = rpc:call(?NAME(JoinedNode), ?MANAGER, join, [Node]),
+            ok = rpc:call(?NAME(JoinedNode), ?MANAGER, join, [Myself]),
 
             %% Wait until all nodes agree about membership.
             ok = wait_until_nodes_agree_on_membership(JoinedNodes ++ [Node]),
@@ -407,7 +410,7 @@ sync_join_cluster(Node, [JoinedNode|_]=JoinedNodes) ->
 
     Result.
 
-sync_leave_cluster(Node, JoinedNodes) ->
+sync_leave_cluster(Node, [JoinedNode|_]=JoinedNodes) ->
     command_preamble(Node, [sync_leave_cluster, JoinedNodes]),
 
     Result = case enough_nodes_connected_to_issue_remove(JoinedNodes) of
@@ -416,8 +419,11 @@ sync_leave_cluster(Node, JoinedNodes) ->
         true ->
             debug("sync_leave_cluster: leaving node ~p from cluster with members ~p", [Node, JoinedNodes]),
 
+            %% Get my information.
+            Myself = rpc:call(?NAME(Node), partisan_peer_service_manager, myself, []),
+
             %% Issue remove.
-            rpc:call(?NAME(Node), ?MANAGER, leave, []),
+            ok = rpc:call(?NAME(JoinedNode), ?MANAGER, leave, [Myself]),
 
             %% Wait until all nodes agree about membership.
             ok = wait_until_nodes_agree_on_membership(JoinedNodes -- [Node]),
@@ -646,7 +652,7 @@ wait_until_nodes_agree_on_membership(Nodes) ->
             true ->
                 debug("node ~p agrees on membership: ~p", 
                       [Node, SortedMembers]),
-                ok;
+                true;
             false ->
                 debug("node ~p disagrees on membership: ~p != ~p", 
                       [Node, SortedMembers, SortedNames]),
