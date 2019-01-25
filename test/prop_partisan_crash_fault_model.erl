@@ -206,7 +206,7 @@ end_send_omission(SourceNode, DestinationNode0) ->
 fault_commands(_JoinedNodes) ->
     [
      %% Crashes.
-     %% {call, ?MODULE, crash, [node_name(), JoinedNodes]},
+     {call, ?MODULE, crash, [node_name(), JoinedNodes]},
 
      %% Failures: fail-stop.
      %% {call, ?MODULE, stop, [node_name(), JoinedNodes]},
