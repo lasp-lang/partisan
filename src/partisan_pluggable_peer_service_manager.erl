@@ -731,6 +731,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                     end,
                     dict:fold(PostFoldFun, ok, PostInterpositionFuns),
 
+                    lager:info("~p: Sending message ~p with clock: ~p", [node(), Message, MessageClock]),
                     lager:info("~p: Message after send interposition is: ~p", [node(), Message]),
 
                     %% Acknowledgements.
@@ -827,6 +828,7 @@ handle_info(retransmit, #state{connections=Connections}=State) ->
                         Connections)
     end,
     {ok, Outstanding} = partisan_acknowledgement_backend:outstanding(),
+    lager:info("~p outstanding messages are: ~p", [node(), Outstanding]),
     lists:foreach(RetransmitFun, Outstanding),
     schedule_retransmit(),
     {noreply, State};
