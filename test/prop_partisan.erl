@@ -69,7 +69,7 @@
 %% Debug.
 -define(DEBUG, true).
 -define(INITIAL_STATE_DEBUG, false).
--define(PRECONDITION_DEBUG, false).
+-define(PRECONDITION_DEBUG, true).
 -define(POSTCONDITION_DEBUG, false).
 
 %% Partisan connection and forwarding settings.
@@ -132,7 +132,8 @@ prop_parallel() ->
 -record(state, {joined_nodes :: [node()],
                 nodes :: [node()],
                 node_state :: {dict:dict(), dict:dict()}, 
-                fault_model_state :: term()}).
+                fault_model_state :: term(),
+                counter :: non_neg_integer()}).
 
 %% Initial model value at system start. Should be deterministic.
 initial_state() -> 
@@ -156,7 +157,11 @@ initial_state() ->
     %% Debug message.
     initial_state_debug("initial_state: nodes ~p joined_nodes ~p", [Nodes, JoinedNodes]),
 
-    #state{joined_nodes=JoinedNodes,
+    %% Initialize command counter at 0.
+    Counter = 0,
+
+    #state{counter=Counter,
+           joined_nodes=JoinedNodes,
            fault_model_state=FaultModelState,
            nodes=Nodes,
            node_state=NodeState}.
@@ -237,8 +242,9 @@ precondition(#state{joined_nodes=JoinedNodes}, {call, _Mod, sync_leave_cluster, 
             precondition_debug("precondition sync_leave_cluster: no nodes left to remove.", []),
             false
     end;
-precondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes}, {call, Mod, Fun, [Node|_]=Args}=Call) -> 
-    precondition_debug("precondition fired for node function: ~p", [Fun]),
+precondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes, counter=Counter}, 
+             {call, Mod, Fun, [Node|_]=Args}=Call) -> 
+    precondition_debug("precondition fired for counter ~p and node function: ~p", [Counter, Fun]),
 
     case lists:member(Fun, node_functions()) of
         true ->
@@ -260,37 +266,37 @@ precondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joi
 
 %% Assuming the postcondition for a call was true, update the model
 %% accordingly for the test to proceed.
-next_state(State, _Res, {call, ?MODULE, sync_join_cluster, [Node, JoinedNodes]}) -> 
+next_state(#state{counter=Counter}=State, _Res, {call, ?MODULE, sync_join_cluster, [Node, JoinedNodes]}) -> 
     case is_joined(Node, JoinedNodes) of
         true ->
             %% no-op for the join
-            State;
+            State#state{counter=Counter+1};
         false ->
             %% add to the joined list.
-            State#state{joined_nodes=JoinedNodes ++ [Node]}
+            State#state{joined_nodes=JoinedNodes ++ [Node], counter=Counter+1}
     end;
-next_state(#state{joined_nodes=JoinedNodes}=State, _Res, {call, ?MODULE, sync_leave_cluster, [Node, JoinedNodes]}) -> 
+next_state(#state{counter=Counter, joined_nodes=JoinedNodes}=State, _Res, {call, ?MODULE, sync_leave_cluster, [Node, JoinedNodes]}) -> 
     case enough_nodes_connected_to_issue_remove(JoinedNodes) of
         true ->
             %% removed from the list.
-            State#state{joined_nodes=JoinedNodes -- [Node]};
+            State#state{joined_nodes=JoinedNodes -- [Node], counter=Counter+1};
         false ->
             %% no-op for the leave
-            State
+            State#state{counter=Counter+1}
     end;
-next_state(#state{fault_model_state=FaultModelState0, node_state=NodeState0, joined_nodes=JoinedNodes}=State, Res, {call, _Mod, Fun, _Args}=Call) -> 
+next_state(#state{counter=Counter, fault_model_state=FaultModelState0, node_state=NodeState0, joined_nodes=JoinedNodes}=State, Res, {call, _Mod, Fun, _Args}=Call) -> 
     case lists:member(Fun, node_functions()) of
         true ->
             NodeState = node_next_state(NodeState0, Res, Call),
-            State#state{node_state=NodeState};
+            State#state{node_state=NodeState, counter=Counter+1};
         false ->
             case lists:member(Fun, fault_functions(JoinedNodes)) of 
                 true ->
                     FaultModelState = fault_next_state(FaultModelState0, Res, Call),
-                    State#state{fault_model_state=FaultModelState};
+                    State#state{fault_model_state=FaultModelState, counter=Counter+1};
                 false ->
                     debug("general next_state fired", []),
-                    State
+                    State#state{counter=Counter+1}
             end
     end.
 
