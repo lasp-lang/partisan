@@ -102,7 +102,7 @@ init_per_group(with_forward_interposition, Config) ->
 init_per_group(with_receive_interposition, Config) ->
     [{disable_fast_receive, true}] ++ Config;
 init_per_group(with_ack, Config) ->
-    [{forward_options, [{ack, true}]}] ++ Config;
+    [{disable_fast_forward, true}, {forward_options, [{ack, true}]}] ++ Config;
 init_per_group(with_tls, Config) ->
     TLSOpts = make_certs(Config),
     [{parallelism, 1}, {tls, true}] ++ TLSOpts ++ Config;
@@ -232,7 +232,8 @@ groups() ->
        gossip_test]},
 
      {with_ack, [],
-      [basic_test]},
+      [basic_test,
+       ack_test]},
 
      {with_causal_labels, [],
       [causal_test]},
@@ -552,6 +553,85 @@ receive_interposition_test(Config) ->
             ok
     after 
         1000 ->
+            ct:fail("Didn't receive message we should have!")
+    end,
+
+    %% Stop nodes.
+    ?SUPPORT:stop(Nodes),
+
+    ok.
+
+ack_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
+
+    %% Specify servers.
+    Servers = ?SUPPORT:node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
+
+    %% Start nodes.
+    Nodes = ?SUPPORT:start(ack_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Test on_down callback.
+    [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
+
+    %% Set message filter.
+    InterpositionFun = 
+        fun({forward_message, N, M}) ->
+            case N of
+                Node4 ->
+                    undefined;
+                _ ->
+                    M
+            end;
+            ({_, _, M}) -> 
+                M
+    end,
+    ok = rpc:call(Node3, Manager, add_interposition_fun, [Node4, InterpositionFun]),
+    
+    %% Spawn receiver process.
+    Message1 = message1,
+
+    Self = self(),
+
+    ReceiverFun = fun() ->
+        receive 
+            X ->
+                Self ! X
+        end
+    end,
+    Pid = rpc:call(Node4, erlang, spawn, [ReceiverFun]),
+    true = rpc:call(Node4, erlang, register, [receiver, Pid]),
+
+    %% Send message.
+    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message1, [{ack, true}]]),
+
+    %% Wait to receive message.
+    receive
+        Message1 ->
+            ct:fail("Received message we shouldn't have!")
+    after 
+        1000 ->
+            ok
+    end,
+
+    %% Remove filter.
+    ok = rpc:call(Node3, Manager, remove_interposition_fun, [Node4]),
+
+    %% Wait to receive message.
+    receive
+        Message1 ->
+            ok
+    after 
+        2000 ->
             ct:fail("Didn't receive message we should have!")
     end,
 
