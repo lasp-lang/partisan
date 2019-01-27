@@ -10,7 +10,6 @@ script:
   - make test
   - make xref
   - make dialyzer
-  - rm -rf priv/logs/*; clear; pkill -9 beam.smp; bin/counterexample-find.sh
 notifications:
   email: christopher.meiklejohn@gmail.com
   slack: lasp-lang:hiPRNnbUa3zdGrrXZfGRAF7D
