@@ -116,6 +116,10 @@ connections() ->
     gen_server:call(?MODULE, connections, infinity).
 
 %% @doc Return myself.
+mynode() ->
+    partisan_peer_service_manager:mynode().
+
+%% @doc Return myself.
 myself() ->
     partisan_peer_service_manager:myself().
 
@@ -663,7 +667,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
             {noreply, State};
         Message ->
             %% Increment the clock.
-            VClock = partisan_vclock:increment(myself(), VClock0),
+            VClock = partisan_vclock:increment(mynode(), VClock0),
 
             %% Are we using causality?
             CausalLabel = proplists:get_value(causal_label, Options, undefined),
