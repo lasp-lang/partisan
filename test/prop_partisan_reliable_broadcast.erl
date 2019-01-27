@@ -70,6 +70,10 @@ node_commands() ->
 
     AssertionCommands ++ CoreCommands.
 
+%% Assertion commands.
+node_assertion_functions() ->
+    [check_mailbox].
+
 %% What should the initial node state be.
 node_initial_state() ->
     node_debug("initializing", []),

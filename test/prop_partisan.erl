@@ -40,7 +40,8 @@
          node_next_state/3,
          node_begin_property/0,
          node_begin_case/0,
-         node_end_case/0]).
+         node_end_case/0,
+         node_assertion_functions/0]).
 
 %% Fault model.
 -define(FAULT_MODEL, prop_partisan_crash_fault_model).
@@ -250,10 +251,16 @@ precondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joi
 
     case lists:member(Fun, node_functions()) of
         true ->
-            ClusterCondition = enough_nodes_connected(JoinedNodes) andalso is_joined(Node, JoinedNodes),
-            NodePrecondition = node_precondition(NodeState, Call),
-            FaultPrecondition = not fault_is_crashed(FaultModelState, Node),
-            ClusterCondition andalso NodePrecondition andalso FaultPrecondition;
+            case Counter < ?ALLOWED_ASSERTION_COUNTER andalso lists:member(Fun, node_assertion_functions()) of 
+                true ->
+                    precondition_debug("=> assertion not allowed at current time: ~p < ~p", [Counter, ?ALLOWED_ASSERTION_COUNTER]),
+                    false;
+                false ->
+                    ClusterCondition = enough_nodes_connected(JoinedNodes) andalso is_joined(Node, JoinedNodes),
+                    NodePrecondition = node_precondition(NodeState, Call),
+                    FaultPrecondition = not fault_is_crashed(FaultModelState, Node),
+                    ClusterCondition andalso NodePrecondition andalso FaultPrecondition
+            end;
         false ->
             case lists:member(Fun, fault_functions(JoinedNodes)) of 
                 true ->
