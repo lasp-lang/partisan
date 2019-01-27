@@ -836,18 +836,42 @@ handle_info(periodic, #state{pending=Pending,
                           membership_strategy_state=MembershipStrategyState,
                           connections=Connections}};
 
-handle_info(retransmit, State) ->
+handle_info(retransmit, #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
     RetransmitFun = fun({_, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, Message, _Options}}) ->
         Mynode = partisan_peer_service_manager:mynode(),
         lager:info("~p no acknowledgement yet, restranmitting message ~p with clock ~p to ~p", [Mynode, Message, Clock, Name]),
 
+        %% Fire pre-interposition functions.
+        PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
+            lager:info("firing preinterposition fun for original message: ~p", [Message]),
+            PreInterpositionFun({forward_message, Name, Message}),
+            ok
+        end,
+        dict:fold(PreFoldFun, ok, PreInterpositionFuns),
+
         %% Schedule message for redelivery.
         gen_server:cast(?MODULE, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, Message, []})
     end,
+
     {ok, Outstanding} = partisan_acknowledgement_backend:outstanding(),
     lager:info("~p outstanding messages are: ~p", [node(), Outstanding]),
-    lists:foreach(RetransmitFun, Outstanding),
+
+    case partisan_config:get(replaying, false) of 
+        false ->
+            %% Fire all pre-interposition functions, and then deliver, preserving serial order of messages.
+            lists:foreach(RetransmitFun, Outstanding);
+        true ->
+            %% Allow the system to proceed, and the message will be delivered once pre-interposition is done.
+            lists:foreach(fun(OutstandingMessage) -> 
+                spawn_link(fun() -> 
+                    RetransmitFun(OutstandingMessage) 
+                end) 
+            end, Outstanding)
+    end,
+
+    %% Reschedule retransmission.
     schedule_retransmit(),
+
     {noreply, State};
 
 handle_info(connections, #state{pending=Pending,
