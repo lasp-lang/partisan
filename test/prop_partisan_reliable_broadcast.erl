@@ -85,7 +85,9 @@ node_functions() ->
 node_postcondition(_State, {call, ?MODULE, broadcast, [_Node, _Message]}, ok) ->
     true;
 node_postcondition(#state{sent=Sent}, {call, ?MODULE, check_mailbox, [Node]}, {ok, Messages}) ->
-    node_debug("verifying mailbox at node ~p: sent: ~p, received: ~p", [Node, Sent, Messages]),
+    node_debug("verifying mailbox at node ~p: ", [Node]),
+    node_debug(" => sent: ~p", [Sent]),
+    node_debug(" => received: ~p", [Messages]),
 
     %% Figure out which messages we have.
     Result = lists:all(fun(M) -> lists:member(M, Messages) end, Sent),
