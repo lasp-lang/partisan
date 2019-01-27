@@ -59,10 +59,12 @@
 -define(CLUSTER_NODES, true).
 -define(MANAGER, partisan_pluggable_peer_service_manager).
 
--define(PERFORM_LEAVES_AND_JOINS, false).           %% Do we allow cluster transitions during test execution:
-                                                    %% EXTREMELY slow, given a single join can take ~30 seconds.
+%% Do we allow cluster transitions during test execution:
+%% EXTREMELY slow, given a single join can take ~30 seconds.
+-define(PERFORM_LEAVES_AND_JOINS, false).           
 
--define(PERFORM_FAULT_INJECTION, true).             %% Do we perform fault-injection?                                            
+%% Do we perform fault-injection?                                            
+-define(PERFORM_FAULT_INJECTION, false).
 
 %% Debug.
 -define(DEBUG, true).
