@@ -651,6 +651,37 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
     end,
     Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
 
+    %% Increment the clock.
+    VClock = partisan_vclock:increment(mynode(), VClock0),
+
+    %% Are we using causality?
+    CausalLabel = proplists:get_value(causal_label, Options, undefined),
+
+    %% Use local information for message unless it's a causal message.
+    {MessageClock, FullMessage} = case CausalLabel of
+        undefined ->
+            %% Generate a message clock or use the provided clock.
+            LocalClock = case Clock of
+                undefined ->
+                    {undefined, VClock};
+                Clock ->
+                    Clock
+            end,
+
+            {LocalClock,
+                {forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options}};
+        CausalLabel ->
+            %% Get causality assignment and message buffer.
+            {ok, LocalClock0, CausalMessage} = partisan_causality_backend:emit(CausalLabel, Name, ServerRef, Message),
+
+            %% Wrap the clock wih a scope.
+            %% TODO: Maybe do this wrapping inside of the causality backend.
+            LocalClock = {CausalLabel, LocalClock0},
+
+            {LocalClock,
+                {forward_message, Name, Channel, LocalClock, PartitionKey, ServerRef, CausalMessage, Options}}
+    end,
+
     case Message of
         undefined ->
             %% Fire post-interposition functions.
@@ -664,39 +695,8 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
 
             gen_server:reply(From, ok),
 
-            {noreply, State};
+            {noreply, State#state{vclock=VClock}};
         Message ->
-            %% Increment the clock.
-            VClock = partisan_vclock:increment(mynode(), VClock0),
-
-            %% Are we using causality?
-            CausalLabel = proplists:get_value(causal_label, Options, undefined),
-
-            %% Use local information for message unless it's a causal message.
-            {MessageClock, FullMessage} = case CausalLabel of
-                undefined ->
-                    %% Generate a message clock or use the provided clock.
-                    LocalClock = case Clock of
-                        undefined ->
-                            {undefined, VClock};
-                        Clock ->
-                            Clock
-                    end,
-
-                    {LocalClock,
-                        {forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options}};
-                CausalLabel ->
-                    %% Get causality assignment and message buffer.
-                    {ok, LocalClock0, CausalMessage} = partisan_causality_backend:emit(CausalLabel, Name, ServerRef, Message),
-
-                    %% Wrap the clock wih a scope.
-                    %% TODO: Maybe do this wrapping inside of the causality backend.
-                    LocalClock = {CausalLabel, LocalClock0},
-
-                    {LocalClock,
-                        {forward_message, Name, Channel, LocalClock, PartitionKey, ServerRef, CausalMessage, Options}}
-            end,
-
             %% Store for reliability, if necessary.
             Result = case proplists:get_value(ack, Options, false) of
                 false ->
