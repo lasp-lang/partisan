@@ -721,8 +721,8 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                                     Connections);
                 true ->
                     %% Tracing.
-                    WrappedOriginalMessage = {forward_message, myself(), MessageClock, ServerRef, OriginalMessage},
-                    WrappedMessage = {forward_message, myself(), MessageClock, ServerRef, Message},
+                    WrappedOriginalMessage = {forward_message, mynode(), MessageClock, ServerRef, OriginalMessage},
+                    WrappedMessage = {forward_message, mynode(), MessageClock, ServerRef, Message},
 
                     %% Fire post-interposition functions -- trace after wrapping!
                     PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
