@@ -812,7 +812,10 @@ handle_info(periodic, #state{pending=Pending,
                           connections=Connections}};
 
 handle_info(retransmit, #state{connections=Connections}=State) ->
-    RetransmitFun = fun({_, {forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Message, _Options}}) ->
+    RetransmitFun = fun({_, {forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, _Options}}) ->
+        Mynode = partisan_peer_service_manager:mynode(),
+        lager:info("~p restranmitting message ~p with clock ~p to ~p", [Mynode, Message, Clock, Name]),
+
         do_send_message(Name,
                         Channel,
                         PartitionKey,
@@ -1152,6 +1155,8 @@ handle_message({forward_message, ServerRef, Message},
 handle_message({ack, MessageClock}, 
                From,
                State) ->
+    Mynode = partisan_peer_service_manager:mynode(),
+    lager:info("~p acknowledgement received for message ~p", [Mynode, MessageClock]),
     partisan_acknowledgement_backend:ack(MessageClock),
     gen_server:reply(From, ok),
     {noreply, State}.
