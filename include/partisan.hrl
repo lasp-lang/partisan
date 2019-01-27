@@ -37,7 +37,7 @@
 -define(DEFAULT_ORCHESTRATION_STRATEGY, undefined).
 
 %% Test variables.
--define(TEST_NUM_NODES, 5).
+-define(TEST_NUM_NODES, 4).
 
 -define(SUPPORT, partisan_support).
 
