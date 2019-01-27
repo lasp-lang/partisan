@@ -684,6 +684,16 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
 
     case Message of
         undefined ->
+            %% Store for reliability, if necessary.
+            case proplists:get_value(ack, Options, false) of
+                false ->
+                    ok;
+                true ->
+                    %% Acknowledgements.
+                    RescheduleableMessage = {forward_message, From, Name, Channel, MessageClock, PartitionKey, ServerRef, OriginalMessage, Options},
+                    partisan_acknowledgement_backend:store(MessageClock, RescheduleableMessage)
+            end,
+
             %% Fire post-interposition functions.
             PostFoldFunUndefined = fun(_Name, PostInterpositionFun, ok) ->
                 PostInterpositionFun({forward_message, Name, OriginalMessage}, {forward_message, Name, Message}),
@@ -693,7 +703,12 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
 
             lager:info("~p: Message after send interposition is: ~p", [node(), Message]),
 
-            gen_server:reply(From, ok),
+            case From of 
+                undefined ->
+                    ok;
+                _ ->
+                    gen_server:reply(From, ok)
+            end,
 
             {noreply, State#state{vclock=VClock}};
         Message ->
@@ -745,7 +760,12 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                                     Connections)
             end,
 
-            gen_server:reply(From, Result),
+            case From of 
+                undefined ->
+                    ok;
+                _ ->
+                    gen_server:reply(From, Result)
+            end,
 
             {noreply, State#state{vclock=VClock}}
     end;
@@ -816,16 +836,13 @@ handle_info(periodic, #state{pending=Pending,
                           membership_strategy_state=MembershipStrategyState,
                           connections=Connections}};
 
-handle_info(retransmit, #state{connections=Connections}=State) ->
-    RetransmitFun = fun({_, {forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, _Options}}) ->
+handle_info(retransmit, State) ->
+    RetransmitFun = fun({_, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, Message, _Options}}) ->
         Mynode = partisan_peer_service_manager:mynode(),
-        lager:info("~p restranmitting message ~p with clock ~p to ~p", [Mynode, Message, Clock, Name]),
+        lager:info("~p no acknowledgement yet, restranmitting message ~p with clock ~p to ~p", [Mynode, Message, Clock, Name]),
 
-        do_send_message(Name,
-                        Channel,
-                        PartitionKey,
-                        {forward_message, ServerRef, Message},
-                        Connections)
+        %% Schedule message for redelivery.
+        gen_server:cast(?MODULE, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, Message, []})
     end,
     {ok, Outstanding} = partisan_acknowledgement_backend:outstanding(),
     lager:info("~p outstanding messages are: ~p", [node(), Outstanding]),
