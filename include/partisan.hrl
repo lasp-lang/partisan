@@ -38,6 +38,7 @@
 
 %% Test variables.
 -define(TEST_NUM_NODES, 4).
+-define(ALLOWED_BEGIN_FAULT_COUNTER, 5).
 
 -define(SUPPORT, partisan_support).
 

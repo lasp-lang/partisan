@@ -52,7 +52,9 @@
          fault_precondition/2,
          fault_postcondition/3,
          fault_next_state/3,
-         fault_is_crashed/2]).
+         fault_is_crashed/2,
+         fault_begin_functions/0,
+         fault_end_functions/0]).
 
 %% General test configuration
 -define(COMMAND_MULTIPLE, 10).
@@ -255,9 +257,15 @@ precondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joi
         false ->
             case lists:member(Fun, fault_functions(JoinedNodes)) of 
                 true ->
-                    ClusterCondition = enough_nodes_connected(JoinedNodes) andalso is_joined(Node, JoinedNodes),
-                    FaultModelPrecondition = fault_precondition(FaultModelState, Call),
-                    ClusterCondition andalso FaultModelPrecondition;
+                    case Counter > ?ALLOWED_BEGIN_FAULT_COUNTER andalso lists:member(Fun, fault_begin_functions()) of 
+                        true ->
+                            precondition_debug("=> fault not allowed at current time: ~p > ~p", [Counter, ?ALLOWED_BEGIN_FAULT_COUNTER]),
+                            false;
+                        false ->
+                            ClusterCondition = enough_nodes_connected(JoinedNodes) andalso is_joined(Node, JoinedNodes),
+                            FaultModelPrecondition = fault_precondition(FaultModelState, Call),
+                            ClusterCondition andalso FaultModelPrecondition
+                    end;
                 false ->
                     debug("general precondition fired for mod ~p and fun ~p and args ~p", [Mod, Fun, Args]),
                     false

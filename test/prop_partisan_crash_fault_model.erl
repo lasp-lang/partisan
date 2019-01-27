@@ -225,6 +225,14 @@ fault_commands(JoinedNodes) ->
 fault_functions(JoinedNodes) ->
     lists:map(fun({call, _Mod, Fun, _Args}) -> Fun end, fault_commands(JoinedNodes)).
 
+%% Commands to induce failures.
+fault_begin_functions() ->
+    [begin_receive_omission, begin_send_omission, crash, stop].
+
+%% Commands to resolve failures.
+fault_end_functions() ->
+    [end_send_omission, end_receive_omission].
+
 %% Initialize failure state.
 fault_initial_state() ->
     Tolerance = case os:getenv("FAULT_TOLERANCE") of 
