@@ -97,7 +97,7 @@ handle_cast({broadcast, ServerRef, Message}, #state{membership=Membership}=State
 
     lists:foreach(fun(N) ->
         lager:info("~p: sending broadcast message to node ~p: ~p", [node(), N, Message]),
-        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {broadcast, Id, ServerRef, Message}, [{ack, true}])
+        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {broadcast, Id, ServerRef, Message}, [])
     end, membership(Membership) -- [MyNode]),
 
     {noreply, State};
