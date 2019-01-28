@@ -163,30 +163,42 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
                 %% Destructure message.
                 {TracingNode, OriginNode, InterpositionType, MessagePayload, RewrittenMessagePayload} = Message,
 
-                %% Format trace accordingly.
-                case MessagePayload =:= RewrittenMessagePayload of 
-                    true ->
-                        case InterpositionType of
-                            receive_message ->
-                                replay_debug("~p <- ~p: ~p", [TracingNode, OriginNode, MessagePayload]);
-                            forward_message ->
-                                replay_debug("~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload])
-                        end;
-                    false ->
-                        case RewrittenMessagePayload of 
-                            undefined ->
+                case MessagePayload of
+                    {protocol, _} ->
+                        %% Ignore protocol messages when printing the trace.
+                        ok;
+                    {ping, _, _, _} ->
+                        %% ignore pong messages when printing the trace.
+                        ok;
+                    {pong, _, _, _} ->
+                        %% ignore pong messages when printing the trace.
+                        ok;
+                    _ ->
+                        %% Format trace accordingly.
+                        case MessagePayload =:= RewrittenMessagePayload of 
+                            true ->
                                 case InterpositionType of
                                     receive_message ->
-                                        replay_debug("~p <- ~p: DROPPED ~p", [TracingNode, OriginNode, MessagePayload]);
+                                        replay_debug("~p <- ~p: ~p", [TracingNode, OriginNode, MessagePayload]);
                                     forward_message ->
-                                        replay_debug("~p => ~p: DROPPED ~p", [TracingNode, OriginNode, MessagePayload])
+                                        replay_debug("~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload])
                                 end;
-                            _ ->
-                                case InterpositionType of
-                                    receive_message ->
-                                        replay_debug("~p <- ~p: REWROTE ~p to ~p", [TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload]);
-                                    forward_message ->
-                                        replay_debug("~p => ~p: REWROTE ~p to ~p", [TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload])
+                            false ->
+                                case RewrittenMessagePayload of 
+                                    undefined ->
+                                        case InterpositionType of
+                                            receive_message ->
+                                                replay_debug("~p <- ~p: DROPPED ~p", [TracingNode, OriginNode, MessagePayload]);
+                                            forward_message ->
+                                                replay_debug("~p => ~p: DROPPED ~p", [TracingNode, OriginNode, MessagePayload])
+                                        end;
+                                    _ ->
+                                        case InterpositionType of
+                                            receive_message ->
+                                                replay_debug("~p <- ~p: REWROTE ~p to ~p", [TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload]);
+                                            forward_message ->
+                                                replay_debug("~p => ~p: REWROTE ~p to ~p", [TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload])
+                                        end
                                 end
                         end
                 end;
