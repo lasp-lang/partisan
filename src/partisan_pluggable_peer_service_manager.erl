@@ -1,7 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2014 Helium Systems, Inc.  All Rights Reserved.
-%% Copyright (c) 2016 Christopher Meiklejohn.  All Rights Reserved.
+%% Copyright (c) 2019 Christopher Meiklejohn.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -522,13 +521,9 @@ handle_call({sync_join, #{name := Name} = Node},
     end;
 
 handle_call({send_message, Name, Channel, Message}, _From,
-            #state{connections=Connections}=State) ->
-    Result = do_send_message(Name, 
-                             Channel, 
-                             ?DEFAULT_PARTITION_KEY, 
-                             Message, 
-                             Connections),
-    {reply, Result, State};
+            #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
+    schedule_message_delivery(Name, Message, Channel, ?DEFAULT_PARTITION_KEY, PreInterpositionFuns),
+    {reply, ok, State};
 
 handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options}, 
             From, 
@@ -643,6 +638,7 @@ handle_cast({receive_message, From, Peer, OriginalMessage},
 
 handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options},
             #state{interposition_funs=InterpositionFuns, 
+                   pre_interposition_funs=PreInterpositionFuns, 
                    post_interposition_funs=PostInterpositionFuns, 
                    connections=Connections, 
                    vclock=VClock0}=State) ->
@@ -660,6 +656,9 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
 
     %% Are we using causality?
     CausalLabel = proplists:get_value(causal_label, Options, undefined),
+
+    %% Get forwarding options.
+    ForwardOptions = partisan_config:get(forward_options, []),
 
     %% Use local information for message unless it's a causal message.
     {MessageClock, FullMessage} = case CausalLabel of
@@ -747,7 +746,9 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                                     Channel,
                                     PartitionKey,
                                     WrappedMessage,
-                                    Connections);
+                                    Connections,
+                                    ForwardOptions,
+                                    PreInterpositionFuns);
                 true ->
                     %% Tracing.
                     WrappedOriginalMessage = {forward_message, mynode(), MessageClock, ServerRef, OriginalMessage},
@@ -772,7 +773,9 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                                     Channel,
                                     PartitionKey,
                                     WrappedMessage,
-                                    Connections)
+                                    Connections,
+                                    ForwardOptions,
+                                    PreInterpositionFuns)
             end,
 
             case From of 
@@ -801,7 +804,8 @@ handle_info(tree_refresh, #state{}=State) ->
 
 handle_info(distance, #state{pending=Pending,
                              membership=Membership,
-                             connections=Connections0}=State) ->
+                             connections=Connections0,
+                             pre_interposition_funs=PreInterpositionFuns}=State) ->
     %% Establish any new connections.
     Connections = establish_connections(Pending,
                                         Membership,
@@ -814,12 +818,8 @@ handle_info(distance, #state{pending=Pending,
     SourceNode = partisan_peer_service_manager:myself(),
 
     lists:foreach(fun(Peer) ->
-                do_send_message(Peer,
-                                ?MEMBERSHIP_PROTOCOL_CHANNEL,
-                                ?DEFAULT_PARTITION_KEY,
-                                {ping, SourceNode, Peer, SourceTime},
-                                Connections)
-        end, Membership),
+        schedule_message_delivery(Peer, {ping, SourceNode, Peer, SourceTime}, ?MEMBERSHIP_PROTOCOL_CHANNEL, ?DEFAULT_PARTITION_KEY, PreInterpositionFuns)
+    end, Membership),
 
     schedule_distance(),
 
@@ -828,6 +828,7 @@ handle_info(distance, #state{pending=Pending,
 handle_info(periodic, #state{pending=Pending,
                              membership_strategy=MembershipStrategy,
                              membership_strategy_state=MembershipStrategyState0,
+                             pre_interposition_funs=PreInterpositionFuns,
                              connections=Connections0}=State) ->
     {ok, Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:periodic(MembershipStrategyState0),
 
@@ -838,12 +839,8 @@ handle_info(periodic, #state{pending=Pending,
 
     %% Send outgoing messages.
     lists:foreach(fun({Peer, Message}) ->
-                do_send_message(Peer,
-                                ?MEMBERSHIP_PROTOCOL_CHANNEL,
-                                ?DEFAULT_PARTITION_KEY,
-                                Message,
-                                Connections)
-        end, OutgoingMessages),
+        schedule_message_delivery(Peer, Message, ?MEMBERSHIP_PROTOCOL_CHANNEL, ?DEFAULT_PARTITION_KEY, PreInterpositionFuns)
+    end, OutgoingMessages),
 
     schedule_periodic(),
 
@@ -936,7 +933,8 @@ handle_info({connected, Node, _Tag, RemoteState},
                       sync_joins=SyncJoins0,
                       connections=Connections,
                       membership_strategy=MembershipStrategy,
-                      membership_strategy_state=MembershipStrategyState0}=State0) ->
+                      membership_strategy_state=MembershipStrategyState0,
+                      pre_interposition_funs=PreInterpositionFuns}=State0) ->
     lager:debug("Node ~p connected!", [Node]),
 
     State = case lists:member(Node, Pending0) of
@@ -949,12 +947,8 @@ handle_info({connected, Node, _Tag, RemoteState},
 
             %% Gossip the new membership.
             lists:foreach(fun({Peer, Message}) ->
-                        do_send_message(Peer,
-                                        ?MEMBERSHIP_PROTOCOL_CHANNEL,
-                                        ?DEFAULT_PARTITION_KEY,
-                                        Message,
-                                        Connections)
-                end, OutgoingMessages),
+                schedule_message_delivery(Peer, Message, ?MEMBERSHIP_PROTOCOL_CHANNEL, ?DEFAULT_PARTITION_KEY, PreInterpositionFuns)
+            end, OutgoingMessages),
 
             %% Announce to the peer service.
             partisan_peer_service_events:update(Membership),
@@ -1064,18 +1058,15 @@ handle_message({ping, SourceNode, DestinationNode, SourceTime},
                From,
                #state{pending=Pending,
                       connections=Connections0,
-                      membership=Membership}=State) ->
+                      membership=Membership,
+                      pre_interposition_funs=PreInterpositionFuns}=State) ->
     %% Establish any new connections.
     Connections = establish_connections(Pending,
                                         Membership,
                                         Connections0),
 
     %% Send ping response.
-    do_send_message(SourceNode,
-                    ?MEMBERSHIP_PROTOCOL_CHANNEL,
-                    ?DEFAULT_PARTITION_KEY,
-                    {pong, SourceNode, DestinationNode, SourceTime},
-                    Connections),
+    schedule_message_delivery(SourceNode, {pong, SourceNode, DestinationNode, SourceTime}, ?MEMBERSHIP_PROTOCOL_CHANNEL, ?DEFAULT_PARTITION_KEY, PreInterpositionFuns),
 
     gen_server:reply(From, ok),
 
@@ -1109,7 +1100,8 @@ handle_message({protocol, ProtocolMessage},
                       connections=Connections0,
                       membership=Membership0,
                       membership_strategy=MembershipStrategy,
-                      membership_strategy_state=MembershipStrategyState0}=State) ->
+                      membership_strategy_state=MembershipStrategyState0,
+                      pre_interposition_funs=PreInterpositionFuns}=State) ->
     %% Process the protocol message.
     {ok, Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:handle_message(MembershipStrategyState0, ProtocolMessage),
 
@@ -1128,12 +1120,8 @@ handle_message({protocol, ProtocolMessage},
 
     %% Send outgoing messages.
     lists:foreach(fun({Peer, Message}) ->
-                do_send_message(Peer,
-                                ?MEMBERSHIP_PROTOCOL_CHANNEL,
-                                ?DEFAULT_PARTITION_KEY,
-                                Message,
-                                Connections)
-        end, OutgoingMessages),
+        schedule_message_delivery(Peer, Message, ?MEMBERSHIP_PROTOCOL_CHANNEL, ?DEFAULT_PARTITION_KEY, PreInterpositionFuns)
+    end, OutgoingMessages),
 
     case lists:member(partisan_peer_service_manager:myself(), Membership) of
         false ->
@@ -1153,13 +1141,9 @@ handle_message({protocol, ProtocolMessage},
 %% Causal and acknowledged messages.
 handle_message({forward_message, SourceNode, MessageClock, ServerRef, {causal, Label, _, _, _, _, _} = Message},
                From,
-               #state{connections=Connections}=State) ->
-    %% Try to acknowledge.
-    do_send_message(SourceNode,
-                    ?DEFAULT_CHANNEL,
-                    ?DEFAULT_PARTITION_KEY,
-                    {ack, MessageClock},
-                    Connections),
+               #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
+    %% Send message acknowledgement.
+    send_acknowledgement(SourceNode, MessageClock, PreInterpositionFuns),
 
     case partisan_causality_backend:is_causal_message(Message) of
         true ->
@@ -1176,13 +1160,9 @@ handle_message({forward_message, SourceNode, MessageClock, ServerRef, {causal, L
 %% Acknowledged messages.
 handle_message({forward_message, SourceNode, MessageClock, ServerRef, Message},
                From,
-               #state{connections=Connections}=State) ->
-    %% Try to acknowledge.
-    do_send_message(SourceNode,
-                    ?DEFAULT_CHANNEL,
-                    ?DEFAULT_PARTITION_KEY,
-                    {ack, MessageClock},
-                    Connections),
+               #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
+    %% Send message acknowledgement.
+    send_acknowledgement(SourceNode, MessageClock, PreInterpositionFuns),
 
     partisan_util:process_forward(ServerRef, Message),
 
@@ -1244,23 +1224,7 @@ schedule_connections() ->
     erlang:send_after(ConnectionInterval, ?MODULE, connections).
 
 %% @private
--spec do_send_message(Node :: atom() | node_spec(),
-                      Channel :: channel(),
-                      PartitionKey :: term(),
-                      Message :: term(),
-                      Connections :: partisan_peer_service_connections:t(),
-                      Options :: [{atom(), term()}]) -> ok.
-do_send_message(Node, Channel, PartitionKey, Message, Connections) ->
-    ForwardOptions = partisan_config:get(forward_options, []),
-    do_send_message(Node, Channel, PartitionKey, Message, Connections, ForwardOptions).
-
-%% @private
--spec do_send_message(Node :: atom() | node_spec(),
-                      Channel :: channel(),
-                      PartitionKey :: term(),
-                      Message :: term(),
-                      Connections :: partisan_peer_service_connections:t()) -> ok.
-do_send_message(Node, Channel, PartitionKey, Message, Connections, Options) ->
+do_send_message(Node, Channel, PartitionKey, Message, Connections, Options, PreInterpositionFuns) ->
     %% Find a connection for the remote node, if we have one.
     case partisan_peer_service_connections:find(Node, Connections) of
         {ok, []} ->
@@ -1279,7 +1243,7 @@ do_send_message(Node, Channel, PartitionKey, Message, Connections, Options) ->
                         true ->
                             lager:info("Performing tree forward from node ~p to node ~p and message: ~p", [node(), Node, Message]),
                             TTL = partisan_config:get(relay_ttl, ?RELAY_TTL),
-                            do_tree_forward(Node, Channel, PartitionKey, Message, Connections, Options, TTL);
+                            do_tree_forward(Node, Channel, PartitionKey, Message, Connections, Options, TTL, PreInterpositionFuns);
                         false ->
                             ok
                     end;
@@ -1306,7 +1270,7 @@ do_send_message(Node, Channel, PartitionKey, Message, Connections, Options) ->
                         true ->
                             lager:info("Performing tree forward from node ~p to node ~p and message: ~p", [node(), Node, Message]),
                             TTL = partisan_config:get(relay_ttl, ?RELAY_TTL),
-                            do_tree_forward(Node, Channel, PartitionKey, Message, Connections, Options, TTL);
+                            do_tree_forward(Node, Channel, PartitionKey, Message, Connections, Options, TTL, PreInterpositionFuns);
                         false ->
                             ok
                     end;
@@ -1345,7 +1309,8 @@ internal_leave(#{name := Name} = Node,
                #state{pending=Pending,
                       connections=Connections0,
                       membership_strategy=MembershipStrategy,
-                      membership_strategy_state=MembershipStrategyState0}=State) ->
+                      membership_strategy_state=MembershipStrategyState0,
+                      pre_interposition_funs=PreInterpositionFuns}=State) ->
     lager:info("Leaving node ~p at node ~p", [Node, partisan_peer_service_manager:mynode()]),
 
     {ok, Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:leave(MembershipStrategyState0, Node),
@@ -1357,12 +1322,8 @@ internal_leave(#{name := Name} = Node,
 
     %% Transmit outgoing messages.
     lists:foreach(fun({Peer, Message}) ->
-                do_send_message(Peer,
-                                ?MEMBERSHIP_PROTOCOL_CHANNEL,
-                                ?DEFAULT_PARTITION_KEY,
-                                Message,
-                                Connections)
-        end, OutgoingMessages),
+        schedule_message_delivery(Peer, Message, ?MEMBERSHIP_PROTOCOL_CHANNEL, ?DEFAULT_PARTITION_KEY, PreInterpositionFuns)
+    end, OutgoingMessages),
 
     case partisan_config:get(connect_disterl) of 
         true ->
@@ -1373,6 +1334,7 @@ internal_leave(#{name := Name} = Node,
     end,
 
     State#state{membership=Membership,
+                connections=Connections,
                 membership_strategy_state=MembershipStrategyState}.
 
 %% @private
@@ -1453,7 +1415,7 @@ avoid_rush() ->
     end.
 
 %% @private
-do_tree_forward(Node, Channel, PartitionKey, Message, Connections, Options, TTL) ->
+do_tree_forward(Node, Channel, PartitionKey, Message, _Connections, Options, TTL, PreInterpositionFuns) ->
     case partisan_config:get(tracing, ?TRACING) of
         true ->
             lager:info("Attempting to forward message ~p from ~p to ~p.", 
@@ -1490,8 +1452,8 @@ do_tree_forward(Node, Channel, PartitionKey, Message, Connections, Options, TTL)
         end,
 
         RelayMessage = {relay_message, Node, Message, TTL - 1},
-        do_send_message(N, Channel, PartitionKey, RelayMessage, Connections, proplists:delete(transitive, Options))
-        end, OutLinks),
+        schedule_message_delivery(N, RelayMessage, Channel, PartitionKey, proplists:delete(transitive, Options), PreInterpositionFuns)
+    end, OutLinks),
     ok.
 
 %% @private
@@ -1532,3 +1494,42 @@ schedule_tree_refresh() ->
         false ->
             ok
     end.
+
+%% @private
+schedule_message_delivery(Name, Message, Channel, PartitionKey, PreInterpositionFuns) ->
+    schedule_message_delivery(Name, Message, Channel, PartitionKey, [], PreInterpositionFuns).
+
+%% @private
+schedule_message_delivery(Name, Message, Channel, PartitionKey, Options, PreInterpositionFuns) ->
+    %% Run all interposition functions.
+    DeliveryFun = fun() ->
+        %% Fire pre-interposition functions.
+        PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
+            lager:info("firing forward_message preinterposition fun for message: ~p", [Message]),
+            PreInterpositionFun({forward_message, Name, Message}),
+            ok
+        end,
+        dict:fold(PreFoldFun, ok, PreInterpositionFuns),
+
+        %% Once pre-interposition returns, then schedule for delivery.
+        gen_server:cast(?MODULE, {forward_message, undefined, Name, Channel, undefined, PartitionKey, undefined, Message, Options})
+    end,
+
+    case partisan_config:get(replaying, false) of 
+        false ->
+            %% Fire all pre-interposition functions, and then deliver, preserving serial order of messages.
+            DeliveryFun();
+        true ->
+            %% Allow the system to proceed, and the message will be delivered once pre-interposition is done.
+            spawn_link(DeliveryFun)
+    end,
+
+    ok.
+
+%% @private
+send_acknowledgement(Name, MessageClock, PreInterpositionFuns) ->
+    %% Generate message.
+    Message = {ack, MessageClock},
+
+    %% Send on the default channel.
+    schedule_message_delivery(Name, Message, ?DEFAULT_CHANNEL, ?DEFAULT_PARTITION_KEY, PreInterpositionFuns).
