@@ -258,8 +258,8 @@ receive_message(Peer, {forward_message, ServerRef, Message} = FullMessage) ->
             % lager:info("in mesage receive at node ~p for peer ~p FAST RECEIVE NOT DISABLE", [node(), Peer]),
             partisan_util:process_forward(ServerRef, Message)
     end;
-receive_message(_Peer, Message) ->
-    gen_server:call(?MODULE, {receive_message, Message}, infinity).
+receive_message(Peer, Message) ->
+    gen_server:call(?MODULE, {receive_message, Peer, Message}, infinity).
 
 %% @doc Attempt to join a remote node.
 sync_join(Node) ->
