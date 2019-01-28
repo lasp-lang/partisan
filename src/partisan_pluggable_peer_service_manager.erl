@@ -662,7 +662,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
     CausalLabel = proplists:get_value(causal_label, Options, undefined),
 
     %% Use local information for message unless it's a causal message.
-    {MessageClock, FullMessage} = case CausalLabel of
+    {MessageClock, _FullMessage} = case CausalLabel of
         undefined ->
             %% Generate a message clock or use the provided clock.
             LocalClock = case Clock of
@@ -754,7 +754,8 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                     lager:info("~p: Message after send interposition is: ~p", [node(), Message]),
 
                     %% Acknowledgements.
-                    partisan_acknowledgement_backend:store(MessageClock, FullMessage),
+                    RescheduleableMessage = {forward_message, From, Name, Channel, MessageClock, PartitionKey, ServerRef, OriginalMessage, Options},
+                    partisan_acknowledgement_backend:store(MessageClock, RescheduleableMessage),
 
                     %% Send message along.
                     do_send_message(Name,
