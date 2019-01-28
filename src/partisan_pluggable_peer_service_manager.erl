@@ -615,8 +615,8 @@ handle_call(Msg, _From, State) ->
 handle_cast({receive_message, From, Peer, OriginalMessage}, 
             #state{interposition_funs=InterpositionFuns,
                    post_interposition_funs=PostInterpositionFuns} = State) ->
-    lager:info("~p: Inside the receive interposition, message from ~p at node ~p", [node(), Peer, node()]),
-    lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
+    %% lager:info("~p: Inside the receive interposition, message from ~p at node ~p", [node(), Peer, node()]),
+    %% lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
 
     %% Filter messages using interposition functions.
     FoldFun = fun(_Name, InterpositionFun, M) ->
@@ -646,8 +646,8 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                    post_interposition_funs=PostInterpositionFuns, 
                    connections=Connections, 
                    vclock=VClock0}=State) ->
-    lager:info("~p: Inside the send interposition, message ~p from ~p at node ~p", [node(), OriginalMessage, Name, node()]),
-    lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
+    %% lager:info("~p: Inside the send interposition, message ~p from ~p at node ~p", [node(), OriginalMessage, Name, node()]),
+    %% lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
 
     %% Filter messages using interposition functions.
     FoldFun = fun(_Name, InterpositionFun, M) ->
