@@ -858,7 +858,7 @@ handle_info(retransmit, #state{pre_interposition_funs=PreInterpositionFuns}=Stat
     end,
 
     {ok, Outstanding} = partisan_acknowledgement_backend:outstanding(),
-    lager:info("~p outstanding messages are: ~p", [node(), Outstanding]),
+    %% lager:info("~p outstanding messages are: ~p", [node(), Outstanding]),
 
     case partisan_config:get(replaying, false) of 
         false ->
