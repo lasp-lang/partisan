@@ -662,7 +662,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
     CausalLabel = proplists:get_value(causal_label, Options, undefined),
 
     %% Use local information for message unless it's a causal message.
-    {MessageClock, _FullMessage} = case CausalLabel of
+    {MessageClock, FullMessage} = case CausalLabel of
         undefined ->
             %% Generate a message clock or use the provided clock.
             LocalClock = case Clock of
@@ -672,18 +672,28 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                     Clock
             end,
 
-            {LocalClock,
-                {forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options}};
+            {LocalClock, Message};
         CausalLabel ->
-            %% Get causality assignment and message buffer.
-            {ok, LocalClock0, CausalMessage} = partisan_causality_backend:emit(CausalLabel, Name, ServerRef, Message),
+            case Clock of 
+                %% First time through.
+                undefined ->
+                    %% We don't have a clock yet, get one using the causality backend.
+                    {ok, LocalClock0, CausalMessage} = partisan_causality_backend:emit(CausalLabel, Name, ServerRef, Message),
 
-            %% Wrap the clock wih a scope.
-            %% TODO: Maybe do this wrapping inside of the causality backend.
-            LocalClock = {CausalLabel, LocalClock0},
+                    %% Wrap the clock wih a scope.
+                    %% TODO: Maybe do this wrapping inside of the causality backend.
+                    LocalClock = {CausalLabel, LocalClock0},
 
-            {LocalClock,
-                {forward_message, Name, Channel, LocalClock, PartitionKey, ServerRef, CausalMessage, Options}}
+                    %% Return clock and wrapped message.
+                    {LocalClock, CausalMessage};
+                %% Retransmission.
+                _ ->
+                    %% Get the clock and message we used last time.
+                    {ok, LocalClock, CausalMessage} = partisan_causality_backend:reemit(CausalLabel, Clock),
+
+                    %% Return clock and wrapped message.
+                    {LocalClock, CausalMessage}
+            end
     end,
 
     case Message of
@@ -699,13 +709,13 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
             end,
 
             %% Fire post-interposition functions.
-            PostFoldFunUndefined = fun(_Name, PostInterpositionFun, ok) ->
-                PostInterpositionFun({forward_message, Name, OriginalMessage}, {forward_message, Name, Message}),
+            PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
+                PostInterpositionFun({forward_message, Name, OriginalMessage}, {forward_message, Name, FullMessage}),
                 ok
             end,
-            dict:fold(PostFoldFunUndefined, ok, PostInterpositionFuns),
+            dict:fold(PostFoldFun, ok, PostInterpositionFuns),
 
-            lager:info("~p: Message after send interposition is: ~p", [node(), Message]),
+            lager:info("~p: Message after send interposition is: ~p", [node(), FullMessage]),
 
             case From of 
                 undefined ->
@@ -715,12 +725,12 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
             end,
 
             {noreply, State#state{vclock=VClock}};
-        Message ->
+        _ ->
             %% Store for reliability, if necessary.
             Result = case proplists:get_value(ack, Options, false) of
                 false ->
                     %% Tracing.
-                    WrappedMessage =  {forward_message, ServerRef, Message},
+                    WrappedMessage =  {forward_message, ServerRef, FullMessage},
                     WrappedOriginalMessage =  {forward_message, ServerRef, OriginalMessage},
 
                     %% Fire post-interposition functions -- trace after wrapping!
@@ -730,7 +740,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                     end,
                     dict:fold(PostFoldFun, ok, PostInterpositionFuns),
 
-                    lager:info("~p: Message after send interposition is: ~p", [node(), Message]),
+                    lager:info("~p: Message after send interposition is: ~p", [node(), FullMessage]),
 
                     %% Send message along.
                     do_send_message(Name,
@@ -741,7 +751,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                 true ->
                     %% Tracing.
                     WrappedOriginalMessage = {forward_message, mynode(), MessageClock, ServerRef, OriginalMessage},
-                    WrappedMessage = {forward_message, mynode(), MessageClock, ServerRef, Message},
+                    WrappedMessage = {forward_message, mynode(), MessageClock, ServerRef, FullMessage},
 
                     %% Fire post-interposition functions -- trace after wrapping!
                     PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
