@@ -147,6 +147,10 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
                 %% Format trace accordingly.
                 replay_debug("~p leaving command: ~p", [TracingNode, Command]);
             pre_interposition_fun ->
+                %% Destructure message.
+                {_TracingNode, _InterpositionType, _OriginNode, _MessagePayload} = Message,
+
+                %% Do nothing.
                 ok;
             interposition_fun ->
                 %% Destructure message.
@@ -163,18 +167,12 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
                 %% Destructure message.
                 {TracingNode, OriginNode, InterpositionType, MessagePayload, RewrittenMessagePayload} = Message,
 
-                case MessagePayload of
-                    {protocol, _} ->
-                        %% Ignore protocol messages when printing the trace.
-                        ok;
-                    {ping, _, _, _} ->
-                        %% ignore pong messages when printing the trace.
-                        ok;
-                    {pong, _, _, _} ->
-                        %% ignore pong messages when printing the trace.
+                case is_protocol_message(MessagePayload) andalso not protocol_tracing() of 
+                    true ->
+                        %% Protocol message and we're not tracing protocol messages.
                         ok;
                     _ ->
-                        %% Format trace accordingly.
+                        %% Otherwise, format trace accordingly.
                         case MessagePayload =:= RewrittenMessagePayload of 
                             true ->
                                 case InterpositionType of
@@ -399,10 +397,20 @@ initialize_state() ->
 %% @private
 write_trace(Trace) ->
     %% Write trace.
-    FilteredTrace = lists:filter(fun({Type, _Message}) ->
+    FilteredTrace = lists:filter(fun({Type, Message}) ->
         case Type of 
             pre_interposition_fun ->
-                true;
+                %% Trace all entry points if protocol message, unless tracing enabled.
+                {_TracingNode, _InterpositionType, _OriginNode, MessagePayload} = Message,
+
+                case is_protocol_message(MessagePayload) of 
+                    true ->
+                        %% Trace protocol messages only if protocol tracing is enabled.
+                        protocol_tracing();
+                    false ->
+                        %% Always trace non-protocol messages.
+                        true
+                end;
             enter_command ->
                 true;
             exit_command ->
@@ -423,3 +431,18 @@ write_trace(Trace) ->
 %% Should we do replay debugging?
 replay_debug(Line, Args) ->
     lager:info("~p: " ++ Line, [?MODULE] ++ Args).
+
+%% @private
+protocol_tracing() ->
+    partisan_config:get(protocol_tracing, ?PROTOCOL_TRACING).
+
+%% @private
+is_protocol_message({protocol, _}) ->
+    true;
+is_protocol_message({ping, _, _, _}) ->
+    true;
+is_protocol_message({pong, _, _, _}) ->
+    true;
+is_protocol_message(_Message) ->
+    false.
+

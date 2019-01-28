@@ -41,6 +41,7 @@
 -define(ALLOWED_BEGIN_FAULT_COUNTER, 5).
 -define(END_FAULT_COUNTER, 7).
 -define(ALLOWED_ASSERTION_COUNTER, 9).
+-define(PROTOCOL_TRACING, false).
 
 -define(SUPPORT, partisan_support).
 
