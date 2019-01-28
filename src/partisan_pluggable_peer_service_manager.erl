@@ -533,11 +533,13 @@ handle_call({send_message, Name, Channel, Message}, _From,
 handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options}, 
             From, 
             #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
+    lager:info("number of forward_message pre_interposition_funs ~p", [length(dict:to_list(PreInterpositionFuns))]),
+
     %% Run all interposition functions.
     DeliveryFun = fun() ->
         %% Fire pre-interposition functions.
         PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
-            lager:info("firing preinterposition fun for original message: ~p", [OriginalMessage]),
+            lager:info("firing forward_message preinterposition fun for original message: ~p", [OriginalMessage]),
             PreInterpositionFun({forward_message, Name, OriginalMessage}),
             ok
         end,
@@ -561,11 +563,13 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Ori
 handle_call({receive_message, Peer, OriginalMessage}, 
             From, 
             #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
+    lager:info("number of receive_message pre_interposition_funs ~p", [length(dict:to_list(PreInterpositionFuns))]),
+
     %% Run all interposition functions.
     DeliveryFun = fun() ->
         %% Fire pre-interposition functions.
         PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
-            lager:info("firing preinterposition fun for original message: ~p", [OriginalMessage]),
+            lager:info("firing receive_message preinterposition fun for original message: ~p", [OriginalMessage]),
             PreInterpositionFun({receive_message, Peer, OriginalMessage}),
             ok
         end,
