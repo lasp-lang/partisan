@@ -240,9 +240,9 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
     end.
 
 %% @doc Receive message from a remote manager.
-receive_message(_Peer, {forward_message, _SourceNode, _MessageClock, _ServerRef, _Message} = FullMessage) ->
+receive_message(Peer, {forward_message, _SourceNode, _MessageClock, _ServerRef, _Message} = FullMessage) ->
     %% Process the message and generate the acknowledgement.
-    gen_server:call(?MODULE, {receive_message, FullMessage}, infinity);
+    gen_server:call(?MODULE, {receive_message, Peer, FullMessage}, infinity);
 receive_message(Peer, {forward_message, ServerRef, {'$partisan_padded', _Padding, Message}}) ->
     receive_message(Peer, {forward_message, ServerRef, Message});
 receive_message(_Peer, {forward_message, _ServerRef, {causal, Label, _, _, _, _, _} = Message}) ->
