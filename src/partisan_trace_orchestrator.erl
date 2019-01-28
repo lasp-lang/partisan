@@ -179,7 +179,7 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
                             true ->
                                 case InterpositionType of
                                     receive_message ->
-                                        replay_debug("~p <- ~p: ~p", [TracingNode, OriginNode, MessagePayload]);
+                                        replay_debug("* ~p <- ~p: ~p", [TracingNode, OriginNode, MessagePayload]);
                                     forward_message ->
                                         replay_debug("~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload])
                                 end;
@@ -188,14 +188,14 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
                                     undefined ->
                                         case InterpositionType of
                                             receive_message ->
-                                                replay_debug("~p <- ~p: DROPPED ~p", [TracingNode, OriginNode, MessagePayload]);
+                                                replay_debug("* ~p <- ~p: DROPPED ~p", [TracingNode, OriginNode, MessagePayload]);
                                             forward_message ->
                                                 replay_debug("~p => ~p: DROPPED ~p", [TracingNode, OriginNode, MessagePayload])
                                         end;
                                     _ ->
                                         case InterpositionType of
                                             receive_message ->
-                                                replay_debug("~p <- ~p: REWROTE ~p to ~p", [TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload]);
+                                                replay_debug("* ~p <- ~p: REWROTE ~p to ~p", [TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload]);
                                             forward_message ->
                                                 replay_debug("~p => ~p: REWROTE ~p to ~p", [TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload])
                                         end
