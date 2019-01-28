@@ -47,15 +47,16 @@
 -define(FAULT_MODEL, prop_partisan_crash_fault_model).
 
 -import(?FAULT_MODEL,
-        [fault_commands/1,
+        [fault_commands/2,
          fault_initial_state/0,
-         fault_functions/1,
+         fault_functions/2,
          fault_precondition/2,
          fault_postcondition/3,
          fault_next_state/3,
          fault_is_crashed/2,
          fault_begin_functions/0,
-         fault_end_functions/0]).
+         fault_end_functions/0,
+         fault_num_resolvable_faults/1]).
 
 %% General test configuration
 -define(COMMAND_MULTIPLE, 10).
@@ -169,7 +170,7 @@ initial_state() ->
            nodes=Nodes,
            node_state=NodeState}.
 
-command(#state{joined_nodes=JoinedNodes}=State) -> 
+command(#state{fault_model_state=FaultModelState, joined_nodes=JoinedNodes}=State) -> 
     ?LET(Commands, 
         %% Cluster maintenance commands.
         lists:flatmap(fun(Command) -> 
@@ -189,7 +190,7 @@ command(#state{joined_nodes=JoinedNodes}=State) ->
                 false ->
                     []
             end
-        end, fault_commands(JoinedNodes)) ++
+        end, fault_commands(FaultModelState, JoinedNodes)) ++
 
         %% System model commands.
         lists:map(fun(Command) -> {1, Command} end, node_commands()), 
@@ -247,35 +248,49 @@ precondition(#state{joined_nodes=JoinedNodes}, {call, _Mod, sync_leave_cluster, 
     end;
 precondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes, counter=Counter}, 
              {call, Mod, Fun, [Node|_]=Args}=Call) -> 
-    precondition_debug("precondition fired for counter ~p and node function: ~p", [Counter, Fun]),
+    precondition_debug("precondition fired for counter ~p and node function: ~p(~p)", [Counter, Fun, Args]),
 
-    case lists:member(Fun, node_functions()) of
-        true ->
-            case Counter < ?ALLOWED_ASSERTION_COUNTER andalso lists:member(Fun, node_assertion_functions()) of 
+    case ?END_FAULT_COUNTER =:= Counter andalso fault_num_resolvable_faults(FaultModelState) > 0 of
+        true -> 
+            %% If there are faults to resolve, resolve them now.
+            case Fun =:= end_resolvable_faults of 
                 true ->
-                    precondition_debug("=> assertion not allowed at current time: ~p < ~p", [Counter, ?ALLOWED_ASSERTION_COUNTER]),
-                    false;
+                    precondition_debug("ending all resolvable faults", []),
+                    true;
                 false ->
-                    ClusterCondition = enough_nodes_connected(JoinedNodes) andalso is_joined(Node, JoinedNodes),
-                    NodePrecondition = node_precondition(NodeState, Call),
-                    FaultPrecondition = not fault_is_crashed(FaultModelState, Node),
-                    ClusterCondition andalso NodePrecondition andalso FaultPrecondition
+                    precondition_debug("command not allowed.", []),
+                    false
             end;
         false ->
-            case lists:member(Fun, fault_functions(JoinedNodes)) of 
+            %% Otherwise, run a normal command.
+            case lists:member(Fun, node_functions()) of
                 true ->
-                    case Counter > ?ALLOWED_BEGIN_FAULT_COUNTER andalso lists:member(Fun, fault_begin_functions()) of 
+                    case Counter < ?ALLOWED_ASSERTION_COUNTER andalso lists:member(Fun, node_assertion_functions()) of 
                         true ->
-                            precondition_debug("=> fault not allowed at current time: ~p > ~p", [Counter, ?ALLOWED_BEGIN_FAULT_COUNTER]),
+                            precondition_debug("=> assertion not allowed at current time: ~p < ~p", [Counter, ?ALLOWED_ASSERTION_COUNTER]),
                             false;
                         false ->
                             ClusterCondition = enough_nodes_connected(JoinedNodes) andalso is_joined(Node, JoinedNodes),
-                            FaultModelPrecondition = fault_precondition(FaultModelState, Call),
-                            ClusterCondition andalso FaultModelPrecondition
+                            NodePrecondition = node_precondition(NodeState, Call),
+                            FaultPrecondition = not fault_is_crashed(FaultModelState, Node),
+                            ClusterCondition andalso NodePrecondition andalso FaultPrecondition
                     end;
                 false ->
-                    debug("general precondition fired for mod ~p and fun ~p and args ~p", [Mod, Fun, Args]),
-                    false
+                    case lists:member(Fun, fault_functions(FaultModelState, JoinedNodes)) of 
+                        true ->
+                            case Counter > ?ALLOWED_BEGIN_FAULT_COUNTER andalso lists:member(Fun, fault_begin_functions()) of 
+                                true ->
+                                    precondition_debug("=> fault not allowed at current time: ~p > ~p", [Counter, ?ALLOWED_BEGIN_FAULT_COUNTER]),
+                                    false;
+                                false ->
+                                    ClusterCondition = enough_nodes_connected(JoinedNodes) andalso is_joined(Node, JoinedNodes),
+                                    FaultModelPrecondition = fault_precondition(FaultModelState, Call),
+                                    ClusterCondition andalso FaultModelPrecondition
+                            end;
+                        false ->
+                            debug("general precondition fired for mod ~p and fun ~p and args ~p", [Mod, Fun, Args]),
+                            false
+                    end
             end
     end.
 
@@ -305,7 +320,7 @@ next_state(#state{counter=Counter, fault_model_state=FaultModelState0, node_stat
             NodeState = node_next_state(NodeState0, Res, Call),
             State#state{node_state=NodeState, counter=Counter+1};
         false ->
-            case lists:member(Fun, fault_functions(JoinedNodes)) of 
+            case lists:member(Fun, fault_functions(FaultModelState0, JoinedNodes)) of 
                 true ->
                     FaultModelState = fault_next_state(FaultModelState0, Res, Call),
                     State#state{fault_model_state=FaultModelState, counter=Counter+1};
@@ -341,7 +356,7 @@ postcondition(#state{fault_model_state=FaultModelState, node_state=NodeState, jo
 
             PostconditionResult;
         false ->
-            case lists:member(Fun, fault_functions(JoinedNodes)) of 
+            case lists:member(Fun, fault_functions(FaultModelState, JoinedNodes)) of 
                 true ->
                     PostconditionResult = fault_postcondition(FaultModelState, Call, Res),
 
