@@ -49,7 +49,7 @@
 
 -define(SUPPORT, partisan_support).
 
--define(OVERRIDE_PERIODIC_INTERVAL, 1000).
+-define(OVERRIDE_PERIODIC_INTERVAL, 10000).
 
 -define(UTIL, partisan_plumtree_util).
 -define(DEFAULT_LAZY_TICK_PERIOD, 1000).
