@@ -102,7 +102,9 @@ node_postcondition(#state{sent=Sent}, {call, ?MODULE, check_mailbox, [Node]}, {o
             true;
         _ ->
             Missing = Sent -- Messages,
-            node_debug("verification of mailbox at node ~p failed, missing: ~p, received: ~p", [Node, Missing, Messages]),
+            node_debug("verification of mailbox at node ~p failed.", [Node]),
+            node_debug(" => missing: ~p", [Missing]),
+            node_debug(" => received: ~p", [Messages]),
             false
     end;
 node_postcondition(_State, _Command, _Response) ->
