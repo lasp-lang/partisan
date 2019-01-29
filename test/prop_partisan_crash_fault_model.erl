@@ -434,12 +434,19 @@ fault_is_crashed(#fault_model_state{crashed_nodes=CrashedNodes}, Name) ->
     lists:member(Name, CrashedNodes).
 
 %% Is this fault allowed?
-fault_allowed({call, _Mod, _Fun, [Node|_] = _Args}, #fault_model_state{tolerance=Tolerance}=FaultModelState) ->
+fault_allowed({call, _Mod, Fun, [Node|_] = _Args}, #fault_model_state{tolerance=Tolerance}=FaultModelState) ->
     %% We can tolerate another failure.
-    num_active_faults(FaultModelState) < Tolerance orelse
+    NumActiveFaults = num_active_faults(FaultModelState),
 
     %% Node is already in faulted state -- send or receive omission.
-    lists:member(Node, active_faults(FaultModelState)).
+    IsAlreadyFaulted = lists:member(Node, active_faults(FaultModelState)),
+
+    %% Compute and log result.
+    Result = NumActiveFaults < Tolerance orelse IsAlreadyFaulted,
+
+    fault_debug("=> ~p num_active_faults: ~p is_already_faulted: ~p: result: ~p", [Fun, NumActiveFaults, IsAlreadyFaulted, Result]),
+
+    Result.
 
 %% Should we do node debugging?
 fault_debug(Line, Args) ->
