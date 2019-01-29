@@ -103,21 +103,42 @@ handle_call({trace, Type, Message}, _From, #state{trace=Trace0}=State) ->
 handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0, replay=Replay, shrinking=Shrinking, blocked_processes=BlockedProcesses0}=State) ->
     case Replay of 
         true ->
-            %% Find next message that should arrive based on the trace.
-            %% Can we process immediately?
-            case can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace0, BlockedProcesses0) of 
-                true ->
-                    %% Deliver as much as we can.
-                    {PreviousTrace, BlockedProcesses} = trace_deliver(Shrinking, {Type, Message}, PreviousTrace0, BlockedProcesses0),
+            %% Should we enforce trace order during replay?
+            ShouldEnforce = case Type of 
+                pre_interposition_fun ->
+                    %% Destructure pre-interposition trace message.
+                    {_TracingNode, InterpositionType, _OriginNode, MessagePayload} = Message,
 
-                    %% Record new trace position and new list of blocked processes.
-                    {reply, ok, State#state{blocked_processes=BlockedProcesses, previous_trace=PreviousTrace}};
+                    case is_protocol_message(InterpositionType, MessagePayload) of
+                        true ->
+                            protocol_tracing();
+                        false ->
+                            true
+                    end;
+                _ ->
+                    true
+            end,
+
+            case ShouldEnforce of 
                 false ->
-                    %% If not, store message, block caller until processed.
-                    BlockedProcesses = [{{Type, Message}, From} | BlockedProcesses0],
+                    {reply, ok, State};
+                true ->
+                    %% Find next message that should arrive based on the trace.
+                    %% Can we process immediately?
+                    case can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace0, BlockedProcesses0) of 
+                        true ->
+                            %% Deliver as much as we can.
+                            {PreviousTrace, BlockedProcesses} = trace_deliver(Shrinking, {Type, Message}, PreviousTrace0, BlockedProcesses0),
 
-                    %% Block the process.
-                    {noreply, State#state{blocked_processes=BlockedProcesses}}
+                            %% Record new trace position and new list of blocked processes.
+                            {reply, ok, State#state{blocked_processes=BlockedProcesses, previous_trace=PreviousTrace}};
+                        false ->
+                            %% If not, store message, block caller until processed.
+                            BlockedProcesses = [{{Type, Message}, From} | BlockedProcesses0],
+
+                            %% Block the process.
+                            {noreply, State#state{blocked_processes=BlockedProcesses}}
+                    end
             end;
         false ->
             {reply, ok, State}
@@ -167,7 +188,7 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
                 %% Destructure message.
                 {TracingNode, OriginNode, InterpositionType, MessagePayload, RewrittenMessagePayload} = Message,
 
-                case is_protocol_message(MessagePayload) andalso not protocol_tracing() of 
+                case is_protocol_message(InterpositionType, MessagePayload) andalso not protocol_tracing() of 
                     true ->
                         %% Protocol message and we're not tracing protocol messages.
                         ok;
@@ -401,13 +422,16 @@ write_trace(Trace) ->
         case Type of 
             pre_interposition_fun ->
                 %% Trace all entry points if protocol message, unless tracing enabled.
-                {_TracingNode, _InterpositionType, _OriginNode, MessagePayload} = Message,
+                {_TracingNode, InterpositionType, _OriginNode, MessagePayload} = Message,
 
-                case is_protocol_message(MessagePayload) of 
+                case is_protocol_message(InterpositionType, MessagePayload) of 
                     true ->
                         %% Trace protocol messages only if protocol tracing is enabled.
-                        protocol_tracing();
+                        ShouldPrint = protocol_tracing(),
+                        replay_debug("found protocol message in interposition type ~p message ~p; should_print: ~p", [InterpositionType, MessagePayload, ShouldPrint]),
+                        ShouldPrint;
                     false ->
+                        replay_debug("didn't find protocol message in interposition type: ~p message: ~p", [InterpositionType, MessagePayload]),
                         %% Always trace non-protocol messages.
                         true
                 end;
@@ -436,13 +460,38 @@ replay_debug(Line, Args) ->
 protocol_tracing() ->
     partisan_config:get(protocol_tracing, ?PROTOCOL_TRACING).
 
-%% @private
-is_protocol_message({protocol, _}) ->
-    true;
-is_protocol_message({ping, _, _, _}) ->
-    true;
-is_protocol_message({pong, _, _, _}) ->
-    true;
-is_protocol_message(_Message) ->
-    false.
+%%%===================================================================
+%%% Trace filtering: super hack, until we can refactor these messages.
+%%%===================================================================
 
+%% TODO: Find a way to disable distance metrics, which are non-deterministic
+%% for the test execution.
+
+%% TODO: Rename protocol messages, find a way to specify an external
+%% function for filtering the trace -- do it from the harness.  Maybe
+%% some sort of glob function for receives and forwards to filter.
+
+%% TODO: Weird hack, now everything goes through the interposition mechanism 
+%% which means we can capture everything *good!* but we only want
+%% to see a small subset of it -- acks, yes!, membership updates, sometimes!
+%% but distances?  never.  so, we need some really terrible hacks here.
+
+%% TODO: Change "protocol" tracing to "membership strategy" tracing.
+
+%% @private
+is_protocol_message(receive_message, {_, _, {protocol, _}}) ->
+    true;
+is_protocol_message(receive_message, {_, _, {ping, _, _, _}}) ->
+    true;
+is_protocol_message(receive_message, {_, _, {pong, _, _, _}}) ->
+    true;
+
+is_protocol_message(forward_message, {protocol, _}) ->
+    true;
+is_protocol_message(forward_message, {ping, _, _, _}) ->
+    true;
+is_protocol_message(forward_message, {pong, _, _, _}) ->
+    true;
+
+is_protocol_message(_Type, _Message) ->
+    false.
