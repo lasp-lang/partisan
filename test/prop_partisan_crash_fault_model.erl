@@ -275,7 +275,7 @@ fault_initial_state() ->
 
 %% Receive omission.
 fault_precondition(_FaultModelState, {call, _Mod, end_resolvable_faults, [FaultModelState]}) ->
-    fault_num_resolvable_faults(FaultModelState) > 0;
+    fault_num_resolvable_faults(FaultModelState) >= 0;
 
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelState, {call, _Mod, begin_receive_omission, [SourceNode, DestinationNode]}=Call) ->
     %% Fault must be allowed at this moment.
