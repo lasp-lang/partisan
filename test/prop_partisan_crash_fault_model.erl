@@ -45,7 +45,7 @@ message() ->
             {Id, Random})).
 
 node_name() ->
-    ?LET(Names, names(), oneof(Names)).
+    oneof(names()).
 
 names() ->
     NameFun = fun(N) -> 
