@@ -1110,7 +1110,7 @@ handle_message({pong, SourceNode, DestinationNode, SourceTime},
 
     {noreply, State#state{distance_metrics=DistanceMetrics}};
 
-handle_message({protocol, ProtocolMessage},
+handle_message({membership_strategy, ProtocolMessage},
                From,
                #state{pending=Pending,
                       connections=Connections0,

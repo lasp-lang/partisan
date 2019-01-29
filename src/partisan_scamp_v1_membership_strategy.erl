@@ -64,7 +64,7 @@ join(#scamp_v1{membership=Membership0}=State0, Node, _NodeState) ->
     %% 2. Notify node to add us to its state. 
     %%    This is lazily done to ensure we can setup the TCP connection both ways, first.
     Myself = partisan_peer_service_manager:myself(),
-    OutgoingMessages1 = OutgoingMessages0 ++ [{Node, {protocol, {forward_subscription, Myself}}}],
+    OutgoingMessages1 = OutgoingMessages0 ++ [{Node, {membership_strategy, {forward_subscription, Myself}}}],
 
     %% 3. Notify all members we know about to add node to their membership.
     OutgoingMessages2 = sets:fold(fun(N, OM) ->
@@ -75,7 +75,7 @@ join(#scamp_v1{membership=Membership0}=State0, Node, _NodeState) ->
                 ok
         end,
 
-        OM ++ [{N, {protocol, {forward_subscription, Node}}}]
+        OM ++ [{N, {membership_strategy, {forward_subscription, Node}}}]
 
         end, OutgoingMessages1, Membership0),
 
@@ -89,7 +89,7 @@ join(#scamp_v1{membership=Membership0}=State0, Node, _NodeState) ->
                 ok
         end,
 
-        {N, {protocol, {forward_subscription, Node}}}
+        {N, {membership_strategy, {forward_subscription, Node}}}
 
         end, select_random_sublist(State0, C)),
     OutgoingMessages = OutgoingMessages2 ++ ForwardMessages,
@@ -113,7 +113,7 @@ leave(#scamp_v1{membership=Membership0}=State0, Node) ->
 
     %% Gossip to existing cluster members.
     Message = {remove_subscription, Node},
-    OutgoingMessages = lists:map(fun(Peer) -> {Peer, {protocol, Message}} end, MembershipList0),
+    OutgoingMessages = lists:map(fun(Peer) -> {Peer, {membership_strategy, Message}} end, MembershipList0),
 
     %% Return updated membership.
     State = State0#scamp_v1{membership=Membership},
@@ -133,7 +133,7 @@ periodic(#scamp_v1{last_message_time=LastMessageTime} = State) ->
     %% last message received, and if we don't receive one after X interval, then we know 
     %% we are isolated.
     OutgoingPingMessages = lists:map(fun(Peer) -> 
-        {Peer, {protocol, {ping, SourceNode}}}
+        {Peer, {membership_strategy, {ping, SourceNode}}}
     end, MembershipList),
 
     Difference = case LastMessageTime of 
@@ -164,7 +164,7 @@ periodic(#scamp_v1{last_message_time=LastMessageTime} = State) ->
                         ok
                 end,
                 
-                {N, {protocol, {forward_subscription, Myself}}}
+                {N, {membership_strategy, {forward_subscription, Myself}}}
             end, select_random_sublist(State, 1));
         false ->
             %% Node is not isolated.
@@ -198,7 +198,7 @@ handle_message(#scamp_v1{membership=Membership0}=State0, {remove_subscription, N
 
             %% Gossip removals.
             Message = {remove_subscription, Node},
-            OutgoingMessages = lists:map(fun(Peer) -> {Peer, {protocol, Message}} end, MembershipList0),
+            OutgoingMessages = lists:map(fun(Peer) -> {Peer, {membership_strategy, Message}} end, MembershipList0),
 
             %% Update state.
             State = State0#scamp_v1{membership=Membership},
@@ -246,7 +246,7 @@ handle_message(#scamp_v1{membership=Membership0}=State0, {forward_subscription, 
                         ok
                 end,
 
-                {N, {protocol, {forward_subscription, Node}}}
+                {N, {membership_strategy, {forward_subscription, Node}}}
                 end, select_random_sublist(State0, 1)),
             {ok, MembershipList0, OutgoingMessages, State0}
     end.

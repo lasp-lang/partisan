@@ -109,9 +109,9 @@ handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0,
                     %% Destructure pre-interposition trace message.
                     {_TracingNode, InterpositionType, _OriginNode, MessagePayload} = Message,
 
-                    case is_protocol_message(InterpositionType, MessagePayload) of
+                    case is_membership_strategy_message(InterpositionType, MessagePayload) of
                         true ->
-                            protocol_tracing();
+                            membership_strategy_tracing();
                         false ->
                             true
                     end;
@@ -188,7 +188,7 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
                 %% Destructure message.
                 {TracingNode, OriginNode, InterpositionType, MessagePayload, RewrittenMessagePayload} = Message,
 
-                case is_protocol_message(InterpositionType, MessagePayload) andalso not protocol_tracing() of 
+                case is_membership_strategy_message(InterpositionType, MessagePayload) andalso not membership_strategy_tracing() of 
                     true ->
                         %% Protocol message and we're not tracing protocol messages.
                         ok;
@@ -424,10 +424,10 @@ write_trace(Trace) ->
                 %% Trace all entry points if protocol message, unless tracing enabled.
                 {_TracingNode, InterpositionType, _OriginNode, MessagePayload} = Message,
 
-                case is_protocol_message(InterpositionType, MessagePayload) of 
+                case is_membership_strategy_message(InterpositionType, MessagePayload) of 
                     true ->
                         %% Trace protocol messages only if protocol tracing is enabled.
-                        ShouldPrint = protocol_tracing(),
+                        ShouldPrint = membership_strategy_tracing(),
                         replay_debug("found protocol message in interposition type ~p message ~p; should_print: ~p", [InterpositionType, MessagePayload, ShouldPrint]),
                         ShouldPrint;
                     false ->
@@ -457,8 +457,8 @@ replay_debug(Line, Args) ->
     lager:info("~p: " ++ Line, [?MODULE] ++ Args).
 
 %% @private
-protocol_tracing() ->
-    partisan_config:get(protocol_tracing, ?PROTOCOL_TRACING).
+membership_strategy_tracing() ->
+    partisan_config:get(membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING).
 
 %%%===================================================================
 %%% Trace filtering: super hack, until we can refactor these messages.
@@ -479,19 +479,11 @@ protocol_tracing() ->
 %% TODO: Change "protocol" tracing to "membership strategy" tracing.
 
 %% @private
-is_protocol_message(receive_message, {_, _, {protocol, _}}) ->
-    true;
-is_protocol_message(receive_message, {_, _, {ping, _, _, _}}) ->
-    true;
-is_protocol_message(receive_message, {_, _, {pong, _, _, _}}) ->
+is_membership_strategy_message(receive_message, {_, _, {membership_strategy, _}}) ->
     true;
 
-is_protocol_message(forward_message, {protocol, _}) ->
-    true;
-is_protocol_message(forward_message, {ping, _, _, _}) ->
-    true;
-is_protocol_message(forward_message, {pong, _, _, _}) ->
+is_membership_strategy_message(forward_message, {membership_strategy, _}) ->
     true;
 
-is_protocol_message(_Type, _Message) ->
+is_membership_strategy_message(_Type, _Message) ->
     false.

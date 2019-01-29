@@ -139,14 +139,14 @@ start(Case, Config, Options) ->
             debug("Setting periodic_enabled to: ~p", [PeriodicEnabled]),
             ok = rpc:call(Node, partisan_config, set, [periodic_enabled, PeriodicEnabled]),
 
-            ProtocolTracing = case ?config(protocol_tracing, Config) of
+            MembershipStrategyTracing = case ?config(membership_strategy_tracing, Config) of
                               undefined ->
                                   false;
-                              PT ->
-                                  PT
+                              MST ->
+                                  MST
                           end,
-            debug("Setting protocol_tracing to: ~p", [ProtocolTracing]),
-            ok = rpc:call(Node, partisan_config, set, [protocol_tracing, ProtocolTracing]),
+            debug("Setting membership_strategy_tracing to: ~p", [MembershipStrategyTracing]),
+            ok = rpc:call(Node, partisan_config, set, [membership_strategy_tracing, MembershipStrategyTracing]),
 
             ForwardOptions = case ?config(forward_options, Config) of
                               undefined ->

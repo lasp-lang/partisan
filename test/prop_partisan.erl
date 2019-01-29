@@ -497,7 +497,7 @@ start_nodes() ->
               {hash, undefined},
               {egress_delay, ?EGRESS_DELAY},
               {ingress_delay, ?INGRESS_DELAY},
-              {protocol_tracing, false},
+              {membership_strategy_tracing, false},
               {periodic_enabled, false},
               {distance_enabled, false},
               {disable_fast_forward, true},

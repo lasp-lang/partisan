@@ -128,7 +128,7 @@ init() ->
                            {periodic_enabled, ?PERIODIC_ENABLED},
                            {periodic_interval, 10000},
                            {pid_encoding, true},
-                           {protocol_tracing, ?PROTOCOL_TRACING},
+                           {membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING},
                            {orchestration_strategy, ?DEFAULT_ORCHESTRATION_STRATEGY},
                            {random_seed, random_seed()},
                            {random_promotion, true},
