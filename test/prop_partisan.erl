@@ -171,31 +171,32 @@ initial_state() ->
            node_state=NodeState}.
 
 command(#state{fault_model_state=FaultModelState, joined_nodes=JoinedNodes}=State) -> 
-    ?LET(Commands, 
-        %% Cluster maintenance commands.
-        lists:flatmap(fun(Command) -> 
-            case ?PERFORM_LEAVES_AND_JOINS of 
-                true ->
-                    [{1, Command}];
-                false ->
-                    []
-            end
-        end, cluster_commands(State)) ++ 
+    %% Cluster maintenance commands.
+    ClusterCommands = lists:flatmap(fun(Command) -> 
+        case ?PERFORM_LEAVES_AND_JOINS of 
+            true ->
+                [{1, Command}];
+            false ->
+                []
+        end
+    end, cluster_commands(State)),
 
-        %% Fault model commands.
-        lists:flatmap(fun(Command) -> 
-            case ?PERFORM_FAULT_INJECTION of 
-                true ->
-                    [{1, Command}];
-                false ->
-                    []
-            end
-        end, fault_commands(FaultModelState, JoinedNodes)) ++
+    %% Fault model commands.
+    FaultModelCommands = lists:flatmap(fun(Command) -> 
+        case ?PERFORM_FAULT_INJECTION of 
+            true ->
+                [{1, Command}];
+            false ->
+                []
+        end
+    end, fault_commands(FaultModelState, JoinedNodes)),
 
-        %% System model commands.
-        lists:map(fun(Command) -> {1, Command} end, node_commands()), 
+    %% System model commands.
+    SystemModelCommands = lists:map(fun(Command) -> 
+        {1, Command} 
+    end, node_commands()), 
 
-        frequency(Commands)).
+    frequency(ClusterCommands ++ FaultModelCommands ++ SystemModelCommands).
 
 %% Picks whether a command should be valid under the current state.
 precondition(#state{nodes=Nodes, joined_nodes=JoinedNodes}, {call, _Mod, sync_join_cluster, [Node, JoinedNodes]}) -> 
@@ -381,7 +382,7 @@ postcondition(#state{fault_model_state=FaultModelState, node_state=NodeState, jo
 %%%===================================================================
 
 node_name() ->
-    ?LET(Names, names(), oneof(Names)).
+    oneof(names()).
 
 corrupted_value() ->
     ?LET(Binary, binary(), 
