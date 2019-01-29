@@ -635,6 +635,9 @@ ack_test(Config) ->
             ct:fail("Didn't receive message we should have!")
     end,
 
+    %% Pause for acknowledgement.
+    timer:sleep(5000),
+
     %% Stop nodes.
     ?SUPPORT:stop(Nodes),
 
