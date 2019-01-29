@@ -1205,13 +1205,23 @@ handle_message({ack, MessageClock},
 
 %% @private
 schedule_distance() ->
-    DistanceInterval = partisan_config:get(distance_interval, 10000),
-    erlang:send_after(DistanceInterval, ?MODULE, distance).
+    case partisan_config:get(distance_enabled, false) of 
+        true ->
+            DistanceInterval = partisan_config:get(distance_interval, 10000),
+            erlang:send_after(DistanceInterval, ?MODULE, distance);
+        false ->
+            ok
+    end.
 
 %% @private
 schedule_periodic() ->
-    PeriodicInterval = partisan_config:get(periodic_interval, ?PERIODIC_INTERVAL),
-    erlang:send_after(PeriodicInterval, ?MODULE, periodic).
+    case partisan_config:get(distance_enabled, false) of 
+        true ->
+            PeriodicInterval = partisan_config:get(periodic_interval, ?PERIODIC_INTERVAL),
+            erlang:send_after(PeriodicInterval, ?MODULE, periodic);
+        false ->
+            ok
+    end.
 
 %% @private
 schedule_retransmit() ->

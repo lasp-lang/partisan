@@ -36,6 +36,10 @@
 -define(DEFAULT_MEMBERSHIP_STRATEGY, partisan_full_membership_strategy).
 -define(DEFAULT_ORCHESTRATION_STRATEGY, undefined).
 
+%% Pluggable manager options.
+-define(DISTANCE_ENABLED, true).
+-define(PERIODIC_ENABLED, true).
+
 %% Test variables.
 -define(TEST_NUM_NODES, 4).
 -define(ALLOWED_BEGIN_FAULT_COUNTER, 5).

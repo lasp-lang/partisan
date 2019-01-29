@@ -121,6 +121,33 @@ start(Case, Config, Options) ->
 
             ok = rpc:call(Node, application, set_env, [partisan, peer_ip, ?PEER_IP]),
 
+            DistanceEnabled = case ?config(distance_enabled, Config) of
+                              undefined ->
+                                  true;
+                              DE ->
+                                  DE
+                          end,
+            debug("Setting distance_enabled to: ~p", [DistanceEnabled]),
+            ok = rpc:call(Node, partisan_config, set, [distance_enabled, DistanceEnabled]),
+
+            PeriodicEnabled = case ?config(periodic_enabled, Config) of
+                              undefined ->
+                                  true;
+                              PDE ->
+                                  PDE
+                          end,
+            debug("Setting periodic_enabled to: ~p", [PeriodicEnabled]),
+            ok = rpc:call(Node, partisan_config, set, [periodic_enabled, PeriodicEnabled]),
+
+            ProtocolTracing = case ?config(protocol_tracing, Config) of
+                              undefined ->
+                                  false;
+                              PT ->
+                                  PT
+                          end,
+            debug("Setting protocol_tracing to: ~p", [ProtocolTracing]),
+            ok = rpc:call(Node, partisan_config, set, [protocol_tracing, ProtocolTracing]),
+
             ForwardOptions = case ?config(forward_options, Config) of
                               undefined ->
                                   [];
