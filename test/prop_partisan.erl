@@ -73,7 +73,7 @@
 %% Debug.
 -define(DEBUG, true).
 -define(INITIAL_STATE_DEBUG, false).
--define(PRECONDITION_DEBUG, true).
+-define(PRECONDITION_DEBUG, false).
 -define(POSTCONDITION_DEBUG, false).
 
 %% Partisan connection and forwarding settings.
