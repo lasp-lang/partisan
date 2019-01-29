@@ -75,7 +75,6 @@ handle_call({store, MessageClock, Message}, _From, #state{storage=Storage}=State
     {reply, ok, State};
 handle_call(outstanding, _From, #state{storage=Storage}=State) ->
     Objects = ets:foldl(fun(X, Acc) -> Acc ++ [X] end, [], Storage),
-    lager:info("~p oustanding messages: ~p", [node(), Objects]),
     {reply, {ok, Objects}, State};
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
