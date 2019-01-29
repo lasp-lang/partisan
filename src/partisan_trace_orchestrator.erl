@@ -427,11 +427,8 @@ write_trace(Trace) ->
                 case is_membership_strategy_message(InterpositionType, MessagePayload) of 
                     true ->
                         %% Trace protocol messages only if protocol tracing is enabled.
-                        ShouldPrint = membership_strategy_tracing(),
-                        replay_debug("found protocol message in interposition type ~p message ~p; should_print: ~p", [InterpositionType, MessagePayload, ShouldPrint]),
-                        ShouldPrint;
+                        membership_strategy_tracing();
                     false ->
-                        replay_debug("didn't find protocol message in interposition type: ~p message: ~p", [InterpositionType, MessagePayload]),
                         %% Always trace non-protocol messages.
                         true
                 end;
