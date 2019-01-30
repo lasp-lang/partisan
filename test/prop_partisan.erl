@@ -73,7 +73,7 @@
 %% Debug.
 -define(DEBUG, true).
 -define(INITIAL_STATE_DEBUG, false).
--define(PRECONDITION_DEBUG, true).
+-define(PRECONDITION_DEBUG, false).
 -define(POSTCONDITION_DEBUG, false).
 
 %% Partisan connection and forwarding settings.
@@ -384,10 +384,6 @@ postcondition(#state{fault_model_state=FaultModelState, node_state=NodeState, jo
 node_name() ->
     oneof(names()).
 
-corrupted_value() ->
-    ?LET(Binary, binary(), 
-        {erlang:timestamp(), Binary}).
-
 names() ->
     NameFun = fun(N) -> 
         list_to_atom("node_" ++ integer_to_list(N)) 
@@ -616,12 +612,6 @@ all_to_ok_or_error(List) ->
         false ->
             {error, some_operations_failed, List}
     end.
-
-%% Select a random grouping of nodes.
-majority_nodes() ->
-    ?LET(MajorityCount, ?TEST_NUM_NODES / 2 + 1,
-        ?LET(Names, names(), 
-            ?LET(Sublist, lists:sublist(Names, trunc(MajorityCount)), Sublist))).
 
 enough_nodes_connected(Nodes) ->
     length(Nodes) >= 3.
