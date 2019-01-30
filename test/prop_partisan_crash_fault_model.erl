@@ -277,7 +277,15 @@ fault_initial_state() ->
 fault_precondition(_FaultModelState, {call, _Mod, end_resolvable_faults, [FaultModelState]}) ->
     fault_num_resolvable_faults(FaultModelState) >= 0;
 
-fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelState, {call, _Mod, begin_receive_omission, [SourceNode, DestinationNode]}=Call) ->
+fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, receive_omissions=ReceiveOmissions}=FaultModelState, {call, _Mod, begin_receive_omission, [SourceNode, DestinationNode]}=Call) ->
+    %% We must not already have a receive omission for these nodes.
+    BeginCondition = case dict:find({SourceNode, DestinationNode}, ReceiveOmissions) of 
+        {ok, _Value} ->
+            false;
+        error ->
+            true
+    end,
+
     %% Fault must be allowed at this moment.
     fault_allowed(Call, FaultModelState) andalso 
 
@@ -285,7 +293,10 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelStat
     SourceNode =/= DestinationNode andalso
 
     %% Both nodes have to be non-crashed.
-    not lists:member(SourceNode, CrashedNodes) andalso not lists:member(DestinationNode, CrashedNodes);
+    not lists:member(SourceNode, CrashedNodes) andalso not lists:member(DestinationNode, CrashedNodes) andalso
+
+    %% Can't already have a receive omission for these nodes.
+    BeginCondition;
 
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, receive_omissions=ReceiveOmissions}, {call, _Mod, end_receive_omission, [SourceNode, DestinationNode]}) ->
     %% We must be in the middle of a send omission to resolve it.
@@ -299,7 +310,15 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, receive_omissi
     EndCondition andalso not lists:member(DestinationNode, CrashedNodes);
 
 %% Send omission.
-fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelState, {call, _Mod, begin_send_omission, [SourceNode, DestinationNode]}=Call) ->
+fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, send_omissions=SendOmissions}=FaultModelState, {call, _Mod, begin_send_omission, [SourceNode, DestinationNode]}=Call) ->
+    %% We must not already have a receive omission for these nodes.
+    BeginCondition = case dict:find({SourceNode, DestinationNode}, SendOmissions) of 
+        {ok, _Value} ->
+            false;
+        error ->
+            true
+    end,
+
     %% Fault must be allowed at this moment.
     fault_allowed(Call, FaultModelState) andalso 
 
@@ -307,7 +326,10 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelStat
     SourceNode =/= DestinationNode andalso
 
     %% Both nodes have to be non-crashed.
-    not lists:member(SourceNode, CrashedNodes) andalso not lists:member(DestinationNode, CrashedNodes);
+    not lists:member(SourceNode, CrashedNodes) andalso not lists:member(DestinationNode, CrashedNodes) andalso
+
+    %% Can't already have a receive omission for these nodes.
+    BeginCondition;
 
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, send_omissions=SendOmissions}, {call, _Mod, end_send_omission, [SourceNode, DestinationNode]}) ->
     %% We must be in the middle of a send omission to resolve it.
