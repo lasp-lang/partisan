@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-NUM_TESTS=10
+NUM_TESTS=20
 TRACE_FILE=/tmp/partisan-latest.trace
 COUNTEREXAMPLE_CONSULT_FILE=/tmp/partisan-counterexample.consult
 REBAR_COUNTEREXAMPLE_CONSULT_FILE=_build/test/rebar3_proper-counterexamples.consult
