@@ -251,7 +251,11 @@ fault_begin_functions() ->
 
 %% Commands to resolve failures.
 fault_end_functions() ->
-    [end_send_omission, end_receive_omission, end_resolvable_faults].
+    [end_send_omission, end_receive_omission].
+
+%% Global functions.
+fault_global_functions() ->
+    [end_resolvable_faults].
 
 %% Initialize failure state.
 fault_initial_state() ->

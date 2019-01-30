@@ -56,6 +56,7 @@
          fault_is_crashed/2,
          fault_begin_functions/0,
          fault_end_functions/0,
+         fault_global_functions/0,
          fault_num_resolvable_faults/1]).
 
 %% General test configuration
@@ -254,9 +255,9 @@ precondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joi
     case ?END_FAULT_COUNTER =:= Counter andalso fault_num_resolvable_faults(FaultModelState) > 0 of
         true -> 
             %% If there are faults to resolve, resolve them now.
-            case Fun =:= end_resolvable_faults of 
+            case lists:member(Fun, fault_global_functions()) of
                 true ->
-                    precondition_debug("ending all resolvable faults", []),
+                    precondition_debug("ending all resolvable faults using ~p", [Fun]),
                     true;
                 false ->
                     precondition_debug("command not allowed.", []),
