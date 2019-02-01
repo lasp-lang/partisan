@@ -199,28 +199,11 @@ end_send_omission(SourceNode, DestinationNode0) ->
 
     Result.
 
-%% End all resolvable faults.
-end_faults_with_resolve(#fault_model_state{send_omissions=SendOmissions, receive_omissions=ReceiveOmissions}) ->
-    ?PROPERTY_MODULE:command_preamble(node(), [end_faults_with_resolve]),
-
-    fault_debug("end_faults_with_resolve", []),
-
-    lists:foreach(fun({{SourceNode, DestinationNode}, true}) -> 
-        end_send_omission(SourceNode, DestinationNode)
-    end, dict:to_list(SendOmissions)),
-
-    lists:foreach(fun({{SourceNode, DestinationNode}, true}) -> 
-        end_receive_omission(SourceNode, DestinationNode)
-    end, dict:to_list(ReceiveOmissions)),
-
-    ?PROPERTY_MODULE:command_conclusion(node(), [end_faults_with_resolve]),
-    ok.
-
 %%%===================================================================
 %%% Fault Model
 %%%===================================================================
 
-fault_commands(FaultModelState, JoinedNodes) ->
+fault_commands(JoinedNodes) ->
     [
      %% Crashes.
      {call, ?MODULE, crash, [node_name(), JoinedNodes]},
@@ -234,16 +217,13 @@ fault_commands(FaultModelState, JoinedNodes) ->
 
      %% Receive omission failures.
      {call, ?MODULE, begin_receive_omission, [node_name(), node_name()]},
-     {call, ?MODULE, end_receive_omission, [node_name(), node_name()]},
-
-     %% End all resolvable faults.
-     {call, ?MODULE, end_faults_with_resolve, [FaultModelState]}
+     {call, ?MODULE, end_receive_omission, [node_name(), node_name()]}
     ].
 
 %% Names of the node functions so we kow when we can dispatch to the node
 %% pre- and postconditions.
-fault_functions(FaultModelState, JoinedNodes) ->
-    lists:map(fun({call, _Mod, Fun, _Args}) -> Fun end, fault_commands(FaultModelState, JoinedNodes)).
+fault_functions(JoinedNodes) ->
+    lists:map(fun({call, _Mod, Fun, _Args}) -> Fun end, fault_commands(JoinedNodes)).
 
 %% Commands to induce failures.
 fault_begin_functions() ->
@@ -252,10 +232,6 @@ fault_begin_functions() ->
 %% Commands to resolve failures.
 fault_end_functions() ->
     [end_send_omission, end_receive_omission].
-
-%% Global functions.
-fault_global_functions() ->
-    [end_faults_with_resolve].
 
 %% Initialize failure state.
 fault_initial_state() ->
@@ -278,9 +254,6 @@ fault_initial_state() ->
                        receive_omissions=ReceiveOmissions}.
 
 %% Receive omission.
-fault_precondition(_FaultModelState, {call, _Mod, end_faults_with_resolve, [FaultModelState]}) ->
-    fault_num_resolvable_faults(FaultModelState) >= 0;
-
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, receive_omissions=ReceiveOmissions}=FaultModelState, {call, _Mod, begin_receive_omission, [SourceNode, DestinationNode]}=Call) ->
     %% We must not already have a receive omission for these nodes.
     BeginCondition = case dict:find({SourceNode, DestinationNode}, ReceiveOmissions) of 
@@ -367,11 +340,6 @@ fault_precondition(_FaultModelState, {call, Mod, Fun, [_Node|_]=Args}) ->
     false.
 
 %% Receive omission.
-fault_next_state(FaultModelState, _Res, {call, _Mod, end_faults_with_resolve, [FaultModelState]}) ->
-    ReceiveOmissions = dict:new(),
-    SendOmissions = dict:new(),
-    FaultModelState#fault_model_state{send_omissions=SendOmissions, receive_omissions=ReceiveOmissions};
-
 fault_next_state(#fault_model_state{receive_omissions=ReceiveOmissions0} = FaultModelState, _Res, {call, _Mod, begin_receive_omission, [SourceNode, DestinationNode]}) ->
     ReceiveOmissions = dict:store({SourceNode, DestinationNode}, true, ReceiveOmissions0),
     FaultModelState#fault_model_state{receive_omissions=ReceiveOmissions};
@@ -399,10 +367,6 @@ fault_next_state(#fault_model_state{crashed_nodes=CrashedNodes} = FaultModelStat
 
 fault_next_state(FaultModelState, _Res, _Call) ->
     FaultModelState.
-
-%% Resolve faults.
-fault_postcondition(_FaultModelState, {call, _Mod, end_faults_with_resolve, [_FaultModelState]}, ok) ->
-    true;
 
 %% Receive omission.
 fault_postcondition(_FaultModelState, {call, _Mod, begin_receive_omission, [_SourceNode, _DestinationNode]}, ok) ->
