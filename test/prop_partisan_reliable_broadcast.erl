@@ -144,9 +144,13 @@ broadcast(Node, {Id, Value}) ->
 
     ?PROPERTY_MODULE:command_preamble(Node, [broadcast, Node, Id, Value]),
 
+    %% Transmit message.
     FullMessage = {Id, Node, Value},
     node_debug("broadcast from node ~p message: ~p", [Node, FullMessage]),
     Result = rpc:call(?NAME(Node), ?BROADCAST_MODULE, broadcast, [?RECEIVER, FullMessage]),
+
+    %% Sleep for 1 second, giving time for message to propagate.
+    timer:sleep(1000),
 
     ?PROPERTY_MODULE:command_conclusion(Node, [broadcast, Node, Id, Value]),
 
@@ -159,9 +163,6 @@ check_mailbox(Node) ->
     ?PROPERTY_MODULE:command_preamble(Node, [check_mailbox, Node]),
 
     Self = self(),
-
-    node_debug("waiting for message quiescence at node ~p", [Node]),
-    timer:sleep(20000),
 
     %% Ask for what messages they have received.
     erlang:send({?RECEIVER, ?NAME(Node)}, {received, Self}),
