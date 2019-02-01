@@ -252,7 +252,7 @@ precondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joi
              {call, Mod, Fun, [Node|_]=Args}=Call) -> 
     precondition_debug("precondition fired for counter ~p and node function: ~p(~p)", [Counter, Fun, Args]),
 
-    case ?END_FAULT_COUNTER =:= Counter andalso fault_num_resolvable_faults(FaultModelState) > 0 of
+    case (Counter =< ?ALLOWED_ASSERTION_COUNTER andalso Counter >= ?ALLOWED_BEGIN_FAULT_COUNTER) andalso fault_num_resolvable_faults(FaultModelState) > 0 of
         true -> 
             %% If there are faults to resolve, resolve them now.
             case lists:member(Fun, fault_global_functions()) of
