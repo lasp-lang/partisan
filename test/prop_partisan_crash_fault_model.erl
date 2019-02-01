@@ -200,10 +200,10 @@ end_send_omission(SourceNode, DestinationNode0) ->
     Result.
 
 %% End all resolvable faults.
-end_resolvable_faults(#fault_model_state{send_omissions=SendOmissions, receive_omissions=ReceiveOmissions}) ->
-    ?PROPERTY_MODULE:command_preamble(node(), [end_resolvable_faults]),
+end_faults_with_resolve(#fault_model_state{send_omissions=SendOmissions, receive_omissions=ReceiveOmissions}) ->
+    ?PROPERTY_MODULE:command_preamble(node(), [end_faults_with_resolve]),
 
-    fault_debug("end_resolvable_faults", []),
+    fault_debug("end_faults_with_resolve", []),
 
     lists:foreach(fun({{SourceNode, DestinationNode}, true}) -> 
         end_send_omission(SourceNode, DestinationNode)
@@ -213,7 +213,7 @@ end_resolvable_faults(#fault_model_state{send_omissions=SendOmissions, receive_o
         end_receive_omission(SourceNode, DestinationNode)
     end, dict:to_list(ReceiveOmissions)),
 
-    ?PROPERTY_MODULE:command_conclusion(node(), [end_resolvable_faults]),
+    ?PROPERTY_MODULE:command_conclusion(node(), [end_faults_with_resolve]),
     ok.
 
 %%%===================================================================
@@ -237,7 +237,7 @@ fault_commands(FaultModelState, JoinedNodes) ->
      {call, ?MODULE, end_receive_omission, [node_name(), node_name()]},
 
      %% End all resolvable faults.
-     {call, ?MODULE, end_resolvable_faults, [FaultModelState]}
+     {call, ?MODULE, end_faults_with_resolve, [FaultModelState]}
     ].
 
 %% Names of the node functions so we kow when we can dispatch to the node
@@ -255,7 +255,7 @@ fault_end_functions() ->
 
 %% Global functions.
 fault_global_functions() ->
-    [end_resolvable_faults].
+    [end_faults_with_resolve].
 
 %% Initialize failure state.
 fault_initial_state() ->
@@ -278,7 +278,7 @@ fault_initial_state() ->
                        receive_omissions=ReceiveOmissions}.
 
 %% Receive omission.
-fault_precondition(_FaultModelState, {call, _Mod, end_resolvable_faults, [FaultModelState]}) ->
+fault_precondition(_FaultModelState, {call, _Mod, end_faults_with_resolve, [FaultModelState]}) ->
     fault_num_resolvable_faults(FaultModelState) >= 0;
 
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, receive_omissions=ReceiveOmissions}=FaultModelState, {call, _Mod, begin_receive_omission, [SourceNode, DestinationNode]}=Call) ->
@@ -367,7 +367,7 @@ fault_precondition(_FaultModelState, {call, Mod, Fun, [_Node|_]=Args}) ->
     false.
 
 %% Receive omission.
-fault_next_state(FaultModelState, _Res, {call, _Mod, end_resolvable_faults, [FaultModelState]}) ->
+fault_next_state(FaultModelState, _Res, {call, _Mod, end_faults_with_resolve, [FaultModelState]}) ->
     ReceiveOmissions = dict:new(),
     SendOmissions = dict:new(),
     FaultModelState#fault_model_state{send_omissions=SendOmissions, receive_omissions=ReceiveOmissions};
@@ -401,7 +401,7 @@ fault_next_state(FaultModelState, _Res, _Call) ->
     FaultModelState.
 
 %% Resolve faults.
-fault_postcondition(_FaultModelState, {call, _Mod, end_resolvable_faults, [_FaultModelState]}, ok) ->
+fault_postcondition(_FaultModelState, {call, _Mod, end_faults_with_resolve, [_FaultModelState]}, ok) ->
     true;
 
 %% Receive omission.
