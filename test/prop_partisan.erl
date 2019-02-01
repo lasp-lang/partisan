@@ -69,7 +69,7 @@
 -define(PERFORM_LEAVES_AND_JOINS, false).           
 
 %% Do we perform fault-injection?                                            
--define(PERFORM_FAULT_INJECTION, true).
+-define(PERFORM_FAULT_INJECTION, false).
 
 %% Debug.
 -define(DEBUG, true).
