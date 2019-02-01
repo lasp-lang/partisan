@@ -69,7 +69,7 @@
 -define(PERFORM_LEAVES_AND_JOINS, false).           
 
 %% Do we perform fault-injection?                                            
--define(PERFORM_FAULT_INJECTION, false).
+-define(PERFORM_FAULT_INJECTION, true).
 
 %% Debug.
 -define(DEBUG, true).
@@ -193,11 +193,11 @@ command(#state{fault_model_state=FaultModelState, joined_nodes=JoinedNodes}=Stat
     end, fault_commands(FaultModelState, JoinedNodes)),
 
     %% System model commands.
-    SystemModelCommands = lists:map(fun(Command) -> 
-        {1, Command} 
+    SystemCommands = lists:map(fun(Command) -> 
+        {2, Command} 
     end, node_commands()), 
 
-    frequency(ClusterCommands ++ FaultModelCommands ++ SystemModelCommands).
+    frequency(ClusterCommands ++ FaultModelCommands ++ SystemCommands).
 
 %% Picks whether a command should be valid under the current state.
 precondition(#state{nodes=Nodes, joined_nodes=JoinedNodes}, {call, _Mod, sync_join_cluster, [Node, JoinedNodes]}) -> 
