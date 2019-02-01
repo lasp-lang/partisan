@@ -43,6 +43,7 @@
 %% Test variables.
 -define(TEST_NUM_NODES, 4).
 -define(ALLOWED_BEGIN_FAULT_COUNTER, 5).
+-define(END_FAULT_COUNTER, 7).
 -define(ALLOWED_ASSERTION_COUNTER, 9).
 -define(MEMBERSHIP_STRATEGY_TRACING, false).
 
