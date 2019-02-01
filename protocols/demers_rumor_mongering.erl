@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(demers_direct_mail).
+-module(demers_rumor_mongering).
 
 -include("partisan.hrl").
 
@@ -95,10 +95,10 @@ handle_cast({broadcast, ServerRef, Message}, #state{membership=Membership}=State
     %% Store outgoing message.
     true = ets:insert(?MODULE, {Id, Message}),
 
-    %% Forward message.
+    %% Forward messages.
     lists:foreach(fun(N) ->
         lager:info("~p: sending broadcast message to node ~p: ~p", [node(), N, Message]),
-        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {broadcast, Id, ServerRef, Message}, [{ack, true}])
+        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {broadcast, Id, ServerRef, Message, MyNode}, [{ack, true}])
     end, membership(Membership) -- [MyNode]),
 
     {noreply, State};
@@ -111,8 +111,8 @@ handle_cast(Msg, State) ->
 
 %% @private
 %% Incoming messages.
-handle_info({broadcast, Id, ServerRef, Message}, State) ->
-    lager:info("~p received value from broadcast: ~p", [node(), Message]),
+handle_info({broadcast, Id, ServerRef, Message, FromNode}, #state{membership=Membership}=State) ->
+    lager:info("~p received broadcast value from node ~p: ~p", [node(), FromNode, Message]),
 
     case ets:lookup(?MODULE, Id) of
         [] ->
@@ -121,6 +121,16 @@ handle_info({broadcast, Id, ServerRef, Message}, State) ->
 
             %% Store.
             true = ets:insert(?MODULE, {Id, Message}),
+
+            %% Forward to our peers.
+            Manager = manager(),
+            MyNode = partisan_peer_service_manager:mynode(),
+
+            %% Forward messages to peers to everyone except where we got it from and ourselves.
+            lists:foreach(fun(N) ->
+                lager:info("~p: sending broadcast message to node ~p: ~p", [node(), N, Message]),
+                Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {broadcast, Id, ServerRef, Message, MyNode}, [])
+            end, membership(Membership) -- [MyNode, FromNode]),
 
             ok;
         _ ->
