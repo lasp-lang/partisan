@@ -94,7 +94,7 @@ handle_cast({broadcast, ServerRef, Message}, State) ->
     partisan_util:process_forward(ServerRef, Message),
 
     %% Store outgoing message.
-    true = ets:insert(?MODULE, {Id, Message}),
+    true = ets:insert(?MODULE, {Id, {ServerRef, Message}}),
 
     {noreply, State};
 handle_cast({update, Membership0}, State) ->
@@ -111,8 +111,8 @@ handle_info(antientropy, #state{membership=Membership}=State) ->
     MyNode = partisan_peer_service_manager:mynode(),
 
     %% Get all of our messages.
-    OurMessages = ets:foldl(fun({Id, Message}, Acc) ->
-        Acc ++ [{Id, Message}] 
+    OurMessages = ets:foldl(fun({Id, {ServerRef, Message}}, Acc) ->
+        Acc ++ [{Id, {ServerRef, Message}}] 
     end, [], ?MODULE),
 
     %% Forward to all peers.
@@ -129,15 +129,25 @@ handle_info({push, FromNode, TheirMessages}, State) ->
     Manager = manager(),
     MyNode = partisan_peer_service_manager:mynode(),
 
-    %% Encorporate their messages.
-    lists:foreach(fun({Id, Message}) ->
-            %% Store.
-            true = ets:insert(?MODULE, {Id, Message})
+    %% Encorporate their messages and process them if we didn't see them.
+    lists:foreach(fun({Id, {ServerRef, Message}}) ->
+        case ets:lookup(?MODULE, Id) of
+            [] ->
+                %% Forward to process.
+                partisan_util:process_forward(ServerRef, Message),
+
+                %% Store.
+                true = ets:insert(?MODULE, {Id, {ServerRef, Message}}),
+
+                ok;
+            _ ->
+                ok
+        end
     end, TheirMessages),
 
     %% Get all of our messages.
-    OurMessages = ets:foldl(fun({Id, Message}, Acc) ->
-        Acc ++ [{Id, Message}] 
+    OurMessages = ets:foldl(fun({Id, {ServerRef, Message}}, Acc) ->
+        Acc ++ [{Id, {ServerRef, Message}}] 
     end, [], ?MODULE),
 
     %% Forward message back to sender.
@@ -148,9 +158,19 @@ handle_info({push, FromNode, TheirMessages}, State) ->
 
 handle_info({pull, _FromNode, Messages}, State) ->
     %% Process all incoming.
-    lists:foreach(fun({Id, Message}) ->
-            %% Store.
-            true = ets:insert(?MODULE, {Id, Message})
+    lists:foreach(fun({Id, {ServerRef, Message}}) ->
+        case ets:lookup(?MODULE, Id) of
+            [] ->
+                %% Forward to process.
+                partisan_util:process_forward(ServerRef, Message),
+
+                %% Store.
+                true = ets:insert(?MODULE, {Id, {ServerRef, Message}}),
+
+                ok;
+            _ ->
+                ok
+        end
     end, Messages),
 
     {noreply, State};

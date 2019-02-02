@@ -29,7 +29,7 @@
 -compile([export_all]).
 
 -define(ASSERT_MAILBOX, true).
--define(BROADCAST_MODULE, demers_direct_mail).
+-define(BROADCAST_MODULE, demers_anti_entropy).
 
 -define(PERFORM_SUMMARY, false).
 

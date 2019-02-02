@@ -539,7 +539,7 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Ori
     DeliveryFun = fun() ->
         %% Fire pre-interposition functions.
         PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
-            lager:info("firing forward_message preinterposition fun for original message: ~p", [OriginalMessage]),
+            %% lager:info("firing forward_message preinterposition fun for original message: ~p", [OriginalMessage]),
             PreInterpositionFun({forward_message, Name, OriginalMessage}),
             ok
         end,
@@ -644,7 +644,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                    post_interposition_funs=PostInterpositionFuns, 
                    connections=Connections, 
                    vclock=VClock0}=State) ->
-    lager:info("~p: Inside the send interposition, message ~p from ~p at node ~p", [node(), OriginalMessage, Name, node()]),
+    %% lager:info("~p: Inside the send interposition, message ~p from ~p at node ~p", [node(), OriginalMessage, Name, node()]),
     %% lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
 
     %% Filter messages using interposition functions.
