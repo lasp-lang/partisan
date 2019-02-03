@@ -95,16 +95,19 @@ handle_cast({broadcast, ServerRef, Message}, #state{membership=Membership}=State
     %% Store outgoing message.
     true = ets:insert(?MODULE, {Id, Message}),
 
-    %% Forward messages.
+    %% Forward to random subset of peers.
+    AntiEntropyMembers = select_random_sublist(membership(Membership), ?GOSSIP_FANOUT),
+
     lists:foreach(fun(N) ->
-        lager:info("~p: sending broadcast message to node ~p: ~p", [node(), N, Message]),
-        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {broadcast, Id, ServerRef, Message, MyNode}, [{ack, true}])
-    end, membership(Membership) -- [MyNode]),
+        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {broadcast, Id, ServerRef, Message, MyNode}, [])
+    end, AntiEntropyMembers -- [MyNode]),
 
     {noreply, State};
+
 handle_cast({update, Membership0}, State) ->
     Membership = membership(Membership0),
     {noreply, State#state{membership=Membership}};
+
 handle_cast(Msg, State) ->
     lager:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
@@ -126,11 +129,12 @@ handle_info({broadcast, Id, ServerRef, Message, FromNode}, #state{membership=Mem
             Manager = manager(),
             MyNode = partisan_peer_service_manager:mynode(),
 
-            %% Forward messages to peers to everyone except where we got it from and ourselves.
+            %% Forward to random subset of peers: except ourselves and where we got it from.
+            AntiEntropyMembers = select_random_sublist(membership(Membership), ?GOSSIP_FANOUT),
+
             lists:foreach(fun(N) ->
-                lager:info("~p: sending broadcast message to node ~p: ~p", [node(), N, Message]),
                 Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {broadcast, Id, ServerRef, Message, MyNode}, [])
-            end, membership(Membership) -- [MyNode, FromNode]),
+            end, AntiEntropyMembers -- [MyNode, FromNode]),
 
             ok;
         _ ->
@@ -160,3 +164,11 @@ manager() ->
 %% @private -- sort to remove nondeterminism in node selection.
 membership(Membership) ->
     lists:usort(Membership).
+
+%% @private
+select_random_sublist(Membership, K) ->
+    lists:sublist(shuffle(Membership), K).
+
+%% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
+shuffle(L) ->
+    [X || {_, X} <- lists:sort([{rand:uniform(), N} || N <- L])].

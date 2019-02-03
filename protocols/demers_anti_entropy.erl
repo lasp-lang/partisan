@@ -97,9 +97,11 @@ handle_cast({broadcast, ServerRef, Message}, State) ->
     true = ets:insert(?MODULE, {Id, {ServerRef, Message}}),
 
     {noreply, State};
+
 handle_cast({update, Membership0}, State) ->
     Membership = membership(Membership0),
     {noreply, State#state{membership=Membership}};
+
 handle_cast(Msg, State) ->
     lager:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
@@ -115,10 +117,12 @@ handle_info(antientropy, #state{membership=Membership}=State) ->
         Acc ++ [{Id, {ServerRef, Message}}] 
     end, [], ?MODULE),
 
-    %% Forward to all peers.
+    %% Forward to random subset of peers.
+    AntiEntropyMembers = select_random_sublist(membership(Membership), ?GOSSIP_FANOUT),
+
     lists:foreach(fun(N) ->
         Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {push, MyNode, OurMessages}, [])
-    end, membership(Membership) -- [MyNode]),
+    end, AntiEntropyMembers -- [MyNode]),
 
     %% Reschedule.
     schedule_anti_entropy(),
@@ -202,3 +206,11 @@ membership(Membership) ->
 schedule_anti_entropy() ->
     Interval = 1000,
     erlang:send_after(Interval, ?MODULE, antientropy).
+
+%% @private
+select_random_sublist(Membership, K) ->
+    lists:sublist(shuffle(Membership), K).
+
+%% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
+shuffle(L) ->
+    [X || {_, X} <- lists:sort([{rand:uniform(), N} || N <- L])].
