@@ -59,7 +59,6 @@
          fault_num_resolvable_faults/1]).
 
 %% General test configuration
--define(COMMAND_MULTIPLE, 10).
 -define(CLUSTER_NODES, true).
 -define(MANAGER, partisan_pluggable_peer_service_manager).
 
@@ -102,7 +101,7 @@
 prop_sequential() ->
     node_begin_property(),
 
-    ?FORALL(Cmds, more_commands(?COMMAND_MULTIPLE, commands(?MODULE)), 
+    ?FORALL(Cmds, modified_commands(?MODULE), 
         begin
             start_nodes(),
             node_begin_case(),
@@ -114,20 +113,12 @@ prop_sequential() ->
                       aggregate(command_names(Cmds), Result =:= ok))
         end).
 
-prop_parallel() ->
-    node_begin_property(),
-    
-    ?FORALL(Cmds, more_commands(?COMMAND_MULTIPLE, parallel_commands(?MODULE)), 
-        begin
-            start_nodes(),
-            node_begin_case(),
-            {History, State, Result} = run_parallel_commands(?MODULE, Cmds), 
-            node_end_case(),
-            stop_nodes(),
-            ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
-                                [History,State,Result]),
-                      aggregate(command_names(Cmds), Result =:= ok))
-        end).
+%%%===================================================================
+%%% Command sequences
+%%%===================================================================
+
+modified_commands(Module) ->
+    ?LET(Commands, commands(Module), Commands).
 
 %%%===================================================================
 %%% Initial state
