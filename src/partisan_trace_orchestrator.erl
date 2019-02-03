@@ -227,6 +227,7 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
     end, Trace),
 
     write_trace(Trace),
+    write_json_trace(Trace),
 
     {reply, ok, State};
 handle_call(Msg, _From, State) ->
@@ -449,6 +450,97 @@ write_trace(Trace) ->
 
     ok.
 
+%% @private
+write_json_trace(Trace) ->
+    %% Write trace.
+    FilteredJsonTrace = lists:map(fun({Type, Message}) ->
+        case Type of 
+            pre_interposition_fun ->
+                %% Trace all entry points if protocol message, unless tracing enabled.
+                {TracingNode, InterpositionType, OriginNode, MessagePayload} = Message,
+
+                case is_membership_strategy_message(InterpositionType, MessagePayload) of 
+                    true ->
+                        %% Trace protocol messages only if protocol tracing is enabled.
+                        case membership_strategy_tracing() of 
+                            true ->
+                                [
+                                 {type, pre_interposition_fun},
+                                 {tracing_node, TracingNode},
+                                 {interposition_type, InterpositionType},
+                                 {origin_node, OriginNode},
+                                 {message_payload, format_message_payload_for_json(MessagePayload)}
+                                ];
+                            false ->
+                                []
+                        end;
+                    false ->
+                        %% Always trace non-protocol messages.
+                        [
+                         {type, pre_interposition_fun},
+                         {tracing_node, TracingNode},
+                         {interposition_type, InterpositionType},
+                         {origin_node, OriginNode},
+                         {message_payload, format_message_payload_for_json(MessagePayload)}
+                        ]
+                end;
+            post_interposition_fun ->
+                %% Destructure message.
+                {TracingNode, OriginNode, InterpositionType, MessagePayload, RewrittenMessagePayload} = Message,
+
+                [
+                 {type, post_interposition_fun},
+                 {tracing_node, TracingNode},
+                 {interposition_type, InterpositionType},
+                 {origin_node, OriginNode},
+                 {message_payload, format_message_payload_for_json(MessagePayload)},
+                 {rewritten_message_payload, format_message_payload_for_json(RewrittenMessagePayload)}
+                ];
+            enter_command ->
+                {TracingNode, Command} = Message,
+
+                [
+                 {type, enter_command},
+                 {tracing_node, TracingNode},
+                 {command, Command}
+                ];
+            exit_command ->
+                {TracingNode, Command} = Message,
+
+                [
+                 {type, exit_command},
+                 {tracing_node, TracingNode},
+                 {command, Command}
+                ];
+            _ ->
+                []
+        end
+    end, Trace),
+
+    %% Filter out empty objects.
+    FilteredJsonTrace1 = lists:filter(fun(X) ->
+        case X of 
+            [] ->
+                false;
+            _ ->
+                true
+        end
+    end, FilteredJsonTrace),
+
+    EncodedJsonTrace = jsx:encode(FilteredJsonTrace1),
+    io:format("", []),
+    io:format("~s", [jsx:prettify(EncodedJsonTrace)]),
+    io:format("", []),
+    EncodedJsonTrace,
+
+    JsonTraceFile = trace_file() ++ ".json",
+    replay_debug("writing trace.", []),
+    {ok, Io} = file:open(JsonTraceFile, [write, {encoding, utf8}]),
+    io:format(Io, "~s", [jsx:prettify(EncodedJsonTrace)]),
+    file:close(Io),
+
+    ok.
+
 %% Should we do replay debugging?
 replay_debug(Line, Args) ->
     lager:info("~p: " ++ Line, [?MODULE] ++ Args).
@@ -456,6 +548,10 @@ replay_debug(Line, Args) ->
 %% @private
 membership_strategy_tracing() ->
     partisan_config:get(membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING).
+
+%% @private
+format_message_payload_for_json(MessagePayload) ->
+    list_to_binary(lists:flatten(io_lib:format("~w", [MessagePayload]))).
 
 %%%===================================================================
 %%% Trace filtering: super hack, until we can refactor these messages.
