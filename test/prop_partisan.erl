@@ -372,10 +372,10 @@ command_preamble(Node, Command) ->
     debug("command preamble fired for command at node ~p: ~p", [Node, Command]),
 
     %% Log command entrance trace.
-    partisan_trace_orchestrator:trace(enter_command, {Node, Command}),
+    partisan_trace_orchestrator:trace(enter_command, {?NAME(Node), Command}),
 
     %% Under replay, perform the trace replay.
-    partisan_trace_orchestrator:replay(enter_command, {Node, Command}),
+    partisan_trace_orchestrator:replay(enter_command, {?NAME(Node), Command}),
 
     ok.
 
@@ -383,10 +383,10 @@ command_conclusion(Node, Command) ->
     debug("command conclusion fired for command at node ~p: ~p", [Node, Command]),
 
     %% Log command entrance trace.
-    partisan_trace_orchestrator:trace(exit_command, {Node, Command}),
+    partisan_trace_orchestrator:trace(exit_command, {?NAME(Node), Command}),
 
     %% Under replay, perform the trace replay.
-    partisan_trace_orchestrator:replay(exit_command, {Node, Command}),
+    partisan_trace_orchestrator:replay(exit_command, {?NAME(Node), Command}),
 
     ok.
 
