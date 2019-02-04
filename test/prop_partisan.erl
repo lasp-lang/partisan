@@ -138,8 +138,13 @@ modified_commands(Module) ->
                 end
             end, Commands),
 
-            % Add a command to resolve all partitions with a heal.
-            ResolveCommands = [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_heal,[]}}],
+            %% Add a command to resolve all partitions with a heal.
+            ResolveCommands = case rand:uniform(10) rem 2 =:= 0 of 
+                true ->
+                    [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_heal,[]}}];
+                false ->
+                    [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_crash,[]}}]
+            end,
 
             %% Only global node commands.
             CommandsWithOnlyGlobalNodeCommands = lists:map(fun(Fun) ->
@@ -360,7 +365,7 @@ next_state(#state{counter=Counter, fault_model_state=FaultModelState0, node_stat
                     FaultModelState = fault_next_state(FaultModelState0, Res, Call),
                     State#state{fault_model_state=FaultModelState, counter=Counter+1};
                 false ->
-                    debug("general next_state fired", []),
+                    debug("general next_state fired for fun: ~p", [Fun]),
                     State#state{counter=Counter+1}
             end
     end.

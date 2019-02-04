@@ -69,28 +69,11 @@ names() ->
 stop(Name, JoinedNames) ->
     ?PROPERTY_MODULE:command_preamble(Name, [stop, JoinedNames]),
 
-    fault_debug("stopping node: ~p", [Name]),
-
-    Result = case ct_slave:stop(Name) of
-        {ok, _} ->
-            ok;
-        {error, stop_timeout, _} ->
-            fault_debug("Failed to stop node ~p: stop_timeout!", [Name]),
-            crash(Name, JoinedNames),
-            ok;
-        {error, not_started, _} ->
-            ok;
-        Error ->
-            ct:fail(Error)
-    end,
-
-    %% Wait for all nodes to detect failure.
-    %% TODO: This needs to be done using the on_down callback, but whatever for now.
-    timer:sleep(20000),
+    %% TODO: Implement me.
 
     ?PROPERTY_MODULE:command_conclusion(Name, [stop, JoinedNames]),
 
-    Result.
+    {error, not_implemented}.
 
 %% Crash the node.
 %% Crash is a stop that doesn't wait for all members to know about the crash.
@@ -100,22 +83,11 @@ crash(Name, JoinedNames) ->
 
     fault_debug("crashing node: ~p", [Name]),
 
-    Result = case ct_slave:stop(Name) of
-        {ok, _} ->
-            ok;
-        {error, stop_timeout, _} ->
-            fault_debug("Failed to stop node ~p: stop_timeout!", [Name]),
-            crash(Name, JoinedNames),
-            ok;
-        {error, not_started, _} ->
-            ok;
-        Error ->
-            ct:fail(Error)
-    end,
+    internal_crash(Name),
 
     ?PROPERTY_MODULE:command_conclusion(Name, [crash, JoinedNames]),
 
-    Result.
+    ok.
 
 %% Create a receive omission failure.
 begin_receive_omission(SourceNode0, DestinationNode) ->
@@ -232,6 +204,45 @@ resolve_all_faults_with_heal() ->
 
     ok.
 
+%% Resolve all faults with crash.
+resolve_all_faults_with_crash() ->
+    fault_debug("executing resolve_all_faults_with_crash command", []),
+
+    RunnerNode = node(),
+
+    ?PROPERTY_MODULE:command_preamble(RunnerNode, [resolve_all_faults_with_crash]),
+
+    %% Remove all interposition funs.
+    lists:foreach(fun(Node) ->
+        % fault_debug("getting interposition funs at node ~p", [Node]),
+
+        case rpc:call(?NAME(Node), ?MANAGER, get_interposition_funs, []) of 
+            {badrpc, nodedown} ->
+                ok;
+            {ok, InterpositionFuns0} ->
+                InterpositionFuns = dict:to_list(InterpositionFuns0),
+                % fault_debug("=> ~p", [InterpositionFuns]),
+
+                lists:foreach(fun({InterpositionName, _Function}) ->
+                    % fault_debug("=> removing interposition: ~p", [InterpositionName]),
+                    ok = rpc:call(?NAME(Node), ?MANAGER, remove_interposition_fun, [InterpositionName]),
+
+                %% Crash node.
+                fault_debug("=> crashing node!", []),
+                internal_crash(Node),
+
+                ok
+            end, InterpositionFuns)
+        end
+    end, names()),
+
+    %% Sleep.
+    timer:sleep(1000),
+
+    ?PROPERTY_MODULE:command_conclusion(RunnerNode, [resolve_all_faults_with_crash]),
+
+    ok.
+
 %%%===================================================================
 %%% Fault Model
 %%%===================================================================
@@ -268,7 +279,7 @@ fault_end_functions() ->
 
 %% Commands to resolve global failures.
 fault_global_functions() ->
-    [resolve_all_faults_with_heal].
+    [resolve_all_faults_with_heal, resolve_all_faults_with_crash].
 
 %% Initialize failure state.
 fault_initial_state() ->
@@ -408,6 +419,17 @@ fault_next_state(FaultModelState, _Res, {call, _Mod, resolve_all_faults_with_hea
     ReceiveOmissions = dict:new(),
     FaultModelState#fault_model_state{send_omissions=SendOmissions, receive_omissions=ReceiveOmissions};
 
+fault_next_state(#fault_model_state{crashed_nodes=CrashedNodes0}=FaultModelState, 
+                 _Res, 
+                 {call, _Mod, resolve_all_faults_with_crash, []}) ->
+    SendOmissions = dict:new(),
+    ReceiveOmissions = dict:new(),
+    CrashedNodes = lists:usort(CrashedNodes0 ++ active_faults(FaultModelState)),
+
+    FaultModelState#fault_model_state{crashed_nodes=CrashedNodes, 
+                                      send_omissions=SendOmissions, 
+                                      receive_omissions=ReceiveOmissions};
+
 fault_next_state(FaultModelState, _Res, _Call) ->
     FaultModelState.
 
@@ -434,6 +456,9 @@ fault_postcondition(_FaultModelState, {call, _Mod, crash, [_Node, _JoinedNodes]}
     true;
 
 fault_postcondition(_FaultModelState, {call, _Mod, resolve_all_faults_with_heal, []}, ok) ->
+    true;
+
+fault_postcondition(_FaultModelState, {call, _Mod, resolve_all_faults_with_crash, []}, ok) ->
     true;
 
 fault_postcondition(_FaultModelState, {call, Mod, Fun, [_Node|_]=Args}, Res) ->
@@ -545,4 +570,19 @@ wait_until_result(Fun, Result, Retry, Delay) when Retry > 0 ->
         _ ->
             timer:sleep(Delay),
             wait_until_result(Fun, Result, Retry-1, Delay)
+    end.
+
+%% @private
+internal_crash(Name) ->
+    case ct_slave:stop(Name) of
+        {ok, _} ->
+            ok;
+        {error, stop_timeout, _} ->
+            fault_debug("Failed to stop node ~p: stop_timeout!", [Name]),
+            internal_crash(Name),
+            ok;
+        {error, not_started, _} ->
+            ok;
+        Error ->
+            ct:fail(Error)
     end.
