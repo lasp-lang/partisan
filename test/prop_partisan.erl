@@ -128,20 +128,6 @@ modified_commands(Module) ->
                 debug("~p: -> ~p~n", [?MODULE, Command])
             end, Commands),
 
-            % Add a command to resolve all partitions with a heal.
-            ResolveNth = length(Commands) + 1,
-            ResolveCommands = [{set,{var,ResolveNth},{call,?FAULT_MODEL,resolve_all_faults_with_heal,[]}}],
-
-            %% Only global node commands.
-            CommandsWithOnlyGlobalNodeCommands = lists:filter(fun({set,{var,_Nth},{call,_Mod,Fun,_Args}}) ->
-                case lists:member(Fun, node_global_functions()) of 
-                    true ->
-                        true;
-                    _ ->
-                        false
-                end
-            end, Commands), 
-
             %% Filter out global commands.
             CommandsWithoutGlobalNodeCommands = lists:filter(fun({set,{var,_Nth},{call,_Mod,Fun,_Args}}) ->
                 case lists:member(Fun, node_global_functions()) of 
@@ -151,6 +137,22 @@ modified_commands(Module) ->
                         true
                 end
             end, Commands),
+
+            % Add a command to resolve all partitions with a heal.
+            ResolveCommands = [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_heal,[]}}],
+
+            %% Only global node commands.
+            CommandsWithOnlyGlobalNodeCommands0 = lists:flatmap(fun({set,{var,_Nth},{call,_Mod,Fun,_Args}}) ->
+                case lists:member(Fun, node_global_functions()) of 
+                    true ->
+                        [{set,{var,_Nth},{call,_Mod,Fun,_Args}}];
+                    _ ->
+                        []
+                end
+            end, Commands), 
+
+            %% Remove duplicates.
+            CommandsWithOnlyGlobalNodeCommands = lists:usort(CommandsWithOnlyGlobalNodeCommands0),
 
             %% Derive final command sequence.
             FinalCommands0 = lists:flatten(
