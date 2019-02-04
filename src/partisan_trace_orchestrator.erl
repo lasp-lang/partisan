@@ -531,7 +531,7 @@ write_json_trace(Trace) ->
     EncodedJsonTrace = jsx:encode(FilteredJsonTrace1),
 
     JsonTraceFile = trace_file() ++ ".json",
-    replay_debug("writing trace.", []),
+    replay_debug("writing JSON trace.", []),
     {ok, Io} = file:open(JsonTraceFile, [write, {encoding, utf8}]),
     io:format(Io, "~s", [jsx:prettify(EncodedJsonTrace)]),
     file:close(Io),
