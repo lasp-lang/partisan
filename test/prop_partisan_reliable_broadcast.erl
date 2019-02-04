@@ -58,16 +58,7 @@ names() ->
 
 %% What node-specific operations should be called.
 node_commands() ->
-    CoreCommands = [{call, ?MODULE, broadcast, [node_name(), message()]}],
-
-    AssertionCommands = case ?ASSERT_MAILBOX of
-        true ->
-            [{call, ?MODULE, check_mailbox, []}];
-        false ->
-            []
-    end,
-
-    AssertionCommands ++ CoreCommands.
+    [{call, ?MODULE, broadcast, [node_name(), message()]}].
 
 %% Assertion commands.
 node_assertion_functions() ->
