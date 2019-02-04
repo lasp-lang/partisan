@@ -99,5 +99,8 @@ compose: containerize
 ## Testing targets
 ##
 
-demers-direct-mail-test: kill
+make bin-perms:
+	chmod 755 bin/*.sh
+
+demers-direct-mail-test: kill bin-perms
 	BROADCAST_MODULE=demers_direct_mail bin/counterexample-find.sh 
