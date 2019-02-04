@@ -94,3 +94,10 @@ containerize: containerize-deps
 
 compose: containerize
 	docker-compose down; docker-compose rm; docker-compose up
+
+##
+## Testing targets
+##
+
+demers-direct-mail-test: kill
+	BROADCAST_MODULE=demers_direct_mail bin/counterexample-find.sh 
