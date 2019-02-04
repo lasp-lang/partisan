@@ -29,7 +29,6 @@
 -compile([export_all]).
 
 -define(ASSERT_MAILBOX, true).
--define(BROADCAST_MODULE, demers_direct_mail).
 
 -define(PERFORM_SUMMARY, false).
 
@@ -155,7 +154,7 @@ broadcast(Node, {Id, Value}) ->
     %% Transmit message.
     FullMessage = {Id, Node, Value},
     node_debug("broadcast from node ~p message: ~p", [Node, FullMessage]),
-    Result = rpc:call(?NAME(Node), ?BROADCAST_MODULE, broadcast, [?RECEIVER, FullMessage]),
+    Result = rpc:call(?NAME(Node), broadcast_module(), broadcast, [?RECEIVER, FullMessage]),
 
     %% Sleep for 1 second, giving time for message to propagate.
     timer:sleep(1000),
@@ -226,7 +225,7 @@ node_begin_case() ->
     %% Start the backend.
     lists:foreach(fun({ShortName, _}) ->
         %% node_debug("starting ~p at node ~p with node list ~p ", [?BROADCAST_MODULE, ShortName, SublistNodeProjection]),
-        {ok, _Pid} = rpc:call(?NAME(ShortName), ?BROADCAST_MODULE, start_link, [])
+        {ok, _Pid} = rpc:call(?NAME(ShortName), broadcast_module(), start_link, [])
     end, Nodes),
 
     lists:foreach(fun({ShortName, _}) ->
@@ -286,3 +285,15 @@ node_end_case() ->
     node_debug("ending case", []),
 
     ok.
+
+%% @private
+broadcast_module() ->
+    Module = case os:getenv("BROADCAST_MODULE") of 
+        false ->
+            demers_direct_mail;
+        Other ->
+            list_to_atom(Other)
+    end,
+
+    node_debug("broadcast module is defined as ~p", [Module]),
+    Module.
