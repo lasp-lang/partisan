@@ -10,10 +10,10 @@ script:
   - make test
   - make xref
   - make dialyzer
-  - BROADCAST_MODULE=demers_direct_mail bin/counterexample-find.sh 
-  - BROADCAST_MODULE=demers_direct_mail_acked bin/counterexample-find.sh 
-  - BROADCAST_MODULE=demers_anti_entropy bin/counterexample-find.sh 
-  - BROADCAST_MODULE=demers_rumor_mongering bin/counterexample-find.sh 
+  - make demers-direct-mail-test
+  - make demers-direct-mail-acked-test
+  - make demers-anti-entropy-test
+  - make demers-rumor-mongering-test
 notifications:
   email: christopher.meiklejohn@gmail.com
   slack: lasp-lang:hiPRNnbUa3zdGrrXZfGRAF7D
