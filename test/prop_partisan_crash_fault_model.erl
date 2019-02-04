@@ -201,6 +201,12 @@ end_send_omission(SourceNode, DestinationNode0) ->
 
 %% Resolve all faults with heal.
 resolve_all_faults_with_heal() ->
+    fault_debug("executing resolve_all_faults_with_heal command", []),
+
+    RunnerNode = node(),
+
+    ?PROPERTY_MODULE:command_preamble(RunnerNode, [resolve_all_faults_with_heal]),
+
     %% Remove all interposition funs.
     lists:foreach(fun(Node) ->
         % fault_debug("getting interposition funs at node ~p", [Node]),
@@ -221,6 +227,8 @@ resolve_all_faults_with_heal() ->
 
     %% Sleep.
     timer:sleep(1000),
+
+    ?PROPERTY_MODULE:command_conclusion(RunnerNode, [resolve_all_faults_with_heal]),
 
     ok.
 
