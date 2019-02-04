@@ -145,7 +145,7 @@ modified_commands(Module) ->
             CommandsWithOnlyGlobalNodeCommands0 = lists:flatmap(fun({set,{var,_Nth},{call,_Mod,Fun,_Args}}) ->
                 case lists:member(Fun, node_global_functions()) of 
                     true ->
-                        [{set,{var,_Nth},{call,_Mod,Fun,_Args}}];
+                        [{set,{var,0},{call,_Mod,Fun,_Args}}];
                     _ ->
                         []
                 end
