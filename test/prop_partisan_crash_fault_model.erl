@@ -365,12 +365,13 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelStat
     not lists:member(Node, CrashedNodes);
 
 %% Crash failures.
-fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelState, {call, _Mod, crash, [Node, _JoinedNames]}=Call) ->
-    %% Fault must be allowed at this moment.
-    fault_allowed(Call, FaultModelState) andalso 
+fault_precondition(#fault_model_state{crashed_nodes=_CrashedNodes}=_FaultModelState, {call, _Mod, crash, [_Node, _JoinedNames]}=_Call) ->
+    % %% Fault must be allowed at this moment.
+    % fault_allowed(Call, FaultModelState) andalso 
 
-    %% Node to crash must be online at the time.
-    not lists:member(Node, CrashedNodes);
+    % %% Node to crash must be online at the time.
+    % not lists:member(Node, CrashedNodes);
+    false;
 
 fault_precondition(_FaultModelState, {call, Mod, Fun, [_Node|_]=Args}) ->
     fault_debug("fault precondition fired for ~p:~p(~p)", [Mod, Fun, Args]),

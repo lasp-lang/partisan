@@ -125,7 +125,7 @@ modified_commands(Module) ->
             debug("~p: original command sequence...~n", [?MODULE]),
 
             lists:foreach(fun(Command) -> 
-                debug("~p: -> ~p~n", [?MODULE, Command])
+                debug("-> ~p~n", [Command])
             end, Commands),
 
             %% Filter out global commands.
@@ -163,10 +163,10 @@ modified_commands(Module) ->
             end, {[], 1}, FinalCommands0),
 
             %% Print final command sequence.
-            debug("~p: altered command sequence...~n", [?MODULE]),
+            debug("altered command sequence...~n", []),
 
             lists:foreach(fun(Command) -> 
-                debug("~p: => ~p~n", [?MODULE, Command])
+                debug("=> ~p~n", [Command])
             end, FinalCommands),
 
             %% Return the final command sequence.
