@@ -237,7 +237,7 @@ command(#state{joined_nodes=JoinedNodes}=State) ->
 
     %% System model commands.
     SystemCommands = lists:map(fun(Command) -> 
-        {2, Command} 
+        {1, Command} 
     end, node_commands()), 
 
     frequency(ClusterCommands ++ FaultModelCommands ++ SystemCommands).
