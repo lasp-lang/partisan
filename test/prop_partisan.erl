@@ -142,17 +142,9 @@ modified_commands(Module) ->
             ResolveCommands = [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_heal,[]}}],
 
             %% Only global node commands.
-            CommandsWithOnlyGlobalNodeCommands0 = lists:flatmap(fun({set,{var,_Nth},{call,_Mod,Fun,_Args}}) ->
-                case lists:member(Fun, node_global_functions()) of 
-                    true ->
-                        [{set,{var,0},{call,_Mod,Fun,_Args}}];
-                    _ ->
-                        []
-                end
-            end, Commands), 
-
-            %% Remove duplicates.
-            CommandsWithOnlyGlobalNodeCommands = lists:usort(CommandsWithOnlyGlobalNodeCommands0),
+            CommandsWithOnlyGlobalNodeCommands = lists:map(fun(Fun) ->
+                {set,{var,0},{call,?SYSTEM_MODEL,Fun,[]}}
+            end, node_global_functions()), 
 
             %% Derive final command sequence.
             FinalCommands0 = lists:flatten(
