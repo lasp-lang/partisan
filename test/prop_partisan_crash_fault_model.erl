@@ -199,6 +199,23 @@ end_send_omission(SourceNode, DestinationNode0) ->
 
     Result.
 
+%% Resolve all faults with heal.
+resolve_all_faults_with_heal() ->
+    %% Remove all interposition funs.
+    lists:foreach(fun(Node) ->
+        fault_debug("getting interposition funs at node ~p", [Node]),
+        {ok, InterpositionFuns0} = rpc:call(?NAME(Node), ?MANAGER, get_interposition_funs, []),
+        InterpositionFuns = dict:to_list(InterpositionFuns0),
+        fault_debug("=> ~p", [InterpositionFuns]),
+
+        lists:foreach(fun({InterpositionName, _Function}) ->
+            fault_debug("=> removing interposition: ~p", [InterpositionName]),
+            ok = rpc:call(?NAME(Node), ?MANAGER, remove_interposition_fun, [InterpositionName])
+        end, InterpositionFuns)
+    end, names()),
+
+    ok.
+
 %%%===================================================================
 %%% Fault Model
 %%%===================================================================
@@ -232,6 +249,10 @@ fault_begin_functions() ->
 %% Commands to resolve failures.
 fault_end_functions() ->
     [end_send_omission, end_receive_omission].
+
+%% Commands to resolve global failures.
+fault_global_functions() ->
+    [resolve_all_faults_with_heal].
 
 %% Initialize failure state.
 fault_initial_state() ->
@@ -365,6 +386,12 @@ fault_next_state(#fault_model_state{crashed_nodes=CrashedNodes} = FaultModelStat
 fault_next_state(#fault_model_state{crashed_nodes=CrashedNodes} = FaultModelState, _Res, {call, _Mod, stop, [Node, _JoinedNodes]}) ->
     FaultModelState#fault_model_state{crashed_nodes=CrashedNodes ++ [Node]};
 
+%% Remove faults.
+fault_next_state(FaultModelState, _Res, {call, _Mod, resolve_all_faults_with_heal, []}) ->
+    SendOmissions = dict:new(),
+    ReceiveOmissions = dict:new(),
+    FaultModelState#fault_model_state{send_omissions=SendOmissions, receive_omissions=ReceiveOmissions};
+
 fault_next_state(FaultModelState, _Res, _Call) ->
     FaultModelState.
 
@@ -388,6 +415,9 @@ fault_postcondition(_FaultModelState, {call, _Mod, stop, [_Node, _JoinedNodes]},
 
 %% Crashes are allowed.
 fault_postcondition(_FaultModelState, {call, _Mod, crash, [_Node, _JoinedNodes]}, ok) ->
+    true;
+
+fault_postcondition(_FaultModelState, {call, _Mod, resolve_all_faults_with_heal, []}, ok) ->
     true;
 
 fault_postcondition(_FaultModelState, {call, Mod, Fun, [_Node|_]=Args}, Res) ->
