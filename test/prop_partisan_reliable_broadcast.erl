@@ -90,19 +90,25 @@ node_postcondition(#state{sent=Sent}, {call, ?MODULE, check_mailbox, []}, Result
         node_debug(" => sent: ~p", [Sent]),
         node_debug(" => received: ~p", [Messages]),
 
-        %% Figure out which messages we have.
-        Result = lists:all(fun(M) -> lists:member(M, Messages) end, Sent),
-
-        case Result of 
-            true ->
-                node_debug("verification of mailbox at node ~p complete.", [Node]),
+        case Messages of 
+            %% Crashed nodes are allowed to have any number of messages.
+            nodedown ->
                 true andalso All;
             _ ->
-                Missing = Sent -- Messages,
-                node_debug("verification of mailbox at node ~p failed.", [Node]),
-                node_debug(" => missing: ~p", [Missing]),
-                node_debug(" => received: ~p", [Messages]),
-                false andalso All
+                %% Figure out which messages we have.
+                Result = lists:all(fun(M) -> lists:member(M, Messages) end, Sent),
+
+                case Result of 
+                    true ->
+                        node_debug("verification of mailbox at node ~p complete.", [Node]),
+                        true andalso All;
+                    _ ->
+                        Missing = Sent -- Messages,
+                        node_debug("verification of mailbox at node ~p failed.", [Node]),
+                        node_debug(" => missing: ~p", [Missing]),
+                        node_debug(" => received: ~p", [Messages]),
+                        false andalso All
+                end
         end
     end, true, names());
 node_postcondition(_State, _Command, _Response) ->
