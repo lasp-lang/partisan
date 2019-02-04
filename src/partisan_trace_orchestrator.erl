@@ -527,11 +527,8 @@ write_json_trace(Trace) ->
         end
     end, FilteredJsonTrace),
 
+    %% Print the trace.
     EncodedJsonTrace = jsx:encode(FilteredJsonTrace1),
-    io:format("", []),
-    io:format("~s", [jsx:prettify(EncodedJsonTrace)]),
-    io:format("", []),
-    EncodedJsonTrace,
 
     JsonTraceFile = trace_file() ++ ".json",
     replay_debug("writing trace.", []),
