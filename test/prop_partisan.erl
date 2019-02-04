@@ -48,7 +48,7 @@
 -define(FAULT_MODEL, prop_partisan_crash_fault_model).
 
 -import(?FAULT_MODEL,
-        [fault_commands/1,
+        [fault_commands/0,
          fault_initial_state/0,
          fault_functions/1,
          fault_precondition/2,
@@ -214,7 +214,7 @@ initial_state() ->
            nodes=Nodes,
            node_state=NodeState}.
 
-command(#state{joined_nodes=JoinedNodes}=State) -> 
+command(State) -> 
     %% Cluster maintenance commands.
     ClusterCommands = lists:flatmap(fun(Command) -> 
         case ?PERFORM_LEAVES_AND_JOINS of 
@@ -233,7 +233,7 @@ command(#state{joined_nodes=JoinedNodes}=State) ->
             false ->
                 []
         end
-    end, fault_commands(JoinedNodes)),
+    end, fault_commands()),
 
     %% System model commands.
     SystemCommands = lists:map(fun(Command) -> 
