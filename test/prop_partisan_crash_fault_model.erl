@@ -204,15 +204,23 @@ resolve_all_faults_with_heal() ->
     %% Remove all interposition funs.
     lists:foreach(fun(Node) ->
         fault_debug("getting interposition funs at node ~p", [Node]),
-        {ok, InterpositionFuns0} = rpc:call(?NAME(Node), ?MANAGER, get_interposition_funs, []),
-        InterpositionFuns = dict:to_list(InterpositionFuns0),
-        fault_debug("=> ~p", [InterpositionFuns]),
 
-        lists:foreach(fun({InterpositionName, _Function}) ->
-            fault_debug("=> removing interposition: ~p", [InterpositionName]),
-            ok = rpc:call(?NAME(Node), ?MANAGER, remove_interposition_fun, [InterpositionName])
-        end, InterpositionFuns)
+        case rpc:call(?NAME(Node), ?MANAGER, get_interposition_funs, []) of 
+            {badrpc, nodedown} ->
+                ok;
+            {ok, InterpositionFuns0} ->
+                InterpositionFuns = dict:to_list(InterpositionFuns0),
+                fault_debug("=> ~p", [InterpositionFuns]),
+
+                lists:foreach(fun({InterpositionName, _Function}) ->
+                    fault_debug("=> removing interposition: ~p", [InterpositionName]),
+                    ok = rpc:call(?NAME(Node), ?MANAGER, remove_interposition_fun, [InterpositionName])
+            end, InterpositionFuns)
+        end
     end, names()),
+
+    %% Sleep.
+    timer:sleep(1000),
 
     ok.
 
