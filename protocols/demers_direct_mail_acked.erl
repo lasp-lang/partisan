@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(demers_direct_mail).
+-module(demers_direct_mail_acked).
 
 -include("partisan.hrl").
 
