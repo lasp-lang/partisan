@@ -183,7 +183,13 @@ check_mailbox() ->
                 dict:store(Node, Messages, Dict)
         after 
             10000 ->
-                dict:store(Node, [], Dict)
+                case rpc:call(?NAME(Node), erlang, is_process_alive, []) of 
+                    {badrpc, nodedown} ->
+                        dict:store(Node, nodedown, Dict);
+                    Other ->
+                        node_debug("=> no response, asked if node was alive: ~p", [Other]),
+                        dict:store(Node, [], Dict)
+                end
         end
     end, dict:new(), names()),
 
