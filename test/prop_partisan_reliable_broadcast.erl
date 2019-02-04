@@ -156,8 +156,9 @@ broadcast(Node, {Id, Value}) ->
     node_debug("broadcast from node ~p message: ~p", [Node, FullMessage]),
     Result = rpc:call(?NAME(Node), broadcast_module(), broadcast, [?RECEIVER, FullMessage]),
 
-    %% Sleep for 1 second, giving time for message to propagate.
-    timer:sleep(1000),
+    %% Sleep for 2 second, giving time for message to propagate (1 second timer.)
+    node_debug("=> sleeping for propagation", []),
+    timer:sleep(5000),
 
     ?PROPERTY_MODULE:command_conclusion(Node, [broadcast, Node, Id, Value]),
 
