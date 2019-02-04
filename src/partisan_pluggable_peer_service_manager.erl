@@ -52,6 +52,7 @@
          remove_pre_interposition_fun/1,
          add_interposition_fun/2,
          remove_interposition_fun/1,
+         get_interposition_funs/0,
          add_post_interposition_fun/2,
          remove_post_interposition_fun/1,
          inject_partition/2,
@@ -251,11 +252,11 @@ receive_message(Peer, {forward_message, ServerRef, {'$partisan_padded', _Padding
 receive_message(_Peer, {forward_message, _ServerRef, {causal, Label, _, _, _, _, _} = Message}) ->
     partisan_causality_backend:receive_message(Label, Message);
 receive_message(Peer, {forward_message, ServerRef, Message} = FullMessage) ->
-    lager:info("in mesage receive at node ~p for peer ~p: ~p", [node(), Peer, FullMessage]),
+    % lager:info("in mesage receive at node ~p for peer ~p: ~p", [node(), Peer, FullMessage]),
 
     case partisan_config:get(disable_fast_receive, false) of
         true ->
-            lager:info("in mesage receive at node ~p for peer ~p FAST RECEIVE DISABLE: ~p", [node(), Peer, Message]),
+            % lager:info("in mesage receive at node ~p for peer ~p FAST RECEIVE DISABLE: ~p", [node(), Peer, Message]),
             gen_server:call(?MODULE, {receive_message, Peer, FullMessage}, infinity);
         false ->
             % lager:info("in mesage receive at node ~p for peer ~p FAST RECEIVE NOT DISABLE", [node(), Peer]),
@@ -303,6 +304,10 @@ add_interposition_fun(Name, InterpositionFun) ->
 %% @doc
 remove_interposition_fun(Name) ->
     gen_server:call(?MODULE, {remove_interposition_fun, Name}, infinity).
+
+%% @doc
+get_interposition_funs() ->
+    gen_server:call(?MODULE, get_interposition_funs, infinity).
 
 %% @doc
 add_post_interposition_fun(Name, PostInterpositionFun) ->
@@ -420,6 +425,9 @@ handle_call({remove_interposition_fun, Name}, _From, #state{interposition_funs=I
     InterpositionFuns = dict:erase(Name, InterpositionFuns0),
     {reply, ok, State#state{interposition_funs=InterpositionFuns}};
 
+handle_call(get_interposition_funs, _From, #state{interposition_funs=InterpositionFuns}=State) ->
+    {reply, {ok, InterpositionFuns}, State};
+
 handle_call({add_post_interposition_fun, Name, PostInterpositionFun}, _From, #state{post_interposition_funs=PostInterpositionFuns0}=State) ->
     PostInterpositionFuns = dict:store(Name, PostInterpositionFun, PostInterpositionFuns0),
     {reply, ok, State#state{post_interposition_funs=PostInterpositionFuns}};
@@ -529,11 +537,11 @@ handle_call({send_message, Name, Channel, Message}, _From,
     schedule_self_message_delivery(Name, Message, Channel, ?DEFAULT_PARTITION_KEY, PreInterpositionFuns),
     {reply, ok, State};
 
-handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options}=FullMessage, 
+handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options}=_FullMessage, 
             From, 
             #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
     %% lager:info("number of forward_message pre_interposition_funs ~p", [length(dict:to_list(PreInterpositionFuns))]),
-    lager:info("called: ~p", [FullMessage]),
+    % lager:info("called: ~p", [FullMessage]),
 
     %% Run all interposition functions.
     DeliveryFun = fun() ->
@@ -569,7 +577,7 @@ handle_call({receive_message, Peer, OriginalMessage},
     DeliveryFun = fun() ->
         %% Fire pre-interposition functions.
         PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
-            lager:info("firing receive_message preinterposition fun for original message: ~p", [OriginalMessage]),
+            % lager:info("firing receive_message preinterposition fun for original message: ~p", [OriginalMessage]),
             PreInterpositionFun({receive_message, Peer, OriginalMessage}),
             ok
         end,
@@ -736,7 +744,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                     WrappedMessage =  {forward_message, ServerRef, FullMessage},
                     WrappedOriginalMessage =  {forward_message, ServerRef, OriginalMessage},
 
-                    lager:info("NO acknowledge message: ~p, options: ~p", [WrappedMessage, Options]),
+                    % lager:info("NO acknowledge message: ~p, options: ~p", [WrappedMessage, Options]),
 
                     %% Fire post-interposition functions -- trace after wrapping!
                     PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
@@ -1214,8 +1222,8 @@ handle_message({forward_message, ServerRef, Message},
 handle_message({ack, MessageClock}, 
                From,
                State) ->
-    Mynode = partisan_peer_service_manager:mynode(),
-    lager:warning("~p acknowledgement received for message ~p", [Mynode, MessageClock]),
+    % Mynode = partisan_peer_service_manager:mynode(),
+    % lager:warning("~p acknowledgement received for message ~p", [Mynode, MessageClock]),
     partisan_acknowledgement_backend:ack(MessageClock),
     optional_gen_server_reply(From, ok),
     {noreply, State};
