@@ -41,7 +41,8 @@
          node_begin_property/0,
          node_begin_case/0,
          node_end_case/0,
-         node_assertion_functions/0]).
+         node_assertion_functions/0,
+         node_global_functions/0]).
 
 %% Fault model.
 -define(FAULT_MODEL, prop_partisan_crash_fault_model).
@@ -56,6 +57,7 @@
          fault_is_crashed/2,
          fault_begin_functions/0,
          fault_end_functions/0,
+         fault_global_functions/0,
          fault_num_resolvable_faults/1]).
 
 %% General test configuration
@@ -118,7 +120,64 @@ prop_sequential() ->
 %%%===================================================================
 
 modified_commands(Module) ->
-    ?LET(Commands, commands(Module), Commands).
+    ?LET(Commands, commands(Module), 
+        begin 
+            debug("~p: original command sequence...~n", [?MODULE]),
+
+            lists:foreach(fun(Command) -> 
+                debug("~p: -> ~p~n", [?MODULE, Command])
+            end, Commands),
+
+            % Add a command to resolve all partitions with a heal.
+            ResolveNth = length(Commands) + 1,
+            ResolveCommands = [{set,{var,ResolveNth},{call,?FAULT_MODEL,resolve_all_faults_with_heal,[]}}],
+
+            %% Only global node commands.
+            CommandsWithOnlyGlobalNodeCommands = lists:filter(fun({set,{var,_Nth},{call,_Mod,Fun,_Args}}) ->
+                case lists:member(Fun, node_global_functions()) of 
+                    true ->
+                        true;
+                    _ ->
+                        false
+                end
+            end, Commands), 
+
+            %% Filter out global commands.
+            CommandsWithoutGlobalNodeCommands = lists:filter(fun({set,{var,_Nth},{call,_Mod,Fun,_Args}}) ->
+                case lists:member(Fun, node_global_functions()) of 
+                    true ->
+                        false;
+                    _ ->
+                        true
+                end
+            end, Commands),
+
+            %% Derive final command sequence.
+            FinalCommands0 = lists:flatten(
+                %% Node commands and failures, without global assertions.
+                CommandsWithoutGlobalNodeCommands ++ 
+                
+                %% Commands to resolve failures.
+                ResolveCommands ++ 
+
+                %% Global assertions only.
+                CommandsWithOnlyGlobalNodeCommands),
+
+            %% Renumber command sequence.
+            {FinalCommands, _} = lists:foldl(fun({set,{var,_Nth},{call,Mod,Fun,Args}}, {Acc, Next}) ->
+                {Acc ++ [{set,{var,Next},{call,Mod,Fun,Args}}], Next + 1}
+            end, {[], 1}, FinalCommands0),
+
+            %% Print final command sequence.
+            debug("~p: altered command sequence...~n", [?MODULE]),
+
+            lists:foreach(fun(Command) -> 
+                debug("~p: => ~p~n", [?MODULE, Command])
+            end, FinalCommands),
+
+            %% Return the final command sequence.
+            FinalCommands
+        end).
 
 %%%===================================================================
 %%% Initial state
@@ -258,6 +317,22 @@ precondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joi
                     debug("general precondition fired for mod ~p and fun ~p and args ~p", [Mod, Fun, Args]),
                     false
             end
+    end;
+precondition(#state{counter=Counter}, {call, _Mod, Fun, Args}=_Call) ->
+    precondition_debug("fallthrough precondition fired for counter ~p and node function: ~p(~p)", [Counter, Fun, Args]),
+
+    case lists:member(Fun, fault_global_functions()) of 
+        true ->
+            precondition_debug("=> allowing global fault command.", []),
+            true;
+        false ->
+            case lists:member(Fun, node_global_functions()) of
+                true ->
+                    precondition_debug("=> allowing global node command.", []),
+                    true;
+                false ->
+                    false
+            end
     end.
 
 %% Assuming the postcondition for a call was true, update the model
@@ -307,7 +382,7 @@ postcondition(_State, {call, ?MODULE, sync_leave_cluster, [_Node, _JoinedNodes]}
     postcondition_debug("postcondition sync_leave_cluster: succeeded", []),
     %% Accept leaves that succeed.
     true;
-postcondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes}, {call, Mod, Fun, Args}=Call, Res) -> 
+postcondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes}, {call, Mod, Fun, [_Node|_]=Args}=Call, Res) -> 
     case lists:member(Fun, node_functions()) of
         true ->
             PostconditionResult = node_postcondition(NodeState, Call, Res),
@@ -340,6 +415,21 @@ postcondition(#state{fault_model_state=FaultModelState, node_state=NodeState, jo
                     %% All other commands pass.
                     false
             end
+    end;
+postcondition(#state{node_state=NodeState}, {call, _Mod, Fun, Args}=Call, Res) ->
+    postcondition_debug("fallthrough precondition fired node function: ~p(~p)", [Fun, Args]),
+
+    case lists:member(Fun, fault_global_functions()) of 
+        true ->
+            postcondition_debug("=> allowing global fault command.", []),
+            true;
+        false ->
+            case lists:member(Fun, node_global_functions()) of 
+                true ->
+                    node_postcondition(NodeState, Call, Res);
+                false ->
+                    false
+            end
     end.
 
 %%%===================================================================
@@ -359,14 +449,25 @@ names() ->
 %%% Trace Support
 %%%===================================================================
 
+%% @private
+normalize_name(Node) ->
+    RunnerNode = node(),
+
+    case Node of 
+        RunnerNode ->
+            RunnerNode;
+        _ ->
+            ?NAME(Node)
+    end.
+
 command_preamble(Node, Command) ->
     debug("command preamble fired for command at node ~p: ~p", [Node, Command]),
 
     %% Log command entrance trace.
-    partisan_trace_orchestrator:trace(enter_command, {?NAME(Node), Command}),
+    partisan_trace_orchestrator:trace(enter_command, {normalize_name(Node), Command}),
 
     %% Under replay, perform the trace replay.
-    partisan_trace_orchestrator:replay(enter_command, {?NAME(Node), Command}),
+    partisan_trace_orchestrator:replay(enter_command, {normalize_name(Node), Command}),
 
     ok.
 
@@ -374,10 +475,10 @@ command_conclusion(Node, Command) ->
     debug("command conclusion fired for command at node ~p: ~p", [Node, Command]),
 
     %% Log command entrance trace.
-    partisan_trace_orchestrator:trace(exit_command, {?NAME(Node), Command}),
+    partisan_trace_orchestrator:trace(exit_command, {normalize_name(Node), Command}),
 
     %% Under replay, perform the trace replay.
-    partisan_trace_orchestrator:replay(exit_command, {?NAME(Node), Command}),
+    partisan_trace_orchestrator:replay(exit_command, {normalize_name(Node), Command}),
 
     ok.
 
