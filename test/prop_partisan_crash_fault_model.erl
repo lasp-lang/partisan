@@ -233,7 +233,7 @@ resolve_all_faults_with_crash() ->
                     0 ->
                         ok;
                     _ ->
-                        fault_debug("=> crashing faulted node!", []),
+                        fault_debug("=> crashing faulted node: ~p", [Node]),
                         internal_crash(Node)
                 end,
 
