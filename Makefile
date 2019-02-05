@@ -103,13 +103,13 @@ make bin-perms:
 	chmod 755 bin/*.sh
 
 demers-direct-mail-test: kill bin-perms
-	bin/demers-direct-mail-test.sh > /dev/null
+	bin/demers-direct-mail-test.sh
 
 demers-direct-mail-acked-test: kill bin-perms
-	bin/demers-direct-mail-acked-test.sh > /dev/null
+	bin/demers-direct-mail-acked-test.sh
 
 demers-anti-entropy-test: kill bin-perms
-	bin/demers-anti-entropy-test.sh > /dev/null
+	bin/demers-anti-entropy-test.sh
 
 demers-rumor_mongering-test: kill bin-perms
-	bin/demers-rumor-mongering-test.sh > /dev/null
+	bin/demers-rumor-mongering-test.sh
