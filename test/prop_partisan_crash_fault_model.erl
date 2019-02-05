@@ -491,8 +491,12 @@ fault_num_resolvable_faults(#fault_model_state{send_omissions=SendOmissions0, re
 active_faults(#fault_model_state{crashed_nodes=CrashedNodes, send_omissions=SendOmissions0, receive_omissions=ReceiveOmissions0}) ->
     SendOmissions = lists:map(fun({{SourceNode, _DestinationNode}, true}) -> SourceNode end, 
                         dict:to_list(SendOmissions0)),
+    % fault_debug("=> => send_omissions: ~p", [SendOmissions]),
+
     ReceiveOmissions = lists:map(fun({{_SourceNode, DestinationNode}, true}) -> DestinationNode end, 
                         dict:to_list(ReceiveOmissions0)),
+    % fault_debug("=> => receive_omissions: ~p", [ReceiveOmissions]),
+
     lists:usort(SendOmissions ++ ReceiveOmissions ++ CrashedNodes).
 
 %% Is crashed?
