@@ -225,14 +225,19 @@ resolve_all_faults_with_crash() ->
 
                 lists:foreach(fun({InterpositionName, _Function}) ->
                     % fault_debug("=> removing interposition: ~p", [InterpositionName]),
-                    ok = rpc:call(?NAME(Node), ?MANAGER, remove_interposition_fun, [InterpositionName]),
+                    ok = rpc:call(?NAME(Node), ?MANAGER, remove_interposition_fun, [InterpositionName])
+                end, InterpositionFuns),
 
-                %% Crash node.
-                fault_debug("=> crashing node!", []),
-                internal_crash(Node),
+                %% If the node had faults, then we crash it.
+                case length(InterpositionFuns) of 
+                    0 ->
+                        ok;
+                    _ ->
+                        fault_debug("=> crashing faulted node!", []),
+                        internal_crash(Node)
+                end,
 
                 ok
-            end, InterpositionFuns)
         end
     end, names()),
 
