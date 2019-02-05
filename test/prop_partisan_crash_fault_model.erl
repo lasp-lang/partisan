@@ -224,25 +224,10 @@ resolve_all_faults_with_crash() ->
                 % fault_debug("=> ~p", [InterpositionFuns]),
 
                 %% Remove all interposition functions.
-                ToCrash1 = lists:foldl(fun({InterpositionName, _Function}, ToCrash2) ->
+                ToCrash1 = lists:map(fun({InterpositionName, _Function}) ->
                     fault_debug("=> removing interposition: ~p", [InterpositionName]),
-
-                    %% TODO: Revisit this.
-                    %%
-                    %% Specifically, don't remove fault.  Otherwise, a race condition occurs where 
-                    %% between the node shutdown and the fault removal, the message can be delivered.
-                    %%
-                    %% ok = rpc:call(?NAME(Node), ?MANAGER, remove_interposition_fun, [InterpositionName]),
-
-                    case InterpositionName of 
-                        %% If it's a send omission, then we have to crash the remote node.
-                        {send_omission, DestinationNode} ->
-                            ToCrash2 ++ [DestinationNode];
-                        %% If it's a receive omission, then we have to crash ourself.
-                        {receive_omission, _DestinationNode} ->
-                            ToCrash2 ++ [Node]
-                    end
-                end, [], InterpositionFuns),
+                    Node
+                end, InterpositionFuns),
 
                 %% Return updated list of nodes to crash.
                 lists:usort(ToCrash ++ ToCrash1)
@@ -425,17 +410,13 @@ fault_next_state(FaultModelState, _Res, {call, _Mod, resolve_all_faults_with_hea
 fault_next_state(#fault_model_state{crashed_nodes=CrashedNodes0}=FaultModelState, 
                  _Res, 
                  {call, _Mod, resolve_all_faults_with_crash, []}) ->
+    SendOmissions = dict:new(),
+    ReceiveOmissions = dict:new(),
     CrashedNodes = lists:usort(CrashedNodes0 ++ active_faults(FaultModelState)),
 
-    %% TODO: Revisit me.
-
-    % SendOmissions = dict:new(),
-    % ReceiveOmissions = dict:new(),
-
-    % FaultModelState#fault_model_state{crashed_nodes=CrashedNodes, 
-    %                                   send_omissions=SendOmissions, 
-    %                                   receive_omissions=ReceiveOmissions};
-    FaultModelState#fault_model_state{crashed_nodes=CrashedNodes};
+    FaultModelState#fault_model_state{crashed_nodes=CrashedNodes, 
+                                      send_omissions=SendOmissions, 
+                                      receive_omissions=ReceiveOmissions};
 
 fault_next_state(FaultModelState, _Res, _Call) ->
     FaultModelState.
