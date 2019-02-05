@@ -213,33 +213,41 @@ resolve_all_faults_with_crash() ->
     ?PROPERTY_MODULE:command_preamble(RunnerNode, [resolve_all_faults_with_crash]),
 
     %% Remove all interposition funs.
-    lists:foreach(fun(Node) ->
-        % fault_debug("getting interposition funs at node ~p", [Node]),
+    NodesToCrash = lists:foldl(fun(Node, ToCrash) ->
+        fault_debug("getting interposition funs at node ~p", [Node]),
 
         case rpc:call(?NAME(Node), ?MANAGER, get_interposition_funs, []) of 
             {badrpc, nodedown} ->
-                ok;
+                ToCrash;
             {ok, InterpositionFuns0} ->
                 InterpositionFuns = dict:to_list(InterpositionFuns0),
                 % fault_debug("=> ~p", [InterpositionFuns]),
 
-                lists:foreach(fun({InterpositionName, _Function}) ->
-                    % fault_debug("=> removing interposition: ~p", [InterpositionName]),
-                    ok = rpc:call(?NAME(Node), ?MANAGER, remove_interposition_fun, [InterpositionName])
-                end, InterpositionFuns),
+                %% Remove all interposition functions.
+                ToCrash1 = lists:foldl(fun({InterpositionName, _Function}, ToCrash2) ->
+                    fault_debug("=> removing interposition: ~p", [InterpositionName]),
+                    ok = rpc:call(?NAME(Node), ?MANAGER, remove_interposition_fun, [InterpositionName]),
 
-                %% If the node had faults, then we crash it.
-                case length(InterpositionFuns) of 
-                    0 ->
-                        ok;
-                    _ ->
-                        fault_debug("=> crashing faulted node: ~p", [Node]),
-                        internal_crash(Node)
-                end,
+                    case InterpositionName of 
+                        %% If it's a send omission, then we have to crash the remote node.
+                        {send_omission, DestinationNode} ->
+                            ToCrash2 ++ [DestinationNode];
+                        %% If it's a receive omission, then we have to crash ourself.
+                        {receive_omission, _DestinationNode} ->
+                            ToCrash2 ++ [Node]
+                    end
+                end, [], InterpositionFuns),
 
-                ok
+                %% Return updated list of nodes to crash.
+                lists:usort(ToCrash ++ ToCrash1)
         end
-    end, names()),
+    end, [], names()),
+
+    %% Crash faulted nodes.
+    lists:foreach(fun(N) -> 
+        fault_debug("crashing faulted node: ~p", [N]),
+        internal_crash(N) 
+    end, NodesToCrash),
 
     %% Sleep.
     timer:sleep(10000),
