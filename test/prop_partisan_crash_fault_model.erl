@@ -226,7 +226,13 @@ resolve_all_faults_with_crash() ->
                 %% Remove all interposition functions.
                 ToCrash1 = lists:foldl(fun({InterpositionName, _Function}, ToCrash2) ->
                     fault_debug("=> removing interposition: ~p", [InterpositionName]),
-                    ok = rpc:call(?NAME(Node), ?MANAGER, remove_interposition_fun, [InterpositionName]),
+
+                    %% TODO: Revisit this.
+                    %%
+                    %% Specifically, don't remove fault.  Otherwise, a race condition occurs where 
+                    %% between the node shutdown and the fault removal, the message can be delivered.
+                    %%
+                    %% ok = rpc:call(?NAME(Node), ?MANAGER, remove_interposition_fun, [InterpositionName]),
 
                     case InterpositionName of 
                         %% If it's a send omission, then we have to crash the remote node.
@@ -419,13 +425,17 @@ fault_next_state(FaultModelState, _Res, {call, _Mod, resolve_all_faults_with_hea
 fault_next_state(#fault_model_state{crashed_nodes=CrashedNodes0}=FaultModelState, 
                  _Res, 
                  {call, _Mod, resolve_all_faults_with_crash, []}) ->
-    SendOmissions = dict:new(),
-    ReceiveOmissions = dict:new(),
     CrashedNodes = lists:usort(CrashedNodes0 ++ active_faults(FaultModelState)),
 
-    FaultModelState#fault_model_state{crashed_nodes=CrashedNodes, 
-                                      send_omissions=SendOmissions, 
-                                      receive_omissions=ReceiveOmissions};
+    %% TODO: Revisit me.
+
+    % SendOmissions = dict:new(),
+    % ReceiveOmissions = dict:new(),
+
+    % FaultModelState#fault_model_state{crashed_nodes=CrashedNodes, 
+    %                                   send_omissions=SendOmissions, 
+    %                                   receive_omissions=ReceiveOmissions};
+    FaultModelState#fault_model_state{crashed_nodes=CrashedNodes};
 
 fault_next_state(FaultModelState, _Res, _Call) ->
     FaultModelState.
