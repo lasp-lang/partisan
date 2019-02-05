@@ -198,7 +198,7 @@ resolve_all_faults_with_heal() ->
     end, names()),
 
     %% Sleep.
-    timer:sleep(1000),
+    timer:sleep(5000),
 
     ?PROPERTY_MODULE:command_conclusion(RunnerNode, [resolve_all_faults_with_heal]),
 
@@ -237,7 +237,7 @@ resolve_all_faults_with_crash() ->
     end, names()),
 
     %% Sleep.
-    timer:sleep(1000),
+    timer:sleep(5000),
 
     ?PROPERTY_MODULE:command_conclusion(RunnerNode, [resolve_all_faults_with_crash]),
 
