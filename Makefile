@@ -109,7 +109,7 @@ demers-direct-mail-acked-test: kill bin-perms
 	bin/demers-direct-mail-acked-test.sh > /dev/null
 
 demers-anti-entropy-test: kill bin-perms
-	bin/demers-anti-entropy-test.sh
+	bin/demers-anti-entropy-test.sh > /dev/null
 
 demers-rumor_mongering-test: kill bin-perms
-	bin/demers-rumor-mongering-test.sh
+	bin/demers-rumor-mongering-test.sh > /dev/null
