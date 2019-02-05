@@ -372,22 +372,6 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, send_omissions
 
     EndCondition andalso not lists:member(SourceNode, CrashedNodes);
 
-%% Stop failures.
-fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelState, {call, _Mod, stop, [Node, _JoinedNames]}=Call) ->
-    %% Fault must be allowed at this moment.
-    fault_allowed(Call, FaultModelState) andalso 
-
-    %% Node to crash must be online at the time.
-    not lists:member(Node, CrashedNodes);
-
-%% Crash failures.
-fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes}=FaultModelState, {call, _Mod, crash, [Node, _JoinedNames]}=Call) ->
-    %% Fault must be allowed at this moment.
-    fault_allowed(Call, FaultModelState) andalso 
-
-    %% Node to crash must be online at the time.
-    not lists:member(Node, CrashedNodes);
-
 fault_precondition(_FaultModelState, {call, Mod, Fun, [_Node|_]=Args}) ->
     fault_debug("fault precondition fired for ~p:~p(~p)", [Mod, Fun, Args]),
     false.
