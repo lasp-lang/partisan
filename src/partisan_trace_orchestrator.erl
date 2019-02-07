@@ -96,7 +96,6 @@ init([]) ->
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
 handle_call({trace, Type, Message}, _From, #state{trace=Trace0}=State) ->
-    %% replay_debug("recording trace type: ~p message: ~p", [Type, Message]),
     {reply, ok, State#state{trace=Trace0++[{Type, Message}]}};
 handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0, replay=Replay, shrinking=Shrinking, blocked_processes=BlockedProcesses0}=State) ->
     case Replay of 
