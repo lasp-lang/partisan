@@ -247,7 +247,7 @@ command(State) ->
     frequency(ClusterCommands ++ FaultModelCommands ++ SystemCommands).
 
 %% Picks whether a command should be valid under the current state.
-precondition(#state{nodes=Nodes, joined_nodes=JoinedNodes}, {call, _Mod, sync_join_cluster, [Node, JoinedNodes]}) -> 
+precondition(#state{nodes=Nodes, joined_nodes=JoinedNodes}, {call, _Mod, sync_join_cluster, [Node, JoinNode]}) -> 
     %% Only allow dropping of the first unjoined node in the nodes list, for ease of debugging.
     precondition_debug("precondition sync_join_cluster: invoked for node ~p joined_nodes ~p", [Node, JoinedNodes]),
 
@@ -260,8 +260,8 @@ precondition(#state{nodes=Nodes, joined_nodes=JoinedNodes}, {call, _Mod, sync_jo
 
             case lists:member(Node, CanBeJoinedNodes) of
                 true ->
-                    precondition_debug("precondition sync_join_cluster: YES attempting to join ~p is in ~p", [Node, CanBeJoinedNodes]),
-                    true;
+                    precondition_debug("precondition sync_join_cluster: POSSIBLE YES attempting to join ~p is in ~p", [Node, CanBeJoinedNodes]),
+                    lists:member(JoinNode, JoinedNodes);
                 _ ->
                     precondition_debug("precondition sync_join_cluster: NO attempting to join ~p not in ~p", [Node, CanBeJoinedNodes]),
                     false
@@ -270,7 +270,7 @@ precondition(#state{nodes=Nodes, joined_nodes=JoinedNodes}, {call, _Mod, sync_jo
             precondition_debug("precondition sync_join_cluster: no nodes left to join.", []),
             false %% Might need to be changed when there's no read/write operations.
     end;
-precondition(#state{joined_nodes=JoinedNodes}, {call, _Mod, sync_leave_cluster, [Node, JoinedNodes]}) -> 
+precondition(#state{joined_nodes=JoinedNodes}, {call, _Mod, sync_leave_cluster, [Node]}) -> 
     %% Only allow dropping of the last node in the join list, for ease of debugging.
     precondition_debug("precondition sync_leave_cluster: invoked for node ~p joined_nodes ~p", [Node, JoinedNodes]),
 
@@ -335,24 +335,10 @@ precondition(#state{counter=Counter}, {call, _Mod, Fun, Args}=_Call) ->
 
 %% Assuming the postcondition for a call was true, update the model
 %% accordingly for the test to proceed.
-next_state(#state{counter=Counter}=State, _Res, {call, ?MODULE, sync_join_cluster, [Node, JoinedNodes]}) -> 
-    case is_joined(Node, JoinedNodes) of
-        true ->
-            %% no-op for the join
-            State#state{counter=Counter+1};
-        false ->
-            %% add to the joined list.
-            State#state{joined_nodes=JoinedNodes ++ [Node], counter=Counter+1}
-    end;
-next_state(#state{counter=Counter, joined_nodes=JoinedNodes}=State, _Res, {call, ?MODULE, sync_leave_cluster, [Node, JoinedNodes]}) -> 
-    case enough_nodes_connected_to_issue_remove(JoinedNodes) of
-        true ->
-            %% removed from the list.
-            State#state{joined_nodes=JoinedNodes -- [Node], counter=Counter+1};
-        false ->
-            %% no-op for the leave
-            State#state{counter=Counter+1}
-    end;
+next_state(#state{counter=Counter, joined_nodes=JoinedNodes}=State, _Res, {call, ?MODULE, sync_join_cluster, [Node, _JoinNode]}) -> 
+    State#state{joined_nodes=JoinedNodes ++ [Node], counter=Counter+1};
+next_state(#state{counter=Counter, joined_nodes=JoinedNodes}=State, _Res, {call, ?MODULE, sync_leave_cluster, [Node]}) -> 
+    State#state{joined_nodes=JoinedNodes -- [Node], counter=Counter+1};
 next_state(#state{counter=Counter, fault_model_state=FaultModelState0, node_state=NodeState0, joined_nodes=JoinedNodes}=State, Res, {call, _Mod, Fun, _Args}=Call) -> 
     case lists:member(Fun, node_functions()) of
         true ->
@@ -372,13 +358,11 @@ next_state(#state{counter=Counter, fault_model_state=FaultModelState0, node_stat
 %% Given the state `State' *prior* to the call `{call, Mod, Fun, Args}',
 %% determine whether the result `Res' (coming from the actual system)
 %% makes sense.
-postcondition(_State, {call, ?MODULE, sync_join_cluster, [_Node, _JoinedNodes]}, ok) ->
-    postcondition_debug("postcondition sync_join_cluster: succeeded", []),
-    %% Accept joins that succeed.
+postcondition(_State, {call, ?MODULE, sync_join_cluster, [_Node, _JoinNode]}, {ok, _Members}) ->
+    postcondition_debug("postcondition sync_join_cluster fired", []),
     true;
-postcondition(_State, {call, ?MODULE, sync_leave_cluster, [_Node, _JoinedNodes]}, ok) ->
-    postcondition_debug("postcondition sync_leave_cluster: succeeded", []),
-    %% Accept leaves that succeed.
+postcondition(_State, {call, ?MODULE, sync_leave_cluster, [_Node]}, {ok, _Members}) ->
+    postcondition_debug("postcondition sync_leave_cluster fired", []),
     true;
 postcondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes}, {call, Mod, Fun, [_Node|_]=Args}=Call, Res) -> 
     case lists:member(Fun, node_functions()) of
@@ -484,55 +468,62 @@ command_conclusion(Node, Command) ->
 %%% Commands
 %%%===================================================================
 
-sync_join_cluster(Node, [JoinedNode|_]=JoinedNodes) ->
-    command_preamble(Node, [sync_join_cluster, JoinedNodes]),
+sync_join_cluster(Node, JoinNode) ->
+    command_preamble(Node, [sync_join_cluster, JoinNode]),
 
-    Result = case is_joined(Node, JoinedNodes) of
-        true ->
-            ok;
-        false ->
-            debug("sync_join_cluster: joining node ~p to node ~p", [Node, JoinedNode]),
+    %% Get an existing member of the cluster.
+    {ok, Members} = rpc:call(?NAME(JoinNode), ?MANAGER, members, []),
+    debug("sync_join_cluster: joining node ~p to cluster at node ~p with current members ~p", 
+          [?NAME(Node), ?NAME(JoinNode), Members]),
 
-            %% Get my information.
-            Myself = rpc:call(?NAME(Node), partisan_peer_service_manager, myself, []),
+    %% Get my information.
+    Myself = rpc:call(?NAME(Node), partisan_peer_service_manager, myself, []),
 
-            %% Issue join.
-            ok = rpc:call(?NAME(JoinedNode), ?MANAGER, join, [Myself]),
+    %% Issue remove.
+    ok = rpc:call(?NAME(JoinNode), ?MANAGER, join, [Myself]),
 
-            %% Wait until all nodes agree about membership.
-            ok = wait_until_nodes_agree_on_membership(JoinedNodes ++ [Node]),
+    %% Wait until all nodes agree about membership.
+    DesiredMembership = Members ++ [?NAME(Node)],
+    debug("=> nodes should wait for desired membership: ~p", [DesiredMembership]),
+    ok = wait_until_nodes_agree_on_membership(DesiredMembership),
 
-            ok
-    end,
+    %% Return new membership, make sure it matches model state.
+    {ok, NewMembers} = rpc:call(JoinNode, ?MANAGER, members, []),
+    debug("=> members after transition are: ~p", [NewMembers]),
 
-    command_conclusion(Node, [sync_join_cluster, JoinedNodes]),
+    command_conclusion(Node, [sync_join_cluster, JoinNode]),
 
-    Result.
+    {ok, NewMembers}.
 
-sync_leave_cluster(Node, [JoinedNode|_]=JoinedNodes) ->
-    command_preamble(Node, [sync_leave_cluster, JoinedNodes]),
+sync_leave_cluster(Node) ->
+    command_preamble(Node, [sync_leave_cluster]),
 
-    Result = case enough_nodes_connected_to_issue_remove(JoinedNodes) of
-        false ->
-            ok;
-        true ->
-            debug("sync_leave_cluster: leaving node ~p from cluster with members ~p", [Node, JoinedNodes]),
+    %% Get an existing member of the cluster.
+    {ok, Members} = rpc:call(?NAME(Node), ?MANAGER, members, []),
+    debug("sync_leave_cluster: leaving node ~p from cluster with current members ~p", 
+          [?NAME(Node), Members]),
 
-            %% Get my information.
-            Myself = rpc:call(?NAME(Node), partisan_peer_service_manager, myself, []),
+    %% Select first member of membership -- *that's not us*.
+    FirstMember = hd(lists:filter(fun(N) -> N =/= ?NAME(Node) end, Members)),
 
-            %% Issue remove.
-            ok = rpc:call(?NAME(JoinedNode), ?MANAGER, leave, [Myself]),
+    %% Get my information.
+    Myself = rpc:call(?NAME(Node), partisan_peer_service_manager, myself, []),
 
-            %% Wait until all nodes agree about membership.
-            ok = wait_until_nodes_agree_on_membership(JoinedNodes -- [Node]),
+    %% Issue remove.
+    ok = rpc:call(FirstMember, ?MANAGER, leave, [Myself]),
 
-            ok
-    end,
+    %% Wait until all nodes agree about membership.
+    DesiredMembership = Members -- [?NAME(Node)],
+    debug("=> nodes should wait for desired membership: ~p", [DesiredMembership]),
+    ok = wait_until_nodes_agree_on_membership(DesiredMembership),
 
-    command_conclusion(Node, [sync_leave_cluster, JoinedNodes]),
+    %% Return new membership, make sure it matches model state.
+    {ok, NewMembers} = rpc:call(FirstMember, ?MANAGER, members, []),
+    debug("=> members after transition are: ~p", [NewMembers]),
 
-    Result.
+    command_conclusion(Node, [sync_leave_cluster]),
+
+    {ok, NewMembers}.
 
 %%%===================================================================
 %%% Helper Functions
@@ -711,10 +702,11 @@ debug(Line, Args) ->
 is_joined(Node, Cluster) ->
     lists:member(Node, Cluster).
 
-cluster_commands(#state{joined_nodes=JoinedNodes}) ->
+cluster_commands(_State) ->
     [
-    {call, ?MODULE, sync_join_cluster, [node_name(), JoinedNodes]},
-    {call, ?MODULE, sync_leave_cluster, [node_name(), JoinedNodes]}
+    % TODO: Disabled, because nodes shutdown on removal from the cluster.
+    % {call, ?MODULE, sync_join_cluster, [node_name(), node_name()]},
+    {call, ?MODULE, sync_leave_cluster, [node_name()]}
     ].
 
 name_to_nodename(Name) ->
@@ -727,24 +719,21 @@ ensure_tracing_started() ->
 wait_until_nodes_agree_on_membership(Nodes) ->
     AgreementFun = fun(Node) ->
         %% Get membership at node.
-        {ok, Members} = rpc:call(?NAME(Node), ?MANAGER, members, []),
-
-        %% Convert started nodes to longnames.
-        Names = lists:map(fun(N) -> ?NAME(N) end, Nodes),
+        {ok, Members} = rpc:call(Node, ?MANAGER, members, []),
 
         %% Sort.
-        SortedNames = lists:usort(Names),
+        SortedNodes = lists:usort(Nodes),
         SortedMembers = lists:usort(Members),
 
         %% Ensure the lists are the same -- barrier for proceeding.
-        case SortedNames =:= SortedMembers of
+        case SortedNodes =:= SortedMembers of
             true ->
                 debug("node ~p agrees on membership: ~p", 
                       [Node, SortedMembers]),
                 true;
             false ->
                 debug("node ~p disagrees on membership: ~p != ~p", 
-                      [Node, SortedMembers, SortedNames]),
+                      [Node, SortedMembers, SortedNodes]),
                 error
         end
     end,
