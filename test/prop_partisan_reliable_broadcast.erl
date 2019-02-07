@@ -83,7 +83,41 @@ node_functions() ->
 node_postcondition(_State, {call, ?MODULE, broadcast, [_Node, _Message]}, ok) ->
     true;
 node_postcondition(#state{sent=Sent}, {call, ?MODULE, check_mailbox, []}, Results) ->
-    lists:foldl(fun(Node, All) ->
+
+    %% Figure out which nodes have crashed.
+    CrashedNodes = lists:foldl(fun(Node, Acc) ->
+        Messages = dict:fetch(Node, Results),
+
+        case Messages of 
+            nodedown ->
+                Acc ++ [Node];
+            _ ->
+                ok
+        end
+    end, [], names()),
+
+    %% Assert that all non-crashed nodes got messages sent from non-crashed nodes.
+    MustReceiveMessages = lists:flatmap(fun({_Id, SourceNode, _Payload} = Message) ->
+        case lists:member(SourceNode, CrashedNodes) of 
+            true ->
+                [];
+            false ->
+                [Message]
+        end
+    end, Sent),
+
+    %% For crashed nodes, either everyone had to get it or no one should have.
+    _ConditionalReceiveMessages = lists:flatmap(fun({_Id, SourceNode, _Payload} = Message) ->
+        case lists:member(SourceNode, CrashedNodes) of 
+            false ->
+                [];
+            true ->
+                [Message]
+        end
+    end, Sent),
+
+    %% Verify the must receive messages.
+    MustReceives = lists:foldl(fun(Node, All) ->
         Messages = dict:fetch(Node, Results),
 
         node_debug("verifying mailboxes at node ~p: ", [Node]),
@@ -96,21 +130,26 @@ node_postcondition(#state{sent=Sent}, {call, ?MODULE, check_mailbox, []}, Result
                 true andalso All;
             _ ->
                 %% Figure out which messages we have.
-                Result = lists:all(fun(M) -> lists:member(M, Messages) end, Sent),
+                Result = lists:all(fun(M) -> lists:member(M, Messages) end, MustReceiveMessages),
 
                 case Result of 
                     true ->
-                        node_debug("verification of mailbox at node ~p complete.", [Node]),
+                        node_debug("verification of mailbox must receives at node ~p complete.", [Node]),
                         true andalso All;
                     _ ->
                         Missing = Sent -- Messages,
-                        node_debug("verification of mailbox at node ~p failed.", [Node]),
+                        node_debug("verification of mailbox must receives at node ~p failed.", [Node]),
                         node_debug(" => missing: ~p", [Missing]),
                         node_debug(" => received: ~p", [Messages]),
                         false andalso All
                 end
         end
-    end, true, names());
+    end, true, names()),
+
+    %% TODO: Verify conditional receives.
+    ConditionalReceives = true,
+
+    MustReceives andalso ConditionalReceives;
 node_postcondition(_State, _Command, _Response) ->
     false.
 
