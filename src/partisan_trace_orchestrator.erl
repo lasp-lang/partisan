@@ -82,6 +82,7 @@ print() ->
 %% @doc Identify trace.
 identify(Identifier) ->
     gen_server:call(?MODULE, {identify, Identifier}, infinity).
+    gen_server:call({global, ?MODULE}, {identify, Identifier}, infinity).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -568,12 +569,20 @@ format_message_payload_for_json(MessagePayload) ->
 
 %% TODO: Change "protocol" tracing to "membership strategy" tracing.
 
-%% @private
+%% Pre-interposition examples.
 is_membership_strategy_message(receive_message, {_, _, {membership_strategy, _}}) ->
     true;
 
 is_membership_strategy_message(forward_message, {membership_strategy, _}) ->
     true;
+
+%% Post-interposition examples.
+is_membership_strategy_message(forward_message, {_, _, {membership_strategy, _}}) ->
+    true;
+
+is_membership_strategy_message(receive_message, {membership_strategy, _}) ->
+    true;
+
 
 is_membership_strategy_message(_Type, _Message) ->
     false.
