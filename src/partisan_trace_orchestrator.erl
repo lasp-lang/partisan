@@ -54,34 +54,31 @@
 %%%===================================================================
 
 %% @doc Same as start_link([]).
--spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
     start_link([]).
 
 %% @doc Start and link to calling process.
--spec start_link(list())-> {ok, pid()} | ignore | {error, term()}.
-start_link(Opts) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
+start_link(Args) ->
+    gen_server:start_link({global, ?MODULE}, ?MODULE, Args, []).
 
 %% @doc Record trace message.
 trace(Type, Message) ->
-    gen_server:call(?MODULE, {trace, Type, Message}, infinity).
+    gen_server:call({global, ?MODULE}, {trace, Type, Message}, infinity).
 
 %% @doc Replay trace.
 replay(Type, Message) ->
-    gen_server:call(?MODULE, {replay, Type, Message}, infinity).
+    gen_server:call({global, ?MODULE}, {replay, Type, Message}, infinity).
 
 %% @doc Reset trace.
 reset() ->
-    gen_server:call(?MODULE, reset, infinity).
+    gen_server:call({global, ?MODULE}, reset, infinity).
 
 %% @doc Print trace.
 print() ->
-    gen_server:call(?MODULE, print, infinity).
+    gen_server:call({global, ?MODULE}, print, infinity).
 
 %% @doc Identify trace.
 identify(Identifier) ->
-    gen_server:call(?MODULE, {identify, Identifier}, infinity).
     gen_server:call({global, ?MODULE}, {identify, Identifier}, infinity).
 
 %%%===================================================================
