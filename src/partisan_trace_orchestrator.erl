@@ -447,86 +447,48 @@ write_trace(Trace) ->
 
     ok.
 
-%% @private
+%% @private -- in the JSON output only put the messages that were really sent.
 write_json_trace(Trace) ->
     %% Write trace.
-    FilteredJsonTrace = lists:map(fun({Type, Message}) ->
+    FilteredJsonTrace = lists:foldl(fun({Type, Message}, Acc) ->
         case Type of 
-            pre_interposition_fun ->
-                %% Trace all entry points if protocol message, unless tracing enabled.
-                {TracingNode, InterpositionType, OriginNode, MessagePayload} = Message,
-
-                case is_membership_strategy_message(InterpositionType, MessagePayload) of 
-                    true ->
-                        %% Trace protocol messages only if protocol tracing is enabled.
-                        case membership_strategy_tracing() of 
-                            true ->
-                                [
-                                 {type, pre_interposition_fun},
-                                 {tracing_node, TracingNode},
-                                 {interposition_type, InterpositionType},
-                                 {origin_node, OriginNode},
-                                 {message_payload, format_message_payload_for_json(MessagePayload)}
-                                ];
-                            false ->
-                                []
-                        end;
-                    false ->
-                        %% Always trace non-protocol messages.
-                        [
-                         {type, pre_interposition_fun},
-                         {tracing_node, TracingNode},
-                         {interposition_type, InterpositionType},
-                         {origin_node, OriginNode},
-                         {message_payload, format_message_payload_for_json(MessagePayload)}
-                        ]
-                end;
             post_interposition_fun ->
                 %% Destructure message.
                 {TracingNode, OriginNode, InterpositionType, MessagePayload, RewrittenMessagePayload} = Message,
 
-                [
-                 {type, post_interposition_fun},
-                 {tracing_node, TracingNode},
-                 {interposition_type, InterpositionType},
-                 {origin_node, OriginNode},
-                 {message_payload, format_message_payload_for_json(MessagePayload)},
-                 {rewritten_message_payload, format_message_payload_for_json(RewrittenMessagePayload)}
-                ];
-            enter_command ->
-                {TracingNode, Command} = Message,
+                case RewrittenMessagePayload of 
+                    undefined ->
+                        Acc;
+                    _ ->
+                        %% Ignore all membership strategy messages for now.
+                        case is_membership_strategy_message(InterpositionType, MessagePayload) of 
+                            true ->
+                                Acc;
+                            false ->
+                                NewObject = [
+                                    {type, post_interposition_fun},
+                                    {tracing_node, TracingNode},
+                                    {origin_node, OriginNode},
+                                    {interposition_type, InterpositionType},
+                                    {message_payload, format_message_payload_for_json(MessagePayload)},
+                                    {rewritten_message_payload, format_message_payload_for_json(RewrittenMessagePayload)}
+                                ],
 
-                [
-                 {type, enter_command},
-                 {tracing_node, TracingNode},
-                 {command, Command}
-                ];
-            exit_command ->
-                {TracingNode, Command} = Message,
-
-                [
-                 {type, exit_command},
-                 {tracing_node, TracingNode},
-                 {command, Command}
-                ];
+                                Acc ++ [NewObject]
+                        end
+                end;
             _ ->
-                []
+                Acc
         end
-    end, Trace),
-
-    %% Filter out empty objects.
-    FilteredJsonTrace1 = lists:filter(fun(X) ->
-        case X of 
-            [] ->
-                false;
-            _ ->
-                true
-        end
-    end, FilteredJsonTrace),
+    end, [], Trace),
 
     %% Print the trace.
-    EncodedJsonTrace = jsx:encode(FilteredJsonTrace1),
+    % [io:format("~p~n", [Item]) || Item <- FilteredJsonTrace],
 
+    %% Encode as JSON.
+    EncodedJsonTrace = jsx:encode(FilteredJsonTrace),
+
+    %% Write to file.
     JsonTraceFile = trace_file() ++ ".json",
     replay_debug("writing JSON trace.", []),
     {ok, Io} = file:open(JsonTraceFile, [write, {encoding, utf8}]),
