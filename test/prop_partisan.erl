@@ -595,19 +595,11 @@ start_nodes() ->
 
     %% Add send and receive pre-interposition functions to enforce message ordering.
     PreInterpositionFun = fun({Type, OriginNode, OriginalMessage}) ->
-        TracingNode = node(),
-
         %% Record message incoming and outgoing messages.
-        ok = rpc:call(Self, 
-                      partisan_trace_orchestrator, 
-                      trace, 
-                      [pre_interposition_fun, {TracingNode, Type, OriginNode, OriginalMessage}]),
+        ok = partisan_trace_orchestrator:trace(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
 
         %% Under replay ensure they match the trace order (but only for pre-interposition messages).
-        ok = rpc:call(Self, 
-                      partisan_trace_orchestrator, 
-                      replay, 
-                      [pre_interposition_fun, {TracingNode, Type, OriginNode, OriginalMessage}]),
+        ok = partisan_trace_orchestrator:replay(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
 
         ok
     end, 
@@ -621,13 +613,9 @@ start_nodes() ->
 
     %% Add send and receive post-interposition functions to perform tracing.
     PostInterpositionFun = fun({Type, OriginNode, OriginalMessage}, {Type, OriginNode, RewrittenMessage}) ->
-        TracingNode = node(),
-
-        ok = rpc:call(Self, 
-                      partisan_trace_orchestrator, 
-                      trace, 
-                      [post_interposition_fun, {TracingNode, OriginNode, Type, OriginalMessage, RewrittenMessage}]),
-
+        %% Record outgoing message after transformation.
+        ok = partisan_trace_orchestrator:trace(post_interposition_fun, {node(), OriginNode, Type, OriginalMessage, RewrittenMessage}),
+        
         ok
     end, 
 
