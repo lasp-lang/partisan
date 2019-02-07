@@ -74,7 +74,7 @@
 -define(DEBUG, true).
 -define(INITIAL_STATE_DEBUG, false).
 -define(PRECONDITION_DEBUG, true).
--define(POSTCONDITION_DEBUG, false).
+-define(POSTCONDITION_DEBUG, true).
 
 %% Partisan connection and forwarding settings.
 -define(EGRESS_DELAY, 0).                           %% How many milliseconds to delay outgoing messages?
