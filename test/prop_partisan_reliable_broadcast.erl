@@ -92,7 +92,7 @@ node_postcondition(#state{sent=Sent}, {call, ?MODULE, check_mailbox, []}, Result
             nodedown ->
                 Acc ++ [Node];
             _ ->
-                ok
+                Acc
         end
     end, [], names()),
 
