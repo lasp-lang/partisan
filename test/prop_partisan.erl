@@ -37,7 +37,7 @@
          node_functions/0,
          node_precondition/2,
          node_postcondition/3,
-         node_next_state/3,
+         node_next_state/4,
          node_begin_property/0,
          node_begin_case/0,
          node_end_case/0,
@@ -53,7 +53,7 @@
          fault_functions/1,
          fault_precondition/2,
          fault_postcondition/3,
-         fault_next_state/3,
+         fault_next_state/4,
          fault_is_crashed/2,
          fault_begin_functions/0,
          fault_end_functions/0,
@@ -181,12 +181,6 @@ modified_commands(Module) ->
 %%% Initial state
 %%%===================================================================
 
--record(state, {joined_nodes :: [node()],
-                nodes :: [node()],
-                node_state :: {dict:dict(), dict:dict()}, 
-                fault_model_state :: term(),
-                counter :: non_neg_integer()}).
-
 %% Initial model value at system start. Should be deterministic.
 initial_state() -> 
     %% Initialize empty dictionary for process state.
@@ -212,7 +206,7 @@ initial_state() ->
     %% Initialize command counter at 0.
     Counter = 0,
 
-    #state{counter=Counter,
+    #property_state{counter=Counter,
            joined_nodes=JoinedNodes,
            fault_model_state=FaultModelState,
            nodes=Nodes,
@@ -247,7 +241,7 @@ command(State) ->
     frequency(ClusterCommands ++ FaultModelCommands ++ SystemCommands).
 
 %% Picks whether a command should be valid under the current state.
-precondition(#state{nodes=Nodes, joined_nodes=JoinedNodes}, {call, _Mod, sync_join_cluster, [Node, JoinNode]}) -> 
+precondition(#property_state{nodes=Nodes, joined_nodes=JoinedNodes}, {call, _Mod, sync_join_cluster, [Node, JoinNode]}) -> 
     %% Only allow dropping of the first unjoined node in the nodes list, for ease of debugging.
     precondition_debug("precondition sync_join_cluster: invoked for node ~p joined_nodes ~p", [Node, JoinedNodes]),
 
@@ -270,7 +264,7 @@ precondition(#state{nodes=Nodes, joined_nodes=JoinedNodes}, {call, _Mod, sync_jo
             precondition_debug("precondition sync_join_cluster: no nodes left to join.", []),
             false %% Might need to be changed when there's no read/write operations.
     end;
-precondition(#state{joined_nodes=JoinedNodes}, {call, _Mod, sync_leave_cluster, [Node]}) -> 
+precondition(#property_state{joined_nodes=JoinedNodes}, {call, _Mod, sync_leave_cluster, [Node]}) -> 
     %% Only allow dropping of the last node in the join list, for ease of debugging.
     precondition_debug("precondition sync_leave_cluster: invoked for node ~p joined_nodes ~p", [Node, JoinedNodes]),
 
@@ -295,7 +289,7 @@ precondition(#state{joined_nodes=JoinedNodes}, {call, _Mod, sync_leave_cluster, 
             precondition_debug("precondition sync_leave_cluster: no nodes left to remove.", []),
             false
     end;
-precondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes, counter=Counter}, 
+precondition(#property_state{fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes, counter=Counter}, 
              {call, Mod, Fun, [Node|_]=Args}=Call) -> 
     precondition_debug("precondition fired for counter ~p and node function: ~p(~p)", [Counter, Fun, Args]),
 
@@ -316,7 +310,7 @@ precondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joi
                     false
             end
     end;
-precondition(#state{counter=Counter}, {call, _Mod, Fun, Args}=_Call) ->
+precondition(#property_state{counter=Counter}, {call, _Mod, Fun, Args}=_Call) ->
     precondition_debug("fallthrough precondition fired for counter ~p and node function: ~p(~p)", [Counter, Fun, Args]),
 
     case lists:member(Fun, fault_global_functions()) of 
@@ -335,23 +329,23 @@ precondition(#state{counter=Counter}, {call, _Mod, Fun, Args}=_Call) ->
 
 %% Assuming the postcondition for a call was true, update the model
 %% accordingly for the test to proceed.
-next_state(#state{counter=Counter, joined_nodes=JoinedNodes}=State, _Res, {call, ?MODULE, sync_join_cluster, [Node, _JoinNode]}) -> 
-    State#state{joined_nodes=JoinedNodes ++ [Node], counter=Counter+1};
-next_state(#state{counter=Counter, joined_nodes=JoinedNodes}=State, _Res, {call, ?MODULE, sync_leave_cluster, [Node]}) -> 
-    State#state{joined_nodes=JoinedNodes -- [Node], counter=Counter+1};
-next_state(#state{counter=Counter, fault_model_state=FaultModelState0, node_state=NodeState0, joined_nodes=JoinedNodes}=State, Res, {call, _Mod, Fun, _Args}=Call) -> 
+next_state(#property_state{counter=Counter, joined_nodes=JoinedNodes}=State, _Res, {call, ?MODULE, sync_join_cluster, [Node, _JoinNode]}) -> 
+    State#property_state{joined_nodes=JoinedNodes ++ [Node], counter=Counter+1};
+next_state(#property_state{counter=Counter, joined_nodes=JoinedNodes}=State, _Res, {call, ?MODULE, sync_leave_cluster, [Node]}) -> 
+    State#property_state{joined_nodes=JoinedNodes -- [Node], counter=Counter+1};
+next_state(#property_state{counter=Counter, fault_model_state=FaultModelState0, node_state=NodeState0, joined_nodes=JoinedNodes}=State, Res, {call, _Mod, Fun, _Args}=Call) -> 
     case lists:member(Fun, node_functions()) of
         true ->
-            NodeState = node_next_state(NodeState0, Res, Call),
-            State#state{node_state=NodeState, counter=Counter+1};
+            NodeState = node_next_state(State, NodeState0, Res, Call),
+            State#property_state{node_state=NodeState, counter=Counter+1};
         false ->
             case lists:member(Fun, fault_functions(JoinedNodes)) of 
                 true ->
-                    FaultModelState = fault_next_state(FaultModelState0, Res, Call),
-                    State#state{fault_model_state=FaultModelState, counter=Counter+1};
+                    FaultModelState = fault_next_state(State, FaultModelState0, Res, Call),
+                    State#property_state{fault_model_state=FaultModelState, counter=Counter+1};
                 false ->
                     debug("general next_state fired for fun: ~p", [Fun]),
-                    State#state{counter=Counter+1}
+                    State#property_state{counter=Counter+1}
             end
     end.
 
@@ -364,7 +358,7 @@ postcondition(_State, {call, ?MODULE, sync_join_cluster, [_Node, _JoinNode]}, {o
 postcondition(_State, {call, ?MODULE, sync_leave_cluster, [_Node]}, {ok, _Members}) ->
     postcondition_debug("postcondition sync_leave_cluster fired", []),
     true;
-postcondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes}, {call, Mod, Fun, [_Node|_]=Args}=Call, Res) -> 
+postcondition(#property_state{fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes}, {call, Mod, Fun, [_Node|_]=Args}=Call, Res) -> 
     case lists:member(Fun, node_functions()) of
         true ->
             PostconditionResult = node_postcondition(NodeState, Call, Res),
@@ -398,7 +392,7 @@ postcondition(#state{fault_model_state=FaultModelState, node_state=NodeState, jo
                     false
             end
     end;
-postcondition(#state{node_state=NodeState}, {call, _Mod, Fun, Args}=Call, Res) ->
+postcondition(#property_state{node_state=NodeState}, {call, _Mod, Fun, Args}=Call, Res) ->
     postcondition_debug("fallthrough precondition fired node function: ~p(~p)", [Fun, Args]),
 
     case lists:member(Fun, fault_global_functions()) of 

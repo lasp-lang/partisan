@@ -54,7 +54,7 @@ names() ->
 %%% Node Functions
 %%%===================================================================
 
--record(state, {sent}).
+-record(node_state, {sent}).
 
 %% What node-specific operations should be called.
 node_commands() ->
@@ -71,8 +71,7 @@ node_global_functions() ->
 %% What should the initial node state be.
 node_initial_state() ->
     node_debug("initializing", []),
-    Sent = [],
-    #state{sent=Sent}.
+    #node_state{sent=[]}.
 
 %% Names of the node functions so we kow when we can dispatch to the node
 %% pre- and postconditions.
@@ -80,93 +79,51 @@ node_functions() ->
     lists:map(fun({call, _Mod, Fun, _Args}) -> Fun end, node_commands()).
 
 %% Postconditions for node commands.
-node_postcondition(_State, {call, ?MODULE, broadcast, [_Node, _Message]}, ok) ->
+node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, ok) ->
     true;
-node_postcondition(#state{sent=Sent}, {call, ?MODULE, check_mailbox, []}, Results) ->
+node_postcondition(#node_state{sent=Sent}, {call, ?MODULE, check_mailbox, []}, Results) ->
+    lists:foldl(fun({Message, Recipients}, MessageAcc) ->
+        node_debug("verifying that message ~p was received by ~p", [Message, Recipients]),
 
-    %% Figure out which nodes have crashed.
-    CrashedNodes = lists:foldl(fun(Node, Acc) ->
-        Messages = dict:fetch(Node, Results),
+        All = lists:foldl(fun(Recipient, NodeAcc) ->
+            node_debug("=> verifying that message ~p was received by ~p", [Message, Recipient]),
 
-        case Messages of 
-            nodedown ->
-                Acc ++ [Node];
-            _ ->
-                Acc
-        end
-    end, [], names()),
+            %% Did this node receive the message?
+            Messages = dict:fetch(Recipient, Results),
 
-    %% Assert that all non-crashed nodes got messages sent from non-crashed nodes.
-    MustReceiveMessages = lists:flatmap(fun({_Id, SourceNode, _Payload} = Message) ->
-        case lists:member(SourceNode, CrashedNodes) of 
-            true ->
-                [];
-            false ->
-                [Message]
-        end
-    end, Sent),
+            %% Carry forward.
+            case lists:member(Message, Messages) of 
+                true ->
+                    NodeAcc andalso true;
+                false ->
+                    node_debug("=> => message not received at node ~p: ~p", [Message, Recipient]),
+                    NodeAcc andalso false
+            end
+        end, true, Recipients),
 
-    %% For crashed nodes, either everyone had to get it or no one should have.
-    _ConditionalReceiveMessages = lists:flatmap(fun({_Id, SourceNode, _Payload} = Message) ->
-        case lists:member(SourceNode, CrashedNodes) of 
-            false ->
-                [];
-            true ->
-                [Message]
-        end
-    end, Sent),
-
-    %% Verify the must receive messages.
-    MustReceives = lists:foldl(fun(Node, All) ->
-        Messages = dict:fetch(Node, Results),
-
-        node_debug("verifying mailboxes at node ~p: ", [Node]),
-        node_debug(" => sent: ~p", [Sent]),
-        node_debug(" => received: ~p", [Messages]),
-
-        case Messages of 
-            %% Crashed nodes are allowed to have any number of messages.
-            nodedown ->
-                true andalso All;
-            _ ->
-                %% Figure out which messages we have.
-                Result = lists:all(fun(M) -> lists:member(M, Messages) end, MustReceiveMessages),
-
-                case Result of 
-                    true ->
-                        node_debug("verification of mailbox must receives at node ~p complete.", [Node]),
-                        true andalso All;
-                    _ ->
-                        Missing = Sent -- Messages,
-                        node_debug("verification of mailbox must receives at node ~p failed.", [Node]),
-                        node_debug(" => missing: ~p", [Missing]),
-                        node_debug(" => received: ~p", [Messages]),
-                        false andalso All
-                end
-        end
-    end, true, names()),
-
-    %% TODO: Verify conditional receives.
-    ConditionalReceives = true,
-
-    MustReceives andalso ConditionalReceives;
-node_postcondition(_State, _Command, _Response) ->
+        All andalso MessageAcc
+    end, true, Sent);
+node_postcondition(_NodeState, _Command, _Response) ->
     false.
 
 %% Next state.
-node_next_state(#state{sent=Sent0}=State, _Result, {call, ?MODULE, broadcast, [Node, {Id, Value}]}) ->
+node_next_state(#property_state{joined_nodes=JoinedNodes}, 
+                #node_state{sent=Sent0}=NodeState, 
+                _Result, 
+                {call, ?MODULE, broadcast, [Node, {Id, Value}]}) ->
+    Recipients = JoinedNodes,
     Message = {Id, Node, Value},
-    Sent = Sent0 ++ [Message],
-    State#state{sent=Sent};
-node_next_state(State, _Response, _Command) ->
-    State.
+    Sent = Sent0 ++ [{Message, Recipients}],
+    NodeState#node_state{sent=Sent};
+node_next_state(_State, NodeState, _Response, _Command) ->
+    NodeState.
 
 %% Precondition.
-node_precondition(_State, {call, ?MODULE, broadcast, [_Node, _Message]}) ->
+node_precondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}) ->
     true;
-node_precondition(_State, {call, ?MODULE, check_mailbox, []}) ->
+node_precondition(_NodeState, {call, ?MODULE, check_mailbox, []}) ->
     true;
-node_precondition(_State, _Command) ->
+node_precondition(_NodeState, _Command) ->
     false.
 
 %%%===================================================================
