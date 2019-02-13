@@ -2,11 +2,11 @@ PACKAGE         ?= partisan
 VERSION         ?= $(shell git describe --tags)
 BASE_DIR         = $(shell pwd)
 ERLANG_BIN       = $(shell dirname $(shell which erl))
-REBAR            = $(shell pwd)/rebar3
-MAKE						 = make
-CONCURRENCY 	 ?= 4
-LATENCY 		 ?= 0
-SIZE 			 ?= 1024
+REBAR           ?= rebar3
+MAKE             = make
+CONCURRENCY     ?= 4
+LATENCY         ?= 0
+SIZE            ?= 1024
 
 .PHONY: rel deps test plots
 
