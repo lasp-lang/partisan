@@ -110,7 +110,19 @@ prop_sequential() ->
                             aggregate(command_names(Cmds), Result =:= ok))
                 end);
         finite_fault ->
-            ?FORALL(Cmds, modified_commands(?MODULE), 
+            ?FORALL(Cmds, finite_fault_commands(?MODULE), 
+                begin
+                    start_nodes(),
+                    node_begin_case(),
+                    {History, State, Result} = run_commands(?MODULE, Cmds), 
+                    node_end_case(),
+                    stop_nodes(),
+                    ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
+                                        [History,State,Result]),
+                            aggregate(command_names(Cmds), Result =:= ok))
+                end);
+        single_success ->
+            ?FORALL(Cmds, single_success_commands(?MODULE), 
                 begin
                     start_nodes(),
                     node_begin_case(),
@@ -127,7 +139,7 @@ prop_sequential() ->
 %%% Command sequences
 %%%===================================================================
 
-modified_commands(Module) ->
+finite_fault_commands(Module) ->
     ?LET(Commands, commands(Module), 
         begin 
             debug("~p: original command sequence...~n", [?MODULE]),
@@ -174,6 +186,68 @@ modified_commands(Module) ->
 
                 %% Global assertions only.
                 CommandsWithOnlyGlobalNodeCommands),
+
+            %% Renumber command sequence.
+            {FinalCommands, _} = lists:foldl(fun({set,{var,_Nth},{call,Mod,Fun,Args}}, {Acc, Next}) ->
+                {Acc ++ [{set,{var,Next},{call,Mod,Fun,Args}}], Next + 1}
+            end, {[], 1}, FinalCommands0),
+
+            %% Print final command sequence.
+            debug("altered command sequence...~n", []),
+
+            lists:foreach(fun(Command) -> 
+                debug("=> ~p~n", [Command])
+            end, FinalCommands),
+
+            %% Return the final command sequence.
+            FinalCommands
+        end).
+
+single_success_commands(Module) ->
+    ?LET(Commands, commands(Module), 
+        begin 
+            debug("original command sequence...~n", []),
+
+            lists:foreach(fun(Command) -> 
+                debug("-> ~p~n", [Command])
+            end, Commands),
+
+            %% Filter out global commands.
+            CommandsWithoutGlobalNodeCommands = lists:filter(fun({set,{var,_Nth},{call,_Mod,Fun,_Args}}) ->
+                case lists:member(Fun, node_global_functions()) of 
+                    true ->
+                        false;
+                    _ ->
+                        true
+                end
+            end, Commands),
+
+            %% Get first non-global command.
+            FirstNonGlobalCommand = case length(CommandsWithoutGlobalNodeCommands) > 0 of
+                true ->
+                    [hd(CommandsWithoutGlobalNodeCommands)];
+                false ->
+                    []
+            end,
+
+            %% Generate failure command.
+            FailureCommands = [{set,{var,0},{call,?MODULE,forced_failure,[]}}],
+
+            %% Only global node commands.
+            CommandsWithOnlyGlobalNodeCommands = lists:map(fun(Fun) ->
+                {set,{var,0},{call,?SYSTEM_MODEL,Fun,[]}}
+            end, node_global_functions()), 
+
+            %% Derive final command sequence.
+            FinalCommands0 = lists:flatten(
+                %% Node commands, without global assertions.  Take only the first.
+                FirstNonGlobalCommand ++
+
+                %% Global assertions only.
+                CommandsWithOnlyGlobalNodeCommands ++ 
+            
+                %% Final failure commands
+                FailureCommands),
 
             %% Renumber command sequence.
             {FinalCommands, _} = lists:foldl(fun({set,{var,_Nth},{call,Mod,Fun,Args}}, {Acc, Next}) ->
@@ -324,6 +398,11 @@ precondition(#property_state{fault_model_state=FaultModelState, node_state=NodeS
                     false
             end
     end;
+
+precondition(#property_state{}, {call, _Mod, forced_failure, _Args}) ->
+    precondition_debug("forced failure precondition fired!", []),
+    true;
+
 precondition(#property_state{counter=Counter}, {call, _Mod, Fun, Args}=_Call) ->
     precondition_debug("fallthrough precondition fired for counter ~p and node function: ~p(~p)", [Counter, Fun, Args]),
 
@@ -347,6 +426,8 @@ next_state(#property_state{counter=Counter, joined_nodes=JoinedNodes}=State, _Re
     State#property_state{joined_nodes=JoinedNodes ++ [Node], counter=Counter+1};
 next_state(#property_state{counter=Counter, joined_nodes=JoinedNodes}=State, _Res, {call, ?MODULE, sync_leave_cluster, [Node]}) -> 
     State#property_state{joined_nodes=JoinedNodes -- [Node], counter=Counter+1};
+next_state(#property_state{}=State, _Res, {call, ?MODULE, forced_failure, []}) -> 
+    State;
 next_state(#property_state{counter=Counter, fault_model_state=FaultModelState0, node_state=NodeState0, joined_nodes=JoinedNodes}=State, Res, {call, _Mod, Fun, _Args}=Call) -> 
     case lists:member(Fun, node_functions()) of
         true ->
@@ -366,6 +447,9 @@ next_state(#property_state{counter=Counter, fault_model_state=FaultModelState0, 
 %% Given the state `State' *prior* to the call `{call, Mod, Fun, Args}',
 %% determine whether the result `Res' (coming from the actual system)
 %% makes sense.
+postcondition(_State, {call, ?MODULE, forced_failure, []}, ok) ->
+    postcondition_debug("postcondition forced_failure fired", []),
+    false;
 postcondition(_State, {call, ?MODULE, sync_join_cluster, [_Node, _JoinNode]}, {ok, _Members}) ->
     postcondition_debug("postcondition sync_join_cluster fired", []),
     true;
@@ -475,6 +559,17 @@ command_conclusion(Node, Command) ->
 %%%===================================================================
 %%% Commands
 %%%===================================================================
+
+forced_failure() ->
+    RunnerNode = node(),
+
+    command_preamble(RunnerNode, [forced_failure]),
+
+    %% Do nothing.
+
+    command_conclusion(RunnerNode, [forced_failure]),
+
+    ok.
 
 sync_join_cluster(Node, JoinNode) ->
     command_preamble(Node, [sync_join_cluster, JoinNode]),
