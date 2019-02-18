@@ -64,12 +64,6 @@
 -define(CLUSTER_NODES, true).
 -define(MANAGER, partisan_pluggable_peer_service_manager).
 
-%% Do we allow cluster transitions during test execution?
--define(PERFORM_LEAVES_AND_JOINS, false).           
-
-%% Do we perform fault-injection?                                            
--define(PERFORM_FAULT_INJECTION, false).
-
 %% Debug.
 -define(DEBUG, true).
 -define(INITIAL_STATE_DEBUG, false).
@@ -138,7 +132,7 @@ modified_commands(Module) ->
             end, Commands),
 
             %% Add a command to resolve all partitions with a heal.
-            ResolveCommands = case ?PERFORM_FAULT_INJECTION of 
+            ResolveCommands = case fault_injection_enabled() of 
                 true ->
                     case rand:uniform(10) rem 2 =:= 0 of 
                         true ->
@@ -220,7 +214,7 @@ initial_state() ->
 command(State) -> 
     %% Cluster maintenance commands.
     ClusterCommands = lists:flatmap(fun(Command) -> 
-        case ?PERFORM_LEAVES_AND_JOINS of 
+        case membership_changes_enabled() of 
             true ->
                 [{1, Command}];
             false ->
@@ -230,7 +224,7 @@ command(State) ->
 
     %% Fault model commands.
     FaultModelCommands = lists:flatmap(fun(Command) -> 
-        case ?PERFORM_FAULT_INJECTION of 
+        case fault_injection_enabled() of 
             true ->
                 [{1, Command}];
             false ->
@@ -766,4 +760,22 @@ wait_until_result(Fun, Result, Retry, Delay) when Retry > 0 ->
         _ ->
             timer:sleep(Delay),
             wait_until_result(Fun, Result, Retry-1, Delay)
+    end.
+
+%% @private
+fault_injection_enabled() ->
+    case os:getenv("FAULT_INJECTION") of 
+        false ->
+            false;
+        _ ->
+            true
+    end.            
+
+%% @private
+membership_changes_enabled() ->
+    case os:getenv("MEMBERSHIP_CHANGES") of 
+        false ->
+            false;
+        _ ->
+            true
     end.
