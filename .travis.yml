@@ -1,15 +1,17 @@
 language: erlang
 otp_release:
+  - 21.2.5
   - 20.3
 install:
-  - make
+  - wget https://s3.amazonaws.com/rebar3/rebar3 && chmod u+x rebar3
+  - REBAR=./rebar3 make
   - ./rebar3 update
 before_script:
   - epmd -daemon
 script:
-  - make test
-  - make xref
-  - make dialyzer
+  - REBAR=./rebar3 make test
+  - REBAR=./rebar3 make xref
+  - REBAR=./rebar3 make dialyzer
 notifications:
   email: christopher.meiklejohn@gmail.com
   slack: lasp-lang:hiPRNnbUa3zdGrrXZfGRAF7D
