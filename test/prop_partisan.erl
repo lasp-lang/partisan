@@ -65,7 +65,7 @@
 -define(MANAGER, partisan_pluggable_peer_service_manager).
 
 %% Do we allow cluster transitions during test execution?
--define(PERFORM_LEAVES_AND_JOINS, true).           
+-define(PERFORM_LEAVES_AND_JOINS, false).           
 
 %% Do we perform fault-injection?                                            
 -define(PERFORM_FAULT_INJECTION, false).
@@ -138,11 +138,16 @@ modified_commands(Module) ->
             end, Commands),
 
             %% Add a command to resolve all partitions with a heal.
-            ResolveCommands = case rand:uniform(10) rem 2 =:= 0 of 
+            ResolveCommands = case ?PERFORM_FAULT_INJECTION of 
                 true ->
-                    [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_heal,[]}}];
+                    case rand:uniform(10) rem 2 =:= 0 of 
+                        true ->
+                            [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_heal,[]}}];
+                        false ->
+                            [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_crash,[]}}]
+                    end;
                 false ->
-                    [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_crash,[]}}]
+                    [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_heal,[]}}]
             end,
 
             %% Only global node commands.
