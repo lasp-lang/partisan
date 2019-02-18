@@ -96,17 +96,32 @@
 prop_sequential() ->
     node_begin_property(),
 
-    ?FORALL(Cmds, modified_commands(?MODULE), 
-        begin
-            start_nodes(),
-            node_begin_case(),
-            {History, State, Result} = run_commands(?MODULE, Cmds), 
-            node_end_case(),
-            stop_nodes(),
-            ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
-                                [History,State,Result]),
-                      aggregate(command_names(Cmds), Result =:= ok))
-        end).
+    case scheduler() of 
+        default ->
+            ?FORALL(Cmds, commands(?MODULE), 
+                begin
+                    start_nodes(),
+                    node_begin_case(),
+                    {History, State, Result} = run_commands(?MODULE, Cmds), 
+                    node_end_case(),
+                    stop_nodes(),
+                    ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
+                                        [History,State,Result]),
+                            aggregate(command_names(Cmds), Result =:= ok))
+                end);
+        finite_fault ->
+            ?FORALL(Cmds, modified_commands(?MODULE), 
+                begin
+                    start_nodes(),
+                    node_begin_case(),
+                    {History, State, Result} = run_commands(?MODULE, Cmds), 
+                    node_end_case(),
+                    stop_nodes(),
+                    ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
+                                        [History,State,Result]),
+                            aggregate(command_names(Cmds), Result =:= ok))
+                end)
+    end.
 
 %%%===================================================================
 %%% Command sequences
@@ -778,4 +793,13 @@ membership_changes_enabled() ->
             false;
         _ ->
             true
+    end.
+
+%% @private
+scheduler() ->
+    case os:getenv("SCHEDULER") of
+        false ->
+            default;
+        Other ->
+            list_to_atom(Other)
     end.
