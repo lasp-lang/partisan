@@ -79,6 +79,9 @@ node_functions() ->
     lists:map(fun({call, _Mod, Fun, _Args}) -> Fun end, node_commands()).
 
 %% Postconditions for node commands.
+node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, {error, timeout}) ->
+    lager:info("Broadcast timed out, must have been synchronous!"),
+    false;
 node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, ok) ->
     true;
 node_postcondition(#node_state{sent=Sent}, {call, ?MODULE, check_mailbox, []}, Results) ->
@@ -290,7 +293,7 @@ node_end_case() ->
 broadcast_module() ->
     Module = case os:getenv("BROADCAST_MODULE") of 
         false ->
-            demers_direct_mail;
+            lampson_2pc;
         Other ->
             list_to_atom(Other)
     end,
