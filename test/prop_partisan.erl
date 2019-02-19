@@ -231,7 +231,14 @@ single_success_commands(Module) ->
             end,
 
             %% Generate failure command.
-            FailureCommands = [{set,{var,0},{call,?MODULE,forced_failure,[]}}],
+            FailureCommands = case length(CommandsWithoutGlobalNodeCommands) > 0 of
+                true ->
+                    %% Only fail if we have at least *one* command that
+                    %% performs application behavior.
+                    [{set,{var,0},{call,?MODULE,forced_failure,[]}}];
+                false ->
+                    []
+            end,
 
             %% Only global node commands.
             CommandsWithOnlyGlobalNodeCommands = lists:map(fun(Fun) ->
