@@ -123,7 +123,7 @@ handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0,
                     %% Find next message that should arrive based on the trace.
                     %% Can we process immediately?
                     case can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace0, BlockedProcesses0) of 
-                        true ->
+                        {true, _} ->
                             %% Deliver as much as we can.
                             {PreviousTrace, BlockedProcesses} = trace_deliver(Shrinking, {Type, Message}, PreviousTrace0, BlockedProcesses0),
 
@@ -257,7 +257,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-%% @private 
+%% @private
+-spec can_deliver_based_on_trace(term(), term(), term(), term()) -> 
+    {true, delivered} | {true, omitted} | false.
 can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace, BlockedProcesses) ->
     replay_debug("determining if message ~p: ~p can be delivered.", [Type, Message]),
 
@@ -266,7 +268,10 @@ can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace, BlockedPro
             CanDeliver = case {NextType, NextMessage} of 
                 {Type, Message} ->
                     replay_debug("=> YES!", []),
-                    true;
+                    {true, delivered};
+                {{omit, Type}, Message} ->
+                    replay_debug("=> YES: OMISSION!", []),
+                    {true, omitted};
                 _ ->
                     %% But, does the message actually exist in the trace?
                     case lists:member({Type, Message}, PreviousTrace) of 
@@ -279,7 +284,7 @@ can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace, BlockedPro
                             case Shrinking of 
                                 true ->
                                     replay_debug("=> CONDITIONAL YES, message doesn't exist in previous trace, but shrinking: ~p ~p", [Type, Message]),
-                                    true;
+                                    {true, delivered};
                                 false ->
                                     replay_debug("=> NO, waiting for message: ~p: ~p", [NextType, NextMessage]),
                                     false
@@ -297,7 +302,7 @@ can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace, BlockedPro
             case Shrinking of 
                 true ->
                     replay_debug("=> CONDITIONAL YES, message doesn't exist in previous trace, but shrinking: ~p ~p", [Type, Message]),
-                    true;
+                    {true, delivered};
                 false ->
                     replay_debug("=> message should not have been delivered, blocking.", []),
                     false
@@ -328,7 +333,7 @@ trace_deliver_log_flush(Shrinking, Trace0, BlockedProcesses0) ->
     %% Iterate blocked processes in an attempt to remove one.
     {ND, T, BP} = lists:foldl(fun({{NextType, NextMessage}, Pid} = BP, {NumDelivered1, Trace1, BlockedProcesses1}) ->
         case can_deliver_based_on_trace(Shrinking, {NextType, NextMessage}, Trace1, BlockedProcesses0) of 
-            true ->
+            {true, delivered} ->
                 replay_debug("message ~p ~p can be unblocked!", [NextType, NextMessage]),
 
                 %% Advance the trace.
@@ -344,6 +349,17 @@ trace_deliver_log_flush(Shrinking, Trace0, BlockedProcesses0) ->
                 NewBlockedProcesses = BlockedProcesses1 -- [BP],
 
                 {NewNumDelivered, RestOfTrace, NewBlockedProcesses};
+            {true, omitted} ->
+                %% TODO: Not ideal to keep these processes blocked forever, but hey, it works!
+                replay_debug("message ~p ~p should be omitted!", [NextType, NextMessage]),
+
+                %% Advance the trace.
+                [{_, _} | RestOfTrace] = Trace1,
+
+                %% Advance the count of delivered messages.
+                NewNumDelivered = NumDelivered1 + 1,
+
+                {NewNumDelivered, RestOfTrace, BlockedProcesses1};
             false ->
                 replay_debug("pid ~p CANNOT be unblocked yet, unmet dependencies!", [Pid]),
 
