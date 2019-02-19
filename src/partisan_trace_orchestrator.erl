@@ -25,6 +25,8 @@
 
 -include("partisan.hrl").
 
+-define(MANAGER, partisan_pluggable_peer_service_manager).
+
 %% API
 -export([start_link/0,
          start_link/1,
@@ -32,7 +34,8 @@
          replay/2,
          reset/0,
          identify/1,
-         print/0]).
+         print/0,
+         perform_preloads/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -80,6 +83,15 @@ print() ->
 %% @doc Identify trace.
 identify(Identifier) ->
     gen_server:call({global, ?MODULE}, {identify, Identifier}, infinity).
+
+%% @doc Perform preloads.
+perform_preloads() ->
+    %% This is a replay, so load the preloads.
+    replay_debug("loading preload omissions.", []),
+    preload_omissions(),
+    replay_debug("preloads finished.", []),
+
+    ok.
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -363,6 +375,15 @@ trace_deliver_log_flush(Shrinking, Trace0, BlockedProcesses0) ->
     end.
 
 %% @private
+preload_omission_file() ->
+    case os:getenv("PRELOAD_OMISSIONS_FILE") of
+        false ->
+            undefined;
+        Other ->
+            Other
+    end.
+
+%% @private
 trace_file() ->
     case os:getenv("TRACE_FILE") of
         false ->
@@ -509,6 +530,42 @@ membership_strategy_tracing() ->
 %% @private
 format_message_payload_for_json(MessagePayload) ->
     list_to_binary(lists:flatten(io_lib:format("~w", [MessagePayload]))).
+
+%% @private
+preload_omissions() ->
+    PreloadOmissionFile = preload_omission_file(),
+    case PreloadOmissionFile of 
+        undefined ->
+            ok;
+        _ ->
+            {ok, [Omissions]} = file:consult(PreloadOmissionFile),
+
+            lists:foreach(fun({T, Message}) ->
+                case T of
+                    pre_interposition_fun ->
+                        {TracingNode, forward_message, OriginNode, MessagePayload} = Message,
+
+                        replay_debug("Enabling preload omission for ~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload]) ,
+
+                        InterpositionFun = fun({forward_message, N, M}) ->
+                            case N of
+                                OriginNode ->
+                                    lager:info("~p: dropping packet from ~p to ~p due to preload interposition.", [node(), TracingNode, OriginNode]),
+                                    undefined;
+                                OtherNode ->
+                                    lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), TracingNode, OtherNode]),
+                                    M
+                            end;
+                            ({receive_message, _N, M}) -> M
+                        end,
+                        ok = rpc:call(TracingNode, ?MANAGER, add_interposition_fun, [{send_omission, OriginNode, Message}, InterpositionFun]);
+                    Other ->
+                        replay_debug("unknown preload: ~p", [Other])
+                end
+            end, Omissions)
+    end,
+
+    ok.
 
 %%%===================================================================
 %%% Trace filtering: super hack, until we can refactor these messages.

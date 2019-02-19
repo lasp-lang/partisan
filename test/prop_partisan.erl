@@ -687,6 +687,9 @@ start_nodes() ->
     %% Reset trace.
     ok = partisan_trace_orchestrator:reset(),
 
+    %% Perform preloads.
+    ok = partisan_trace_orchestrator:perform_preloads(),
+
     %% Identify trace.
     TraceRandomNumber = rand:uniform(100000),
     %% lager:info("~p: trace random generated: ~p", [?MODULE, TraceRandomNumber]),
