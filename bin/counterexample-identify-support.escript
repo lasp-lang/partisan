@@ -1,6 +1,6 @@
 #!/usr/bin/env escript
 
-main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexampleConsultFile]) ->
+main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexampleConsultFile, PreloadOmissionFile]) ->
     %% Open the trace file.
     {ok, TraceLines} = file:consult(TraceFile),
 
@@ -9,13 +9,13 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     {ok, [{TestModule, TestFunction, [TestCommands]}]} = file:consult(CounterexampleConsultFile),
 
     io:format("Loading commands...~n", []),
-    [io:format("~p.~n", [TestCommand]) || TestCommand <- TestCommands],
+    [io:format(" ~p.~n", [TestCommand]) || TestCommand <- TestCommands],
 
     %% Drop last command -- forced failure.
     TestFinalCommands = lists:reverse(tl(lists:reverse(TestCommands))),
 
     io:format("Rewritten commands...~n", []),
-    [io:format("~p.~n", [TestFinalCommand]) || TestFinalCommand <- TestFinalCommands],
+    [io:format(" ~p.~n", [TestFinalCommand]) || TestFinalCommand <- TestFinalCommands],
 
     %% Write the schedule out.
     {ok, CounterexampleIo} = file:open(RebarCounterexampleConsultFile, [write, {encoding, utf8}]),
@@ -51,67 +51,66 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     end, TraceLinesWithoutFailure),
     io:format("Number of items in message trace: ~p~n", [length(MessageTraceLines)]),
 
-    [io:format("** ~p.~n", [T]) || T <- MessageTraceLines],
-
-
     %% Generate the powerset of tracelines.
     MessageTraceLinesPowerset = powerset(MessageTraceLines),
     io:format("Number of message sets in powerset: ~p~n", [length(MessageTraceLinesPowerset)]),
 
-    %% For each powerset, generate a trace that only allows those messages.
-    Traces = lists:map(fun(Set) ->
-        %% TODO: Allow non-pre-interposition through.
-        ConcreteTrace = lists:flatmap(fun({T, M} = Full) -> 
-            case T of 
-                pre_interposition_fun ->
-                    {_TracingNode, InterpositionType, _OriginNode, _MessagePayload} = M,
-                    
-                    case InterpositionType of
+    %% For each trace, write out the preload omission file.
+    lists:foreach(fun(Omissions) ->
+        %% Write out a new omission file from the previously used trace.
+        {ok, PreloadOmissionIo} = file:open(PreloadOmissionFile, [write, {encoding, utf8}]),
+        [io:format(PreloadOmissionIo, "~p.~n", [O]) || O <- [Omissions]],
+        ok = file:close(PreloadOmissionIo),
+
+        %% Generate a new trace.
+        io:format("Generating new trace based on message omissions: ~n", []),
+
+        {FinalTraceLines, _} = lists:foldl(fun({Type, Message} = Line, {FinalTrace0, AdditionalOmissions0}) ->
+            case Type =:= pre_interposition_fun of 
+                true ->
+                    {TracingNode, InterpositionType, OriginNode, MessagePayload} = Message,
+
+                    case InterpositionType of 
                         forward_message ->
-                            case lists:member(Full, Set) of 
-                                %% If powerset contains message, allow.
-                                %% This means that the message should be allowed during this execution.
+                            case lists:member(Line, Omissions) of 
                                 true ->
-                                    [{T, M}];
-                                %% If powerset doesn't contain the message, remap message to an omission.
-                                %% This is the omission we want to test.
+                                    % io:format("-> Omitting trace message (forward_message): ~p~n", 
+                                    %           [Line]),
+                                    % %% TODO: HACK: HARDCODED.
+                                    ReceiveOmission = {Type, {OriginNode, receive_message, TracingNode, {forward_message, lampson_2pc, MessagePayload}}},
+                                    io:format("-> Adding to additional omissions corresponding (receive_message): ~p~n", 
+                                              [ReceiveOmission]),
+                                    {FinalTrace0 ++ [Line], AdditionalOmissions0 ++ [ReceiveOmission]};
                                 false ->
-                                    [{{omit, T}, M}]
+                                    {FinalTrace0 ++ [Line], AdditionalOmissions0}
                             end;
-                        _ ->
-                            %% Pass anything but a forward_message through.
-                            %% We only test partitions on the sender side.
-                            [{T, M}]
+                        receive_message -> 
+                            case lists:member(Line, AdditionalOmissions0) of 
+                                true ->
+                                    io:format("-> Omitting corresponding message (receive_message): ~p~n", [Line]),
+                                    {FinalTrace0, AdditionalOmissions0 -- [Line]};
+                                false ->
+                                    {FinalTrace0 ++ [Line], AdditionalOmissions0}
+                            end
                     end;
-                _ ->
-                    %% Pass non-pre-interposition-funs through.
-                    %% Other commands are not subject to fault-injection.
-                    [{T, M}]
+                false ->
+                    {FinalTrace0 ++ [Line], AdditionalOmissions0}
             end
-        end, TraceLinesWithoutFailure),
+        end, {[], []}, TraceLinesWithoutFailure),
 
-        %% Return concrete trace.
-        ConcreteTrace
-    end, MessageTraceLinesPowerset),
+        % io:format("New trace: ~n", []),
+        % [io:format("-> ~p.~n", [TraceLine]) || TraceLine <- [FinalTraceLines]],
 
-    io:format("Number of traces materialized: ~p~n", [length(Traces)]),
-
-    %% For each trace, write out the trace file.
-    lists:foreach(fun(Trace) ->
-        %% Write out a new replay trace from the last used trace.
+        %% Write out replay trace.
         {ok, TraceIo} = file:open(ReplayTraceFile, [write, {encoding, utf8}]),
-
-        %% Write new trace out.
-        [io:format(TraceIo, "~p.~n", [TraceLine]) || TraceLine <- [Trace]],
-
-        %% Close file.
+        [io:format(TraceIo, "~p.~n", [TraceLine]) || TraceLine <- [FinalTraceLines]],
         ok = file:close(TraceIo),
 
         %% Run the trace.
-        Command = "REPLAY=true REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry",
+        Command = "REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry",
         io:format("Command to execute: ~p~n", [Command])
 
-    end, [hd(lists:reverse(Traces))]), %% TODO: FIX ME
+    end, [hd(MessageTraceLinesPowerset)]), %% TODO: FIX ME
 
     ok.
 
