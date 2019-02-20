@@ -20,6 +20,8 @@
 
 %% NOTE: This protocol doesn't cover durability nor recovery. It's merely
 %% here for demonstration purposes.
+%% TODO: Handle abort message at participants.
+%% TODO: Handle durability at participants.
 
 -module(lampson_2pc).
 
@@ -61,7 +63,7 @@ start_link() ->
 
 %% @doc Broadcast.
 broadcast(ServerRef, Message) ->
-    gen_server:call(?MODULE, {broadcast, ServerRef, Message}, ?TIMEOUT).
+    gen_server:call(?MODULE, {broadcast, ServerRef, Message}, infinity).
 
 %% @doc Membership update.
 update(LocalState0) ->
@@ -111,6 +113,9 @@ handle_call({broadcast, ServerRef, Message}, From, #state{membership=Membership}
     %% Store transaction.
     true = ets:insert(?MODULE, {Id, Transaction}),
 
+    %% Set transaction timer.
+    erlang:send_after(1000, self(), {timeout, Id}),
+
     %% Send prepare message to all participants including ourself.
     lists:foreach(fun(N) ->
         lager:info("~p: sending prepare message to node ~p: ~p", [node(), N, Message]),
@@ -132,6 +137,32 @@ handle_cast(Msg, State) ->
 
 %% @private
 %% Incoming messages.
+handle_info({timeout, Id}, State) ->
+    Manager = manager(),
+
+    %% Find transaction record.
+    case ets:lookup(?MODULE, Id) of 
+        [{_Id, #transaction{participants=Participants, from=From, server_ref=ServerRef, message=Message} = Transaction}] ->
+            lager:info("Received timeout for transaction id ~p", [Id]),
+
+            %% Reply to caller.
+            lager:info("Aborting transaction: ~p", [Id]),
+            gen_server:reply(From, error),
+
+            %% Update local state.
+            true = ets:insert(?MODULE, {Id, Transaction#transaction{status=aborting}}),
+
+            %% Send notification to abort.
+            MyNode = partisan_peer_service_manager:mynode(),
+            lists:foreach(fun(N) ->
+                lager:info("~p: sending abort message to node ~p: ~p", [node(), N, Id]),
+                Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {abort, MyNode, Id, ServerRef, Message}, [])
+            end, membership(Participants));
+        [] ->
+            lager:error("Notification for timeout message but no transaction found!")
+    end,
+
+    {noreply, State};
 handle_info({ack, FromNode, Id}, State) ->
     %% Find transaction record.
     case ets:lookup(?MODULE, Id) of 
@@ -224,7 +255,8 @@ handle_info({prepare, FromNode, Id, _ServerRef, _Message}, State) ->
     Manager:forward_message(FromNode, ?GOSSIP_CHANNEL, ?MODULE, {prepared, MyNode, Id}, []),
 
     {noreply, State};
-handle_info(_Msg, State) ->
+handle_info(Msg, State) ->
+    lager:info("~p received unhandled message: ~p", [node(), Msg]),
     {noreply, State}.
 
 %% @private
