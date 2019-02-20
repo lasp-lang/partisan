@@ -605,6 +605,5 @@ is_membership_strategy_message(forward_message, {_, _, {membership_strategy, _}}
 is_membership_strategy_message(receive_message, {membership_strategy, _}) ->
     true;
 
-
 is_membership_strategy_message(_Type, _Message) ->
     false.
