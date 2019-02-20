@@ -78,10 +78,34 @@ node_initial_state() ->
 node_functions() ->
     lists:map(fun({call, _Mod, Fun, _Args}) -> Fun end, node_commands()).
 
+%% Precondition.
+node_precondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}) ->
+    true;
+node_precondition(_NodeState, {call, ?MODULE, check_mailbox, []}) ->
+    true;
+node_precondition(_NodeState, _Command) ->
+    false.
+
+%% Next state.
+
+%% If the broadcast returned 'ok', we have to assume it was sent (asynchronous / synchronous.)
+node_next_state(#property_state{joined_nodes=JoinedNodes}, 
+                #node_state{sent=Sent0}=NodeState, 
+                ok, 
+                {call, ?MODULE, broadcast, [Node, {Id, Value}]}) ->
+    Recipients = JoinedNodes,
+    Message = {Id, Node, Value},
+    Sent = Sent0 ++ [{Message, Recipients}],
+    NodeState#node_state{sent=Sent};
+
+%% If the broadcast returned 'error', we have to assume it was aborted (synchronous.)
+node_next_state(_State, NodeState, _Response, _Command) ->
+    NodeState.
+
 %% Postconditions for node commands.
-node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, {error, timeout}) ->
-    lager:info("Broadcast timed out, must have been synchronous!"),
-    false;
+node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, error) ->
+    lager:info("Broadcast error, must have been synchronous!"),
+    true;
 node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, ok) ->
     true;
 node_postcondition(#node_state{sent=Sent}, {call, ?MODULE, check_mailbox, []}, Results) ->
@@ -109,25 +133,6 @@ node_postcondition(#node_state{sent=Sent}, {call, ?MODULE, check_mailbox, []}, R
 node_postcondition(_NodeState, _Command, _Response) ->
     false.
 
-%% Next state.
-node_next_state(#property_state{joined_nodes=JoinedNodes}, 
-                #node_state{sent=Sent0}=NodeState, 
-                _Result, 
-                {call, ?MODULE, broadcast, [Node, {Id, Value}]}) ->
-    Recipients = JoinedNodes,
-    Message = {Id, Node, Value},
-    Sent = Sent0 ++ [{Message, Recipients}],
-    NodeState#node_state{sent=Sent};
-node_next_state(_State, NodeState, _Response, _Command) ->
-    NodeState.
-
-%% Precondition.
-node_precondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}) ->
-    true;
-node_precondition(_NodeState, {call, ?MODULE, check_mailbox, []}) ->
-    true;
-node_precondition(_NodeState, _Command) ->
-    false.
 
 %%%===================================================================
 %%% Commands
