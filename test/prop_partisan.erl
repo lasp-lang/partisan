@@ -498,7 +498,7 @@ postcondition(#property_state{fault_model_state=FaultModelState, node_state=Node
             end
     end;
 postcondition(#property_state{node_state=NodeState}, {call, _Mod, Fun, Args}=Call, Res) ->
-    postcondition_debug("fallthrough precondition fired node function: ~p(~p)", [Fun, Args]),
+    postcondition_debug("fallthrough postcondition fired node function: ~p(~p)", [Fun, Args]),
 
     case lists:member(Fun, fault_global_functions()) of 
         true ->
@@ -507,7 +507,9 @@ postcondition(#property_state{node_state=NodeState}, {call, _Mod, Fun, Args}=Cal
         false ->
             case lists:member(Fun, node_global_functions()) of 
                 true ->
-                    node_postcondition(NodeState, Call, Res);
+                    Result = node_postcondition(NodeState, Call, Res),
+                    postcondition_debug("=> postcondition returned ~p", [Result]),
+                    Result;
                 false ->
                     false
             end
