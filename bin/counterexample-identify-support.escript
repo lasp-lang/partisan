@@ -1,4 +1,5 @@
 #!/usr/bin/env escript
+%%! -pa ./_build/default/lib/jsx/ebin -Wall
 
 %% TODO: Store results in ETS table.
 %% TODO: Sort omissions ascending by size.
@@ -67,10 +68,12 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
 
     %% Traces to iterate.
     SortedPowerset = lists:sort(fun(A, B) -> length(A) =< length(B) end, MessageTraceLinesPowerset),
-    TracesToIterate = lists:sublist(SortedPowerset, 3),
+    %% TracesToIterate = lists:sublist(SortedPowerset, 13),
+    TracesToIterate = SortedPowerset,
 
     %% For each trace, write out the preload omission file.
-    {_, AcceptableOmissions} = lists:foldl(fun(Omissions, {Iteration, ValidOmissions}) ->
+    {_, FailedOmissions, PassedOmissions, NumPrunedOmissions} = lists:foldl(fun(Omissions, {Iteration, InvalidOmissions, ValidOmissions, PrunedExecutions}) ->
+
         %% Super-naive version of dynamic partial order reduction.
         %%
         %% See if we've already investigated a prefix of these omissions.
@@ -90,7 +93,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
                 true = ets:insert(?MODULE, {Iteration, {Omissions, false}}),
 
                 %% Increment iteration, update valid omission schedules.
-                {Iteration + 1, ValidOmissions};
+                {Iteration + 1, InvalidOmissions, ValidOmissions, PrunedExecutions + 1};
             not_found ->
                 %% Write out a new omission file from the previously used trace.
                 io:format("Writing out new preload omissions file!~n", []),
@@ -102,38 +105,48 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
                 io:format("Generating new trace based on message omissions (~p omissions): ~n", 
                         [length(Omissions)]),
 
-                {FinalTraceLines, _} = lists:foldl(fun({Type, Message} = Line, {FinalTrace0, AdditionalOmissions0}) ->
+                {FinalTraceLines, _, _} = lists:foldl(fun({Type, Message} = Line, {FinalTrace0, FaultsStarted0, AdditionalOmissions0}) ->
                     case Type =:= pre_interposition_fun of 
                         true ->
                             {TracingNode, InterpositionType, OriginNode, MessagePayload} = Message,
 
-                            case InterpositionType of 
-                                forward_message ->
-                                    case lists:member(Line, Omissions) of 
-                                        true ->
-                                            io:format("-> Omitting trace message (forward_message): ~p~n", 
-                                                    [Line]),
-                                            % %% TODO: HACK: HARDCODED.
-                                            ReceiveOmission = {Type, {OriginNode, receive_message, TracingNode, {forward_message, lampson_2pc, MessagePayload}}},
-                                            io:format("-> Adding to additional omissions corresponding (receive_message): ~p~n", 
-                                                    [ReceiveOmission]),
-                                            {FinalTrace0, AdditionalOmissions0 ++ [ReceiveOmission]};
-                                        false ->
-                                            {FinalTrace0 ++ [Line], AdditionalOmissions0}
-                                    end;
-                                receive_message -> 
-                                    case lists:member(Line, AdditionalOmissions0) of 
-                                        true ->
-                                            io:format("-> Omitting corresponding message (receive_message): ~p~n", [Line]),
-                                            {FinalTrace0, AdditionalOmissions0 -- [Line]};
-                                        false ->
-                                            {FinalTrace0 ++ [Line], AdditionalOmissions0}
+                            case FaultsStarted0 of 
+                                true ->
+                                    %% Once we start omitting, omit everything after that's a message
+                                    %% send because we don't know what might be coming. %% In 2PC, if we
+                                    %% have a successful trace and omit a prepare -- we can't be guaranteed
+                                    %% to ever see a prepare vote or commmit.
+                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0};
+                                false ->
+                                    %% Otherwise, find just the targeted commands to remove.
+                                    case InterpositionType of 
+                                        forward_message ->
+                                            case lists:member(Line, Omissions) of 
+                                                true ->
+                                                    io:format("-> Omitting trace message (forward_message): ~p~n", 
+                                                            [Line]),
+                                                    % %% TODO: HACK: HARDCODED.
+                                                    ReceiveOmission = {Type, {OriginNode, receive_message, TracingNode, {forward_message, lampson_2pc, MessagePayload}}},
+                                                    io:format("-> Adding to additional omissions corresponding (receive_message): ~p~n", 
+                                                            [ReceiveOmission]),
+                                                    {FinalTrace0, true, AdditionalOmissions0 ++ [ReceiveOmission]};
+                                                false ->
+                                                    {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0}
+                                            end;
+                                        receive_message -> 
+                                            case lists:member(Line, AdditionalOmissions0) of 
+                                                true ->
+                                                    io:format("-> Omitting corresponding message (receive_message): ~p~n", [Line]),
+                                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0 -- [Line]};
+                                                false ->
+                                                    {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0}
+                                            end
                                     end
                             end;
                         false ->
-                            {FinalTrace0 ++ [Line], AdditionalOmissions0}
+                            {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0}
                     end
-                end, {[], []}, TraceLinesWithoutFailure),
+                end, {[], false, []}, TraceLinesWithoutFailure),
 
                 % io:format("New trace: ~n", []),
                 % [io:format("-> ~p.~n", [TraceLine]) || TraceLine <- [FinalTraceLines]],
@@ -146,12 +159,12 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
 
                 %% Run the trace.
                 Command = "SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
-                io:format("Executing command for iteration ~p of ~p:", [Iteration, length(TracesToIterate)]),
+                io:format("Executing command for iteration ~p of ~p (~p pruned):", [Iteration, length(TracesToIterate), PrunedExecutions]),
                 io:format(" ~p~n", [Command]),
                 Output = os:cmd(Command),
 
                 %% Store set of omissions as omissions that didn't invalidate the execution.
-                UpdatedOmissions = case string:find(Output, "{postcondition,false}") of 
+                case string:find(Output, "{postcondition,false}") of 
                     nomatch ->
                         %% This passed.
                         io:format("Test passed, adding omissions to set of supporting omissions!~n", []),
@@ -159,8 +172,8 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
                         %% Insert result into the ETS table.
                         true = ets:insert(?MODULE, {Iteration, {Omissions, true}}),
 
-                        %% Add omissiont to list of value omissions.
-                        ValidOmissions ++ [Omissions];
+                        %% Increment iteration, update omission accumulators.
+                        {Iteration + 1, InvalidOmissions, ValidOmissions ++ [Omissions], PrunedExecutions};
                     _ ->
                         %% This failed.
                         io:format("Test FAILED!~n", []),
@@ -168,18 +181,48 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
                         %% Insert result into the ETS table.
                         true = ets:insert(?MODULE, {Iteration, {Omissions, false}}),
 
-                        %% Do not add omissions into the valid omissions.
-                        ValidOmissions
-                end,
-
-                %% Increment iteration, update valid omission schedules.
-                {Iteration + 1, UpdatedOmissions}
+                        %% Increment iteration, update omission accumulators.
+                        {Iteration + 1, InvalidOmissions ++ [Omissions], ValidOmissions, PrunedExecutions}
+                end
         end
-    end, {1, []}, TracesToIterate),
+    end, {1, [], [], 0}, TracesToIterate),
 
-    io:format("Out of ~p traces, found ~p that supported the execution.~n", [length(TracesToIterate), length(AcceptableOmissions)]),
+    io:format("Out of ~p traces (~p pruned), found ~p that supported the execution where ~p didn't.~n", 
+              [length(TracesToIterate), NumPrunedOmissions, length(PassedOmissions), length(FailedOmissions)]),
+
+    %% Generate disjunctive normal form representation of failures that will invalidate the entire trace.
+    FinalDNF = lists:foldl(fun(Omissions, DNF) ->
+        CNF = lists:foldl(fun({Type, Message}, CNF1) ->
+            {TracingNode, InterpositionType, OriginNode, MessagePayload} = Message,
+
+            NewObject = [
+                {type, Type},
+                {tracing_node, TracingNode},
+                {origin_node, OriginNode},
+                {interposition_type, InterpositionType},
+                {message_payload, format_message_payload_for_json(MessagePayload)}
+            ],
+
+            %% Add conjunct for the omission.
+            CNF1 ++ [NewObject]
+        end, [], Omissions),
+
+        DNF ++ [CNF]
+    end, [], FailedOmissions),
+
+    %% Write out JSON file with the DNF.
+    EncodedJsonTrace = jsx:encode(FinalDNF),
+    JsonOutputFile = dnf_file(),
+    io:format("Writing JSON DNF.~n", []),
+    {ok, Io} = file:open(JsonOutputFile, [write, {encoding, utf8}]),
+    io:format(Io, "~s", [jsx:prettify(EncodedJsonTrace)]),
+    file:close(Io),
 
     ok.
+
+%% @private
+dnf_file() ->
+    "/tmp/partisan-dnf.json".
 
 %% @doc Generate the powerset of messages.
 powerset([]) -> 
@@ -303,3 +346,7 @@ powerset([H|T]) ->
     % % %% lists:foreach(fun(Command) -> io:format("~p~n", [Command]) end, AlteredCommands),
 
     % ok.
+
+%% @private
+format_message_payload_for_json(MessagePayload) ->
+    list_to_binary(lists:flatten(io_lib:format("~w", [MessagePayload]))).
