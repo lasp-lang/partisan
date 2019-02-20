@@ -55,15 +55,20 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     MessageTraceLinesPowerset = powerset(MessageTraceLines),
     io:format("Number of message sets in powerset: ~p~n", [length(MessageTraceLinesPowerset)]),
 
+    %% Traces to iterate.
+    TracesToIterate = lists:sublist(lists:reverse(MessageTraceLinesPowerset), 2),
+
     %% For each trace, write out the preload omission file.
-    lists:foreach(fun(Omissions) ->
+    {_, AcceptableOmissions} = lists:foldl(fun(Omissions, {Iteration, ValidOmissions}) ->
         %% Write out a new omission file from the previously used trace.
+        io:format("Writing out new preload omissions file!~n", []),
         {ok, PreloadOmissionIo} = file:open(PreloadOmissionFile, [write, {encoding, utf8}]),
         [io:format(PreloadOmissionIo, "~p.~n", [O]) || O <- [Omissions]],
         ok = file:close(PreloadOmissionIo),
 
         %% Generate a new trace.
-        io:format("Generating new trace based on message omissions: ~n", []),
+        io:format("Generating new trace based on message omissions (~p omissions): ~n", 
+                  [length(Omissions)]),
 
         {FinalTraceLines, _} = lists:foldl(fun({Type, Message} = Line, {FinalTrace0, AdditionalOmissions0}) ->
             case Type =:= pre_interposition_fun of 
@@ -74,13 +79,13 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
                         forward_message ->
                             case lists:member(Line, Omissions) of 
                                 true ->
-                                    % io:format("-> Omitting trace message (forward_message): ~p~n", 
-                                    %           [Line]),
+                                    io:format("-> Omitting trace message (forward_message): ~p~n", 
+                                              [Line]),
                                     % %% TODO: HACK: HARDCODED.
                                     ReceiveOmission = {Type, {OriginNode, receive_message, TracingNode, {forward_message, lampson_2pc, MessagePayload}}},
                                     io:format("-> Adding to additional omissions corresponding (receive_message): ~p~n", 
                                               [ReceiveOmission]),
-                                    {FinalTrace0 ++ [Line], AdditionalOmissions0 ++ [ReceiveOmission]};
+                                    {FinalTrace0, AdditionalOmissions0 ++ [ReceiveOmission]};
                                 false ->
                                     {FinalTrace0 ++ [Line], AdditionalOmissions0}
                             end;
@@ -102,15 +107,33 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
         % [io:format("-> ~p.~n", [TraceLine]) || TraceLine <- [FinalTraceLines]],
 
         %% Write out replay trace.
+        io:format("Writing out new replay trace file!~n", []),
         {ok, TraceIo} = file:open(ReplayTraceFile, [write, {encoding, utf8}]),
         [io:format(TraceIo, "~p.~n", [TraceLine]) || TraceLine <- [FinalTraceLines]],
         ok = file:close(TraceIo),
 
         %% Run the trace.
-        Command = "REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry",
-        io:format("Command to execute: ~p~n", [Command])
+        Command = "SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
+        io:format("Executing command for iteration ~p of ~p:", [Iteration, length(TracesToIterate)]),
+        io:format(" ~p~n", [Command]),
+        Output = os:cmd(Command),
 
-    end, [hd(MessageTraceLinesPowerset)]), %% TODO: FIX ME
+        %% Store set of omissions as omissions that didn't invalidate the execution.
+        UpdatedOmissions = case string:find(Output, "{postcondition,false}") of 
+            nomatch ->
+                %% This passed.
+                io:format("Test passed, adding omissions to set of supporting omissions!~n", []),
+                ValidOmissions ++ [Omissions];
+            _ ->
+                io:format("Test FAILED!~n", []),
+                ValidOmissions
+        end,
+
+        %% Increment iteration, update valid omission schedules.
+        {Iteration + 1, UpdatedOmissions}
+    end, {1, []}, TracesToIterate),
+
+    io:format("Out of ~p traces, found ~p that supported the execution.~n", [length(TracesToIterate), length(AcceptableOmissions)]),
 
     ok.
 
