@@ -72,7 +72,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     %% Traces to iterate.
     SortedPowerset = lists:sort(fun(A, B) -> length(A) =< length(B) end, MessageTraceLinesPowerset),
     %% TracesToIterate = lists:sublist(SortedPowerset, 13),
-    TracesToIterate = lists:reverse(SortedPowerset), %% TODO: FIX ME.
+    TracesToIterate = SortedPowerset,
 
     %% For each trace, write out the preload omission file.
     {_, FailedOmissions, PassedOmissions, NumPrunedOmissions} = lists:foldl(fun(Omissions, {Iteration, InvalidOmissions, ValidOmissions, PrunedExecutions}) ->
