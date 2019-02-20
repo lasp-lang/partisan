@@ -726,7 +726,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
             end,
             dict:fold(PostFoldFun, ok, PostInterpositionFuns),
 
-            lager:info("~p: Message after send interposition is: ~p", [node(), FullMessage]),
+            lager:info("~p: Message ~p after send interposition is: ~p", [node(), OriginalMessage, FullMessage]),
 
             case From of 
                 undefined ->
