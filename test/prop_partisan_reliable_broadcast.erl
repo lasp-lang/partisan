@@ -54,7 +54,7 @@ names() ->
 %%% Node Functions
 %%%===================================================================
 
--record(node_state, {sent}).
+-record(node_state, {sent, failed_to_send}).
 
 %% What node-specific operations should be called.
 node_commands() ->
@@ -71,7 +71,7 @@ node_global_functions() ->
 %% What should the initial node state be.
 node_initial_state() ->
     node_debug("initializing", []),
-    #node_state{sent=[]}.
+    #node_state{sent=[], failed_to_send=[]}.
 
 %% Names of the node functions so we kow when we can dispatch to the node
 %% pre- and postconditions.
@@ -98,6 +98,15 @@ node_next_state(#property_state{joined_nodes=JoinedNodes},
     Sent = Sent0 ++ [{Message, Recipients}],
     NodeState#node_state{sent=Sent};
 
+node_next_state(#property_state{joined_nodes=JoinedNodes}, 
+                #node_state{failed_to_send=FailedToSend0}=NodeState, 
+                error, 
+                {call, ?MODULE, broadcast, [Node, {Id, Value}]}) ->
+    Recipients = JoinedNodes,
+    Message = {Id, Node, Value},
+    FailedToSend = FailedToSend0 ++ [{Message, Recipients}],
+    NodeState#node_state{failed_to_send=FailedToSend};
+
 %% If the broadcast returned 'error', we have to assume it was aborted (synchronous.)
 node_next_state(_State, NodeState, _Response, _Command) ->
     NodeState.
@@ -108,8 +117,8 @@ node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, er
     true;
 node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, ok) ->
     true;
-node_postcondition(#node_state{sent=Sent}, {call, ?MODULE, check_mailbox, []}, Results) ->
-    lists:foldl(fun({Message, Recipients}, MessageAcc) ->
+node_postcondition(#node_state{failed_to_send=FailedToSend, sent=Sent}, {call, ?MODULE, check_mailbox, []}, Results) ->
+    AllSentAndReceived = lists:foldl(fun({Message, Recipients}, MessageAcc) ->
         node_debug("verifying that message ~p was received by ~p", [Message, Recipients]),
 
         All = lists:foldl(fun(Recipient, NodeAcc) ->
@@ -129,7 +138,31 @@ node_postcondition(#node_state{sent=Sent}, {call, ?MODULE, check_mailbox, []}, R
         end, true, Recipients),
 
         All andalso MessageAcc
-    end, true, Sent);
+    end, true, Sent),
+
+    FailedToSendNotReceived = lists:foldl(fun({Message, Recipients}, MessageAcc) ->
+        node_debug("verifying that message ~p was NOT received by ~p", [Message, Recipients]),
+
+        All = lists:foldl(fun(Recipient, NodeAcc) ->
+            node_debug("=> verifying that message ~p was NOT received by ~p", [Message, Recipient]),
+
+            %% Did this node receive the message?
+            Messages = dict:fetch(Recipient, Results),
+
+            %% Carry forward.
+            case lists:member(Message, Messages) of 
+                true ->
+                    node_debug("=> => message received at node ~p: ~p", [Message, Recipient]),
+                    NodeAcc andalso false;
+                false ->
+                    NodeAcc andalso true
+            end
+        end, true, Recipients),
+
+        All andalso MessageAcc
+    end, true, FailedToSend),
+
+    AllSentAndReceived andalso FailedToSendNotReceived;
 node_postcondition(_NodeState, _Command, _Response) ->
     false.
 
