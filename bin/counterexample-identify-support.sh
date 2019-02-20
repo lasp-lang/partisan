@@ -23,7 +23,3 @@ cp ${TRACE_FILE} ${SAVED_TRACE_FILE}
 # Shrink counterexample, which should copy files in place.
 echo "Deriving schedules to test for counterexample support..."
 bin/counterexample-identify-support.escript ${TRACE_FILE} ${REPLAY_TRACE_FILE} ${COUNTEREXAMPLE_CONSULT_FILE} ${REBAR_COUNTEREXAMPLE_CONSULT_FILE} ${PRELOAD_OMISSION_FILE}
-
-# # Replay counterexample.
-# echo "Replaying counterexample..."
-# make kill; pkill -9 beam.smp; rm -rf priv/lager; SHRINKING=true REPLAY=true REPLAY_TRACE_FILE=${REPLAY_TRACE_FILE} TRACE_FILE=${TRACE_FILE} ./rebar3 proper --retry
