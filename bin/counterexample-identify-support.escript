@@ -72,7 +72,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     %% Traces to iterate.
     SortedPowerset = lists:sort(fun(A, B) -> length(A) =< length(B) end, MessageTraceLinesPowerset),
     %% TracesToIterate = lists:sublist(SortedPowerset, 13),
-    TracesToIterate = SortedPowerset,
+    TracesToIterate = lists:reverse(SortedPowerset), %% TODO: FIX ME.
 
     %% For each trace, write out the preload omission file.
     {_, FailedOmissions, PassedOmissions, NumPrunedOmissions} = lists:foldl(fun(Omissions, {Iteration, InvalidOmissions, ValidOmissions, PrunedExecutions}) ->
@@ -162,7 +162,8 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
 
                 %% Run the trace.
                 Command = "SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
-                io:format("Executing command for iteration ~p of ~p (~p pruned):", [Iteration, length(TracesToIterate), PrunedExecutions]),
+                io:format("Executing command for iteration ~p of ~p (~p pruned, ~p invalid, ~p valid):", 
+                          [Iteration, length(TracesToIterate), PrunedExecutions, length(InvalidOmissions), length(ValidOmissions)]),
                 io:format(" ~p~n", [Command]),
                 Output = os:cmd(Command),
 

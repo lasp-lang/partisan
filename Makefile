@@ -101,6 +101,7 @@ compose: containerize
 
 make bin-perms:
 	chmod 755 bin/*.sh
+	chmod 755 bin/*.escript
 
 demers-direct-mail-test: kill bin-perms
 	bin/demers-direct-mail-test.sh
