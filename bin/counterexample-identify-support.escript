@@ -66,92 +66,114 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     io:format("Number of message sets in powerset: ~p~n", [length(MessageTraceLinesPowerset)]),
 
     %% Traces to iterate.
-    TracesToIterate = lists:sublist(lists:reverse(MessageTraceLinesPowerset), 2),
+    SortedPowerset = lists:sort(fun(A, B) -> length(A) =< length(B) end, MessageTraceLinesPowerset),
+    TracesToIterate = lists:sublist(SortedPowerset, 3),
 
     %% For each trace, write out the preload omission file.
     {_, AcceptableOmissions} = lists:foldl(fun(Omissions, {Iteration, ValidOmissions}) ->
-        %% Write out a new omission file from the previously used trace.
-        io:format("Writing out new preload omissions file!~n", []),
-        {ok, PreloadOmissionIo} = file:open(PreloadOmissionFile, [write, {encoding, utf8}]),
-        [io:format(PreloadOmissionIo, "~p.~n", [O]) || O <- [Omissions]],
-        ok = file:close(PreloadOmissionIo),
 
-        %% Generate a new trace.
-        io:format("Generating new trace based on message omissions (~p omissions): ~n", 
-                  [length(Omissions)]),
-
-        {FinalTraceLines, _} = lists:foldl(fun({Type, Message} = Line, {FinalTrace0, AdditionalOmissions0}) ->
-            case Type =:= pre_interposition_fun of 
+        %% See if we've already investigated a prefix of these omissions.
+        AlreadyExecuted = ets:foldl(fun({_I, {O, R}}, Acc) ->
+            %% Have we run a prefix of this execution and it failed?
+            case lists:prefix(O, Omissions) andalso R =:= false of 
                 true ->
-                    {TracingNode, InterpositionType, OriginNode, MessagePayload} = Message,
-
-                    case InterpositionType of 
-                        forward_message ->
-                            case lists:member(Line, Omissions) of 
-                                true ->
-                                    io:format("-> Omitting trace message (forward_message): ~p~n", 
-                                              [Line]),
-                                    % %% TODO: HACK: HARDCODED.
-                                    ReceiveOmission = {Type, {OriginNode, receive_message, TracingNode, {forward_message, lampson_2pc, MessagePayload}}},
-                                    io:format("-> Adding to additional omissions corresponding (receive_message): ~p~n", 
-                                              [ReceiveOmission]),
-                                    {FinalTrace0, AdditionalOmissions0 ++ [ReceiveOmission]};
-                                false ->
-                                    {FinalTrace0 ++ [Line], AdditionalOmissions0}
-                            end;
-                        receive_message -> 
-                            case lists:member(Line, AdditionalOmissions0) of 
-                                true ->
-                                    io:format("-> Omitting corresponding message (receive_message): ~p~n", [Line]),
-                                    {FinalTrace0, AdditionalOmissions0 -- [Line]};
-                                false ->
-                                    {FinalTrace0 ++ [Line], AdditionalOmissions0}
-                            end
-                    end;
+                    found;
                 false ->
-                    {FinalTrace0 ++ [Line], AdditionalOmissions0}
+                    Acc
             end
-        end, {[], []}, TraceLinesWithoutFailure),
+        end, not_found, ?MODULE),
 
-        % io:format("New trace: ~n", []),
-        % [io:format("-> ~p.~n", [TraceLine]) || TraceLine <- [FinalTraceLines]],
-
-        %% Write out replay trace.
-        io:format("Writing out new replay trace file!~n", []),
-        {ok, TraceIo} = file:open(ReplayTraceFile, [write, {encoding, utf8}]),
-        [io:format(TraceIo, "~p.~n", [TraceLine]) || TraceLine <- [FinalTraceLines]],
-        ok = file:close(TraceIo),
-
-        %% Run the trace.
-        Command = "SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
-        io:format("Executing command for iteration ~p of ~p:", [Iteration, length(TracesToIterate)]),
-        io:format(" ~p~n", [Command]),
-        Output = os:cmd(Command),
-
-        %% Store set of omissions as omissions that didn't invalidate the execution.
-        UpdatedOmissions = case string:find(Output, "{postcondition,false}") of 
-            nomatch ->
-                %% This passed.
-                io:format("Test passed, adding omissions to set of supporting omissions!~n", []),
-
-                %% Insert result into the ETS table.
-                true = ets:insert(?MODULE, {Iteration, {Omissions, true}}),
-
-                %% Add omissiont to list of value omissions.
-                ValidOmissions ++ [Omissions];
-            _ ->
-                %% This failed.
-                io:format("Test FAILED!~n", []),
-
+        case AlreadyExecuted of 
+            found ->
                 %% Insert result into the ETS table.
                 true = ets:insert(?MODULE, {Iteration, {Omissions, false}}),
 
-                %% Do not add omissions into the valid omissions.
-                ValidOmissions
-        end,
+                %% Increment iteration, update valid omission schedules.
+                {Iteration + 1, ValidOmissions};
+            not_found ->
+                %% Write out a new omission file from the previously used trace.
+                io:format("Writing out new preload omissions file!~n", []),
+                {ok, PreloadOmissionIo} = file:open(PreloadOmissionFile, [write, {encoding, utf8}]),
+                [io:format(PreloadOmissionIo, "~p.~n", [O]) || O <- [Omissions]],
+                ok = file:close(PreloadOmissionIo),
 
-        %% Increment iteration, update valid omission schedules.
-        {Iteration + 1, UpdatedOmissions}
+                %% Generate a new trace.
+                io:format("Generating new trace based on message omissions (~p omissions): ~n", 
+                        [length(Omissions)]),
+
+                {FinalTraceLines, _} = lists:foldl(fun({Type, Message} = Line, {FinalTrace0, AdditionalOmissions0}) ->
+                    case Type =:= pre_interposition_fun of 
+                        true ->
+                            {TracingNode, InterpositionType, OriginNode, MessagePayload} = Message,
+
+                            case InterpositionType of 
+                                forward_message ->
+                                    case lists:member(Line, Omissions) of 
+                                        true ->
+                                            io:format("-> Omitting trace message (forward_message): ~p~n", 
+                                                    [Line]),
+                                            % %% TODO: HACK: HARDCODED.
+                                            ReceiveOmission = {Type, {OriginNode, receive_message, TracingNode, {forward_message, lampson_2pc, MessagePayload}}},
+                                            io:format("-> Adding to additional omissions corresponding (receive_message): ~p~n", 
+                                                    [ReceiveOmission]),
+                                            {FinalTrace0, AdditionalOmissions0 ++ [ReceiveOmission]};
+                                        false ->
+                                            {FinalTrace0 ++ [Line], AdditionalOmissions0}
+                                    end;
+                                receive_message -> 
+                                    case lists:member(Line, AdditionalOmissions0) of 
+                                        true ->
+                                            io:format("-> Omitting corresponding message (receive_message): ~p~n", [Line]),
+                                            {FinalTrace0, AdditionalOmissions0 -- [Line]};
+                                        false ->
+                                            {FinalTrace0 ++ [Line], AdditionalOmissions0}
+                                    end
+                            end;
+                        false ->
+                            {FinalTrace0 ++ [Line], AdditionalOmissions0}
+                    end
+                end, {[], []}, TraceLinesWithoutFailure),
+
+                % io:format("New trace: ~n", []),
+                % [io:format("-> ~p.~n", [TraceLine]) || TraceLine <- [FinalTraceLines]],
+
+                %% Write out replay trace.
+                io:format("Writing out new replay trace file!~n", []),
+                {ok, TraceIo} = file:open(ReplayTraceFile, [write, {encoding, utf8}]),
+                [io:format(TraceIo, "~p.~n", [TraceLine]) || TraceLine <- [FinalTraceLines]],
+                ok = file:close(TraceIo),
+
+                %% Run the trace.
+                Command = "SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
+                io:format("Executing command for iteration ~p of ~p:", [Iteration, length(TracesToIterate)]),
+                io:format(" ~p~n", [Command]),
+                Output = os:cmd(Command),
+
+                %% Store set of omissions as omissions that didn't invalidate the execution.
+                UpdatedOmissions = case string:find(Output, "{postcondition,false}") of 
+                    nomatch ->
+                        %% This passed.
+                        io:format("Test passed, adding omissions to set of supporting omissions!~n", []),
+
+                        %% Insert result into the ETS table.
+                        true = ets:insert(?MODULE, {Iteration, {Omissions, true}}),
+
+                        %% Add omissiont to list of value omissions.
+                        ValidOmissions ++ [Omissions];
+                    _ ->
+                        %% This failed.
+                        io:format("Test FAILED!~n", []),
+
+                        %% Insert result into the ETS table.
+                        true = ets:insert(?MODULE, {Iteration, {Omissions, false}}),
+
+                        %% Do not add omissions into the valid omissions.
+                        ValidOmissions
+                end,
+
+                %% Increment iteration, update valid omission schedules.
+                {Iteration + 1, UpdatedOmissions}
+        end
     end, {1, []}, TracesToIterate),
 
     io:format("Out of ~p traces, found ~p that supported the execution.~n", [length(TracesToIterate), length(AcceptableOmissions)]),
