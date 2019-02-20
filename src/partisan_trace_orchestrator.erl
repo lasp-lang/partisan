@@ -550,8 +550,14 @@ preload_omissions() ->
                         InterpositionFun = fun({forward_message, N, M}) ->
                             case N of
                                 OriginNode ->
-                                    lager:info("~p: dropping packet from ~p to ~p due to preload interposition.", [node(), TracingNode, OriginNode]),
-                                    undefined;
+                                    case M of 
+                                        MessagePayload ->
+                                            lager:info("~p: dropping packet from ~p to ~p due to preload interposition.", [node(), TracingNode, OriginNode]),
+                                            undefined;
+                                        _ ->
+                                            lager:info("~p: allowing message, doesn't match interposition payload while node matches", [node()]),
+                                            M
+                                    end;
                                 OtherNode ->
                                     lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), TracingNode, OtherNode]),
                                     M
