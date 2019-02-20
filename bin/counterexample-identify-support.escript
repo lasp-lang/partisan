@@ -71,7 +71,8 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
 
     %% For each trace, write out the preload omission file.
     {_, AcceptableOmissions} = lists:foldl(fun(Omissions, {Iteration, ValidOmissions}) ->
-
+        %% Super-naive version of dynamic partial order reduction.
+        %%
         %% See if we've already investigated a prefix of these omissions.
         AlreadyExecuted = ets:foldl(fun({_I, {O, R}}, Acc) ->
             %% Have we run a prefix of this execution and it failed?
