@@ -1,6 +1,16 @@
 #!/usr/bin/env escript
 
+%% TODO: Store results in ETS table.
+%% TODO: Sort omissions ascending by size.
+%% TODO: If we have a fail result for a prefix, fail result should propagate forward to bigger 
+%%       sets of traces: dynamic partial order reduction.
+%% TODO: All subsequent messages, after omitted messages, need to be removed from trace
+%%       (optional delivery, not reified in the trace.)
+
 main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexampleConsultFile, PreloadOmissionFile]) ->
+    %% Open ets table.
+    ?MODULE = ets:new(?MODULE, [named_table, set]),
+
     %% Open the trace file.
     {ok, TraceLines} = file:consult(TraceFile),
 
@@ -123,9 +133,20 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
             nomatch ->
                 %% This passed.
                 io:format("Test passed, adding omissions to set of supporting omissions!~n", []),
+
+                %% Insert result into the ETS table.
+                true = ets:insert(?MODULE, {Iteration, {Omissions, true}}),
+
+                %% Add omissiont to list of value omissions.
                 ValidOmissions ++ [Omissions];
             _ ->
+                %% This failed.
                 io:format("Test FAILED!~n", []),
+
+                %% Insert result into the ETS table.
+                true = ets:insert(?MODULE, {Iteration, {Omissions, false}}),
+
+                %% Do not add omissions into the valid omissions.
                 ValidOmissions
         end,
 
