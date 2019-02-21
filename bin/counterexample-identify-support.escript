@@ -76,6 +76,8 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
 
     %% For each trace, write out the preload omission file.
     {_, FailedOmissions, PassedOmissions, NumPrunedOmissions} = lists:foldl(fun(Omissions, {Iteration, InvalidOmissions, ValidOmissions, PrunedExecutions}) ->
+        %% At the start of each run, write out termorary results to DNF for debugging.
+        encode_and_write_json_dnf(InvalidOmissions),
 
         %% Super-naive version of dynamic partial order reduction.
         %%
@@ -194,6 +196,32 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     io:format("Out of ~p traces (~p pruned), found ~p that supported the execution where ~p didn't.~n", 
               [length(TracesToIterate), NumPrunedOmissions, length(PassedOmissions), length(FailedOmissions)]),
 
+    %% Write out JSON file.
+    encode_and_write_json_dnf(FailedOmissions),
+
+    %% Test finished time.
+    EndTime = os:timestamp(),
+
+    io:format("Test started: ~p~n", [StartTime]),
+    io:format("Test ended: ~p~n", [EndTime]),
+    io:format("Test took: ~p~n", [timer:now_diff(EndTime, StartTime)]),
+
+    ok.
+
+%% @private
+dnf_file() ->
+    "/tmp/partisan-dnf.json".
+
+%% @doc Generate the powerset of messages.
+powerset([]) -> 
+    [[]];
+
+powerset([H|T]) -> 
+    PT = powerset(T),
+    [ [H|X] || X <- PT ] ++ PT.
+
+%% @private
+encode_and_write_json_dnf(FailedOmissions) ->
     %% Generate disjunctive normal form representation of failures that will invalidate the entire trace.
     FinalDNF = lists:foldl(fun(Omissions, DNF) ->
         CNF = lists:foldl(fun({Type, Message}, CNF1) ->
@@ -222,26 +250,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     io:format(Io, "~s", [jsx:prettify(EncodedJsonTrace)]),
     file:close(Io),
 
-    %% Test finished time.
-    EndTime = os:timestamp(),
-
-    io:format("Test started: ~p~n", [StartTime]),
-    io:format("Test ended: ~p~n", [EndTime]),
-    io:format("Test took: ~p~n", [timer:now_diff(EndTime, StartTime)]),
-
     ok.
-
-%% @private
-dnf_file() ->
-    "/tmp/partisan-dnf.json".
-
-%% @doc Generate the powerset of messages.
-powerset([]) -> 
-    [[]];
-
-powerset([H|T]) -> 
-    PT = powerset(T),
-    [ [H|X] || X <- PT ] ++ PT.
 
 %% @private
 format_message_payload_for_json(MessagePayload) ->
