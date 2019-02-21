@@ -49,6 +49,7 @@
                       status, 
                       prepared, 
                       committed, 
+                      aborted,
                       server_ref, 
                       message}).
 
@@ -106,6 +107,7 @@ handle_call({broadcast, ServerRef, Message}, From, #state{membership=Membership}
         status=preparing, 
         prepared=[], 
         committed=[], 
+        aborted=[],
         server_ref=ServerRef, 
         message=Message
     },
@@ -163,11 +165,40 @@ handle_info({timeout, Id}, State) ->
     end,
 
     {noreply, State};
-handle_info({ack, FromNode, Id}, State) ->
+handle_info({abort_ack, FromNode, Id}, State) ->
+    %% Find transaction record.
+    case ets:lookup(?MODULE, Id) of 
+        [{_Id, #transaction{participants=Participants, aborted=Aborted0} = Transaction}] ->
+            lager:info("Received abort_ack from node ~p", [FromNode]),
+
+            %% Update aborted.
+            Aborted = Aborted0 ++ [FromNode],
+
+            %% Are we all committed?
+            case lists:usort(Participants) =:= lists:usort(Aborted) of 
+                true ->
+                    %% Remove record from storage.
+                    true = ets:delete(?MODULE, Id),
+
+                    ok;
+                false ->
+                    lager:info("Not all participants have aborted yet: ~p != ~p", [Aborted, Participants]),
+
+                    %% Update local state.
+                    true = ets:insert(?MODULE, {Id, Transaction#transaction{aborted=Aborted}}),
+
+                    ok
+            end;
+        [] ->
+            lager:error("Notification for abort_ack message but no transaction found!")
+    end,
+
+    {noreply, State};
+handle_info({commit_ack, FromNode, Id}, State) ->
     %% Find transaction record.
     case ets:lookup(?MODULE, Id) of 
         [{_Id, #transaction{participants=Participants, committed=Committed0, from=From} = Transaction}] ->
-            lager:info("Received ack from node ~p", [FromNode]),
+            lager:info("Received commit_ack from node ~p", [FromNode]),
 
             %% Update committed.
             Committed = Committed0 ++ [FromNode],
@@ -192,8 +223,19 @@ handle_info({ack, FromNode, Id}, State) ->
                     ok
             end;
         [] ->
-            lager:error("Notification for commit message but no transaction found!")
+            lager:error("Notification for commit_acK message but no transaction found!")
     end,
+
+    {noreply, State};
+handle_info({abort, FromNode, Id, _ServerRef, _Message}, State) ->
+    Manager = manager(),
+
+    %% TODO: Unstage changes after writing abort log record.
+
+    %% Repond to coordinator that we are now committed.
+    MyNode = partisan_peer_service_manager:mynode(),
+    lager:info("~p: sending abort ack message to node ~p: ~p", [node(), FromNode, Id]),
+    Manager:forward_message(FromNode, ?GOSSIP_CHANNEL, ?MODULE, {abort_ack, MyNode, Id}, []),
 
     {noreply, State};
 handle_info({commit, FromNode, Id, ServerRef, Message}, State) ->
@@ -207,7 +249,7 @@ handle_info({commit, FromNode, Id, ServerRef, Message}, State) ->
     %% Repond to coordinator that we are now committed.
     MyNode = partisan_peer_service_manager:mynode(),
     lager:info("~p: sending commit ack message to node ~p: ~p", [node(), FromNode, Id]),
-    Manager:forward_message(FromNode, ?GOSSIP_CHANNEL, ?MODULE, {ack, MyNode, Id}, []),
+    Manager:forward_message(FromNode, ?GOSSIP_CHANNEL, ?MODULE, {commit_ack, MyNode, Id}, []),
 
     {noreply, State};
 handle_info({prepared, FromNode, Id}, State) ->
