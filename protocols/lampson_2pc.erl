@@ -144,22 +144,31 @@ handle_info({timeout, Id}, State) ->
 
     %% Find transaction record.
     case ets:lookup(?MODULE, Id) of 
-        [{_Id, #transaction{participants=Participants, from=From, server_ref=ServerRef, message=Message} = Transaction}] ->
-            lager:info("Received timeout for transaction id ~p", [Id]),
+        [{_Id, #transaction{status=Status, participants=Participants, from=From, server_ref=ServerRef, message=Message} = Transaction}] ->
+            case Status of 
+                committing ->
+                    %% Can't do anything; block.
+                    ok;
+                aborting ->
+                    %% Can't do anything; block.
+                    ok;
+                preparing ->
+                    lager:info("Received timeout for transaction id ~p", [Id]),
 
-            %% Reply to caller.
-            lager:info("Aborting transaction: ~p", [Id]),
-            gen_server:reply(From, error),
+                    %% Reply to caller.
+                    lager:info("Aborting transaction: ~p", [Id]),
+                    gen_server:reply(From, error),
 
-            %% Update local state.
-            true = ets:insert(?MODULE, {Id, Transaction#transaction{status=aborting}}),
+                    %% Update local state.
+                    true = ets:insert(?MODULE, {Id, Transaction#transaction{status=aborting}}),
 
-            %% Send notification to abort.
-            MyNode = partisan_peer_service_manager:mynode(),
-            lists:foreach(fun(N) ->
-                lager:info("~p: sending abort message to node ~p: ~p", [node(), N, Id]),
-                Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {abort, MyNode, Id, ServerRef, Message}, [])
-            end, membership(Participants));
+                    %% Send notification to abort.
+                    MyNode = partisan_peer_service_manager:mynode(),
+                    lists:foreach(fun(N) ->
+                        lager:info("~p: sending abort message to node ~p: ~p", [node(), N, Id]),
+                        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {abort, MyNode, Id, ServerRef, Message}, [])
+                    end, membership(Participants))
+            end;
         [] ->
             lager:error("Notification for timeout message but no transaction found!")
     end,
