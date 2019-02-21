@@ -206,7 +206,7 @@ handle_info({abort_ack, FromNode, Id}, State) ->
 handle_info({commit_ack, FromNode, Id}, State) ->
     %% Find transaction record.
     case ets:lookup(?MODULE, Id) of 
-        [{_Id, #transaction{participants=Participants, committed=Committed0, from=From} = Transaction}] ->
+        [{_Id, #transaction{participants=Participants, committed=Committed0} = Transaction}] ->
             lager:info("Received commit_ack from node ~p", [FromNode]),
 
             %% Update committed.
@@ -215,10 +215,6 @@ handle_info({commit_ack, FromNode, Id}, State) ->
             %% Are we all committed?
             case lists:usort(Participants) =:= lists:usort(Committed) of 
                 true ->
-                    %% Reply to caller.
-                    lager:info("replying to the caller: ~p", From),
-                    gen_server:reply(From, ok),
-
                     %% Remove record from storage.
                     true = ets:delete(?MODULE, Id),
 
@@ -267,7 +263,7 @@ handle_info({prepared, FromNode, Id}, State) ->
     %% Find transaction record.
     case ets:lookup(?MODULE, Id) of 
         %% TODO: Eventually, don't send the payload once the participant has full persistence.
-        [{_Id, #transaction{participants=Participants, prepared=Prepared0, server_ref=ServerRef, message=Message} = Transaction}] ->
+        [{_Id, #transaction{participants=Participants, prepared=Prepared0, from=From, server_ref=ServerRef, message=Message} = Transaction}] ->
             %% Update prepared.
             Prepared = Prepared0 ++ [FromNode],
 
@@ -276,6 +272,10 @@ handle_info({prepared, FromNode, Id}, State) ->
                 true ->
                     %% Change state to committing.
                     Status = committing,
+
+                    %% Reply to caller.
+                    lager:info("replying to the caller: ~p", From),
+                    gen_server:reply(From, ok),
 
                     %% Update local state before sending decision to participants.
                     true = ets:insert(?MODULE, {Id, Transaction#transaction{status=Status, prepared=Prepared}}),
