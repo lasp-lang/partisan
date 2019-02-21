@@ -112,6 +112,9 @@ node_next_state(_State, NodeState, _Response, _Command) ->
     NodeState.
 
 %% Postconditions for node commands.
+node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, {badrpc, timeout}) ->
+    lager:info("Broadcast error with timeout, must have been synchronous!"),
+    false;
 node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, error) ->
     lager:info("Broadcast error, must have been synchronous!"),
     true;
@@ -163,9 +166,10 @@ node_postcondition(#node_state{failed_to_send=FailedToSend, sent=Sent}, {call, ?
     end, true, FailedToSend),
 
     AllSentAndReceived andalso FailedToSendNotReceived;
-node_postcondition(_NodeState, _Command, _Response) ->
+node_postcondition(_NodeState, Command, Response) ->
+    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
+               [Command, Response]),
     false.
-
 
 %%%===================================================================
 %%% Commands
@@ -188,7 +192,7 @@ broadcast(Node, {Id, Value}) ->
     %% Transmit message.
     FullMessage = {Id, Node, Value},
     node_debug("broadcast from node ~p message: ~p", [Node, FullMessage]),
-    Result = rpc:call(?NAME(Node), broadcast_module(), broadcast, [?RECEIVER, FullMessage]),
+    Result = rpc:call(?NAME(Node), broadcast_module(), broadcast, [?RECEIVER, FullMessage], 2000),
 
     %% Sleep for 2 second, giving time for message to propagate (1 second timer.)
     node_debug("=> sleeping for propagation", []),
