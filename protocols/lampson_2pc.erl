@@ -228,7 +228,7 @@ handle_info({commit_ack, FromNode, Id}, State) ->
                     ok
             end;
         [] ->
-            lager:error("Notification for commit_acK message but no transaction found!")
+            lager:error("Notification for commit_ack message but no transaction found!")
     end,
 
     {noreply, State};
@@ -237,7 +237,6 @@ handle_info({abort, FromNode, Id, _ServerRef, _Message}, State) ->
 
     %% TODO: Unstage changes after writing abort log record.
 
-    %% Repond to coordinator that we are now committed.
     MyNode = partisan_peer_service_manager:mynode(),
     lager:info("~p: sending abort ack message to node ~p: ~p", [node(), FromNode, Id]),
     Manager:forward_message(FromNode, ?GOSSIP_CHANNEL, ?MODULE, {abort_ack, MyNode, Id}, []),
