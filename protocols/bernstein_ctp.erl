@@ -46,8 +46,8 @@
                       coordinator,
                       from,
                       participants, 
-                      status, 
-                      our_status,
+                      coordinator_status, 
+                      participant_status,
                       prepared, 
                       committed, 
                       aborted,
@@ -128,8 +128,8 @@ handle_cast({broadcast, From, ServerRef, Message}, #state{membership=Membership}
         coordinator=MyNode,
         from=From,
         participants=Membership, 
-        status=preparing, 
-        our_status=undefined,
+        coordinator_status=preparing, 
+        participant_status=undefined,
         prepared=[], 
         committed=[], 
         aborted=[],
@@ -170,7 +170,7 @@ handle_info({decision, FromNode, Id, Decision}, State) ->
             case Decision of 
                 abort ->
                     %% Write log record showing abort occurred.
-                    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{our_status=abort, uncertain=[]}}),
+                    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=abort, uncertain=[]}}),
 
                     %% Notify uncertain.
                     lists:foreach(fun(N) ->
@@ -189,7 +189,7 @@ handle_info({decision, FromNode, Id, Decision}, State) ->
                     ok;
                 commit ->
                     %% Write log record showing commit occurred.
-                    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{our_status=commit, uncertain=[]}}),
+                    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=commit, uncertain=[]}}),
 
                     %% Notify uncertain.
                     lists:foreach(fun(N) ->
@@ -213,8 +213,8 @@ handle_info({decision_request, FromNode, Id}, State) ->
 
     %% Find transaction record.
     case ets:lookup(?PARTICIPATING_TRANSACTIONS, Id) of 
-        [{_Id, #transaction{our_status=OurStatus}}] ->
-            Decision = case OurStatus of 
+        [{_Id, #transaction{participant_status=ParticipantStatus}}] ->
+            Decision = case ParticipantStatus of 
                 abort -> 
                     %% We aborted.
                     abort; 
@@ -264,8 +264,8 @@ handle_info({coordinator_timeout, Id}, State) ->
 
     %% Find transaction record.
     case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
-        [{_Id, #transaction{status=Status, participants=Participants, from=From} = Transaction0}] ->
-            case Status of 
+        [{_Id, #transaction{coordinator_status=CoordinatorStatus, participants=Participants, from=From} = Transaction0}] ->
+            case CoordinatorStatus of 
                 committing ->
                     %% Can't do anything; block.
                     ok;
@@ -276,7 +276,7 @@ handle_info({coordinator_timeout, Id}, State) ->
                     lager:info("Received coordinator timeout for transaction id ~p", [Id]),
 
                     %% Update local state.
-                    Transaction = Transaction0#transaction{status=aborting},
+                    Transaction = Transaction0#transaction{coordinator_status=aborting},
                     true = ets:insert(?COORDINATING_TRANSACTIONS, {Id, Transaction}),
 
                     %% Reply to caller.
@@ -366,7 +366,7 @@ handle_info({commit, #transaction{id=Id, coordinator=Coordinator, server_ref=Ser
     Manager = manager(),
 
     %% Write log record showing commit occurred.
-    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{our_status=commit}}),
+    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=commit}}),
 
     %% Forward to process.
     partisan_util:process_forward(ServerRef, Message),
@@ -390,10 +390,10 @@ handle_info({prepared, FromNode, Id}, State) ->
             case lists:usort(Participants) =:= lists:usort(Prepared) of 
                 true ->
                     %% Change state to committing.
-                    Status = committing,
+                    CoordinatorStatus = committing,
 
                     %% Update local state before sending decision to participants.
-                    Transaction = Transaction0#transaction{status=Status, prepared=Prepared},
+                    Transaction = Transaction0#transaction{coordinator_status=CoordinatorStatus, prepared=Prepared},
                     true = ets:insert(?COORDINATING_TRANSACTIONS, {Id, Transaction}),
 
                     %% Reply to caller.
@@ -418,7 +418,7 @@ handle_info({prepare, #transaction{coordinator=Coordinator, id=Id}=Transaction},
     Manager = manager(),
 
     %% Durably store the message for recovery.
-    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{our_status=prepared}}),
+    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=prepared}}),
 
     %% Set a timeout to hear about a decision.
     erlang:send_after(1000, self(), {participant_timeout, Id}),
