@@ -71,8 +71,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
 
     %% Traces to iterate.
     SortedPowerset = lists:sort(fun(A, B) -> length(A) =< length(B) end, MessageTraceLinesPowerset),
-    %% TracesToIterate = lists:sublist(SortedPowerset, 13),
-    TracesToIterate = SortedPowerset,
+    TracesToIterate = lists:reverse(SortedPowerset),
 
     %% For each trace, write out the preload omission file.
     {_, FailedOmissions, PassedOmissions, NumPrunedOmissions} = lists:foldl(fun(Omissions, {Iteration, InvalidOmissions, ValidOmissions, PrunedExecutions}) ->
@@ -84,7 +83,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
         %% See if we've already investigated a prefix of these omissions.
         AlreadyExecuted = ets:foldl(fun({_I, {O, R}}, Acc) ->
             %% Have we run a prefix of this execution and it failed?
-            case lists:prefix(O, Omissions) andalso R =:= false of 
+            case lists:prefix(O, Omissions) andalso R =:= false andalso should_prune() of 
                 true ->
                     found;
                 false ->
@@ -255,3 +254,12 @@ encode_and_write_json_dnf(FailedOmissions) ->
 %% @private
 format_message_payload_for_json(MessagePayload) ->
     list_to_binary(lists:flatten(io_lib:format("~w", [MessagePayload]))).
+
+%% @private
+should_prune() ->
+    case os:getenv("SHOULD_PRUNE") of 
+        false ->
+            false;
+        _Other ->
+            true
+    end.
