@@ -307,8 +307,14 @@ registered_name(Name) ->
 process_forward(ServerRef, Message) ->
     try
         case ServerRef of
+            {partisan_remote_reference, _, {partisan_registered_name_reference, RegisteredName}} ->
+                Name = list_to_atom(RegisteredName),
+                Name ! Message;
             {partisan_remote_reference, _, {partisan_process_reference, ProcessIdentifier}} ->
                 Pid = list_to_pid(ProcessIdentifier),
+                Pid ! Message;
+            {partisan_registered_name_reference, RegisteredName} ->
+                Pid = list_to_atom(RegisteredName),
                 Pid ! Message;
             {partisan_process_reference, ProcessIdentifier} ->
                 Pid = list_to_pid(ProcessIdentifier),
