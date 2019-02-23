@@ -81,7 +81,7 @@ init([]) ->
     %% Register membership update callback.
     partisan_peer_service:add_sup_callback(fun ?MODULE:update/1),
 
-    %% Open ETS table to track received messages.
+    %% Open ETS table to track coordinated transactions.
     ?MODULE = ets:new(?MODULE, [set, named_table, public]),
 
     %% Start with initial membership.
