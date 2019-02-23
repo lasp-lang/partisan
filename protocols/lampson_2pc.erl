@@ -53,8 +53,6 @@
                       server_ref, 
                       message}).
 
--define(TIMEOUT, 2000).
-
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -116,7 +114,7 @@ handle_call({broadcast, ServerRef, Message}, From, #state{membership=Membership}
     true = ets:insert(?MODULE, {Id, Transaction}),
 
     %% Set transaction timer.
-    erlang:send_after(1000, self(), {timeout, Id}),
+    erlang:send_after(1000, self(), {coordinator_timeout, Id}),
 
     %% Send prepare message to all participants including ourself.
     lists:foreach(fun(N) ->
@@ -139,7 +137,7 @@ handle_cast(Msg, State) ->
 
 %% @private
 %% Incoming messages.
-handle_info({timeout, Id}, State) ->
+handle_info({coordinator_timeout, Id}, State) ->
     Manager = manager(),
 
     %% Find transaction record.
@@ -153,7 +151,7 @@ handle_info({timeout, Id}, State) ->
                     %% Can't do anything; block.
                     ok;
                 preparing ->
-                    lager:info("Received timeout for transaction id ~p", [Id]),
+                    lager:info("Received coordinator timeout for transaction id ~p", [Id]),
 
                     %% Reply to caller.
                     lager:info("Aborting transaction: ~p", [Id]),
@@ -170,7 +168,7 @@ handle_info({timeout, Id}, State) ->
                     end, membership(Participants))
             end;
         [] ->
-            lager:error("Notification for timeout message but no transaction found!")
+            lager:error("Notification for coordinator timeout message but no transaction found!")
     end,
 
     {noreply, State};
