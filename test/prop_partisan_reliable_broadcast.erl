@@ -335,7 +335,7 @@ node_end_case() ->
 broadcast_module() ->
     Module = case os:getenv("BROADCAST_MODULE") of 
         false ->
-            lampson_2pc;
+            bernstein_ctp;
         Other ->
             list_to_atom(Other)
     end,
