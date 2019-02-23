@@ -5,3 +5,4 @@ rm -rf priv/lager; pkill -9 beam.smp; NUM_TESTS=3 SCHEDULER=single_success bin/c
 
 echo "Beginning reduction to find support for successful example..."
 bin/counterexample-identify-support.sh
+
