@@ -162,6 +162,27 @@ handle_cast(Msg, State) ->
 
 %% @private
 %% Incoming messages.
+handle_info({participant_timeout, Id}, State) ->
+    Manager = manager(),
+
+    %% Find transaction record.
+    case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
+        [{_Id, #transaction{participants=Participants} = Transaction}] ->
+            %% Write log record showing abort occurred.
+            true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=abort, uncertain=[]}}),
+
+            %% Send decision request to all participants.
+            lists:foreach(fun(N) ->
+                lager:info("~p: sending decision request message to node ~p: ~p", [node(), N, Id]),
+                Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {abort, Transaction}, [])
+            end, membership(Participants)),
+
+            ok;
+        [] ->
+            lager:error("Notification for participant timeout message but no transaction found!")
+    end,
+
+    {noreply, State};
 handle_info({coordinator_timeout, Id}, State) ->
     Manager = manager(),
 
@@ -352,7 +373,7 @@ handle_info({prepared, FromNode, Id}, State) ->
 
                     %% Send notification to commit.
                     lists:foreach(fun(N) ->
-                        lager:info("~p: sending commit message to node ~p: ~p", [node(), N, Id]),
+                        lager:info("~p: sending precommit message to node ~p: ~p", [node(), N, Id]),
                         Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {precommit, Transaction}, [])
                     end, membership(Participants));
                 false ->
@@ -369,6 +390,9 @@ handle_info({prepare, #transaction{coordinator=Coordinator, id=Id}=Transaction},
 
     %% Durably store the message for recovery.
     true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=prepared}}),
+
+    %% Set a timeout to hear about a decision.
+    erlang:send_after(1000, self(), {participant_timeout, Id}),
 
     %% Repond to coordinator that we are now prepared.
     MyNode = partisan_peer_service_manager:mynode(),
