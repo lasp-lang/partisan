@@ -173,7 +173,7 @@ handle_info({participant_timeout, Id}, State) ->
 
             %% Send decision request to all participants.
             lists:foreach(fun(N) ->
-                lager:info("~p: sending decision request message to node ~p: ~p", [node(), N, Id]),
+                lager:info("~p: sending abort message to node ~p: ~p", [node(), N, Id]),
                 Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {abort, Transaction}, [])
             end, membership(Participants)),
 
