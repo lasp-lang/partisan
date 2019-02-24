@@ -130,7 +130,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
                                                     io:format("-> Omitting trace message (forward_message): ~p~n", 
                                                             [Line]),
                                                     % %% TODO: HACK: HARDCODED.
-                                                    ReceiveOmission = {Type, {OriginNode, receive_message, TracingNode, {forward_message, lampson_2pc, MessagePayload}}},
+                                                    ReceiveOmission = {Type, {OriginNode, receive_message, TracingNode, {forward_message, skeen_3pc, MessagePayload}}},
                                                     io:format("-> Adding to additional omissions corresponding (receive_message): ~p~n", 
                                                             [ReceiveOmission]),
                                                     {FinalTrace0, true, AdditionalOmissions0 ++ [ReceiveOmission]};
