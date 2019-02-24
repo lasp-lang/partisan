@@ -167,17 +167,32 @@ handle_info({participant_timeout, Id}, State) ->
 
     %% Find transaction record.
     case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
-        [{_Id, #transaction{participants=Participants} = Transaction}] ->
-            %% Write log record showing abort occurred.
-            true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=abort, uncertain=[]}}),
+        [{_Id, #transaction{participants=Participants, participant_status=ParticipantStatus, server_ref=ServerRef, message=Message} = Transaction}] ->
+            case ParticipantStatus of 
+                precommit ->
+                    %% Proceed with the commit.
 
-            %% Send decision request to all participants.
-            lists:foreach(fun(N) ->
-                lager:info("~p: sending abort message to node ~p: ~p", [node(), N, Id]),
-                Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {abort, Transaction}, [])
-            end, membership(Participants)),
+                    %% Write log record showing commit occurred.
+                    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=commit}}),
 
-            ok;
+                    %% Forward to process.
+                    partisan_util:process_forward(ServerRef, Message),
+
+                    %% Send commit to participants.
+                    lists:foreach(fun(N) ->
+                        lager:info("~p: sending commit message to node ~p: ~p", [node(), N, Id]),
+                        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {commit, Transaction}, [])
+                    end, membership(Participants));
+                _ ->
+                    %% Write log record showing abort occurred.
+                    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=abort}}),
+
+                    %% Send commit to participants.
+                    lists:foreach(fun(N) ->
+                        lager:info("~p: sending abort message to node ~p: ~p", [node(), N, Id]),
+                        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {abort, Transaction}, [])
+                    end, membership(Participants))
+            end;
         [] ->
             lager:error("Notification for participant timeout message but no transaction found!")
     end,
