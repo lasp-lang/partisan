@@ -192,7 +192,7 @@ powerset([H|T]) ->
 implementation_module() ->
     case os:getenv("IMPLEMENTATION_MODULE") of 
         false ->
-            exit({no_implementation_module_specified});
+            exit({error, no_implementation_module_specified});
         Other ->
             list_to_atom(Other)
     end.
