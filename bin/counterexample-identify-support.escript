@@ -170,10 +170,13 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
 
     %% Test finished time.
     EndTime = os:timestamp(),
+    Difference = timer:now_diff(EndTime, StartTime),
+    DifferenceMs = Difference / 1000,
+    DifferenceSec = DifferenceMs / 1000,
 
     io:format("Test started: ~p~n", [StartTime]),
     io:format("Test ended: ~p~n", [EndTime]),
-    io:format("Test took: ~p~n", [timer:now_diff(EndTime, StartTime)]),
+    io:format("Test took: ~p seconds.~n", [DifferenceSec]),
 
     ok.
 
