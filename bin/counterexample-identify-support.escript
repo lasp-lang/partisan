@@ -99,7 +99,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
                         case FaultsStarted0 of 
                             true ->
                                 %% Once we start omitting, omit everything after that's a message
-                                %% send because we don't know what might be coming. %% In 2PC, if we
+                                %% send because we don't know what might be coming. In 2PC, if we
                                 %% have a successful trace and omit a prepare -- we can't be guaranteed
                                 %% to ever see a prepare vote or commmit.
                                 {FinalTrace0, FaultsStarted0, AdditionalOmissions0};
@@ -109,12 +109,8 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
                                     forward_message ->
                                         case lists:member(Line, Omissions) of 
                                             true ->
-                                                io:format("-> Omitting trace message (forward_message): ~p~n", 
-                                                        [Line]),
-                                                % %% TODO: HACK: HARDCODED.
+                                                %% Sort of hack, just deal with it for now.
                                                 ReceiveOmission = {Type, {OriginNode, receive_message, TracingNode, {forward_message, implementation_module(), MessagePayload}}},
-                                                io:format("-> Adding to additional omissions corresponding (receive_message): ~p~n", 
-                                                        [ReceiveOmission]),
                                                 {FinalTrace0, true, AdditionalOmissions0 ++ [ReceiveOmission]};
                                             false ->
                                                 {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0}
@@ -122,7 +118,6 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
                                     receive_message -> 
                                         case lists:member(Line, AdditionalOmissions0) of 
                                             true ->
-                                                io:format("-> Omitting corresponding message (receive_message): ~p~n", [Line]),
                                                 {FinalTrace0, FaultsStarted0, AdditionalOmissions0 -- [Line]};
                                             false ->
                                                 {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0}
