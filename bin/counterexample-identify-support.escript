@@ -74,9 +74,9 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
 
     TracesToIterate = case os:getenv("SUBLIST") of 
         false ->
-            SortedPowerset;
+            lists:reverse(SortedPowerset);
         Other ->
-            lists:sublist(SortedPowerset, list_to_integer(Other))
+            lists:reverse(lists:sublist(SortedPowerset, list_to_integer(Other)))
     end,
 
     %% For each trace, write out the preload omission file.
