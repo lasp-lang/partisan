@@ -554,8 +554,10 @@ preload_omissions() ->
                                         MessagePayload ->
                                             lager:info("~p: dropping packet from ~p to ~p due to preload interposition.", [node(), TracingNode, OriginNode]),
                                             undefined;
-                                        _ ->
+                                        Other ->
                                             lager:info("~p: allowing message, doesn't match interposition payload while node matches", [node()]),
+                                            lager:info("~p: => expecting: ~p", [node(), MessagePayload]),
+                                            lager:info("~p: => got: ~p", [node(), Other]),
                                             M
                                     end;
                                 OtherNode ->
