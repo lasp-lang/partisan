@@ -168,9 +168,6 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     io:format("Out of ~p traces found ~p that supported the execution where ~p didn't.~n", 
               [length(TracesToIterate), length(PassedOmissions), length(FailedOmissions)]),
 
-    %% Write out JSON file.
-    encode_and_write_json_dnf(FailedOmissions),
-
     %% Test finished time.
     EndTime = os:timestamp(),
 
@@ -180,10 +177,6 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
 
     ok.
 
-%% @private
-dnf_file() ->
-    "/tmp/partisan-dnf.json".
-
 %% @doc Generate the powerset of messages.
 powerset([]) -> 
     [[]];
@@ -191,42 +184,6 @@ powerset([]) ->
 powerset([H|T]) -> 
     PT = powerset(T),
     [ [H|X] || X <- PT ] ++ PT.
-
-%% @private
-encode_and_write_json_dnf(FailedOmissions) ->
-    %% Generate disjunctive normal form representation of failures that will invalidate the entire trace.
-    FinalDNF = lists:foldl(fun(Omissions, DNF) ->
-        CNF = lists:foldl(fun({Type, Message}, CNF1) ->
-            {TracingNode, InterpositionType, OriginNode, MessagePayload} = Message,
-
-            NewObject = [
-                {type, Type},
-                {tracing_node, TracingNode},
-                {origin_node, OriginNode},
-                {interposition_type, InterpositionType},
-                {message_payload, format_message_payload_for_json(MessagePayload)}
-            ],
-
-            %% Add conjunct for the omission.
-            CNF1 ++ [NewObject]
-        end, [], Omissions),
-
-        DNF ++ [CNF]
-    end, [], FailedOmissions),
-
-    %% Write out JSON file with the DNF.
-    EncodedJsonTrace = jsx:encode(FinalDNF),
-    JsonOutputFile = dnf_file(),
-    io:format("Writing JSON DNF.~n", []),
-    {ok, Io} = file:open(JsonOutputFile, [write, {encoding, utf8}]),
-    io:format(Io, "~s", [jsx:prettify(EncodedJsonTrace)]),
-    file:close(Io),
-
-    ok.
-
-%% @private
-format_message_payload_for_json(MessagePayload) ->
-    list_to_binary(lists:flatten(io_lib:format("~w", [MessagePayload]))).
 
 %% @private
 implementation_module() ->
