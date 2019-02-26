@@ -129,9 +129,6 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
                 end
             end, {[], false, []}, TraceLinesWithoutFailure),
 
-            % io:format("New trace: ~n", []),
-            % [io:format("-> ~p.~n", [TraceLine]) || TraceLine <- [FinalTraceLines]],
-
             %% Write out replay trace.
             io:format("Writing out new replay trace file!~n", []),
             {ok, TraceIo} = file:open(ReplayTraceFile, [write, {encoding, utf8}]),
