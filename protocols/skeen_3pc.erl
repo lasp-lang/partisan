@@ -243,7 +243,7 @@ handle_info({abort_ack, FromNode, Id}, State) ->
             lager:info("Received abort_ack from node ~p", [FromNode]),
 
             %% Update aborted.
-            Aborted = Aborted0 ++ [FromNode],
+            Aborted = lists:usort(Aborted0 ++ [FromNode]),
 
             %% Are we all committed?
             case lists:usort(Participants) =:= lists:usort(Aborted) of 
@@ -272,7 +272,7 @@ handle_info({commit_ack, FromNode, Id}, State) ->
             lager:info("Received commit_ack from node ~p", [FromNode]),
 
             %% Update committed.
-            Committed = Committed0 ++ [FromNode],
+            Committed = lists:usort(Committed0 ++ [FromNode]),
 
             %% Are we all committed?
             case lists:usort(Participants) =:= lists:usort(Committed) of 
@@ -326,7 +326,7 @@ handle_info({precommit_ack, FromNode, Id}, State) ->
     case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
         [{_Id, #transaction{from=From, participants=Participants, precommitted=Precommitted0} = Transaction0}] ->
             %% Update prepared.
-            Precommitted = Precommitted0 ++ [FromNode],
+            Precommitted = lists:usort(Precommitted0 ++ [FromNode]),
 
             %% Are we all prepared?
             case lists:usort(Participants) =:= lists:usort(Precommitted) of 
@@ -374,7 +374,7 @@ handle_info({prepared, FromNode, Id}, State) ->
     case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
         [{_Id, #transaction{participants=Participants, prepared=Prepared0} = Transaction0}] ->
             %% Update prepared.
-            Prepared = Prepared0 ++ [FromNode],
+            Prepared = lists:usort(Prepared0 ++ [FromNode]),
 
             %% Are we all prepared?
             case lists:usort(Participants) =:= lists:usort(Prepared) of 
