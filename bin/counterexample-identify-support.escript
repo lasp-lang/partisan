@@ -138,7 +138,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
             case string:find(Output, "{postcondition,false}") of 
                 nomatch ->
                     %% This passed.
-                    io:format("Test passed, adding omissions to set of supporting omissions!~n", []),
+                    io:format("Test passed.~n", []),
 
                     %% Insert result into the ETS table.
                     true = ets:insert(?MODULE, {Iteration, {Iteration, FinalTraceLines, Omissions, true}});
