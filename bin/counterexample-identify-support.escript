@@ -130,8 +130,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
 
             %% Run the trace.
             Command = "rm -rf priv/lager; SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
-            io:format("Executing command for iteration ~p of ~p (~p invalid, ~p valid):", 
-                        [Iteration, length(TracesToIterate), length(InvalidOmissions), length(ValidOmissions)]),
+            io:format("Executing command for iteration ~p of ~p:", [Iteration, length(TracesToIterate)]),
             io:format(" ~p~n", [Command]),
             Output = os:cmd(Command),
 
