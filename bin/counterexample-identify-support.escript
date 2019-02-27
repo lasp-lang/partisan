@@ -73,7 +73,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     end,
 
     %% For each trace, write out the preload omission file.
-    {_, FailedOmissions, PassedOmissions} = lists:foldl(fun(Omissions, {Iteration, InvalidOmissions, ValidOmissions}) ->
+    lists:foldl(fun(Omissions, Iteration) ->
             %% Write out a new omission file from the previously used trace.
             io:format("Writing out new preload omissions file!~n", []),
             {ok, PreloadOmissionIo} = file:open(PreloadOmissionFile, [write, {encoding, utf8}]),
@@ -141,16 +141,18 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
                     io:format("Test passed, adding omissions to set of supporting omissions!~n", []),
 
                     %% Insert result into the ETS table.
-                    true = ets:insert(?MODULE, {Iteration, {Omissions, true}}),
-
-                    %% Increment iteration, update omission accumulators.
-                    {Iteration + 1, InvalidOmissions, ValidOmissions ++ [Omissions]};
+                    true = ets:insert(?MODULE, {Iteration, {Iteration, FinalTraceLines, Omissions, true}});
                 _ ->
                     %% This failed.
                     io:format("Test FAILED!~n", []),
 
                     %% Insert result into the ETS table.
-                    true = ets:insert(?MODULE, {Iteration, {Omissions, false}}),
+                    true = ets:insert(?MODULE, {Iteration, {Iteration, FinalTraceLines, Omissions, false}})
+            end,
+
+            %% Bump iteration.
+            Iteration + 1
+    end, 1, TracesToIterate),
 
                     %% Increment iteration, update omission accumulators.
                     {Iteration + 1, InvalidOmissions ++ [Omissions], ValidOmissions}
