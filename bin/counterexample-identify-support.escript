@@ -154,13 +154,67 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
             Iteration + 1
     end, 1, TracesToIterate),
 
-                    %% Increment iteration, update omission accumulators.
-                    {Iteration + 1, InvalidOmissions ++ [Omissions], ValidOmissions}
-            end
-    end, {1, [], []}, TracesToIterate),
+    io:format("Identifying witnesses...~n", []),
 
-    io:format("Out of ~p traces found ~p that supported the execution where ~p didn't.~n", 
-              [length(TracesToIterate), length(PassedOmissions), length(FailedOmissions)]),
+    %% Once we finished, we need to compute the minimals.
+    Witnesses = ets:foldl(fun({_, {Iteration, FinalTraceLines, _Omissions, Status} = Candidate}, Witnesses1) ->
+        io:format("=> looking at iteration ~p~n", [Iteration]),
+
+        %% For each trace that passes.
+        case Status of 
+            true ->
+                %% Ensure all supertraces also pass.
+                AllSupertracesPass = ets:foldl(fun({_, {_Iteration1, FinalTraceLines1, _Omissions1, Status1}}, AllSupertracesPass1) ->
+                    case is_supertrace(FinalTraceLines1, FinalTraceLines) of
+                        true ->
+                            io:format("=> => found supertrace, status: ~p~n", [Status1]),
+                            Status1 andalso AllSupertracesPass1;
+                        false ->
+                            AllSupertracesPass1
+                    end
+                end, true, ?MODULE),
+
+                io:format("=> ~p, all_super_traces_passing? ~p~n", [Iteration, AllSupertracesPass]),
+
+                case AllSupertracesPass of 
+                    true ->
+                        Witnesses1 ++ [Candidate];
+                    false ->
+                        Witnesses1
+                end;
+            false ->
+                %% If it didn't pass, it can't be a witness.
+                Witnesses1
+        end
+    end, [], ?MODULE),
+
+    io:format("Checking for minimal witnesses...~n", []),
+
+    %% Identify minimal.
+    MinimalWitnesses = lists:foldl(fun({Iteration, FinalTraceLines, Omissions, Status} = Witness, MinimalWitnesses) ->
+        io:format("=> looking at iteration ~p~n", [Iteration]),
+
+        %% See if any of the traces are subtraces of this.
+        StillMinimal = lists:foldl(fun({Iteration1, FinalTraceLines1, Omissions1, Status1}, StillMinimal1) ->
+            %% Is this other trace a subtrace of me?  If so, discard us
+            case is_subtrace(FinalTraceLines1, FinalTraceLines) andalso Iteration =/= Iteration1 of 
+                true ->
+                    io:format("=> => found subtrace in iteration: ~p, status: ~p~n", [Iteration1, Status1]),
+                    StillMinimal1 andalso false;
+                false ->
+                    StillMinimal1
+            end
+        end, true, Witnesses),
+
+        io:format("=> ~p, still_minimal? ~p~n", [Iteration, StillMinimal]),
+
+        case StillMinimal of 
+            true ->
+                MinimalWitnesses ++ [Witness];
+            false ->
+                MinimalWitnesses
+        end
+    end, [], Witnesses),
 
     %% Test finished time.
     EndTime = os:timestamp(),
@@ -190,3 +244,17 @@ implementation_module() ->
         Other ->
             list_to_atom(Other)
     end.
+
+%% @private
+is_supertrace(Trace1, Trace2) ->
+    %% Trace1 is a supertrace if Trace2 is a prefix of Trace1.
+    %% Contiguous, ordered.
+    lists:prefix(Trace2, Trace1).
+
+%% @private
+is_subtrace(Trace1, Trace2) ->
+    %% Remove all elements from T2 not in T1 to make traces comparable.
+    FilteredTrace2 = lists:filter(fun(T2) -> lists:member(T2, Trace1) end, Trace2),
+
+    %% Now, is the first trace a prefix?  If so, it's a subtrace.
+    lists:prefix(Trace1, FilteredTrace2).
