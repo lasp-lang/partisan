@@ -154,11 +154,11 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
             Iteration + 1
     end, 1, TracesToIterate),
 
-    io:format("Identifying witnesses...~n", []),
+    % io:format("Identifying witnesses...~n", []),
 
     %% Once we finished, we need to compute the minimals.
     Witnesses = ets:foldl(fun({_, {Iteration, FinalTraceLines, _Omissions, Status} = Candidate}, Witnesses1) ->
-        io:format("=> looking at iteration ~p~n", [Iteration]),
+        % io:format("=> looking at iteration ~p~n", [Iteration]),
 
         %% For each trace that passes.
         case Status of 
@@ -167,14 +167,14 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
                 AllSupertracesPass = ets:foldl(fun({_, {_Iteration1, FinalTraceLines1, _Omissions1, Status1}}, AllSupertracesPass1) ->
                     case is_supertrace(FinalTraceLines1, FinalTraceLines) of
                         true ->
-                            io:format("=> => found supertrace, status: ~p~n", [Status1]),
+                            % io:format("=> => found supertrace, status: ~p~n", [Status1]),
                             Status1 andalso AllSupertracesPass1;
                         false ->
                             AllSupertracesPass1
                     end
                 end, true, ?MODULE),
 
-                io:format("=> ~p, all_super_traces_passing? ~p~n", [Iteration, AllSupertracesPass]),
+                % io:format("=> ~p, all_super_traces_passing? ~p~n", [Iteration, AllSupertracesPass]),
 
                 case AllSupertracesPass of 
                     true ->
@@ -188,25 +188,25 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
         end
     end, [], ?MODULE),
 
-    io:format("Checking for minimal witnesses...~n", []),
+    % io:format("Checking for minimal witnesses...~n", []),
 
     %% Identify minimal.
     MinimalWitnesses = lists:foldl(fun({Iteration, FinalTraceLines, Omissions, Status} = Witness, MinimalWitnesses) ->
-        io:format("=> looking at iteration ~p~n", [Iteration]),
+        % io:format("=> looking at iteration ~p~n", [Iteration]),
 
         %% See if any of the traces are subtraces of this.
         StillMinimal = lists:foldl(fun({Iteration1, FinalTraceLines1, Omissions1, Status1}, StillMinimal1) ->
             %% Is this other trace a subtrace of me?  If so, discard us
             case is_subtrace(FinalTraceLines1, FinalTraceLines) andalso Iteration =/= Iteration1 of 
                 true ->
-                    io:format("=> => found subtrace in iteration: ~p, status: ~p~n", [Iteration1, Status1]),
+                    % io:format("=> => found subtrace in iteration: ~p, status: ~p~n", [Iteration1, Status1]),
                     StillMinimal1 andalso false;
                 false ->
                     StillMinimal1
             end
         end, true, Witnesses),
 
-        io:format("=> ~p, still_minimal? ~p~n", [Iteration, StillMinimal]),
+        % io:format("=> ~p, still_minimal? ~p~n", [Iteration, StillMinimal]),
 
         case StillMinimal of 
             true ->
@@ -215,6 +215,10 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
                 MinimalWitnesses
         end
     end, [], Witnesses),
+
+    %% Output.
+    io:format("Witnesses found: ~p~n", [length(Witnesses)]),
+    io:format("Minimal witnesses found: ~p~n", [length(MinimalWitnesses)]),
 
     %% Test finished time.
     EndTime = os:timestamp(),
