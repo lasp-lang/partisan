@@ -1,13 +1,6 @@
 #!/usr/bin/env escript
 %%! -pa ./_build/default/lib/jsx/ebin -Wall
 
-%% TODO: Store results in ETS table.
-%% TODO: Sort omissions ascending by size.
-%% TODO: If we have a fail result for a prefix, fail result should propagate forward to bigger 
-%%       sets of traces: dynamic partial order reduction.
-%% TODO: All subsequent messages, after omitted messages, need to be removed from trace
-%%       (optional delivery, not reified in the trace.)
-
 main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexampleConsultFile, PreloadOmissionFile]) ->
     %% Keep track of when test started.
     StartTime = os:timestamp(),
