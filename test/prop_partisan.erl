@@ -231,7 +231,14 @@ single_success_commands(Module) ->
             end,
 
             %% Generate failure command.
-            FailureCommands = [{set,{var,0},{call,?MODULE,forced_failure,[]}}],
+            FailureCommands = case length(CommandsWithoutGlobalNodeCommands) > 0 of
+                true ->
+                    %% Only fail if we have at least *one* command that
+                    %% performs application behavior.
+                    [{set,{var,0},{call,?MODULE,forced_failure,[]}}];
+                false ->
+                    []
+            end,
 
             %% Only global node commands.
             CommandsWithOnlyGlobalNodeCommands = lists:map(fun(Fun) ->
@@ -491,7 +498,7 @@ postcondition(#property_state{fault_model_state=FaultModelState, node_state=Node
             end
     end;
 postcondition(#property_state{node_state=NodeState}, {call, _Mod, Fun, Args}=Call, Res) ->
-    postcondition_debug("fallthrough precondition fired node function: ~p(~p)", [Fun, Args]),
+    postcondition_debug("fallthrough postcondition fired node function: ~p(~p)", [Fun, Args]),
 
     case lists:member(Fun, fault_global_functions()) of 
         true ->
@@ -500,7 +507,9 @@ postcondition(#property_state{node_state=NodeState}, {call, _Mod, Fun, Args}=Cal
         false ->
             case lists:member(Fun, node_global_functions()) of 
                 true ->
-                    node_postcondition(NodeState, Call, Res);
+                    Result = node_postcondition(NodeState, Call, Res),
+                    postcondition_debug("=> postcondition returned ~p", [Result]),
+                    Result;
                 false ->
                     false
             end
@@ -679,6 +688,9 @@ start_nodes() ->
 
     %% Reset trace.
     ok = partisan_trace_orchestrator:reset(),
+
+    %% Perform preloads.
+    ok = partisan_trace_orchestrator:perform_preloads(),
 
     %% Identify trace.
     TraceRandomNumber = rand:uniform(100000),

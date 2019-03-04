@@ -115,5 +115,4 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     %% Print out final schedule.
     %% lists:foreach(fun(Command) -> io:format("~p~n", [Command]) end, AlteredCommands),
 
-    %% Move the 
     ok.

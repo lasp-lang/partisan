@@ -21,7 +21,7 @@
 %% NOTE: This protocol doesn't cover recovery. It's merely here for
 %% demonstration purposes.
 
--module(lampson_2pc).
+-module(bernstein_ctp).
 
 -include("partisan.hrl").
 
@@ -160,6 +160,105 @@ handle_cast(Msg, State) ->
 
 %% @private
 %% Incoming messages.
+handle_info({decision, FromNode, Id, Decision}, State) ->
+    Manager = manager(),
+    MyNode = partisan_peer_service_manager:mynode(),
+
+    %% Find transaction record.
+    case ets:lookup(?PARTICIPATING_TRANSACTIONS, Id) of 
+        [{_Id, #transaction{uncertain=Uncertain0, server_ref=ServerRef, message=Message}=Transaction}] ->
+            case Decision of 
+                abort ->
+                    %% Write log record showing abort occurred.
+                    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=abort, uncertain=[]}}),
+
+                    %% Notify uncertain.
+                    lists:foreach(fun(N) ->
+                        lager:info("~p: sending decision message to node ~p: ~p", [node(), N, Decision]),
+                        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {decision, MyNode, Id, Decision}, [])
+                    end, Uncertain0),
+
+                    ok;
+                uncertain ->
+                    %% Don't know, do nothing, possibly block.
+
+                    %% Keep track of who is uncertain.
+                    Uncertain = lists:usort(Uncertain0 ++ [FromNode]),
+                    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{uncertain=Uncertain}}),
+
+                    ok;
+                commit ->
+                    %% Write log record showing commit occurred.
+                    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=commit, uncertain=[]}}),
+
+                    %% Notify uncertain.
+                    lists:foreach(fun(N) ->
+                        lager:info("~p: sending decision message to node ~p: ~p", [node(), N, Decision]),
+                        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {decision, MyNode, Id, Decision}, [])
+                    end, Uncertain0),
+
+                    %% Forward to process.
+                    partisan_util:process_forward(ServerRef, Message),
+
+                    ok
+            end;
+        [] ->
+            lager:error("Notification for decision message but no transaction found!")
+    end,
+
+    {noreply, State};
+handle_info({decision_request, FromNode, Id}, State) ->
+    Manager = manager(),
+    MyNode = partisan_peer_service_manager:mynode(),
+
+    %% Find transaction record.
+    case ets:lookup(?PARTICIPATING_TRANSACTIONS, Id) of 
+        [{_Id, #transaction{participant_status=ParticipantStatus}}] ->
+            Decision = case ParticipantStatus of 
+                abort -> 
+                    %% We aborted.
+                    abort; 
+                undefined ->
+                    %% We haven't voted.
+                    abort;
+                commit ->
+                    %% We committed.
+                    commit;
+                _ ->
+                    uncertain
+            end,
+
+            lager:info("~p: sending decision message to node ~p: ~p", [node(), FromNode, Decision]),
+            Manager:forward_message(FromNode, ?GOSSIP_CHANNEL, ?MODULE, {decision, MyNode, Id, Decision}, []);
+        [] ->
+            lager:error("Notification for decision-request message but no transaction found!"),
+
+            Decision = uncertain,
+
+            lager:info("~p: sending decision message to node ~p: ~p", [node(), FromNode, Decision]),
+            Manager:forward_message(FromNode, ?GOSSIP_CHANNEL, ?MODULE, {decision, MyNode, Id, Decision}, [])
+    end,
+
+    {noreply, State};
+handle_info({participant_timeout, Id}, State) ->
+    Manager = manager(),
+    MyNode = partisan_peer_service_manager:mynode(),
+
+    %% Find transaction record.
+    case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
+        [{_Id, #transaction{participants=Participants}}] ->
+            %% Send decision request to all participants.
+            lists:foreach(fun(N) ->
+                lager:info("~p: sending decision request message to node ~p: ~p", [node(), N, Id]),
+                Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {decision_request, MyNode, Id}, [])
+            end, membership(Participants)),
+
+            ok;
+        [] ->
+            lager:error("Notification for participant timeout message but no transaction found!")
+    end,
+
+    {noreply, State};
 handle_info({coordinator_timeout, Id}, State) ->
     Manager = manager(),
 
@@ -320,6 +419,9 @@ handle_info({prepare, #transaction{coordinator=Coordinator, id=Id}=Transaction},
 
     %% Durably store the message for recovery.
     true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=prepared}}),
+
+    %% Set a timeout to hear about a decision.
+    erlang:send_after(1000, self(), {participant_timeout, Id}),
 
     %% Repond to coordinator that we are now prepared.
     MyNode = partisan_peer_service_manager:mynode(),

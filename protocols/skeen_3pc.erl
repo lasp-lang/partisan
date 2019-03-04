@@ -21,7 +21,7 @@
 %% NOTE: This protocol doesn't cover recovery. It's merely here for
 %% demonstration purposes.
 
--module(lampson_2pc).
+-module(skeen_3pc).
 
 -include("partisan.hrl").
 
@@ -49,6 +49,7 @@
                       coordinator_status, 
                       participant_status,
                       prepared, 
+                      precommitted,
                       committed, 
                       aborted,
                       uncertain,
@@ -122,6 +123,9 @@ handle_cast({broadcast, From, ServerRef, Message}, #state{membership=Membership}
     MyNode = partisan_peer_service_manager:mynode(),
     Id = {MyNode, erlang:unique_integer([monotonic, positive])},
 
+    %% Set transaction timer.
+    erlang:send_after(1000, self(), {coordinator_timeout, Id}),
+
     %% Create transaction in a preparing state.
     Transaction = #transaction{
         id=Id,
@@ -131,6 +135,7 @@ handle_cast({broadcast, From, ServerRef, Message}, #state{membership=Membership}
         coordinator_status=preparing, 
         participant_status=undefined,
         prepared=[], 
+        precommitted=[],
         committed=[], 
         aborted=[],
         uncertain=[],
@@ -140,9 +145,6 @@ handle_cast({broadcast, From, ServerRef, Message}, #state{membership=Membership}
 
     %% Store transaction.
     true = ets:insert(?COORDINATING_TRANSACTIONS, {Id, Transaction}),
-
-    %% Set transaction timer.
-    erlang:send_after(1000, self(), {coordinator_timeout, Id}),
 
     %% Send prepare message to all participants including ourself.
     lists:foreach(fun(N) ->
@@ -160,6 +162,42 @@ handle_cast(Msg, State) ->
 
 %% @private
 %% Incoming messages.
+handle_info({participant_timeout, Id}, State) ->
+    Manager = manager(),
+
+    %% Find transaction record.
+    case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
+        [{_Id, #transaction{participants=Participants, participant_status=ParticipantStatus, server_ref=ServerRef, message=Message} = Transaction}] ->
+            case ParticipantStatus of 
+                precommit ->
+                    %% Proceed with the commit.
+
+                    %% Write log record showing commit occurred.
+                    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=commit}}),
+
+                    %% Forward to process.
+                    partisan_util:process_forward(ServerRef, Message),
+
+                    %% Send commit to participants.
+                    lists:foreach(fun(N) ->
+                        lager:info("~p: sending commit message to node ~p: ~p", [node(), N, Id]),
+                        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {commit, Transaction}, [])
+                    end, membership(Participants));
+                _ ->
+                    %% Write log record showing abort occurred.
+                    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=abort}}),
+
+                    %% Send commit to participants.
+                    lists:foreach(fun(N) ->
+                        lager:info("~p: sending abort message to node ~p: ~p", [node(), N, Id]),
+                        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {abort, Transaction}, [])
+                    end, membership(Participants))
+            end;
+        [] ->
+            lager:error("Notification for participant timeout message but no transaction found!")
+    end,
+
+    {noreply, State};
 handle_info({coordinator_timeout, Id}, State) ->
     Manager = manager(),
 
@@ -167,7 +205,10 @@ handle_info({coordinator_timeout, Id}, State) ->
     case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
         [{_Id, #transaction{coordinator_status=CoordinatorStatus, participants=Participants, from=From} = Transaction0}] ->
             case CoordinatorStatus of 
-                committing ->
+                commit_authorized ->
+                    %% Can't do anything; block.
+                    ok;
+                commit_finalizing ->
                     %% Can't do anything; block.
                     ok;
                 aborting ->
@@ -278,12 +319,60 @@ handle_info({commit, #transaction{id=Id, coordinator=Coordinator, server_ref=Ser
     Manager:forward_message(Coordinator, ?GOSSIP_CHANNEL, ?MODULE, {commit_ack, MyNode, Id}, []),
 
     {noreply, State};
+handle_info({precommit_ack, FromNode, Id}, State) ->
+    Manager = manager(),
+
+    %% Find transaction record.
+    case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
+        [{_Id, #transaction{from=From, participants=Participants, precommitted=Precommitted0} = Transaction0}] ->
+            %% Update prepared.
+            Precommitted = lists:usort(Precommitted0 ++ [FromNode]),
+
+            %% Are we all prepared?
+            case lists:usort(Participants) =:= lists:usort(Precommitted) of 
+                true ->
+                    %% Change state to committing.
+                    CoordinatorStatus = commit_finalizing,
+
+                    %% Reply to caller.
+                    lager:info("replying to the caller: ~p", From),
+                    Manager:forward_message(From, ok),
+
+                    %% Update local state before sending decision to participants.
+                    Transaction = Transaction0#transaction{coordinator_status=CoordinatorStatus, precommitted=Precommitted},
+                    true = ets:insert(?COORDINATING_TRANSACTIONS, {Id, Transaction}),
+
+                    %% Send notification to commit.
+                    lists:foreach(fun(N) ->
+                        lager:info("~p: sending commit message to node ~p: ~p", [node(), N, Id]),
+                        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {commit, Transaction}, [])
+                    end, membership(Participants));
+                false ->
+                    %% Update local state before sending decision to participants.
+                    true = ets:insert(?COORDINATING_TRANSACTIONS, {Id, Transaction0#transaction{precommitted=Precommitted}})
+            end;
+        [] ->
+            lager:error("Notification for precommit_ack message but no transaction found!")
+    end,
+
+    {noreply, State};
+handle_info({precommit, #transaction{id=Id, coordinator=Coordinator} = Transaction}, State) ->
+    Manager = manager(),
+
+    %% Write log record showing commit occurred.
+    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=precommit}}),
+
+    %% Repond to coordinator that we are now committed.
+    MyNode = partisan_peer_service_manager:mynode(),
+    Manager:forward_message(Coordinator, ?GOSSIP_CHANNEL, ?MODULE, {precommit_ack, MyNode, Id}, []),
+
+    {noreply, State};
 handle_info({prepared, FromNode, Id}, State) ->
     Manager = manager(),
 
     %% Find transaction record.
     case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
-        [{_Id, #transaction{participants=Participants, prepared=Prepared0, from=From} = Transaction0}] ->
+        [{_Id, #transaction{participants=Participants, prepared=Prepared0} = Transaction0}] ->
             %% Update prepared.
             Prepared = lists:usort(Prepared0 ++ [FromNode]),
 
@@ -291,20 +380,16 @@ handle_info({prepared, FromNode, Id}, State) ->
             case lists:usort(Participants) =:= lists:usort(Prepared) of 
                 true ->
                     %% Change state to committing.
-                    CoordinatorStatus = committing,
+                    CoordinatorStatus = commit_authorized,
 
                     %% Update local state before sending decision to participants.
                     Transaction = Transaction0#transaction{coordinator_status=CoordinatorStatus, prepared=Prepared},
                     true = ets:insert(?COORDINATING_TRANSACTIONS, {Id, Transaction}),
 
-                    %% Reply to caller.
-                    lager:info("replying to the caller: ~p", From),
-                    Manager:forward_message(From, ok),
-
                     %% Send notification to commit.
                     lists:foreach(fun(N) ->
-                        lager:info("~p: sending commit message to node ~p: ~p", [node(), N, Id]),
-                        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {commit, Transaction}, [])
+                        lager:info("~p: sending precommit message to node ~p: ~p", [node(), N, Id]),
+                        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {precommit, Transaction}, [])
                     end, membership(Participants));
                 false ->
                     %% Update local state before sending decision to participants.
@@ -320,6 +405,9 @@ handle_info({prepare, #transaction{coordinator=Coordinator, id=Id}=Transaction},
 
     %% Durably store the message for recovery.
     true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=prepared}}),
+
+    %% Set a timeout to hear about a decision.
+    erlang:send_after(1000, self(), {participant_timeout, Id}),
 
     %% Repond to coordinator that we are now prepared.
     MyNode = partisan_peer_service_manager:mynode(),

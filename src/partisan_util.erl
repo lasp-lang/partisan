@@ -272,6 +272,15 @@ term_to_iolist_(T) when is_list(T) ->
         false ->
             [108, <<Len:32/integer-big>>, [[term_to_iolist_(E) || E <- T]], 106]
     end;
+term_to_iolist_(T) when is_reference(T) ->
+    case partisan_config:get(ref_encoding, true) of
+        false ->
+            <<131, Rest/binary>> = term_to_binary(T),
+            Rest;
+        true ->
+            <<131, Rest/binary>> = term_to_binary(ref(T)),
+            Rest
+    end;
 term_to_iolist_(T) when is_pid(T) ->
     case partisan_config:get(pid_encoding, true) of
         false ->
@@ -289,7 +298,14 @@ term_to_iolist_(T) ->
 gensym(Name) when is_atom(Name) ->
     {partisan_registered_name_reference, atom_to_list(Name)};
 gensym(Pid) when is_pid(Pid) ->
-    {partisan_process_reference, pid_to_list(Pid)}.
+    {partisan_process_reference, pid_to_list(Pid)};
+gensym(Ref) when is_reference(Ref) ->
+    {partisan_encoded_reference, term_to_binary(Ref)}.
+
+ref(Ref) ->
+    GenSym = gensym(Ref),
+    Node = partisan_peer_service_manager:mynode(),
+    {partisan_remote_reference, Node, GenSym}.
 
 pid() ->
     pid(self()).
@@ -307,8 +323,14 @@ registered_name(Name) ->
 process_forward(ServerRef, Message) ->
     try
         case ServerRef of
+            {partisan_remote_reference, _, {partisan_registered_name_reference, RegisteredName}} ->
+                Name = list_to_atom(RegisteredName),
+                Name ! Message;
             {partisan_remote_reference, _, {partisan_process_reference, ProcessIdentifier}} ->
                 Pid = list_to_pid(ProcessIdentifier),
+                Pid ! Message;
+            {partisan_registered_name_reference, RegisteredName} ->
+                Pid = list_to_atom(RegisteredName),
                 Pid ! Message;
             {partisan_process_reference, ProcessIdentifier} ->
                 Pid = list_to_pid(ProcessIdentifier),
