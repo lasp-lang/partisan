@@ -177,7 +177,7 @@ forward_message(Name, Channel, ServerRef, Message) ->
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, Channel, ServerRef, Message, Options) ->
-    lager:info("Entering forward_message at ~p for message: ~p ~p", [node(), Name, Message]),
+    % lager:info("Entering forward_message at ~p for message: ~p ~p", [node(), Name, Message]),
 
     %% Attempt to get the partition key, if possible.
     PartitionKey = proplists:get_value(partition_key, Options, ?DEFAULT_PARTITION_KEY),
@@ -193,7 +193,7 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
 
     %% Get forwarding options and combine with message specific options.
     ForwardOptions = lists:usort(partisan_config:get(forward_options, []) ++ Options),
-    lager:info("Forwarding options for message ~p are ~p", [Message, ForwardOptions]),
+    % lager:info("Forwarding options for message ~p are ~p", [Message, ForwardOptions]),
 
     %% Use configuration to disable fast forwarding.
     DisableFastForward = partisan_config:get(disable_fast_forward, false),
@@ -726,7 +726,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
             end,
             dict:fold(PostFoldFun, ok, PostInterpositionFuns),
 
-            lager:info("~p: Message after send interposition is: ~p", [node(), FullMessage]),
+            lager:info("~p: Message ~p after send interposition is: ~p", [node(), OriginalMessage, FullMessage]),
 
             case From of 
                 undefined ->

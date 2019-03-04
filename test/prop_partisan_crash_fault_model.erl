@@ -376,38 +376,39 @@ fault_precondition(_FaultModelState, {call, Mod, Fun, [_Node|_]=Args}) ->
     false.
 
 %% Receive omission.
-fault_next_state(#fault_model_state{receive_omissions=ReceiveOmissions0} = FaultModelState, _Res, {call, _Mod, begin_receive_omission, [SourceNode, DestinationNode]}) ->
+fault_next_state(_State, #fault_model_state{receive_omissions=ReceiveOmissions0} = FaultModelState, _Res, {call, _Mod, begin_receive_omission, [SourceNode, DestinationNode]}) ->
     ReceiveOmissions = dict:store({SourceNode, DestinationNode}, true, ReceiveOmissions0),
     FaultModelState#fault_model_state{receive_omissions=ReceiveOmissions};
 
-fault_next_state(#fault_model_state{receive_omissions=ReceiveOmissions0} = FaultModelState, _Res, {call, _Mod, end_receive_omission, [SourceNode, DestinationNode]}) ->
+fault_next_state(_State, #fault_model_state{receive_omissions=ReceiveOmissions0} = FaultModelState, _Res, {call, _Mod, end_receive_omission, [SourceNode, DestinationNode]}) ->
     ReceiveOmissions = dict:erase({SourceNode, DestinationNode}, ReceiveOmissions0),
     FaultModelState#fault_model_state{receive_omissions=ReceiveOmissions};
 
 %% Send omission.
-fault_next_state(#fault_model_state{send_omissions=SendOmissions0} = FaultModelState, _Res, {call, _Mod, begin_send_omission, [SourceNode, DestinationNode]}) ->
+fault_next_state(_State, #fault_model_state{send_omissions=SendOmissions0} = FaultModelState, _Res, {call, _Mod, begin_send_omission, [SourceNode, DestinationNode]}) ->
     SendOmissions = dict:store({SourceNode, DestinationNode}, true, SendOmissions0),
     FaultModelState#fault_model_state{send_omissions=SendOmissions};
 
-fault_next_state(#fault_model_state{send_omissions=SendOmissions0} = FaultModelState, _Res, {call, _Mod, end_send_omission, [SourceNode, DestinationNode]}) ->
+fault_next_state(_State, #fault_model_state{send_omissions=SendOmissions0} = FaultModelState, _Res, {call, _Mod, end_send_omission, [SourceNode, DestinationNode]}) ->
     SendOmissions = dict:erase({SourceNode, DestinationNode}, SendOmissions0),
     FaultModelState#fault_model_state{send_omissions=SendOmissions};
 
 %% Crashing a node adds a node to the crashed state.
-fault_next_state(#fault_model_state{crashed_nodes=CrashedNodes} = FaultModelState, _Res, {call, _Mod, crash, [Node, _JoinedNodes]}) ->
+fault_next_state(_State, #fault_model_state{crashed_nodes=CrashedNodes} = FaultModelState, _Res, {call, _Mod, crash, [Node, _JoinedNodes]}) ->
     FaultModelState#fault_model_state{crashed_nodes=CrashedNodes ++ [Node]};
 
 %% Stopping a node assumes a crash that's immediately detected.
-fault_next_state(#fault_model_state{crashed_nodes=CrashedNodes} = FaultModelState, _Res, {call, _Mod, stop, [Node, _JoinedNodes]}) ->
+fault_next_state(_State, #fault_model_state{crashed_nodes=CrashedNodes} = FaultModelState, _Res, {call, _Mod, stop, [Node, _JoinedNodes]}) ->
     FaultModelState#fault_model_state{crashed_nodes=CrashedNodes ++ [Node]};
 
 %% Remove faults.
-fault_next_state(FaultModelState, _Res, {call, _Mod, resolve_all_faults_with_heal, []}) ->
+fault_next_state(_State, FaultModelState, _Res, {call, _Mod, resolve_all_faults_with_heal, []}) ->
     SendOmissions = dict:new(),
     ReceiveOmissions = dict:new(),
     FaultModelState#fault_model_state{send_omissions=SendOmissions, receive_omissions=ReceiveOmissions};
 
-fault_next_state(#fault_model_state{crashed_nodes=CrashedNodes0}=FaultModelState, 
+fault_next_state(_State,
+                 #fault_model_state{crashed_nodes=CrashedNodes0}=FaultModelState, 
                  _Res, 
                  {call, _Mod, resolve_all_faults_with_crash, []}) ->
     SendOmissions = dict:new(),
@@ -418,7 +419,7 @@ fault_next_state(#fault_model_state{crashed_nodes=CrashedNodes0}=FaultModelState
                                       send_omissions=SendOmissions, 
                                       receive_omissions=ReceiveOmissions};
 
-fault_next_state(FaultModelState, _Res, _Call) ->
+fault_next_state(_State, FaultModelState, _Res, _Call) ->
     FaultModelState.
 
 %% Receive omission.

@@ -37,7 +37,7 @@
          node_functions/0,
          node_precondition/2,
          node_postcondition/3,
-         node_next_state/3,
+         node_next_state/4,
          node_begin_property/0,
          node_begin_case/0,
          node_end_case/0,
@@ -53,7 +53,7 @@
          fault_functions/1,
          fault_precondition/2,
          fault_postcondition/3,
-         fault_next_state/3,
+         fault_next_state/4,
          fault_is_crashed/2,
          fault_begin_functions/0,
          fault_end_functions/0,
@@ -64,18 +64,11 @@
 -define(CLUSTER_NODES, true).
 -define(MANAGER, partisan_pluggable_peer_service_manager).
 
-%% Do we allow cluster transitions during test execution:
-%% EXTREMELY slow, given a single join can take ~30 seconds.
--define(PERFORM_LEAVES_AND_JOINS, false).           
-
-%% Do we perform fault-injection?                                            
--define(PERFORM_FAULT_INJECTION, true).
-
 %% Debug.
 -define(DEBUG, true).
 -define(INITIAL_STATE_DEBUG, false).
 -define(PRECONDITION_DEBUG, true).
--define(POSTCONDITION_DEBUG, false).
+-define(POSTCONDITION_DEBUG, true).
 
 %% Partisan connection and forwarding settings.
 -define(EGRESS_DELAY, 0).                           %% How many milliseconds to delay outgoing messages?
@@ -103,23 +96,50 @@
 prop_sequential() ->
     node_begin_property(),
 
-    ?FORALL(Cmds, modified_commands(?MODULE), 
-        begin
-            start_nodes(),
-            node_begin_case(),
-            {History, State, Result} = run_commands(?MODULE, Cmds), 
-            node_end_case(),
-            stop_nodes(),
-            ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
-                                [History,State,Result]),
-                      aggregate(command_names(Cmds), Result =:= ok))
-        end).
+    case scheduler() of 
+        default ->
+            ?FORALL(Cmds, commands(?MODULE), 
+                begin
+                    start_nodes(),
+                    node_begin_case(),
+                    {History, State, Result} = run_commands(?MODULE, Cmds), 
+                    node_end_case(),
+                    stop_nodes(),
+                    ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
+                                        [History,State,Result]),
+                            aggregate(command_names(Cmds), Result =:= ok))
+                end);
+        finite_fault ->
+            ?FORALL(Cmds, finite_fault_commands(?MODULE), 
+                begin
+                    start_nodes(),
+                    node_begin_case(),
+                    {History, State, Result} = run_commands(?MODULE, Cmds), 
+                    node_end_case(),
+                    stop_nodes(),
+                    ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
+                                        [History,State,Result]),
+                            aggregate(command_names(Cmds), Result =:= ok))
+                end);
+        single_success ->
+            ?FORALL(Cmds, single_success_commands(?MODULE), 
+                begin
+                    start_nodes(),
+                    node_begin_case(),
+                    {History, State, Result} = run_commands(?MODULE, Cmds), 
+                    node_end_case(),
+                    stop_nodes(),
+                    ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
+                                        [History,State,Result]),
+                            aggregate(command_names(Cmds), Result =:= ok))
+                end)
+    end.
 
 %%%===================================================================
 %%% Command sequences
 %%%===================================================================
 
-modified_commands(Module) ->
+finite_fault_commands(Module) ->
     ?LET(Commands, commands(Module), 
         begin 
             debug("~p: original command sequence...~n", [?MODULE]),
@@ -139,11 +159,16 @@ modified_commands(Module) ->
             end, Commands),
 
             %% Add a command to resolve all partitions with a heal.
-            ResolveCommands = case rand:uniform(10) rem 2 =:= 0 of 
+            ResolveCommands = case fault_injection_enabled() of 
                 true ->
-                    [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_heal,[]}}];
+                    case rand:uniform(10) rem 2 =:= 0 of 
+                        true ->
+                            [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_heal,[]}}];
+                        false ->
+                            [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_crash,[]}}]
+                    end;
                 false ->
-                    [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_crash,[]}}]
+                    [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_heal,[]}}]
             end,
 
             %% Only global node commands.
@@ -178,15 +203,78 @@ modified_commands(Module) ->
             FinalCommands
         end).
 
+single_success_commands(Module) ->
+    ?LET(Commands, commands(Module), 
+        begin 
+            debug("original command sequence...~n", []),
+
+            lists:foreach(fun(Command) -> 
+                debug("-> ~p~n", [Command])
+            end, Commands),
+
+            %% Filter out global commands.
+            CommandsWithoutGlobalNodeCommands = lists:filter(fun({set,{var,_Nth},{call,_Mod,Fun,_Args}}) ->
+                case lists:member(Fun, node_global_functions()) of 
+                    true ->
+                        false;
+                    _ ->
+                        true
+                end
+            end, Commands),
+
+            %% Get first non-global command.
+            FirstNonGlobalCommand = case length(CommandsWithoutGlobalNodeCommands) > 0 of
+                true ->
+                    [hd(CommandsWithoutGlobalNodeCommands)];
+                false ->
+                    []
+            end,
+
+            %% Generate failure command.
+            FailureCommands = case length(CommandsWithoutGlobalNodeCommands) > 0 of
+                true ->
+                    %% Only fail if we have at least *one* command that
+                    %% performs application behavior.
+                    [{set,{var,0},{call,?MODULE,forced_failure,[]}}];
+                false ->
+                    []
+            end,
+
+            %% Only global node commands.
+            CommandsWithOnlyGlobalNodeCommands = lists:map(fun(Fun) ->
+                {set,{var,0},{call,?SYSTEM_MODEL,Fun,[]}}
+            end, node_global_functions()), 
+
+            %% Derive final command sequence.
+            FinalCommands0 = lists:flatten(
+                %% Node commands, without global assertions.  Take only the first.
+                FirstNonGlobalCommand ++
+
+                %% Global assertions only.
+                CommandsWithOnlyGlobalNodeCommands ++ 
+            
+                %% Final failure commands
+                FailureCommands),
+
+            %% Renumber command sequence.
+            {FinalCommands, _} = lists:foldl(fun({set,{var,_Nth},{call,Mod,Fun,Args}}, {Acc, Next}) ->
+                {Acc ++ [{set,{var,Next},{call,Mod,Fun,Args}}], Next + 1}
+            end, {[], 1}, FinalCommands0),
+
+            %% Print final command sequence.
+            debug("altered command sequence...~n", []),
+
+            lists:foreach(fun(Command) -> 
+                debug("=> ~p~n", [Command])
+            end, FinalCommands),
+
+            %% Return the final command sequence.
+            FinalCommands
+        end).
+
 %%%===================================================================
 %%% Initial state
 %%%===================================================================
-
--record(state, {joined_nodes :: [node()],
-                nodes :: [node()],
-                node_state :: {dict:dict(), dict:dict()}, 
-                fault_model_state :: term(),
-                counter :: non_neg_integer()}).
 
 %% Initial model value at system start. Should be deterministic.
 initial_state() -> 
@@ -213,7 +301,7 @@ initial_state() ->
     %% Initialize command counter at 0.
     Counter = 0,
 
-    #state{counter=Counter,
+    #property_state{counter=Counter,
            joined_nodes=JoinedNodes,
            fault_model_state=FaultModelState,
            nodes=Nodes,
@@ -222,7 +310,7 @@ initial_state() ->
 command(State) -> 
     %% Cluster maintenance commands.
     ClusterCommands = lists:flatmap(fun(Command) -> 
-        case ?PERFORM_LEAVES_AND_JOINS of 
+        case membership_changes_enabled() of 
             true ->
                 [{1, Command}];
             false ->
@@ -232,7 +320,7 @@ command(State) ->
 
     %% Fault model commands.
     FaultModelCommands = lists:flatmap(fun(Command) -> 
-        case ?PERFORM_FAULT_INJECTION of 
+        case fault_injection_enabled() of 
             true ->
                 [{1, Command}];
             false ->
@@ -248,7 +336,7 @@ command(State) ->
     frequency(ClusterCommands ++ FaultModelCommands ++ SystemCommands).
 
 %% Picks whether a command should be valid under the current state.
-precondition(#state{nodes=Nodes, joined_nodes=JoinedNodes}, {call, _Mod, sync_join_cluster, [Node, JoinedNodes]}) -> 
+precondition(#property_state{nodes=Nodes, joined_nodes=JoinedNodes}, {call, _Mod, sync_join_cluster, [Node, JoinNode]}) -> 
     %% Only allow dropping of the first unjoined node in the nodes list, for ease of debugging.
     precondition_debug("precondition sync_join_cluster: invoked for node ~p joined_nodes ~p", [Node, JoinedNodes]),
 
@@ -261,8 +349,8 @@ precondition(#state{nodes=Nodes, joined_nodes=JoinedNodes}, {call, _Mod, sync_jo
 
             case lists:member(Node, CanBeJoinedNodes) of
                 true ->
-                    precondition_debug("precondition sync_join_cluster: YES attempting to join ~p is in ~p", [Node, CanBeJoinedNodes]),
-                    true;
+                    precondition_debug("precondition sync_join_cluster: POSSIBLE YES attempting to join ~p is in ~p", [Node, CanBeJoinedNodes]),
+                    lists:member(JoinNode, JoinedNodes);
                 _ ->
                     precondition_debug("precondition sync_join_cluster: NO attempting to join ~p not in ~p", [Node, CanBeJoinedNodes]),
                     false
@@ -271,7 +359,7 @@ precondition(#state{nodes=Nodes, joined_nodes=JoinedNodes}, {call, _Mod, sync_jo
             precondition_debug("precondition sync_join_cluster: no nodes left to join.", []),
             false %% Might need to be changed when there's no read/write operations.
     end;
-precondition(#state{joined_nodes=JoinedNodes}, {call, _Mod, sync_leave_cluster, [Node, JoinedNodes]}) -> 
+precondition(#property_state{joined_nodes=JoinedNodes}, {call, _Mod, sync_leave_cluster, [Node]}) -> 
     %% Only allow dropping of the last node in the join list, for ease of debugging.
     precondition_debug("precondition sync_leave_cluster: invoked for node ~p joined_nodes ~p", [Node, JoinedNodes]),
 
@@ -296,7 +384,7 @@ precondition(#state{joined_nodes=JoinedNodes}, {call, _Mod, sync_leave_cluster, 
             precondition_debug("precondition sync_leave_cluster: no nodes left to remove.", []),
             false
     end;
-precondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes, counter=Counter}, 
+precondition(#property_state{fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes, counter=Counter}, 
              {call, Mod, Fun, [Node|_]=Args}=Call) -> 
     precondition_debug("precondition fired for counter ~p and node function: ~p(~p)", [Counter, Fun, Args]),
 
@@ -317,7 +405,12 @@ precondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joi
                     false
             end
     end;
-precondition(#state{counter=Counter}, {call, _Mod, Fun, Args}=_Call) ->
+
+precondition(#property_state{}, {call, _Mod, forced_failure, _Args}) ->
+    precondition_debug("forced failure precondition fired!", []),
+    true;
+
+precondition(#property_state{counter=Counter}, {call, _Mod, Fun, Args}=_Call) ->
     precondition_debug("fallthrough precondition fired for counter ~p and node function: ~p(~p)", [Counter, Fun, Args]),
 
     case lists:member(Fun, fault_global_functions()) of 
@@ -336,52 +429,41 @@ precondition(#state{counter=Counter}, {call, _Mod, Fun, Args}=_Call) ->
 
 %% Assuming the postcondition for a call was true, update the model
 %% accordingly for the test to proceed.
-next_state(#state{counter=Counter}=State, _Res, {call, ?MODULE, sync_join_cluster, [Node, JoinedNodes]}) -> 
-    case is_joined(Node, JoinedNodes) of
-        true ->
-            %% no-op for the join
-            State#state{counter=Counter+1};
-        false ->
-            %% add to the joined list.
-            State#state{joined_nodes=JoinedNodes ++ [Node], counter=Counter+1}
-    end;
-next_state(#state{counter=Counter, joined_nodes=JoinedNodes}=State, _Res, {call, ?MODULE, sync_leave_cluster, [Node, JoinedNodes]}) -> 
-    case enough_nodes_connected_to_issue_remove(JoinedNodes) of
-        true ->
-            %% removed from the list.
-            State#state{joined_nodes=JoinedNodes -- [Node], counter=Counter+1};
-        false ->
-            %% no-op for the leave
-            State#state{counter=Counter+1}
-    end;
-next_state(#state{counter=Counter, fault_model_state=FaultModelState0, node_state=NodeState0, joined_nodes=JoinedNodes}=State, Res, {call, _Mod, Fun, _Args}=Call) -> 
+next_state(#property_state{counter=Counter, joined_nodes=JoinedNodes}=State, _Res, {call, ?MODULE, sync_join_cluster, [Node, _JoinNode]}) -> 
+    State#property_state{joined_nodes=JoinedNodes ++ [Node], counter=Counter+1};
+next_state(#property_state{counter=Counter, joined_nodes=JoinedNodes}=State, _Res, {call, ?MODULE, sync_leave_cluster, [Node]}) -> 
+    State#property_state{joined_nodes=JoinedNodes -- [Node], counter=Counter+1};
+next_state(#property_state{}=State, _Res, {call, ?MODULE, forced_failure, []}) -> 
+    State;
+next_state(#property_state{counter=Counter, fault_model_state=FaultModelState0, node_state=NodeState0, joined_nodes=JoinedNodes}=State, Res, {call, _Mod, Fun, _Args}=Call) -> 
     case lists:member(Fun, node_functions()) of
         true ->
-            NodeState = node_next_state(NodeState0, Res, Call),
-            State#state{node_state=NodeState, counter=Counter+1};
+            NodeState = node_next_state(State, NodeState0, Res, Call),
+            State#property_state{node_state=NodeState, counter=Counter+1};
         false ->
             case lists:member(Fun, fault_functions(JoinedNodes)) of 
                 true ->
-                    FaultModelState = fault_next_state(FaultModelState0, Res, Call),
-                    State#state{fault_model_state=FaultModelState, counter=Counter+1};
+                    FaultModelState = fault_next_state(State, FaultModelState0, Res, Call),
+                    State#property_state{fault_model_state=FaultModelState, counter=Counter+1};
                 false ->
                     debug("general next_state fired for fun: ~p", [Fun]),
-                    State#state{counter=Counter+1}
+                    State#property_state{counter=Counter+1}
             end
     end.
 
 %% Given the state `State' *prior* to the call `{call, Mod, Fun, Args}',
 %% determine whether the result `Res' (coming from the actual system)
 %% makes sense.
-postcondition(_State, {call, ?MODULE, sync_join_cluster, [_Node, _JoinedNodes]}, ok) ->
-    postcondition_debug("postcondition sync_join_cluster: succeeded", []),
-    %% Accept joins that succeed.
+postcondition(_State, {call, ?MODULE, forced_failure, []}, ok) ->
+    postcondition_debug("postcondition forced_failure fired", []),
+    false;
+postcondition(_State, {call, ?MODULE, sync_join_cluster, [_Node, _JoinNode]}, {ok, _Members}) ->
+    postcondition_debug("postcondition sync_join_cluster fired", []),
     true;
-postcondition(_State, {call, ?MODULE, sync_leave_cluster, [_Node, _JoinedNodes]}, ok) ->
-    postcondition_debug("postcondition sync_leave_cluster: succeeded", []),
-    %% Accept leaves that succeed.
+postcondition(_State, {call, ?MODULE, sync_leave_cluster, [_Node]}, {ok, _Members}) ->
+    postcondition_debug("postcondition sync_leave_cluster fired", []),
     true;
-postcondition(#state{fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes}, {call, Mod, Fun, [_Node|_]=Args}=Call, Res) -> 
+postcondition(#property_state{fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes}, {call, Mod, Fun, [_Node|_]=Args}=Call, Res) -> 
     case lists:member(Fun, node_functions()) of
         true ->
             PostconditionResult = node_postcondition(NodeState, Call, Res),
@@ -415,8 +497,8 @@ postcondition(#state{fault_model_state=FaultModelState, node_state=NodeState, jo
                     false
             end
     end;
-postcondition(#state{node_state=NodeState}, {call, _Mod, Fun, Args}=Call, Res) ->
-    postcondition_debug("fallthrough precondition fired node function: ~p(~p)", [Fun, Args]),
+postcondition(#property_state{node_state=NodeState}, {call, _Mod, Fun, Args}=Call, Res) ->
+    postcondition_debug("fallthrough postcondition fired node function: ~p(~p)", [Fun, Args]),
 
     case lists:member(Fun, fault_global_functions()) of 
         true ->
@@ -425,7 +507,9 @@ postcondition(#state{node_state=NodeState}, {call, _Mod, Fun, Args}=Call, Res) -
         false ->
             case lists:member(Fun, node_global_functions()) of 
                 true ->
-                    node_postcondition(NodeState, Call, Res);
+                    Result = node_postcondition(NodeState, Call, Res),
+                    postcondition_debug("=> postcondition returned ~p", [Result]),
+                    Result;
                 false ->
                     false
             end
@@ -485,55 +569,73 @@ command_conclusion(Node, Command) ->
 %%% Commands
 %%%===================================================================
 
-sync_join_cluster(Node, [JoinedNode|_]=JoinedNodes) ->
-    command_preamble(Node, [sync_join_cluster, JoinedNodes]),
+forced_failure() ->
+    RunnerNode = node(),
 
-    Result = case is_joined(Node, JoinedNodes) of
-        true ->
-            ok;
-        false ->
-            debug("sync_join_cluster: joining node ~p to node ~p", [Node, JoinedNode]),
+    command_preamble(RunnerNode, [forced_failure]),
 
-            %% Get my information.
-            Myself = rpc:call(?NAME(Node), partisan_peer_service_manager, myself, []),
+    %% Do nothing.
 
-            %% Issue join.
-            ok = rpc:call(?NAME(JoinedNode), ?MANAGER, join, [Myself]),
+    command_conclusion(RunnerNode, [forced_failure]),
 
-            %% Wait until all nodes agree about membership.
-            ok = wait_until_nodes_agree_on_membership(JoinedNodes ++ [Node]),
+    ok.
 
-            ok
-    end,
+sync_join_cluster(Node, JoinNode) ->
+    command_preamble(Node, [sync_join_cluster, JoinNode]),
 
-    command_conclusion(Node, [sync_join_cluster, JoinedNodes]),
+    %% Get an existing member of the cluster.
+    {ok, Members} = rpc:call(?NAME(JoinNode), ?MANAGER, members, []),
+    debug("sync_join_cluster: joining node ~p to cluster at node ~p with current members ~p", 
+          [?NAME(Node), ?NAME(JoinNode), Members]),
 
-    Result.
+    %% Get my information.
+    Myself = rpc:call(?NAME(Node), partisan_peer_service_manager, myself, []),
 
-sync_leave_cluster(Node, [JoinedNode|_]=JoinedNodes) ->
-    command_preamble(Node, [sync_leave_cluster, JoinedNodes]),
+    %% Issue remove.
+    ok = rpc:call(?NAME(JoinNode), ?MANAGER, join, [Myself]),
 
-    Result = case enough_nodes_connected_to_issue_remove(JoinedNodes) of
-        false ->
-            ok;
-        true ->
-            debug("sync_leave_cluster: leaving node ~p from cluster with members ~p", [Node, JoinedNodes]),
+    %% Wait until all nodes agree about membership.
+    DesiredMembership = Members ++ [?NAME(Node)],
+    debug("=> nodes should wait for desired membership: ~p", [DesiredMembership]),
+    ok = wait_until_nodes_agree_on_membership(DesiredMembership),
 
-            %% Get my information.
-            Myself = rpc:call(?NAME(Node), partisan_peer_service_manager, myself, []),
+    %% Return new membership, make sure it matches model state.
+    {ok, NewMembers} = rpc:call(JoinNode, ?MANAGER, members, []),
+    debug("=> members after transition are: ~p", [NewMembers]),
 
-            %% Issue remove.
-            ok = rpc:call(?NAME(JoinedNode), ?MANAGER, leave, [Myself]),
+    command_conclusion(Node, [sync_join_cluster, JoinNode]),
 
-            %% Wait until all nodes agree about membership.
-            ok = wait_until_nodes_agree_on_membership(JoinedNodes -- [Node]),
+    {ok, NewMembers}.
 
-            ok
-    end,
+sync_leave_cluster(Node) ->
+    command_preamble(Node, [sync_leave_cluster]),
 
-    command_conclusion(Node, [sync_leave_cluster, JoinedNodes]),
+    %% Get an existing member of the cluster.
+    {ok, Members} = rpc:call(?NAME(Node), ?MANAGER, members, []),
+    debug("sync_leave_cluster: leaving node ~p from cluster with current members ~p", 
+          [?NAME(Node), Members]),
 
-    Result.
+    %% Select first member of membership -- *that's not us*.
+    FirstMember = hd(lists:filter(fun(N) -> N =/= ?NAME(Node) end, Members)),
+
+    %% Get my information.
+    Myself = rpc:call(?NAME(Node), partisan_peer_service_manager, myself, []),
+
+    %% Issue remove.
+    ok = rpc:call(FirstMember, ?MANAGER, leave, [Myself]),
+
+    %% Wait until all nodes agree about membership.
+    DesiredMembership = Members -- [?NAME(Node)],
+    debug("=> nodes should wait for desired membership: ~p", [DesiredMembership]),
+    ok = wait_until_nodes_agree_on_membership(DesiredMembership),
+
+    %% Return new membership, make sure it matches model state.
+    {ok, NewMembers} = rpc:call(FirstMember, ?MANAGER, members, []),
+    debug("=> members after transition are: ~p", [NewMembers]),
+
+    command_conclusion(Node, [sync_leave_cluster]),
+
+    {ok, NewMembers}.
 
 %%%===================================================================
 %%% Helper Functions
@@ -587,6 +689,9 @@ start_nodes() ->
     %% Reset trace.
     ok = partisan_trace_orchestrator:reset(),
 
+    %% Perform preloads.
+    ok = partisan_trace_orchestrator:perform_preloads(),
+
     %% Identify trace.
     TraceRandomNumber = rand:uniform(100000),
     %% lager:info("~p: trace random generated: ~p", [?MODULE, TraceRandomNumber]),
@@ -595,19 +700,11 @@ start_nodes() ->
 
     %% Add send and receive pre-interposition functions to enforce message ordering.
     PreInterpositionFun = fun({Type, OriginNode, OriginalMessage}) ->
-        TracingNode = node(),
-
         %% Record message incoming and outgoing messages.
-        ok = rpc:call(Self, 
-                      partisan_trace_orchestrator, 
-                      trace, 
-                      [pre_interposition_fun, {TracingNode, Type, OriginNode, OriginalMessage}]),
+        ok = partisan_trace_orchestrator:trace(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
 
         %% Under replay ensure they match the trace order (but only for pre-interposition messages).
-        ok = rpc:call(Self, 
-                      partisan_trace_orchestrator, 
-                      replay, 
-                      [pre_interposition_fun, {TracingNode, Type, OriginNode, OriginalMessage}]),
+        ok = partisan_trace_orchestrator:replay(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
 
         ok
     end, 
@@ -621,13 +718,9 @@ start_nodes() ->
 
     %% Add send and receive post-interposition functions to perform tracing.
     PostInterpositionFun = fun({Type, OriginNode, OriginalMessage}, {Type, OriginNode, RewrittenMessage}) ->
-        TracingNode = node(),
-
-        ok = rpc:call(Self, 
-                      partisan_trace_orchestrator, 
-                      trace, 
-                      [post_interposition_fun, {TracingNode, OriginNode, Type, OriginalMessage, RewrittenMessage}]),
-
+        %% Record outgoing message after transformation.
+        ok = partisan_trace_orchestrator:trace(post_interposition_fun, {node(), OriginNode, Type, OriginalMessage, RewrittenMessage}),
+        
         ok
     end, 
 
@@ -724,10 +817,11 @@ debug(Line, Args) ->
 is_joined(Node, Cluster) ->
     lists:member(Node, Cluster).
 
-cluster_commands(#state{joined_nodes=JoinedNodes}) ->
+cluster_commands(_State) ->
     [
-    {call, ?MODULE, sync_join_cluster, [node_name(), JoinedNodes]},
-    {call, ?MODULE, sync_leave_cluster, [node_name(), JoinedNodes]}
+    % TODO: Disabled, because nodes shutdown on removal from the cluster.
+    % {call, ?MODULE, sync_join_cluster, [node_name(), node_name()]},
+    {call, ?MODULE, sync_leave_cluster, [node_name()]}
     ].
 
 name_to_nodename(Name) ->
@@ -740,24 +834,21 @@ ensure_tracing_started() ->
 wait_until_nodes_agree_on_membership(Nodes) ->
     AgreementFun = fun(Node) ->
         %% Get membership at node.
-        {ok, Members} = rpc:call(?NAME(Node), ?MANAGER, members, []),
-
-        %% Convert started nodes to longnames.
-        Names = lists:map(fun(N) -> ?NAME(N) end, Nodes),
+        {ok, Members} = rpc:call(Node, ?MANAGER, members, []),
 
         %% Sort.
-        SortedNames = lists:usort(Names),
+        SortedNodes = lists:usort(Nodes),
         SortedMembers = lists:usort(Members),
 
         %% Ensure the lists are the same -- barrier for proceeding.
-        case SortedNames =:= SortedMembers of
+        case SortedNodes =:= SortedMembers of
             true ->
                 debug("node ~p agrees on membership: ~p", 
                       [Node, SortedMembers]),
                 true;
             false ->
                 debug("node ~p disagrees on membership: ~p != ~p", 
-                      [Node, SortedMembers, SortedNames]),
+                      [Node, SortedMembers, SortedNodes]),
                 error
         end
     end,
@@ -791,4 +882,31 @@ wait_until_result(Fun, Result, Retry, Delay) when Retry > 0 ->
         _ ->
             timer:sleep(Delay),
             wait_until_result(Fun, Result, Retry-1, Delay)
+    end.
+
+%% @private
+fault_injection_enabled() ->
+    case os:getenv("FAULT_INJECTION") of 
+        false ->
+            false;
+        _ ->
+            true
+    end.            
+
+%% @private
+membership_changes_enabled() ->
+    case os:getenv("MEMBERSHIP_CHANGES") of 
+        false ->
+            false;
+        _ ->
+            true
+    end.
+
+%% @private
+scheduler() ->
+    case os:getenv("SCHEDULER") of
+        false ->
+            default;
+        Other ->
+            list_to_atom(Other)
     end.

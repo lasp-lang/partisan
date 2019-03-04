@@ -41,8 +41,15 @@
 -define(PERIODIC_ENABLED, true).
 
 %% Test variables.
--define(TEST_NUM_NODES, 3).
+-define(TEST_NUM_NODES, 4).
 -define(MEMBERSHIP_STRATEGY_TRACING, false).
+
+-record(property_state, 
+        {joined_nodes :: [node()],
+         nodes :: [node()],
+         node_state :: {dict:dict(), dict:dict()}, 
+         fault_model_state :: term(),
+         counter :: non_neg_integer()}).
 
 -define(SUPPORT, partisan_support).
 
