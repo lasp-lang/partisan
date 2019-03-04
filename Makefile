@@ -94,3 +94,23 @@ containerize: containerize-deps
 
 compose: containerize
 	docker-compose down; docker-compose rm; docker-compose up
+
+##
+## Testing targets
+##
+
+make bin-perms:
+	chmod 755 bin/*.sh
+	chmod 755 bin/*.escript
+
+demers-direct-mail-test: kill bin-perms
+	bin/demers-direct-mail-test.sh
+
+demers-direct-mail-acked-test: kill bin-perms
+	bin/demers-direct-mail-acked-test.sh
+
+demers-anti-entropy-test: kill bin-perms
+	bin/demers-anti-entropy-test.sh
+
+demers-rumor_mongering-test: kill bin-perms
+	bin/demers-rumor-mongering-test.sh

@@ -29,7 +29,6 @@
 -compile([export_all]).
 
 -define(ASSERT_MAILBOX, true).
--define(BROADCAST_MODULE, demers_direct_mail).
 
 -define(PERFORM_SUMMARY, false).
 
@@ -55,75 +54,121 @@ names() ->
 %%% Node Functions
 %%%===================================================================
 
--record(state, {sent}).
+-record(node_state, {sent, failed_to_send}).
 
 %% What node-specific operations should be called.
 node_commands() ->
-    CoreCommands = [{call, ?MODULE, broadcast, [node_name(), message()]}],
-
-    AssertionCommands = case ?ASSERT_MAILBOX of
-        true ->
-            [{call, ?MODULE, check_mailbox, [node_name()]}];
-        false ->
-            []
-    end,
-
-    AssertionCommands ++ CoreCommands.
+    [{call, ?MODULE, broadcast, [node_name(), message()]}].
 
 %% Assertion commands.
 node_assertion_functions() ->
     [check_mailbox].
 
+%% Global functions.
+node_global_functions() ->
+    [check_mailbox].
+
 %% What should the initial node state be.
 node_initial_state() ->
     node_debug("initializing", []),
-    Sent = [],
-    #state{sent=Sent}.
+    #node_state{sent=[], failed_to_send=[]}.
 
 %% Names of the node functions so we kow when we can dispatch to the node
 %% pre- and postconditions.
 node_functions() ->
     lists:map(fun({call, _Mod, Fun, _Args}) -> Fun end, node_commands()).
 
-%% Postconditions for node commands.
-node_postcondition(_State, {call, ?MODULE, broadcast, [_Node, _Message]}, ok) ->
+%% Precondition.
+node_precondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}) ->
     true;
-node_postcondition(#state{sent=Sent}, {call, ?MODULE, check_mailbox, [Node]}, {ok, Messages}) ->
-    node_debug("verifying mailbox at node ~p: ", [Node]),
-    node_debug(" => sent: ~p", [Sent]),
-    node_debug(" => received: ~p", [Messages]),
-
-    %% Figure out which messages we have.
-    Result = lists:all(fun(M) -> lists:member(M, Messages) end, Sent),
-
-    case Result of 
-        true ->
-            node_debug("verification of mailbox at node ~p complete.", [Node]),
-            true;
-        _ ->
-            Missing = Sent -- Messages,
-            node_debug("verification of mailbox at node ~p failed.", [Node]),
-            node_debug(" => missing: ~p", [Missing]),
-            node_debug(" => received: ~p", [Messages]),
-            false
-    end;
-node_postcondition(_State, _Command, _Response) ->
+node_precondition(_NodeState, {call, ?MODULE, check_mailbox, []}) ->
+    true;
+node_precondition(_NodeState, _Command) ->
     false.
 
 %% Next state.
-node_next_state(#state{sent=Sent0}=State, _Result, {call, ?MODULE, broadcast, [Node, {Id, Value}]}) ->
-    Message = {Id, Node, Value},
-    Sent = Sent0 ++ [Message],
-    State#state{sent=Sent};
-node_next_state(State, _Response, _Command) ->
-    State.
 
-%% Precondition.
-node_precondition(_State, {call, ?MODULE, broadcast, [_Node, _Message]}) ->
+%% If the broadcast returned 'ok', we have to assume it was sent (asynchronous / synchronous.)
+node_next_state(#property_state{joined_nodes=JoinedNodes}, 
+                #node_state{sent=Sent0}=NodeState, 
+                ok, 
+                {call, ?MODULE, broadcast, [Node, {Id, Value}]}) ->
+    Recipients = JoinedNodes,
+    Message = {Id, Node, Value},
+    Sent = Sent0 ++ [{Message, Recipients}],
+    NodeState#node_state{sent=Sent};
+
+node_next_state(#property_state{joined_nodes=JoinedNodes}, 
+                #node_state{failed_to_send=FailedToSend0}=NodeState, 
+                error, 
+                {call, ?MODULE, broadcast, [Node, {Id, Value}]}) ->
+    Recipients = JoinedNodes,
+    Message = {Id, Node, Value},
+    FailedToSend = FailedToSend0 ++ [{Message, Recipients}],
+    NodeState#node_state{failed_to_send=FailedToSend};
+
+%% If the broadcast returned 'error', we have to assume it was aborted (synchronous.)
+node_next_state(_State, NodeState, _Response, _Command) ->
+    NodeState.
+
+%% Postconditions for node commands.
+node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, {badrpc, timeout}) ->
+    lager:info("Broadcast error with timeout, must have been synchronous!"),
+    false;
+node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, error) ->
+    lager:info("Broadcast error, must have been synchronous!"),
     true;
-node_precondition(_State, {call, ?MODULE, check_mailbox, [_Node]}) ->
+node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, ok) ->
     true;
-node_precondition(_State, _Command) ->
+node_postcondition(#node_state{failed_to_send=FailedToSend, sent=Sent}, {call, ?MODULE, check_mailbox, []}, Results) ->
+    AllSentAndReceived = lists:foldl(fun({Message, Recipients}, MessageAcc) ->
+        node_debug("verifying that message ~p was received by ~p", [Message, Recipients]),
+
+        All = lists:foldl(fun(Recipient, NodeAcc) ->
+            node_debug("=> verifying that message ~p was received by ~p", [Message, Recipient]),
+
+            %% Did this node receive the message?
+            Messages = dict:fetch(Recipient, Results),
+
+            %% Carry forward.
+            case lists:member(Message, Messages) of 
+                true ->
+                    NodeAcc andalso true;
+                false ->
+                    node_debug("=> => message not received at node ~p: ~p", [Message, Recipient]),
+                    NodeAcc andalso false
+            end
+        end, true, Recipients),
+
+        All andalso MessageAcc
+    end, true, Sent),
+
+    FailedToSendNotReceived = lists:foldl(fun({Message, Recipients}, MessageAcc) ->
+        node_debug("verifying that message ~p was NOT received by ~p", [Message, Recipients]),
+
+        All = lists:foldl(fun(Recipient, NodeAcc) ->
+            node_debug("=> verifying that message ~p was NOT received by ~p", [Message, Recipient]),
+
+            %% Did this node receive the message?
+            Messages = dict:fetch(Recipient, Results),
+
+            %% Carry forward.
+            case lists:member(Message, Messages) of 
+                true ->
+                    node_debug("=> => message received at node ~p: ~p", [Message, Recipient]),
+                    NodeAcc andalso false;
+                false ->
+                    NodeAcc andalso true
+            end
+        end, true, Recipients),
+
+        All andalso MessageAcc
+    end, true, FailedToSend),
+
+    AllSentAndReceived andalso FailedToSendNotReceived;
+node_postcondition(_NodeState, Command, Response) ->
+    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
+               [Command, Response]),
     false.
 
 %%%===================================================================
@@ -147,37 +192,48 @@ broadcast(Node, {Id, Value}) ->
     %% Transmit message.
     FullMessage = {Id, Node, Value},
     node_debug("broadcast from node ~p message: ~p", [Node, FullMessage]),
-    Result = rpc:call(?NAME(Node), ?BROADCAST_MODULE, broadcast, [?RECEIVER, FullMessage]),
+    Result = rpc:call(?NAME(Node), broadcast_module(), broadcast, [?RECEIVER, FullMessage], 2000),
 
-    %% Sleep for 1 second, giving time for message to propagate.
-    timer:sleep(1000),
+    %% Sleep for 2 second, giving time for message to propagate (1 second timer.)
+    node_debug("=> sleeping for propagation", []),
+    timer:sleep(5000),
 
     ?PROPERTY_MODULE:command_conclusion(Node, [broadcast, Node, Id, Value]),
 
     Result.
 
 %% @private
-check_mailbox(Node) ->
-    node_debug("executing check mailbox command: ~p", [Node]),
+check_mailbox() ->
+    node_debug("executing check_mailbox command", []),
 
-    ?PROPERTY_MODULE:command_preamble(Node, [check_mailbox, Node]),
+    RunnerNode = node(),
+
+    ?PROPERTY_MODULE:command_preamble(RunnerNode, [check_mailbox]),
 
     Self = self(),
 
-    %% Ask for what messages they have received.
-    erlang:send({?RECEIVER, ?NAME(Node)}, {received, Self}),
+    Results = lists:foldl(fun(Node, Dict) ->
+        %% Ask for what messages they have received.
+        erlang:send({?RECEIVER, ?NAME(Node)}, {received, Self}),
 
-    Result = receive
-        Messages ->
-            {ok, Messages}
-    after 
-        10000 ->
-            {error, no_response_from_mailbox}
-    end,
+        receive
+            Messages ->
+                dict:store(Node, Messages, Dict)
+        after 
+            10000 ->
+                case rpc:call(?NAME(Node), erlang, is_process_alive, []) of 
+                    {badrpc, nodedown} ->
+                        dict:store(Node, nodedown, Dict);
+                    Other ->
+                        node_debug("=> no response, asked if node was alive: ~p", [Other]),
+                        dict:store(Node, [], Dict)
+                end
+        end
+    end, dict:new(), names()),
 
-    ?PROPERTY_MODULE:command_conclusion(Node, [check_mailbox, Node]),
+    ?PROPERTY_MODULE:command_conclusion(RunnerNode, [check_mailbox]),
 
-    Result.
+    Results.
 
 %%%===================================================================
 %%% Helper Functions
@@ -214,7 +270,7 @@ node_begin_case() ->
     %% Start the backend.
     lists:foreach(fun({ShortName, _}) ->
         %% node_debug("starting ~p at node ~p with node list ~p ", [?BROADCAST_MODULE, ShortName, SublistNodeProjection]),
-        {ok, _Pid} = rpc:call(?NAME(ShortName), ?BROADCAST_MODULE, start_link, [])
+        {ok, _Pid} = rpc:call(?NAME(ShortName), broadcast_module(), start_link, [])
     end, Nodes),
 
     lists:foreach(fun({ShortName, _}) ->
@@ -273,43 +329,16 @@ node_begin_case() ->
 node_end_case() ->
     node_debug("ending case", []),
 
-    case ?PERFORM_SUMMARY of 
-        true ->
-            %% Get nodes.
-            [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
+    ok.
 
-            %% Aggregate the results from the run.
-            NodeMessages = lists:map(fun({Name, _Node}) ->
-                case check_mailbox(Name) of 
-                    {ok, Messages} ->
-                        node_debug("received at node ~p are ~p: ~p", [Name, length(Messages), Messages]),
-                        Messages;
-                    {error, _} ->
-                        node_debug("cannot get messages received at node ~p", [Name]),
-                        []
-                end
-            end, Nodes),
-
-            %% Compute total messages.
-            TotalMessages = length(lists:usort(lists:flatten(NodeMessages))),
-            node_debug("total messages sent: ~p", [TotalMessages]),
-
-            %% Keep percentage of nodes that have received all messages.
-            NodeCount = length(Nodes),
-
-            NodesRececivedAll = lists:foldl(fun(M, Acc) ->
-                case length(M) =:= TotalMessages of
-                    true ->
-                        Acc + 1;
-                    false ->
-                        Acc
-                end
-            end, 0, NodeMessages),
-
-            Percentage = NodesRececivedAll / NodeCount,
-            node_debug("nodes received all: ~p, total nodes: ~p, percentage received: ~p", [NodesRececivedAll, NodeCount, Percentage]);
+%% @private
+broadcast_module() ->
+    Module = case os:getenv("BROADCAST_MODULE") of 
         false ->
-            ok
+            lampson_2pc;
+        Other ->
+            list_to_atom(Other)
     end,
 
-    ok.
+    node_debug("broadcast module is defined as ~p", [Module]),
+    Module.
