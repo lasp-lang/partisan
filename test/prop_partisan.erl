@@ -22,72 +22,66 @@
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+-include("partisan.hrl").
+
 -include_lib("proper/include/proper.hrl").
 
 -compile([export_all]).
 
--define(MODEL, prop_partisan_reliable_broadcast).
+%% System model.
+-define(SYSTEM_MODEL, prop_partisan_reliable_broadcast).
 
--import(?MODEL,
+-import(?SYSTEM_MODEL,
         [node_commands/0,
          node_initial_state/0,
          node_functions/0,
          node_precondition/2,
          node_postcondition/3,
-         node_next_state/3,
-         begin_property/0,
-         begin_case/0,
-         end_case/0]).
+         node_next_state/4,
+         node_begin_property/0,
+         node_begin_case/0,
+         node_end_case/0,
+         node_assertion_functions/0,
+         node_global_functions/0]).
 
--define(SUPPORT, partisan_support).
+%% Fault model.
+-define(FAULT_MODEL, prop_partisan_crash_fault_model).
 
-%% TODO: Fix message corruption fault.
-%% TODO: Fix bit flip bugs.
-%% TODO: Fix node names.
-%% TODO: Message ommission.
-%% TODO: Jitter the timers with deterministic seed.
-%% TODO: Add maximum number of faults.
+-import(?FAULT_MODEL,
+        [fault_commands/0,
+         fault_initial_state/0,
+         fault_functions/1,
+         fault_precondition/2,
+         fault_postcondition/3,
+         fault_next_state/4,
+         fault_is_crashed/2,
+         fault_begin_functions/0,
+         fault_end_functions/0,
+         fault_global_functions/0,
+         fault_num_resolvable_faults/1]).
 
 %% General test configuration
--define(NUM_NODES, 3).
--define(COMMAND_MULTIPLE, 10).
 -define(CLUSTER_NODES, true).
 -define(MANAGER, partisan_pluggable_peer_service_manager).
 
 %% Debug.
 -define(DEBUG, true).
--define(PARTITION_DEBUG, true).
 -define(INITIAL_STATE_DEBUG, false).
--define(PRECONDITION_DEBUG, false).
--define(POSTCONDITION_DEBUG, false).
+-define(PRECONDITION_DEBUG, true).
+-define(POSTCONDITION_DEBUG, true).
 
 %% Partisan connection and forwarding settings.
 -define(EGRESS_DELAY, 0).                           %% How many milliseconds to delay outgoing messages?
 -define(INGRESS_DELAY, 0).                          %% How many millisconds to delay incoming messages?
 -define(VNODE_PARTITIONING, false).                 %% Should communication be partitioned by vnode identifier?
--define(PARALLELISM, 1).                            %% How many connections should exist between nodes?
--define(CHANNELS, 
-        [undefined, broadcast, vnode, {monotonic,gossip}]).   
-                                                    %% What channels should be established?
--define(CAUSAL_LABELS, []).                         %% What causal channels should be established?
 
-%% Only one of the modes below should be selected for efficient, proper shrinking.
--define(PERFORM_LEAVES_AND_JOINS, false).           %% Do we allow cluster transitions during test execution:
-                                                    %% EXTREMELY slow, given a single join can take ~30 seconds.
--define(PERFORM_CLUSTER_PARTITIONS, false).         %% Whether or not we should partition at the cluster level 
-                                                    %% ie. groups of nodes at a time.
--define(PERFORM_ASYNC_PARTITIONS, false).           %% Whether or not we should partition using asymmetric partitions
-                                                    %% ie. nodes can send but not receive from other nodes
--define(PERFORM_SYNC_PARTITIONS, false).            %% Whether or not we should use symmetric partitions: most common.
-                                                    %% ie. two-way communication prohibited between different nodes.
--define(PERFORM_BYZANTINE_MESSAGE_FAULTS, false).   %% Whether or not we should use cluster byzantine faults:
-                                                    %% ie. message corruption, etc.
+%%%===================================================================
+%%% Helper Macros
+%%%===================================================================
 
-%% Fault bounds.
--define(MAXIMUM_ACTIVE_FAULTS, 10).                 %% Number of active faults allowed.                                                
+-define(ETS, prop_partisan).
 
-%% Alternative configurations.
--define(BIAS_MINORITY, false).                      %% Bias requests to minority partitions.
+-define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
 
 -export([command/1, 
          initial_state/0, 
@@ -100,54 +94,195 @@
 %%%===================================================================
 
 prop_sequential() ->
-    begin_property(),
+    node_begin_property(),
 
-    ?FORALL(Cmds, more_commands(?COMMAND_MULTIPLE, commands(?MODULE)), 
-        begin
-            start_nodes(),
-            begin_case(),
-            {History, State, Result} = run_commands(?MODULE, Cmds), 
-            end_case(),
-            stop_nodes(),
-            ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
-                                [History,State,Result]),
-                      aggregate(command_names(Cmds), Result =:= ok))
+    case scheduler() of 
+        default ->
+            ?FORALL(Cmds, commands(?MODULE), 
+                begin
+                    start_nodes(),
+                    node_begin_case(),
+                    {History, State, Result} = run_commands(?MODULE, Cmds), 
+                    node_end_case(),
+                    stop_nodes(),
+                    ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
+                                        [History,State,Result]),
+                            aggregate(command_names(Cmds), Result =:= ok))
+                end);
+        finite_fault ->
+            ?FORALL(Cmds, finite_fault_commands(?MODULE), 
+                begin
+                    start_nodes(),
+                    node_begin_case(),
+                    {History, State, Result} = run_commands(?MODULE, Cmds), 
+                    node_end_case(),
+                    stop_nodes(),
+                    ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
+                                        [History,State,Result]),
+                            aggregate(command_names(Cmds), Result =:= ok))
+                end);
+        single_success ->
+            ?FORALL(Cmds, single_success_commands(?MODULE), 
+                begin
+                    start_nodes(),
+                    node_begin_case(),
+                    {History, State, Result} = run_commands(?MODULE, Cmds), 
+                    node_end_case(),
+                    stop_nodes(),
+                    ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
+                                        [History,State,Result]),
+                            aggregate(command_names(Cmds), Result =:= ok))
+                end)
+    end.
+
+%%%===================================================================
+%%% Command sequences
+%%%===================================================================
+
+finite_fault_commands(Module) ->
+    ?LET(Commands, commands(Module), 
+        begin 
+            debug("~p: original command sequence...~n", [?MODULE]),
+
+            lists:foreach(fun(Command) -> 
+                debug("-> ~p~n", [Command])
+            end, Commands),
+
+            %% Filter out global commands.
+            CommandsWithoutGlobalNodeCommands = lists:filter(fun({set,{var,_Nth},{call,_Mod,Fun,_Args}}) ->
+                case lists:member(Fun, node_global_functions()) of 
+                    true ->
+                        false;
+                    _ ->
+                        true
+                end
+            end, Commands),
+
+            %% Add a command to resolve all partitions with a heal.
+            ResolveCommands = case fault_injection_enabled() of 
+                true ->
+                    case rand:uniform(10) rem 2 =:= 0 of 
+                        true ->
+                            [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_heal,[]}}];
+                        false ->
+                            [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_crash,[]}}]
+                    end;
+                false ->
+                    [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_heal,[]}}]
+            end,
+
+            %% Only global node commands.
+            CommandsWithOnlyGlobalNodeCommands = lists:map(fun(Fun) ->
+                {set,{var,0},{call,?SYSTEM_MODEL,Fun,[]}}
+            end, node_global_functions()), 
+
+            %% Derive final command sequence.
+            FinalCommands0 = lists:flatten(
+                %% Node commands and failures, without global assertions.
+                CommandsWithoutGlobalNodeCommands ++ 
+                
+                %% Commands to resolve failures.
+                ResolveCommands ++ 
+
+                %% Global assertions only.
+                CommandsWithOnlyGlobalNodeCommands),
+
+            %% Renumber command sequence.
+            {FinalCommands, _} = lists:foldl(fun({set,{var,_Nth},{call,Mod,Fun,Args}}, {Acc, Next}) ->
+                {Acc ++ [{set,{var,Next},{call,Mod,Fun,Args}}], Next + 1}
+            end, {[], 1}, FinalCommands0),
+
+            %% Print final command sequence.
+            debug("altered command sequence...~n", []),
+
+            lists:foreach(fun(Command) -> 
+                debug("=> ~p~n", [Command])
+            end, FinalCommands),
+
+            %% Return the final command sequence.
+            FinalCommands
         end).
 
-prop_parallel() ->
-    begin_property(),
-    
-    ?FORALL(Cmds, more_commands(?COMMAND_MULTIPLE, parallel_commands(?MODULE)), 
-        begin
-            start_nodes(),
-            begin_case(),
-            {History, State, Result} = run_parallel_commands(?MODULE, Cmds), 
-            end_case(),
-            stop_nodes(),
-            ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
-                                [History,State,Result]),
-                      aggregate(command_names(Cmds), Result =:= ok))
+single_success_commands(Module) ->
+    ?LET(Commands, commands(Module), 
+        begin 
+            debug("original command sequence...~n", []),
+
+            lists:foreach(fun(Command) -> 
+                debug("-> ~p~n", [Command])
+            end, Commands),
+
+            %% Filter out global commands.
+            CommandsWithoutGlobalNodeCommands = lists:filter(fun({set,{var,_Nth},{call,_Mod,Fun,_Args}}) ->
+                case lists:member(Fun, node_global_functions()) of 
+                    true ->
+                        false;
+                    _ ->
+                        true
+                end
+            end, Commands),
+
+            %% Get first non-global command.
+            FirstNonGlobalCommand = case length(CommandsWithoutGlobalNodeCommands) > 0 of
+                true ->
+                    [hd(CommandsWithoutGlobalNodeCommands)];
+                false ->
+                    []
+            end,
+
+            %% Generate failure command.
+            FailureCommands = case length(CommandsWithoutGlobalNodeCommands) > 0 of
+                true ->
+                    %% Only fail if we have at least *one* command that
+                    %% performs application behavior.
+                    [{set,{var,0},{call,?MODULE,forced_failure,[]}}];
+                false ->
+                    []
+            end,
+
+            %% Only global node commands.
+            CommandsWithOnlyGlobalNodeCommands = lists:map(fun(Fun) ->
+                {set,{var,0},{call,?SYSTEM_MODEL,Fun,[]}}
+            end, node_global_functions()), 
+
+            %% Derive final command sequence.
+            FinalCommands0 = lists:flatten(
+                %% Node commands, without global assertions.  Take only the first.
+                FirstNonGlobalCommand ++
+
+                %% Global assertions only.
+                CommandsWithOnlyGlobalNodeCommands ++ 
+            
+                %% Final failure commands
+                FailureCommands),
+
+            %% Renumber command sequence.
+            {FinalCommands, _} = lists:foldl(fun({set,{var,_Nth},{call,Mod,Fun,Args}}, {Acc, Next}) ->
+                {Acc ++ [{set,{var,Next},{call,Mod,Fun,Args}}], Next + 1}
+            end, {[], 1}, FinalCommands0),
+
+            %% Print final command sequence.
+            debug("altered command sequence...~n", []),
+
+            lists:foreach(fun(Command) -> 
+                debug("=> ~p~n", [Command])
+            end, FinalCommands),
+
+            %% Return the final command sequence.
+            FinalCommands
         end).
 
 %%%===================================================================
 %%% Initial state
 %%%===================================================================
 
--record(state, {
-                joined_nodes :: [node()],
-                nodes :: [node()],
-                node_state :: {dict:dict(), dict:dict()}, 
-                partition_filters :: dict:dict(),
-                minority_nodes :: [node()], 
-                majority_nodes :: [node()], 
-                byzantine_faults :: dict:dict(),
-                active_faults :: non_neg_integer()
-            }).
-
 %% Initial model value at system start. Should be deterministic.
 initial_state() -> 
     %% Initialize empty dictionary for process state.
     NodeState = node_initial_state(),
+
+    %% Initialize fault model.
+    FaultModelState = fault_initial_state(),
 
     %% Get the list of nodes.
     Nodes = names(),
@@ -160,181 +295,175 @@ initial_state() ->
             Nodes
     end,
 
-    %% Fault state management.
-    PartitionFilters = dict:new(),
-    ByzantineFaults = dict:new(),
-    MinorityNodes = [],
-    MajorityNodes = [],
-    ActiveFaults = 0,
-
     %% Debug message.
     initial_state_debug("initial_state: nodes ~p joined_nodes ~p", [Nodes, JoinedNodes]),
 
-    #state{joined_nodes=JoinedNodes, 
+    %% Initialize command counter at 0.
+    Counter = 0,
+
+    #property_state{counter=Counter,
+           joined_nodes=JoinedNodes,
+           fault_model_state=FaultModelState,
            nodes=Nodes,
-           minority_nodes=MinorityNodes,
-           majority_nodes=MajorityNodes, 
-           node_state=NodeState,
-           active_faults=ActiveFaults, 
-           byzantine_faults=ByzantineFaults,
-           partition_filters=PartitionFilters}.
+           node_state=NodeState}.
 
 command(State) -> 
-    ?LET(Commands, cluster_commands(State) ++ node_commands(), oneof(Commands)).
+    %% Cluster maintenance commands.
+    ClusterCommands = lists:flatmap(fun(Command) -> 
+        case membership_changes_enabled() of 
+            true ->
+                [{1, Command}];
+            false ->
+                []
+        end
+    end, cluster_commands(State)),
+
+    %% Fault model commands.
+    FaultModelCommands = lists:flatmap(fun(Command) -> 
+        case fault_injection_enabled() of 
+            true ->
+                [{1, Command}];
+            false ->
+                []
+        end
+    end, fault_commands()),
+
+    %% System model commands.
+    SystemCommands = lists:map(fun(Command) -> 
+        {1, Command} 
+    end, node_commands()), 
+
+    frequency(ClusterCommands ++ FaultModelCommands ++ SystemCommands).
 
 %% Picks whether a command should be valid under the current state.
-precondition(#state{byzantine_faults=ByzantineFaults, active_faults=ActiveFaults}, {call, _Mod, induce_byzantine_message_corruption_fault, [SourceNode, DestinationNode, _Value]}) -> 
-    not is_involved_in_byzantine_fault(SourceNode, DestinationNode, ByzantineFaults) andalso not_maximum_active_faults(1, ActiveFaults);
-precondition(#state{byzantine_faults=ByzantineFaults}, {call, _Mod, resolve_byzantine_message_corruption_fault, [SourceNode, DestinationNode]}) -> 
-    is_involved_in_byzantine_fault(SourceNode, DestinationNode, ByzantineFaults);
-precondition(#state{partition_filters=PartitionFilters, active_faults=ActiveFaults}, {call, _Mod, induce_async_partition, [SourceNode, DestinationNode]}) -> 
-    not is_involved_in_partition(SourceNode, DestinationNode, PartitionFilters) andalso not_maximum_active_faults(1, ActiveFaults);
-precondition(#state{partition_filters=PartitionFilters}, {call, _Mod, resolve_async_partition, [SourceNode, DestinationNode]}) -> 
-    is_involved_in_partition(SourceNode, DestinationNode, PartitionFilters);
-precondition(#state{partition_filters=PartitionFilters, active_faults=ActiveFaults}, {call, _Mod, induce_sync_partition, [SourceNode, DestinationNode]}) -> 
-    not is_involved_in_partition(SourceNode, DestinationNode, PartitionFilters) andalso is_valid_partition(SourceNode, DestinationNode) andalso not_maximum_active_faults(2, ActiveFaults);
-precondition(#state{partition_filters=PartitionFilters}, {call, _Mod, resolve_sync_partition, [SourceNode, DestinationNode]}) -> 
-    is_involved_in_partition(SourceNode, DestinationNode, PartitionFilters);
-precondition(#state{partition_filters=PartitionFilters}, {call, _Mod, delayed_resolve_sync_partition, [_Timeout, SourceNode, DestinationNode]}) -> 
-    is_involved_in_partition(SourceNode, DestinationNode, PartitionFilters);
-precondition(#state{partition_filters=PartitionFilters, active_faults=ActiveFaults}, {call, _Mod, induce_cluster_partition, [MajorityNodes, AllNodes]}) -> 
-    MinorityNodes = AllNodes -- MajorityNodes,
-
-    Result = lists:all(fun(SourceNode) -> 
-        lists:all(fun(DestinationNode) ->
-            not is_involved_in_partition(SourceNode, DestinationNode, PartitionFilters)
-        end, MinorityNodes)
-    end, MajorityNodes),
-
-    Result andalso not_maximum_active_faults(length(MinorityNodes * 2), ActiveFaults);
-precondition(#state{partition_filters=PartitionFilters}, {call, _Mod, resolve_cluster_partition, [MajorityNodes, AllNodes]}) -> 
-    MinorityNodes = AllNodes -- MajorityNodes,
-
-    lists:all(fun(SourceNode) -> 
-        lists:all(fun(DestinationNode) ->
-            is_involved_in_partition(SourceNode, DestinationNode, PartitionFilters)
-        end, MinorityNodes)
-    end, MajorityNodes);
-precondition(#state{nodes=Nodes, joined_nodes=JoinedNodes}, {call, _Mod, join_cluster, [Node, JoinedNodes]}) -> 
+precondition(#property_state{nodes=Nodes, joined_nodes=JoinedNodes}, {call, _Mod, sync_join_cluster, [Node, JoinNode]}) -> 
     %% Only allow dropping of the first unjoined node in the nodes list, for ease of debugging.
-    precondition_debug("precondition join_cluster: invoked for node ~p joined_nodes ~p", [Node, JoinedNodes]),
+    precondition_debug("precondition sync_join_cluster: invoked for node ~p joined_nodes ~p", [Node, JoinedNodes]),
 
-    ToBeJoinedNodes = Nodes -- JoinedNodes,
-    precondition_debug("precondition join_cluster: remaining nodes to be joined are: ~p", [ToBeJoinedNodes]),
+    CanBeJoinedNodes = Nodes -- JoinedNodes,
+    precondition_debug("precondition sync_join_cluster: remaining nodes to be joined are: ~p", [CanBeJoinedNodes]),
 
-    case length(ToBeJoinedNodes) > 0 of
+    case length(CanBeJoinedNodes) > 0 of
         true ->
-            ToBeJoinedNode = hd(ToBeJoinedNodes),
-            precondition_debug("precondition join_cluster: attempting to join ~p", [ToBeJoinedNode]),
-            case ToBeJoinedNode of
-                Node ->
-                    precondition_debug("precondition join_cluster: YES attempting to join ~p is ~p", [ToBeJoinedNode, Node]),
-                    true;
-                OtherNode ->
-                    precondition_debug("precondition join_cluster: NO attempting to join ~p not ~p", [ToBeJoinedNode, OtherNode]),
+            precondition_debug("precondition sync_join_cluster: attempting to join ~p", [Node]),
+
+            case lists:member(Node, CanBeJoinedNodes) of
+                true ->
+                    precondition_debug("precondition sync_join_cluster: POSSIBLE YES attempting to join ~p is in ~p", [Node, CanBeJoinedNodes]),
+                    lists:member(JoinNode, JoinedNodes);
+                _ ->
+                    precondition_debug("precondition sync_join_cluster: NO attempting to join ~p not in ~p", [Node, CanBeJoinedNodes]),
                     false
             end;
         false ->
-            precondition_debug("precondition join_cluster: no nodes left to join.", []),
+            precondition_debug("precondition sync_join_cluster: no nodes left to join.", []),
             false %% Might need to be changed when there's no read/write operations.
     end;
-precondition(#state{joined_nodes=JoinedNodes}, {call, _Mod, leave_cluster, [Node, JoinedNodes]}) -> 
+precondition(#property_state{joined_nodes=JoinedNodes}, {call, _Mod, sync_leave_cluster, [Node]}) -> 
     %% Only allow dropping of the last node in the join list, for ease of debugging.
-    precondition_debug("precondition leave_cluster: invoked for node ~p joined_nodes ~p", [Node, JoinedNodes]),
+    precondition_debug("precondition sync_leave_cluster: invoked for node ~p joined_nodes ~p", [Node, JoinedNodes]),
 
     ToBeRemovedNodes = JoinedNodes,
-    precondition_debug("precondition leave_cluster: remaining nodes to be removed are: ~p", [ToBeRemovedNodes]),
+    precondition_debug("precondition sync_leave_cluster: remaining nodes to be removed are: ~p", [ToBeRemovedNodes]),
 
     case length(ToBeRemovedNodes) > 3 of
         true ->
-            ToBeRemovedNode = lists:last(ToBeRemovedNodes),
-            precondition_debug("precondition leave_cluster: attempting to leave ~p", [ToBeRemovedNode]),
-            case ToBeRemovedNode of
-                Node ->
-                    precondition_debug("precondition leave_cluster: YES attempting to leave ~p is ~p", [ToBeRemovedNode, Node]),
+            TotalNodes = length(ToBeRemovedNodes),
+            CanBeRemovedNodes = lists:sublist(ToBeRemovedNodes, 4, TotalNodes),
+            precondition_debug("precondition sync_leave_cluster: attempting to leave ~p", [Node]),
+
+            case lists:member(Node, CanBeRemovedNodes) of
+                true ->
+                    precondition_debug("precondition sync_leave_cluster: YES attempting to leave ~p is in ~p", [Node, CanBeRemovedNodes]),
                     true;
-                OtherNode ->
-                    precondition_debug("precondition leave_cluster: NO attempting to leave ~p not ~p", [ToBeRemovedNode, OtherNode]),
+                _ ->
+                    precondition_debug("precondition sync_leave_cluster: NO attempting to leave ~p is not in ~p", [Node, CanBeRemovedNodes]),
                     false
             end;
         false ->
-            precondition_debug("precondition leave_cluster: no nodes left to remove.", []),
-            false %% Might need to be changed when there's no read/write operations.
+            precondition_debug("precondition sync_leave_cluster: no nodes left to remove.", []),
+            false
     end;
-precondition(#state{majority_nodes=MajorityNodes, minority_nodes=MinorityNodes, node_state=NodeState, joined_nodes=JoinedNodes}, {call, Mod, Fun, [Node|_]=Args}=Call) -> 
-    precondition_debug("precondition fired for node function: ~p, majority_nodes: ~p, minority_nodes ~p", [Fun, MajorityNodes, MinorityNodes]),
+precondition(#property_state{fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes, counter=Counter}, 
+             {call, Mod, Fun, [Node|_]=Args}=Call) -> 
+    precondition_debug("precondition fired for counter ~p and node function: ~p(~p)", [Counter, Fun, Args]),
+
     case lists:member(Fun, node_functions()) of
         true ->
-            case ?BIAS_MINORITY andalso length(MinorityNodes) > 0 of
-                true ->
-                    precondition_debug("precondition fired for node function where minority is biased: ~p, bias_minority: ~p, checking whether node ~p is in minority", [Fun, ?BIAS_MINORITY, Node]),
-                    case lists:member(Node, MinorityNodes) of
-                        true ->
-                            debug("=> bias towards minority, write is going to node ~p in minority", [Node]),
-                            ClusterCondition = enough_nodes_connected(JoinedNodes) andalso is_joined(Node, JoinedNodes),
-                            NodePrecondition = node_precondition(NodeState, Call),
-                            ClusterCondition andalso NodePrecondition;
-                        false ->
-                            false
-                    end;
-                false ->
-                    ClusterCondition = enough_nodes_connected(JoinedNodes) andalso is_joined(Node, JoinedNodes),
-                    NodePrecondition = node_precondition(NodeState, Call),
-                    ClusterCondition andalso NodePrecondition
-            end;
+            ClusterCondition = enough_nodes_connected(JoinedNodes) andalso is_joined(Node, JoinedNodes),
+            NodePrecondition = node_precondition(NodeState, Call),
+            FaultPrecondition = not fault_is_crashed(FaultModelState, Node),
+            ClusterCondition andalso NodePrecondition andalso FaultPrecondition;
         false ->
-            debug("general precondition fired for mod ~p and fun ~p and args ~p", [Mod, Fun, Args]),
-            false
+            case lists:member(Fun, fault_functions(JoinedNodes)) of 
+                true ->
+                    ClusterCondition = enough_nodes_connected(JoinedNodes) andalso is_joined(Node, JoinedNodes),
+                    FaultModelPrecondition = fault_precondition(FaultModelState, Call),
+                    ClusterCondition andalso FaultModelPrecondition;
+                false ->
+                    debug("general precondition fired for mod ~p and fun ~p and args ~p", [Mod, Fun, Args]),
+                    false
+            end
+    end;
+
+precondition(#property_state{}, {call, _Mod, forced_failure, _Args}) ->
+    precondition_debug("forced failure precondition fired!", []),
+    true;
+
+precondition(#property_state{counter=Counter}, {call, _Mod, Fun, Args}=_Call) ->
+    precondition_debug("fallthrough precondition fired for counter ~p and node function: ~p(~p)", [Counter, Fun, Args]),
+
+    case lists:member(Fun, fault_global_functions()) of 
+        true ->
+            precondition_debug("=> allowing global fault command.", []),
+            true;
+        false ->
+            case lists:member(Fun, node_global_functions()) of
+                true ->
+                    precondition_debug("=> allowing global node command.", []),
+                    true;
+                false ->
+                    false
+            end
+    end.
+
+%% Assuming the postcondition for a call was true, update the model
+%% accordingly for the test to proceed.
+next_state(#property_state{counter=Counter, joined_nodes=JoinedNodes}=State, _Res, {call, ?MODULE, sync_join_cluster, [Node, _JoinNode]}) -> 
+    State#property_state{joined_nodes=JoinedNodes ++ [Node], counter=Counter+1};
+next_state(#property_state{counter=Counter, joined_nodes=JoinedNodes}=State, _Res, {call, ?MODULE, sync_leave_cluster, [Node]}) -> 
+    State#property_state{joined_nodes=JoinedNodes -- [Node], counter=Counter+1};
+next_state(#property_state{}=State, _Res, {call, ?MODULE, forced_failure, []}) -> 
+    State;
+next_state(#property_state{counter=Counter, fault_model_state=FaultModelState0, node_state=NodeState0, joined_nodes=JoinedNodes}=State, Res, {call, _Mod, Fun, _Args}=Call) -> 
+    case lists:member(Fun, node_functions()) of
+        true ->
+            NodeState = node_next_state(State, NodeState0, Res, Call),
+            State#property_state{node_state=NodeState, counter=Counter+1};
+        false ->
+            case lists:member(Fun, fault_functions(JoinedNodes)) of 
+                true ->
+                    FaultModelState = fault_next_state(State, FaultModelState0, Res, Call),
+                    State#property_state{fault_model_state=FaultModelState, counter=Counter+1};
+                false ->
+                    debug("general next_state fired for fun: ~p", [Fun]),
+                    State#property_state{counter=Counter+1}
+            end
     end.
 
 %% Given the state `State' *prior* to the call `{call, Mod, Fun, Args}',
 %% determine whether the result `Res' (coming from the actual system)
 %% makes sense.
-postcondition(_State, {call, ?MODULE, induce_byzantine_message_corruption_fault, [_SourceNode, _DestinationNode, _Value]}, ok) ->
-    postcondition_debug("postcondition induce_byzantine_message_corruption_fault: succeeded", []),
-    %% Added message filter.
+postcondition(_State, {call, ?MODULE, forced_failure, []}, ok) ->
+    postcondition_debug("postcondition forced_failure fired", []),
+    false;
+postcondition(_State, {call, ?MODULE, sync_join_cluster, [_Node, _JoinNode]}, {ok, _Members}) ->
+    postcondition_debug("postcondition sync_join_cluster fired", []),
     true;
-postcondition(_State, {call, ?MODULE, resolve_byzantine_message_corruption_fault, [_SourceNode, _DestinationNode]}, ok) ->
-    postcondition_debug("postcondition resolve_byzantine_message_corruption_fault: succeeded", []),
-    %% Remove message filter.
+postcondition(_State, {call, ?MODULE, sync_leave_cluster, [_Node]}, {ok, _Members}) ->
+    postcondition_debug("postcondition sync_leave_cluster fired", []),
     true;
-postcondition(_State, {call, ?MODULE, induce_async_partition, [_SourceNode, _DestinationNode]}, ok) ->
-    postcondition_debug("postcondition induce_async_partition: succeeded", []),
-    %% Added message filter.
-    true;
-postcondition(_State, {call, ?MODULE, resolve_async_partition, [_SourceNode, _DestinationNode]}, ok) ->
-    postcondition_debug("postcondition resolve_async_partition: succeeded", []),
-    %% Removed message filter.
-    true;
-postcondition(_State, {call, ?MODULE, induce_sync_partition, [_SourceNode, _DestinationNode]}, ok) ->
-    postcondition_debug("postcondition induce_sync_partition: succeeded", []),
-    %% Added message filter.
-    true;
-postcondition(_State, {call, ?MODULE, resolve_sync_partition, [_SourceNode, _DestinationNode]}, ok) ->
-    postcondition_debug("postcondition resolve_sync_partition: succeeded", []),
-    %% Removed message filter.
-    true;
-postcondition(_State, {call, ?MODULE, delayed_resolve_sync_partition, [_Timeout, _SourceNode, _DestinationNode]}, ok) ->
-    postcondition_debug("postcondition delayed_resolve_sync_partition: succeeded", []),
-    %% Removed message filter.
-    true;
-postcondition(_State, {call, ?MODULE, induce_cluster_partition, [_MajorityNodes, _MinorityNodes]}, ok) ->
-    postcondition_debug("postcondition induce_cluster_partition: succeeded", []),
-    %% Added message filter.
-    true;
-postcondition(_State, {call, ?MODULE, resolve_cluster_partition, [_MajorityNodes, _MinorityNodes]}, ok) ->
-    postcondition_debug("postcondition resolve_cluster_partition: succeeded", []),
-    %% Removed message filter.
-    true;
-postcondition(_State, {call, ?MODULE, join_cluster, [_Node, _JoinedNodes]}, ok) ->
-    postcondition_debug("postcondition join_cluster: succeeded", []),
-    %% Accept joins that succeed.
-    true;
-postcondition(_State, {call, ?MODULE, leave_cluster, [_Node, _JoinedNodes]}, ok) ->
-    postcondition_debug("postcondition leave_cluster: succeeded", []),
-    %% Accept leaves that succeed.
-    true;
-postcondition(#state{node_state=NodeState}, {call, Mod, Fun, Args}=Call, Res) -> 
+postcondition(#property_state{fault_model_state=FaultModelState, node_state=NodeState, joined_nodes=JoinedNodes}, {call, Mod, Fun, [_Node|_]=Args}=Call, Res) -> 
     case lists:member(Fun, node_functions()) of
         true ->
             PostconditionResult = node_postcondition(NodeState, Call, Res),
@@ -349,68 +478,41 @@ postcondition(#state{node_state=NodeState}, {call, Mod, Fun, Args}=Call, Res) ->
 
             PostconditionResult;
         false ->
-            postcondition_debug("general postcondition fired for ~p:~p with response ~p", [Mod, Fun, Res]),
-            %% All other commands pass.
-            false
-    end.
+            case lists:member(Fun, fault_functions(JoinedNodes)) of 
+                true ->
+                    PostconditionResult = fault_postcondition(FaultModelState, Call, Res),
 
-%% Assuming the postcondition for a call was true, update the model
-%% accordingly for the test to proceed.
-next_state(#state{byzantine_faults=ByzantineFaults0, active_faults=ActiveFaults}=State, _Res, {call, ?MODULE, induce_byzantine_message_corruption_fault, [SourceNode, DestinationNode, Value]}) -> 
-    ByzantineFaults = add_byzantine_fault(SourceNode, DestinationNode, Value, ByzantineFaults0),
-    State#state{byzantine_faults=ByzantineFaults, active_faults=ActiveFaults + 1};
-next_state(#state{byzantine_faults=ByzantineFaults0, active_faults=ActiveFaults}=State, _Res, {call, ?MODULE, resolve_byzantine_message_corruption_fault, [SourceNode, DestinationNode]}) -> 
-    ByzantineFaults = delete_byzantine_fault(SourceNode, DestinationNode, ByzantineFaults0),
-    State#state{byzantine_faults=ByzantineFaults, active_faults=ActiveFaults - 1};
-next_state(#state{partition_filters=PartitionFilters0, active_faults=ActiveFaults}=State, _Res, {call, ?MODULE, induce_async_partition, [SourceNode, DestinationNode]}) -> 
-    PartitionFilters = add_async_partition(SourceNode, DestinationNode, PartitionFilters0),
-    State#state{partition_filters=PartitionFilters, active_faults=ActiveFaults + 1};
-next_state(#state{partition_filters=PartitionFilters0, active_faults=ActiveFaults}=State, _Res, {call, ?MODULE, resolve_async_partition, [SourceNode, DestinationNode]}) -> 
-    PartitionFilters = delete_async_partition(SourceNode, DestinationNode, PartitionFilters0),
-    State#state{partition_filters=PartitionFilters, active_faults=ActiveFaults - 1};
-next_state(#state{partition_filters=PartitionFilters0}=State, _Res, {call, ?MODULE, induce_sync_partition, [SourceNode, DestinationNode]}) -> 
-    PartitionFilters = add_sync_partition(SourceNode, DestinationNode, PartitionFilters0),
-    State#state{partition_filters=PartitionFilters};
-next_state(#state{partition_filters=PartitionFilters0}=State, _Res, {call, ?MODULE, resolve_sync_partition, [SourceNode, DestinationNode]}) -> 
-    PartitionFilters = delete_sync_partition(SourceNode, DestinationNode, PartitionFilters0),
-    State#state{partition_filters=PartitionFilters};
-next_state(#state{partition_filters=PartitionFilters0}=State, _Res, {call, ?MODULE, delayed_resolve_sync_partition, [_Timeout, SourceNode, DestinationNode]}) -> 
-    PartitionFilters = delete_sync_partition(SourceNode, DestinationNode, PartitionFilters0),
-    State#state{partition_filters=PartitionFilters};
-next_state(#state{partition_filters=PartitionFilters0}=State, _Res, {call, ?MODULE, induce_cluster_partition, [MajorityNodes, AllNodes]}) -> 
-    MinorityNodes = AllNodes -- MajorityNodes,
-    PartitionFilters = add_cluster_partition(MajorityNodes, MinorityNodes, PartitionFilters0),
-    State#state{partition_filters=PartitionFilters, majority_nodes=MajorityNodes, minority_nodes=MinorityNodes};
-next_state(#state{partition_filters=PartitionFilters0}=State, _Res, {call, ?MODULE, resolve_cluster_partition, [MajorityNodes, AllNodes]}) -> 
-    MinorityNodes = AllNodes -- MajorityNodes,
-    PartitionFilters = delete_cluster_partition(MajorityNodes, MinorityNodes, PartitionFilters0),
-    State#state{partition_filters=PartitionFilters, majority_nodes=[], minority_nodes=[]};
-next_state(State, _Res, {call, ?MODULE, join_cluster, [Node, JoinedNodes]}) -> 
-    case is_joined(Node, JoinedNodes) of
-        true ->
-            %% no-op for the join
-            State;
-        false ->
-            %% add to the joined list.
-            State#state{joined_nodes=JoinedNodes ++ [Node]}
+                    case PostconditionResult of 
+                        false ->
+                            debug("postcondition result: ~p; command: ~p:~p(~p)", [PostconditionResult, Mod, Fun, Args]),
+                            ok;
+                        true ->
+                            ok
+                    end,
+
+                    PostconditionResult;
+                false ->
+                    postcondition_debug("general postcondition fired for ~p:~p with response ~p", [Mod, Fun, Res]),
+                    %% All other commands pass.
+                    false
+            end
     end;
-next_state(#state{joined_nodes=JoinedNodes}=State, _Res, {call, ?MODULE, leave_cluster, [Node, JoinedNodes]}) -> 
-    case enough_nodes_connected_to_issue_remove(JoinedNodes) of
+postcondition(#property_state{node_state=NodeState}, {call, _Mod, Fun, Args}=Call, Res) ->
+    postcondition_debug("fallthrough postcondition fired node function: ~p(~p)", [Fun, Args]),
+
+    case lists:member(Fun, fault_global_functions()) of 
         true ->
-            %% removed from the list.
-            State#state{joined_nodes=JoinedNodes -- [Node]};
+            postcondition_debug("=> allowing global fault command.", []),
+            true;
         false ->
-            %% no-op for the leave
-            State
-    end;
-next_state(#state{node_state=NodeState0}=State, Res, {call, _Mod, Fun, _Args}=Call) -> 
-    case lists:member(Fun, node_functions()) of
-        true ->
-            NodeState = node_next_state(NodeState0, Res, Call),
-            State#state{node_state=NodeState};
-        false ->
-            debug("general next_state fired", []),
-            State
+            case lists:member(Fun, node_global_functions()) of 
+                true ->
+                    Result = node_postcondition(NodeState, Call, Res),
+                    postcondition_debug("=> postcondition returned ~p", [Result]),
+                    Result;
+                false ->
+                    false
+            end
     end.
 
 %%%===================================================================
@@ -418,23 +520,134 @@ next_state(#state{node_state=NodeState0}=State, Res, {call, _Mod, Fun, _Args}=Ca
 %%%===================================================================
 
 node_name() ->
-    ?LET(Names, names(), oneof(Names)).
-
-corrupted_value() ->
-    ?LET(Binary, binary(), 
-        {erlang:timestamp(), Binary}).
+    oneof(names()).
 
 names() ->
     NameFun = fun(N) -> 
         list_to_atom("node_" ++ integer_to_list(N)) 
     end,
-    lists:map(NameFun, lists:seq(1, ?NUM_NODES)).
+    lists:map(NameFun, lists:seq(1, ?TEST_NUM_NODES)).
 
 %%%===================================================================
-%%% Cluster Functions
+%%% Trace Support
+%%%===================================================================
+
+%% @private
+normalize_name(Node) ->
+    RunnerNode = node(),
+
+    case Node of 
+        RunnerNode ->
+            RunnerNode;
+        _ ->
+            ?NAME(Node)
+    end.
+
+command_preamble(Node, Command) ->
+    debug("command preamble fired for command at node ~p: ~p", [Node, Command]),
+
+    %% Log command entrance trace.
+    partisan_trace_orchestrator:trace(enter_command, {normalize_name(Node), Command}),
+
+    %% Under replay, perform the trace replay.
+    partisan_trace_orchestrator:replay(enter_command, {normalize_name(Node), Command}),
+
+    ok.
+
+command_conclusion(Node, Command) ->
+    debug("command conclusion fired for command at node ~p: ~p", [Node, Command]),
+
+    %% Log command entrance trace.
+    partisan_trace_orchestrator:trace(exit_command, {normalize_name(Node), Command}),
+
+    %% Under replay, perform the trace replay.
+    partisan_trace_orchestrator:replay(exit_command, {normalize_name(Node), Command}),
+
+    ok.
+
+%%%===================================================================
+%%% Commands
+%%%===================================================================
+
+forced_failure() ->
+    RunnerNode = node(),
+
+    command_preamble(RunnerNode, [forced_failure]),
+
+    %% Do nothing.
+
+    command_conclusion(RunnerNode, [forced_failure]),
+
+    ok.
+
+sync_join_cluster(Node, JoinNode) ->
+    command_preamble(Node, [sync_join_cluster, JoinNode]),
+
+    %% Get an existing member of the cluster.
+    {ok, Members} = rpc:call(?NAME(JoinNode), ?MANAGER, members, []),
+    debug("sync_join_cluster: joining node ~p to cluster at node ~p with current members ~p", 
+          [?NAME(Node), ?NAME(JoinNode), Members]),
+
+    %% Get my information.
+    Myself = rpc:call(?NAME(Node), partisan_peer_service_manager, myself, []),
+
+    %% Issue remove.
+    ok = rpc:call(?NAME(JoinNode), ?MANAGER, join, [Myself]),
+
+    %% Wait until all nodes agree about membership.
+    DesiredMembership = Members ++ [?NAME(Node)],
+    debug("=> nodes should wait for desired membership: ~p", [DesiredMembership]),
+    ok = wait_until_nodes_agree_on_membership(DesiredMembership),
+
+    %% Return new membership, make sure it matches model state.
+    {ok, NewMembers} = rpc:call(JoinNode, ?MANAGER, members, []),
+    debug("=> members after transition are: ~p", [NewMembers]),
+
+    command_conclusion(Node, [sync_join_cluster, JoinNode]),
+
+    {ok, NewMembers}.
+
+sync_leave_cluster(Node) ->
+    command_preamble(Node, [sync_leave_cluster]),
+
+    %% Get an existing member of the cluster.
+    {ok, Members} = rpc:call(?NAME(Node), ?MANAGER, members, []),
+    debug("sync_leave_cluster: leaving node ~p from cluster with current members ~p", 
+          [?NAME(Node), Members]),
+
+    %% Select first member of membership -- *that's not us*.
+    FirstMember = hd(lists:filter(fun(N) -> N =/= ?NAME(Node) end, Members)),
+
+    %% Get my information.
+    Myself = rpc:call(?NAME(Node), partisan_peer_service_manager, myself, []),
+
+    %% Issue remove.
+    ok = rpc:call(FirstMember, ?MANAGER, leave, [Myself]),
+
+    %% Wait until all nodes agree about membership.
+    DesiredMembership = Members -- [?NAME(Node)],
+    debug("=> nodes should wait for desired membership: ~p", [DesiredMembership]),
+    ok = wait_until_nodes_agree_on_membership(DesiredMembership),
+
+    %% Return new membership, make sure it matches model state.
+    {ok, NewMembers} = rpc:call(FirstMember, ?MANAGER, members, []),
+    debug("=> members after transition are: ~p", [NewMembers]),
+
+    command_conclusion(Node, [sync_leave_cluster]),
+
+    {ok, NewMembers}.
+
+%%%===================================================================
+%%% Helper Functions
 %%%===================================================================
 
 start_nodes() ->
+    Self = node(),
+    lager:info("~p: ~p starting nodes!", [?MODULE, Self]),
+
+    %% Nuke epmd first.
+    [] = os:cmd("pkill -9 epmd"),
+
     %% Create an ets table for test configuration.
     ?MODULE = ets:new(?MODULE, [named_table]),
 
@@ -449,12 +662,14 @@ start_nodes() ->
               {pid_encoding, false},
               {sync_join, false},
               {forward_options, []},
-              {initiate_reverse, false},
               {broadcast, false},
               {disterl, false},
               {hash, undefined},
               {egress_delay, ?EGRESS_DELAY},
               {ingress_delay, ?INGRESS_DELAY},
+              {membership_strategy_tracing, false},
+              {periodic_enabled, false},
+              {distance_enabled, false},
               {disable_fast_forward, true},
               {disable_fast_receive, true},
               {membership_strategy, partisan_full_membership_strategy}],
@@ -463,10 +678,9 @@ start_nodes() ->
     Nodes = ?SUPPORT:start(prop_partisan,
                            Config,
                            [{partisan_peer_service_manager, ?MANAGER},
-                           {num_nodes, ?NUM_NODES},
+                           {num_nodes, ?TEST_NUM_NODES},
                            {cluster_nodes, ?CLUSTER_NODES}]),
 
-    Self = node(),
     lager:info("~p: ~p started nodes: ~p", [?MODULE, Self, Nodes]),
 
     %% Deterministically seed the random number generator.
@@ -475,27 +689,22 @@ start_nodes() ->
     %% Reset trace.
     ok = partisan_trace_orchestrator:reset(),
 
+    %% Perform preloads.
+    ok = partisan_trace_orchestrator:perform_preloads(),
+
     %% Identify trace.
     TraceRandomNumber = rand:uniform(100000),
     %% lager:info("~p: trace random generated: ~p", [?MODULE, TraceRandomNumber]),
-    TraceIdentifier = atom_to_list(?MODEL) ++ "_" ++ integer_to_list(TraceRandomNumber),
+    TraceIdentifier = atom_to_list(?SYSTEM_MODEL) ++ "_" ++ integer_to_list(TraceRandomNumber),
     ok = partisan_trace_orchestrator:identify(TraceIdentifier),
 
     %% Add send and receive pre-interposition functions to enforce message ordering.
     PreInterpositionFun = fun({Type, OriginNode, OriginalMessage}) ->
-        TracingNode = node(),
-
         %% Record message incoming and outgoing messages.
-        ok = rpc:call(Self, 
-                      partisan_trace_orchestrator, 
-                      trace, 
-                      [pre_interposition_fun, {TracingNode, Type, OriginNode, OriginalMessage}]),
+        ok = partisan_trace_orchestrator:trace(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
 
         %% Under replay ensure they match the trace order (but only for pre-interposition messages).
-        ok = rpc:call(Self, 
-                      partisan_trace_orchestrator, 
-                      replay, 
-                      [pre_interposition_fun, {TracingNode, Type, OriginNode, OriginalMessage}]),
+        ok = partisan_trace_orchestrator:replay(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
 
         ok
     end, 
@@ -509,13 +718,9 @@ start_nodes() ->
 
     %% Add send and receive post-interposition functions to perform tracing.
     PostInterpositionFun = fun({Type, OriginNode, OriginalMessage}, {Type, OriginNode, RewrittenMessage}) ->
-        TracingNode = node(),
-
-        ok = rpc:call(Self, 
-                      partisan_trace_orchestrator, 
-                      trace, 
-                      [post_interposition_fun, {TracingNode, OriginNode, Type, OriginalMessage, RewrittenMessage}]),
-
+        %% Record outgoing message after transformation.
+        ok = partisan_trace_orchestrator:trace(post_interposition_fun, {node(), OriginNode, Type, OriginalMessage, RewrittenMessage}),
+        
         ok
     end, 
 
@@ -531,7 +736,7 @@ start_nodes() ->
         rpc:call(Node, 
                  partisan_config,
                  set,
-                 [tracing, true])
+                 [tracing, false])
         end, Nodes),
 
     %% Insert all nodes into group for all nodes.
@@ -571,273 +776,11 @@ all_to_ok_or_error(List) ->
             {error, some_operations_failed, List}
     end.
 
-%% Select a random grouping of nodes.
-majority_nodes() ->
-    ?LET(MajorityCount, ?NUM_NODES / 2 + 1,
-        ?LET(Names, names(), 
-            ?LET(Sublist, lists:sublist(Names, trunc(MajorityCount)), Sublist))).
-
-%% Is a node involved in a byzantine fault?
-is_involved_in_byzantine_fault(SourceNode, DestinationNode, ByzantineFaults) ->
-    Source = case dict:find({SourceNode, DestinationNode}, ByzantineFaults) of
-        error ->
-            false;
-        _ ->
-            true
-    end,
-
-    Destination = case dict:find({DestinationNode, SourceNode}, ByzantineFaults) of
-        error ->
-            false;
-        _ ->
-            true
-    end,
-
-    Source orelse Destination.
-
-%% Is a node involved in an sync partition?
-is_involved_in_partition(SourceNode, DestinationNode, PartitionFilters) ->
-    Source = case dict:find({SourceNode, DestinationNode}, PartitionFilters) of
-        error ->
-            false;
-        _ ->
-            true
-    end,
-
-    Destination = case dict:find({DestinationNode, SourceNode}, PartitionFilters) of
-        error ->
-            false;
-        _ ->
-            true
-    end,
-
-    Source orelse Destination.
-
-delete_sync_partition(SourceNode, DestinationNode, PartitionFilters) ->
-    delete_async_partition(DestinationNode, SourceNode, 
-        delete_async_partition(SourceNode, DestinationNode, PartitionFilters)).
-
-delete_async_partition(SourceNode, DestinationNode, PartitionFilters) ->
-    dict:erase({SourceNode, DestinationNode}, PartitionFilters).
-
-add_sync_partition(SourceNode, DestinationNode, PartitionFilters) ->
-    add_async_partition(SourceNode, DestinationNode,
-        add_async_partition(DestinationNode, SourceNode, PartitionFilters)).
-
-add_async_partition(SourceNode, DestinationNode, PartitionFilters) ->
-    dict:store({SourceNode, DestinationNode}, true, PartitionFilters).
-
-add_byzantine_fault(SourceNode, DestinationNode, Value, ByzantineFaults) ->
-    dict:store({SourceNode, DestinationNode}, Value, ByzantineFaults).
-
-delete_byzantine_fault(SourceNode, DestinationNode, ByzantineFaults) ->
-    dict:erase({SourceNode, DestinationNode}, ByzantineFaults).
-
-add_cluster_partition(MajorityNodes, AllNodes, PartitionFilters) ->
-    MinorityNodes = AllNodes -- MajorityNodes,
-
-    lists:foldl(fun(SourceNode, Filters) ->
-        lists:foldl(fun(DestinationNode, Filters2) ->
-            add_sync_partition(SourceNode, DestinationNode, Filters2)
-            end, Filters, MinorityNodes)
-        end, PartitionFilters, MajorityNodes).
-
-delete_cluster_partition(MajorityNodes, AllNodes, PartitionFilters) ->
-    MinorityNodes = AllNodes -- MajorityNodes,
-
-    lists:foldl(fun(SourceNode, Filters) ->
-        lists:foldl(fun(DestinationNode, Filters2) ->
-            delete_sync_partition(SourceNode, DestinationNode, Filters2)
-            end, Filters, MinorityNodes)
-        end, PartitionFilters, MajorityNodes).
-
-induce_cluster_partition(MajorityNodes, AllNodes) ->
-    MinorityNodes = AllNodes -- MajorityNodes,
-    debug("induce_cluster_partition: majority_nodes ~p minority_nodes ~p", [MajorityNodes, MinorityNodes]),
-
-    Results = lists:flatmap(fun(SourceNode) ->
-        lists:flatmap(fun(DestinationNode) ->
-            [
-             induce_async_partition(SourceNode, DestinationNode),
-             induce_async_partition(DestinationNode, SourceNode)
-            ]
-            end, MinorityNodes)
-        end, MajorityNodes),
-    all_to_ok_or_error(Results).
-
-resolve_cluster_partition(MajorityNodes, AllNodes) ->
-    MinorityNodes = AllNodes -- MajorityNodes,
-
-    debug("resolve_cluster_partition: majority_nodes ~p minority_nodes ~p", [MajorityNodes, MinorityNodes]),
-    Results = lists:flatmap(fun(SourceNode) ->
-        lists:flatmap(fun(DestinationNode) ->
-            [
-             resolve_async_partition(SourceNode, DestinationNode),
-             resolve_async_partition(DestinationNode, SourceNode)
-            ]
-            end, MinorityNodes)
-        end, MajorityNodes),
-    all_to_ok_or_error(Results).
-
-is_involved_in_x_partitions(Node, X, PartitionFilters) ->
-    Count = dict:fold(fun(Key, _Value, AccIn) ->
-            case Key of
-                {Node, _} ->
-                    AccIn + 1;
-                _ ->
-                    AccIn
-            end
-        end, 0, PartitionFilters),
-    postcondition_debug("is_involved_in_x_partitions is ~p and should be ~p", [Count, X]),
-    Count >= X.
-
-is_valid_partition(SourceNode, DestinationNode) ->
-    SourceNode =/= DestinationNode.
-
-induce_byzantine_message_corruption_fault(SourceNode, DestinationNode0, Value) ->
-    partition_debug("induce_byzantine_message_corruption_fault: source_node ~p destination_node ~p value ~p", [SourceNode, DestinationNode0, Value]),
-
-    %% Convert to real node name and not symbolic name.
-    DestinationNode = name_to_nodename(DestinationNode0),
-
-    InterpositionFun = fun({forward_message, N, Message}) ->
-        case N of
-            DestinationNode ->
-                lager:info("~p: rewriting packet from ~p to ~p for message from ~p to ~p due to interposition.", [node(), Message, Value, SourceNode, DestinationNode]),
-                Value;
-            OtherNode ->
-                lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
-                Message
-        end;
-        ({receive_message, _N, Message}) -> Message
-    end,
-    rpc:call(name_to_nodename(SourceNode), ?MANAGER, add_interposition_fun, [{corruption, DestinationNode}, InterpositionFun]).
-
-resolve_byzantine_message_corruption_fault(SourceNode, DestinationNode0) ->
-    partition_debug("resolve_byzantine_message_corruption_fault: source_node ~p destination_node ~p", [SourceNode, DestinationNode0]),
-
-    %% Convert to real node name and not symbolic name.
-    DestinationNode = name_to_nodename(DestinationNode0),
-
-    rpc:call(name_to_nodename(SourceNode), ?MANAGER, remove_interposition_fun, [{corruption, DestinationNode}]).
-
-induce_async_partition(SourceNode, DestinationNode0) ->
-    partition_debug("induce_async_partition: source_node ~p destination_node ~p", [SourceNode, DestinationNode0]),
-
-    %% Convert to real node name and not symbolic name.
-    DestinationNode = name_to_nodename(DestinationNode0),
-
-    InterpositionFun = fun({forward_message, N, Message}) ->
-        case N of
-            DestinationNode ->
-                lager:info("~p: dropping packet from ~p to ~p due to interposition.", [node(), SourceNode, DestinationNode]),
-                undefined;
-            OtherNode ->
-                lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
-                Message
-        end;
-        ({receive_message, _N, Message}) -> Message
-    end,
-    rpc:call(name_to_nodename(SourceNode), ?MANAGER, add_interposition_fun, [{async, DestinationNode}, InterpositionFun]).
-
-resolve_async_partition(SourceNode, DestinationNode0) ->
-    partition_debug("resolve_async_partition: source_node ~p destination_node ~p", [SourceNode, DestinationNode0]),
-
-    %% Convert to real node name and not symbolic name.
-    DestinationNode = name_to_nodename(DestinationNode0),
-
-    rpc:call(name_to_nodename(SourceNode), ?MANAGER, remove_interposition_fun, [{async, DestinationNode}]).
-
-induce_sync_partition(SourceNode, DestinationNode) ->
-    partition_debug("induce_sync_partition: source_node ~p destination_node ~p", [SourceNode, DestinationNode]),
-    SourceResult = induce_async_partition(SourceNode, DestinationNode),
-    DestinationResult = induce_async_partition(DestinationNode, SourceNode),
-    all_to_ok_or_error([SourceResult, DestinationResult]).
-
-resolve_sync_partition(SourceNode, DestinationNode) ->
-    partition_debug("resolve_sync_partition: source_node ~p destination_node ~p", [SourceNode, DestinationNode]),
-    SourceResult = resolve_async_partition(SourceNode, DestinationNode),
-    DestinationResult = resolve_async_partition(DestinationNode, SourceNode),
-    all_to_ok_or_error([SourceResult, DestinationResult]).
-
-delayed_resolve_sync_partition(Timeout, SourceNode, DestinationNode) ->
-    partition_debug("delayed_resolve_sync_partition: source_node ~p destination_node ~p", [SourceNode, DestinationNode]),
-    timer:sleep(Timeout),
-    SourceResult = resolve_async_partition(SourceNode, DestinationNode),
-    DestinationResult = resolve_async_partition(DestinationNode, SourceNode),
-    all_to_ok_or_error([SourceResult, DestinationResult]).
-
-leave_cluster(Name, JoinedNames) ->
-    Node = name_to_nodename(Name),
-    debug("leave_cluster: leaving node ~p from cluster with members ~p", [Node, JoinedNames]),
-
-    case enough_nodes_connected_to_issue_remove(JoinedNames) of
-        false ->
-            ok;
-        true ->
-            %% Issue remove.
-            ok = ?SUPPORT:leave(Node),
-
-            %% Verify appropriate number of connections.
-            NewCluster = lists:map(fun name_to_nodename/1, JoinedNames -- [Name]),
-
-            %% Ensure each node owns a portion of the ring
-            ConvergeFun = fun() ->
-                ok = ?SUPPORT:wait_until_all_connections(NewCluster),
-                ok = ?SUPPORT:wait_until_nodes_agree_about_ownership(NewCluster),
-                ok = ?SUPPORT:wait_until_no_pending_changes(NewCluster),
-                ok = ?SUPPORT:wait_until_ring_converged(NewCluster)
-            end,
-            {ConvergeTime, _} = timer:tc(ConvergeFun),
-
-            debug("leave_cluster: converged at ~p", [ConvergeTime]),
-            ok
-    end.
-
-join_cluster(Name, [JoinedName|_]=JoinedNames) ->
-    case is_joined(Name, JoinedNames) of
-        true ->
-            ok;
-        false ->
-            Node = name_to_nodename(Name),
-            JoinedNode = name_to_nodename(JoinedName),
-            debug("join_cluster: joining node ~p to node ~p", [Node, JoinedNode]),
-
-            %% Stage join.
-            ok = ?SUPPORT:staged_join(Node, JoinedNode),
-
-            %% Plan will only succeed once the ring has been gossiped.
-            ok = ?SUPPORT:plan_and_commit(JoinedNode),
-
-            %% Verify appropriate number of connections.
-            NewCluster = lists:map(fun name_to_nodename/1, JoinedNames ++ [Name]),
-
-            %% Ensure each node owns a portion of the ring
-            ConvergeFun = fun() ->
-                ok = ?SUPPORT:wait_until_all_connections(NewCluster),
-                ok = ?SUPPORT:wait_until_nodes_agree_about_ownership(NewCluster),
-                ok = ?SUPPORT:wait_until_no_pending_changes(NewCluster),
-                ok = ?SUPPORT:wait_until_ring_converged(NewCluster)
-            end,
-            {ConvergeTime, _} = timer:tc(ConvergeFun),
-
-            debug("join_cluster: converged at ~p", [ConvergeTime]),
-            ok
-    end.
-
 enough_nodes_connected(Nodes) ->
     length(Nodes) >= 3.
 
 enough_nodes_connected_to_issue_remove(Nodes) ->
     length(Nodes) > 3.
-
-partition_debug(Line, Args) ->
-    case ?PARTITION_DEBUG of
-        true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
-        false ->
-            ok
-    end.
 
 initial_state_debug(Line, Args) ->
     case ?INITIAL_STATE_DEBUG of
@@ -874,62 +817,12 @@ debug(Line, Args) ->
 is_joined(Node, Cluster) ->
     lists:member(Node, Cluster).
 
-cluster_commands(#state{joined_nodes=JoinedNodes}) ->
-    ByzantineCommands = case ?PERFORM_BYZANTINE_MESSAGE_FAULTS of
-        true ->
-            [
-            {call, ?MODULE, induce_byzantine_message_corruption_fault, [node_name(), node_name(), corrupted_value()]},
-            {call, ?MODULE, resolve_byzantine_message_corruption_fault, [node_name(), node_name()]}
-            ];
-        false ->
-            []
-    end,
-
-    MemberCommands = case ?PERFORM_LEAVES_AND_JOINS of
-        true ->
-            [
-            {call, ?MODULE, join_cluster, [node_name(), JoinedNodes]},
-            {call, ?MODULE, leave_cluster, [node_name(), JoinedNodes]}
-            ];
-        false ->
-            []
-    end,
-
-    AsyncPartitionCommands = case ?PERFORM_ASYNC_PARTITIONS of
-        true ->
-            [
-            {call, ?MODULE, induce_async_partition, [node_name(), node_name()]},
-            {call, ?MODULE, resolve_async_partition, [node_name(), node_name()]}
-            ];
-        false ->
-            []
-    end,
-
-    SyncPartitionCommands = case ?PERFORM_SYNC_PARTITIONS of
-        true ->
-            [
-            {call, ?MODULE, induce_sync_partition, [node_name(), node_name()]},
-            {call, ?MODULE, resolve_sync_partition, [node_name(), node_name()]}
-            ];
-        false ->
-            []
-    end,
-
-    ClusterPartitionCommands = case ?PERFORM_CLUSTER_PARTITIONS of
-        true ->
-            [
-             {call, ?MODULE, induce_cluster_partition, [majority_nodes(), names()]},
-             {call, ?MODULE, resolve_cluster_partition, [majority_nodes(), names()]}
-            ];
-        false ->
-            []
-    end,
-
-    MemberCommands ++ 
-        AsyncPartitionCommands ++ 
-        SyncPartitionCommands ++ 
-        ClusterPartitionCommands ++
-        ByzantineCommands.
+cluster_commands(_State) ->
+    [
+    % TODO: Disabled, because nodes shutdown on removal from the cluster.
+    % {call, ?MODULE, sync_join_cluster, [node_name(), node_name()]},
+    {call, ?MODULE, sync_leave_cluster, [node_name()]}
+    ].
 
 name_to_nodename(Name) ->
     [{_, NodeName}] = ets:lookup(?MODULE, Name),
@@ -938,6 +831,82 @@ name_to_nodename(Name) ->
 ensure_tracing_started() ->
     partisan_trace_orchestrator:start_link().
 
+wait_until_nodes_agree_on_membership(Nodes) ->
+    AgreementFun = fun(Node) ->
+        %% Get membership at node.
+        {ok, Members} = rpc:call(Node, ?MANAGER, members, []),
+
+        %% Sort.
+        SortedNodes = lists:usort(Nodes),
+        SortedMembers = lists:usort(Members),
+
+        %% Ensure the lists are the same -- barrier for proceeding.
+        case SortedNodes =:= SortedMembers of
+            true ->
+                debug("node ~p agrees on membership: ~p", 
+                      [Node, SortedMembers]),
+                true;
+            false ->
+                debug("node ~p disagrees on membership: ~p != ~p", 
+                      [Node, SortedMembers, SortedNodes]),
+                error
+        end
+    end,
+    [ok = wait_until(Node, AgreementFun) || Node <- Nodes],
+    lager:info("All nodes agree on membership!"),
+    ok.
+
 %% @private
-not_maximum_active_faults(NewFaults, ActiveFaults) ->
-    (ActiveFaults + NewFaults) < ?MAXIMUM_ACTIVE_FAULTS.
+wait_until(Fun) when is_function(Fun) ->
+    MaxTime = 600000, %% @TODO use config,
+        Delay = 1000, %% @TODO use config,
+        Retry = MaxTime div Delay,
+    wait_until(Fun, Retry, Delay).
+
+%% @private
+wait_until(Node, Fun) when is_atom(Node), is_function(Fun) ->
+    wait_until(fun() -> Fun(Node) end).
+
+%% @private
+wait_until(Fun, Retry, Delay) when Retry > 0 ->
+    wait_until_result(Fun, true, Retry, Delay).
+
+%% @private
+wait_until_result(Fun, Result, Retry, Delay) when Retry > 0 ->
+    Res = Fun(),
+    case Res of
+        Result ->
+            ok;
+        _ when Retry == 1 ->
+            {fail, Res};
+        _ ->
+            timer:sleep(Delay),
+            wait_until_result(Fun, Result, Retry-1, Delay)
+    end.
+
+%% @private
+fault_injection_enabled() ->
+    case os:getenv("FAULT_INJECTION") of 
+        false ->
+            false;
+        _ ->
+            true
+    end.            
+
+%% @private
+membership_changes_enabled() ->
+    case os:getenv("MEMBERSHIP_CHANGES") of 
+        false ->
+            false;
+        _ ->
+            true
+    end.
+
+%% @private
+scheduler() ->
+    case os:getenv("SCHEDULER") of
+        false ->
+            default;
+        Other ->
+            list_to_atom(Other)
+    end.

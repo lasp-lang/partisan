@@ -2,6 +2,7 @@
 
 TRACE_FILE=/tmp/partisan-latest.trace
 REPLAY_TRACE_FILE=/tmp/partisan-replay.trace
+PRESHRUNK_TRACE_FILE=/tmp/partisan-preshrunk.trace
 COUNTEREXAMPLE_CONSULT_FILE=/tmp/partisan-counterexample.consult
 REBAR_COUNTEREXAMPLE_CONSULT_FILE=_build/test/rebar3_proper-counterexamples.consult
 
@@ -14,6 +15,9 @@ if [ ! -f ${TRACE_FILE} ]; then
     echo "No trace file!"
     exit 1
 fi
+
+# Backup pre-shrink trace.
+cp ${TRACE_FILE} ${PRESHRUNK_TRACE_FILE}
 
 # Shrink counterexample, which should copy files in place.
 echo "Staging shrunk counterexample..."
@@ -28,7 +32,11 @@ RETVAL=$?
 if [ $RETVAL -ne 0 ]; then
     echo "Copying the shrunk rebar3 counterexample file..."
     cp ${REBAR_COUNTEREXAMPLE_CONSULT_FILE} ${COUNTEREXAMPLE_CONSULT_FILE}
+
+    exit 1
 else
     echo "Minimal counterexample found..."
-    cp ${REPLAY_TRACE_FILE} ${TRACE_FILE}
+    cp ${PRESHRUNK_TRACE_FILE} ${TRACE_FILE}
+
+    exit 0
 fi

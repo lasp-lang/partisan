@@ -66,9 +66,11 @@ init([]) ->
 
 %% @private
 handle_call({ack, MessageClock}, _From, #state{storage=Storage}=State) ->
+    lager:info("~p acknowledgement received for clock: ~p", [node(), MessageClock]),
     true = ets:delete(Storage, MessageClock),
     {reply, ok, State};
 handle_call({store, MessageClock, Message}, _From, #state{storage=Storage}=State) ->
+    lager:info("~p storing message in acknowledgement backend: ~p ~p", [node(), MessageClock, Message]),
     true = ets:insert(Storage, {MessageClock, Message}),
     {reply, ok, State};
 handle_call(outstanding, _From, #state{storage=Storage}=State) ->

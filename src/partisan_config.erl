@@ -69,9 +69,27 @@ init() ->
                         undefined;
                     TagList ->
                         Tag = list_to_atom(TagList),
-                        application:set_env(partisan, tag, Tag),
+                        application:set_env(?APP, tag, Tag),
                         Tag
                 end,
+
+    %% Determine if we are replaying.
+    case os:getenv("REPLAY", "false") of 
+        "false" ->
+            false;
+        _ ->
+            application:set_env(?APP, replaying, true),
+            true
+    end,
+
+    %% Determine if we are shrinking.
+    case os:getenv("SHRINKING", "false") of 
+        "false" ->
+            false;
+        _ ->
+            application:set_env(?APP, shrinking, true),
+            true
+    end,
 
     %% Configure system parameters.
     DefaultPeerIP = try_get_node_address(),
@@ -92,11 +110,11 @@ init() ->
                            {connection_jitter, ?CONNECTION_JITTER},
                            {disable_fast_forward, false},
                            {disable_fast_receive, false},
+                           {distance_enabled, ?DISTANCE_ENABLED},
                            {egress_delay, 0},
                            {fanout, ?FANOUT},
                            {gossip, true},
                            {ingress_delay, 0},
-                           {initiate_reverse, false},
                            {max_active_size, 6},
                            {max_passive_size, 30},
                            {min_active_size, 3},
@@ -107,12 +125,17 @@ init() ->
                            {partisan_peer_service_manager, PeerService},
                            {peer_ip, DefaultPeerIP},
                            {peer_port, DefaultPeerPort},
+                           {periodic_enabled, ?PERIODIC_ENABLED},
                            {periodic_interval, 10000},
                            {pid_encoding, true},
+                           {ref_encoding, true},
+                           {membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING},
                            {orchestration_strategy, ?DEFAULT_ORCHESTRATION_STRATEGY},
                            {random_seed, random_seed()},
                            {random_promotion, true},
+                           {replaying, false},
                            {reservations, []},
+                           {shrinking, false},
                            {tracing, false},
                            {tls, false},
                            {tls_options, []},

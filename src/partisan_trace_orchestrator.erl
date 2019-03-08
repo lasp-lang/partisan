@@ -25,6 +25,8 @@
 
 -include("partisan.hrl").
 
+-define(MANAGER, partisan_pluggable_peer_service_manager).
+
 %% API
 -export([start_link/0,
          start_link/1,
@@ -32,7 +34,8 @@
          replay/2,
          reset/0,
          identify/1,
-         print/0]).
+         print/0,
+         perform_preloads/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -54,34 +57,41 @@
 %%%===================================================================
 
 %% @doc Same as start_link([]).
--spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
     start_link([]).
 
 %% @doc Start and link to calling process.
--spec start_link(list())-> {ok, pid()} | ignore | {error, term()}.
-start_link(Opts) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
+start_link(Args) ->
+    gen_server:start_link({global, ?MODULE}, ?MODULE, Args, []).
 
 %% @doc Record trace message.
 trace(Type, Message) ->
-    gen_server:call(?MODULE, {trace, Type, Message}, infinity).
+    gen_server:call({global, ?MODULE}, {trace, Type, Message}, infinity).
 
 %% @doc Replay trace.
 replay(Type, Message) ->
-    gen_server:call(?MODULE, {replay, Type, Message}, infinity).
+    gen_server:call({global, ?MODULE}, {replay, Type, Message}, infinity).
 
 %% @doc Reset trace.
 reset() ->
-    gen_server:call(?MODULE, reset, infinity).
+    gen_server:call({global, ?MODULE}, reset, infinity).
 
 %% @doc Print trace.
 print() ->
-    gen_server:call(?MODULE, print, infinity).
+    gen_server:call({global, ?MODULE}, print, infinity).
 
 %% @doc Identify trace.
 identify(Identifier) ->
-    gen_server:call(?MODULE, {identify, Identifier}, infinity).
+    gen_server:call({global, ?MODULE}, {identify, Identifier}, infinity).
+
+%% @doc Perform preloads.
+perform_preloads() ->
+    %% This is a replay, so load the preloads.
+    replay_debug("loading preload omissions.", []),
+    preload_omissions(),
+    replay_debug("preloads finished.", []),
+
+    ok.
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -98,43 +108,79 @@ init([]) ->
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
 handle_call({trace, Type, Message}, _From, #state{trace=Trace0}=State) ->
-    %% lager:info("~p: recording trace type: ~p message: ~p", [?MODULE, Type, Message]),
     {reply, ok, State#state{trace=Trace0++[{Type, Message}]}};
 handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0, replay=Replay, shrinking=Shrinking, blocked_processes=BlockedProcesses0}=State) ->
     case Replay of 
         true ->
-            %% Find next message that should arrive based on the trace.
-            %% Can we process immediately?
-            case can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace0, BlockedProcesses0) of 
-                true ->
-                    %% Deliver as much as we can.
-                    {PreviousTrace, BlockedProcesses} = trace_deliver(Shrinking, {Type, Message}, PreviousTrace0, BlockedProcesses0),
+            %% Should we enforce trace order during replay?
+            ShouldEnforce = case Type of 
+                pre_interposition_fun ->
+                    %% Destructure pre-interposition trace message.
+                    {_TracingNode, InterpositionType, _OriginNode, MessagePayload} = Message,
 
-                    %% Record new trace position and new list of blocked processes.
-                    {reply, ok, State#state{blocked_processes=BlockedProcesses, previous_trace=PreviousTrace}};
+                    case is_membership_strategy_message(InterpositionType, MessagePayload) of
+                        true ->
+                            membership_strategy_tracing();
+                        false ->
+                            true
+                    end;
+                _ ->
+                    true
+            end,
+
+            case ShouldEnforce of 
                 false ->
-                    %% If not, store message, block caller until processed.
-                    BlockedProcesses = [{{Type, Message}, From} | BlockedProcesses0],
+                    {reply, ok, State};
+                true ->
+                    %% Find next message that should arrive based on the trace.
+                    %% Can we process immediately?
+                    case can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace0, BlockedProcesses0) of 
+                        true ->
+                            %% Deliver as much as we can.
+                            {PreviousTrace, BlockedProcesses} = trace_deliver(Shrinking, {Type, Message}, PreviousTrace0, BlockedProcesses0),
 
-                    %% Block the process.
-                    {noreply, State#state{blocked_processes=BlockedProcesses}}
+                            %% Record new trace position and new list of blocked processes.
+                            {reply, ok, State#state{blocked_processes=BlockedProcesses, previous_trace=PreviousTrace}};
+                        false ->
+                            %% If not, store message, block caller until processed.
+                            BlockedProcesses = [{{Type, Message}, From} | BlockedProcesses0],
+
+                            %% Block the process.
+                            {noreply, State#state{blocked_processes=BlockedProcesses}}
+                    end
             end;
         false ->
             {reply, ok, State}
     end;
 handle_call(reset, _From, _State) ->
-    lager:info("~p: resetting trace.", [?MODULE]),
+    replay_debug("resetting trace.", []),
     State = initialize_state(),
     {reply, ok, State};
 handle_call({identify, Identifier}, _From, State) ->
-    lager:info("~p: identifying trace: ~p", [?MODULE, Identifier]),
+    replay_debug("identifying trace: ~p", [Identifier]),
     {reply, ok, State#state{identifier=Identifier}};
 handle_call(print, _From, #state{trace=Trace}=State) ->
-    lager:info("~p: printing trace", [?MODULE]),
+    replay_debug("printing trace", []),
 
     lists:foreach(fun({Type, Message}) ->
         case Type of
+            enter_command ->
+                %% Destructure message.
+                {TracingNode, Command} = Message,
+
+                %% Format trace accordingly.
+                replay_debug("~p entering command: ~p", [TracingNode, Command]);
+            exit_command ->
+                %% Destructure message.
+                {TracingNode, Command} = Message,
+
+                %% Format trace accordingly.
+                replay_debug("~p leaving command: ~p", [TracingNode, Command]);
             pre_interposition_fun ->
+                %% Destructure message.
+                {_TracingNode, _InterpositionType, _OriginNode, _MessagePayload} = Message,
+
+                %% Do nothing.
                 ok;
             interposition_fun ->
                 %% Destructure message.
@@ -143,63 +189,70 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
                 %% Format trace accordingly.
                 case InterpositionType of
                     receive_message ->
-                        lager:info("~p: ~p <- ~p: ~p", [?MODULE, TracingNode, OriginNode, MessagePayload]);
+                        replay_debug("~p <- ~p: ~p", [TracingNode, OriginNode, MessagePayload]);
                     forward_message ->
-                        lager:info("~p: ~p => ~p: ~p", [?MODULE, TracingNode, OriginNode, MessagePayload])
+                        replay_debug("~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload])
                 end;
             post_interposition_fun ->
                 %% Destructure message.
                 {TracingNode, OriginNode, InterpositionType, MessagePayload, RewrittenMessagePayload} = Message,
 
-                %% Format trace accordingly.
-                case MessagePayload =:= RewrittenMessagePayload of 
+                case is_membership_strategy_message(InterpositionType, MessagePayload) andalso not membership_strategy_tracing() of 
                     true ->
-                        case InterpositionType of
-                            receive_message ->
-                                lager:info("~p: ~p <- ~p: ~p", [?MODULE, TracingNode, OriginNode, MessagePayload]);
-                            forward_message ->
-                                lager:info("~p: ~p => ~p: ~p", [?MODULE, TracingNode, OriginNode, MessagePayload])
-                        end;
-                    false ->
-                        case RewrittenMessagePayload of 
-                            undefined ->
+                        %% Protocol message and we're not tracing protocol messages.
+                        ok;
+                    _ ->
+                        %% Otherwise, format trace accordingly.
+                        case MessagePayload =:= RewrittenMessagePayload of 
+                            true ->
                                 case InterpositionType of
                                     receive_message ->
-                                        lager:info("~p: ~p <- ~p: DROPPED ~p", [?MODULE, TracingNode, OriginNode, MessagePayload]);
+                                        replay_debug("* ~p <- ~p: ~p", [TracingNode, OriginNode, MessagePayload]);
                                     forward_message ->
-                                        lager:info("~p: ~p => ~p: DROPPED ~p", [?MODULE, TracingNode, OriginNode, MessagePayload])
+                                        replay_debug("~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload])
                                 end;
-                            _ ->
-                                case InterpositionType of
-                                    receive_message ->
-                                        lager:info("~p: ~p <- ~p: REWROTE ~p to ~p", [?MODULE, TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload]);
-                                    forward_message ->
-                                        lager:info("~p: ~p => ~p: REWROTE ~p to ~p", [?MODULE, TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload])
+                            false ->
+                                case RewrittenMessagePayload of 
+                                    undefined ->
+                                        case InterpositionType of
+                                            receive_message ->
+                                                replay_debug("* ~p <- ~p: DROPPED ~p", [TracingNode, OriginNode, MessagePayload]);
+                                            forward_message ->
+                                                replay_debug("~p => ~p: DROPPED ~p", [TracingNode, OriginNode, MessagePayload])
+                                        end;
+                                    _ ->
+                                        case InterpositionType of
+                                            receive_message ->
+                                                replay_debug("* ~p <- ~p: REWROTE ~p to ~p", [TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload]);
+                                            forward_message ->
+                                                replay_debug("~p => ~p: REWROTE ~p to ~p", [TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload])
+                                        end
                                 end
                         end
                 end;
             _ ->
-                lager:info("~p: unknown message type: ~p, message: ~p", [?MODULE, Type, Message])
+                replay_debug("unknown message type: ~p, message: ~p", [Type, Message])
         end
     end, Trace),
 
     write_trace(Trace),
+    write_json_trace(Trace),
 
     {reply, ok, State};
 handle_call(Msg, _From, State) ->
-    lager:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
+    replay_debug("Unhandled call messages: ~p", [Msg]),
     {reply, ok, State}.
 
 %% @private
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
 handle_cast(Msg, State) ->
-    lager:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
+    replay_debug("Unhandled cast messages: ~p", [Msg]),
     {noreply, State}.
 
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
 handle_info(Msg, State) ->
-    lager:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Msg]),
+    replay_debug("Unhandled info messages: ~p", [Msg]),
     {noreply, State}.
 
 %% @private
@@ -216,37 +269,39 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-%% @private 
+%% @private
+-spec can_deliver_based_on_trace(term(), term(), term(), term()) -> true | false.
 can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace, BlockedProcesses) ->
-    replay_debug("~p: determining if message ~p: ~p can be delivered.", [?MODULE, Type, Message]),
+    replay_debug("determining if message ~p: ~p can be delivered.", [Type, Message]),
 
     case PreviousTrace of 
         [{NextType, NextMessage} | _] ->
             CanDeliver = case {NextType, NextMessage} of 
                 {Type, Message} ->
-                    replay_debug("~p: => YES!", [?MODULE]),
+                    replay_debug("=> YES!", []),
                     true;
                 _ ->
                     %% But, does the message actually exist in the trace?
                     case lists:member({Type, Message}, PreviousTrace) of 
                         true ->
-                            replay_debug("~p: => NO, waiting for message: ~p: ~p", [?MODULE, NextType, NextMessage]),
+                            replay_debug("=> NO, waiting for message: ~p: ~p", [NextType, NextMessage]),
                             false;
                         false ->
                             %% new messages in the middle of the trace.
                             %% this *should* be the common case if we shrink from the start of the trace forward (foldl)
                             case Shrinking of 
                                 true ->
-                                    replay_debug("~p: => CONDITIONAL YES, message doesn't exist in previous trace, but shrinking: ~p ~p", [?MODULE, Type, Message]),
+                                    replay_debug("=> CONDITIONAL YES, message doesn't exist in previous trace, but shrinking: ~p ~p", [Type, Message]),
                                     true;
                                 false ->
-                                    replay_debug("~p: => NO, waiting for message: ~p: ~p", [?MODULE, NextType, NextMessage]),
+                                    replay_debug("=> NO, waiting for message: ~p: ~p", [NextType, NextMessage]),
                                     false
                             end
                     end
             end,
 
-            replay_debug("~p: can deliver: ~p blocked processes: ~p", [?MODULE, CanDeliver, BlockedProcesses]),
+            replay_debug("can deliver: ~p", [CanDeliver]),
+            replay_debug("blocked processes: ~p", [length(BlockedProcesses)]),
 
             CanDeliver;
         [] ->
@@ -254,40 +309,40 @@ can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace, BlockedPro
             %% this *should* be the common case if we shrink from the back of the trace forward (foldr)
             case Shrinking of 
                 true ->
-                    replay_debug("~p: => CONDITIONAL YES, message doesn't exist in previous trace, but shrinking: ~p ~p", [?MODULE, Type, Message]),
+                    replay_debug("=> CONDITIONAL YES, message doesn't exist in previous trace, but shrinking: ~p ~p", [Type, Message]),
                     true;
                 false ->
-                    replay_debug("~p: => message should not have been delivered, blocking.", [?MODULE]),
+                    replay_debug("=> message should not have been delivered, blocking.", []),
                     false
             end
     end.
 
 %% @private
 trace_deliver(Shrinking, {Type, Message}, [{Type, Message} | Trace], BlockedProcesses) ->
-    replay_debug("~p: delivering single message!", [?MODULE]),
+    replay_debug("delivering single message!", []),
 
     %% Advance the trace, then try to flush the blocked processes.
     trace_deliver_log_flush(Shrinking, Trace, BlockedProcesses);
-trace_deliver(_Shrinking, {_, _}, [{_, _} | Trace], BlockedProcesses) ->
-    replay_debug("~p: delivering single message (not in the trace)!", [?MODULE]),
+trace_deliver(_Shrinking, {_, _}, [{_, _} = NextMessage | Trace], BlockedProcesses) ->
+    replay_debug("delivering single message (not in the trace)!", []),
 
     %% Advance the trace, don't flush blocked processes, since we weren't in the trace, nothing is blocked.
-    {Trace, BlockedProcesses};
+    {[NextMessage|Trace], BlockedProcesses};
 trace_deliver(_Shrinking, {_, _}, [], BlockedProcesses) ->
-    replay_debug("~p: delivering single message (not in the trace -- end of trace)!", [?MODULE]),
+    replay_debug("delivering single message (not in the trace -- end of trace)!", []),
 
     %% No trace to advance.
     {[], BlockedProcesses}.
 
 %% @private
 trace_deliver_log_flush(Shrinking, Trace0, BlockedProcesses0) ->
-    replay_debug("~p: attempting to flush blocked messages!", [?MODULE]),
+    replay_debug("attempting to flush blocked messages!", []),
 
     %% Iterate blocked processes in an attempt to remove one.
     {ND, T, BP} = lists:foldl(fun({{NextType, NextMessage}, Pid} = BP, {NumDelivered1, Trace1, BlockedProcesses1}) ->
         case can_deliver_based_on_trace(Shrinking, {NextType, NextMessage}, Trace1, BlockedProcesses0) of 
             true ->
-                replay_debug("~p: pid ~p can be unblocked!", [?MODULE, Pid]),
+                replay_debug("message ~p ~p can be unblocked!", [NextType, NextMessage]),
 
                 %% Advance the trace.
                 [{_, _} | RestOfTrace] = Trace1,
@@ -303,7 +358,7 @@ trace_deliver_log_flush(Shrinking, Trace0, BlockedProcesses0) ->
 
                 {NewNumDelivered, RestOfTrace, NewBlockedProcesses};
             false ->
-                replay_debug("~p: pid ~p CANNOT be unblocked yet, unmet dependencies!", [?MODULE, Pid]),
+                replay_debug("pid ~p CANNOT be unblocked yet, unmet dependencies!", [Pid]),
 
                 {NumDelivered1, Trace1, BlockedProcesses1}
         end
@@ -312,11 +367,20 @@ trace_deliver_log_flush(Shrinking, Trace0, BlockedProcesses0) ->
     %% Did we deliver something? If so, try again.
     case ND > 0 of 
         true ->
-            replay_debug("~p: was able to deliver a message, trying again", [?MODULE]),
+            %% replay_debug("was able to deliver a message, trying again", []),
             trace_deliver_log_flush(Shrinking, T, BP);
         false ->
-            replay_debug("~p: flush attempt finished.", [?MODULE]),
+            replay_debug("flush attempt finished.", []),
             {T, BP}
+    end.
+
+%% @private
+preload_omission_file() ->
+    case os:getenv("PRELOAD_OMISSIONS_FILE") of
+        false ->
+            undefined;
+        Other ->
+            Other
     end.
 
 %% @private
@@ -342,23 +406,29 @@ initialize_state() ->
     case os:getenv("REPLAY") of 
         false ->
             %% This is not a replay, so store the current trace.
-            lager:info("~p: recording trace to file.", [?MODULE]),
+            replay_debug("recording trace to file.", []),
             #state{trace=[], blocked_processes=[], identifier=undefined};
         _ ->
+            %% Mark that we are in replay mode.
+            partisan_config:set(replaying, true),
+
             %% This is a replay, so load the previous trace.
-            lager:info("~p: loading previous trace for replay.", [?MODULE]),
+            replay_debug("loading previous trace for replay.", []),
 
             ReplayTraceFile = replay_trace_file(),
             {ok, [Lines]} = file:consult(ReplayTraceFile),
 
-            lists:foreach(fun(Line) -> replay_debug("~p: ~p", [?MODULE, Line]) end, Lines),
+            lists:foreach(fun(Line) -> replay_debug("~p", [Line]) end, Lines),
 
-            lager:info("~p: trace loaded.", [?MODULE]),
+            replay_debug("trace loaded.", []),
 
             Shrinking = case os:getenv("SHRINKING") of 
                 false ->
                     false;
                 _ ->
+                    %% Mark that we are in shrinking mode.
+                    partisan_config:set(shrinking, true),
+
                     true
             end,
 
@@ -368,9 +438,23 @@ initialize_state() ->
 %% @private
 write_trace(Trace) ->
     %% Write trace.
-    FilteredTrace = lists:filter(fun({Type, _Message}) ->
+    FilteredTrace = lists:filter(fun({Type, Message}) ->
         case Type of 
             pre_interposition_fun ->
+                %% Trace all entry points if protocol message, unless tracing enabled.
+                {_TracingNode, InterpositionType, _OriginNode, MessagePayload} = Message,
+
+                case is_membership_strategy_message(InterpositionType, MessagePayload) of 
+                    true ->
+                        %% Trace protocol messages only if protocol tracing is enabled.
+                        membership_strategy_tracing();
+                    false ->
+                        %% Always trace non-protocol messages.
+                        true
+                end;
+            enter_command ->
+                true;
+            exit_command ->
                 true;
             _ ->
                 false
@@ -378,9 +462,59 @@ write_trace(Trace) ->
     end, Trace),
 
     TraceFile = trace_file(),
-    lager:info("~p: writing trace.", [?MODULE]),
+    replay_debug("writing trace.", []),
     {ok, Io} = file:open(TraceFile, [write, {encoding, utf8}]),
     io:format(Io, "~p.~n", [FilteredTrace]),
+    file:close(Io),
+
+    ok.
+
+%% @private -- in the JSON output only put the messages that were really sent.
+write_json_trace(Trace) ->
+    %% Write trace.
+    FilteredJsonTrace = lists:foldl(fun({Type, Message}, Acc) ->
+        case Type of 
+            post_interposition_fun ->
+                %% Destructure message.
+                {TracingNode, OriginNode, InterpositionType, MessagePayload, RewrittenMessagePayload} = Message,
+
+                case RewrittenMessagePayload of 
+                    undefined ->
+                        Acc;
+                    _ ->
+                        %% Ignore all membership strategy messages for now.
+                        case is_membership_strategy_message(InterpositionType, MessagePayload) of 
+                            true ->
+                                Acc;
+                            false ->
+                                NewObject = [
+                                    {type, post_interposition_fun},
+                                    {tracing_node, TracingNode},
+                                    {origin_node, OriginNode},
+                                    {interposition_type, InterpositionType},
+                                    {message_payload, format_message_payload_for_json(MessagePayload)},
+                                    {rewritten_message_payload, format_message_payload_for_json(RewrittenMessagePayload)}
+                                ],
+
+                                Acc ++ [NewObject]
+                        end
+                end;
+            _ ->
+                Acc
+        end
+    end, [], Trace),
+
+    %% Print the trace.
+    % [io:format("~p~n", [Item]) || Item <- FilteredJsonTrace],
+
+    %% Encode as JSON.
+    EncodedJsonTrace = jsx:encode(FilteredJsonTrace),
+
+    %% Write to file.
+    JsonTraceFile = trace_file() ++ ".json",
+    replay_debug("writing JSON trace.", []),
+    {ok, Io} = file:open(JsonTraceFile, [write, {encoding, utf8}]),
+    io:format(Io, "~s", [jsx:prettify(EncodedJsonTrace)]),
     file:close(Io),
 
     ok.
@@ -388,3 +522,90 @@ write_trace(Trace) ->
 %% Should we do replay debugging?
 replay_debug(Line, Args) ->
     lager:info("~p: " ++ Line, [?MODULE] ++ Args).
+
+%% @private
+membership_strategy_tracing() ->
+    partisan_config:get(membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING).
+
+%% @private
+format_message_payload_for_json(MessagePayload) ->
+    list_to_binary(lists:flatten(io_lib:format("~w", [MessagePayload]))).
+
+%% @private
+preload_omissions() ->
+    PreloadOmissionFile = preload_omission_file(),
+    case PreloadOmissionFile of 
+        undefined ->
+            ok;
+        _ ->
+            {ok, [Omissions]} = file:consult(PreloadOmissionFile),
+
+            lists:foreach(fun({T, Message}) ->
+                case T of
+                    pre_interposition_fun ->
+                        {TracingNode, forward_message, OriginNode, MessagePayload} = Message,
+
+                        replay_debug("Enabling preload omission for ~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload]) ,
+
+                        InterpositionFun = fun({forward_message, N, M}) ->
+                            case N of
+                                OriginNode ->
+                                    case M of 
+                                        MessagePayload ->
+                                            lager:info("~p: dropping packet from ~p to ~p due to preload interposition.", [node(), TracingNode, OriginNode]),
+                                            undefined;
+                                        Other ->
+                                            lager:info("~p: allowing message, doesn't match interposition payload while node matches", [node()]),
+                                            lager:info("~p: => expecting: ~p", [node(), MessagePayload]),
+                                            lager:info("~p: => got: ~p", [node(), Other]),
+                                            M
+                                    end;
+                                OtherNode ->
+                                    lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), TracingNode, OtherNode]),
+                                    M
+                            end;
+                            ({receive_message, _N, M}) -> M
+                        end,
+                        ok = rpc:call(TracingNode, ?MANAGER, add_interposition_fun, [{send_omission, OriginNode, Message}, InterpositionFun]);
+                    Other ->
+                        replay_debug("unknown preload: ~p", [Other])
+                end
+            end, Omissions)
+    end,
+
+    ok.
+
+%%%===================================================================
+%%% Trace filtering: super hack, until we can refactor these messages.
+%%%===================================================================
+
+%% TODO: Find a way to disable distance metrics, which are non-deterministic
+%% for the test execution.
+
+%% TODO: Rename protocol messages, find a way to specify an external
+%% function for filtering the trace -- do it from the harness.  Maybe
+%% some sort of glob function for receives and forwards to filter.
+
+%% TODO: Weird hack, now everything goes through the interposition mechanism 
+%% which means we can capture everything *good!* but we only want
+%% to see a small subset of it -- acks, yes!, membership updates, sometimes!
+%% but distances?  never.  so, we need some really terrible hacks here.
+
+%% TODO: Change "protocol" tracing to "membership strategy" tracing.
+
+%% Pre-interposition examples.
+is_membership_strategy_message(receive_message, {_, _, {membership_strategy, _}}) ->
+    true;
+
+is_membership_strategy_message(forward_message, {membership_strategy, _}) ->
+    true;
+
+%% Post-interposition examples.
+is_membership_strategy_message(forward_message, {_, _, {membership_strategy, _}}) ->
+    true;
+
+is_membership_strategy_message(receive_message, {membership_strategy, _}) ->
+    true;
+
+is_membership_strategy_message(_Type, _Message) ->
+    false.

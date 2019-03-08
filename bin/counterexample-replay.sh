@@ -28,4 +28,7 @@ RETVAL=$?
 
 if [ $RETVAL -ne 0 ]; then
     echo "Counterexample held and replayed..."
+    exit 1
 fi
+
+exit 0

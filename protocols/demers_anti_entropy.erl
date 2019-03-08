@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(gossip_demers).
+-module(demers_anti_entropy).
 
 -include("partisan.hrl").
 
@@ -26,7 +26,6 @@
 
 %% API
 -export([start_link/0,
-         gossip/2,
          broadcast/2,
          update/1]).
 
@@ -47,23 +46,11 @@
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
-%% @doc Gossip.
-%% 
-%% Given the membership known at this node, select `fanout' nodes
-%% uniformly from the membership to transmit the message to.
-%%
+%% @doc Broadcast.
 broadcast(ServerRef, Message) ->
-    gossip(ServerRef, Message).
+    gen_server:cast(?MODULE, {broadcast, ServerRef, Message}).
 
-%% @doc Gossip.
-%% 
-%% Given the membership known at this node, select `fanout' nodes
-%% uniformly from the membership to transmit the message to.
-%%
-gossip(ServerRef, Message) ->
-    gen_server:cast(?MODULE, {gossip, ServerRef, Message}).
-
-%% @doc Notifies us of membership update.
+%% @doc Membership update.
 update(LocalState0) ->
     LocalState = partisan_peer_service:decode(LocalState0),
     gen_server:cast(?MODULE, {update, LocalState}).
@@ -87,7 +74,10 @@ init([]) ->
     {ok, Membership} = partisan_peer_service:members(),
     lager:info("Starting with membership: ~p", [Membership]),
 
-    {ok, #state{membership=Membership}}.
+    %% Schedule anti-entropy.
+    schedule_anti_entropy(),
+
+    {ok, #state{membership=membership(Membership)}}.
 
 %% @private
 handle_call(Msg, _From, State) ->
@@ -95,9 +85,7 @@ handle_call(Msg, _From, State) ->
     {reply, ok, State}.
 
 %% @private
-handle_cast({gossip, ServerRef, Message}, #state{membership=Membership}=State) ->
-    Manager = manager(),
-
+handle_cast({broadcast, ServerRef, Message}, State) ->
     %% Generate message id.
     MyNode = partisan_peer_service_manager:mynode(),
     Id = {MyNode, erlang:unique_integer([monotonic, positive])},
@@ -106,75 +94,91 @@ handle_cast({gossip, ServerRef, Message}, #state{membership=Membership}=State) -
     partisan_util:process_forward(ServerRef, Message),
 
     %% Store outgoing message.
-    true = ets:insert(?MODULE, {Id, Message}),
-
-    MyNode = partisan_peer_service_manager:mynode(),
-    GossipMembers = select_random_sublist(Membership, ?GOSSIP_FANOUT),
-
-    lists:foreach(fun(N) ->
-        lager:info("~p: sending gossip message to node ~p: ~p", [node(), N, Message]),
-        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {gossip, Id, ServerRef, Message})
-    end, GossipMembers -- [MyNode]),
+    true = ets:insert(?MODULE, {Id, {ServerRef, Message}}),
 
     {noreply, State};
+
 handle_cast({update, Membership0}, State) ->
-    Membership = lists:usort(Membership0), %% Must sort list or random selection with seed is *nondeterministic.*
+    Membership = membership(Membership0),
     {noreply, State#state{membership=Membership}};
+
 handle_cast(Msg, State) ->
     lager:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
 
 %% @private
 %% Incoming messages.
-handle_info({gossip, Id, ServerRef, Message}, #state{membership=Membership}=State) ->
-    lager:info("~p received value from gossip: ~p", [node(), Message]),
+handle_info(antientropy, #state{membership=Membership}=State) ->
     Manager = manager(),
+    MyNode = partisan_peer_service_manager:mynode(),
 
-    case ets:lookup(?MODULE, Id) of
-        [] ->
-            %% Forward to process.
-            partisan_util:process_forward(ServerRef, Message),
+    %% Get all of our messages.
+    OurMessages = ets:foldl(fun({Id, {ServerRef, Message}}, Acc) ->
+        Acc ++ [{Id, {ServerRef, Message}}] 
+    end, [], ?MODULE),
 
-            %% Store.
-            true = ets:insert(?MODULE, {Id, Message}),
+    %% Forward to random subset of peers.
+    AntiEntropyMembers = select_random_sublist(membership(Membership), ?GOSSIP_FANOUT),
 
-            %% Forward message.
-            MyNode = partisan_peer_service_manager:mynode(),
-            GossipMembers = select_random_sublist(Membership, ?GOSSIP_FANOUT),
-            lager:info("~p: forwarding gossip message, selecting from members: ~p, gossip members: ~p", [node(), Membership, GossipMembers]),
+    lists:foreach(fun(N) ->
+        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {push, MyNode, OurMessages}, [])
+    end, AntiEntropyMembers -- [MyNode]),
 
-            lists:foreach(fun(N) ->
-                lager:info("~p: forwarding gossip message to node ~p: ~p", [node(), N, Message]),
-                Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {gossip, Id, ServerRef, Message})
-            end, GossipMembers -- [MyNode]),
-
-            lager:info("Forwarding to gossip members: ~p", [GossipMembers]),
-
-            %% Drop oldest message.
-            Info = ets:info(?MODULE),
-            case proplists:get_value(size, Info, undefined) of
-                undefined ->
-                    ok;
-                Size ->
-                    case Size > ?GOSSIP_GC_MIN_SIZE of
-                        true ->
-                            case ets:first(?MODULE) of
-                                '$end_of_table' ->
-                                    ok;
-                                Key ->
-                                    ets:delete(?MODULE, Key)
-                            end;
-                        false ->
-                            ok
-                    end
-            end,
-
-            ok;
-        _ ->
-            ok
-    end,
+    %% Reschedule.
+    schedule_anti_entropy(),
 
     {noreply, State};
+
+handle_info({push, FromNode, TheirMessages}, State) ->
+    Manager = manager(),
+    MyNode = partisan_peer_service_manager:mynode(),
+
+    %% Encorporate their messages and process them if we didn't see them.
+    lists:foreach(fun({Id, {ServerRef, Message}}) ->
+        case ets:lookup(?MODULE, Id) of
+            [] ->
+                %% Forward to process.
+                partisan_util:process_forward(ServerRef, Message),
+
+                %% Store.
+                true = ets:insert(?MODULE, {Id, {ServerRef, Message}}),
+
+                ok;
+            _ ->
+                ok
+        end
+    end, TheirMessages),
+
+    %% Get all of our messages.
+    OurMessages = ets:foldl(fun({Id, {ServerRef, Message}}, Acc) ->
+        Acc ++ [{Id, {ServerRef, Message}}] 
+    end, [], ?MODULE),
+
+    %% Forward message back to sender.
+    lager:info("~p: sending messages to node ~p", [node(), FromNode]),
+    Manager:forward_message(FromNode, ?GOSSIP_CHANNEL, ?MODULE, {pull, MyNode, OurMessages}, []),
+
+    {noreply, State};
+
+handle_info({pull, _FromNode, Messages}, State) ->
+    %% Process all incoming.
+    lists:foreach(fun({Id, {ServerRef, Message}}) ->
+        case ets:lookup(?MODULE, Id) of
+            [] ->
+                %% Forward to process.
+                partisan_util:process_forward(ServerRef, Message),
+
+                %% Store.
+                true = ets:insert(?MODULE, {Id, {ServerRef, Message}}),
+
+                ok;
+            _ ->
+                ok
+        end
+    end, Messages),
+
+    {noreply, State};
+
 handle_info(_Msg, State) ->
     {noreply, State}.
 
@@ -191,13 +195,22 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private
+manager() ->
+    partisan_config:get(partisan_peer_service_manager).
+
+%% @private -- sort to remove nondeterminism in node selection.
+membership(Membership) ->
+    lists:usort(Membership).
+
+%% @private
+schedule_anti_entropy() ->
+    Interval = 1000,
+    erlang:send_after(Interval, ?MODULE, antientropy).
+
+%% @private
 select_random_sublist(Membership, K) ->
     lists:sublist(shuffle(Membership), K).
 
 %% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
 shuffle(L) ->
     [X || {_, X} <- lists:sort([{rand:uniform(), N} || N <- L])].
-
-%% @private
-manager() ->
-    partisan_config:get(partisan_peer_service_manager).

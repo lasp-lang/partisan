@@ -121,6 +121,33 @@ start(Case, Config, Options) ->
 
             ok = rpc:call(Node, application, set_env, [partisan, peer_ip, ?PEER_IP]),
 
+            DistanceEnabled = case ?config(distance_enabled, Config) of
+                              undefined ->
+                                  true;
+                              DE ->
+                                  DE
+                          end,
+            debug("Setting distance_enabled to: ~p", [DistanceEnabled]),
+            ok = rpc:call(Node, partisan_config, set, [distance_enabled, DistanceEnabled]),
+
+            PeriodicEnabled = case ?config(periodic_enabled, Config) of
+                              undefined ->
+                                  true;
+                              PDE ->
+                                  PDE
+                          end,
+            debug("Setting periodic_enabled to: ~p", [PeriodicEnabled]),
+            ok = rpc:call(Node, partisan_config, set, [periodic_enabled, PeriodicEnabled]),
+
+            MembershipStrategyTracing = case ?config(membership_strategy_tracing, Config) of
+                              undefined ->
+                                  false;
+                              MST ->
+                                  MST
+                          end,
+            debug("Setting membership_strategy_tracing to: ~p", [MembershipStrategyTracing]),
+            ok = rpc:call(Node, partisan_config, set, [membership_strategy_tracing, MembershipStrategyTracing]),
+
             ForwardOptions = case ?config(forward_options, Config) of
                               undefined ->
                                   [];
@@ -158,15 +185,6 @@ start(Case, Config, Options) ->
                           end,
             debug("Setting disterl to: ~p", [Disterl]),
             ok = rpc:call(Node, partisan_config, set, [disterl, Disterl]),
-
-            InitiateReverse = case ?config(initiate_reverse, Config) of
-                              undefined ->
-                                  false;
-                              IR ->
-                                  IR
-                          end,
-            debug("Setting initiate_reverse to: ~p", [InitiateReverse]),
-            ok = rpc:call(Node, partisan_config, set, [initiate_reverse, InitiateReverse]),
 
             DisableFastReceive = case ?config(disable_fast_receive, Config) of
                               undefined ->

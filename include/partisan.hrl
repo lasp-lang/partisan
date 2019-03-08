@@ -4,17 +4,20 @@
 -define(PEER_SERVICE_SERVER, partisan_peer_service_server).
 -define(FANOUT, 5).
 -define(CACHE, partisan_connection_cache).
--define(PARALLELISM, 1).
--define(RPC_CHANNEL, rpc).
--define(DEFAULT_CHANNEL, undefined).
--define(DEFAULT_PARTITION_KEY, undefined).
-%% -define(CHANNELS, [?DEFAULT_CHANNEL, ?MEMBERSHIP_PROTOCOL_CHANNEL, ?GOSSIP_CHANNEL]).
--define(CHANNELS, [?DEFAULT_CHANNEL]).
 -define(CONNECTION_JITTER, 1000).
-
 -define(TRACING, false).
 -define(RELAY_TTL, 5).
 -define(MEMBERSHIP_PROTOCOL_CHANNEL, membership).
+
+%% Optimizations.
+-define(RPC_CHANNEL, rpc).
+-define(DEFAULT_CHANNEL, undefined).
+-define(DEFAULT_PARTITION_KEY, undefined).
+-define(PARALLELISM, 1).                            %% How many connections should exist between nodes?
+% -define(CHANNELS,                                 %% What channels should be established?
+%         [undefined, broadcast, vnode, {monotonic, gossip}]).   
+-define(CHANNELS, [?DEFAULT_CHANNEL]).
+-define(CAUSAL_LABELS, []).                         %% What causal channels should be established?
 
 %% Gossip.
 -define(GOSSIP_CHANNEL, gossip).
@@ -33,10 +36,24 @@
 -define(DEFAULT_MEMBERSHIP_STRATEGY, partisan_full_membership_strategy).
 -define(DEFAULT_ORCHESTRATION_STRATEGY, undefined).
 
+%% Pluggable manager options.
+-define(DISTANCE_ENABLED, true).
+-define(PERIODIC_ENABLED, true).
+
 %% Test variables.
+-define(TEST_NUM_NODES, 4).
+-define(MEMBERSHIP_STRATEGY_TRACING, false).
+
+-record(property_state, 
+        {joined_nodes :: [node()],
+         nodes :: [node()],
+         node_state :: {dict:dict(), dict:dict()}, 
+         fault_model_state :: term(),
+         counter :: non_neg_integer()}).
+
 -define(SUPPORT, partisan_support).
 
--define(OVERRIDE_PERIODIC_INTERVAL, 1000).
+-define(OVERRIDE_PERIODIC_INTERVAL, 10000).
 
 -define(UTIL, partisan_plumtree_util).
 -define(DEFAULT_LAZY_TICK_PERIOD, 1000).

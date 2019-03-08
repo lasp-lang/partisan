@@ -137,7 +137,7 @@ gossip_messages(State0, State) ->
                 [] ->
                     [];
                 AllPeers ->
-                    lists:map(fun(Peer) -> {Peer, {protocol, {myself(), State}}} end, AllPeers)
+                    lists:map(fun(Peer) -> {Peer, {membership_strategy, {myself(), State}}} end, AllPeers)
             end;
         _ ->
             []
