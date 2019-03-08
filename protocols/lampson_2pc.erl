@@ -23,8 +23,6 @@
 
 -module(lampson_2pc).
 
--include("partisan.hrl").
-
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 %% API
@@ -147,7 +145,7 @@ handle_cast({broadcast, From, ServerRef, Message}, #state{membership=Membership}
     %% Send prepare message to all participants including ourself.
     lists:foreach(fun(N) ->
         lager:info("~p: sending prepare message to node ~p: ~p", [node(), N, Message]),
-        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {prepare, Transaction}, [])
+        Manager:forward_message(N, undefined, ?MODULE, {prepare, Transaction}, [])
     end, membership(Membership)),
 
     {noreply, State};
@@ -187,7 +185,7 @@ handle_info({coordinator_timeout, Id}, State) ->
                     %% Send notification to abort.
                     lists:foreach(fun(N) ->
                         lager:info("~p: sending abort message to node ~p: ~p", [node(), N, Id]),
-                        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {abort, Transaction}, [])
+                        Manager:forward_message(N, undefined, ?MODULE, {abort, Transaction}, [])
                     end, membership(Participants))
             end;
         [] ->
@@ -260,7 +258,7 @@ handle_info({abort, #transaction{id=Id, coordinator=Coordinator}}, State) ->
 
     MyNode = partisan_peer_service_manager:mynode(),
     lager:info("~p: sending abort ack message to node ~p: ~p", [node(), Coordinator, Id]),
-    Manager:forward_message(Coordinator, ?GOSSIP_CHANNEL, ?MODULE, {abort_ack, MyNode, Id}, []),
+    Manager:forward_message(Coordinator, undefined, ?MODULE, {abort_ack, MyNode, Id}, []),
 
     {noreply, State};
 handle_info({commit, #transaction{id=Id, coordinator=Coordinator, server_ref=ServerRef, message=Message} = Transaction}, State) ->
@@ -275,7 +273,7 @@ handle_info({commit, #transaction{id=Id, coordinator=Coordinator, server_ref=Ser
     %% Repond to coordinator that we are now committed.
     MyNode = partisan_peer_service_manager:mynode(),
     lager:info("~p: sending commit ack message to node ~p: ~p", [node(), Coordinator, Id]),
-    Manager:forward_message(Coordinator, ?GOSSIP_CHANNEL, ?MODULE, {commit_ack, MyNode, Id}, []),
+    Manager:forward_message(Coordinator, undefined, ?MODULE, {commit_ack, MyNode, Id}, []),
 
     {noreply, State};
 handle_info({prepared, FromNode, Id}, State) ->
@@ -304,7 +302,7 @@ handle_info({prepared, FromNode, Id}, State) ->
                     %% Send notification to commit.
                     lists:foreach(fun(N) ->
                         lager:info("~p: sending commit message to node ~p: ~p", [node(), N, Id]),
-                        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {commit, Transaction}, [])
+                        Manager:forward_message(N, undefined, ?MODULE, {commit, Transaction}, [])
                     end, membership(Participants));
                 false ->
                     %% Update local state before sending decision to participants.
@@ -324,7 +322,7 @@ handle_info({prepare, #transaction{coordinator=Coordinator, id=Id}=Transaction},
     %% Repond to coordinator that we are now prepared.
     MyNode = partisan_peer_service_manager:mynode(),
     lager:info("~p: sending prepared message to node ~p: ~p", [node(), Coordinator, Id]),
-    Manager:forward_message(Coordinator, ?GOSSIP_CHANNEL, ?MODULE, {prepared, MyNode, Id}, []),
+    Manager:forward_message(Coordinator, undefined, ?MODULE, {prepared, MyNode, Id}, []),
 
     {noreply, State};
 handle_info(Msg, State) ->
