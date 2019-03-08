@@ -1,5 +1,5 @@
 {"1.1.0",
-[{<<"acceptor_pool">>,{pkg,<<"acceptor_pool">>,<<"1.0.0-rc.0">>},0},
+[{<<"acceptor_pool">>,{pkg,<<"acceptor_pool">>,<<"1.0.0">>},0},
  {<<"eini">>,{pkg,<<"eini">>,<<"1.2.4">>},1},
  {<<"eredis">>,
   {git,"git://github.com/wooga/eredis.git",
@@ -18,7 +18,7 @@
  {<<"uuid">>,{pkg,<<"uuid_erl">>,<<"1.7.3">>},0}]}.
 [
 {pkg_hash,[
- {<<"acceptor_pool">>, <<"679D741DF87FC13599B1AEF2DF8F78F1F880449A6BEFAB7C44FB6FAE0E92A2DE">>},
+ {<<"acceptor_pool">>, <<"43C20D2ACAE35F0C2BCD64F9D2BDE267E459F0F3FD23DAB26485BF518C281B21">>},
  {<<"eini">>, <<"ABD64A0533398A6D714D21219BB85F2D41FDB42665AC4080939B7BFA8E55F386">>},
  {<<"erlcloud">>, <<"02B404335B19AE125424805467C7F94D3EF755B4E06EBF281438D2D41CD0F820">>},
  {<<"goldrush">>, <<"F06E5D5F1277DA5C413E84D5A2924174182FB108DABB39D5EC548B27424CD106">>},
