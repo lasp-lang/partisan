@@ -1,12 +1,11 @@
 -module(thing).
--export([init/0, thing/0, otherthing/0, finalthing/0]).
+-export([init/0, thing/0, handle_info/2, finalthing/0]).
 
 init() ->
     ok.
 
 thing() ->
-    1,
-    Fun1 = fun() -> otherthing() end,
+    Fun1 = fun() -> handle_info({message1_, 1}, undefined) end,
     Fun1(),
 
     Fun2 = fun() -> finalthing() end,
@@ -17,8 +16,18 @@ thing() ->
     finalthing(),
     rand:seed().
 
-otherthing() ->
+handle_info({message1, _A}, _State) ->
+    partisan_pluggable_peer_service_manager:forward_message(node(), undefined, ?MODULE, {prepare, txn1}, []),
+    other_function(),
+    ok;
+handle_info({message2, _A, _B}, _State) ->
+    ok;
+handle_info(_, _) ->
     ok.
 
 finalthing() ->
     [].
+
+other_function() ->
+    partisan_pluggable_peer_service_manager:forward_message(node(), undefined, ?MODULE, {abort, txn1}, []),
+    ok.
