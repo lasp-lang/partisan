@@ -22,6 +22,6 @@ main([]) ->
 
     {NewTree, _Max} = cerl_trees:label(CoreForms),
 
-    partisan_analysis:partisan_analyze(NewTree),
+    partisan_analysis:partisan_analysis(NewTree),
 
     ok.

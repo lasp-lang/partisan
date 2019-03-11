@@ -1,0 +1,323 @@
+{c_literal,[],test}
+=> {c_var,[],{module_info,0}}
+=> {c_var,[],{module_info,1}}
+{c_literal,[1],file}
+{c_literal,[],116}
+{c_literal,[],101}
+{c_literal,[],115}
+{c_literal,[],116}
+{c_literal,[],46}
+{c_literal,[],101}
+{c_literal,[],114}
+{c_literal,[],108}
+{c_literal,[],[]}
+{c_literal,[],"l"}
+{c_literal,[],"rl"}
+{c_literal,[],"erl"}
+{c_literal,[],".erl"}
+{c_literal,[],"t.erl"}
+{c_literal,[],"st.erl"}
+{c_literal,[],"est.erl"}
+{c_literal,[],"test.erl"}
+{c_literal,[],1}
+{c_literal,[],{"test.erl",1}}
+{c_literal,[],[]}
+{c_literal,[1],[{"test.erl",1}]}
+=> {c_var,[],{one,0}}
+{c_values,[3,{file,"test.erl"}],[]}
+{c_literal,[],true}
+{c_literal,[4,{file,"test.erl"}],1}
+{c_clause,[3,{file,"test.erl"}],
+          [],
+          {c_literal,[],true},
+          {c_literal,[4,{file,"test.erl"}],1}}
+{c_literal,[],true}
+{c_literal,[],match_fail}
+{c_literal,[],function_clause}
+{c_literal,[3,{file,"test.erl"}],{function_clause}}
+{c_primop,[{function_name,{one,0}},3,{file,"test.erl"}],
+          {c_literal,[],match_fail},
+          [{c_literal,[3,{file,"test.erl"}],{function_clause}}]}
+{c_clause,[compiler_generated],
+          [],
+          {c_literal,[],true},
+          {c_primop,[{function_name,{one,0}},3,{file,"test.erl"}],
+                    {c_literal,[],match_fail},
+                    [{c_literal,[3,{file,"test.erl"}],{function_clause}}]}}
+{c_case,
+    [3,{file,"test.erl"}],
+    {c_values,[3,{file,"test.erl"}],[]},
+    [{c_clause,
+         [3,{file,"test.erl"}],
+         [],
+         {c_literal,[],true},
+         {c_literal,[4,{file,"test.erl"}],1}},
+     {c_clause,
+         [compiler_generated],
+         [],
+         {c_literal,[],true},
+         {c_primop,
+             [{function_name,{one,0}},3,{file,"test.erl"}],
+             {c_literal,[],match_fail},
+             [{c_literal,[3,{file,"test.erl"}],{function_clause}}]}}]}
+{c_fun,
+    [3,{file,"test.erl"}],
+    [],
+    {c_case,
+        [3,{file,"test.erl"}],
+        {c_values,[3,{file,"test.erl"}],[]},
+        [{c_clause,
+             [3,{file,"test.erl"}],
+             [],
+             {c_literal,[],true},
+             {c_literal,[4,{file,"test.erl"}],1}},
+         {c_clause,
+             [compiler_generated],
+             [],
+             {c_literal,[],true},
+             {c_primop,
+                 [{function_name,{one,0}},3,{file,"test.erl"}],
+                 {c_literal,[],match_fail},
+                 [{c_literal,[3,{file,"test.erl"}],{function_clause}}]}}]}}
+=> {c_var,[],{module_info,0}}
+{c_values,[0,{file,"test.erl"}],[]}
+{c_literal,[],true}
+{c_literal,[0,{file,"test.erl"}],erlang}
+{c_literal,[0,{file,"test.erl"}],get_module_info}
+{c_literal,[0,{file,"test.erl"}],test}
+{c_call,[0,{file,"test.erl"}],
+        {c_literal,[0,{file,"test.erl"}],erlang},
+        {c_literal,[0,{file,"test.erl"}],get_module_info},
+        [{c_literal,[0,{file,"test.erl"}],test}]}
+{c_clause,[0,{file,"test.erl"}],
+          [],
+          {c_literal,[],true},
+          {c_call,[0,{file,"test.erl"}],
+                  {c_literal,[0,{file,"test.erl"}],erlang},
+                  {c_literal,[0,{file,"test.erl"}],get_module_info},
+                  [{c_literal,[0,{file,"test.erl"}],test}]}}
+{c_literal,[],true}
+{c_literal,[],match_fail}
+{c_literal,[],function_clause}
+{c_literal,[0,{file,"test.erl"}],{function_clause}}
+{c_primop,[{function_name,{module_info,0}},0,{file,"test.erl"}],
+          {c_literal,[],match_fail},
+          [{c_literal,[0,{file,"test.erl"}],{function_clause}}]}
+{c_clause,[compiler_generated],
+          [],
+          {c_literal,[],true},
+          {c_primop,[{function_name,{module_info,0}},0,{file,"test.erl"}],
+                    {c_literal,[],match_fail},
+                    [{c_literal,[0,{file,"test.erl"}],{function_clause}}]}}
+{c_case,
+    [0,{file,"test.erl"}],
+    {c_values,[0,{file,"test.erl"}],[]},
+    [{c_clause,
+         [0,{file,"test.erl"}],
+         [],
+         {c_literal,[],true},
+         {c_call,
+             [0,{file,"test.erl"}],
+             {c_literal,[0,{file,"test.erl"}],erlang},
+             {c_literal,[0,{file,"test.erl"}],get_module_info},
+             [{c_literal,[0,{file,"test.erl"}],test}]}},
+     {c_clause,
+         [compiler_generated],
+         [],
+         {c_literal,[],true},
+         {c_primop,
+             [{function_name,{module_info,0}},0,{file,"test.erl"}],
+             {c_literal,[],match_fail},
+             [{c_literal,[0,{file,"test.erl"}],{function_clause}}]}}]}
+{c_fun,
+    [0,{file,"test.erl"}],
+    [],
+    {c_case,
+        [0,{file,"test.erl"}],
+        {c_values,[0,{file,"test.erl"}],[]},
+        [{c_clause,
+             [0,{file,"test.erl"}],
+             [],
+             {c_literal,[],true},
+             {c_call,
+                 [0,{file,"test.erl"}],
+                 {c_literal,[0,{file,"test.erl"}],erlang},
+                 {c_literal,[0,{file,"test.erl"}],get_module_info},
+                 [{c_literal,[0,{file,"test.erl"}],test}]}},
+         {c_clause,
+             [compiler_generated],
+             [],
+             {c_literal,[],true},
+             {c_primop,
+                 [{function_name,{module_info,0}},0,{file,"test.erl"}],
+                 {c_literal,[],match_fail},
+                 [{c_literal,[0,{file,"test.erl"}],{function_clause}}]}}]}}
+=> {c_var,[],{module_info,1}}
+=> {c_var,[0,{file,"test.erl"}],0}
+=> {c_var,[0,{file,"test.erl"}],0}
+=> {c_var,[0,{file,"test.erl"}],'X'}
+{c_literal,[],true}
+{c_literal,[0,{file,"test.erl"}],erlang}
+{c_literal,[0,{file,"test.erl"}],get_module_info}
+{c_literal,[0,{file,"test.erl"}],test}
+=> {c_var,[0,{file,"test.erl"}],'X'}
+{c_call,[0,{file,"test.erl"}],
+        {c_literal,[0,{file,"test.erl"}],erlang},
+        {c_literal,[0,{file,"test.erl"}],get_module_info},
+        [{c_literal,[0,{file,"test.erl"}],test},
+         {c_var,[0,{file,"test.erl"}],'X'}]}
+{c_clause,[0,{file,"test.erl"}],
+          [{c_var,[0,{file,"test.erl"}],'X'}],
+          {c_literal,[],true},
+          {c_call,[0,{file,"test.erl"}],
+                  {c_literal,[0,{file,"test.erl"}],erlang},
+                  {c_literal,[0,{file,"test.erl"}],get_module_info},
+                  [{c_literal,[0,{file,"test.erl"}],test},
+                   {c_var,[0,{file,"test.erl"}],'X'}]}}
+=> {c_var,[],1}
+{c_literal,[],true}
+{c_literal,[],match_fail}
+{c_literal,[],function_clause}
+=> {c_var,[],1}
+{c_tuple,[0,{file,"test.erl"}],[{c_literal,[],function_clause},{c_var,[],1}]}
+{c_primop,[{function_name,{module_info,1}},0,{file,"test.erl"}],
+          {c_literal,[],match_fail},
+          [{c_tuple,[0,{file,"test.erl"}],
+                    [{c_literal,[],function_clause},{c_var,[],1}]}]}
+{c_clause,[compiler_generated],
+          [{c_var,[],1}],
+          {c_literal,[],true},
+          {c_primop,[{function_name,{module_info,1}},0,{file,"test.erl"}],
+                    {c_literal,[],match_fail},
+                    [{c_tuple,[0,{file,"test.erl"}],
+                              [{c_literal,[],function_clause},
+                               {c_var,[],1}]}]}}
+{c_case,
+    [0,{file,"test.erl"}],
+    {c_var,[0,{file,"test.erl"}],0},
+    [{c_clause,
+         [0,{file,"test.erl"}],
+         [{c_var,[0,{file,"test.erl"}],'X'}],
+         {c_literal,[],true},
+         {c_call,
+             [0,{file,"test.erl"}],
+             {c_literal,[0,{file,"test.erl"}],erlang},
+             {c_literal,[0,{file,"test.erl"}],get_module_info},
+             [{c_literal,[0,{file,"test.erl"}],test},
+              {c_var,[0,{file,"test.erl"}],'X'}]}},
+     {c_clause,
+         [compiler_generated],
+         [{c_var,[],1}],
+         {c_literal,[],true},
+         {c_primop,
+             [{function_name,{module_info,1}},0,{file,"test.erl"}],
+             {c_literal,[],match_fail},
+             [{c_tuple,
+                  [0,{file,"test.erl"}],
+                  [{c_literal,[],function_clause},{c_var,[],1}]}]}}]}
+{c_fun,
+    [0,{file,"test.erl"}],
+    [{c_var,[0,{file,"test.erl"}],0}],
+    {c_case,
+        [0,{file,"test.erl"}],
+        {c_var,[0,{file,"test.erl"}],0},
+        [{c_clause,
+             [0,{file,"test.erl"}],
+             [{c_var,[0,{file,"test.erl"}],'X'}],
+             {c_literal,[],true},
+             {c_call,
+                 [0,{file,"test.erl"}],
+                 {c_literal,[0,{file,"test.erl"}],erlang},
+                 {c_literal,[0,{file,"test.erl"}],get_module_info},
+                 [{c_literal,[0,{file,"test.erl"}],test},
+                  {c_var,[0,{file,"test.erl"}],'X'}]}},
+         {c_clause,
+             [compiler_generated],
+             [{c_var,[],1}],
+             {c_literal,[],true},
+             {c_primop,
+                 [{function_name,{module_info,1}},0,{file,"test.erl"}],
+                 {c_literal,[],match_fail},
+                 [{c_tuple,
+                      [0,{file,"test.erl"}],
+                      [{c_literal,[],function_clause},{c_var,[],1}]}]}}]}}
+{c_module,[],
+    {c_literal,[],test},
+    [{c_var,[],{module_info,0}},{c_var,[],{module_info,1}}],
+    [{{c_literal,[1],file},{c_literal,[1],[{"test.erl",1}]}}],
+    [{{c_var,[],{one,0}},
+      {c_fun,
+          [3,{file,"test.erl"}],
+          [],
+          {c_case,
+              [3,{file,"test.erl"}],
+              {c_values,[3,{file,"test.erl"}],[]},
+              [{c_clause,
+                   [3,{file,"test.erl"}],
+                   [],
+                   {c_literal,[],true},
+                   {c_literal,[4,{file,"test.erl"}],1}},
+               {c_clause,
+                   [compiler_generated],
+                   [],
+                   {c_literal,[],true},
+                   {c_primop,
+                       [{function_name,{one,0}},3,{file,"test.erl"}],
+                       {c_literal,[],match_fail},
+                       [{c_literal,
+                            [3,{file,"test.erl"}],
+                            {function_clause}}]}}]}}},
+     {{c_var,[],{module_info,0}},
+      {c_fun,
+          [0,{file,"test.erl"}],
+          [],
+          {c_case,
+              [0,{file,"test.erl"}],
+              {c_values,[0,{file,"test.erl"}],[]},
+              [{c_clause,
+                   [0,{file,"test.erl"}],
+                   [],
+                   {c_literal,[],true},
+                   {c_call,
+                       [0,{file,"test.erl"}],
+                       {c_literal,[0,{file,"test.erl"}],erlang},
+                       {c_literal,[0,{file,"test.erl"}],get_module_info},
+                       [{c_literal,[0,{file,"test.erl"}],test}]}},
+               {c_clause,
+                   [compiler_generated],
+                   [],
+                   {c_literal,[],true},
+                   {c_primop,
+                       [{function_name,{module_info,0}},0,{file,"test.erl"}],
+                       {c_literal,[],match_fail},
+                       [{c_literal,
+                            [0,{file,"test.erl"}],
+                            {function_clause}}]}}]}}},
+     {{c_var,[],{module_info,1}},
+      {c_fun,
+          [0,{file,"test.erl"}],
+          [{c_var,[0,{file,"test.erl"}],0}],
+          {c_case,
+              [0,{file,"test.erl"}],
+              {c_var,[0,{file,"test.erl"}],0},
+              [{c_clause,
+                   [0,{file,"test.erl"}],
+                   [{c_var,[0,{file,"test.erl"}],'X'}],
+                   {c_literal,[],true},
+                   {c_call,
+                       [0,{file,"test.erl"}],
+                       {c_literal,[0,{file,"test.erl"}],erlang},
+                       {c_literal,[0,{file,"test.erl"}],get_module_info},
+                       [{c_literal,[0,{file,"test.erl"}],test},
+                        {c_var,[0,{file,"test.erl"}],'X'}]}},
+               {c_clause,
+                   [compiler_generated],
+                   [{c_var,[],1}],
+                   {c_literal,[],true},
+                   {c_primop,
+                       [{function_name,{module_info,1}},0,{file,"test.erl"}],
+                       {c_literal,[],match_fail},
+                       [{c_tuple,
+                            [0,{file,"test.erl"}],
+                            [{c_literal,[],function_clause},
+                             {c_var,[],1}]}]}}]}}}]}

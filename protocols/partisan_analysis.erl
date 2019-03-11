@@ -1,3 +1,4 @@
+%%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
 %% You may obtain a copy of the License at
@@ -11,7 +12,8 @@
 %% limitations under the License.
 %%
 %% @copyright 2001-2002 Richard Carlsson
-%% @copyright 2019 Christopher Meiklejohn
+%% @copyright 2019 Christopher S. Meiklejohn
+%%
 
 %% TODO: might need a "top" (`any') element for any-length value lists.
 
@@ -20,7 +22,7 @@
 -author("Richard Carlsson <carlsson.richard@gmail.com>").
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
--export([analyze/1, annotate/1, partisan_analyze/1]).
+-export([intraprocedural/1, annotate/1, partisan_analysis/1]).
 
 %% The following functions are exported from this module since they
 %% are also used by Dialyzer (file dialyzer/src/dialyzer_dep.erl)
@@ -55,7 +57,7 @@
 -type escapes()  :: labelset().
 
 %% TODO: Document me.
-partisan_analyze(Tree) ->
+partisan_analysis(Tree) ->
     %% Note that we use different name spaces for variable labels and
     %% function/call site labels, so we can reuse some names here. We
     %% assume that the labeling of Tree only uses integers, not atoms.
@@ -102,7 +104,7 @@ partisan_analyze(Tree) ->
 %%
 %%	    Tree = cerl:cerl()
 %%
-%%	Analyzes `Tree' (see `analyze') and appends terms `{callers,
+%%	Analyzes `Tree' (see `intraprocedural') and appends terms `{callers,
 %%	Labels}' and `{calls, Labels}' to the annotation list of each
 %%	fun-expression node and apply-expression node of `Tree',
 %%	respectively, where `Labels' is an ordered-set list of labels of
@@ -111,17 +113,17 @@ partisan_analyze(Tree) ->
 %%	by the analysis. Any previous such annotations are removed from
 %%	`Tree'. `Tree1' is the modified tree; for details on `OutList',
 %%	`Outputs' , `Dependencies', `Escapes' and `Parents', see
-%%	`analyze'.
+%%	`intraprocedural'.
 %%
 %%	Note: `Tree' must be annotated with labels in order to use this
-%%	function; see `analyze' for details.
+%%	function; see `intraprocedural' for details.
 
 -spec annotate(cerl:cerl()) ->
         {cerl:cerl(), outlist(), dict:dict(),
          escapes(), dict:dict(), dict:dict(), sets:set()}.
 
 annotate(Tree) ->
-    {Xs, Out, Esc, Deps, Par, Sends} = analyze(Tree),
+    {Xs, Out, Esc, Deps, Par, Sends} = intraprocedural(Tree),
     F = fun (T) ->
 		case type(T) of
 		    'fun' ->
@@ -159,7 +161,7 @@ append_ann(Tag, Val, []) ->
     [{Tag, Val}].
 
 %% =====================================================================
-%% analyze(Tree) -> {OutList, Outputs, Escapes, Dependencies, Parents, Sends}
+%% intraprocedural(Tree) -> {OutList, Outputs, Escapes, Dependencies, Parents, Sends}
 %%
 %%	    Tree = cerl()
 %%	    OutList = [LabelSet] | none
@@ -247,10 +249,10 @@ append_ann(Tag, Val, []) ->
 %% variable labeled `escape', which will hold the set of escaped labels.
 %% initially it contains `top' and `external'.
 
--spec analyze(cerl:cerl()) ->
+-spec intraprocedural(cerl:cerl()) ->
         {outlist(), dict:dict(), escapes(), dict:dict(), dict:dict(), sets:set()}.
 
-analyze(Tree) ->
+intraprocedural(Tree) ->
     %% Note that we use different name spaces for variable labels and
     %% function/call site labels, so we can reuse some names here. We
     %% assume that the labeling of Tree only uses integers, not atoms.
@@ -1003,15 +1005,6 @@ generate_names_to_functions(StartFun) ->
 reverse_postorder_fold(FoldFun, Acc, Tree) ->
 	ReversePostorderTraversal = cerl_trees:fold(fun(T, A) -> A ++ [T] end, [], Tree),
 	lists:foldr(FoldFun, Acc, ReversePostorderTraversal).
-
-%% TODO: Document me.
-intraprocedural(Tree) ->
-	%% Analysis is just a forward flow from the current tree point, without
-	%% entering functions. 
-	%%
-	%% This is a standard intraprocedural analysis.
-	%%
-	analyze(Tree).
 
 %% TODO: Document me.
 analysis_from_function_clause(Tree) ->

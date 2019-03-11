@@ -1,0 +1,20 @@
+module 'test' ['module_info'/0,
+	       'module_info'/1]
+    attributes [%% Line 1
+		'file' =
+		    %% Line 1
+		    [{[116|[101|[115|[116|[46|[101|[114|[108]]]]]]]],1}]]
+'one'/0 =
+    %% Line 3
+    fun () ->
+	%% Line 4
+	1
+'module_info'/0 =
+    fun () ->
+	call 'erlang':'get_module_info'
+	    ('test')
+'module_info'/1 =
+    fun (_0) ->
+	call 'erlang':'get_module_info'
+	    ('test', _0)
+end
