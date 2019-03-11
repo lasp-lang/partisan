@@ -396,7 +396,7 @@ visit(T, L, St) ->
 	    {_, St1} = visit(seq_arg(T), L, St),
 	    visit(seq_body(T), L, St1);
 	apply ->
-		io:format("=> apply found ~p~n", [T]),
+		% io:format("=> apply found ~p~n", [T]),
 	    {Xs, St1} = visit(apply_op(T), L, St),
 	    {As, St2} = visit_list(apply_args(T), L, St1),
 	    case Xs of
@@ -914,7 +914,7 @@ is_pure_op(M, F, A) -> erl_bifs:is_pure(M, F, A).
 partisan_forward_call(M, F, A, St) ->
 	case {concrete(M), concrete(F)} of 
 		{partisan_pluggable_peer_service_manager, forward_message} ->
-			io:format("=> found partisan call ~p:~p/~p~n", [concrete(M), concrete(F), length(A)]),
+			% io:format("=> found partisan call ~p:~p/~p~n", [concrete(M), concrete(F), length(A)]),
 
 			MessageType = message_type_from_args(A),
 			% io:format("message type from send: ~p~n", [MessageType]),
@@ -1015,42 +1015,49 @@ intraprocedural(Tree) ->
 
 %% TODO: Document me.
 analysis_from_function_clause(Tree) ->
-	FindFunctionClauseFun = fun(T, Acc) ->
+	FindFunctionClauseFun = fun(T, {Found, Dict0}) ->
 		case type(T) of 
 			'case' ->
-				case Acc of
-					undefined ->
+				case Found of
+					false ->
+						%% First function clause expression.
 						% io:format("found function_clause matcher~n", []),
 
-						lists:foreach(fun(Clause) ->
+						Dict = lists:foldl(fun(Clause, Dict1) ->
 							%% Get message type.
 							MessageType = message_type_from_function_clause(Clause),
+
 							case MessageType of 
 								undefined ->
-									ok;
+									Dict1;
 								_ ->
-									io:format("Receive of message type: ~p~n", [MessageType]),
-
-									%% Find all possible message emissions.
+									% io:format("Receive of message type: ~p~n", [MessageType]),
 									Body = cerl:clause_body(Clause),
-									%% io:format("body: ~p~n", [Body]),
 									{_Xs, _Out, _Esc, _Deps, _Par, Sends} = intraprocedural(Body),
-									io:format("* Emits the following types of messages: ~p~n", [sets:to_list(Sends)]),
-									io:format("~n", [])
-							end,
+									% io:format("* Emits the following types of messages: ~p~n", [sets:to_list(Sends)]),
+									% io:format("~n", []),
+									dict:append_list(MessageType, sets:to_list(Sends), Dict1)
+							end
+						end, Dict0, case_clauses(T)),
 
-							ok
-						end, case_clauses(T)),
-
-						T;
-					_ ->
-						Acc
+						{true, Dict};
+					true ->
+						%% Already found the function_clause expression.
+						{Found, Dict0}
 				end;
 			_ ->
-				Acc
+				%% Unmatched expression.
+				{Found, Dict0}
 		end
 	end,
-	reverse_postorder_fold(FindFunctionClauseFun, undefined, Tree).
+	{_, Results} = reverse_postorder_fold(FindFunctionClauseFun, {false, dict:new()}, Tree),
+
+	%% Debug.
+	lists:foreach(fun({Key, Values}) ->
+		io:format("~p => ~p~n", [Key, Values])
+	end, dict:to_list(Results)),
+
+	Results.
 
 %% TODO: Document me.
 message_type_from_function_clause(Clause) ->
