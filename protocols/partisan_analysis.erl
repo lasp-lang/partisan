@@ -54,6 +54,7 @@
 -type outlist()  :: [labelset()] | 'none'.
 -type escapes()  :: labelset().
 
+%% TODO: Document me.
 partisan_analyze(Tree) ->
     %% Note that we use different name spaces for variable labels and
     %% function/call site labels, so we can reuse some names here. We
@@ -84,12 +85,13 @@ partisan_analyze(Tree) ->
 	%% the analysis for incoming messages.
 	NamesToFunctions = generate_names_to_functions(StartFun),
 
+	%% Assume, for now, that te entry point for all messages
+	%% into the Partisan system is the handle_info/2 callback
+	%% function.
 	case dict:find({handle_info, 2}, NamesToFunctions) of
-		{ok, {_, HandleInfoFun}} ->
-			% io:format("found function handle_info/2~n", []),
-			receives_to_sends(HandleInfoFun);
+		{ok, {_, HandleInfoTree}} ->
+			analysis_from_function_clause(HandleInfoTree);
 		_Error ->
-			% io:format("no handle_info call found: ~p~n", [Error]),
 			ok
 	end,
 
@@ -908,6 +910,7 @@ is_pure_op(M, F, A) -> erl_bifs:is_pure(M, F, A).
 
 %% =====================================================================
 
+%% TODO: Document me.
 partisan_forward_call(M, F, A, St) ->
 	case {concrete(M), concrete(F)} of 
 		{partisan_pluggable_peer_service_manager, forward_message} ->
@@ -921,6 +924,7 @@ partisan_forward_call(M, F, A, St) ->
 			St
 	end.
 
+%% TODO: Document me.
 generate_names_to_functions(StartFun) ->
 	%% Perform postorder traversal with defaults.
 	NameToFuns0 = dict:new(),
@@ -995,11 +999,22 @@ generate_names_to_functions(StartFun) ->
 
 	NameToFuns.
 
+%% TODO: Document me.
 reverse_postorder_fold(FoldFun, Acc, Tree) ->
 	ReversePostorderTraversal = cerl_trees:fold(fun(T, A) -> A ++ [T] end, [], Tree),
 	lists:foldr(FoldFun, Acc, ReversePostorderTraversal).
 
-receives_to_sends(Tree) ->
+%% TODO: Document me.
+intraprocedural(Tree) ->
+	%% Analysis is just a forward flow from the current tree point, without
+	%% entering functions. 
+	%%
+	%% This is a standard intraprocedural analysis.
+	%%
+	analyze(Tree).
+
+%% TODO: Document me.
+analysis_from_function_clause(Tree) ->
 	FindFunctionClauseFun = fun(T, Acc) ->
 		case type(T) of 
 			'case' ->
@@ -1019,7 +1034,7 @@ receives_to_sends(Tree) ->
 									%% Find all possible message emissions.
 									Body = cerl:clause_body(Clause),
 									%% io:format("body: ~p~n", [Body]),
-									{_Xs, _Out, _Esc, _Deps, _Par, Sends} = analyze(Body),
+									{_Xs, _Out, _Esc, _Deps, _Par, Sends} = intraprocedural(Body),
 									io:format("* Emits the following types of messages: ~p~n", [sets:to_list(Sends)]),
 									io:format("~n", [])
 							end,
@@ -1037,6 +1052,7 @@ receives_to_sends(Tree) ->
 	end,
 	reverse_postorder_fold(FindFunctionClauseFun, undefined, Tree).
 
+%% TODO: Document me.
 message_type_from_function_clause(Clause) ->
 	Anns = get_ann(Clause),
 	case lists:member(compiler_generated, Anns) of 
@@ -1058,6 +1074,7 @@ message_type_from_function_clause(Clause) ->
 			end
 	end.
 
+%% TODO: Document me.
 message_type_from_args(Args) ->
 	Tree = case length(Args) of 
 		2 ->
