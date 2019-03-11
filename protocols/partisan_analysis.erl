@@ -216,7 +216,7 @@ append_ann(Tag, Val, []) ->
 %%	labels should be unique. Constant literals do not need to be
 %%	labeled.
 
--record(state, {vars, out, dep, work, funs, par, sends}).
+-record(intraprocedural_state, {vars, out, dep, work, funs, par, sends}).
 
 %% Note: In order to keep our domain simple, we assume that all remote
 %% calls and primops return a single value, if any.
@@ -305,7 +305,7 @@ intraprocedural(Tree) ->
     Vars1 = dict:store(escape, from_label_list([top, external]), Vars),
 
     %% Enter the fixpoint iteration at the StartFun.
-    St = intraprocedural_loop(StartFun, start, #state{vars = Vars1, 
+    St = intraprocedural_loop(StartFun, start, #intraprocedural_state{vars = Vars1, 
 					  out = Out,
 				      dep = dict:new(),
 				      work = init_work(),
@@ -314,13 +314,13 @@ intraprocedural(Tree) ->
 					  sends = sets:new()}),
 %%%     io:fwrite("dependencies: ~p.\n",
 %%%  	      [[{X, set__to_list(Y)}
-%%%   		|| {X, Y} <- dict:to_list(St#state.dep)]]),
-    {dict:fetch(top, St#state.out),
-     tidy_dict([start, top, external], St#state.out),
-     dict:fetch(escape, St#state.vars),
-     tidy_dict([intraprocedural_loop], St#state.dep),
-	 St#state.par,
-	 St#state.sends}.
+%%%   		|| {X, Y} <- dict:to_list(St#intraprocedural_state.dep)]]),
+    {dict:fetch(top, St#intraprocedural_state.out),
+     tidy_dict([start, top, external], St#intraprocedural_state.out),
+     dict:fetch(escape, St#intraprocedural_state.vars),
+     tidy_dict([intraprocedural_loop], St#intraprocedural_state.dep),
+	 St#intraprocedural_state.par,
+	 St#intraprocedural_state.sends}.
 
 tidy_dict([X | Xs], D) ->
     tidy_dict(Xs, dict:erase(X, D));
@@ -331,29 +331,29 @@ intraprocedural_loop(T, L, St0) ->
     % io:fwrite("\n", []),
     % io:fwrite("intraprocedural_loop iteration starting: ~w.\n", [L]),
     % io:fwrite("analyzing: ~w.\n", [L]),
-	% io:fwrite("work: ~w.\n", [St0#state.work]),
+	% io:fwrite("work: ~w.\n", [St0#intraprocedural_state.work]),
 
-    Xs0 = dict:fetch(L, St0#state.out),
+    Xs0 = dict:fetch(L, St0#intraprocedural_state.out),
     {Xs, St1} = visit(fun_body(T), L, St0),
     {W, M} = case equal(Xs0, Xs) of
 		 true ->
-		     {St1#state.work, St1#state.out};
+		     {St1#intraprocedural_state.work, St1#intraprocedural_state.out};
 		 false ->
   		    %  io:fwrite("out (~w) changed: ~w <- ~w.\n", [L, Xs, Xs0]),
-		     M1 = dict:store(L, Xs, St1#state.out),
-		     case dict:find(L, St1#state.dep) of
+		     M1 = dict:store(L, Xs, St1#intraprocedural_state.out),
+		     case dict:find(L, St1#intraprocedural_state.dep) of
 			 {ok, S} ->
-			     {add_work(set__to_list(S), St1#state.work),
+			     {add_work(set__to_list(S), St1#intraprocedural_state.work),
 			      M1};
 			 error ->
-			     {St1#state.work, M1}
+			     {St1#intraprocedural_state.work, M1}
 		     end
 	     end,
-    St2 = St1#state{out = M},
+    St2 = St1#intraprocedural_state{out = M},
     case take_work(W) of
 		{ok, L1, W1} ->
-			T1 = dict:fetch(L1, St2#state.funs),
-			intraprocedural_loop(T1, L1, St2#state{work = W1});
+			T1 = dict:fetch(L1, St2#intraprocedural_state.funs),
+			intraprocedural_loop(T1, L1, St2#intraprocedural_state{work = W1});
 		none ->
 			St2
     end.
@@ -366,21 +366,21 @@ visit(T, L, St) ->
 	    %% If a variable is not already in the store here, we
 	    %% initialize it to empty().
 	    L1 = get_label(T),
-	    Vars = St#state.vars,
+	    Vars = St#intraprocedural_state.vars,
 	    case dict:find(L1, Vars) of
 		{ok, X} ->
 		    {[X], St};
 		error ->
 		    X = empty(),
-		    St1 = St#state{vars = dict:store(L1, X, Vars)},
+		    St1 = St#intraprocedural_state{vars = dict:store(L1, X, Vars)},
 		    {[X], St1}
 	    end;
 	'fun' ->
 	    %% Must revisit the fun also, because its environment might
 	    %% have changed. (We don't keep track of such dependencies.)
 	    L1 = get_label(T),
-	    St1 = St#state{work = add_work([L1], St#state.work),
-			   par = set_parent([L1], L, St#state.par)},
+	    St1 = St#intraprocedural_state{work = add_work([L1], St#intraprocedural_state.work),
+			   par = set_parent([L1], L, St#intraprocedural_state.par)},
 	    {[singleton(L1)], St1};
 	values ->
 	    visit_list(values_es(T), L, St);
@@ -392,8 +392,8 @@ visit(T, L, St) ->
 	    {[join_single_list(Xs)], St1};
 	'let' ->
 	    {Xs, St1} = visit(let_arg(T), L, St),
-	    Vars = bind_vars(let_vars(T), Xs, St1#state.vars),
-	    visit(let_body(T), L, St1#state{vars = Vars});
+	    Vars = bind_vars(let_vars(T), Xs, St1#intraprocedural_state.vars),
+	    visit(let_body(T), L, St1#intraprocedural_state{vars = Vars});
 	seq ->
 	    {_, St1} = visit(seq_arg(T), L, St),
 	    visit(seq_body(T), L, St1);
@@ -406,12 +406,12 @@ visit(T, L, St) ->
 		    %% We store the dependency from the call site to the
 		    %% called functions
 		    Ls = set__to_list(X),
-		    Out = St2#state.out,
+		    Out = St2#intraprocedural_state.out,
 		    Xs1 = join_list([dict:fetch(Lx, Out) || Lx <- Ls]),
 		    St3 = call_site(Ls, L, As, St2),
 		    L1 = get_label(T),
-		    D = dict:store(L1, X, St3#state.dep),
-		    {Xs1, St3#state{dep = D}};
+		    D = dict:store(L1, X, St3#intraprocedural_state.dep),
+		    {Xs1, St3#intraprocedural_state{dep = D}};
 		none ->
 		    {none, St2}
 	    end;
@@ -440,10 +440,10 @@ visit(T, L, St) ->
 	'try' ->
 	    {Xs1, St1} = visit(try_arg(T), L, St),
 	    X = singleton(external),
-	    Vars = bind_vars(try_vars(T), [X], St1#state.vars),
-	    {Xs2, St2} = visit(try_body(T), L, St1#state{vars = Vars}),
-	    Evars = bind_vars(try_evars(T), [X, X, X], St2#state.vars),
-	    {Xs3, St3} = visit(try_handler(T), L, St2#state{vars = Evars}),
+	    Vars = bind_vars(try_vars(T), [X], St1#intraprocedural_state.vars),
+	    {Xs2, St2} = visit(try_body(T), L, St1#intraprocedural_state{vars = Vars}),
+	    Evars = bind_vars(try_evars(T), [X, X, X], St2#intraprocedural_state.vars),
+	    {Xs3, St3} = visit(try_handler(T), L, St2#intraprocedural_state{vars = Evars}),
 	    {join(join(Xs1, Xs2), Xs3), St3};
 	'catch' ->
 	    {_, St1} = visit(catch_body(T), L, St),
@@ -460,8 +460,8 @@ visit(T, L, St) ->
 	    %% All the bound funs should be revisited, because the
 	    %% environment might have changed.
 	    Ls = [get_label(F) || {_, F} <- letrec_defs(T)],
-	    St1 = St#state{work = add_work(Ls, St#state.work),
-			   par = set_parent(Ls, L, St#state.par)},
+	    St1 = St#intraprocedural_state{work = add_work(Ls, St#intraprocedural_state.work),
+			   par = set_parent(Ls, L, St#intraprocedural_state.par)},
 	    visit(letrec_body(T), L, St1);
 	module ->
 	    %% All the exported functions escape, and can thus be passed
@@ -472,8 +472,8 @@ visit(T, L, St) ->
     end.
 
 visit_clause(T, Xs, L, St) ->
-    Vars = bind_pats(clause_pats(T), Xs, St#state.vars),
-    {_, St1} = visit(clause_guard(T), L, St#state{vars = Vars}),
+    Vars = bind_pats(clause_pats(T), Xs, St#intraprocedural_state.vars),
+    {_, St1} = visit(clause_guard(T), L, St#intraprocedural_state{vars = Vars}),
     visit(clause_body(T), L, St1).
 
 %% We assume correct value-list typing.
@@ -547,9 +547,9 @@ bind_vars_single([], _X, Vars) ->
 
 call_site(Ls, L, Xs, St) ->
 %%%     io:fwrite("call site: ~w -> ~w (~w).\n", [L, Ls, Xs]),
-    {D, W, V} = call_site(Ls, L, Xs, St#state.dep, St#state.work,
-			  St#state.vars, St#state.funs),
-    St#state{dep = D, work = W, vars = V}.
+    {D, W, V} = call_site(Ls, L, Xs, St#intraprocedural_state.dep, St#intraprocedural_state.work,
+			  St#intraprocedural_state.vars, St#intraprocedural_state.funs),
+    St#intraprocedural_state{dep = D, work = W, vars = V}.
 
 call_site([external | Ls], T, Xs, D, W, V, Fs) ->
     D1 = add_dep(external, T, D),
@@ -642,7 +642,7 @@ bind_arg(L, X, Vars, Ch) ->
 %% escape(none, St) ->
 %%    St;
 escape([X], St) ->
-    Vars = St#state.vars,
+    Vars = St#intraprocedural_state.vars,
     X0 = dict:fetch(escape, Vars),
     X1 = join_single(X, X0),
     case equal_single(X0, X1) of
@@ -653,9 +653,9 @@ escape([X], St) ->
 %%% 	    io:fwrite("updating escaping funs: ~w.\n", [set__to_list(X)]),
 	    Vars1 = dict:store(escape, X1, Vars),
 	    {W, Vars2} = update_esc(set__to_list(set__subtract(X, X0)),
-				    St#state.work, Vars1,
-				    St#state.funs),
-	    St#state{work = add_work([external], W), vars = Vars2}
+				    St#intraprocedural_state.work, Vars1,
+				    St#intraprocedural_state.funs),
+	    St#intraprocedural_state{work = add_work([external], W), vars = Vars2}
     end.
 
 %% For all escaping lambdas, since they might be called from outside the
@@ -921,7 +921,7 @@ partisan_forward_call(M, F, A, St) ->
 			MessageType = message_type_from_args(A),
 			% io:format("message type from send: ~p~n", [MessageType]),
 
-			St#state{sends = sets:add_element(MessageType, St#state.sends)};
+			St#intraprocedural_state{sends = sets:add_element(MessageType, St#intraprocedural_state.sends)};
 		_ ->
 			St
 	end.
