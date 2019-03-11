@@ -1,6 +1,6 @@
 #!/usr/bin/env escript
 
-main([]) ->
+main([FileToAnalyze]) ->
     Analyzer = "partisan_analysis", 
 
     case compile:file(Analyzer, []) of
@@ -9,8 +9,6 @@ main([]) ->
         _ ->
             io:fwrite("Error: Could not compile analysis.~n", [])
     end,
-
-    FileToAnalyze = "thing", 
 
     CoreForms = case compile:file(FileToAnalyze, [to_core, binary, no_copt]) of
         {ok, _, CFs} ->

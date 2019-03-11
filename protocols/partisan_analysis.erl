@@ -63,7 +63,7 @@ partisan_analysis(Tree) ->
     %% assume that the labeling of Tree only uses integers, not atoms.
     External = ann_c_var([{label, external}], {external, 1}),
     Escape = ann_c_var([{label, escape}], 'Escape'),
-    ExtBody = c_seq(ann_c_apply([{label, loop}], External,
+    ExtBody = c_seq(ann_c_apply([{label, intraprocedural_loop}], External,
 				[ann_c_apply([{label, external_call}],
 					     Escape, [])]),
 		    External),
@@ -305,8 +305,8 @@ intraprocedural(Tree) ->
     Vars1 = dict:store(escape, from_label_list([top, external]), Vars),
 
     %% Enter the fixpoint iteration at the StartFun.
-    St = loop(StartFun, start, #state{vars = Vars1,
-				      out = Out,
+    St = intraprocedural_loop(StartFun, start, #state{vars = Vars1, 
+					  out = Out,
 				      dep = dict:new(),
 				      work = init_work(),
 				      funs = Funs,
@@ -318,7 +318,7 @@ intraprocedural(Tree) ->
     {dict:fetch(top, St#state.out),
      tidy_dict([start, top, external], St#state.out),
      dict:fetch(escape, St#state.vars),
-     tidy_dict([loop], St#state.dep),
+     tidy_dict([intraprocedural_loop], St#state.dep),
 	 St#state.par,
 	 St#state.sends}.
 
@@ -327,9 +327,9 @@ tidy_dict([X | Xs], D) ->
 tidy_dict([], D) ->
     D.
 
-loop(T, L, St0) ->
+intraprocedural_loop(T, L, St0) ->
     % io:fwrite("\n", []),
-    % io:fwrite("loop iteration starting: ~w.\n", [L]),
+    % io:fwrite("intraprocedural_loop iteration starting: ~w.\n", [L]),
     % io:fwrite("analyzing: ~w.\n", [L]),
 	% io:fwrite("work: ~w.\n", [St0#state.work]),
 
@@ -353,7 +353,7 @@ loop(T, L, St0) ->
     case take_work(W) of
 		{ok, L1, W1} ->
 			T1 = dict:fetch(L1, St2#state.funs),
-			loop(T1, L1, St2#state{work = W1});
+			intraprocedural_loop(T1, L1, St2#state{work = W1});
 		none ->
 			St2
     end.
