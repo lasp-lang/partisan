@@ -28,7 +28,7 @@
 	       binary_segments/1, c_letrec/2, c_seq/2, c_tuple/1,
 	       c_nil/0, call_args/1, call_module/1, call_name/1,
 	       case_arg/1, case_clauses/1, catch_body/1, clause_body/1,
-	       clause_guard/1, clause_pats/1, cons_hd/1, cons_tl/1,
+	       clause_guard/1, clause_pats/1, cons_hd/1, cons_tl/1, concrete/1,
 	       fun_body/1, fun_vars/1, get_ann/1, is_c_atom/1,
 	       let_arg/1, let_body/1, let_vars/1, letrec_body/1,
 	       letrec_defs/1, module_defs/1, module_defs/1,
@@ -36,7 +36,7 @@
 	       primop_name/1, receive_action/1, receive_clauses/1,
 	       receive_timeout/1, seq_arg/1, seq_body/1, set_ann/2,
 	       try_arg/1, try_body/1, try_vars/1, try_evars/1,
-	       try_handler/1, tuple_es/1, type/1, values_es/1]).
+	       try_handler/1, tuple_es/1, type/1, values_es/1, var_name/1]).
 
 -import(cerl_trees, [get_label/1]).
 
@@ -234,21 +234,23 @@ analyze(Tree) ->
     F = fun (T, S = {Fs, Vs, Os}) ->
 		case type(T) of
 		    'fun' ->
-			L = get_label(T),
-			As = fun_vars(T),
-			{dict:store(L, T, Fs),
-			 bind_vars_single(As, Empty, Vs),
-			 dict:store(L, none, Os)};
+				L = get_label(T),
+				As = fun_vars(T),
+				{dict:store(L, T, Fs), bind_vars_single(As, Empty, Vs), dict:store(L, none, Os)};
 		    letrec ->
-			{Fs, bind_defs(letrec_defs(T), Vs), Os};
+				{Fs, bind_defs(letrec_defs(T), Vs), Os};
 		    module ->
-			{Fs, bind_defs(module_defs(T), Vs), Os};
+				{Fs, bind_defs(module_defs(T), Vs), Os};
 		    _ ->
-			S
+				S
 		end
 	end,
-    {Funs, Vars, Out} = cerl_trees:fold(F, {Funs0, Vars0, Out0},
-					StartFun),
+    {Funs, Vars, Out} = cerl_trees:fold(F, {Funs0, Vars0, Out0}, StartFun),
+
+	io:format("funs: ~p~n", [[Label || {Label, _Fun} <- dict:to_list(Funs)]]),
+
+	%% TODO
+	_NamesToFunctions = generate_names_to_functions(StartFun),
 
     %% Initialise Escape to the minimal set of escaped labels.
     Vars1 = dict:store(escape, from_label_list([top, external]), Vars),
@@ -275,16 +277,18 @@ tidy_dict([], D) ->
     D.
 
 loop(T, L, St0) ->
-%%%     io:fwrite("analyzing: ~w.\n", [L]),
-%%%     io:fwrite("work: ~w.\n", [St0#state.work]),
+    % io:fwrite("\n", []),
+    % io:fwrite("loop iteration starting: ~w.\n", [L]),
+    % io:fwrite("analyzing: ~w.\n", [L]),
+	% io:fwrite("work: ~w.\n", [St0#state.work]),
+
     Xs0 = dict:fetch(L, St0#state.out),
     {Xs, St1} = visit(fun_body(T), L, St0),
     {W, M} = case equal(Xs0, Xs) of
 		 true ->
 		     {St1#state.work, St1#state.out};
 		 false ->
-%%%  		     io:fwrite("out (~w) changed: ~w <- ~w.\n",
-%%%  			       [L, Xs, Xs0]),
+  		    %  io:fwrite("out (~w) changed: ~w <- ~w.\n", [L, Xs, Xs0]),
 		     M1 = dict:store(L, Xs, St1#state.out),
 		     case dict:find(L, St1#state.dep) of
 			 {ok, S} ->
@@ -296,11 +300,11 @@ loop(T, L, St0) ->
 	     end,
     St2 = St1#state{out = M},
     case take_work(W) of
-	{ok, L1, W1} ->
- 	    T1 = dict:fetch(L1, St2#state.funs),
- 	    loop(T1, L1, St2#state{work = W1});
-	none ->
-	    St2
+		{ok, L1, W1} ->
+			T1 = dict:fetch(L1, St2#state.funs),
+			loop(T1, L1, St2#state{work = W1});
+		none ->
+			St2
     end.
 
 visit(T, L, St) ->
@@ -343,7 +347,7 @@ visit(T, L, St) ->
 	    {_, St1} = visit(seq_arg(T), L, St),
 	    visit(seq_body(T), L, St1);
 	apply ->
-		io:format("~p~n", [T]),
+		%% io:format("~p~n", [T]),
 	    {Xs, St1} = visit(apply_op(T), L, St),
 	    {As, St2} = visit_list(apply_args(T), L, St1),
 	    case Xs of
@@ -364,7 +368,7 @@ visit(T, L, St) ->
 	    M = call_module(T),
 		F = call_name(T),
 		A = call_args(T),
-		io:format("~p:~p(~p)~n", [M, F, A]),
+		_ = is_partisan_forward_call(M, F, A),
 	    {_, St1} = visit(M, L, St),
 	    {_, St2} = visit(F, L, St1),
 	    {Xs, St3} = visit_list(call_args(T), L, St2),
@@ -511,7 +515,7 @@ call_site([external | Ls], T, Xs, D, W, V, Fs) ->
     end;
 call_site([L | Ls], T, Xs, D, W, V, Fs) ->
 	D1 = add_dep(L, T, D),
-	io:format("adding dep from ~p to ~p~n", [L, T]),
+	%% io:format("adding dep from ~p to ~p~n", [L, T]),
     Vs = fun_vars(dict:fetch(L, Fs)),
     case bind_args(Vs, Xs, V) of
 	{V1, true} ->
@@ -856,3 +860,102 @@ is_pure_op(F, A) when is_atom(F), is_integer(A) -> false.
 is_pure_op(M, F, A) -> erl_bifs:is_pure(M, F, A).
 
 %% =====================================================================
+
+is_partisan_forward_call(M, F, A) ->
+	case {concrete(M), concrete(F)} of 
+		{partisan_pluggable_peer_service_manager, forward_message} ->
+			%% io:format("~p:~p/~p~n", [concrete(M), concrete(F), length(A)]),
+
+			_MessageTree = case length(A) of 
+				2 ->	
+					%% Reply call.
+					lists:nth(2, A);
+				5 ->
+					%% Fully qualified forward call.
+					lists:nth(4, A);
+				_Other ->
+					%% io:format("*** couldn't get args for length ~p call~n", [Other]),
+					[]
+			end,
+			
+			%% io:format(" ~p~n", [MessageTree]),
+
+			true;
+		_ ->
+			ok
+	end.
+
+generate_names_to_functions(StartFun) ->
+	%% Perform forward traversal.
+	ReversePostorderTraversal = cerl_trees:fold(fun(T, Acc) -> Acc ++ [T] end, [], StartFun),
+
+	%% Perform postorder traversal with defaults.
+	NameToFuns0 = dict:new(),
+	CandidateTree0 = undefined,
+	CandidateLabel0 = undefined,
+	CandidateAnns0 = undefined,
+
+    NameFun = fun (T, S = {N2Fs, CandidateTree, CandidateLabel, CandidateAnns}) ->
+		case type(T) of
+			var ->
+				N = var_name(T),
+				L = get_label(T),
+				Anns = get_ann(T),
+
+				case N of 
+					{_, _} ->
+						%% Function variables.
+						% io:format("~p at label ~p with anns: ~p~n", [N, L, Anns]),
+
+						case length(Anns) >= 3 of
+							true ->
+								%% Variable that represents the usage of a function in a function body.
+								% io:format("***** ignoring variable as it's a body occurence ~p~n", [N]),
+								{N2Fs, CandidateTree, CandidateLabel, CandidateAnns};
+							false ->
+								%% Match!
+								case CandidateLabel =/= undefined andalso CandidateAnns =/= undefined of
+									false ->
+										%% We aren't trying to match a function.
+										S;
+									true ->
+										%% ...and, we were looking for one!
+										% io:format("*** mapping function ~p to ~p~n", [N, CandidateAnns]),
+										% io:format("~n", []),
+										{dict:store(N, {CandidateAnns, CandidateTree}, N2Fs), undefined, undefined, undefined}
+								end
+						end;
+					_ ->
+						%% Not a function variable.
+						S
+				end;
+
+		    'fun' ->
+				%% Function bodies.
+				L = get_label(T),
+				Anns = get_ann(T),
+
+				case length(Anns) > 3 of
+					true ->
+						%% Function that's defined and subsequently used in the body, ignore.
+						S;
+					false ->
+						%% Function that's defined, but not with an anonymous function identifier.
+						% io:format("fun: ~p => ~p~n", [L, Anns]),
+						{N2Fs, T, L, Anns}
+				end;
+
+		    _ ->
+				%% Everything else.
+				S
+		end
+	end,
+	{NameToFuns, _, _, _} = lists:foldr(NameFun, 
+		{NameToFuns0, CandidateTree0, CandidateLabel0, CandidateAnns0}, ReversePostorderTraversal),
+
+	io:format("~n", []),
+	io:format("after analysis: ~p~n", 
+		[ [{Function, CandidateAnns} || {Function, {CandidateAnns, _CandidateTree}} <- dict:to_list(NameToFuns)] ]),
+	io:format("~n", []),
+
+	NameToFuns.

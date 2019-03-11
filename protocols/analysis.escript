@@ -22,21 +22,21 @@ main([]) ->
 
     {NewTree, _Max} = cerl_trees:label(CoreForms),
 
-    {AnnotatedTree, _, _, _, _, _} = cerl_closurean_modified:annotate(NewTree),
+    {_AnnotatedTree, _, _, _, _, _} = cerl_closurean_modified:annotate(NewTree),
 
-    F = fun(T) ->
-		case cerl:type(T) of
-		    'fun' ->
-                io:format("Abstraction: ~p~n", [cerl:get_ann(T)]),
-                T;
-		    apply ->
-                io:format("Application: ~p~n", [cerl:get_ann(T)]),
-                T;
-		    _ ->
-                T
-		end
-    end,
+    % F = fun(T) ->
+	% 	case cerl:type(T) of
+	% 	    'fun' ->
+    %             io:format("Abstraction: ~p~n", [cerl:get_ann(T)]),
+    %             T;
+	% 	    apply ->
+    %             io:format("Application: ~p~n", [cerl:get_ann(T)]),
+    %             T;
+	% 	    _ ->
+    %             T
+	% 	end
+    % end,
 
-    cerl_trees:map(F, AnnotatedTree),
+    % cerl_trees:map(F, AnnotatedTree),
 
     ok.
