@@ -11,32 +11,38 @@
 %% limitations under the License.
 %%
 %% @copyright 2001-2002 Richard Carlsson
-%% @author Richard Carlsson <carlsson.richard@gmail.com>
-%% @doc Closure analysis of Core Erlang programs.
+%% @copyright 2019 Christopher Meiklejohn
 
 %% TODO: might need a "top" (`any') element for any-length value lists.
 
--module(cerl_closurean_modified).
+-module(partisan_analysis).
 
--export([analyze/1, annotate/1]).
+-author("Richard Carlsson <carlsson.richard@gmail.com>").
+-author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
+
+-export([analyze/1, annotate/1, partisan_analyze/1]).
+
 %% The following functions are exported from this module since they
 %% are also used by Dialyzer (file dialyzer/src/dialyzer_dep.erl)
 -export([is_escape_op/2, is_escape_op/3, is_literal_op/2, is_literal_op/3]).
 
--import(cerl, [ann_c_apply/3, ann_c_fun/3, ann_c_var/2, apply_args/1,
+-import(cerl, 
+		[
+		   ann_c_apply/3, ann_c_fun/3, ann_c_var/2, apply_args/1,
 	       apply_op/1, atom_val/1, bitstr_size/1, bitstr_val/1,
 	       binary_segments/1, c_letrec/2, c_seq/2, c_tuple/1,
 	       c_nil/0, call_args/1, call_module/1, call_name/1,
 	       case_arg/1, case_clauses/1, catch_body/1, clause_body/1,
 	       clause_guard/1, clause_pats/1, cons_hd/1, cons_tl/1, concrete/1,
-	       fun_body/1, fun_vars/1, get_ann/1, is_c_atom/1,
+		   fun_body/1, fun_vars/1, get_ann/1, is_c_atom/1, is_leaf/1,
 	       let_arg/1, let_body/1, let_vars/1, letrec_body/1,
 	       letrec_defs/1, module_defs/1, module_defs/1,
 	       module_exports/1, pat_vars/1, primop_args/1,
 	       primop_name/1, receive_action/1, receive_clauses/1,
 	       receive_timeout/1, seq_arg/1, seq_body/1, set_ann/2,
 	       try_arg/1, try_body/1, try_vars/1, try_evars/1,
-	       try_handler/1, tuple_es/1, type/1, values_es/1, var_name/1]).
+		   try_handler/1, tuple_es/1, type/1, values_es/1, var_name/1
+		]).
 
 -import(cerl_trees, [get_label/1]).
 
@@ -48,8 +54,49 @@
 -type outlist()  :: [labelset()] | 'none'.
 -type escapes()  :: labelset().
 
+partisan_analyze(Tree) ->
+    %% Note that we use different name spaces for variable labels and
+    %% function/call site labels, so we can reuse some names here. We
+    %% assume that the labeling of Tree only uses integers, not atoms.
+    External = ann_c_var([{label, external}], {external, 1}),
+    Escape = ann_c_var([{label, escape}], 'Escape'),
+    ExtBody = c_seq(ann_c_apply([{label, loop}], External,
+				[ann_c_apply([{label, external_call}],
+					     Escape, [])]),
+		    External),
+    ExtFun = ann_c_fun([{label, external}], [Escape], ExtBody),
+%%%     io:fwrite("external fun:\n~s.\n",
+%%% 	      [cerl_prettypr:format(ExtFun, [noann])]),
+    Top = ann_c_var([{label, top}], {top, 0}),
+    TopFun = ann_c_fun([{label, top}], [], Tree),
+
+    %% The "start fun" just makes the initialisation easier. It will not
+    %% be marked as escaped, and thus cannot be called.
+    StartFun =  ann_c_fun([{label, start}], [],
+			  c_letrec([{External, ExtFun}, {Top, TopFun}],
+				   c_nil())),
+%%%     io:fwrite("start fun:\n~s.\n",
+%%% 	      [cerl_prettypr:format(StartFun, [noann])]),
+
+	%% With partisan (or, with gen_*), the handle_info callback is 
+	%% used to pattern match message sends to the server.  Therefore, 
+	%% we need to ensure we use this as a potential entry point of 
+	%% the analysis for incoming messages.
+	NamesToFunctions = generate_names_to_functions(StartFun),
+
+	case dict:find({handle_info, 2}, NamesToFunctions) of
+		{ok, {_, HandleInfoFun}} ->
+			% io:format("found function handle_info/2~n", []),
+			receives_to_sends(HandleInfoFun);
+		_Error ->
+			% io:format("no handle_info call found: ~p~n", [Error]),
+			ok
+	end,
+
+	ok.
+
 %% ===========================================================================
-%% annotate(Tree) -> {Tree1, OutList, Outputs, Escapes, Dependencies, Parents}
+%% annotate(Tree) -> {Tree1, OutList, Outputs, Escapes, Dependencies, Parents, Sends}
 %%
 %%	    Tree = cerl:cerl()
 %%
@@ -69,10 +116,10 @@
 
 -spec annotate(cerl:cerl()) ->
         {cerl:cerl(), outlist(), dict:dict(),
-         escapes(), dict:dict(), dict:dict()}.
+         escapes(), dict:dict(), dict:dict(), sets:set()}.
 
 annotate(Tree) ->
-    {Xs, Out, Esc, Deps, Par} = analyze(Tree),
+    {Xs, Out, Esc, Deps, Par, Sends} = analyze(Tree),
     F = fun (T) ->
 		case type(T) of
 		    'fun' ->
@@ -98,7 +145,7 @@ annotate(Tree) ->
 			T
 		end
 	end,
-    {cerl_trees:map(F, Tree), Xs, Out, Esc, Deps, Par}.
+    {cerl_trees:map(F, Tree), Xs, Out, Esc, Deps, Par, Sends}.
 
 append_ann(Tag, Val, [X | Xs]) ->
     if tuple_size(X) >= 1, element(1, X) =:= Tag -> 
@@ -110,7 +157,7 @@ append_ann(Tag, Val, []) ->
     [{Tag, Val}].
 
 %% =====================================================================
-%% analyze(Tree) -> {OutList, Outputs, Escapes, Dependencies, Parents}
+%% analyze(Tree) -> {OutList, Outputs, Escapes, Dependencies, Parents, Sends}
 %%
 %%	    Tree = cerl()
 %%	    OutList = [LabelSet] | none
@@ -120,6 +167,7 @@ append_ann(Tag, Val, []) ->
 %%	    LabelSet = ordset(Label)
 %%	    Label = integer() | top | external | external_call
 %%	    Parents = dict(Label, Label)
+%%      Sends = set()
 %%
 %%	Analyzes a module or an expression represented by `Tree'.
 %%
@@ -164,7 +212,7 @@ append_ann(Tag, Val, []) ->
 %%	labels should be unique. Constant literals do not need to be
 %%	labeled.
 
--record(state, {vars, out, dep, work, funs, par}).
+-record(state, {vars, out, dep, work, funs, par, sends}).
 
 %% Note: In order to keep our domain simple, we assume that all remote
 %% calls and primops return a single value, if any.
@@ -198,7 +246,7 @@ append_ann(Tag, Val, []) ->
 %% initially it contains `top' and `external'.
 
 -spec analyze(cerl:cerl()) ->
-        {outlist(), dict:dict(), escapes(), dict:dict(), dict:dict()}.
+        {outlist(), dict:dict(), escapes(), dict:dict(), dict:dict(), sets:set()}.
 
 analyze(Tree) ->
     %% Note that we use different name spaces for variable labels and
@@ -247,10 +295,7 @@ analyze(Tree) ->
 	end,
     {Funs, Vars, Out} = cerl_trees:fold(F, {Funs0, Vars0, Out0}, StartFun),
 
-	io:format("funs: ~p~n", [[Label || {Label, _Fun} <- dict:to_list(Funs)]]),
-
-	%% TODO
-	_NamesToFunctions = generate_names_to_functions(StartFun),
+	% io:format("funs: ~p~n", [[Label || {Label, _Fun} <- dict:to_list(Funs)]]),
 
     %% Initialise Escape to the minimal set of escaped labels.
     Vars1 = dict:store(escape, from_label_list([top, external]), Vars),
@@ -261,7 +306,8 @@ analyze(Tree) ->
 				      dep = dict:new(),
 				      work = init_work(),
 				      funs = Funs,
-				      par = dict:new()}),
+				      par = dict:new(),
+					  sends = sets:new()}),
 %%%     io:fwrite("dependencies: ~p.\n",
 %%%  	      [[{X, set__to_list(Y)}
 %%%   		|| {X, Y} <- dict:to_list(St#state.dep)]]),
@@ -269,7 +315,8 @@ analyze(Tree) ->
      tidy_dict([start, top, external], St#state.out),
      dict:fetch(escape, St#state.vars),
      tidy_dict([loop], St#state.dep),
-     St#state.par}.
+	 St#state.par,
+	 St#state.sends}.
 
 tidy_dict([X | Xs], D) ->
     tidy_dict(Xs, dict:erase(X, D));
@@ -347,7 +394,7 @@ visit(T, L, St) ->
 	    {_, St1} = visit(seq_arg(T), L, St),
 	    visit(seq_body(T), L, St1);
 	apply ->
-		%% io:format("~p~n", [T]),
+		io:format("=> apply found ~p~n", [T]),
 	    {Xs, St1} = visit(apply_op(T), L, St),
 	    {As, St2} = visit_list(apply_args(T), L, St1),
 	    case Xs of
@@ -368,11 +415,11 @@ visit(T, L, St) ->
 	    M = call_module(T),
 		F = call_name(T),
 		A = call_args(T),
-		_ = is_partisan_forward_call(M, F, A),
-	    {_, St1} = visit(M, L, St),
-	    {_, St2} = visit(F, L, St1),
-	    {Xs, St3} = visit_list(call_args(T), L, St2),
-	    remote_call(M, F, Xs, St3);
+		St1 = partisan_forward_call(M, F, A, St),
+	    {_, St2} = visit(M, L, St1),
+	    {_, St3} = visit(F, L, St2),
+	    {Xs, St4} = visit_list(call_args(T), L, St3),
+	    remote_call(M, F, Xs, St4);
 	primop ->
 	    As = primop_args(T),
 	    {Xs, St1} = visit_list(As, L, St),
@@ -861,45 +908,31 @@ is_pure_op(M, F, A) -> erl_bifs:is_pure(M, F, A).
 
 %% =====================================================================
 
-is_partisan_forward_call(M, F, A) ->
+partisan_forward_call(M, F, A, St) ->
 	case {concrete(M), concrete(F)} of 
 		{partisan_pluggable_peer_service_manager, forward_message} ->
-			%% io:format("~p:~p/~p~n", [concrete(M), concrete(F), length(A)]),
+			io:format("=> found partisan call ~p:~p/~p~n", [concrete(M), concrete(F), length(A)]),
 
-			_MessageTree = case length(A) of 
-				2 ->	
-					%% Reply call.
-					lists:nth(2, A);
-				5 ->
-					%% Fully qualified forward call.
-					lists:nth(4, A);
-				_Other ->
-					%% io:format("*** couldn't get args for length ~p call~n", [Other]),
-					[]
-			end,
-			
-			%% io:format(" ~p~n", [MessageTree]),
+			MessageType = message_type_from_args(A),
+			% io:format("message type from send: ~p~n", [MessageType]),
 
-			true;
+			St#state{sends = sets:add_element(MessageType, St#state.sends)};
 		_ ->
-			ok
+			St
 	end.
 
 generate_names_to_functions(StartFun) ->
-	%% Perform forward traversal.
-	ReversePostorderTraversal = cerl_trees:fold(fun(T, Acc) -> Acc ++ [T] end, [], StartFun),
-
 	%% Perform postorder traversal with defaults.
 	NameToFuns0 = dict:new(),
 	CandidateTree0 = undefined,
 	CandidateLabel0 = undefined,
 	CandidateAnns0 = undefined,
 
-    NameFun = fun (T, S = {N2Fs, CandidateTree, CandidateLabel, CandidateAnns}) ->
+    FoldFun = fun (T, S = {N2Fs, CandidateTree, CandidateLabel, CandidateAnns}) ->
 		case type(T) of
 			var ->
 				N = var_name(T),
-				L = get_label(T),
+				% L = get_label(T),
 				Anns = get_ann(T),
 
 				case N of 
@@ -950,12 +983,95 @@ generate_names_to_functions(StartFun) ->
 				S
 		end
 	end,
-	{NameToFuns, _, _, _} = lists:foldr(NameFun, 
-		{NameToFuns0, CandidateTree0, CandidateLabel0, CandidateAnns0}, ReversePostorderTraversal),
+	{NameToFuns, _, _, _} = reverse_postorder_fold(FoldFun, 
+		{NameToFuns0, CandidateTree0, CandidateLabel0, CandidateAnns0}, StartFun),
 
-	io:format("~n", []),
-	io:format("after analysis: ~p~n", 
-		[ [{Function, CandidateAnns} || {Function, {CandidateAnns, _CandidateTree}} <- dict:to_list(NameToFuns)] ]),
-	io:format("~n", []),
+	% io:format("~n", []),
+	% io:format("**************************************** Names to Functions ****************************************~n", []),
+	% PrintableFunctions = [{Function, CandidateAnns} || {Function, {CandidateAnns, _CandidateTree}} <- dict:to_list(NameToFuns)],
+	% io:format("~p~n", [PrintableFunctions]),
+	% io:format("**************************************** Names to Functions ****************************************~n", []),
+	% io:format("~n", []),
 
 	NameToFuns.
+
+reverse_postorder_fold(FoldFun, Acc, Tree) ->
+	ReversePostorderTraversal = cerl_trees:fold(fun(T, A) -> A ++ [T] end, [], Tree),
+	lists:foldr(FoldFun, Acc, ReversePostorderTraversal).
+
+receives_to_sends(Tree) ->
+	FindFunctionClauseFun = fun(T, Acc) ->
+		case type(T) of 
+			'case' ->
+				case Acc of
+					undefined ->
+						% io:format("found function_clause matcher~n", []),
+
+						lists:foreach(fun(Clause) ->
+							%% Get message type.
+							MessageType = message_type_from_function_clause(Clause),
+							case MessageType of 
+								undefined ->
+									ok;
+								_ ->
+									io:format("Receive of message type: ~p~n", [MessageType]),
+
+									%% Find all possible message emissions.
+									Body = cerl:clause_body(Clause),
+									%% io:format("body: ~p~n", [Body]),
+									{_Xs, _Out, _Esc, _Deps, _Par, Sends} = analyze(Body),
+									io:format("* Emits the following types of messages: ~p~n", [sets:to_list(Sends)]),
+									io:format("~n", [])
+							end,
+
+							ok
+						end, case_clauses(T)),
+
+						T;
+					_ ->
+						Acc
+				end;
+			_ ->
+				Acc
+		end
+	end,
+	reverse_postorder_fold(FindFunctionClauseFun, undefined, Tree).
+
+message_type_from_function_clause(Clause) ->
+	Anns = get_ann(Clause),
+	case lists:member(compiler_generated, Anns) of 
+		true ->
+			undefined;
+		false ->
+			Pats = clause_pats(Clause),
+			FirstPattern = hd(Pats),
+			% io:format("=> first pattern: ~p~n", [FirstPattern]),
+			case is_leaf(FirstPattern) of 
+				true ->
+					top;
+				false ->
+					TupleTrees = tuple_es(FirstPattern),
+					% io:format("=> tuple trees: ~p~n", [TupleTrees]),
+					MessageType = concrete(hd(TupleTrees)),
+					% io:format("=> message type: ~p~n", [MessageType]),
+					MessageType
+			end
+	end.
+
+message_type_from_args(Args) ->
+	Tree = case length(Args) of 
+		2 ->
+			%% Reply call.
+			lists:nth(2, Args);
+		5 ->
+			%% Fully qualified forward call.
+			lists:nth(4, Args)
+	end,
+
+	case is_leaf(Tree) of 
+		true ->
+			concrete(Tree);
+		false ->
+			TupleTrees = tuple_es(Tree),
+			concrete(hd(TupleTrees))
+	end.
