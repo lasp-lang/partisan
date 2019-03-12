@@ -26,6 +26,10 @@ handle_info({message1, _A}, _State) ->
     ok;
 handle_info({message2, _A, _B}, _State) ->
     ok;
+handle_info(message3, _State) ->
+    Message = {some_other_message, 1},
+    partisan_pluggable_peer_service_manager:forward_message(node(), undefined, ?MODULE, Message, []),
+    ok;
 handle_info(_, _) ->
     ok.
 

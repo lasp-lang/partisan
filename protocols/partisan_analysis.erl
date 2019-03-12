@@ -58,6 +58,8 @@
 
 %% TODO: Document me.
 partisan_analysis(Tree) ->
+	io:format("Starting partisan analysis.~n", []),
+
     %% Note that we use different name spaces for variable labels and
     %% function/call site labels, so we can reuse some names here. We
     %% assume that the labeling of Tree only uses integers, not atoms.
@@ -68,8 +70,6 @@ partisan_analysis(Tree) ->
 					     Escape, [])]),
 		    External),
     ExtFun = ann_c_fun([{label, external}], [Escape], ExtBody),
-%%%     io:fwrite("external fun:\n~s.\n",
-%%% 	      [cerl_prettypr:format(ExtFun, [noann])]),
     Top = ann_c_var([{label, top}], {top, 0}),
     TopFun = ann_c_fun([{label, top}], [], Tree),
 
@@ -78,24 +78,47 @@ partisan_analysis(Tree) ->
     StartFun =  ann_c_fun([{label, start}], [],
 			  c_letrec([{External, ExtFun}, {Top, TopFun}],
 				   c_nil())),
-%%%     io:fwrite("start fun:\n~s.\n",
-%%% 	      [cerl_prettypr:format(StartFun, [noann])]),
 
-	%% With partisan (or, with gen_*), the handle_info callback is 
+	%% With partisan (or, with gen_*), the handle_* callback is 
 	%% used to pattern match message sends to the server.  Therefore, 
 	%% we need to ensure we use this as a potential entry point of 
 	%% the analysis for incoming messages.
+	%% 
+	%% This allows us to establish causal relations, where we can identify
+	%% which receives are responsible for triggering subsequent sends.
+	io:format("Generating names to function bindings.~n", []),
 	NamesToFunctions = generate_names_to_functions(StartFun),
 
-	%% Assume, for now, that te entry point for all messages
-	%% into the Partisan system is the handle_info/2 callback
-	%% function.
-	case dict:find({handle_info, 2}, NamesToFunctions) of
-		{ok, {_, HandleInfoTree}} ->
-			analysis_from_function_clause(NamesToFunctions, HandleInfoTree);
-		_Error ->
-			ok
-	end,
+	%% Run forward interprocedural analysis from the start of the 
+	%% tree to identify *all* messages the application sends.
+	io:format("Performing intraprocedural analysis from start of module.~n", []),
+	%% Use the original tree here: should find a way to fix this but didn't want 
+	%% to modify Richard's analysis wrapping.
+	{_Xs, _Out, _Esc, _Deps, _Par, Sends, _Applys} = intraprocedural(Tree),
+	io:format("All sends: ~p~n", [sets:to_list(Sends)]),
+	AllSends = sets:del_element(top, Sends),
+
+	%% Run a forward interprocedural analysis beginning from the receive points
+	%% to establish the causal relationships between messages.
+	io:format("Performing interprocedural analysis from receieve points.~n", []),
+	MessageEntryPoints = [{handle_info,2},{handle_call,3},{handle_cast,2}],
+	FinalResults = lists:foldl(fun(EntryPoint, Acc) ->
+		case dict:find(EntryPoint, NamesToFunctions) of
+			{ok, {_, EntryPointTree}} ->
+				Results = analysis_from_function_clause(NamesToFunctions, AllSends, EntryPointTree),
+				dict:merge(fun(_Key, Value1, Value2) -> lists:usort(Value1 ++ Value2) end, Acc, Results);
+			_Error ->
+				Acc
+		end
+	end, dict:new(), MessageEntryPoints),
+
+	%% Write out the causal relationships.
+	io:format("Writing out results!~n", []),
+	{ok, Io} = file:open("/tmp/partisan-causality", [write, {encoding, utf8}]),
+	[io:format(Io, "~p.~n", [ResultLine]) || ResultLine <- [FinalResults]],
+	ok = file:close(Io),
+
+	io:format("~n~p~n", [dict:to_list(FinalResults)]),
 
 	ok.
 
@@ -258,7 +281,7 @@ intraprocedural(Tree) ->
     %% assume that the labeling of Tree only uses integers, not atoms.
     External = ann_c_var([{label, external}], {external, 1}),
     Escape = ann_c_var([{label, escape}], 'Escape'),
-    ExtBody = c_seq(ann_c_apply([{label, loop}], External,
+    ExtBody = c_seq(ann_c_apply([{label, intraprocedural_loop}], External,
 				[ann_c_apply([{label, external_call}],
 					     Escape, [])]),
 		    External),
@@ -1030,7 +1053,7 @@ reverse_postorder_fold(FoldFun, Acc, Tree) ->
 	lists:foldr(FoldFun, Acc, ReversePostorderTraversal).
 
 %% TODO: Document me.
-analysis_from_function_clause(NamesToFunctions, Tree) ->
+analysis_from_function_clause(NamesToFunctions, Top, Tree) ->
 	FindFunctionClauseFun = fun(T, {Found, Dict0}) ->
 		case type(T) of 
 			'case' ->
@@ -1049,7 +1072,7 @@ analysis_from_function_clause(NamesToFunctions, Tree) ->
 								_ ->
 									% io:format("Receive of message type: ~p~n", [MessageType]),
 									Body = cerl:clause_body(Clause),
-									Sends = interprocedural(NamesToFunctions, Body),
+									Sends = interprocedural(NamesToFunctions, Top, Body),
 									% io:format("* Emits the following types of messages: ~p~n", [sets:to_list(Sends)]),
 									% io:format("~n", []),
 									dict:append_list(MessageType, sets:to_list(Sends), Dict1)
@@ -1069,9 +1092,9 @@ analysis_from_function_clause(NamesToFunctions, Tree) ->
 	{_, Results} = reverse_postorder_fold(FindFunctionClauseFun, {false, dict:new()}, Tree),
 
 	%% Debug.
-	lists:foreach(fun({Key, Values}) ->
-		io:format("~p => ~p~n", [Key, Values])
-	end, dict:to_list(Results)),
+	% lists:foreach(fun({Key, Values}) ->
+	% 	io:format("~p => ~p~n", [Key, Values])
+	% end, dict:to_list(Results)),
 
 	Results.
 
@@ -1087,7 +1110,12 @@ message_type_from_function_clause(Clause) ->
 			% io:format("=> first pattern: ~p~n", [FirstPattern]),
 			case is_leaf(FirstPattern) of 
 				true ->
-					top;
+					case cerl:is_literal(FirstPattern) of
+						true ->
+							concrete(FirstPattern);
+						false ->
+							top
+					end;
 				false ->
 					TupleTrees = tuple_es(FirstPattern),
 					% io:format("=> tuple trees: ~p~n", [TupleTrees]),
@@ -1110,7 +1138,12 @@ message_type_from_args(Args) ->
 
 	case is_leaf(Tree) of 
 		true ->
-			concrete(Tree);
+			case cerl:is_literal(Tree) of 
+				true ->
+					concrete(Tree);
+				false ->
+					top
+			end;
 		false ->
 			TupleTrees = tuple_es(Tree),
 			concrete(hd(TupleTrees))
@@ -1118,25 +1151,27 @@ message_type_from_args(Args) ->
 
 %% TODO: Document me.
 %% This is the analyze program function, but it starts at a node.
-interprocedural(NamesToFunctions, Tree) ->
+interprocedural(NamesToFunctions, Top, Tree) ->
 	Worklist = [Tree],
-	interprocedural_loop(NamesToFunctions, Worklist, sets:new()).
+	interprocedural_loop(NamesToFunctions, Top, Worklist, sets:new()).
 
 %% TODO: Document me.
 %% NOTE: This is all context insensitive for now.
 %% TODO: This does not handle higher order functions.
 %% This is the analyze function and the containing loop.
-interprocedural_loop(_NamesToFunctions, [], Sends) ->
-	% io:format("Done with interprocedural analysis: ~p~n", [sets:to_list(Sends)]),
+interprocedural_loop(_NamesToFunctions, _Top, [], Sends) ->
+	% io:format("~nDone with interprocedural analysis: ~p~n", [sets:to_list(Sends)]),
 	Sends;
-interprocedural_loop(NamesToFunctions, [Tree|Rest], Sends0) ->
-	% Anns = get_ann(Tree),
-	% io:format("Entering interprocedural loop: ~p~n", [Anns]),
+interprocedural_loop(NamesToFunctions, Top, [Tree|Rest], Sends0) ->
+	% io:format("~nEntering interprocedural loop: ~p~n", [get_ann(Tree)]),
 
 	%% Run the intraprocedural analysis.
 	{_Xs, _Out, _Esc, _Deps, _Par, Sends1, Applys} = intraprocedural(Tree),
 	% io:format("=> Applys: ~p~n", [sets:to_list(Applys)]),
+	% io:format("=> Sends: ~p~n", [sets:to_list(Sends1)]),
+	% io:format("=> Top: ~p~n", [sets:to_list(Top)]),
 
+	%% Add any calls to the worklist.
 	WorklistAdditions = lists:flatmap(fun(X) ->
 		case dict:find(X, NamesToFunctions) of 
 			{ok, {_, ApplyTree}} ->
@@ -1146,5 +1181,13 @@ interprocedural_loop(NamesToFunctions, [Tree|Rest], Sends0) ->
 		end
 	end, sets:to_list(Applys)),
 
+	%% Map unknown sends to top.
+	Sends = case lists:member(top, sets:to_list(Sends1)) of
+		false ->
+			sets:union(Sends0, Sends1);
+		true ->
+			Top
+	end,
+
 	%% Recurse on the remainder of the loop.
-	interprocedural_loop(NamesToFunctions, Rest ++ WorklistAdditions, sets:union(Sends0, Sends1)).
+	interprocedural_loop(NamesToFunctions, Top, Rest ++ WorklistAdditions, Sends).
