@@ -92,7 +92,7 @@ partisan_analysis(Tree) ->
 	%% function.
 	case dict:find({handle_info, 2}, NamesToFunctions) of
 		{ok, {_, HandleInfoTree}} ->
-			analysis_from_function_clause(HandleInfoTree);
+			analysis_from_function_clause(NamesToFunctions, HandleInfoTree);
 		_Error ->
 			ok
 	end,
@@ -100,7 +100,7 @@ partisan_analysis(Tree) ->
 	ok.
 
 %% ===========================================================================
-%% annotate(Tree) -> {Tree1, OutList, Outputs, Escapes, Dependencies, Parents, Sends}
+%% annotate(Tree) -> {Tree1, OutList, Outputs, Escapes, Dependencies, Parents, Sends, Applys}
 %%
 %%	    Tree = cerl:cerl()
 %%
@@ -120,10 +120,10 @@ partisan_analysis(Tree) ->
 
 -spec annotate(cerl:cerl()) ->
         {cerl:cerl(), outlist(), dict:dict(),
-         escapes(), dict:dict(), dict:dict(), sets:set()}.
+         escapes(), dict:dict(), dict:dict(), sets:set(), sets:set()}.
 
 annotate(Tree) ->
-    {Xs, Out, Esc, Deps, Par, Sends} = intraprocedural(Tree),
+    {Xs, Out, Esc, Deps, Par, Sends, Applys} = intraprocedural(Tree),
     F = fun (T) ->
 		case type(T) of
 		    'fun' ->
@@ -149,7 +149,7 @@ annotate(Tree) ->
 			T
 		end
 	end,
-    {cerl_trees:map(F, Tree), Xs, Out, Esc, Deps, Par, Sends}.
+    {cerl_trees:map(F, Tree), Xs, Out, Esc, Deps, Par, Sends, Applys}.
 
 append_ann(Tag, Val, [X | Xs]) ->
     if tuple_size(X) >= 1, element(1, X) =:= Tag -> 
@@ -161,7 +161,7 @@ append_ann(Tag, Val, []) ->
     [{Tag, Val}].
 
 %% =====================================================================
-%% intraprocedural(Tree) -> {OutList, Outputs, Escapes, Dependencies, Parents, Sends}
+%% intraprocedural(Tree) -> {OutList, Outputs, Escapes, Dependencies, Parents, Sends, Applys}
 %%
 %%	    Tree = cerl()
 %%	    OutList = [LabelSet] | none
@@ -216,7 +216,7 @@ append_ann(Tag, Val, []) ->
 %%	labels should be unique. Constant literals do not need to be
 %%	labeled.
 
--record(intraprocedural_state, {vars, out, dep, work, funs, par, sends}).
+-record(intraprocedural_state, {vars, out, dep, work, funs, par, sends, applys}).
 
 %% Note: In order to keep our domain simple, we assume that all remote
 %% calls and primops return a single value, if any.
@@ -311,7 +311,8 @@ intraprocedural(Tree) ->
 				      work = init_work(),
 				      funs = Funs,
 				      par = dict:new(),
-					  sends = sets:new()}),
+					  sends = sets:new(),
+					  applys = sets:new()}),
 %%%     io:fwrite("dependencies: ~p.\n",
 %%%  	      [[{X, set__to_list(Y)}
 %%%   		|| {X, Y} <- dict:to_list(St#intraprocedural_state.dep)]]),
@@ -320,7 +321,8 @@ intraprocedural(Tree) ->
      dict:fetch(escape, St#intraprocedural_state.vars),
      tidy_dict([intraprocedural_loop], St#intraprocedural_state.dep),
 	 St#intraprocedural_state.par,
-	 St#intraprocedural_state.sends}.
+	 St#intraprocedural_state.sends,
+	 St#intraprocedural_state.applys}.
 
 tidy_dict([X | Xs], D) ->
     tidy_dict(Xs, dict:erase(X, D));
@@ -399,6 +401,8 @@ visit(T, L, St) ->
 	    visit(seq_body(T), L, St1);
 	apply ->
 		% io:format("=> apply found ~p~n", [T]),
+		% io:format("=> apply op ~p~n", [cerl:apply_op(T)]),
+		% io:format("=> apply args ~p~n", [cerl:apply_args(T)]),
 	    {Xs, St1} = visit(apply_op(T), L, St),
 	    {As, St2} = visit_list(apply_args(T), L, St1),
 	    case Xs of
@@ -411,7 +415,26 @@ visit(T, L, St) ->
 		    St3 = call_site(Ls, L, As, St2),
 		    L1 = get_label(T),
 		    D = dict:store(L1, X, St3#intraprocedural_state.dep),
-		    {Xs1, St3#intraprocedural_state{dep = D}};
+
+			ApplyOp = cerl:apply_op(T),
+			St4 = case type(ApplyOp) of 
+				var ->
+					VarName = var_name(ApplyOp),
+					case VarName of 
+						{external, 1} ->
+							%% Called only by outside of this module.
+							St3;
+						{_, _} ->
+							% io:format("found function usage here: ~p~n", [VarName]),
+							St3#intraprocedural_state{applys=sets:add_element(VarName, St3#intraprocedural_state.applys)};
+						_ ->
+							St3
+					end;
+				_ ->
+					St3
+			end,
+
+		    {Xs1, St4#intraprocedural_state{dep = D}};
 		none ->
 		    {none, St2}
 	    end;
@@ -1007,7 +1030,7 @@ reverse_postorder_fold(FoldFun, Acc, Tree) ->
 	lists:foldr(FoldFun, Acc, ReversePostorderTraversal).
 
 %% TODO: Document me.
-analysis_from_function_clause(Tree) ->
+analysis_from_function_clause(NamesToFunctions, Tree) ->
 	FindFunctionClauseFun = fun(T, {Found, Dict0}) ->
 		case type(T) of 
 			'case' ->
@@ -1026,7 +1049,7 @@ analysis_from_function_clause(Tree) ->
 								_ ->
 									% io:format("Receive of message type: ~p~n", [MessageType]),
 									Body = cerl:clause_body(Clause),
-									{_Xs, _Out, _Esc, _Deps, _Par, Sends} = intraprocedural(Body),
+									Sends = interprocedural(NamesToFunctions, Body),
 									% io:format("* Emits the following types of messages: ~p~n", [sets:to_list(Sends)]),
 									% io:format("~n", []),
 									dict:append_list(MessageType, sets:to_list(Sends), Dict1)
@@ -1092,3 +1115,36 @@ message_type_from_args(Args) ->
 			TupleTrees = tuple_es(Tree),
 			concrete(hd(TupleTrees))
 	end.
+
+%% TODO: Document me.
+%% This is the analyze program function, but it starts at a node.
+interprocedural(NamesToFunctions, Tree) ->
+	Worklist = [Tree],
+	interprocedural_loop(NamesToFunctions, Worklist, sets:new()).
+
+%% TODO: Document me.
+%% NOTE: This is all context insensitive for now.
+%% TODO: This does not handle higher order functions.
+%% This is the analyze function and the containing loop.
+interprocedural_loop(_NamesToFunctions, [], Sends) ->
+	% io:format("Done with interprocedural analysis: ~p~n", [sets:to_list(Sends)]),
+	Sends;
+interprocedural_loop(NamesToFunctions, [Tree|Rest], Sends0) ->
+	% Anns = get_ann(Tree),
+	% io:format("Entering interprocedural loop: ~p~n", [Anns]),
+
+	%% Run the intraprocedural analysis.
+	{_Xs, _Out, _Esc, _Deps, _Par, Sends1, Applys} = intraprocedural(Tree),
+	% io:format("=> Applys: ~p~n", [sets:to_list(Applys)]),
+
+	WorklistAdditions = lists:flatmap(fun(X) ->
+		case dict:find(X, NamesToFunctions) of 
+			{ok, {_, ApplyTree}} ->
+				[ApplyTree];
+			_ ->
+				[]
+		end
+	end, sets:to_list(Applys)),
+
+	%% Recurse on the remainder of the loop.
+	interprocedural_loop(NamesToFunctions, Rest ++ WorklistAdditions, sets:union(Sends0, Sends1)).
