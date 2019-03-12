@@ -17,8 +17,12 @@ thing() ->
     rand:seed().
 
 handle_info({message1, _A}, _State) ->
+    Fun = fun() -> 
+        partisan_pluggable_peer_service_manager:forward_message(node(), undefined, ?MODULE, {error, txn1}, [])
+    end,
     partisan_pluggable_peer_service_manager:forward_message(node(), undefined, ?MODULE, {prepare, txn1}, []),
     other_function(),
+    Fun(),
     ok;
 handle_info({message2, _A, _B}, _State) ->
     ok;
