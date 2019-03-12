@@ -1068,14 +1068,27 @@ analysis_from_function_clause(NamesToFunctions, Top, Tree) ->
 
 							case MessageType of 
 								undefined ->
+									%% Pattern matching against a wildcard tells us abolsutely nothing.
 									Dict1;
 								_ ->
-									% io:format("Receive of message type: ~p~n", [MessageType]),
-									Body = cerl:clause_body(Clause),
-									Sends = interprocedural(NamesToFunctions, Top, Body),
-									% io:format("* Emits the following types of messages: ~p~n", [sets:to_list(Sends)]),
-									% io:format("~n", []),
-									dict:append_list(MessageType, sets:to_list(Sends), Dict1)
+									%% Pattern matching against a pattern that could contain a receive.
+
+									case lists:member(MessageType, sets:to_list(Top)) of
+										true ->
+											%% This message originated from partisan, so we can track causality.
+
+											% io:format("Receive of message type: ~p~n", [MessageType]),
+											Body = cerl:clause_body(Clause),
+											Sends = interprocedural(NamesToFunctions, Top, Body),
+											% io:format("* Emits the following types of messages: ~p~n", [sets:to_list(Sends)]),
+											% io:format("~n", []),
+											dict:append_list(MessageType, sets:to_list(Sends), Dict1);
+										false ->
+											%% These are receives of messages sent by our own, or someone else's process.
+											%% We can't know anything about the causality here, ignore.
+											% io:format("message ~p wasn't sent by partisan, can't track~n", [MessageType]),
+											Dict1
+									end
 							end
 						end, Dict0, case_clauses(T)),
 
