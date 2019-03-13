@@ -154,8 +154,17 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
         io:format("OmittedMessageTypes: ~p~n", [OmittedMessageTypes]),
         io:format("ConditionalMessageTypes: ~p~n", [ConditionalMessageTypes]),
         io:format("length(MessageTypes): ~p~n", [length(PrefixMessageTypes ++ OmittedMessageTypes ++ ConditionalMessageTypes)]),
-        io:format("schedule_valid: ~p~n", [schedule_valid(Causality, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes)]),
-        io:format("classify_schedule: ~p~n", [classify_schedule(3, Annotations, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes)]),
+
+        ScheduleValid = schedule_valid(Causality, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
+        io:format("schedule_valid: ~p~n", [ScheduleValid]),
+
+        case ScheduleValid of 
+            true ->
+                ClassifySchedule = classify_schedule(3, Annotations, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
+                io:format("classify_schedule: ~p, schedule_valid: ~p~n", [dict:to_list(ClassifySchedule), ScheduleValid]);
+            false ->
+                ok
+        end,
 
         %% Write out replay trace.
         io:format("Writing out new replay trace file!~n", []),
@@ -365,10 +374,10 @@ identify_minimal_witnesses() ->
     ok.
 
 %% @private
-classify_schedule(N, Annotations, PrefixSchedule, OmittedSchedule, ConditionalSchedule) ->
+classify_schedule(_N, Annotations, PrefixSchedule, _OmittedSchedule, ConditionalSchedule) ->
     DerivedSchedule = PrefixSchedule ++ ConditionalSchedule,
 
-    Classification = lists:foldl(fun({Type, {PreconditionType, Condition} = Annotation}, Dict0) ->
+    Classification = lists:foldl(fun({Type, {PreconditionType, Condition}}, Dict0) ->
         io:format("=> checking precondition for type: ~p~n", [Type]),
 
         Num = length(lists:filter(fun(T) -> T =:= PreconditionType end, DerivedSchedule)),
