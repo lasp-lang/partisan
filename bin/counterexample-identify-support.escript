@@ -15,6 +15,11 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     {ok, [Causality]} = file:consult("/tmp/partisan-causality"),
     io:format("Causality loaded: ~p~n", [dict:to_list(Causality)]),
 
+    %% Open the annotations file.
+    {ok, [RawAnnotations]} = file:consult("/tmp/partisan-annotations"),
+    Annotations = dict:from_list(RawAnnotations),
+    io:format("Annotations loaded: ~p~n", [dict:to_list(Annotations)]),
+
     %% Open the counterexample consult file:
     %% - we make an assumption that there will only be a single counterexample here.
     {ok, [{TestModule, TestFunction, [TestCommands]}]} = file:consult(CounterexampleConsultFile),
@@ -150,37 +155,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
         io:format("ConditionalMessageTypes: ~p~n", [ConditionalMessageTypes]),
         io:format("length(MessageTypes): ~p~n", [length(PrefixMessageTypes ++ OmittedMessageTypes ++ ConditionalMessageTypes)]),
         io:format("schedule_valid: ~p~n", [schedule_valid(Causality, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes)]),
-
-        % RequirementsMet = lists:foldl(fun(Type, Acc) ->
-        %     io:format("MessageTypes: => Type: ~p~n", [Type]),
-
-        %     All = lists:foldl(fun({K, V}, Acc1) ->
-        %         case lists:member(Type, V) of 
-        %             true ->
-        %                 io:format("MessageTypes: => Requires delivery of ~p~n", [K]),
-
-        %                 case lists:member(K, MessageTypes) of 
-        %                     true ->
-        %                         io:format("MessageTypes: => Present!~n", []),
-        %                         true andalso Acc1;
-        %                     false ->
-        %                         io:format("MessageTypes: => NOT Present!~n", []),
-        %                         false andalso Acc1
-        %                 end;
-        %             false ->
-        %                 true andalso Acc1
-        %         end
-        %     end, Acc, dict:to_list(Causality)),
-
-        %     All andalso Acc
-        % end, true, MessageTypes),
-
-        % case RequirementsMet of 
-        %     true ->
-        %         io:format("MessageTypes: Causality verified.~n", []);
-        %     false ->
-        %         io:format("MessageTypes: Schedule does not represent a valid schedule!~n", [])
-        % end,
+        io:format("classify_schedule: ~p~n", [classify_schedule(3, Annotations, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes)]),
 
         %% Write out replay trace.
         io:format("Writing out new replay trace file!~n", []),
@@ -388,3 +363,29 @@ identify_minimal_witnesses() ->
     io:format("Minimal witnesses found: ~p~n", [length(MinimalWitnesses)]),
 
     ok.
+
+%% @private
+classify_schedule(N, Annotations, PrefixSchedule, OmittedSchedule, ConditionalSchedule) ->
+    DerivedSchedule = PrefixSchedule ++ ConditionalSchedule,
+
+    Classification = lists:foldl(fun({Type, {PreconditionType, Condition} = Annotation}, Dict0) ->
+        io:format("=> checking precondition for type: ~p~n", [Type]),
+
+        Num = length(lists:filter(fun(T) -> T =:= PreconditionType end, DerivedSchedule)),
+        io:format("=> condition: ~p num: ~p~n", [Condition, Num]),
+
+        Dict = case Num >= Condition of
+            true ->
+                io:format("=> precondition: true~n", []),
+                dict:store(Type, true, Dict0);
+            false ->
+                io:format("=> precondition: false~n", []),
+                dict:store(Type, false, Dict0)
+        end,
+
+        Dict
+    end, dict:new(), dict:to_list(Annotations)),
+
+    io:format("classification: ~p~n", [dict:to_list(Classification)]),
+
+    Classification.
