@@ -377,22 +377,19 @@ identify_minimal_witnesses() ->
 classify_schedule(_N, Annotations, PrefixSchedule, _OmittedSchedule, ConditionalSchedule) ->
     DerivedSchedule = PrefixSchedule ++ ConditionalSchedule,
 
-    Classification = lists:foldl(fun({Type, {PreconditionType, Condition}}, Dict0) ->
-        io:format("=> checking precondition for type: ~p~n", [Type]),
+    Classification = lists:foldl(fun({Type, Preconditions}, Dict0) ->
+        Result = lists:foldl(fun(Precondition, Acc) ->
+            case Precondition of 
+                {PreconditionType, N} ->
+                    Num = length(lists:filter(fun(T) -> T =:= PreconditionType end, DerivedSchedule)),
+                    Acc andalso Num >= N;
+                true ->
+                    Acc andalso true
+            end
+        end, true, Preconditions),
 
-        Num = length(lists:filter(fun(T) -> T =:= PreconditionType end, DerivedSchedule)),
-        io:format("=> condition: ~p num: ~p~n", [Condition, Num]),
-
-        Dict = case Num >= Condition of
-            true ->
-                io:format("=> precondition: true~n", []),
-                dict:store(Type, true, Dict0);
-            false ->
-                io:format("=> precondition: false~n", []),
-                dict:store(Type, false, Dict0)
-        end,
-
-        Dict
+        io:format("=> type: ~p, preconditions: ~p~n", [Type, Result]),
+        dict:store(Type, Result, Dict0)
     end, dict:new(), dict:to_list(Annotations)),
 
     io:format("classification: ~p~n", [dict:to_list(Classification)]),
