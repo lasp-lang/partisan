@@ -1,12 +1,14 @@
 #!/usr/bin/env escript
 %%! -pa ./_build/default/lib/jsx/ebin -Wall
 
+-define(RESULTS, results).
+
 main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexampleConsultFile, PreloadOmissionFile]) ->
     %% Keep track of when test started.
     StartTime = os:timestamp(),
 
-    %% Open ets table.
-    ?MODULE = ets:new(?MODULE, [named_table, set]),
+    %% Open ets table for results.
+    ?RESULTS = ets:new(?RESULTS, [named_table, set]),
 
     %% Open the trace file.
     {ok, TraceLines} = file:consult(TraceFile),
@@ -186,13 +188,13 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
                 io:format("Test passed.~n", []),
 
                 %% Insert result into the ETS table.
-                true = ets:insert(?MODULE, {Iteration, {Iteration, FinalTraceLines, Omissions, true}});
+                true = ets:insert(?RESULTS, {Iteration, {Iteration, FinalTraceLines, Omissions, true}});
             _ ->
                 %% This failed.
                 io:format("Test FAILED!~n", []),
 
                 %% Insert result into the ETS table.
-                true = ets:insert(?MODULE, {Iteration, {Iteration, FinalTraceLines, Omissions, false}})
+                true = ets:insert(?RESULTS, {Iteration, {Iteration, FinalTraceLines, Omissions, false}})
         end,
 
         %% Bump iteration.
@@ -321,7 +323,7 @@ identify_minimal_witnesses() ->
                         false ->
                             AllSupertracesPass1
                     end
-                end, true, ?MODULE),
+                end, true, ?RESULTS),
 
                 % io:format("=> ~p, all_super_traces_passing? ~p~n", [Iteration, AllSupertracesPass]),
 
@@ -336,7 +338,7 @@ identify_minimal_witnesses() ->
                 %% If it didn't pass, it can't be a witness.
                 Witnesses1
         end
-    end, [], ?MODULE),
+    end, [], ?RESULTS),
 
     io:format("Checking for minimal witnesses...~n", []),
 
