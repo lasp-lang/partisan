@@ -251,7 +251,7 @@ handle_info({participant_timeout, Id}, State) ->
     MyNode = partisan_peer_service_manager:mynode(),
 
     %% Find transaction record.
-    case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
+    case ets:lookup(?PARTICIPATING_TRANSACTIONS, Id) of 
         [{_Id, #transaction{participants=Participants}}] ->
             %% Send decision request to all participants.
             lists:foreach(fun(N) ->
