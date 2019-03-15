@@ -192,7 +192,7 @@ broadcast(Node, {Id, Value}) ->
     %% Transmit message.
     FullMessage = {Id, Node, Value},
     node_debug("broadcast from node ~p message: ~p", [Node, FullMessage]),
-    Result = rpc:call(?NAME(Node), broadcast_module(), broadcast, [?RECEIVER, FullMessage], 2000),
+    Result = rpc:call(?NAME(Node), broadcast_module(), broadcast, [?RECEIVER, FullMessage], 4000),
 
     %% Sleep for 2 second, giving time for message to propagate (1 second timer.)
     node_debug("=> sleeping for propagation", []),

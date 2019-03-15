@@ -424,7 +424,7 @@ handle_info({prepare, #transaction{coordinator=Coordinator, id=Id}=Transaction},
     true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=prepared}}),
 
     %% Set a timeout to hear about a decision.
-    erlang:send_after(1000, self(), {participant_timeout, Id}),
+    erlang:send_after(2000, self(), {participant_timeout, Id}),
 
     %% Repond to coordinator that we are now prepared.
     MyNode = partisan_peer_service_manager:mynode(),
