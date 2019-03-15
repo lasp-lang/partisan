@@ -333,7 +333,7 @@ node_end_case() ->
 
 %% @private
 broadcast_module() ->
-    Module = case os:getenv("BROADCAST_MODULE") of 
+    Module = case os:getenv("IMPLEMENTATION_MODULE") of 
         false ->
             lampson_2pc;
         Other ->
