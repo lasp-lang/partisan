@@ -2,25 +2,43 @@
 %%! -pa ./_build/default/lib/jsx/ebin -Wall
 
 -define(RESULTS, results).
+-define(SCHEDULES, schedules).
 
 main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexampleConsultFile, PreloadOmissionFile]) ->
+    %% Get module as string.
+    ModuleString = os:getenv("IMPLEMENTATION_MODULE"),
+
     %% Keep track of when test started.
     StartTime = os:timestamp(),
 
     %% Open ets table for results.
     ?RESULTS = ets:new(?RESULTS, [named_table, set]),
 
+    %% Open table for schedules.
+    ?SCHEDULES = ets:new(?SCHEDULES, [named_table, ordered_set]),
+
     %% Open the trace file.
     {ok, TraceLines} = file:consult(TraceFile),
 
     %% Open the causality file.
-    {ok, [Causality]} = file:consult("/tmp/partisan-causality"),
+    {ok, [RawCausality]} = file:consult("/tmp/partisan-causality-" ++ ModuleString),
+    Causality = dict:from_list(RawCausality),
     io:format("Causality loaded: ~p~n", [dict:to_list(Causality)]),
 
     %% Open the annotations file.
-    {ok, [RawAnnotations]} = file:consult("/tmp/partisan-annotations"),
+    {ok, [RawAnnotations]} = file:consult("/tmp/partisan-annotations-" ++ ModuleString),
     Annotations = dict:from_list(RawAnnotations),
     io:format("Annotations loaded: ~p~n", [dict:to_list(Annotations)]),
+
+    %% Check that we have the necessary preconditions.
+    PreconditionsPresent = ensure_preconditions_present(Causality, Annotations),
+    io:format("All preconditions present: ~p~n", [PreconditionsPresent]),
+    case PreconditionsPresent of 
+        true ->
+            ok;
+        false ->
+            exit({error, not_all_preconditions_present})
+    end,
 
     %% Open the counterexample consult file:
     %% - we make an assumption that there will only be a single counterexample here.
@@ -83,6 +101,8 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
             case Other of 
                 "" ->
                     exit({error, no_sublist_provided});
+                "0" ->
+                    lists:reverse(SortedPowerset);
                 _ ->
                     lists:reverse(lists:sublist(SortedPowerset, list_to_integer(Other)))
             end
@@ -91,12 +111,6 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     %% For each trace, write out the preload omission file.
     lists:foldl(fun(Omissions, Iteration) ->
         io:format("~n", []),
-
-        %% Write out a new omission file from the previously used trace.
-        io:format("Writing out new preload omissions file!~n", []),
-        {ok, PreloadOmissionIo} = file:open(PreloadOmissionFile, [write, {encoding, utf8}]),
-        [io:format(PreloadOmissionIo, "~p.~n", [O]) || O <- [Omissions]],
-        ok = file:close(PreloadOmissionIo),
 
         %% Generate a new trace.
         io:format("Generating new trace based on message omissions (~p omissions): ~n", 
@@ -160,46 +174,86 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
         ScheduleValid = schedule_valid(Causality, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
         io:format("schedule_valid: ~p~n", [ScheduleValid]),
 
+        ClassifySchedule = classify_schedule(3, Annotations, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
+
         case ScheduleValid of 
             true ->
-                ClassifySchedule = classify_schedule(3, Annotations, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
                 io:format("classify_schedule: ~p, schedule_valid: ~p~n", [dict:to_list(ClassifySchedule), ScheduleValid]);
             false ->
                 ok
         end,
 
-        %% Write out replay trace.
-        io:format("Writing out new replay trace file!~n", []),
-        {ok, TraceIo} = file:open(ReplayTraceFile, [write, {encoding, utf8}]),
-        [io:format(TraceIo, "~p.~n", [TraceLine]) || TraceLine <- [FinalTraceLines]],
-        ok = file:close(TraceIo),
-
-        %% Run the trace.
-        Command = "rm -rf priv/lager; SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
-        io:format("Executing command for iteration ~p of ~p:", [Iteration, length(TracesToIterate)]),
-        io:format(" ~p~n", [Command]),
-        % Output = os:cmd(Command),
-        Output = "",
-
-        %% Store set of omissions as omissions that didn't invalidate the execution.
-        case string:find(Output, "{postcondition,false}") of 
-            nomatch ->
-                %% This passed.
-                io:format("Test passed.~n", []),
-
-                %% Insert result into the ETS table.
-                true = ets:insert(?RESULTS, {Iteration, {Iteration, FinalTraceLines, Omissions, true}});
-            _ ->
-                %% This failed.
-                io:format("Test FAILED!~n", []),
-
-                %% Insert result into the ETS table.
-                true = ets:insert(?RESULTS, {Iteration, {Iteration, FinalTraceLines, Omissions, false}})
-        end,
+        %% Store generated schedule.
+        true = ets:insert(?SCHEDULES, {Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}),
 
         %% Bump iteration.
         Iteration + 1
     end, 1, TracesToIterate),
+
+    %% Run schedules.
+    {NumberPassed, NumberFailed, NumberPruned, _} = ets:foldl(fun({Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, {NumPassed, NumFailed, NumPruned, ClassificationsExplored0}) ->
+        Classification = dict:to_list(ClassifySchedule),
+
+        case ScheduleValid of 
+            false ->
+                {NumPassed, NumFailed, NumPruned + 1, ClassificationsExplored0};
+            true ->
+                case lists:member(Classification, ClassificationsExplored0) of 
+                    true ->
+                        {NumPassed, NumFailed, NumPruned + 1, ClassificationsExplored0};
+                    false ->
+                        %% Write out a new omission file from the previously used trace.
+                        io:format("Writing out new preload omissions file!~n", []),
+                        {ok, PreloadOmissionIo} = file:open(PreloadOmissionFile, [write, {encoding, utf8}]),
+                        [io:format(PreloadOmissionIo, "~p.~n", [O]) || O <- [Omissions]],
+                        ok = file:close(PreloadOmissionIo),
+
+                        %% Write out replay trace.
+                        io:format("Writing out new replay trace file!~n", []),
+                        {ok, TraceIo} = file:open(ReplayTraceFile, [write, {encoding, utf8}]),
+                        [io:format(TraceIo, "~p.~n", [TraceLine]) || TraceLine <- [FinalTraceLines]],
+                        ok = file:close(TraceIo),
+
+                        %% Run the trace.
+                        Command = "rm -rf priv/lager; SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
+                        io:format("Executing command for iteration ~p of ~p:", [Iteration, length(TracesToIterate)]),
+                        io:format(" ~p~n", [Command]),
+                        Output = os:cmd(Command),
+
+                        %% Store set of omissions as omissions that didn't invalidate the execution.
+                        case string:find(Output, "{postcondition,false}") of 
+                            nomatch ->
+                                %% This passed.
+                                io:format("Test passed.~n", []),
+
+                                %% Insert result into the ETS table.
+                                true = ets:insert(?RESULTS, {Iteration, {Iteration, FinalTraceLines, Omissions, true}}),
+
+                                {NumPassed + 1, NumFailed, NumPruned, ClassificationsExplored0 ++ [Classification]};
+                            _ ->
+                                %% This failed.
+                                io:format("Test FAILED!~n", []),
+                                io:format("Failing test contained the following omitted mesage types: ~p~n", [Omissions]),
+
+                                case os:getenv("EXIT_ON_COUNTEREXAMPLE") of 
+                                    false ->
+                                        ok;
+                                    "false" ->
+                                        ok;
+                                    _Other ->
+                                        exit({error, counterexample_found})
+                                end,
+
+                                %% Insert result into the ETS table.
+                                true = ets:insert(?RESULTS, {Iteration, {Iteration, FinalTraceLines, Omissions, false}}),
+
+                                {NumPassed, NumFailed + 1, NumPruned, ClassificationsExplored0 ++ [Classification]}
+                        end
+                end
+        end
+    end, {0, 0, 0, []}, ?SCHEDULES),
+
+    io:format("Passed: ~p, Failed: ~p, Pruned: ~p~n", [NumberPassed, NumberFailed, NumberPruned]),
 
     %% Should we try to find witnesses?
     case os:getenv("FIND_WITNESSES") of 
@@ -394,6 +448,23 @@ classify_schedule(_N, Annotations, PrefixSchedule, _OmittedSchedule, Conditional
         dict:store(Type, Result, Dict0)
     end, dict:new(), dict:to_list(Annotations)),
 
-    io:format("classification: ~p~n", [dict:to_list(Classification)]),
+    % io:format("classification: ~p~n", [dict:to_list(Classification)]),
 
     Classification.
+
+%% @private
+ensure_preconditions_present(Causality, Annotations) ->
+    %% Get all messages that are the result of other messages.
+    CausalMessages = lists:foldl(fun({_, Messages}, Acc) ->
+        Messages ++ Acc
+    end, [], dict:to_list(Causality)),
+
+    lists:foldl(fun(Message, Acc) ->
+        case lists:keymember(Message, 1, dict:to_list(Annotations)) of 
+            true ->
+                Acc andalso true;
+            false ->
+                io:format("Precondition not found for message type: ~p~n", [Message]),
+                Acc andalso false
+        end
+    end, true, CausalMessages).
