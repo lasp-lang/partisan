@@ -1,15 +1,22 @@
+%% -------------------------------------------------------------------
 %%
-%% Licensed under the Apache License, Version 2.0 (the "License");
-%% you may not use this file except in compliance with the License.
-%% You may obtain a copy of the License at
+%% Copyright (c) 2019 Christopher S. Meiklejohn.  All Rights Reserved.
 %%
-%%     http://www.apache.org/licenses/LICENSE-2.0
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
 %%
-%% Unless required by applicable law or agreed to in writing, software
-%% distributed under the License is distributed on an "AS IS" BASIS,
-%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-%% See the License for the specific language governing permissions and
-%% limitations under the License.
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% -------------------------------------------------------------------
 %%
 %% @copyright 2001-2002 Richard Carlsson
 %% @copyright 2019 Christopher S. Meiklejohn
@@ -113,9 +120,10 @@ partisan_analysis(Tree) ->
 	end, dict:new(), MessageEntryPoints),
 
 	%% Write out the causal relationships.
+    ModuleString = os:getenv("IMPLEMENTATION_MODULE"),
 	io:format("Writing out results!~n", []),
-	{ok, Io} = file:open("/tmp/partisan-causality", [write, {encoding, utf8}]),
-	[io:format(Io, "~p.~n", [ResultLine]) || ResultLine <- [FinalResults]],
+	{ok, Io} = file:open("/tmp/partisan-causality-" ++ ModuleString, [write, {encoding, utf8}]),
+	[io:format(Io, "~p.~n", [ResultLine]) || ResultLine <- [dict:to_list(FinalResults)]],
 	ok = file:close(Io),
 
 	io:format("~n~p~n", [dict:to_list(FinalResults)]),
