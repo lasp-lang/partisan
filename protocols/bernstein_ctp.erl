@@ -161,47 +161,54 @@ handle_info({decision, FromNode, Id, Decision}, State) ->
 
     %% Find transaction record.
     case ets:lookup(?PARTICIPATING_TRANSACTIONS, Id) of 
-        [{_Id, #transaction{uncertain=Uncertain0, server_ref=ServerRef, message=Message}=Transaction}] ->
-            case Decision of 
+        [{_Id, #transaction{participant_status=ParticipantStatus, uncertain=Uncertain0, server_ref=ServerRef, message=Message}=Transaction}] ->
+            case ParticipantStatus of
                 abort ->
-                    lager:info("~p: decision was abort.", [node()]),
-
-                    %% Write log record showing abort occurred.
-                    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=abort, uncertain=[]}}),
-
-                    %% Notify uncertain.
-                    lists:foreach(fun(N) ->
-                        lager:info("~p: sending decision message to uncertain node ~p: ~p", [node(), N, Decision]),
-                        partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {decision, MyNode, Id, Decision}, [])
-                    end, Uncertain0),
-
-                    ok;
-                uncertain ->
-                    lager:info("~p: decision was uncertain.", [node()]),
-
-                    %% Don't know, do nothing, possibly block.
-
-                    %% Keep track of who is uncertain.
-                    Uncertain = lists:usort(Uncertain0 ++ [FromNode]),
-                    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{uncertain=Uncertain}}),
-
-                    ok;
+                    lager:error("~p: decision already reached: ~p, ignoring decision.", [node(), ParticipantStatus]);
                 commit ->
-                    lager:info("~p: decision was commit.", [node()]),
+                    lager:error("~p: decision already reached: ~p, ignoring decision.", [node(), ParticipantStatus]);
+                _ ->
+                    case Decision of 
+                        abort ->
+                            lager:info("~p: decision was abort.", [node()]),
 
-                    %% Write log record showing commit occurred.
-                    true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=commit, uncertain=[]}}),
+                            %% Write log record showing abort occurred.
+                            true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=abort, uncertain=[]}}),
 
-                    %% Notify uncertain.
-                    lists:foreach(fun(N) ->
-                        lager:info("~p: sending decision message to uncertain node ~p: ~p", [node(), N, Decision]),
-                        partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {decision, MyNode, Id, Decision}, [])
-                    end, Uncertain0),
+                            %% Notify uncertain.
+                            lists:foreach(fun(N) ->
+                                lager:info("~p: sending decision message to uncertain node ~p: ~p", [node(), N, Decision]),
+                                partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {decision, MyNode, Id, Decision}, [])
+                            end, Uncertain0),
 
-                    %% Forward to process.
-                    partisan_util:process_forward(ServerRef, Message),
+                            ok;
+                        uncertain ->
+                            lager:info("~p: decision was uncertain.", [node()]),
 
-                    ok
+                            %% Don't know, do nothing, possibly block.
+
+                            %% Keep track of who is uncertain.
+                            Uncertain = lists:usort(Uncertain0 ++ [FromNode]),
+                            true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{uncertain=Uncertain}}),
+
+                            ok;
+                        commit ->
+                            lager:info("~p: decision was commit.", [node()]),
+
+                            %% Write log record showing commit occurred.
+                            true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=commit, uncertain=[]}}),
+
+                            %% Notify uncertain.
+                            lists:foreach(fun(N) ->
+                                lager:info("~p: sending decision message to uncertain node ~p: ~p", [node(), N, Decision]),
+                                partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {decision, MyNode, Id, Decision}, [])
+                            end, Uncertain0),
+
+                            %% Forward to process.
+                            partisan_util:process_forward(ServerRef, Message),
+
+                            ok
+                    end
             end;
         [] ->
             lager:error("Notification for decision message but no transaction found!")
