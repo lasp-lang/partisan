@@ -1,7 +1,9 @@
 #!/usr/bin/env escript
 
 main([FileToAnalyze]) ->
-    Analyzer = "partisan_analysis", 
+    io:format("Beginning analysis of: ~p~n", [FileToAnalyze]),
+
+    Analyzer = "src/partisan_analysis", 
 
     case compile:file(Analyzer, []) of
         {ok, _} ->
