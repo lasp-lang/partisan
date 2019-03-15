@@ -69,6 +69,34 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
         end
     end, hd(TraceLines)),
 
+    %% Perform recursive analysis of the traces.
+    analyze(PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, [TraceLinesWithoutFailure]),
+
+    %% Should we try to find witnesses?
+    case os:getenv("FIND_WITNESSES") of 
+        false ->
+            ok;
+        _Other ->
+            identify_minimal_witnesses()
+    end,
+
+    %% Test finished time.
+    EndTime = os:timestamp(),
+    Difference = timer:now_diff(EndTime, StartTime),
+    DifferenceMs = Difference / 1000,
+    DifferenceSec = DifferenceMs / 1000,
+
+    io:format("Test started: ~p~n", [StartTime]),
+    io:format("Test ended: ~p~n", [EndTime]),
+    io:format("Test took: ~p seconds.~n", [DifferenceSec]),
+
+    ok.
+
+%% @private
+analyze(_PreloadOmissionFile, _ReplayTraceFile, _TraceFile, _Causality, _Annotations, []) ->
+    ok;
+
+analyze(PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, [TraceLines|RestTraceLines]) ->
     %% Filter the trace into message trace lines.
     MessageTraceLines = lists:filter(fun({Type, Message}) ->
         case Type =:= pre_interposition_fun of 
@@ -84,7 +112,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
             false ->
                 false
         end
-    end, TraceLinesWithoutFailure),
+    end, TraceLines),
     io:format("Number of items in message trace: ~p~n", [length(MessageTraceLines)]),
 
     %% Generate the powerset of tracelines.
@@ -164,7 +192,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
                 false ->
                     {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0}
             end
-        end, {[], false, [], [], [], []}, TraceLinesWithoutFailure),
+        end, {[], false, [], [], [], []}, TraceLines),
 
         io:format("PrefixMessageTypes: ~p~n", [PrefixMessageTypes]),
         io:format("OmittedMessageTypes: ~p~n", [OmittedMessageTypes]),
@@ -226,6 +254,9 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
                                 %% This passed.
                                 io:format("Test passed.~n", []),
 
+                                {ok, NewTraceLines} = file:consult(TraceFile),
+                                io:format("=> Executed test and test contained ~p lines compared to original trace with ~p lines.~n", [length(hd(NewTraceLines)), length(TraceLines)]),
+
                                 %% Insert result into the ETS table.
                                 true = ets:insert(?RESULTS, {Iteration, {Iteration, FinalTraceLines, Omissions, true}}),
 
@@ -233,7 +264,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
                             _ ->
                                 %% This failed.
                                 io:format("Test FAILED!~n", []),
-                                io:format("Failing test contained the following omitted mesage types: ~p~n", [Omissions]),
+                                % io:format("Failing test contained the following omitted mesage types: ~p~n", [Omissions]),
 
                                 case os:getenv("EXIT_ON_COUNTEREXAMPLE") of 
                                     false ->
@@ -253,27 +284,9 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
         end
     end, {0, 0, 0, []}, ?SCHEDULES),
 
-    io:format("Passed: ~p, Failed: ~p, Pruned: ~p~n", [NumberPassed, NumberFailed, NumberPruned]),
+    io:format("Results: ~p, Failed: ~p, Pruned: ~p~n", [NumberPassed, NumberFailed, NumberPruned]),
 
-    %% Should we try to find witnesses?
-    case os:getenv("FIND_WITNESSES") of 
-        false ->
-            ok;
-        _Other ->
-            identify_minimal_witnesses()
-    end,
-
-    %% Test finished time.
-    EndTime = os:timestamp(),
-    Difference = timer:now_diff(EndTime, StartTime),
-    DifferenceMs = Difference / 1000,
-    DifferenceSec = DifferenceMs / 1000,
-
-    io:format("Test started: ~p~n", [StartTime]),
-    io:format("Test ended: ~p~n", [EndTime]),
-    io:format("Test took: ~p seconds.~n", [DifferenceSec]),
-
-    ok.
+    analyze(PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, RestTraceLines).
 
 %% @doc Generate the powerset of messages.
 powerset([]) -> 
