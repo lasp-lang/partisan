@@ -252,14 +252,21 @@ handle_info({participant_timeout, Id}, State) ->
 
     %% Find transaction record.
     case ets:lookup(?PARTICIPATING_TRANSACTIONS, Id) of 
-        [{_Id, #transaction{participants=Participants}}] ->
-            %% Send decision request to all participants.
-            lists:foreach(fun(N) ->
-                lager:info("~p: sending decision-request message to node ~p: ~p", [node(), N, Id]),
-                partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {decision_request, MyNode, Id}, [])
-            end, membership(Participants)),
+        [{_Id, #transaction{participant_status=ParticipantStatus, participants=Participants}}] ->
+            case ParticipantStatus of 
+                abort ->
+                    ok;
+                commit ->
+                    ok;
+                _Other ->
+                    %% Send decision request to all participants.
+                    lists:foreach(fun(N) ->
+                        lager:info("~p: decision locally is ~p; sending decision-request message to node ~p: ~p", [node(), ParticipantStatus, N, Id]),
+                        partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {decision_request, MyNode, Id}, [])
+                    end, membership(Participants)),
 
-            ok;
+                    ok
+            end;
         [] ->
             lager:error("Notification for participant timeout message but no transaction found!")
     end,
