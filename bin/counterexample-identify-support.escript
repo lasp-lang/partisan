@@ -209,13 +209,13 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
             false ->
                 false
         end,
-        io:format("schedule_valid_omissions: ~p~n", [ScheduleValidOmissions]),
+        % io:format("schedule_valid_omissions: ~p~n", [ScheduleValidOmissions]),
 
         ScheduleValidCausality = schedule_valid_causality(Causality, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
-        io:format("schedule_valid_causality: ~p~n", [ScheduleValidCausality]),
+        % io:format("schedule_valid_causality: ~p~n", [ScheduleValidCausality]),
 
         ScheduleValid = ScheduleValidCausality andalso ScheduleValidOmissions,
-        io:format("schedule_valid: ~p~n", [ScheduleValid]),
+        % io:format("schedule_valid: ~p~n", [ScheduleValid]),
 
         ClassifySchedule = classify_schedule(3, Annotations, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
 
