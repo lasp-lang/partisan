@@ -72,7 +72,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     %% Perform recursive analysis of the traces.
     PreviousIteration = 1,
     PreviousClassificationsExplored = [],
-    analyze(1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, PreviousIteration, PreviousClassificationsExplored, [TraceLinesWithoutFailure]),
+    analyze(1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLinesWithoutFailure, []}]),
 
     %% Should we try to find witnesses?
     case os:getenv("FIND_WITNESSES") of 
@@ -98,7 +98,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
 analyze(_Pass, _PreloadOmissionFile, _ReplayTraceFile, _TraceFile, _Causality, _Annotations, _PreviousIteration, _PreviousClassificationsExplored, []) ->
     ok;
 
-analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, PreviousIteration, PreviousClassificationsExplored, [TraceLines|RestTraceLines]) ->
+analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLines, BaseOmissions}|RestTraceLines]) ->
     io:format("Beginning analyze pass: ~p~n", [Pass]),
 
     %% Filter the trace into message trace lines.
@@ -199,18 +199,25 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
         % io:format("ConditionalMessageTypes: ~p~n", [ConditionalMessageTypes]),
         % io:format("length(MessageTypes): ~p~n", [length(PrefixMessageTypes ++ OmittedMessageTypes ++ ConditionalMessageTypes)]),
 
-        ScheduleValid = schedule_valid(Causality, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
-        % io:format("schedule_valid: ~p~n", [ScheduleValid]),
+        %% Is this schedule valid for these omissions?
+        OmissionsSet = sets:from_list(Omissions),
+        BaseOmissionsSet = sets:from_list(BaseOmissions),
+
+        ScheduleValidOmissions = case sets:is_subset(BaseOmissionsSet, OmissionsSet) orelse BaseOmissionsSet =:= OmissionsSet of
+            true ->
+                true;
+            false ->
+                false
+        end,
+        io:format("schedule_valid_omissions: ~p~n", [ScheduleValidOmissions]),
+
+        ScheduleValidCausality = schedule_valid_causality(Causality, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
+        io:format("schedule_valid_causality: ~p~n", [ScheduleValidCausality]),
+
+        ScheduleValid = ScheduleValidCausality andalso ScheduleValidOmissions,
+        io:format("schedule_valid: ~p~n", [ScheduleValid]),
 
         ClassifySchedule = classify_schedule(3, Annotations, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
-
-        case ScheduleValid of 
-            true ->
-                % io:format("classify_schedule: ~p, schedule_valid: ~p~n", [dict:to_list(ClassifySchedule), ScheduleValid]),
-                ok;
-            false ->
-                ok
-        end,
 
         %% Store generated schedule.
         true = ets:insert(?SCHEDULES, {Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}),
@@ -256,7 +263,7 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
                         NewTraces = case length(hd(NewTraceLines)) > length(TraceLines) of 
                             true ->
                                 io:format("=> * Adding trace to list to explore.~n", []),
-                                NewTraces0 ++ [hd(NewTraceLines)];
+                                NewTraces0 ++ [{hd(NewTraceLines), Omissions}];
                             false ->
                                 NewTraces0
                         end,
@@ -344,7 +351,7 @@ message_type(Message) ->
     end.
 
 %% @private
-schedule_valid(Causality, PrefixSchedule, _OmittedSchedule, ConditionalSchedule) ->
+schedule_valid_causality(Causality, PrefixSchedule, _OmittedSchedule, ConditionalSchedule) ->
     DerivedSchedule = PrefixSchedule ++ ConditionalSchedule,
 
     RequirementsMet = lists:foldl(fun(Type, Acc) ->
