@@ -119,14 +119,21 @@ partisan_analysis(Tree) ->
 		end
 	end, dict:new(), MessageEntryPoints),
 
+	%% Rewrite the dict into a proper format.
+	OutputDict = dict:fold(fun(Key, Values, Acc) ->
+		NewKey = {receive_message, Key},
+		NewValues = lists:map(fun(V) -> {forward_message, V} end, Values),
+		dict:store(NewKey, NewValues, Acc)
+	end, dict:new(), FinalResults),
+
 	%% Write out the causal relationships.
     ModuleString = os:getenv("IMPLEMENTATION_MODULE"),
 	io:format("Writing out results!~n", []),
 	{ok, Io} = file:open("/tmp/partisan-causality-" ++ ModuleString, [write, {encoding, utf8}]),
-	[io:format(Io, "~p.~n", [ResultLine]) || ResultLine <- [dict:to_list(FinalResults)]],
+	[io:format(Io, "~p.~n", [ResultLine]) || ResultLine <- [dict:to_list(OutputDict)]],
 	ok = file:close(Io),
 
-	io:format("~n~p~n", [dict:to_list(FinalResults)]),
+	io:format("~n~p~n", [dict:to_list(OutputDict)]),
 
 	ok.
 

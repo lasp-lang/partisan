@@ -10,4 +10,4 @@ echo ""
 read -p "Please ensure the annotations file has been updated prior to running the test suite."
 
 echo "Beginning reduction to find support for successful example..."
-SUBLIST=${SUBLIST} EXIT_ON_COUNTEREXAMPLE=${EXIT_ON_COUNTEREXAMPLE} IMPLEMENTATION_MODULE=${MODULE} bin/counterexample-identify-support.sh
+RECURSIVE=${RECURSIVE} SUBLIST=${SUBLIST} EXIT_ON_COUNTEREXAMPLE=${EXIT_ON_COUNTEREXAMPLE} IMPLEMENTATION_MODULE=${MODULE} bin/counterexample-identify-support.sh

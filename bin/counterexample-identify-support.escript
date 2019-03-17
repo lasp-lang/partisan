@@ -99,7 +99,7 @@ analyze(_Pass, _PreloadOmissionFile, _ReplayTraceFile, _TraceFile, _Causality, _
     ok;
 
 analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLines, BaseOmissions}|RestTraceLines]) ->
-    io:format("Beginning analyze pass: ~p~n", [Pass]),
+    io:format("Beginning analyze pass: ~p with previous iteration: ~p and previous explored classifications: ~p~n", [Pass, PreviousIteration, PreviousClassificationsExplored]),
 
     %% Filter the trace into message trace lines.
     MessageTraceLines = lists:filter(fun({Type, Message}) ->
@@ -159,12 +159,18 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
                                 forward_message ->
                                     case lists:member(Line, Omissions) of 
                                         true ->
-                                            {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0};
+                                            ReceiveOmission = {Type, {OriginNode, receive_message, TracingNode, {forward_message, implementation_module(), MessagePayload}}},
+                                            {FinalTrace0, FaultsStarted0, AdditionalOmissions0 ++ [ReceiveOmission], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0};
                                         false ->
                                             {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0 ++ [message_type(Message)]}
                                     end;
                                 receive_message ->
-                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0}
+                                    case lists:member(Line, AdditionalOmissions0) of 
+                                        true ->
+                                            {FinalTrace0, FaultsStarted0, AdditionalOmissions0 -- [Line], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0};
+                                        false ->
+                                            {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0 ++ [message_type(Message)]}
+                                    end
                             end;
                         false ->
                             %% Otherwise, find just the targeted commands to remove.
@@ -183,9 +189,9 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
                                 receive_message -> 
                                     case lists:member(Line, AdditionalOmissions0) of 
                                         true ->
-                                            {FinalTrace0, FaultsStarted0, AdditionalOmissions0 -- [Line], PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0};
+                                            {FinalTrace0, FaultsStarted0, AdditionalOmissions0 -- [Line], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0};
                                         false ->
-                                            {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0}
+                                            {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0 ++ [message_type(Message)], OmittedMessageTypes0, ConditionalMessageTypes0}
                                     end
                             end
                     end;
@@ -209,13 +215,21 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
             false ->
                 false
         end,
-        % io:format("schedule_valid_omissions: ~p~n", [ScheduleValidOmissions]),
 
         ScheduleValidCausality = schedule_valid_causality(Causality, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
-        % io:format("schedule_valid_causality: ~p~n", [ScheduleValidCausality]),
+        % ScheduleValidCausality = true,
 
         ScheduleValid = ScheduleValidCausality andalso ScheduleValidOmissions,
-        % io:format("schedule_valid: ~p~n", [ScheduleValid]),
+
+        case ScheduleValid of
+            true ->
+            %    io:format("schedule_valid_omissions: ~p~n", [ScheduleValidOmissions]),
+            %    io:format("schedule_valid_causality: ~p~n", [ScheduleValidCausality]),
+            %    io:format("schedule_valid: ~p~n", [ScheduleValid]),
+               ok;
+            false ->
+                ok
+        end,
 
         ClassifySchedule = classify_schedule(3, Annotations, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
 
@@ -227,7 +241,7 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
     end, PreviousIteration, TracesToIterate),
 
     %% Run schedules.
-    {NumberPassed, NumberFailed, NumberPruned, _NewClassificationsExplored, AdditionalTraces} = ets:foldl(fun({Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, {NumPassed, NumFailed, NumPruned, ClassificationsExplored0, NewTraces0}) ->
+    {NumberPassed, NumberFailed, NumberPruned, NewClassificationsExplored, AdditionalTraces} = ets:foldl(fun({Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, {NumPassed, NumFailed, NumPruned, ClassificationsExplored0, NewTraces0}) ->
         Classification = dict:to_list(ClassifySchedule),
 
         case ScheduleValid of 
@@ -250,17 +264,33 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
                         [io:format(TraceIo, "~p.~n", [TraceLine]) || TraceLine <- [FinalTraceLines]],
                         ok = file:close(TraceIo),
 
+                        ClassificationsExplored = ClassificationsExplored0 ++ [Classification],
+                        io:format("=> Classification for this test: ~p~n", [Classification]),
+
                         %% Run the trace.
+                        Size = proplists:get_value(size, ets:info(?SCHEDULES)),
                         Command = "rm -rf priv/lager; IMPLEMENTATION_MODULE=" ++ os:getenv("IMPLEMENTATION_MODULE") ++ " SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
-                        io:format("Executing command for iteration ~p of ~p:", [Iteration, length(TracesToIterate)]),
+                        io:format("Executing command for iteration ~p of ~p:", [Iteration, Size]),
                         io:format(" ~p~n", [Command]),
                         Output = os:cmd(Command),
+                        % Output = "",
+
+                        ClassificationsExplored = ClassificationsExplored0 ++ [Classification],
+                        io:format("=> Classification now: ~p~n", [ClassificationsExplored]),
 
                         %% New trace?
                         {ok, NewTraceLines} = file:consult(TraceFile),
                         io:format("=> Executed test and test contained ~p lines compared to original trace with ~p lines.~n", [length(hd(NewTraceLines)), length(TraceLines)]),
 
-                        NewTraces = case length(hd(NewTraceLines)) > length(TraceLines) of 
+                        MessageTypesFromTraceLines = message_types(TraceLines),
+                        io:format("=> MessageTypesFromTraceLines: ~p~n", [MessageTypesFromTraceLines]),
+                        MessageTypesFromNewTraceLines = message_types(hd(NewTraceLines)),
+                        io:format("=> MessageTypesFromNewTraceLines: ~p~n", [MessageTypesFromNewTraceLines]),
+
+                        Difference = lists:usort(MessageTypesFromNewTraceLines) -- lists:usort(MessageTypesFromTraceLines),
+                        io:format("=> Difference: ~p~n", [Difference]),
+
+                        NewTraces = case length(Difference) > 0 of
                             true ->
                                 io:format("=> * Adding trace to list to explore.~n", []),
                                 NewTraces0 ++ [{hd(NewTraceLines), Omissions}];
@@ -277,7 +307,7 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
                                 %% Insert result into the ETS table.
                                 true = ets:insert(?RESULTS, {Iteration, {Iteration, FinalTraceLines, Omissions, true}}),
 
-                                {NumPassed + 1, NumFailed, NumPruned, ClassificationsExplored0 ++ [Classification], NewTraces};
+                                {NumPassed + 1, NumFailed, NumPruned, ClassificationsExplored, NewTraces};
                             _ ->
                                 %% This failed.
                                 io:format("Test FAILED!~n", []),
@@ -295,7 +325,7 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
                                 %% Insert result into the ETS table.
                                 true = ets:insert(?RESULTS, {Iteration, {Iteration, FinalTraceLines, Omissions, false}}),
 
-                                {NumPassed, NumFailed + 1, NumPruned, ClassificationsExplored0 ++ [Classification], NewTraces}
+                                {NumPassed, NumFailed + 1, NumPruned, ClassificationsExplored, NewTraces}
                         end
                 end
         end
@@ -303,7 +333,14 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
 
     io:format("Pass: ~p, Iterations: ~p - ~p, Results: ~p, Failed: ~p, Pruned: ~p~n", [Pass, PreviousIteration, NewIteration, NumberPassed, NumberFailed, NumberPruned]),
 
-    analyze(Pass + 1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, 1, [], RestTraceLines ++ AdditionalTraces).
+    case os:getenv("RECURSIVE") of 
+        false ->
+            analyze(Pass + 1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, NewIteration, NewClassificationsExplored, RestTraceLines);
+        "false" ->
+            analyze(Pass + 1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, NewIteration, NewClassificationsExplored, RestTraceLines);
+        _Other ->
+            analyze(Pass + 1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, NewIteration, NewClassificationsExplored, RestTraceLines ++ AdditionalTraces)
+    end.
 
 %% @doc Generate the powerset of messages.
 powerset([]) -> 
@@ -343,24 +380,30 @@ message_type(Message) ->
     case InterpositionType of 
         forward_message ->
             MessageType1 = element(1, MessagePayload),
-            MessageType1;
+            {forward_message, MessageType1};
         receive_message ->
             {forward_message, _Module, Payload} = MessagePayload,
             MessageType1 = element(1, Payload),
-            MessageType1
+            {receive_message, MessageType1}
     end.
 
 %% @private
 schedule_valid_causality(Causality, PrefixSchedule, _OmittedSchedule, ConditionalSchedule) ->
     DerivedSchedule = PrefixSchedule ++ ConditionalSchedule,
+    % io:format("derived_schedule: ~p~n", [length(DerivedSchedule)]),
+    % io:format("prefix_schedule: ~p~n", [length(PrefixSchedule)]),
+    % io:format("omitted_schedule: ~p~n", [length(OmittedSchedule)]),
+    % io:format("conditional_schedule: ~p~n", [length(ConditionalSchedule)]),
 
     RequirementsMet = lists:foldl(fun(Type, Acc) ->
         % io:format("=> Type: ~p~n", [Type]),
 
         All = lists:foldl(fun({K, V}, Acc1) ->
+            % io:format("=> V: ~p~n", [V]),
+
             case lists:member(Type, V) of 
                 true ->
-                    % io:format("=> Requires delivery of ~p~n", [K]),
+                    % io:format("=> Presence of ~p requires: ~p~n", [Type, K]),
 
                     case lists:member(K, DerivedSchedule) of 
                         true ->
@@ -371,6 +414,7 @@ schedule_valid_causality(Causality, PrefixSchedule, _OmittedSchedule, Conditiona
                             false andalso Acc1
                     end;
                 false ->
+                    % io:format("=> * fallthrough: ~p not in ~p.~n", [Type, V]),
                     true andalso Acc1
             end
         end, Acc, dict:to_list(Causality)),
@@ -470,6 +514,7 @@ classify_schedule(_N, Annotations, PrefixSchedule, _OmittedSchedule, Conditional
             case Precondition of 
                 {PreconditionType, N} ->
                     Num = length(lists:filter(fun(T) -> T =:= PreconditionType end, DerivedSchedule)),
+                    % io:format("=> * found ~p messages of type ~p~n", [Num, PreconditionType]),
                     Acc andalso Num >= N;
                 true ->
                     Acc andalso true
@@ -500,3 +545,15 @@ ensure_preconditions_present(Causality, Annotations) ->
                 Acc andalso false
         end
     end, true, CausalMessages).
+
+%% @private
+message_types(TraceLines) ->
+    %% Filter the trace into message trace lines.
+    lists:flatmap(fun({Type, Message}) ->
+        case Type =:= pre_interposition_fun of 
+            true ->
+                [message_type(Message)];
+            false ->
+                []
+        end
+    end, TraceLines).
