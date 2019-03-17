@@ -72,7 +72,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     %% Perform recursive analysis of the traces.
     PreviousIteration = 1,
     PreviousClassificationsExplored = [],
-    analyze(1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLinesWithoutFailure, []}]),
+    analyze(1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLinesWithoutFailure, [], []}]),
 
     %% Should we try to find witnesses?
     case os:getenv("FIND_WITNESSES") of 
@@ -98,7 +98,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
 analyze(_Pass, _PreloadOmissionFile, _ReplayTraceFile, _TraceFile, _Causality, _Annotations, _PreviousIteration, _PreviousClassificationsExplored, []) ->
     ok;
 
-analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLines, BaseOmissions}|RestTraceLines]) ->
+analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLines, BaseOmissions, _Difference}|RestTraceLines]) ->
     io:format("Beginning analyze pass: ~p with previous iteration: ~p and previous explored classifications: ~p~n", [Pass, PreviousIteration, PreviousClassificationsExplored]),
 
     %% Filter the trace into message trace lines.
@@ -137,8 +137,8 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
             end
     end,
 
-    %% For each trace, write out the preload omission file.
-    NewIteration = lists:foldl(fun(Omissions, Iteration) ->
+    %% Generate schedules.
+    {GenIteration, GenNumPassed, GenNumFailed, GenNumPruned, GenClassificationsExplored, GenAdditionalTraces} = lists:foldl(fun(Omissions, {GenIteration0, GenNumPassed0, GenNumFailed0, GetNumPruned0, GenClassificationsExplored0, GenAdditionalTraces0}) ->
         % io:format("~n", []),
 
         %% Generate a new trace.
@@ -233,39 +233,61 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
 
         ClassifySchedule = classify_schedule(3, Annotations, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
 
-        %% Store generated schedule.
-        true = ets:insert(?SCHEDULES, {Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}),
+        case os:getenv("PRELOAD_SCHEDULES") of 
+            false ->
+                case execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, GenClassificationsExplored0, GenAdditionalTraces0) of
+                    pruned ->
+                        {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0};
+                    {passed, ClassificationsExplored, NewTraces} ->
+                        {GenIteration0 + 1, GenNumPassed0 + 1, GenNumFailed0, GetNumPruned0, ClassificationsExplored, NewTraces};
+                    {failed, ClassificationsExplored, NewTraces} ->
+                        {GenIteration0 + 1, GenNumPassed0, GenNumFailed0 + 1, GetNumPruned0, ClassificationsExplored, NewTraces};
+                    invalid ->
+                        {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0}
+                end;
+            "false" ->
+                case execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, GenClassificationsExplored0, GenAdditionalTraces0) of
+                    pruned ->
+                        {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0};
+                    {passed, ClassificationsExplored, NewTraces} ->
+                        {GenIteration0 + 1, GenNumPassed0 + 1, GenNumFailed0, GetNumPruned0, ClassificationsExplored, NewTraces};
+                    {failed, ClassificationsExplored, NewTraces} ->
+                        {GenIteration0 + 1, GenNumPassed0, GenNumFailed0 + 1, GetNumPruned0, ClassificationsExplored, NewTraces};
+                    invalid ->
+                        {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0}
+                end;
+            _Other ->
+                %% Store generated schedule.
+                true = ets:insert(?SCHEDULES, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}),
 
-        %% Bump iteration.
-        Iteration + 1
-    end, PreviousIteration, TracesToIterate),
-
-    %% Run schedules.
-    {NumberPassed, NumberFailed, NumberPruned, NewClassificationsExplored, AdditionalTraces} = ets:foldl(fun({Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, {NumPassed, NumFailed, NumPruned, ClassificationsExplored0, NewTraces0}) ->
-        Size = proplists:get_value(size, ets:info(?SCHEDULES)),
-        io:format("Exploring schedule for iteration ~p of ~p~n:", [Iteration, Size]),
-
-        case execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, ClassificationsExplored0, NewTraces0) of
-            pruned ->
-                {NumPassed, NumFailed, NumPruned + 1, ClassificationsExplored0, NewTraces0};
-            {passed, ClassificationsExplored, NewTraces} ->
-                {NumPassed + 1, NumFailed, NumPruned, ClassificationsExplored, NewTraces};
-            {failed, ClassificationsExplored, NewTraces} ->
-                {NumPassed, NumFailed + 1, NumPruned, ClassificationsExplored, NewTraces};
-            invalid ->
-                {NumPassed, NumFailed, NumPruned + 1, ClassificationsExplored0, NewTraces0}
+                {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0, GenClassificationsExplored0, GenAdditionalTraces0}
         end
-    end, {0, 0, 0, PreviousClassificationsExplored, []}, ?SCHEDULES),
+    end, {PreviousIteration, 0, 0, 0, PreviousClassificationsExplored, RestTraceLines}, TracesToIterate),
 
-    io:format("Pass: ~p, Iterations: ~p - ~p, Results: ~p, Failed: ~p, Pruned: ~p~n", [Pass, PreviousIteration, NewIteration, NumberPassed, NumberFailed, NumberPruned]),
+    %% Run generated schedules stored in the ETS table.
+    {PreloadNumPassed, PreloadNumFailed, PreloadNumPruned, PreloadClassificationsExplored, PreloadAdditionalTraces} = ets:foldl(fun({Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, {PreloadNumPassed0, PreloadNumFailed0, PreloadNumPruned0, PreloadClassificationsExplored0, PreloadAdditionalTraces0}) ->
+        case execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, PreloadClassificationsExplored0, PreloadAdditionalTraces0) of
+            pruned ->
+                {PreloadNumPassed0, PreloadNumFailed0, PreloadNumPruned0 + 1, PreloadClassificationsExplored0, PreloadAdditionalTraces0};
+            {passed, ClassificationsExplored, NewTraces} ->
+                {PreloadNumPassed0 + 1, PreloadNumFailed0, PreloadNumPruned0, ClassificationsExplored, NewTraces};
+            {failed, ClassificationsExplored, NewTraces} ->
+                {PreloadNumPassed0, PreloadNumFailed0 + 1, PreloadNumPruned0, ClassificationsExplored, NewTraces};
+            invalid ->
+                {PreloadNumPassed0, PreloadNumFailed0, PreloadNumPruned0 + 1, PreloadClassificationsExplored0, PreloadAdditionalTraces0}
+        end
+    end, {GenNumPassed, GenNumFailed, GenNumPruned, GenClassificationsExplored, GenAdditionalTraces}, ?SCHEDULES),
 
+    io:format("Pass: ~p, Iterations: ~p - ~p, Results: ~p, Failed: ~p, Pruned: ~p~n", [Pass, PreviousIteration, GenIteration, PreloadNumPassed, PreloadNumFailed, PreloadNumPruned]),
+
+    %% Should we explore any new schedules we have discovered?
     case os:getenv("RECURSIVE") of 
         false ->
-            analyze(Pass + 1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, NewIteration, NewClassificationsExplored, RestTraceLines);
+            analyze(Pass + 1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, GenIteration, PreloadClassificationsExplored, RestTraceLines);
         "false" ->
-            analyze(Pass + 1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, NewIteration, NewClassificationsExplored, RestTraceLines);
+            analyze(Pass + 1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, GenIteration, PreloadClassificationsExplored, RestTraceLines);
         _Other ->
-            analyze(Pass + 1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, NewIteration, NewClassificationsExplored, RestTraceLines ++ AdditionalTraces)
+            analyze(Pass + 1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, GenIteration, PreloadClassificationsExplored, PreloadAdditionalTraces)
     end.
 
 %% @doc Generate the powerset of messages.
@@ -514,7 +536,7 @@ execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {I
                     %% Run the trace.
                     Command = "rm -rf priv/lager; IMPLEMENTATION_MODULE=" ++ os:getenv("IMPLEMENTATION_MODULE") ++ " SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
                     io:format("Executing command for iteration ~p:~n", [Iteration]),
-                    io:format(" ~p~n", [Command]),
+                    io:format("~p~n", [Command]),
                     Output = os:cmd(Command),
 
                     ClassificationsExplored = ClassificationsExplored0 ++ [Classification],
@@ -535,7 +557,14 @@ execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {I
                     NewTraces = case length(Difference) > 0 of
                         true ->
                             io:format("=> * Adding trace to list to explore.~n", []),
-                            NewTraces0 ++ [{hd(NewTraceLines), Omissions}];
+
+                            case lists:keymember(Difference, 3, NewTraces0) of 
+                                true ->
+                                    io:format("=> * Similar trace already exists, ignoring!~n", []),
+                                    NewTraces0;
+                                false ->
+                                    NewTraces0 ++ [{hd(NewTraceLines), Omissions, Difference}]
+                            end;
                         false ->
                             NewTraces0
                     end,
