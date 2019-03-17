@@ -242,92 +242,18 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
 
     %% Run schedules.
     {NumberPassed, NumberFailed, NumberPruned, NewClassificationsExplored, AdditionalTraces} = ets:foldl(fun({Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, {NumPassed, NumFailed, NumPruned, ClassificationsExplored0, NewTraces0}) ->
-        Classification = dict:to_list(ClassifySchedule),
+        Size = proplists:get_value(size, ets:info(?SCHEDULES)),
+        io:format("Exploring schedule for iteration ~p of ~p~n:", [Iteration, Size]),
 
-        case ScheduleValid of 
-            false ->
+        case execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, ClassificationsExplored0, NewTraces0) of
+            pruned ->
                 {NumPassed, NumFailed, NumPruned + 1, ClassificationsExplored0, NewTraces0};
-            true ->
-                case lists:member(Classification, ClassificationsExplored0) of 
-                    true ->
-                        {NumPassed, NumFailed, NumPruned + 1, ClassificationsExplored0, NewTraces0};
-                    false ->
-                        %% Write out a new omission file from the previously used trace.
-                        io:format("Writing out new preload omissions file!~n", []),
-                        {ok, PreloadOmissionIo} = file:open(PreloadOmissionFile, [write, {encoding, utf8}]),
-                        [io:format(PreloadOmissionIo, "~p.~n", [O]) || O <- [Omissions]],
-                        ok = file:close(PreloadOmissionIo),
-
-                        %% Write out replay trace.
-                        io:format("Writing out new replay trace file!~n", []),
-                        {ok, TraceIo} = file:open(ReplayTraceFile, [write, {encoding, utf8}]),
-                        [io:format(TraceIo, "~p.~n", [TraceLine]) || TraceLine <- [FinalTraceLines]],
-                        ok = file:close(TraceIo),
-
-                        ClassificationsExplored = ClassificationsExplored0 ++ [Classification],
-                        io:format("=> Classification for this test: ~p~n", [Classification]),
-
-                        %% Run the trace.
-                        Size = proplists:get_value(size, ets:info(?SCHEDULES)),
-                        Command = "rm -rf priv/lager; IMPLEMENTATION_MODULE=" ++ os:getenv("IMPLEMENTATION_MODULE") ++ " SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
-                        io:format("Executing command for iteration ~p of ~p:", [Iteration, Size]),
-                        io:format(" ~p~n", [Command]),
-                        Output = os:cmd(Command),
-                        % Output = "",
-
-                        ClassificationsExplored = ClassificationsExplored0 ++ [Classification],
-                        io:format("=> Classification now: ~p~n", [ClassificationsExplored]),
-
-                        %% New trace?
-                        {ok, NewTraceLines} = file:consult(TraceFile),
-                        io:format("=> Executed test and test contained ~p lines compared to original trace with ~p lines.~n", [length(hd(NewTraceLines)), length(TraceLines)]),
-
-                        MessageTypesFromTraceLines = message_types(TraceLines),
-                        io:format("=> MessageTypesFromTraceLines: ~p~n", [MessageTypesFromTraceLines]),
-                        MessageTypesFromNewTraceLines = message_types(hd(NewTraceLines)),
-                        io:format("=> MessageTypesFromNewTraceLines: ~p~n", [MessageTypesFromNewTraceLines]),
-
-                        Difference = lists:usort(MessageTypesFromNewTraceLines) -- lists:usort(MessageTypesFromTraceLines),
-                        io:format("=> Difference: ~p~n", [Difference]),
-
-                        NewTraces = case length(Difference) > 0 of
-                            true ->
-                                io:format("=> * Adding trace to list to explore.~n", []),
-                                NewTraces0 ++ [{hd(NewTraceLines), Omissions}];
-                            false ->
-                                NewTraces0
-                        end,
-
-                        %% Store set of omissions as omissions that didn't invalidate the execution.
-                        case string:find(Output, "{postcondition,false}") of 
-                            nomatch ->
-                                %% This passed.
-                                io:format("Test passed.~n", []),
-
-                                %% Insert result into the ETS table.
-                                true = ets:insert(?RESULTS, {Iteration, {Iteration, FinalTraceLines, Omissions, true}}),
-
-                                {NumPassed + 1, NumFailed, NumPruned, ClassificationsExplored, NewTraces};
-                            _ ->
-                                %% This failed.
-                                io:format("Test FAILED!~n", []),
-                                % io:format("Failing test contained the following omitted mesage types: ~p~n", [Omissions]),
-
-                                case os:getenv("EXIT_ON_COUNTEREXAMPLE") of 
-                                    false ->
-                                        ok;
-                                    "false" ->
-                                        ok;
-                                    _Other ->
-                                        exit({error, counterexample_found})
-                                end,
-
-                                %% Insert result into the ETS table.
-                                true = ets:insert(?RESULTS, {Iteration, {Iteration, FinalTraceLines, Omissions, false}}),
-
-                                {NumPassed, NumFailed + 1, NumPruned, ClassificationsExplored, NewTraces}
-                        end
-                end
+            {passed, ClassificationsExplored, NewTraces} ->
+                {NumPassed + 1, NumFailed, NumPruned, ClassificationsExplored, NewTraces};
+            {failed, ClassificationsExplored, NewTraces} ->
+                {NumPassed, NumFailed + 1, NumPruned, ClassificationsExplored, NewTraces};
+            invalid ->
+                {NumPassed, NumFailed, NumPruned + 1, ClassificationsExplored0, NewTraces0}
         end
     end, {0, 0, 0, PreviousClassificationsExplored, []}, ?SCHEDULES),
 
@@ -557,3 +483,91 @@ message_types(TraceLines) ->
                 []
         end
     end, TraceLines).
+
+%% @privae
+execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, ClassificationsExplored0, NewTraces0) ->
+    Classification = dict:to_list(ClassifySchedule),
+
+    case ScheduleValid of 
+        false ->
+            invalid;
+        true ->
+            case lists:member(Classification, ClassificationsExplored0) of 
+                true ->
+                    pruned;
+                false ->
+                    %% Write out a new omission file from the previously used trace.
+                    io:format("Writing out new preload omissions file!~n", []),
+                    {ok, PreloadOmissionIo} = file:open(PreloadOmissionFile, [write, {encoding, utf8}]),
+                    [io:format(PreloadOmissionIo, "~p.~n", [O]) || O <- [Omissions]],
+                    ok = file:close(PreloadOmissionIo),
+
+                    %% Write out replay trace.
+                    io:format("Writing out new replay trace file!~n", []),
+                    {ok, TraceIo} = file:open(ReplayTraceFile, [write, {encoding, utf8}]),
+                    [io:format(TraceIo, "~p.~n", [TraceLine]) || TraceLine <- [FinalTraceLines]],
+                    ok = file:close(TraceIo),
+
+                    ClassificationsExplored = ClassificationsExplored0 ++ [Classification],
+                    io:format("=> Classification for this test: ~p~n", [Classification]),
+
+                    %% Run the trace.
+                    Command = "rm -rf priv/lager; IMPLEMENTATION_MODULE=" ++ os:getenv("IMPLEMENTATION_MODULE") ++ " SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
+                    io:format("Executing command for iteration ~p:~n", [Iteration]),
+                    io:format(" ~p~n", [Command]),
+                    Output = os:cmd(Command),
+
+                    ClassificationsExplored = ClassificationsExplored0 ++ [Classification],
+                    io:format("=> Classification now: ~p~n", [ClassificationsExplored]),
+
+                    %% New trace?
+                    {ok, NewTraceLines} = file:consult(TraceFile),
+                    io:format("=> Executed test and test contained ~p lines compared to original trace with ~p lines.~n", [length(hd(NewTraceLines)), length(TraceLines)]),
+
+                    MessageTypesFromTraceLines = message_types(TraceLines),
+                    io:format("=> MessageTypesFromTraceLines: ~p~n", [MessageTypesFromTraceLines]),
+                    MessageTypesFromNewTraceLines = message_types(hd(NewTraceLines)),
+                    io:format("=> MessageTypesFromNewTraceLines: ~p~n", [MessageTypesFromNewTraceLines]),
+
+                    Difference = lists:usort(MessageTypesFromNewTraceLines) -- lists:usort(MessageTypesFromTraceLines),
+                    io:format("=> Difference: ~p~n", [Difference]),
+
+                    NewTraces = case length(Difference) > 0 of
+                        true ->
+                            io:format("=> * Adding trace to list to explore.~n", []),
+                            NewTraces0 ++ [{hd(NewTraceLines), Omissions}];
+                        false ->
+                            NewTraces0
+                    end,
+
+                    %% Store set of omissions as omissions that didn't invalidate the execution.
+                    case string:find(Output, "{postcondition,false}") of 
+                        nomatch ->
+                            %% This passed.
+                            io:format("Test passed.~n", []),
+
+                            %% Insert result into the ETS table.
+                            true = ets:insert(?RESULTS, {Iteration, {Iteration, FinalTraceLines, Omissions, true}}),
+
+                            {passed, ClassificationsExplored, NewTraces};
+                        _ ->
+                            %% This failed.
+                            io:format("Test FAILED!~n", []),
+                            % io:format("Failing test contained the following omitted mesage types: ~p~n", [Omissions]),
+
+                            case os:getenv("EXIT_ON_COUNTEREXAMPLE") of 
+                                false ->
+                                    ok;
+                                "false" ->
+                                    ok;
+                                _Other ->
+                                    exit({error, counterexample_found})
+                            end,
+
+                            %% Insert result into the ETS table.
+                            true = ets:insert(?RESULTS, {Iteration, {Iteration, FinalTraceLines, Omissions, false}}),
+
+                            {failed, ClassificationsExplored, NewTraces}
+                    end
+            end
+    end.
