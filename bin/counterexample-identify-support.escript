@@ -235,7 +235,12 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
 
         case os:getenv("PRELOAD_SCHEDULES") of 
             false ->
-                io:format("Not preloading, executing schedule now...~n", []),
+                case GenIteration0 rem 1000 == 0 of 
+                    true ->
+                        io:format("Executed ~p schedules.~n", [GenIteration0]);
+                    false ->
+                        ok
+                end,
 
                 case execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, GenClassificationsExplored0, GenAdditionalTraces0) of
                     pruned ->
@@ -248,7 +253,12 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
                         {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0}
                 end;
             "false" ->
-                io:format("Not preloading, executing schedule now...~n", []),
+                case GenIteration0 rem 1000 == 0 of 
+                    true ->
+                        io:format("Executed ~p schedules.~n", [GenIteration0]);
+                    false ->
+                        ok
+                end,
 
                 case execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, GenClassificationsExplored0, GenAdditionalTraces0) of
                     pruned ->
