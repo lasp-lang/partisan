@@ -169,8 +169,6 @@ node_begin_case() ->
         node_debug("removing old data root: ~p", [DataRoot]),
         os:cmd("rm -rf ./" ++ DataRoot),
 
-        ok = rpc:call(?NAME(ShortName), application, set_env, [riak_ensemble, data_root, DataRoot]),
-
         node_debug("configuring riak_ensemble at node ~p for data_root ~p", [ShortName, DataRoot]),
         ok = rpc:call(?NAME(ShortName), application, set_env, [riak_ensemble, data_root, DataRoot]),
 
@@ -190,11 +188,30 @@ node_begin_case() ->
 
     %% Join remote nodes to the root.
     lists:foreach(fun({ShortName, _}) ->
-        ok = rpc:call(?NAME(FirstName), riak_ensemble_manager, join, [?NAME(FirstName), ?NAME(ShortName)])
+        %% Join the node.
+        ok = rpc:call(?NAME(FirstName), riak_ensemble_manager, join, [?NAME(FirstName), ?NAME(ShortName)]),
+
+        %% Sleep for convergenece.
+        timer:sleep(10000),
+        
+        %% Wait on the shortname.
+        wait_stable(?NAME(ShortName), root),
+
+        Result = rpc:call(?NAME(FirstName), riak_ensemble_manager, cluster, []),
+        lager:info("Result from cluster: ~p", [Result]),
+
+        %% Wait for stabilization.
+        wait_stable(?NAME(FirstName), root),
+
+        RootLeader = rpc:call(?NAME(FirstName), riak_ensemble_manager, rleader_pid, []),
+        ok = rpc:call(?NAME(FirstName), riak_ensemble_peer, update_members, [RootLeader, [{add, {root, ?NAME(ShortName)}}], 10000]),
+
+        %% Wait until stable.
+        wait_stable(?NAME(FirstName), root)
     end, tl(Nodes)),
 
     ShouldMembers = lists:map(fun({X, _}) ->
-        {root, X}
+        {root, ?NAME(X)}
     end, Nodes),
     node_debug("waiting for membership on node: ~p after join", [FirstName]),
     wait_members(?NAME(FirstName), root, ShouldMembers),
@@ -204,8 +221,8 @@ node_begin_case() ->
 
     %% Get members of the ensemble.
     node_debug("getting members of the root ensemble on node ~p", [FirstName]),
-    [{root, EnsembleNode}] = rpc:call(?NAME(FirstName), riak_ensemble_manager, get_members, [root]),
-    node_debug("=> ~p", [EnsembleNode]),
+    Results = rpc:call(?NAME(FirstName), riak_ensemble_manager, get_members, [root]),
+    node_debug("=> ~p", [Results]),
 
     ok.
 
