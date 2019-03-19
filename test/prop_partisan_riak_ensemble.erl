@@ -36,10 +36,11 @@
 %%% Generators
 %%%===================================================================
 
-message() ->
-    ?LET(Id, erlang:unique_integer([positive, monotonic]), 
-        ?LET(Random, integer(),
-            {Id, Random})).
+key() ->
+    oneof([1, 2]).
+
+value() ->
+    oneof([1, 2]).
 
 node_name() ->
     oneof(names()).
@@ -54,24 +55,24 @@ names() ->
 %%% Node Functions
 %%%===================================================================
 
--record(node_state, {sent, failed_to_send}).
+-record(node_state, {values}).
 
 %% What node-specific operations should be called.
 node_commands() ->
-    [{call, ?MODULE, broadcast, [node_name(), message()]}].
+    [{call, ?MODULE, write, [node_name(), key(), value()]}].
 
 %% Assertion commands.
 node_assertion_functions() ->
-    [check_mailbox].
+    [].
 
 %% Global functions.
 node_global_functions() ->
-    [check_mailbox].
+    [].
 
 %% What should the initial node state be.
 node_initial_state() ->
     node_debug("initializing", []),
-    #node_state{sent=[], failed_to_send=[]}.
+    #node_state{values=dict:new()}.
 
 %% Names of the node functions so we kow when we can dispatch to the node
 %% pre- and postconditions.
@@ -79,93 +80,26 @@ node_functions() ->
     lists:map(fun({call, _Mod, Fun, _Args}) -> Fun end, node_commands()).
 
 %% Precondition.
-node_precondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}) ->
-    true;
-node_precondition(_NodeState, {call, ?MODULE, check_mailbox, []}) ->
+node_precondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}) ->
     true;
 node_precondition(_NodeState, _Command) ->
     false.
 
 %% Next state.
-
-%% If the broadcast returned 'ok', we have to assume it was sent (asynchronous / synchronous.)
-node_next_state(#property_state{joined_nodes=JoinedNodes}, 
-                #node_state{sent=Sent0}=NodeState, 
+node_next_state(#property_state{joined_nodes=_JoinedNodes}, 
+                #node_state{values=Values0}=NodeState, 
                 ok, 
-                {call, ?MODULE, broadcast, [Node, {Id, Value}]}) ->
-    Recipients = JoinedNodes,
-    Message = {Id, Node, Value},
-    Sent = Sent0 ++ [{Message, Recipients}],
-    NodeState#node_state{sent=Sent};
+                {call, ?MODULE, write, [_Node, Key, Value]}) ->
+    Values = dict:store(Key, Value, Values0),
+    NodeState#node_state{values=Values};
 
-node_next_state(#property_state{joined_nodes=JoinedNodes}, 
-                #node_state{failed_to_send=FailedToSend0}=NodeState, 
-                error, 
-                {call, ?MODULE, broadcast, [Node, {Id, Value}]}) ->
-    Recipients = JoinedNodes,
-    Message = {Id, Node, Value},
-    FailedToSend = FailedToSend0 ++ [{Message, Recipients}],
-    NodeState#node_state{failed_to_send=FailedToSend};
-
-%% If the broadcast returned 'error', we have to assume it was aborted (synchronous.)
+%% Fallthrough.
 node_next_state(_State, NodeState, _Response, _Command) ->
     NodeState.
 
 %% Postconditions for node commands.
-node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, {badrpc, timeout}) ->
-    lager:info("Broadcast error with timeout, must have been synchronous!"),
-    false;
-node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, error) ->
-    lager:info("Broadcast error, must have been synchronous!"),
+node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {ok, _}) ->
     true;
-node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, ok) ->
-    true;
-node_postcondition(#node_state{failed_to_send=FailedToSend, sent=Sent}, {call, ?MODULE, check_mailbox, []}, Results) ->
-    AllSentAndReceived = lists:foldl(fun({Message, Recipients}, MessageAcc) ->
-        node_debug("verifying that message ~p was received by ~p", [Message, Recipients]),
-
-        All = lists:foldl(fun(Recipient, NodeAcc) ->
-            node_debug("=> verifying that message ~p was received by ~p", [Message, Recipient]),
-
-            %% Did this node receive the message?
-            Messages = dict:fetch(Recipient, Results),
-
-            %% Carry forward.
-            case lists:member(Message, Messages) of 
-                true ->
-                    NodeAcc andalso true;
-                false ->
-                    node_debug("=> => message not received at node ~p: ~p", [Message, Recipient]),
-                    NodeAcc andalso false
-            end
-        end, true, Recipients),
-
-        All andalso MessageAcc
-    end, true, Sent),
-
-    FailedToSendNotReceived = lists:foldl(fun({Message, Recipients}, MessageAcc) ->
-        node_debug("verifying that message ~p was NOT received by ~p", [Message, Recipients]),
-
-        All = lists:foldl(fun(Recipient, NodeAcc) ->
-            node_debug("=> verifying that message ~p was NOT received by ~p", [Message, Recipient]),
-
-            %% Did this node receive the message?
-            Messages = dict:fetch(Recipient, Results),
-
-            %% Carry forward.
-            case lists:member(Message, Messages) of 
-                true ->
-                    node_debug("=> => message received at node ~p: ~p", [Message, Recipient]),
-                    NodeAcc andalso false;
-                false ->
-                    NodeAcc andalso true
-            end
-        end, true, Recipients),
-
-        All andalso MessageAcc
-    end, true, FailedToSend),
-
-    AllSentAndReceived andalso FailedToSendNotReceived;
 node_postcondition(_NodeState, Command, Response) ->
     node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
                [Command, Response]),
@@ -184,56 +118,14 @@ node_postcondition(_NodeState, Command, Response) ->
 -define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
 
 %% @private
-broadcast(Node, {Id, Value}) ->
-    node_debug("executing broadcast command: ~p => ~p", [Node, {Id, Value}]),
+write(Node, Key, Value) ->
+    ?PROPERTY_MODULE:command_preamble(Node, [write, Key, Value]),
 
-    ?PROPERTY_MODULE:command_preamble(Node, [broadcast, Node, Id, Value]),
+    Result = rpc:call(?NAME(Node), riak_ensemble_client, kover, [root, Key, Value, 5000], 5000),
 
-    %% Transmit message.
-    FullMessage = {Id, Node, Value},
-    node_debug("broadcast from node ~p message: ~p", [Node, FullMessage]),
-    Result = rpc:call(?NAME(Node), broadcast_module(), broadcast, [?RECEIVER, FullMessage], 4000),
-
-    %% Sleep for 2 second, giving time for message to propagate (1 second timer.)
-    node_debug("=> sleeping for propagation", []),
-    timer:sleep(5000),
-
-    ?PROPERTY_MODULE:command_conclusion(Node, [broadcast, Node, Id, Value]),
+    ?PROPERTY_MODULE:command_conclusion(Node, [write, Key, Value]),
 
     Result.
-
-%% @private
-check_mailbox() ->
-    node_debug("executing check_mailbox command", []),
-
-    RunnerNode = node(),
-
-    ?PROPERTY_MODULE:command_preamble(RunnerNode, [check_mailbox]),
-
-    Self = self(),
-
-    Results = lists:foldl(fun(Node, Dict) ->
-        %% Ask for what messages they have received.
-        erlang:send({?RECEIVER, ?NAME(Node)}, {received, Self}),
-
-        receive
-            Messages ->
-                dict:store(Node, Messages, Dict)
-        after 
-            10000 ->
-                case rpc:call(?NAME(Node), erlang, is_process_alive, []) of 
-                    {badrpc, nodedown} ->
-                        dict:store(Node, nodedown, Dict);
-                    Other ->
-                        node_debug("=> no response, asked if node was alive: ~p", [Other]),
-                        dict:store(Node, [], Dict)
-                end
-        end
-    end, dict:new(), names()),
-
-    ?PROPERTY_MODULE:command_conclusion(RunnerNode, [check_mailbox]),
-
-    Results.
 
 %%%===================================================================
 %%% Helper Functions
@@ -301,66 +193,19 @@ node_begin_case() ->
         ok = rpc:call(?NAME(FirstName), riak_ensemble_manager, join, [?NAME(FirstName), ?NAME(ShortName)])
     end, tl(Nodes)),
 
+    ShouldMembers = lists:map(fun({X, _}) ->
+        {root, X}
+    end, Nodes),
+    node_debug("waiting for membership on node: ~p after join", [FirstName]),
+    wait_members(?NAME(FirstName), root, ShouldMembers),
+
+    node_debug("waiting for cluster stability on node: ~p after join", [FirstName]),
+    wait_stable(?NAME(FirstName), root),
+
     %% Get members of the ensemble.
     node_debug("getting members of the root ensemble on node ~p", [FirstName]),
     [{root, EnsembleNode}] = rpc:call(?NAME(FirstName), riak_ensemble_manager, get_members, [root]),
     node_debug("=> ~p", [EnsembleNode]),
-
-    %% Start the backend.
-    lists:foreach(fun({ShortName, _}) ->
-        %% node_debug("starting ~p at node ~p with node list ~p ", [?BROADCAST_MODULE, ShortName, SublistNodeProjection]),
-        {ok, _Pid} = rpc:call(?NAME(ShortName), broadcast_module(), start_link, [])
-    end, Nodes),
-
-    lists:foreach(fun({ShortName, _}) ->
-        %% node_debug("spawning broadcast receiver on node ~p", [ShortName]),
-
-        Self = self(),
-
-        RemoteFun = fun() ->
-            %% Create ETS table for the results.
-            ?TABLE = ets:new(?TABLE, [set, named_table, public]),
-
-            %% Define loop function for receiving and registering values.
-            ReceiverFun = fun(F) ->
-                receive
-                    {received, Sender} ->
-                        Received = ets:foldl(fun(Term, Acc) -> Acc ++ [Term] end, [], ?TABLE),
-                        Sorted = lists:keysort(1, Received),
-                        node_debug("node ~p received request for stored values: ~p", [ShortName, Sorted]),
-                        Sender ! Sorted;
-                    {Id, SourceNode, Value} ->
-                        node_debug("node ~p received origin: ~p id ~p and value: ~p", [ShortName, SourceNode, Id, Value]),
-                        true = ets:insert(?TABLE, {Id, SourceNode, Value});
-                    Other ->
-                        node_debug("node ~p received other: ~p", [ShortName, Other])
-                end,
-                F(F)
-            end,
-
-            %% Spawn locally.
-            Pid = erlang:spawn(fun() -> ReceiverFun(ReceiverFun) end),
-
-            %% Register name.
-            erlang:register(?RECEIVER, Pid),
-
-            %% Prevent races by notifying process is registered.
-            Self ! ready,
-
-            %% Block indefinitely so the table doesn't close.
-            loop()
-        end,
-        
-        Pid = rpc:call(?NAME(ShortName), erlang, spawn, [RemoteFun]),
-
-        receive
-            ready ->
-                {ok, Pid}
-        after 
-            10000 ->
-                error
-        end
-    end, Nodes),
 
     ok.
 
@@ -371,18 +216,6 @@ node_end_case() ->
     ok.
 
 %% @private
-broadcast_module() ->
-    Module = case os:getenv("IMPLEMENTATION_MODULE") of 
-        false ->
-            lampson_2pc;
-        Other ->
-            list_to_atom(Other)
-    end,
-
-    node_debug("broadcast module is defined as ~p", [Module]),
-    Module.
-
-%% @private
 wait_stable(Node, Ensemble) ->
     case check_stable(Node, Ensemble) of
         true ->
@@ -391,6 +224,7 @@ wait_stable(Node, Ensemble) ->
             wait_stable(Node, Ensemble)
     end.
 
+%% @private
 check_stable(Node, Ensemble) ->
     case rpc:call(Node, riak_ensemble_manager, check_quorum, [Ensemble, 1000]) of
         true ->
@@ -402,4 +236,19 @@ check_stable(Node, Ensemble) ->
             end;
         false ->
             false
+    end.
+
+%% @private
+wait_members(Node, Ensemble, Expected) ->
+    Members = rpc:call(Node, riak_ensemble_manager, get_members, [Ensemble]),
+
+    io:format("expected: ~p~n", [Expected]),
+    io:format("members: ~p~n", [Members]),
+
+    case (Expected -- Members) of
+        [] ->
+            ok;
+        _ ->
+            timer:sleep(1000),
+            wait_members(Node, Ensemble, Expected)
     end.
