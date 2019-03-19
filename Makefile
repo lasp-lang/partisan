@@ -114,3 +114,6 @@ demers-anti-entropy-test: kill bin-perms
 
 demers-rumor_mongering-test: kill bin-perms
 	bin/demers-rumor-mongering-test.sh
+
+riak-ensemble: kill bin-perms
+	clear; rm -rf priv/lager; pkill -9 beam.smp; MODULE=lampson_2pc NUM_TESTS=3 SCHEDULER=single_success bin/counterexample-find.sh
