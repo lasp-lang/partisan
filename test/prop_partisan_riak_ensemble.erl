@@ -159,6 +159,18 @@ node_begin_case() ->
     %% Get nodes.
     [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
 
+    %% Enable pid encoding.
+    lists:foreach(fun({ShortName, _}) ->
+        node_debug("enabling pid_encoding at node ~p", [ShortName]),
+        ok = rpc:call(?NAME(ShortName), partisan_config, set, [pid_encoding, true])
+    end, Nodes),
+
+    %% Enable register_pid_for_encoding.
+    lists:foreach(fun({ShortName, _}) ->
+        node_debug("enabling register_pid_for_encoding at node ~p", [ShortName]),
+        ok = rpc:call(?NAME(ShortName), partisan_config, set, [register_pid_for_encoding, true])
+    end, Nodes),
+
     %% Load, configure, and start ensemble.
     lists:foreach(fun({ShortName, _}) ->
         node_debug("starting riak_ensemble at node ~p", [ShortName]),
@@ -197,8 +209,8 @@ node_begin_case() ->
         %% Wait on the shortname.
         wait_stable(?NAME(ShortName), root),
 
-        Result = rpc:call(?NAME(FirstName), riak_ensemble_manager, cluster, []),
-        lager:info("Result from cluster: ~p", [Result]),
+        % Result = rpc:call(?NAME(FirstName), riak_ensemble_manager, cluster, []),
+        % lager:info("Result from cluster: ~p", [Result]),
 
         %% Wait for stabilization.
         wait_stable(?NAME(FirstName), root),
@@ -210,12 +222,12 @@ node_begin_case() ->
         wait_stable(?NAME(FirstName), root)
     end, tl(Nodes)),
 
-    ShouldMembers = lists:map(fun({X, _}) ->
-        {root, ?NAME(X)}
-    end, Nodes),
+    %% Wait for membership to be correct.
+    ShouldMembers = lists:map(fun({X, _}) -> {root, ?NAME(X)} end, Nodes),
     node_debug("waiting for membership on node: ~p after join", [FirstName]),
     wait_members(?NAME(FirstName), root, ShouldMembers),
 
+    %% Wait for root ensemble stability.
     node_debug("waiting for cluster stability on node: ~p after join", [FirstName]),
     wait_stable(?NAME(FirstName), root),
 
@@ -223,6 +235,10 @@ node_begin_case() ->
     node_debug("getting members of the root ensemble on node ~p", [FirstName]),
     Results = rpc:call(?NAME(FirstName), riak_ensemble_manager, get_members, [root]),
     node_debug("=> ~p", [Results]),
+
+    %% Perform a single write to ensure the cluster is ready.
+    node_debug("performing single write to ensure cluster is online and ready.", []),
+    {ok, _} = rpc:call(?NAME(FirstName), riak_ensemble_client, kover, [root, root_key, "cmeik", 5000], 5000),
 
     ok.
 
