@@ -159,6 +159,9 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
     %% Generate schedules.
     {GenIteration, GenNumPassed, GenNumFailed, GenNumPruned, GenClassificationsExplored, GenAdditionalTraces} = lists:foldl(fun(Omissions, {GenIteration0, GenNumPassed0, GenNumFailed0, GetNumPruned0, GenClassificationsExplored0, GenAdditionalTraces0}) ->
         % io:format("~n", []),
+        % io:format("Number of message trace line: ~p~n", [length(MessageTraceLines)]),
+        % io:format("Number of omission lines: ~p~n", [length(Omissions)]),
+        % io:format("Difference lines: ~p~n", [length(MessageTraceLines -- Omissions)]),
 
         %% Generate a new trace.
         % io:format("Generating new trace based on message omissions (~p omissions, iteration ~p): ~n", [length(Omissions), Iteration]),
