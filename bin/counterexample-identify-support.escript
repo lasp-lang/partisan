@@ -163,140 +163,177 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
         % io:format("Number of omission lines: ~p~n", [length(Omissions)]),
         % io:format("Difference lines: ~p~n", [length(MessageTraceLines -- Omissions)]),
 
-        %% Generate a new trace.
-        % io:format("Generating new trace based on message omissions (~p omissions, iteration ~p): ~n", [length(Omissions), Iteration]),
+        %% Validate the causality earlier, using a speculative validation to reduce
+        %% the cost of schedule materialization.
+        CandidateTrace = MessageTraceLines -- Omissions,
+        ValidatedCausality = schedule_valid_causality(Causality, CandidateTrace),
+        io:format("ValidatedCausality: ~p~n", [ValidatedCausality]),
 
-        {FinalTraceLines, _, _, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes} = lists:foldl(fun({Type, Message} = Line, {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0}) ->
-            case Type =:= pre_interposition_fun of 
-                true ->
-                    {TracingNode, InterpositionType, OriginNode, MessagePayload} = Message,
-
-                    case FaultsStarted0 of 
-                        true ->
-                            %% Once we start omitting, omit everything after that's a message
-                            %% send because we don't know what might be coming. In 2PC, if we
-                            %% have a successful trace and omit a prepare -- we can't be guaranteed
-                            %% to ever see a prepare vote or commmit.
-                            case InterpositionType of 
-                                forward_message ->
-                                    case lists:member(Line, Omissions) of 
-                                        true ->
-                                            ReceiveOmission = {Type, {OriginNode, receive_message, TracingNode, {forward_message, implementation_module(), MessagePayload}}},
-                                            {FinalTrace0, FaultsStarted0, AdditionalOmissions0 ++ [ReceiveOmission], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0};
-                                        false ->
-                                            {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0 ++ [message_type(Message)]}
-                                    end;
-                                receive_message ->
-                                    case lists:member(Line, AdditionalOmissions0) of 
-                                        true ->
-                                            {FinalTrace0, FaultsStarted0, AdditionalOmissions0 -- [Line], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0};
-                                        false ->
-                                            {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0 ++ [message_type(Message)]}
-                                    end
-                            end;
-                        false ->
-                            %% Otherwise, find just the targeted commands to remove.
-                            case InterpositionType of 
-                                forward_message ->
-                                    case lists:member(Line, Omissions) of 
-                                        true ->
-                                            % io:format("fault started with line: ~p~n", [Line]),
-
-                                            %% Sort of hack, just deal with it for now.
-                                            ReceiveOmission = {Type, {OriginNode, receive_message, TracingNode, {forward_message, implementation_module(), MessagePayload}}},
-                                            {FinalTrace0, true, AdditionalOmissions0 ++ [ReceiveOmission], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0};
-                                        false ->
-                                            {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0 ++ [message_type(Message)], OmittedMessageTypes0, ConditionalMessageTypes0}
-                                    end;
-                                receive_message -> 
-                                    case lists:member(Line, AdditionalOmissions0) of 
-                                        true ->
-                                            {FinalTrace0, FaultsStarted0, AdditionalOmissions0 -- [Line], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0};
-                                        false ->
-                                            {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0 ++ [message_type(Message)], OmittedMessageTypes0, ConditionalMessageTypes0}
-                                    end
-                            end
-                    end;
-                false ->
-                    {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0}
-            end
-        end, {[], false, [], [], [], []}, TraceLines),
-
-        % io:format("PrefixMessageTypes: ~p~n", [PrefixMessageTypes]),
-        % io:format("OmittedMessageTypes: ~p~n", [OmittedMessageTypes]),
-        % io:format("ConditionalMessageTypes: ~p~n", [ConditionalMessageTypes]),
-        % io:format("length(MessageTypes): ~p~n", [length(PrefixMessageTypes ++ OmittedMessageTypes ++ ConditionalMessageTypes)]),
+        EarlyClassification0 = classify_schedule(3, Annotations, CandidateTrace),
+        EarlyClassification = dict:to_list(EarlyClassification0),
+        io:format("EarlyClassification: ~p~n", [EarlyClassification]),
 
         %% Is this schedule valid for these omissions?
         OmissionsSet = sets:from_list(Omissions),
         BaseOmissionsSet = sets:from_list(BaseOmissions),
 
-        ScheduleValidOmissions = case sets:is_subset(BaseOmissionsSet, OmissionsSet) orelse BaseOmissionsSet =:= OmissionsSet of
+        ValidOmissions = case sets:is_subset(BaseOmissionsSet, OmissionsSet) orelse BaseOmissionsSet =:= OmissionsSet of
             true ->
                 true;
             false ->
                 false
         end,
+        io:format("ValidOmissions: ~p~n", [ValidOmissions]),
 
-        ScheduleValidCausality = schedule_valid_causality(Causality, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
-        % ScheduleValidCausality = true,
-
-        ScheduleValid = ScheduleValidCausality andalso ScheduleValidOmissions,
-
-        case ScheduleValid of
+        case ValidatedCausality andalso not lists:member(EarlyClassification, GenClassificationsExplored0) of
             true ->
-            %    io:format("schedule_valid_omissions: ~p~n", [ScheduleValidOmissions]),
-            %    io:format("schedule_valid_causality: ~p~n", [ScheduleValidCausality]),
-            %    io:format("schedule_valid: ~p~n", [ScheduleValid]),
-               ok;
-            false ->
-                ok
-        end,
+                io:format("Entering generation pass.~n", []),
 
-        ClassifySchedule = classify_schedule(3, Annotations, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
+                %% Generate a new trace.
+                % io:format("Generating new trace based on message omissions (~p omissions, iteration ~p): ~n", [length(Omissions), Iteration]),
 
-        case os:getenv("PRELOAD_SCHEDULES") of 
-            false ->
-                case GenIteration0 rem 1000 == 0 of 
+                {FinalTraceLines, _, _, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes} = lists:foldl(fun({Type, Message} = Line, {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0}) ->
+                    case Type =:= pre_interposition_fun of 
+                        true ->
+                            {TracingNode, InterpositionType, OriginNode, MessagePayload} = Message,
+
+                            case FaultsStarted0 of 
+                                true ->
+                                    %% Once we start omitting, omit everything after that's a message
+                                    %% send because we don't know what might be coming. In 2PC, if we
+                                    %% have a successful trace and omit a prepare -- we can't be guaranteed
+                                    %% to ever see a prepare vote or commmit.
+                                    case InterpositionType of 
+                                        forward_message ->
+                                            case lists:member(Line, Omissions) of 
+                                                true ->
+                                                    ReceiveOmission = {Type, {OriginNode, receive_message, TracingNode, {forward_message, implementation_module(), MessagePayload}}},
+                                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0 ++ [ReceiveOmission], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0};
+                                                false ->
+                                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0 ++ [message_type(Message)]}
+                                            end;
+                                        receive_message ->
+                                            case lists:member(Line, AdditionalOmissions0) of 
+                                                true ->
+                                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0 -- [Line], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0};
+                                                false ->
+                                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0 ++ [message_type(Message)]}
+                                            end
+                                    end;
+                                false ->
+                                    %% Otherwise, find just the targeted commands to remove.
+                                    case InterpositionType of 
+                                        forward_message ->
+                                            case lists:member(Line, Omissions) of 
+                                                true ->
+                                                    % io:format("fault started with line: ~p~n", [Line]),
+
+                                                    %% Sort of hack, just deal with it for now.
+                                                    ReceiveOmission = {Type, {OriginNode, receive_message, TracingNode, {forward_message, implementation_module(), MessagePayload}}},
+                                                    {FinalTrace0, true, AdditionalOmissions0 ++ [ReceiveOmission], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0};
+                                                false ->
+                                                    {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0 ++ [message_type(Message)], OmittedMessageTypes0, ConditionalMessageTypes0}
+                                            end;
+                                        receive_message -> 
+                                            case lists:member(Line, AdditionalOmissions0) of 
+                                                true ->
+                                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0 -- [Line], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0};
+                                                false ->
+                                                    {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0 ++ [message_type(Message)], OmittedMessageTypes0, ConditionalMessageTypes0}
+                                            end
+                                    end
+                            end;
+                        false ->
+                            {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0}
+                    end
+                end, {[], false, [], [], [], []}, TraceLines),
+
+                % io:format("PrefixMessageTypes: ~p~n", [PrefixMessageTypes]),
+                % io:format("OmittedMessageTypes: ~p~n", [OmittedMessageTypes]),
+                % io:format("ConditionalMessageTypes: ~p~n", [ConditionalMessageTypes]),
+                % io:format("length(MessageTypes): ~p~n", [length(PrefixMessageTypes ++ OmittedMessageTypes ++ ConditionalMessageTypes)]),
+
+                %% Is this schedule valid for these omissions?
+                ScheduleValidOmissions = case sets:is_subset(BaseOmissionsSet, OmissionsSet) orelse BaseOmissionsSet =:= OmissionsSet of
                     true ->
-                        io:format("Executed ~p schedules.~n", [GenIteration0]);
+                        true;
+                    false ->
+                        false
+                end,
+                io:format("ScheduleValidOmissions: ~p~n", [ScheduleValidOmissions]),
+
+                ScheduleValidCausality = schedule_valid_causality(Causality, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
+                io:format("ScheduleValidCausality: ~p~n", [ScheduleValidCausality]),
+
+                ScheduleValid = ScheduleValidCausality andalso ScheduleValidOmissions,
+
+                case ScheduleValid of
+                    true ->
+                    %    io:format("schedule_valid_omissions: ~p~n", [ScheduleValidOmissions]),
+                    %    io:format("schedule_valid_causality: ~p~n", [ScheduleValidCausality]),
+                    %    io:format("schedule_valid: ~p~n", [ScheduleValid]),
+                    ok;
                     false ->
                         ok
                 end,
 
-                case execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, GenClassificationsExplored0, GenAdditionalTraces0) of
-                    pruned ->
-                        {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0};
-                    {passed, ClassificationsExplored, NewTraces} ->
-                        {GenIteration0 + 1, GenNumPassed0 + 1, GenNumFailed0, GetNumPruned0, ClassificationsExplored, NewTraces};
-                    {failed, ClassificationsExplored, NewTraces} ->
-                        {GenIteration0 + 1, GenNumPassed0, GenNumFailed0 + 1, GetNumPruned0, ClassificationsExplored, NewTraces};
-                    invalid ->
-                        {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0}
-                end;
-            "false" ->
-                case GenIteration0 rem 1000 == 0 of 
-                    true ->
-                        io:format("Executed ~p schedules.~n", [GenIteration0]);
+                ClassifySchedule = classify_schedule(3, Annotations, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
+                io:format("Classification: ~p~n", [dict:to_list(ClassifySchedule)]),
+
+                case os:getenv("PRELOAD_SCHEDULES") of 
                     false ->
-                        ok
-                end,
+                        case GenIteration0 rem 1000 == 0 of 
+                            true ->
+                                io:format("Executed ~p schedules.~n", [GenIteration0]);
+                            false ->
+                                ok
+                        end,
 
-                case execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, GenClassificationsExplored0, GenAdditionalTraces0) of
-                    pruned ->
-                        {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0};
-                    {passed, ClassificationsExplored, NewTraces} ->
-                        {GenIteration0 + 1, GenNumPassed0 + 1, GenNumFailed0, GetNumPruned0, ClassificationsExplored, NewTraces};
-                    {failed, ClassificationsExplored, NewTraces} ->
-                        {GenIteration0 + 1, GenNumPassed0, GenNumFailed0 + 1, GetNumPruned0, ClassificationsExplored, NewTraces};
-                    invalid ->
-                        {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0}
+                        case execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, GenClassificationsExplored0, GenAdditionalTraces0) of
+                            pruned ->
+                                io:format("Schedule pruned.~n", []),
+                                {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0};
+                            {passed, ClassificationsExplored, NewTraces} ->
+                                io:format("Schedule passed.~n", []),
+                                {GenIteration0 + 1, GenNumPassed0 + 1, GenNumFailed0, GetNumPruned0, ClassificationsExplored, NewTraces};
+                            {failed, ClassificationsExplored, NewTraces} ->
+                                io:format("Schedule failed.~n", []),
+                                {GenIteration0 + 1, GenNumPassed0, GenNumFailed0 + 1, GetNumPruned0, ClassificationsExplored, NewTraces};
+                            invalid ->
+                                io:format("Schedule invalid.~n", []),
+                                {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0}
+                        end;
+                    "false" ->
+                        case GenIteration0 rem 1000 == 0 of 
+                            true ->
+                                io:format("Executed ~p schedules.~n", [GenIteration0]);
+                            false ->
+                                ok
+                        end,
+
+                        case execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, GenClassificationsExplored0, GenAdditionalTraces0) of
+                            pruned ->
+                                io:format("Schedule pruned.~n", []),
+                                {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0};
+                            {passed, ClassificationsExplored, NewTraces} ->
+                                io:format("Schedule passed.~n", []),
+                                {GenIteration0 + 1, GenNumPassed0 + 1, GenNumFailed0, GetNumPruned0, ClassificationsExplored, NewTraces};
+                            {failed, ClassificationsExplored, NewTraces} ->
+                                io:format("Schedule failed.~n", []),
+                                {GenIteration0 + 1, GenNumPassed0, GenNumFailed0 + 1, GetNumPruned0, ClassificationsExplored, NewTraces};
+                            invalid ->
+                                io:format("Schedule invalid.~n", []),
+                                {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0}
+                        end;
+                    _Other ->
+                        %% Store generated schedule.
+                        true = ets:insert(?SCHEDULES, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}),
+
+                        {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0, GenClassificationsExplored0, GenAdditionalTraces0}
                 end;
-            _Other ->
-                %% Store generated schedule.
-                true = ets:insert(?SCHEDULES, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}),
-
-                {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0, GenClassificationsExplored0, GenAdditionalTraces0}
+            false ->
+                io:format("Pruned through early causality and annotation checks.~n", []),
+                {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0}
         end
     end, {PreviousIteration, 0, 0, 0, PreviousClassificationsExplored, RestTraceLines}, TracesToIterate),
 
@@ -514,6 +551,30 @@ classify_schedule(_N, Annotations, PrefixSchedule, _OmittedSchedule, Conditional
     Classification.
 
 %% @private
+classify_schedule(_N, Annotations, CandidateTrace0) ->
+    CandidateTrace = message_types(CandidateTrace0),
+
+    Classification = lists:foldl(fun({Type, Preconditions}, Dict0) ->
+        Result = lists:foldl(fun(Precondition, Acc) ->
+            case Precondition of 
+                {{_, PreconditionType}, N} ->
+                    Num = length(lists:filter(fun(T) -> T =:= {forward_message, PreconditionType} end, CandidateTrace)),
+                    % io:format("=> * found ~p messages of type ~p~n", [Num, PreconditionType]),
+                    Acc andalso Num >= N;
+                true ->
+                    Acc andalso true
+            end
+        end, true, Preconditions),
+
+        % io:format("=> type: ~p, preconditions: ~p~n", [Type, Result]),
+        dict:store(Type, Result, Dict0)
+    end, dict:new(), dict:to_list(Annotations)),
+
+    % io:format("classification: ~p~n", [dict:to_list(Classification)]),
+
+    Classification.
+
+%% @private
 ensure_preconditions_present(Causality, Annotations) ->
     %% Get all messages that are the result of other messages.
     CausalMessages = lists:foldl(fun({_, Messages}, Acc) ->
@@ -583,9 +644,9 @@ execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {I
                     io:format("=> Executed test and test contained ~p lines compared to original trace with ~p lines.~n", [length(hd(NewTraceLines)), length(TraceLines)]),
 
                     MessageTypesFromTraceLines = message_types(TraceLines),
-                    io:format("=> MessageTypesFromTraceLines: ~p~n", [MessageTypesFromTraceLines]),
+                    % io:format("=> MessageTypesFromTraceLines: ~p~n", [MessageTypesFromTraceLines]),
                     MessageTypesFromNewTraceLines = message_types(hd(NewTraceLines)),
-                    io:format("=> MessageTypesFromNewTraceLines: ~p~n", [MessageTypesFromNewTraceLines]),
+                    % io:format("=> MessageTypesFromNewTraceLines: ~p~n", [MessageTypesFromNewTraceLines]),
 
                     Difference = lists:usort(MessageTypesFromNewTraceLines) -- lists:usort(MessageTypesFromTraceLines),
                     io:format("=> Difference: ~p~n", [Difference]),
@@ -623,10 +684,10 @@ execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {I
                             case os:getenv("EXIT_ON_COUNTEREXAMPLE") of 
                                 false ->
                                     ok;
-                                "false" ->
-                                    ok;
+                                "true" ->
+                                    exit({error, counterexample_found});
                                 _Other ->
-                                    exit({error, counterexample_found})
+                                    ok
                             end,
 
                             %% Insert result into the ETS table.
@@ -636,3 +697,59 @@ execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {I
                     end
             end
     end.
+
+%% @private
+schedule_valid_causality(Causality, CandidateTrace0) ->
+    CandidateTrace = message_types(CandidateTrace0),
+
+    % io:format("derived_schedule: ~p~n", [length(DerivedSchedule)]),
+    % io:format("prefix_schedule: ~p~n", [length(PrefixSchedule)]),
+    % io:format("omitted_schedule: ~p~n", [length(OmittedSchedule)]),
+    % io:format("conditional_schedule: ~p~n", [length(ConditionalSchedule)]),
+
+    RequirementsMet = lists:foldl(fun(Type, Acc) ->
+        % io:format("=> Type: ~p~n", [Type]),
+
+        All = lists:foldl(fun({K, V}, Acc1) ->
+            % io:format("=> V: ~p~n", [V]),
+
+            case lists:member(Type, V) of 
+                true ->
+                    % io:format("=> Presence of ~p requires: ~p~n", [Type, K]),
+
+                    SearchType = case K of 
+                        {receive_message, T} ->
+                            {forward_message, T};
+                        Other ->
+                            Other
+                    end,
+
+                    % io:format("=> Rewriting to look for send of same message type: ~p~n", [SearchType]),
+
+                    case lists:member(SearchType, CandidateTrace) of 
+                        true ->
+                            % io:format("=> Present!~n", []),
+                            true andalso Acc1;
+                        false ->
+                            % io:format("=> NOT Present!~n", []),
+                            false andalso Acc1
+                    end;
+                false ->
+                    % io:format("=> * fallthrough: ~p not in ~p.~n", [Type, V]),
+                    true andalso Acc1
+            end
+        end, Acc, dict:to_list(Causality)),
+
+        All andalso Acc
+    end, true, CandidateTrace),
+
+    case RequirementsMet of 
+        true ->
+            % io:format("Causality verified.~n", []),
+            ok;
+        false ->
+            % io:format("Schedule does not represent a valid schedule!~n", []),
+            ok
+    end,
+
+    RequirementsMet.
