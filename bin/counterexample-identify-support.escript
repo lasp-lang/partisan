@@ -117,7 +117,7 @@ analyze(_Pass, _PreloadOmissionFile, _ReplayTraceFile, _TraceFile, _Causality, _
     ok;
 
 analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLines, BaseOmissions, _Difference}|RestTraceLines]) ->
-    io:format("Beginning analyze pass: ~p with previous iteration: ~p and previous explored classifications: ~p~n", [Pass, PreviousIteration, PreviousClassificationsExplored]),
+    io:format("Beginning analyze pass: ~p with previous iteration: ~p~n", [Pass, PreviousIteration]),
 
     %% Filter the trace into message trace lines.
     MessageTraceLines = lists:filter(fun({Type, Message}) ->
