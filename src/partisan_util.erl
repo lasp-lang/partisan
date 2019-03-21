@@ -311,9 +311,44 @@ pid() ->
     pid(self()).
 
 pid(Pid) ->
-    GenSym = gensym(Pid),
-    Node = partisan_peer_service_manager:mynode(),
-    {partisan_remote_reference, Node, GenSym}.
+    Node = node(Pid),
+
+    case partisan_peer_service_manager:mynode() of
+        Node ->
+            %% This is super dangerous.
+            case partisan_config:get(register_pid_for_encoding, false) of 
+                true ->
+                    Unique = erlang:unique_integer([monotonic, positive]),
+                    Name = "partisan_registered_name_" ++ integer_to_list(Unique),
+                    lager:info("registering pid: ~p as name: ~p at node: ~p", [Pid, Name, Node]),
+                    true = erlang:register(list_to_atom(Name), Pid),
+                    {partisan_remote_reference, Node, {partisan_registered_name_reference, Name}};
+                false ->
+                    {partisan_remote_reference, Node, {partisan_process_reference, pid_to_list(Pid)}}
+            end;
+        _ ->
+            %% This is super dangerous.
+            case partisan_config:get(register_pid_for_encoding, false) of 
+                true ->
+                    Unique = erlang:unique_integer([monotonic, positive]),
+                    Name = "partisan_registered_name_" ++ integer_to_list(Unique),
+                    [_, B, C] = string:split(pid_to_list(Pid), ".", all),
+                    RewrittenProcessIdentifier = "<0." ++ B ++ "." ++ C,
+                    RegisterFun = fun() ->
+                        RewrittenPid = list_to_pid(RewrittenProcessIdentifier),
+                        erlang:register(list_to_atom(Name), RewrittenPid)
+                    end,
+                    lager:info("registering pid: ~p as name: ~p at node: ~p", [Pid, Name, Node]),
+                    %% TODO: Race here unless we wait.
+                    _ = rpc:call(Node, erlang, spawn, [RegisterFun]),
+                    {partisan_remote_reference, Node, {partisan_registered_name_reference, Name}};
+                false ->
+                    [_, B, C] = string:split(pid_to_list(Pid), ".", all),
+                    RewrittenProcessIdentifier = "<0." ++ B ++ "." ++ C,
+                    lager:info("rewriting remote reference id: ~p", [RewrittenProcessIdentifier]),
+                    {partisan_remote_reference, Node, {partisan_process_reference, RewrittenProcessIdentifier}}
+            end
+    end.
 
 registered_name(Name) ->
     GenSym = gensym(Name),
@@ -321,14 +356,37 @@ registered_name(Name) ->
     {partisan_remote_reference, Node, GenSym}.
 
 process_forward(ServerRef, Message) ->
+    Node = partisan_peer_service_manager:mynode(),
+
     try
         case ServerRef of
             {partisan_remote_reference, _, {partisan_registered_name_reference, RegisteredName}} ->
                 Name = list_to_atom(RegisteredName),
                 Name ! Message;
-            {partisan_remote_reference, _, {partisan_process_reference, ProcessIdentifier}} ->
-                Pid = list_to_pid(ProcessIdentifier),
-                Pid ! Message;
+            {partisan_remote_reference, OtherNode, {partisan_process_reference, ProcessIdentifier}} ->
+                lager:info("process reference is: ~p", [ProcessIdentifier]),
+                case string:split(ProcessIdentifier, ".", all) of 
+                    ["<0",_B,_C] ->
+                        Pid = list_to_pid(ProcessIdentifier),
+                        lager:info("pid reference is: ~p", [Pid]),
+                        Pid ! Message;
+                    [_,B,C] ->
+                        %% Remote written pid from Distributed Erlang.
+                        case OtherNode =:= Node of 
+                            true ->
+                                RewrittenProcessIdentifier = "<0." ++ B ++ "." ++ C,
+                                lager:info("rewritten process reference is: ~p", [RewrittenProcessIdentifier]),
+                                Pid = list_to_pid(RewrittenProcessIdentifier),
+                                lager:info("pid reference is: ~p", [Pid]),
+                                Pid ! Message;
+                            false ->
+                                lager:info("unknown destination, dropping message for process reference: ~p, other_node: ~p, node: ~p, message: ~p", [ProcessIdentifier, OtherNode, Node, Message]),
+                                ok
+                        end;
+                    _ ->
+                        lager:info("couldn't deserialize unknown process reference: ~p", [ProcessIdentifier]),
+                        ok
+                end;
             {partisan_registered_name_reference, RegisteredName} ->
                 Pid = list_to_atom(RegisteredName),
                 Pid ! Message;
