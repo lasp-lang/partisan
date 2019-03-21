@@ -133,6 +133,7 @@ init() ->
                            {orchestration_strategy, ?DEFAULT_ORCHESTRATION_STRATEGY},
                            {random_seed, random_seed()},
                            {random_promotion, true},
+                           {register_pid_for_encoding, false},
                            {replaying, false},
                            {reservations, []},
                            {shrinking, false},
