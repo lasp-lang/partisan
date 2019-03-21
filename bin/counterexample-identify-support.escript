@@ -21,7 +21,16 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     {ok, TraceLines} = file:consult(TraceFile),
 
     %% Open the causality file.
-    {ok, [RawCausality]} = file:consult("/tmp/partisan-causality-" ++ ModuleString),
+    CausalityFile = "/tmp/partisan-causality-" ++ ModuleString,
+
+    case filelib:is_file(CausalityFile) of 
+        false ->
+            io:format("Causality file doesn't exist: ~p~n", [CausalityFile]);
+        true ->
+            ok
+    end,
+
+    {ok, [RawCausality]} = file:consult(CausalityFile),
     Causality = dict:from_list(RawCausality),
     io:format("Causality loaded: ~p~n", [dict:to_list(Causality)]),
 
