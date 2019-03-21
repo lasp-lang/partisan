@@ -138,8 +138,9 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
     io:format("Number of items in message trace: ~p~n", [length(MessageTraceLines)]),
 
     %% Generate the powerset of tracelines.
-    MessageTraceLinesPowerset = powerset(MessageTraceLines),
+    {PowersetTime, MessageTraceLinesPowerset} = timer:tc(fun() -> powerset(MessageTraceLines) end),
     io:format("Number of message sets in powerset: ~p~n", [length(MessageTraceLinesPowerset)]),
+    io:format("Powerset generation took: ~p~n", [PowersetTime]),
 
     TracesToIterate = case os:getenv("SUBLIST") of 
         false ->
