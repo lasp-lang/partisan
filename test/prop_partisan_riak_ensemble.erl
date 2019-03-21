@@ -259,8 +259,8 @@ check_stable(Node, Ensemble) ->
 wait_members(Node, Ensemble, Expected) ->
     Members = rpc:call(Node, riak_ensemble_manager, get_members, [Ensemble]),
 
-    io:format("expected: ~p~n", [Expected]),
-    io:format("members: ~p~n", [Members]),
+    % io:format("expected: ~p~n", [Expected]),
+    % io:format("members: ~p~n", [Members]),
 
     case (Expected -- Members) of
         [] ->
