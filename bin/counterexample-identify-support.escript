@@ -35,7 +35,16 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     io:format("Causality loaded: ~p~n", [dict:to_list(Causality)]),
 
     %% Open the annotations file.
-    {ok, [RawAnnotations]} = file:consult("/tmp/partisan-annotations-" ++ ModuleString),
+    AnnotationsFile = "/tmp/partisan-annotations-" ++ ModuleString,
+
+    case filelib:is_file(AnnotationsFile) of 
+        false ->
+            io:format("Annotations file doesn't exist: ~p~n", [AnnotationsFile]);
+        true ->
+            ok
+    end,
+
+    {ok, [RawAnnotations]} = file:consult(AnnotationsFile),
     Annotations = dict:from_list(RawAnnotations),
     io:format("Annotations loaded: ~p~n", [dict:to_list(Annotations)]),
 
