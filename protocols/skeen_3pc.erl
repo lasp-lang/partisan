@@ -23,6 +23,8 @@
 
 -module(skeen_3pc).
 
+-include("partisan.hrl").
+
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 %% API
@@ -115,6 +117,8 @@ handle_call(Msg, _From, State) ->
 
 %% @private
 handle_cast({broadcast, From, ServerRef, Message}, #state{membership=Membership}=State) ->
+    Manager = manager(),
+
     %% Generate unique transaction id.
     MyNode = partisan_peer_service_manager:mynode(),
     Id = {MyNode, erlang:unique_integer([monotonic, positive])},
@@ -145,7 +149,7 @@ handle_cast({broadcast, From, ServerRef, Message}, #state{membership=Membership}
     %% Send prepare message to all participants including ourself.
     lists:foreach(fun(N) ->
         lager:info("~p: sending prepare message to node ~p: ~p", [node(), N, Message]),
-        partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {prepare, Transaction}, [])
+        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {prepare, Transaction}, [])
     end, membership(Membership)),
 
     {noreply, State};
@@ -159,6 +163,8 @@ handle_cast(Msg, State) ->
 %% @private
 %% Incoming messages.
 handle_info({participant_timeout, Id}, State) ->
+    Manager = manager(),
+
     %% Find transaction record.
     case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
         [{_Id, #transaction{participants=Participants, participant_status=ParticipantStatus, server_ref=ServerRef, message=Message} = Transaction}] ->
@@ -175,7 +181,7 @@ handle_info({participant_timeout, Id}, State) ->
                     %% Send commit to participants.
                     lists:foreach(fun(N) ->
                         lager:info("~p: sending commit message to node ~p: ~p", [node(), N, Id]),
-                        partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {commit, Transaction}, [])
+                        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {commit, Transaction}, [])
                     end, membership(Participants));
                 _ ->
                     %% Write log record showing abort occurred.
@@ -184,7 +190,7 @@ handle_info({participant_timeout, Id}, State) ->
                     %% Send commit to participants.
                     lists:foreach(fun(N) ->
                         lager:info("~p: sending abort message to node ~p: ~p", [node(), N, Id]),
-                        partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {abort, Transaction}, [])
+                        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {abort, Transaction}, [])
                     end, membership(Participants))
             end;
         [] ->
@@ -193,6 +199,8 @@ handle_info({participant_timeout, Id}, State) ->
 
     {noreply, State};
 handle_info({coordinator_timeout, Id}, State) ->
+    Manager = manager(),
+
     %% Find transaction record.
     case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
         [{_Id, #transaction{coordinator_status=CoordinatorStatus, participants=Participants, from=From} = Transaction0}] ->
@@ -215,12 +223,12 @@ handle_info({coordinator_timeout, Id}, State) ->
 
                     %% Reply to caller.
                     lager:info("Aborting transaction: ~p", [Id]),
-                    partisan_pluggable_peer_service_manager:forward_message(From, error),
+                    Manager:forward_message(From, error),
 
                     %% Send notification to abort.
                     lists:foreach(fun(N) ->
                         lager:info("~p: sending abort message to node ~p: ~p", [node(), N, Id]),
-                        partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {abort, Transaction}, [])
+                        Manager:forward_message(N, undefined, ?MODULE, {abort, Transaction}, [])
                     end, membership(Participants))
             end;
         [] ->
@@ -287,14 +295,18 @@ handle_info({commit_ack, FromNode, Id}, State) ->
 
     {noreply, State};
 handle_info({abort, #transaction{id=Id, coordinator=Coordinator}}, State) ->
+    Manager = manager(),
+
     true = ets:delete(?PARTICIPATING_TRANSACTIONS, Id),
 
     MyNode = partisan_peer_service_manager:mynode(),
     lager:info("~p: sending abort ack message to node ~p: ~p", [node(), Coordinator, Id]),
-    partisan_pluggable_peer_service_manager:forward_message(Coordinator, undefined, ?MODULE, {abort_ack, MyNode, Id}, []),
+    Manager:forward_message(Coordinator, undefined, ?MODULE, {abort_ack, MyNode, Id}, []),
 
     {noreply, State};
 handle_info({commit, #transaction{id=Id, coordinator=Coordinator, server_ref=ServerRef, message=Message} = Transaction}, State) ->
+    Manager = manager(),
+
     %% Write log record showing commit occurred.
     true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=commit}}),
 
@@ -304,10 +316,12 @@ handle_info({commit, #transaction{id=Id, coordinator=Coordinator, server_ref=Ser
     %% Repond to coordinator that we are now committed.
     MyNode = partisan_peer_service_manager:mynode(),
     lager:info("~p: sending commit ack message to node ~p: ~p", [node(), Coordinator, Id]),
-    partisan_pluggable_peer_service_manager:forward_message(Coordinator, undefined, ?MODULE, {commit_ack, MyNode, Id}, []),
+    Manager:forward_message(Coordinator, undefined, ?MODULE, {commit_ack, MyNode, Id}, []),
 
     {noreply, State};
 handle_info({precommit_ack, FromNode, Id}, State) ->
+    Manager = manager(),
+
     %% Find transaction record.
     case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
         [{_Id, #transaction{from=From, participants=Participants, precommitted=Precommitted0} = Transaction0}] ->
@@ -322,7 +336,7 @@ handle_info({precommit_ack, FromNode, Id}, State) ->
 
                     %% Reply to caller.
                     lager:info("replying to the caller: ~p", From),
-                    partisan_pluggable_peer_service_manager:forward_message(From, ok),
+                    Manager:forward_message(From, ok),
 
                     %% Update local state before sending decision to participants.
                     Transaction = Transaction0#transaction{coordinator_status=CoordinatorStatus, precommitted=Precommitted},
@@ -331,7 +345,7 @@ handle_info({precommit_ack, FromNode, Id}, State) ->
                     %% Send notification to commit.
                     lists:foreach(fun(N) ->
                         lager:info("~p: sending commit message to node ~p: ~p", [node(), N, Id]),
-                        partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {commit, Transaction}, [])
+                        Manager:forward_message(N, undefined, ?MODULE, {commit, Transaction}, [])
                     end, membership(Participants));
                 false ->
                     %% Update local state before sending decision to participants.
@@ -343,15 +357,19 @@ handle_info({precommit_ack, FromNode, Id}, State) ->
 
     {noreply, State};
 handle_info({precommit, #transaction{id=Id, coordinator=Coordinator} = Transaction}, State) ->
+    Manager = manager(),
+
     %% Write log record showing commit occurred.
     true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=precommit}}),
 
     %% Repond to coordinator that we are now committed.
     MyNode = partisan_peer_service_manager:mynode(),
-    partisan_pluggable_peer_service_manager:forward_message(Coordinator, undefined, ?MODULE, {precommit_ack, MyNode, Id}, []),
+    Manager:forward_message(Coordinator, undefined, ?MODULE, {precommit_ack, MyNode, Id}, []),
 
     {noreply, State};
 handle_info({prepared, FromNode, Id}, State) ->
+    Manager = manager(),
+
     %% Find transaction record.
     case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
         [{_Id, #transaction{participants=Participants, prepared=Prepared0} = Transaction0}] ->
@@ -371,7 +389,7 @@ handle_info({prepared, FromNode, Id}, State) ->
                     %% Send notification to commit.
                     lists:foreach(fun(N) ->
                         lager:info("~p: sending precommit message to node ~p: ~p", [node(), N, Id]),
-                        partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {precommit, Transaction}, [])
+                        Manager:forward_message(N, undefined, ?MODULE, {precommit, Transaction}, [])
                     end, membership(Participants));
                 false ->
                     %% Update local state before sending decision to participants.
@@ -383,6 +401,8 @@ handle_info({prepared, FromNode, Id}, State) ->
 
     {noreply, State};
 handle_info({prepare, #transaction{coordinator=Coordinator, id=Id}=Transaction}, State) ->
+    Manager = manager(),
+
     %% Durably store the message for recovery.
     true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=prepared}}),
 
@@ -392,7 +412,7 @@ handle_info({prepare, #transaction{coordinator=Coordinator, id=Id}=Transaction},
     %% Repond to coordinator that we are now prepared.
     MyNode = partisan_peer_service_manager:mynode(),
     lager:info("~p: sending prepared message to node ~p: ~p", [node(), Coordinator, Id]),
-    partisan_pluggable_peer_service_manager:forward_message(Coordinator, undefined, ?MODULE, {prepared, MyNode, Id}, []),
+    Manager:forward_message(Coordinator, undefined, ?MODULE, {prepared, MyNode, Id}, []),
 
     {noreply, State};
 handle_info(Msg, State) ->
@@ -410,6 +430,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+%% @private
+manager() ->
+    partisan_config:get(partisan_peer_service_manager).
 
 %% @private -- sort to remove nondeterminism in node selection.
 membership(Membership) ->
