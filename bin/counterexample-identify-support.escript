@@ -185,7 +185,7 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
         end,
         io:format("ValidOmissions: ~p~n", [ValidOmissions]),
 
-        case ValidatedCausality andalso not lists:member(EarlyClassification, GenClassificationsExplored0) of
+        case ValidOmissions andalso ValidatedCausality andalso not lists:member(EarlyClassification, GenClassificationsExplored0) of
             true ->
                 io:format("Entering generation pass.~n", []),
 
@@ -326,6 +326,8 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
                                 {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0}
                         end;
                     _Other ->
+                        io:format("Inserting into generated schedule list.~n", []),
+
                         %% Store generated schedule.
                         true = ets:insert(?SCHEDULES, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}),
 
@@ -630,6 +632,9 @@ execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {I
                     ClassificationsExplored = ClassificationsExplored0 ++ [Classification],
                     io:format("=> Classification for this test: ~p~n", [Classification]),
 
+                    MessageTypes = message_types(TraceLines),
+                    io:format("=> MessageTypes for this test: ~p~n", [MessageTypes]),
+
                     %% Run the trace.
                     Command = "rm -rf priv/lager; IMPLEMENTATION_MODULE=" ++ os:getenv("IMPLEMENTATION_MODULE") ++ " SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
                     io:format("Executing command for iteration ~p:~n", [Iteration]),
@@ -637,7 +642,7 @@ execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {I
                     Output = os:cmd(Command),
 
                     ClassificationsExplored = ClassificationsExplored0 ++ [Classification],
-                    io:format("=> Classification now: ~p~n", [ClassificationsExplored]),
+                    % io:format("=> Classification now: ~p~n", [ClassificationsExplored]),
 
                     %% New trace?
                     {ok, NewTraceLines} = file:consult(TraceFile),
