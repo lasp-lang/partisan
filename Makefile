@@ -119,4 +119,4 @@ riak-ensemble: kill bin-perms compile
 	clear; rm -rf priv/lager; pkill -9 beam.smp; MODULE=lampson_2pc NUM_TESTS=1 SCHEDULER=single_success bin/counterexample-find.sh
 
 bernstein-ctp: kill bin-perms compile
-	PRELOAD_SCHEDULES=false MODULE=bernstein_ctp SUBLIST=0 bin/check-model.sh
+	RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=bernstein_ctp SUBLIST=0 bin/check-model.sh
