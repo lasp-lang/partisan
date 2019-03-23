@@ -21,7 +21,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     {ok, TraceLines} = file:consult(TraceFile),
 
     %% Open the causality file.
-    CausalityFile = "/tmp/partisan-causality-" ++ ModuleString,
+    CausalityFile = "./analysis/partisan-causality-" ++ ModuleString,
 
     case filelib:is_file(CausalityFile) of 
         false ->
@@ -35,7 +35,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     io:format("Causality loaded: ~p~n", [dict:to_list(Causality)]),
 
     %% Open the annotations file.
-    AnnotationsFile = "/tmp/partisan-annotations-" ++ ModuleString,
+    AnnotationsFile = "./annotations/partisan-annotations-" ++ ModuleString,
 
     case filelib:is_file(AnnotationsFile) of 
         false ->

@@ -129,7 +129,7 @@ partisan_analysis(Tree) ->
 	%% Write out the causal relationships.
     ModuleString = os:getenv("IMPLEMENTATION_MODULE"),
 	io:format("Writing out results!~n", []),
-	{ok, Io} = file:open("/tmp/partisan-causality-" ++ ModuleString, [write, {encoding, utf8}]),
+	{ok, Io} = file:open("./analysis/partisan-causality-" ++ ModuleString, [write, {encoding, utf8}]),
 	[io:format(Io, "~p.~n", [ResultLine]) || ResultLine <- [dict:to_list(OutputDict)]],
 	ok = file:close(Io),
 
