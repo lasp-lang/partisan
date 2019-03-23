@@ -683,10 +683,10 @@ execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {I
                     ClassificationsExplored = ClassificationsExplored0 ++ [Classification],
                     % io:format("=> Classification for this test: ~p~n", [Classification]),
 
-                    MessageTypes = message_types(FinalTraceLines),
+                    % MessageTypes = message_types(FinalTraceLines),
                     % io:format("=> MessageTypes for this test: ~p~n", [MessageTypes]),
 
-                    OmissionTypes = message_types(Omissions),
+                    % OmissionTypes = message_types(Omissions),
                     % io:format("=> OmissionTypes for this test: ~p~n", [OmissionTypes]),
 
                     %% Run the trace.
