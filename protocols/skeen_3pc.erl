@@ -23,8 +23,6 @@
 
 -module(skeen_3pc).
 
--include("partisan.hrl").
-
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 %% API
@@ -149,7 +147,7 @@ handle_cast({broadcast, From, ServerRef, Message}, #state{membership=Membership}
     %% Send prepare message to all participants including ourself.
     lists:foreach(fun(N) ->
         lager:info("~p: sending prepare message to node ~p: ~p", [node(), N, Message]),
-        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {prepare, Transaction}, [])
+        Manager:forward_message(N, undefined, ?MODULE, {prepare, Transaction}, [])
     end, membership(Membership)),
 
     {noreply, State};
@@ -181,7 +179,7 @@ handle_info({participant_timeout, Id}, State) ->
                     %% Send commit to participants.
                     lists:foreach(fun(N) ->
                         lager:info("~p: sending commit message to node ~p: ~p", [node(), N, Id]),
-                        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {commit, Transaction}, [])
+                        Manager:forward_message(N, undefined, ?MODULE, {commit, Transaction}, [])
                     end, membership(Participants));
                 _ ->
                     %% Write log record showing abort occurred.
@@ -190,7 +188,7 @@ handle_info({participant_timeout, Id}, State) ->
                     %% Send commit to participants.
                     lists:foreach(fun(N) ->
                         lager:info("~p: sending abort message to node ~p: ~p", [node(), N, Id]),
-                        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {abort, Transaction}, [])
+                        Manager:forward_message(N, undefined, ?MODULE, {abort, Transaction}, [])
                     end, membership(Participants))
             end;
         [] ->
