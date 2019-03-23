@@ -167,13 +167,14 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
             PrefixedPowersetTraceLines = lists:map(fun(X) -> BaseOmissions ++ X end, L),
 
             %% TODO: Remove me.
-            % FinalPowerset = [lists:nth(1, PrefixedPowersetTraceLines)] ++ [lists:nth(length(PrefixedPowersetTraceLines), PrefixedPowersetTraceLines)],
-            FinalPowerset = PrefixedPowersetTraceLines,
+            FinalPowerset = [lists:nth(1, PrefixedPowersetTraceLines)] ++ [lists:nth(length(PrefixedPowersetTraceLines), PrefixedPowersetTraceLines)],
+            % FinalPowerset = PrefixedPowersetTraceLines,
 
             {FilteredTraceLines, FinalPowerset};
         false ->
             %% Generate all.
             FilteredTraceLines = filter_trace_lines(TraceLines),
+            io:format("Beginning powerset generation, length(FilteredTraceLines): ~p~n", [length(FilteredTraceLines)]),
             {Time, L} = timer:tc(fun() -> powerset(FilteredTraceLines) end),
             io:format("Number of message sets in powerset: ~p~n", [length(L)]),
             io:format("Powerset generation took: ~p~n", [Time]),
@@ -741,6 +742,9 @@ execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {I
                             %% This failed.
                             io:format("Test FAILED!~n", []),
                             % io:format("Failing test contained the following omitted mesage types: ~p~n", [Omissions]),
+
+                            OmissionTypes = message_types(Omissions),
+                            io:format("=> OmissionTypes: ~p~n", [OmissionTypes]),
 
                             case os:getenv("EXIT_ON_COUNTEREXAMPLE") of 
                                 false ->
