@@ -72,7 +72,8 @@ init_per_group(with_scamp_v1_membership_strategy, Config) ->
 init_per_group(with_scamp_v2_membership_strategy, Config) ->
     [{membership_strategy, partisan_scamp_v2_membership_strategy}] ++ Config;
 init_per_group(with_hiscamp_membership_strategy, Config) ->
-    [{membership_strategy, partisan_scamp_v2_membership_strategy}] ++ Config;
+    ct:pal("Using hiscamp...", []),
+    [{membership_strategy, partisan_hiscamp_membership_strategy}] ++ Config;
 init_per_group(with_broadcast, Config) ->
     [{broadcast, true}, {forward_options, [{transitive, true}]}] ++ Config;
 init_per_group(with_partition_key, Config) ->
