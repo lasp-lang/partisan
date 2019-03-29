@@ -320,6 +320,15 @@ pid(Pid) ->
                 true ->
                     Unique = erlang:unique_integer([monotonic, positive]),
                     Name = "partisan_registered_name_" ++ integer_to_list(Unique),
+
+                    case process_info(Pid, registered_name) of 
+                        {registered_name, OldName} ->
+                            lager:info("unregistering pid: ~p with name: ~p", [Pid, OldName]),
+                            unregister(OldName);
+                        [] ->
+                            ok
+                    end,
+
                     lager:info("registering pid: ~p as name: ~p at node: ~p", [Pid, Name, Node]),
                     true = erlang:register(list_to_atom(Name), Pid),
                     {partisan_remote_reference, Node, {partisan_registered_name_reference, Name}};
@@ -336,6 +345,15 @@ pid(Pid) ->
                     RewrittenProcessIdentifier = "<0." ++ B ++ "." ++ C,
                     RegisterFun = fun() ->
                         RewrittenPid = list_to_pid(RewrittenProcessIdentifier),
+
+                        case process_info(RewrittenPid, registered_name) of 
+                            {registered_name, OldName} ->
+                                lager:info("unregistering pid: ~p with name: ~p", [Pid, OldName]),
+                                unregister(OldName);
+                            [] ->
+                                ok
+                        end,
+
                         erlang:register(list_to_atom(Name), RewrittenPid)
                     end,
                     lager:info("registering pid: ~p as name: ~p at node: ~p", [Pid, Name, Node]),
