@@ -37,10 +37,13 @@
 %%%===================================================================
 
 key() ->
-    oneof([1, 2]).
+    oneof(keys()).
+
+keys() ->
+    [rkey].
 
 value() ->
-    oneof([1, 2]).
+    oneof([value1, value2, value3]).
 
 node_name() ->
     oneof(names()).
@@ -63,11 +66,11 @@ node_commands() ->
 
 %% Assertion commands.
 node_assertion_functions() ->
-    [].
+    [read].
 
 %% Global functions.
 node_global_functions() ->
-    [].
+    [read].
 
 %% What should the initial node state be.
 node_initial_state() ->
@@ -88,7 +91,7 @@ node_precondition(_NodeState, _Command) ->
 %% Next state.
 node_next_state(#property_state{joined_nodes=_JoinedNodes}, 
                 #node_state{values=Values0}=NodeState, 
-                ok, 
+                {ok, _}, 
                 {call, ?MODULE, write, [_Node, Key, Value]}) ->
     Values = dict:store(Key, Value, Values0),
     NodeState#node_state{values=Values};
@@ -100,6 +103,29 @@ node_next_state(_State, NodeState, _Response, _Command) ->
 %% Postconditions for node commands.
 node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {ok, _}) ->
     true;
+node_postcondition(#node_state{values=Values}=_NodeState, {call, ?MODULE, read, []}, Results) ->
+    lager:info("results: ~p", [Results]),
+    lager:info("values: ~p", [dict:to_list(Values)]),
+
+    Result = lists:foldl(fun({Key, {obj, _, _, Key, Value}}, Acc) ->
+        lager:info("looking for ~p with value ~p", [Key, Value]),
+
+        case dict:find(Key, Values) of 
+            {ok, Value} ->
+                lager:info("found!", []),
+                true andalso Acc;
+            error ->
+                case Value of 
+                    notfound ->
+                        true andalso Acc;
+                    _ ->
+                        lager:info("not found when it should be!", []),
+                        false andalso Acc
+                end
+        end
+    end, true, Results),
+
+    Result;
 node_postcondition(_NodeState, Command, Response) ->
     node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
                [Command, Response]),
@@ -124,6 +150,24 @@ write(Node, Key, Value) ->
     Result = rpc:call(?NAME(Node), riak_ensemble_client, kover, [root, Key, Value, 5000], 5000),
 
     ?PROPERTY_MODULE:command_conclusion(Node, [write, Key, Value]),
+
+    Result.
+
+%% @private
+read() ->
+    RunnerNode = node(),
+
+    ?PROPERTY_MODULE:command_preamble(RunnerNode, [read]),
+
+    %% Get all keys.
+    Node = hd(names()),
+
+    Result = lists:map(fun(Key) ->
+        {ok, Value} = rpc:call(?NAME(Node), riak_ensemble_client, kget, [root, Key, 5000], 5000),
+        {Key, Value}
+    end, keys()),
+
+    ?PROPERTY_MODULE:command_conclusion(RunnerNode, [read]),
 
     Result.
 
@@ -198,6 +242,10 @@ node_begin_case() ->
     node_debug("waiting for cluster stability on node: ~p", [FirstName]),
     wait_stable(?NAME(FirstName), root),
 
+    node_debug("getting leader id from node: ~p", [FirstName]),
+    RootLeader = rpc:call(?NAME(FirstName), riak_ensemble_manager, rleader_pid, []),
+    node_debug("root_leader: ~p", [RootLeader]),
+
     %% Join remote nodes to the root.
     lists:foreach(fun({ShortName, _}) ->
         %% Join the node.
@@ -215,7 +263,7 @@ node_begin_case() ->
         %% Wait for stabilization.
         wait_stable(?NAME(FirstName), root),
 
-        RootLeader = rpc:call(?NAME(FirstName), riak_ensemble_manager, rleader_pid, []),
+        %% Add member to root ensemble.
         ok = rpc:call(?NAME(FirstName), riak_ensemble_peer, update_members, [RootLeader, [{add, {root, ?NAME(ShortName)}}], 10000]),
 
         %% Wait until stable.
@@ -228,17 +276,39 @@ node_begin_case() ->
     wait_members(?NAME(FirstName), root, ShouldMembers),
 
     %% Wait for root ensemble stability.
-    node_debug("waiting for cluster stability on node: ~p after join", [FirstName]),
+    node_debug("waiting for root ensemble stability on node: ~p after join", [FirstName]),
     wait_stable(?NAME(FirstName), root),
 
-    %% Get members of the ensemble.
+    %% Create partisan ensemble.
+    node_debug("creating ensemble for the test on node ~p", [FirstName]),
+    EnsembleId = partisan,
+    Mod = riak_ensemble_basic_backend,
+    Arg = [],
+    ok = rpc:call(?NAME(FirstName), riak_ensemble_manager, create_ensemble, [EnsembleId, {root, ?NAME(FirstName)}, ShouldMembers, Mod, Arg]),
+
+    %% Wait for partisan ensemble stability.
+    node_debug("waiting for partisan ensemble stability on node: ~p after join", [FirstName]),
+    wait_stable(?NAME(FirstName), partisan),
+
+    %% Get members of the root ensemble.
     node_debug("getting members of the root ensemble on node ~p", [FirstName]),
-    Results = rpc:call(?NAME(FirstName), riak_ensemble_manager, get_members, [root]),
-    node_debug("=> ~p", [Results]),
+    RootEnsembleMembers = rpc:call(?NAME(FirstName), riak_ensemble_manager, get_members, [root]),
+    node_debug("=> ~p", [RootEnsembleMembers]),
+
+    %% Get members of the partisan ensemble.
+    node_debug("getting members of the partisan ensemble on node ~p", [FirstName]),
+    PartisanEnsembleMembers = rpc:call(?NAME(FirstName), riak_ensemble_manager, get_members, [partisan]),
+    node_debug("=> ~p", [PartisanEnsembleMembers]),
 
     %% Perform a single write to ensure the cluster is ready.
-    node_debug("performing single write to ensure cluster is online and ready.", []),
-    {ok, _} = rpc:call(?NAME(FirstName), riak_ensemble_client, kover, [root, root_key, "cmeik", 5000], 5000),
+    node_debug("performing root ensemble write to ensure cluster is online and ready.", []),
+    {ok, RRes} = rpc:call(?NAME(FirstName), riak_ensemble_client, kover, [root, rkey, "first", 5000], 5000),
+    node_debug("write completed: ~p", [RRes]),
+
+    %% Perform a second write to ensure the cluster is ready.
+    node_debug("performing partisan ensemble write to ensure cluster is online and ready.", []),
+    {ok, PRes} = rpc:call(?NAME(FirstName), riak_ensemble_client, kover, [partisan, pkey, "second", 5000], 5000),
+    node_debug("write completed: ~p", [PRes]),
 
     ok.
 
