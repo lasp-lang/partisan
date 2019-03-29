@@ -30,6 +30,8 @@
 
 -define(PERFORM_SUMMARY, false).
 
+-define(GROUP, paxoid).
+
 %%%===================================================================
 %%% Generators
 %%%===================================================================
@@ -108,7 +110,7 @@ node_postcondition(_NodeState, Command, Response) ->
 next_id(Node) ->
     ?PROPERTY_MODULE:command_preamble(Node, [next_id]),
 
-    Result = rpc:call(?NAME(Node), paxoid, next_id, [test], 5000),
+    Result = rpc:call(?NAME(Node), paxoid, next_id, [?GROUP], 5000),
 
     ?PROPERTY_MODULE:command_conclusion(Node, [next_id]),
 
@@ -164,18 +166,18 @@ node_begin_case() ->
         ok = rpc:call(?NAME(ShortName), application, load, [paxoid]),
 
         node_debug("starting paxoid at node ~p", [ShortName]),
-        {ok, _} = rpc:call(?NAME(ShortName), paxoid, start_link, [test])
+        {ok, _} = rpc:call(?NAME(ShortName), application, ensure_all_started, [paxoid])
     end, Nodes),
 
     %% Join.
     OtherNodes = lists:map(fun({ShortName, _}) -> ?NAME(ShortName) end, tl(Nodes)),
     {FirstName, _} = hd(Nodes),
     node_debug("joining all nodes with paxoid to first node: ~p: ~p", [FirstName, OtherNodes]),
-    ok = rpc:call(?NAME(FirstName), paxoid, join, [test, OtherNodes]),
+    ok = rpc:call(?NAME(FirstName), paxoid, join, [?GROUP, OtherNodes]),
 
     %% Info.
     node_debug("getting info from paxoid on first node", []),
-    {ok, Info} = rpc:call(?NAME(FirstName), paxoid, info, [test]),
+    {ok, Info} = rpc:call(?NAME(FirstName), paxoid, info, [?GROUP]),
     node_debug("=> info: ~p", [Info]),
 
     ok.
@@ -183,5 +185,15 @@ node_begin_case() ->
 %% @private
 node_end_case() ->
     node_debug("ending case", []),
+
+    %% Get nodes.
+    [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
+
+    %% Stop paxoid.
+    node_debug("stopping paxoid", []),
+    lists:foreach(fun({ShortName, _}) ->
+        node_debug("stopping paxoid on node ~p", [ShortName]),
+        ok = rpc:call(?NAME(ShortName), application, stop, [paxoid])
+    end, Nodes),
 
     ok.

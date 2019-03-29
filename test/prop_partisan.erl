@@ -250,9 +250,13 @@ single_success_commands(Module) ->
                 %% Node commands, without global assertions.  Take only the first.
                 FirstNonGlobalCommand ++
 
+                %% TODO: Please fix me.
+                FirstNonGlobalCommand ++
+                FirstNonGlobalCommand ++
+
                 %% Global assertions only.
                 CommandsWithOnlyGlobalNodeCommands ++ 
-            
+
                 %% Final failure commands
                 FailureCommands),
 
