@@ -116,7 +116,10 @@ demers-rumor_mongering-test: kill bin-perms
 	bin/demers-rumor-mongering-test.sh
 
 riak-ensemble: kill bin-perms compile
-	clear; rm -rf priv/lager; pkill -9 beam.smp; MODULE=lampson_2pc NUM_TESTS=1 SCHEDULER=single_success bin/counterexample-find.sh
+	clear; rm -rf priv/lager; pkill -9 beam.smp; MODULE=lampson_2pc NUM_TESTS=2 SCHEDULER=single_success bin/counterexample-find.sh
+
+riak-ensemble-replay: kill bin-perms compile
+	clear; rm -rf priv/lager; pkill -9 beam.smp; MODULE=lampson_2pc bin/counterexample-replay.sh
 
 lampson-2pc: kill bin-perms compile
 	RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=lampson_2pc SUBLIST=0 bin/check-model.sh
