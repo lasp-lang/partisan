@@ -165,6 +165,9 @@ node_begin_case() ->
         node_debug("starting paxoid at node ~p", [ShortName]),
         ok = rpc:call(?NAME(ShortName), application, load, [paxoid]),
 
+        node_debug("configuring paxoid at node ~p", [ShortName]),
+        ok = rpc:call(?NAME(ShortName), application, set_env, [paxoid, predefined, [paxoid]]),
+
         node_debug("starting paxoid at node ~p", [ShortName]),
         {ok, _} = rpc:call(?NAME(ShortName), application, ensure_all_started, [paxoid])
     end, Nodes),
@@ -179,6 +182,11 @@ node_begin_case() ->
     node_debug("getting info from paxoid on first node", []),
     {ok, Info} = rpc:call(?NAME(FirstName), paxoid, info, [?GROUP]),
     node_debug("=> info: ~p", [Info]),
+
+    %% Sleep.
+    node_debug("sleeping for convergence", []),
+    timer:sleep(50000),
+    node_debug("done.", []),
 
     ok.
 
