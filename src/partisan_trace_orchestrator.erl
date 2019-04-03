@@ -189,7 +189,8 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
                 %% Format trace accordingly.
                 case InterpositionType of
                     receive_message ->
-                        replay_debug("~p <- ~p: ~p", [TracingNode, OriginNode, MessagePayload]);
+                        % replay_debug("~p <- ~p: ~p", [TracingNode, OriginNode, MessagePayload]),
+                        ok;
                     forward_message ->
                         replay_debug("~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload])
                 end;
@@ -207,7 +208,8 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
                             true ->
                                 case InterpositionType of
                                     receive_message ->
-                                        replay_debug("* ~p <- ~p: ~p", [TracingNode, OriginNode, MessagePayload]);
+                                        % replay_debug("* ~p <- ~p: ~p", [TracingNode, OriginNode, MessagePayload]),
+                                        ok;
                                     forward_message ->
                                         replay_debug("~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload])
                                 end;
