@@ -1,0 +1,3 @@
+[{{receive_message,step_accept},[{forward_message,step_accepted}]},
+ {{receive_message,step_prepared},[{forward_message,step_accept}]},
+ {{receive_message,step_prepare},[{forward_message,step_prepared}]}].
