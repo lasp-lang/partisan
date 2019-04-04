@@ -57,16 +57,16 @@ node_commands() ->
 
 %% Assertion commands.
 node_assertion_functions() ->
-    [].
+    [max_id].
 
 %% Global functions.
 node_global_functions() ->
-    [].
+    [max_id].
 
 %% What should the initial node state be.
 node_initial_state() ->
     node_debug("initializing", []),
-    #node_state{counter=1}.
+    #node_state{counter=0}.
 
 %% Names of the node functions so we kow when we can dispatch to the node
 %% pre- and postconditions.
@@ -86,9 +86,23 @@ node_next_state(_State, NodeState, _Response, _Command) ->
     NodeState.
 
 %% Postconditions for node commands.
+node_postcondition(#node_state{counter=Counter}, {call, ?MODULE, max_id, []}, Results) ->
+    node_debug("postcondition received ~p from max_id", [Results]),
+
+    lists:all(fun({Node, Result}) -> 
+        case Counter =:= Result of
+            true ->
+                true;
+            false ->
+                node_debug("=> node: ~p has wrong value: ~p, should be ~p", [Node, Result, Counter]),
+                false
+        end
+    end, Results);
+node_postcondition(_NodeState, {call, ?MODULE, next_id, [_Node]}, {badrpc,timeout}) ->
+    true;
 node_postcondition(#node_state{counter=Counter}, {call, ?MODULE, next_id, [_Node]}, Value) ->
-    node_debug("postcondition received ~p from next_id", [Value]),
-    Counter =:= Value;
+    node_debug("postcondition received ~p from next_id when value should be: ~p", [Value, Counter]),
+    Counter + 1 =:= Value;
 node_postcondition(_NodeState, Command, Response) ->
     node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
                [Command, Response]),
@@ -115,6 +129,24 @@ next_id(Node) ->
     ?PROPERTY_MODULE:command_conclusion(Node, [next_id]),
 
     Result.
+
+%% @private
+max_id() ->
+    node_debug("executing max_id command", []),
+
+    RunnerNode = node(),
+
+    ?PROPERTY_MODULE:command_preamble(RunnerNode, [max_id]),
+
+    Results = lists:map(fun(Node) ->
+        {ok, Result} = rpc:call(?NAME(Node), paxoid, max_id, [?GROUP], 5000),
+        node_debug("result of max_id: ~p~n", [Result]),
+        {Node, Result}
+    end, names()),
+
+    ?PROPERTY_MODULE:command_conclusion(RunnerNode, [max_id]),
+
+    Results.
 
 %%%===================================================================
 %%% Helper Functions
