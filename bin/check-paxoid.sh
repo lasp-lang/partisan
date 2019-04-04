@@ -2,6 +2,9 @@
 
 export MODULE=paxoid
 export SUBLIST=0
+export PRELOAD_SCHEDULES=false
+export RECURSIVE=true
+export EXIT_ON_COUNTEREXAMPLE=true
 
 echo "Running example suite to identify minimal successful example..."
 rm -rf priv/lager; pkill -9 beam.smp; IMPLEMENTATION_MODULE=${MODULE} NUM_TESTS=3 SCHEDULER=single_success bin/counterexample-find.sh
