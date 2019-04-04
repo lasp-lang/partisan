@@ -228,7 +228,7 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
         case EarlyOmissions andalso EarlyCausality andalso not lists:member(EarlyClassification, GenClassificationsExplored0) of
             true ->
                 io:format("~n", []),
-                io:format("Entering generation pass.~n", []),
+                % io:format("Entering generation pass.~n", []),
                 % io:format("length(CandidiateTrace): ~p~n", [length(CandidateTrace)]),
                 % io:format("EarlyCausality: ~p~n", [EarlyCausality]),
                 % io:format("EarlyClassification: ~p~n", [EarlyClassification]),
@@ -455,11 +455,29 @@ message_type(Message) ->
     case InterpositionType of 
         forward_message ->
             MessageType1 = element(1, MessagePayload),
-            {forward_message, MessageType1};
+
+            ActualType = case MessageType1 of 
+                '$gen_cast' ->
+                    CastMessage = element(2, MessagePayload),
+                    element(1, CastMessage);
+                _ ->
+                    MessageType1
+            end,
+
+            {forward_message, ActualType};
         receive_message ->
             {forward_message, _Module, Payload} = MessagePayload,
             MessageType1 = element(1, Payload),
-            {receive_message, MessageType1}
+
+            ActualType = case MessageType1 of 
+                '$gen_cast' ->
+                    CastMessage = element(2, Payload),
+                    element(1, CastMessage);
+                _ ->
+                    MessageType1
+            end,
+
+            {receive_message, ActualType}
     end.
 
 %% @private
