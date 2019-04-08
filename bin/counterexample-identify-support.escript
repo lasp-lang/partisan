@@ -283,7 +283,8 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Causal
                                                     %% If the node is faulted, but the message isn't a specific omission, then we probably have a background message that also needs to be omitted.
                                                     case lists:member(element(2, message_type(Message)), BackgroundAnnotations) of
                                                         true ->
-                                                            % io:format("=> found background message, fauled nodes: ~p~n", [dict:to_list(FaultedNodes0)]),
+                                                            % io:format("=> found background message from ~p to node ~p~n", [TracingNode, OriginNode]),
+                                                            % io:format("=> faulted nodes: ~p~n", [dict:to_list(FaultedNodes0)]),
 
                                                             case dict:find(TracingNode, FaultedNodes0) of 
                                                                 {ok, true} ->
