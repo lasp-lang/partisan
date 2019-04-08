@@ -160,7 +160,7 @@ handle_cast(Msg, State) ->
 %% @private
 %% Incoming messages.
 handle_info({heartbeat, FromNode}, State) ->
-    lager:info("~p: received heartbeat at node: ~p from node: ~p", [node(), FromNode]),
+    lager:info("~p: received heartbeat at node: ~p from node: ~p", [node(), node(), FromNode]),
     {noreply, State};
 handle_info(heartbeat, #state{membership=Membership}=State) ->
     MyNode = partisan_peer_service_manager:mynode(),
@@ -364,7 +364,7 @@ membership(Membership) ->
 schedule_heartbeat() ->
     case os:getenv("NOISE") of 
         "true" ->
-            erlang:send_after(1, self(), heartbeat);
+            erlang:send_after(10, self(), heartbeat);
         _ ->
             ok
     end.
