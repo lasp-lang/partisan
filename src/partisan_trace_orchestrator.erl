@@ -536,13 +536,15 @@ format_message_payload_for_json(MessagePayload) ->
 %% @private
 preload_omissions() ->
     PreloadOmissionFile = preload_omission_file(),
+
     case PreloadOmissionFile of 
         undefined ->
             ok;
         _ ->
             {ok, [Omissions]} = file:consult(PreloadOmissionFile),
 
-            lists:foreach(fun({T, Message}) ->
+            %% Preload each omission at the correct node.
+            OmissionNodes = lists:foldl(fun({T, Message}, OmissionNodes0) ->
                 case T of
                     pre_interposition_fun ->
                         {TracingNode, forward_message, OriginNode, MessagePayload} = Message,
@@ -555,6 +557,15 @@ preload_omissions() ->
                                     case M of 
                                         MessagePayload ->
                                             lager:info("~p: dropping packet from ~p to ~p due to preload interposition.", [node(), TracingNode, OriginNode]),
+
+                                            case partisan_config:get(faulted) of 
+                                                true ->
+                                                    ok;
+                                                _ ->
+                                                    lager:info("~p: setting node ~p to faulted due to preload interposition hit on message: ~p", [node(), TracingNode, Message]),
+                                                    partisan_config:set(faulted, true)
+                                            end,
+
                                             undefined;
                                         Other ->
                                             lager:info("~p: allowing message, doesn't match interposition payload while node matches", [node()]),
@@ -568,14 +579,141 @@ preload_omissions() ->
                             end;
                             ({receive_message, _N, M}) -> M
                         end,
-                        ok = rpc:call(TracingNode, ?MANAGER, add_interposition_fun, [{send_omission, OriginNode, Message}, InterpositionFun]);
+
+                        %% Install function.
+                        ok = rpc:call(TracingNode, ?MANAGER, add_interposition_fun, [{send_omission, OriginNode, Message}, InterpositionFun]),
+
+                        lists:usort(OmissionNodes0 ++ [TracingNode]); 
                     Other ->
-                        replay_debug("unknown preload: ~p", [Other])
+                        replay_debug("unknown preload: ~p", [Other]),
+                        OmissionNodes0
                 end
-            end, Omissions)
+            end, [], Omissions),
+
+            replay_debug("Nodes involved in omissions (possibly faulted): ~p", [OmissionNodes]),
+
+            %% Load background annotations.
+            BackgroundAnnotations = background_annotations(),
+            lager:info("Background annotations are: ~p", [BackgroundAnnotations]),
+
+            %% Install faulted tracing interposition function.
+            %% TODO: ONLY BACKGROUND.
+            lists:foreach(fun(Node) ->
+                InterpositionFun = fun({forward_message, _N, M}) ->
+                    lager:info("~p: interposition called for message: ~p", [node(), M]),
+
+                    case partisan_config:get(faulted) of 
+                        true ->
+                            case M of 
+                                undefined ->
+                                    undefined;
+                                _ ->
+                                    MessageType = message_type(forward_message, M),
+
+                                    case lists:member(element(2, MessageType), BackgroundAnnotations) of 
+                                        true ->
+                                            lager:info("~p: faulted during forward_message of background message, message ~p should be dropped.", [node(), M]),
+                                            undefined;
+                                        false ->
+                                            lager:info("~p: faulted, but forward_message payload is not background message: ~p, message_type: ~p", [node(), M, MessageType]),
+                                            M
+                                    end
+                            end;
+                        _ ->
+                            M
+                    end;
+                    ({receive_message, _N, M}) -> 
+                        case partisan_config:get(faulted) of 
+                            true ->
+                                case M of 
+                                    undefined ->
+                                        undefined;
+                                    _ ->
+                                        MessageType = message_type(receive_message, M),
+
+                                        case lists:member(element(2, MessageType), BackgroundAnnotations) of 
+                                            true ->
+                                                lager:info("~p: faulted during receive_message of background message, message ~p should be dropped.", [node(), M]),
+                                                undefined;
+                                            false ->
+                                                lager:info("~p: faulted, but receive_message payload is not background message: ~p, message_type: ~p", [node(), M, MessageType]),
+                                                M
+                                        end
+                                end;
+                            _ ->
+                                M
+                        end
+                end,
+
+                %% Install function.
+                ok = rpc:call(Node, ?MANAGER, add_interposition_fun, [{faulted, Node}, InterpositionFun])
+            end, OmissionNodes)
     end,
 
     ok.
+
+%% @private
+message_type(InterpositionType, MessagePayload) ->
+    lager:info("interposition_type: ~p, payload: ~p", [InterpositionType, MessagePayload]),
+
+    case InterpositionType of 
+        forward_message ->
+            MessageType1 = element(1, MessagePayload),
+
+            ActualType = case MessageType1 of 
+                '$gen_cast' ->
+                    CastMessage = element(2, MessagePayload),
+                    element(1, CastMessage);
+                _ ->
+                    MessageType1
+            end,
+
+            {forward_message, ActualType};
+        receive_message ->
+            {forward_message, _Module, Payload} = MessagePayload,
+            MessageType1 = element(1, Payload),
+
+            ActualType = case MessageType1 of 
+                '$gen_cast' ->
+                    CastMessage = element(2, Payload),
+                    element(1, CastMessage);
+                _ ->
+                    MessageType1
+            end,
+
+            {receive_message, ActualType}
+    end.
+
+%% @private
+background_annotations() ->
+    %% Get module as string.
+    ModuleString = os:getenv("IMPLEMENTATION_MODULE"),
+
+    %% Open the annotations file.
+    AnnotationsFile = "./annotations/partisan-annotations-" ++ ModuleString,
+
+    case filelib:is_file(AnnotationsFile) of 
+        false ->
+            io:format("Annotations file doesn't exist: ~p~n", [AnnotationsFile]);
+        true ->
+            ok
+    end,
+
+    {ok, [RawAnnotations]} = file:consult(AnnotationsFile),
+    io:format("Raw annotations loaded: ~p~n", [RawAnnotations]),
+    AllAnnotations = dict:from_list(RawAnnotations),
+    io:format("Annotations loaded: ~p~n", [dict:to_list(AllAnnotations)]),
+
+    {ok, RawCausalityAnnotations} = dict:find(causality, AllAnnotations),
+    io:format("Raw causality annotations loaded: ~p~n", [RawCausalityAnnotations]),
+
+    CausalityAnnotations = dict:from_list(RawCausalityAnnotations),
+    io:format("Causality annotations loaded: ~p~n", [dict:to_list(CausalityAnnotations)]),
+
+    {ok, BackgroundAnnotations} = dict:find(background, AllAnnotations),
+    io:format("Background annotations loaded: ~p~n", [BackgroundAnnotations]),
+
+    BackgroundAnnotations.
 
 %%%===================================================================
 %%% Trace filtering: super hack, until we can refactor these messages.
@@ -611,3 +749,4 @@ is_membership_strategy_message(receive_message, {membership_strategy, _}) ->
 
 is_membership_strategy_message(_Type, _Message) ->
     false.
+
