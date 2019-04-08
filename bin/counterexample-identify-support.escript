@@ -289,6 +289,7 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Causal
                                                             case dict:find(TracingNode, FaultedNodes0) of 
                                                                 {ok, true} ->
                                                                     % io:format("Found background message for FAULTED node: ~p~n", [TracingNode]),
+
                                                                     %% Generate receive omission.
                                                                     ReceiveOmission = {Type, {OriginNode, receive_message, TracingNode, {forward_message, implementation_module(), MessagePayload}}},
 
@@ -755,7 +756,7 @@ execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {I
                     % io:format("=> OmissionTypes for this test: ~p~n", [OmissionTypes]),
 
                     %% Run the trace.
-                    Command = "rm -rf priv/lager; IMPLEMENTATION_MODULE=" ++ os:getenv("IMPLEMENTATION_MODULE") ++ " SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
+                    Command = "rm -rf priv/lager; NOISE=" ++ os:getenv("NOISE", "false") ++ " IMPLEMENTATION_MODULE=" ++ os:getenv("IMPLEMENTATION_MODULE") ++ " SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
                     io:format("Executing command for iteration ~p:~n", [Iteration]),
                     io:format("~p~n", [Command]),
                     Output = os:cmd(Command),
