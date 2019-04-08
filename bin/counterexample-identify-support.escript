@@ -1,5 +1,5 @@
 #!/usr/bin/env escript
-%%! -pa ./_build/default/lib/jsx/ebin -Wall
+%%! -Wall -pa ./_build/default/lib/jsx/ebin -pa ./_build/default/lib/partisan/ebin
 
 -define(RESULTS, results).
 -define(SCHEDULES, schedules).
