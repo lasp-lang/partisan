@@ -29,7 +29,7 @@
 -compile([export_all]).
 
 %% System model.
--define(SYSTEM_MODEL, prop_partisan_reliable_broadcast).
+-define(SYSTEM_MODEL, prop_partisan_paxoid).
 
 -import(?SYSTEM_MODEL,
         [node_commands/0,
