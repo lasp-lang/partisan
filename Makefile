@@ -129,3 +129,6 @@ bernstein-ctp: kill bin-perms compile
 
 skeen-3pc: kill bin-perms compile
 	RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=skeen_3pc SUBLIST=0 bin/check-model.sh
+
+lampson-2pc-noise: kill bin-perms compile
+	EXIT_ON_COUNTEREXAMPLE=true NOISE=true RECURSIVE=false PRELOAD_SCHEDULES=false MODULE=lampson_2pc SUBLIST=0 bin/check-model.sh
