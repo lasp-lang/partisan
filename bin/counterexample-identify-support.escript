@@ -45,11 +45,21 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     end,
 
     {ok, [RawAnnotations]} = file:consult(AnnotationsFile),
-    Annotations = dict:from_list(RawAnnotations),
-    io:format("Annotations loaded: ~p~n", [dict:to_list(Annotations)]),
+    io:format("Raw annotations loaded: ~p~n", [RawAnnotations]),
+    AllAnnotations = dict:from_list(RawAnnotations),
+    io:format("Annotations loaded: ~p~n", [dict:to_list(AllAnnotations)]),
+
+    {ok, RawCausalityAnnotations} = dict:find(causality, AllAnnotations),
+    io:format("Raw causality annotations loaded: ~p~n", [RawCausalityAnnotations]),
+
+    CausalityAnnotations = dict:from_list(RawCausalityAnnotations),
+    io:format("Causality annotations loaded: ~p~n", [dict:to_list(CausalityAnnotations)]),
+
+    {ok, BackgroundAnnotations} = dict:find(background, AllAnnotations),
+    io:format("Background annotations loaded: ~p~n", [BackgroundAnnotations]),
 
     %% Check that we have the necessary preconditions.
-    PreconditionsPresent = ensure_preconditions_present(Causality, Annotations),
+    PreconditionsPresent = ensure_preconditions_present(Causality, CausalityAnnotations, BackgroundAnnotations),
     io:format("All preconditions present: ~p~n", [PreconditionsPresent]),
     case PreconditionsPresent of 
         true ->
@@ -90,7 +100,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     %% Perform recursive analysis of the traces.
     PreviousIteration = 1,
     PreviousClassificationsExplored = [],
-    analyze(1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLinesWithoutFailure, [], [], []}]),
+    analyze(1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLinesWithoutFailure, [], [], []}]),
 
     %% Should we try to find witnesses?
     case os:getenv("FIND_WITNESSES") of 
@@ -113,7 +123,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     ok.
 
 %% @private
-filter_trace_lines(TraceLines) ->
+filter_trace_lines(TraceLines, BackgroundAnnotations) ->
     %% Filter the trace into message trace lines.
     MessageTraceLines = lists:filter(fun({Type, Message}) ->
         case Type =:= pre_interposition_fun of 
@@ -122,7 +132,13 @@ filter_trace_lines(TraceLines) ->
 
                 case InterpositionType of 
                     forward_message ->
-                        true;
+                        MessageType = message_type(Message),
+                        case lists:member(element(2, MessageType), BackgroundAnnotations) of 
+                            true ->
+                                false;
+                            false ->
+                                true
+                        end;
                     _ -> 
                         false
                 end;
@@ -136,10 +152,10 @@ filter_trace_lines(TraceLines) ->
     MessageTraceLines.
 
 %% @private
-analyze(_Pass, _PreloadOmissionFile, _ReplayTraceFile, _TraceFile, _Causality, _Annotations, _PreviousIteration, _PreviousClassificationsExplored, []) ->
+analyze(_Pass, _PreloadOmissionFile, _ReplayTraceFile, _TraceFile, _Causality, _CausalityAnnotations, _BackgroundAnnotations, _PreviousIteration, _PreviousClassificationsExplored, []) ->
     ok;
 
-analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLines, BaseOmissions, DifferenceTypes, DifferenceTraceLines}|RestTraceLines]) ->
+analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLines, BaseOmissions, DifferenceTypes, DifferenceTraceLines}|RestTraceLines]) ->
     io:format("Beginning analyze pass: ~p with previous iteration: ~p, traces remaining: ~p~n", [Pass, PreviousIteration, length(RestTraceLines)]),
 
     %% Generate the powerset of tracelines.
@@ -151,10 +167,10 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
             io:format("Using difference types for powerset generation: ~p~n", [DifferenceTypes]),
 
             %% Use message trace.
-            FilteredTraceLines = filter_trace_lines(TraceLines),
+            FilteredTraceLines = filter_trace_lines(TraceLines, BackgroundAnnotations),
 
             %% Generate powerset using *only* the new messages.
-            FilteredDifferenceTraceLines = filter_trace_lines(DifferenceTraceLines),
+            FilteredDifferenceTraceLines = filter_trace_lines(DifferenceTraceLines, BackgroundAnnotations),
             {Time, L} = timer:tc(fun() -> powerset(FilteredDifferenceTraceLines) end),
 
             % io:format("FilteredDifferenceTraceLines: ~p~n", [FilteredDifferenceTraceLines]),
@@ -173,7 +189,7 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
             {FilteredTraceLines, FinalPowerset};
         false ->
             %% Generate all.
-            FilteredTraceLines = filter_trace_lines(TraceLines),
+            FilteredTraceLines = filter_trace_lines(TraceLines, BackgroundAnnotations),
             io:format("Beginning powerset generation, length(FilteredTraceLines): ~p~n", [length(FilteredTraceLines)]),
             {Time, L} = timer:tc(fun() -> powerset(FilteredTraceLines) end),
             io:format("Number of message sets in powerset: ~p~n", [length(L)]),
@@ -207,7 +223,7 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
         CandidateTrace = MessageTraceLines -- Omissions,
         EarlyCausality = schedule_valid_causality(Causality, CandidateTrace),
 
-        EarlyClassification0 = classify_schedule(3, Annotations, CandidateTrace),
+        EarlyClassification0 = classify_schedule(3, CausalityAnnotations, CandidateTrace),
         EarlyClassification = dict:to_list(EarlyClassification0),
 
         %% Is this schedule valid for these omissions?
@@ -235,12 +251,14 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
                 % io:format("EarlyOmissions: ~p~n", [EarlyOmissions]),
 
                 %% Generate a new trace.
-                % io:format("Generating new trace based on message omissions (~p omissions, iteration ~p): ~n", [length(Omissions), Iteration]),
+                io:format("Generating new trace based on message omissions (~p omissions, iteration ~p): ~n", [length(Omissions), GenIteration0]),
 
-                {FinalTraceLines, _, _, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes} = lists:foldl(fun({Type, Message} = Line, {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0}) ->
+                {FinalTraceLines, _, _, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes, _, BackgroundOmissions} = lists:foldl(fun({Type, Message} = Line, {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0, FaultedNodes0, BackgroundOmissions0}) ->
                     case Type =:= pre_interposition_fun of 
                         true ->
                             {TracingNode, InterpositionType, OriginNode, MessagePayload} = Message,
+
+                            % io:format("Looking at message type: ~p~n", [message_type(Message)]),
 
                             case FaultsStarted0 of 
                                 true ->
@@ -252,17 +270,42 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
                                         forward_message ->
                                             case lists:member(Line, Omissions) of 
                                                 true ->
+                                                    %% Another fault: this should be added to the list of faulted nodes.
+                                                    FaultedNodes = update_faulted_nodes(TraceLines, {Type, Message}, Omissions, BackgroundAnnotations, FaultedNodes0),
+
+                                                    %% Generate matching receive omission.
                                                     ReceiveOmission = {Type, {OriginNode, receive_message, TracingNode, {forward_message, implementation_module(), MessagePayload}}},
-                                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0 ++ [ReceiveOmission], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0};
+
+                                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0 ++ [ReceiveOmission], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0, FaultedNodes, BackgroundOmissions0};
                                                 false ->
-                                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0 ++ [message_type(Message)]}
+                                                    % io:format("found a message after the faults started of type: ~p not omission.~n", [message_type(Message)]),
+
+                                                    %% If the node is faulted, but the message isn't a specific omission, then we probably have a background message that also needs to be omitted.
+                                                    case lists:member(element(2, message_type(Message)), BackgroundAnnotations) of
+                                                        true ->
+                                                            % io:format("=> found background message, fauled nodes: ~p~n", [dict:to_list(FaultedNodes0)]),
+
+                                                            case dict:find(TracingNode, FaultedNodes0) of 
+                                                                {ok, true} ->
+                                                                    % io:format("Found background message for FAULTED node: ~p~n", [TracingNode]),
+                                                                    %% Generate receive omission.
+                                                                    ReceiveOmission = {Type, {OriginNode, receive_message, TracingNode, {forward_message, implementation_module(), MessagePayload}}},
+
+                                                                    %% Add additional background omissions.
+                                                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0 ++ [message_type(Message)], FaultedNodes0, BackgroundOmissions0 ++ [Line, ReceiveOmission]};
+                                                                _ ->
+                                                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0 ++ [message_type(Message)], FaultedNodes0, BackgroundOmissions0}
+                                                            end;
+                                                        false ->
+                                                            {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0 ++ [message_type(Message)], FaultedNodes0, BackgroundOmissions0}
+                                                    end
                                             end;
                                         receive_message ->
                                             case lists:member(Line, AdditionalOmissions0) of 
                                                 true ->
-                                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0 -- [Line], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0};
+                                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0 -- [Line], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0, FaultedNodes0, BackgroundOmissions0};
                                                 false ->
-                                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0 ++ [message_type(Message)]}
+                                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0 ++ [message_type(Message)], FaultedNodes0, BackgroundOmissions0}
                                             end
                                     end;
                                 false ->
@@ -273,25 +316,41 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
                                                 true ->
                                                     % io:format("fault started with line: ~p~n", [Line]),
 
-                                                    %% Sort of hack, just deal with it for now.
+                                                    %% First, fault.  This should be added to the list of faulted nodes.
+                                                    FaultedNodes = update_faulted_nodes(TraceLines, {Type, Message}, Omissions, BackgroundAnnotations, FaultedNodes0),
+
+                                                    %% Write out the reverse side of the receive omission.
                                                     ReceiveOmission = {Type, {OriginNode, receive_message, TracingNode, {forward_message, implementation_module(), MessagePayload}}},
-                                                    {FinalTrace0, true, AdditionalOmissions0 ++ [ReceiveOmission], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0};
+
+                                                    {FinalTrace0, true, AdditionalOmissions0 ++ [ReceiveOmission], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0, FaultedNodes, BackgroundOmissions0};
                                                 false ->
-                                                    {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0 ++ [message_type(Message)], OmittedMessageTypes0, ConditionalMessageTypes0}
+                                                    case lists:member(element(2, message_type(Message)), BackgroundAnnotations) of 
+                                                        true ->
+                                                            % io:format("forward_message message outside of fault schedule, not adding to replay trace: ~p~n", [message_type(Message)]),
+                                                            {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0 ++ [message_type(Message)], OmittedMessageTypes0, ConditionalMessageTypes0, FaultedNodes0, BackgroundOmissions0};
+                                                        false ->
+                                                            {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0 ++ [message_type(Message)], OmittedMessageTypes0, ConditionalMessageTypes0, FaultedNodes0, BackgroundOmissions0}
+                                                    end
                                             end;
                                         receive_message -> 
                                             case lists:member(Line, AdditionalOmissions0) of 
                                                 true ->
-                                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0 -- [Line], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0};
+                                                    {FinalTrace0, FaultsStarted0, AdditionalOmissions0 -- [Line], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0, FaultedNodes0, BackgroundOmissions0};
                                                 false ->
-                                                    {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0 ++ [message_type(Message)], OmittedMessageTypes0, ConditionalMessageTypes0}
+                                                    case lists:member(element(2, message_type(Message)), BackgroundAnnotations) of 
+                                                        true ->
+                                                            % io:format("receive_message message outside of fault schedule, not adding to replay trace: ~p~n", [message_type(Message)]),
+                                                            {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0 ++ [message_type(Message)], OmittedMessageTypes0, ConditionalMessageTypes0, FaultedNodes0, BackgroundOmissions0};
+                                                        false ->
+                                                            {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0 ++ [message_type(Message)], OmittedMessageTypes0, ConditionalMessageTypes0, FaultedNodes0, BackgroundOmissions0}
+                                                    end
                                             end
                                     end
                             end;
                         false ->
-                            {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0}
+                            {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0, FaultedNodes0, BackgroundOmissions0}
                     end
-                end, {[], false, [], [], [], []}, TraceLines),
+                end, {[], false, [], [], [], [], dict:new(), []}, TraceLines),
 
                 % io:format("PrefixMessageTypes: ~p~n", [PrefixMessageTypes]),
                 % io:format("OmittedMessageTypes: ~p~n", [OmittedMessageTypes]),
@@ -323,61 +382,42 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
                         ok
                 end,
 
-                ClassifySchedule = classify_schedule(3, Annotations, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
+                ClassifySchedule = classify_schedule(3, CausalityAnnotations, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
                 % io:format("Classification: ~p~n", [dict:to_list(ClassifySchedule)]),
 
+                io:format("=> length(BackgroundOmissions): ~p~n", [length(BackgroundOmissions)]),
+                io:format("=> length(lists:usort(BackgroundOmissions)): ~p~n", [length(lists:usort(BackgroundOmissions))]),
+
                 case os:getenv("PRELOAD_SCHEDULES") of 
-                    false ->
-                        case GenIteration0 rem 10000 == 0 of 
-                            true ->
-                                io:format(".", []);
-                            false ->
-                                ok
-                        end,
-
-                        case execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, GenClassificationsExplored0, GenAdditionalTraces0) of
-                            pruned ->
-                                io:format("Schedule pruned.~n", []),
-                                {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0};
-                            {passed, ClassificationsExplored, NewTraces} ->
-                                io:format("Schedule passed.~n", []),
-                                {GenIteration0 + 1, GenNumPassed0 + 1, GenNumFailed0, GetNumPruned0, ClassificationsExplored, NewTraces};
-                            {failed, ClassificationsExplored, NewTraces} ->
-                                io:format("Schedule failed.~n", []),
-                                {GenIteration0 + 1, GenNumPassed0, GenNumFailed0 + 1, GetNumPruned0, ClassificationsExplored, NewTraces};
-                            invalid ->
-                                io:format("Schedule invalid.~n", []),
-                                {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0}
-                        end;
-                    "false" ->
-                        case GenIteration0 rem 10000 == 0 of 
-                            true ->
-                                io:format(".", []);
-                            false ->
-                                ok
-                        end,
-
-                        case execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, GenClassificationsExplored0, GenAdditionalTraces0) of
-                            pruned ->
-                                io:format("Schedule pruned.~n", []),
-                                {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0};
-                            {passed, ClassificationsExplored, NewTraces} ->
-                                io:format("Schedule passed.~n", []),
-                                {GenIteration0 + 1, GenNumPassed0 + 1, GenNumFailed0, GetNumPruned0, ClassificationsExplored, NewTraces};
-                            {failed, ClassificationsExplored, NewTraces} ->
-                                io:format("Schedule failed.~n", []),
-                                {GenIteration0 + 1, GenNumPassed0, GenNumFailed0 + 1, GetNumPruned0, ClassificationsExplored, NewTraces};
-                            invalid ->
-                                io:format("Schedule invalid.~n", []),
-                                {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0}
-                        end;
-                    _Other ->
+                    "true" ->
                         io:format("Inserting into generated schedule list.~n", []),
 
                         %% Store generated schedule.
                         true = ets:insert(?SCHEDULES, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}),
 
-                        {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0, GenClassificationsExplored0, GenAdditionalTraces0}
+                        {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0, GenClassificationsExplored0, GenAdditionalTraces0};
+                    _Other ->
+                        case GenIteration0 rem 10000 == 0 of 
+                            true ->
+                                io:format(".", []);
+                            false ->
+                                ok
+                        end,
+
+                        case execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, GenClassificationsExplored0, GenAdditionalTraces0) of
+                            pruned ->
+                                io:format("Schedule pruned.~n", []),
+                                {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0};
+                            {passed, ClassificationsExplored, NewTraces} ->
+                                io:format("Schedule passed.~n", []),
+                                {GenIteration0 + 1, GenNumPassed0 + 1, GenNumFailed0, GetNumPruned0, ClassificationsExplored, NewTraces};
+                            {failed, ClassificationsExplored, NewTraces} ->
+                                io:format("Schedule failed.~n", []),
+                                {GenIteration0 + 1, GenNumPassed0, GenNumFailed0 + 1, GetNumPruned0, ClassificationsExplored, NewTraces};
+                            invalid ->
+                                io:format("Schedule invalid.~n", []),
+                                {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0}
+                        end
                 end;
             false ->
                 case GenIteration0 rem 10000 == 0 of 
@@ -412,9 +452,9 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annota
     %% Should we explore any new schedules we have discovered?
     case os:getenv("RECURSIVE") of 
         "true" ->
-            analyze(Pass + 1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, 1, [], PreloadAdditionalTraces);
+            analyze(Pass + 1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, 1, [], PreloadAdditionalTraces);
         _ ->
-            analyze(Pass + 1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Annotations, GenIteration, PreloadClassificationsExplored, RestTraceLines)
+            analyze(Pass + 1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, GenIteration, PreloadClassificationsExplored, RestTraceLines)
     end.
 
 %% @doc Generate the powerset of messages.
@@ -599,7 +639,7 @@ identify_minimal_witnesses() ->
     ok.
 
 %% @private
-classify_schedule(_N, Annotations, PrefixSchedule, _OmittedSchedule, ConditionalSchedule) ->
+classify_schedule(_N, CausalityAnnotations, PrefixSchedule, _OmittedSchedule, ConditionalSchedule) ->
     DerivedSchedule = PrefixSchedule ++ ConditionalSchedule,
 
     Classification = lists:foldl(fun({Type, Preconditions}, Dict0) ->
@@ -616,14 +656,14 @@ classify_schedule(_N, Annotations, PrefixSchedule, _OmittedSchedule, Conditional
 
         % io:format("=> type: ~p, preconditions: ~p~n", [Type, Result]),
         dict:store(Type, Result, Dict0)
-    end, dict:new(), dict:to_list(Annotations)),
+    end, dict:new(), dict:to_list(CausalityAnnotations)),
 
     % io:format("classification: ~p~n", [dict:to_list(Classification)]),
 
     Classification.
 
 %% @private
-classify_schedule(_N, Annotations, CandidateTrace0) ->
+classify_schedule(_N, CausalityAnnotations, CandidateTrace0) ->
     CandidateTrace = message_types(CandidateTrace0),
 
     Classification = lists:foldl(fun({Type, Preconditions}, Dict0) ->
@@ -640,26 +680,31 @@ classify_schedule(_N, Annotations, CandidateTrace0) ->
 
         % io:format("=> type: ~p, preconditions: ~p~n", [Type, Result]),
         dict:store(Type, Result, Dict0)
-    end, dict:new(), dict:to_list(Annotations)),
+    end, dict:new(), dict:to_list(CausalityAnnotations)),
 
     % io:format("classification: ~p~n", [dict:to_list(Classification)]),
 
     Classification.
 
 %% @private
-ensure_preconditions_present(Causality, Annotations) ->
+ensure_preconditions_present(Causality, CausalityAnnotations, BackgroundAnnotations) ->
     %% Get all messages that are the result of other messages.
     CausalMessages = lists:foldl(fun({_, Messages}, Acc) ->
         Messages ++ Acc
     end, [], dict:to_list(Causality)),
 
     lists:foldl(fun(Message, Acc) ->
-        case lists:keymember(Message, 1, dict:to_list(Annotations)) of 
+        case lists:keymember(Message, 1, dict:to_list(CausalityAnnotations)) of 
             true ->
                 Acc andalso true;
             false ->
-                io:format("Precondition not found for message type: ~p~n", [Message]),
-                Acc andalso false
+                case lists:member(element(2, Message), BackgroundAnnotations) of 
+                    true ->
+                        Acc andalso true;
+                    false ->
+                        io:format("Precondition not found for message type: ~p~n", [Message]),
+                        Acc andalso false
+                end
         end
     end, true, CausalMessages).
 
@@ -836,3 +881,123 @@ schedule_valid_causality(Causality, CandidateTrace0) ->
     end,
 
     RequirementsMet.
+
+%% @private
+update_faulted_nodes(TraceLines, {_Type, Message} = Line, Omissions, BackgroundAnnotations, FaultedNodes0) ->
+    %% Destructure message.
+    {TracingNode, InterpositionType, _OriginNode, _MessagePayload} = Message,
+
+    %% Get message type.
+    {forward_message, MessageType} = message_type(Message),
+
+    %% Filter omissions for the tracing node.
+    OmissionsFilterFun = fun({Type1, Message1}) ->
+        case Type1 of 
+            pre_interposition_fun ->
+                {TracingNode1, InterpositionType1, _OriginNode1, _MessagePayload1} = Message1,
+                case InterpositionType1 of 
+                    forward_message ->
+                        TracingNode =:= TracingNode1;
+                    _ ->
+                        false
+                end;
+            _ ->
+                false
+        end
+    end, 
+    OmissionsForTracingNode = lists:filter(OmissionsFilterFun, Omissions),
+
+    %% Get last omission for node.
+    LastOmissionForTracingNode = lists:last(OmissionsForTracingNode),
+
+    %% Get last non-background message for node.
+    TraceFilterFun = fun({Type1, Message1}) ->
+        case Type1 of 
+            pre_interposition_fun ->
+                {TracingNode1, InterpositionType1, _OriginNode1, _MessagePayload1} = Message1,
+
+                case InterpositionType1 of 
+                    forward_message ->
+                        case TracingNode =:= TracingNode1 of 
+                            true ->
+                                case lists:member(element(2, message_type(Message1)), BackgroundAnnotations) of 
+                                    true ->
+                                        % io:format("=> message is background message, false: ~p~n", [Message1]),
+                                        false;
+                                    false ->
+                                        % io:format("=> message is NOT background message, true: ~p~n", [Message1]),
+                                        true
+                                end;
+                            false ->
+                                false
+                        end;
+                    _ ->
+                        false
+                end;
+            _ ->
+                false
+        end
+    end, 
+    MessagesForTracingNode = lists:filter(TraceFilterFun, TraceLines),
+
+    %% Last sent message.
+    LastMessageForTracingNode = lists:last(MessagesForTracingNode),
+
+    case InterpositionType of 
+        forward_message ->
+            case dict:find(TracingNode, FaultedNodes0) of 
+                {ok, true} ->
+                    %% Node is already faulted.
+                    case LastOmissionForTracingNode =:= Line of 
+                        true ->
+                            %% Conditional resolve.
+                            case LastMessageForTracingNode =:= Line of 
+                                true ->
+                                    io:format("Node ~p is already faulted, sends no more messages, keeping faulted.~n", [TracingNode]),
+                                    %% Keep faulted if this is the last message the node sends.
+                                    FaultedNodes0;
+                                false ->
+                                    %% If successful sends are happening as part of the protocol (non-background)
+                                    %% after this final omission, then set the node as recovered.
+                                    io:format("Removing ~p from list of faulted nodes for message type: ~p.~n", [TracingNode, MessageType]),
+                                    io:format("=> last message for tracing node: ~p~n", [LastMessageForTracingNode]),
+                                    io:format("=> is last non-background send for node? ~p~n", [LastMessageForTracingNode =:= Line]),
+
+                                    dict:store(TracingNode, false, FaultedNodes0)
+                            end;
+                        false ->
+                            %% Keep faulted.
+                            FaultedNodes0
+                    end;
+                _ ->
+                    %% Node is not already faulted.
+                    case LastOmissionForTracingNode =:= Line of 
+                        true ->
+                            case LastMessageForTracingNode =:= Line of 
+                                true ->
+                                    %% Set faulted if this is the last message the node sends.
+                                    io:format("Adding ~p to list of faulted nodes for message type: ~p.~n", [TracingNode, MessageType]),
+                                    io:format("=> node ~p is involved in ~p omissions.~n", [TracingNode, length(OmissionsForTracingNode)]),
+                                    io:format("=> is last omission for node? ~p~n", [LastOmissionForTracingNode =:= Line]),
+
+                                    dict:store(TracingNode, true, FaultedNodes0);
+                                false ->
+                                    io:format("Node ~p is not faulted, sends more messages, keeping NOT faulted.~n", [TracingNode]),
+                                    %% If successful sends are happening as part of the protocol (non-background)
+                                    %% after this final omission, then leave the node as non-crashed.
+                                    FaultedNodes0
+                            end;
+                        false ->
+                            %% Otherwise, set as fauled.
+                            io:format("Adding ~p to list of faulted nodes for message type: ~p.~n", [TracingNode, MessageType]),
+                            io:format("=> node ~p is involved in ~p omissions.~n", [TracingNode, length(OmissionsForTracingNode)]),
+                            io:format("=> is last omission for node? ~p~n", [LastOmissionForTracingNode =:= Line]),
+
+                            dict:store(TracingNode, true, FaultedNodes0)
+                    end
+            end;
+        _ ->
+            FaultedNodes0
+    end.
+
+
