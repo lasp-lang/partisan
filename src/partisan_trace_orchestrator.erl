@@ -33,6 +33,7 @@
          trace/2,
          replay/2,
          reset/0,
+         enable/0,
          identify/1,
          print/0,
          perform_preloads/0]).
@@ -47,6 +48,7 @@
 
 -record(state, {previous_trace=[],
                 trace=[], 
+                enabled=false,
                 replay=false,
                 shrinking=false,
                 blocked_processes=[],
@@ -71,6 +73,10 @@ trace(Type, Message) ->
 %% @doc Replay trace.
 replay(Type, Message) ->
     gen_server:call({global, ?MODULE}, {replay, Type, Message}, infinity).
+
+%% @doc Enable trace.
+enable() ->
+    gen_server:call({global, ?MODULE}, enable, infinity).
 
 %% @doc Reset trace.
 reset() ->
@@ -107,6 +113,12 @@ init([]) ->
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
+handle_call(enable, _From, #state{enabled=false}=State) ->
+    replay_debug("enabling tracing.", []),
+    {reply, ok, State#state{enabled=true}};
+handle_call(_Message, _From, #state{enabled=false}=State) ->
+    % replay_debug("ignoring ~p as tracing is disabled.", [Message]),
+    {reply, ok, State};
 handle_call({trace, Type, Message}, _From, #state{trace=Trace0}=State) ->
     {reply, ok, State#state{trace=Trace0++[{Type, Message}]}};
 handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0, replay=Replay, shrinking=Shrinking, blocked_processes=BlockedProcesses0}=State) ->
@@ -278,6 +290,8 @@ can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace, BlockedPro
 
     case PreviousTrace of 
         [{NextType, NextMessage} | _] ->
+            replay_debug("waiting for message ~p: ~p ", [NextType, NextMessage]),
+
             CanDeliver = case {NextType, NextMessage} of 
                 {Type, Message} ->
                     replay_debug("=> YES!", []),
@@ -409,7 +423,7 @@ initialize_state() ->
         false ->
             %% This is not a replay, so store the current trace.
             replay_debug("recording trace to file.", []),
-            #state{trace=[], blocked_processes=[], identifier=undefined};
+            #state{enabled=false, trace=[], blocked_processes=[], identifier=undefined};
         _ ->
             %% Mark that we are in replay mode.
             partisan_config:set(replaying, true),
@@ -434,7 +448,7 @@ initialize_state() ->
                     true
             end,
 
-            #state{trace=[], previous_trace=Lines, replay=true, shrinking=Shrinking, blocked_processes=[], identifier=undefined}
+            #state{enabled=false, trace=[], previous_trace=Lines, replay=true, shrinking=Shrinking, blocked_processes=[], identifier=undefined}
     end.
 
 %% @private
