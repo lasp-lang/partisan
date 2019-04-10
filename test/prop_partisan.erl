@@ -703,11 +703,17 @@ start_nodes() ->
 
     %% Add send and receive pre-interposition functions to enforce message ordering.
     PreInterpositionFun = fun({Type, OriginNode, OriginalMessage}) ->
-        %% Record message incoming and outgoing messages.
-        ok = partisan_trace_orchestrator:trace(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
+        %% TODO: THis needs to be fixed: replay and trace need to be done
+        %% atomically otherwise processes will race to write trace entry when
+        %% they are unblocked from retry: this means that under replay the trace
+        %% file might generate small permutations of messages which means it's
+        %% technically not the same trace.
 
         %% Under replay ensure they match the trace order (but only for pre-interposition messages).
         ok = partisan_trace_orchestrator:replay(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
+
+        %% Record message incoming and outgoing messages.
+        ok = partisan_trace_orchestrator:trace(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
 
         ok
     end, 
