@@ -219,7 +219,7 @@ node_begin_case() ->
 
     %% Sleep.
     node_debug("sleeping for convergence", []),
-    timer:sleep(50000),
+    timer:sleep(1000),
     node_debug("done.", []),
 
     ok.
