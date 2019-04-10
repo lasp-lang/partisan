@@ -689,6 +689,9 @@ start_nodes() ->
     %% Reset trace.
     ok = partisan_trace_orchestrator:reset(),
 
+    %% Start tracing.
+    ok = partisan_trace_orchestrator:enable(),
+
     %% Perform preloads.
     ok = partisan_trace_orchestrator:perform_preloads(),
 
