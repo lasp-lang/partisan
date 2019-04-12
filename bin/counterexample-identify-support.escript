@@ -978,22 +978,23 @@ update_faulted_nodes(TraceLines, {_Type, Message} = Line, Omissions, BackgroundA
                             case LastMessageForTracingNode =:= Line of 
                                 true ->
                                     %% Set faulted if this is the last message the node sends.
-                                    io:format("Adding ~p to list of faulted nodes for message type: ~p.~n", [TracingNode, MessageType]),
-                                    io:format("=> node ~p is involved in ~p omissions.~n", [TracingNode, length(OmissionsForTracingNode)]),
-                                    io:format("=> is last omission for node? ~p~n", [LastOmissionForTracingNode =:= Line]),
+                                    % io:format("Adding ~p to list of faulted nodes for message type: ~p.~n", [TracingNode, MessageType]),
+                                    % io:format("=> node ~p is involved in ~p omissions.~n", [TracingNode, length(OmissionsForTracingNode)]),
+                                    % io:format("=> is last omission for node? ~p~n", [LastOmissionForTracingNode =:= Line]),
 
                                     dict:store(TracingNode, true, FaultedNodes0);
                                 false ->
-                                    io:format("Node ~p is not faulted, sends more messages, keeping NOT faulted.~n", [TracingNode]),
+                                    % io:format("Node ~p is not faulted, sends more messages, keeping NOT faulted.~n", [TracingNode]),
+
                                     %% If successful sends are happening as part of the protocol (non-background)
                                     %% after this final omission, then leave the node as non-crashed.
                                     FaultedNodes0
                             end;
                         false ->
                             %% Otherwise, set as fauled.
-                            io:format("Adding ~p to list of faulted nodes for message type: ~p.~n", [TracingNode, MessageType]),
-                            io:format("=> node ~p is involved in ~p omissions.~n", [TracingNode, length(OmissionsForTracingNode)]),
-                            io:format("=> is last omission for node? ~p~n", [LastOmissionForTracingNode =:= Line]),
+                            % io:format("Adding ~p to list of faulted nodes for message type: ~p.~n", [TracingNode, MessageType]),
+                            % io:format("=> node ~p is involved in ~p omissions.~n", [TracingNode, length(OmissionsForTracingNode)]),
+                            % io:format("=> is last omission for node? ~p~n", [LastOmissionForTracingNode =:= Line]),
 
                             dict:store(TracingNode, true, FaultedNodes0)
                     end
