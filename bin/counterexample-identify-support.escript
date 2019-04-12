@@ -955,16 +955,17 @@ update_faulted_nodes(TraceLines, {_Type, Message} = Line, Omissions, BackgroundA
                             %% Conditional resolve.
                             case LastMessageForTracingNode =:= Line of 
                                 true ->
-                                    io:format("Node ~p is already faulted, sends no more messages, keeping faulted.~n", [TracingNode]),
+                                    % io:format("Node ~p is already faulted, sends no more messages, keeping faulted.~n", [TracingNode]),
+
                                     %% Keep faulted if this is the last message the node sends.
                                     FaultedNodes0;
                                 false ->
+                                    % io:format("Removing ~p from list of faulted nodes for message type: ~p.~n", [TracingNode, MessageType]),
+                                    % io:format("=> last message for tracing node: ~p~n", [LastMessageForTracingNode]),
+                                    % io:format("=> is last non-background send for node? ~p~n", [LastMessageForTracingNode =:= Line]),
+
                                     %% If successful sends are happening as part of the protocol (non-background)
                                     %% after this final omission, then set the node as recovered.
-                                    io:format("Removing ~p from list of faulted nodes for message type: ~p.~n", [TracingNode, MessageType]),
-                                    io:format("=> last message for tracing node: ~p~n", [LastMessageForTracingNode]),
-                                    io:format("=> is last non-background send for node? ~p~n", [LastMessageForTracingNode =:= Line]),
-
                                     dict:store(TracingNode, false, FaultedNodes0)
                             end;
                         false ->
