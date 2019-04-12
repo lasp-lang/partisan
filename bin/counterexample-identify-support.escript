@@ -387,8 +387,8 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Causal
                 ClassifySchedule = classify_schedule(3, CausalityAnnotations, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
                 % io:format("Classification: ~p~n", [dict:to_list(ClassifySchedule)]),
 
-                io:format("=> length(BackgroundOmissions): ~p~n", [length(BackgroundOmissions)]),
-                io:format("=> length(lists:usort(BackgroundOmissions)): ~p~n", [length(lists:usort(BackgroundOmissions))]),
+                % io:format("=> length(BackgroundOmissions): ~p~n", [length(BackgroundOmissions)]),
+                % io:format("=> length(lists:usort(BackgroundOmissions)): ~p~n", [length(lists:usort(BackgroundOmissions))]),
 
                 case os:getenv("PRELOAD_SCHEDULES") of 
                     "true" ->
