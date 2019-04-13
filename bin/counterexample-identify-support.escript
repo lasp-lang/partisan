@@ -376,10 +376,10 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Causal
 
                 case ScheduleValid of
                     true ->
-                    %    io:format("schedule_valid_omissions: ~p~n", [ScheduleValidOmissions]),
-                    %    io:format("schedule_valid_causality: ~p~n", [ScheduleValidCausality]),
-                    %    io:format("schedule_valid: ~p~n", [ScheduleValid]),
-                    ok;
+                        % io:format("schedule_valid_omissions: ~p~n", [ScheduleValidOmissions]),
+                        % io:format("schedule_valid_causality: ~p~n", [ScheduleValidCausality]),
+                        % io:format("schedule_valid: ~p~n", [ScheduleValid]),
+                        ok;
                     false ->
                         ok
                 end,
