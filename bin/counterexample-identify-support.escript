@@ -729,8 +729,11 @@ execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {I
         false ->
             invalid;
         true ->
-            case lists:member(Classification, ClassificationsExplored0) of 
+            case lists:member(Classification, ClassificationsExplored0) andalso pruning() of  
                 true ->
+                    io:format("Classification: ~p~n", [Classification]),
+                    io:format("Classifications explored: ~p~n", [ClassificationsExplored0]),
+
                     pruned;
                 false ->
                     %% Write out a new omission file from the previously used trace.
@@ -1003,4 +1006,11 @@ update_faulted_nodes(TraceLines, {_Type, Message} = Line, Omissions, BackgroundA
             FaultedNodes0
     end.
 
-
+%% @private
+pruning() ->
+    case os:getenv("PRUNING") of 
+        "false" ->
+            false;
+        _ ->
+            true
+    end.
