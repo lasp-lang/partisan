@@ -229,6 +229,7 @@ single_success_commands(Module) ->
                 false ->
                     []
             end,
+            % io:format("FirstNonGlobalCommand: ~p~n", [FirstNonGlobalCommand]),
 
             %% Generate failure command.
             FailureCommands = case length(CommandsWithoutGlobalNodeCommands) > 0 of
