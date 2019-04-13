@@ -122,8 +122,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
 
     ok.
 
-%% @private
-filter_trace_lines(TraceLines, BackgroundAnnotations) ->
+filter_trace_lines(_, TraceLines, BackgroundAnnotations) ->
     %% Filter the trace into message trace lines.
     MessageTraceLines = lists:filter(fun({Type, Message}) ->
         case Type =:= pre_interposition_fun of 
@@ -167,10 +166,10 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Causal
             io:format("Using difference types for powerset generation: ~p~n", [DifferenceTypes]),
 
             %% Use message trace.
-            FilteredTraceLines = filter_trace_lines(TraceLines, BackgroundAnnotations),
+            FilteredTraceLines = filter_trace_lines(implementation_module(), TraceLines, BackgroundAnnotations),
 
             %% Generate powerset using *only* the new messages.
-            FilteredDifferenceTraceLines = filter_trace_lines(DifferenceTraceLines, BackgroundAnnotations),
+            FilteredDifferenceTraceLines = filter_trace_lines(implementation_module(), DifferenceTraceLines, BackgroundAnnotations),
             {Time, L} = timer:tc(fun() -> powerset(FilteredDifferenceTraceLines) end),
 
             % io:format("FilteredDifferenceTraceLines: ~p~n", [FilteredDifferenceTraceLines]),
@@ -189,12 +188,12 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Causal
             {FilteredTraceLines, FinalPowerset};
         false ->
             %% Generate all.
-            FilteredTraceLines = filter_trace_lines(TraceLines, BackgroundAnnotations),
+            FilteredTraceLines = filter_trace_lines(implementation_module(), TraceLines, BackgroundAnnotations),
             io:format("Beginning powerset generation, length(FilteredTraceLines): ~p~n", [length(FilteredTraceLines)]),
-            {Time, L} = timer:tc(fun() -> powerset(FilteredTraceLines) end),
-            io:format("Number of message sets in powerset: ~p~n", [length(L)]),
+            {Time, FinalPowerset} = timer:tc(fun() -> powerset(FilteredTraceLines) end),
+            io:format("Number of message sets in powerset: ~p~n", [length(FinalPowerset)]),
             io:format("Powerset generation took: ~p~n", [Time]),
-            {FilteredTraceLines, L}
+            {FilteredTraceLines, FinalPowerset}
     end,
 
     TracesToIterate = case os:getenv("SUBLIST") of 
