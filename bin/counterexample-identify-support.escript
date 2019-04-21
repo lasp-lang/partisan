@@ -5,6 +5,16 @@
 -define(SCHEDULES, schedules).
 
 main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexampleConsultFile, PreloadOmissionFile]) ->
+    %% Start distribution.
+    {ok, Hostname} = inet:gethostname(), 
+    os:cmd(os:find_executable("epmd") ++ " -daemon"),
+    case net_kernel:start([list_to_atom("support@" ++ Hostname), shortnames]) of
+        {ok, _} ->
+            ok;
+        {error, {already_started, _}} ->
+            ok
+    end,
+
     %% Get module as string.
     ModuleString = os:getenv("IMPLEMENTATION_MODULE"),
 
