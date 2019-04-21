@@ -254,9 +254,10 @@ node_debug(Line, Args) ->
 loop() ->
     receive
         terminate ->
-            ok
-    end,
-    loop().
+            ok;
+        _ ->
+            loop()
+    end.
 
 %% @private
 node_begin_property() ->
