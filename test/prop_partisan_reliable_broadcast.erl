@@ -267,6 +267,9 @@ node_begin_case() ->
     %% Get nodes.
     [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
 
+    %% Print nodes.
+    node_debug("nodes are: ~p", [Nodes]),
+
     %% Start the backend.
     lists:foreach(fun({ShortName, _}) ->
         %% node_debug("starting ~p at node ~p with node list ~p ", [?BROADCAST_MODULE, ShortName, SublistNodeProjection]),
@@ -274,7 +277,7 @@ node_begin_case() ->
     end, Nodes),
 
     lists:foreach(fun({ShortName, _}) ->
-        %% node_debug("spawning broadcast receiver on node ~p", [ShortName]),
+        node_debug("spawning broadcast receiver on node ~p", [ShortName]),
 
         Self = self(),
 
