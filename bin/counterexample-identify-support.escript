@@ -771,7 +771,9 @@ execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {I
                     Command = "rm -rf priv/lager; NOISE=" ++ os:getenv("NOISE", "false") ++ " IMPLEMENTATION_MODULE=" ++ os:getenv("IMPLEMENTATION_MODULE") ++ " SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
                     io:format("Executing command for iteration ~p:~n", [Iteration]),
                     io:format("~p~n", [Command]),
-                    Output = os:cmd(Command),
+                    CommandFun = fun() -> os:cmd(Command) end,
+                    {CTime, Output} = timer:tc(CommandFun),
+                    io:format("Time: ~p ms. ~n", [CTime / 1000]),
 
                     ClassificationsExplored = ClassificationsExplored0 ++ [Classification],
                     % io:format("=> Classification now: ~p~n", [ClassificationsExplored]),
