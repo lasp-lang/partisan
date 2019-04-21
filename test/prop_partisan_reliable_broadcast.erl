@@ -306,7 +306,7 @@ node_begin_case() ->
             Pid = erlang:spawn(fun() -> ReceiverFun(ReceiverFun) end),
 
             %% Register name.
-            erlang:register(?RECEIVER, Pid),
+            true = erlang:register(?RECEIVER, Pid),
 
             %% Prevent races by notifying process is registered.
             Self ! ready,
