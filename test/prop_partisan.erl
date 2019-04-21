@@ -858,7 +858,12 @@ stop_nodes() ->
 
 %% @private
 restart_nodes() ->
-    false. %% TODO: FIX ME.
+    case os:getenv("RESTART_NODES") of 
+        "false" ->
+            false;
+        _ ->
+            true
+    end.
 
 %% Determine if a bunch of operations succeeded or failed.
 all_to_ok_or_error(List) ->
