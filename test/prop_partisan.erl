@@ -756,13 +756,9 @@ start_nodes() ->
 
         ok
     end, 
-
     lists:foreach(fun({_Name, Node}) ->
-        rpc:call(Node, 
-                 ?MANAGER, 
-                 add_pre_interposition_fun, 
-                 ['$tracing', PreInterpositionFun])
-        end, Nodes),
+        rpc:call(Node, ?MANAGER, add_pre_interposition_fun, ['$tracing', PreInterpositionFun])
+    end, Nodes),
 
     %% Add send and receive post-interposition functions to perform tracing.
     PostInterpositionFun = fun({Type, OriginNode, OriginalMessage}, {Type, OriginNode, RewrittenMessage}) ->
