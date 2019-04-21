@@ -742,7 +742,7 @@ start_nodes() ->
 
     %% Add send and receive pre-interposition functions to enforce message ordering.
     PreInterpositionFun = fun({Type, OriginNode, OriginalMessage}) ->
-        %% TODO: THis needs to be fixed: replay and trace need to be done
+        %% TODO: This needs to be fixed: replay and trace need to be done
         %% atomically otherwise processes will race to write trace entry when
         %% they are unblocked from retry: this means that under replay the trace
         %% file might generate small permutations of messages which means it's
