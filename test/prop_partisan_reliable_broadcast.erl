@@ -297,14 +297,19 @@ node_begin_case() ->
                         Received = ets:foldl(fun(Term, Acc) -> Acc ++ [Term] end, [], ?TABLE),
                         Sorted = lists:keysort(1, Received),
                         node_debug("node ~p received request for stored values: ~p", [ShortName, Sorted]),
-                        Sender ! Sorted;
+                        Sender ! Sorted,
+                        F(F);
                     {Id, SourceNode, Value} ->
                         node_debug("node ~p received origin: ~p id ~p and value: ~p", [ShortName, SourceNode, Id, Value]),
-                        true = ets:insert(?TABLE, {Id, SourceNode, Value});
+                        true = ets:insert(?TABLE, {Id, SourceNode, Value}),
+                        F(F);
+                    terminate ->
+                        node_debug("node ~p terminating receiver", [ShortName]),
+                        ok;
                     Other ->
-                        node_debug("node ~p received other: ~p", [ShortName, Other])
-                end,
-                F(F)
+                        node_debug("node ~p received other: ~p", [ShortName, Other]),
+                        F(F)
+                end
             end,
 
             %% Spawn locally.
