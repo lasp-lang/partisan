@@ -763,9 +763,7 @@ start_nodes() ->
     %% Add send and receive post-interposition functions to perform tracing.
     PostInterpositionFun = fun({Type, OriginNode, OriginalMessage}, {Type, OriginNode, RewrittenMessage}) ->
         %% Record outgoing message after transformation.
-        ok = partisan_trace_orchestrator:trace(post_interposition_fun, {node(), OriginNode, Type, OriginalMessage, RewrittenMessage}),
-        
-        ok
+        ok = partisan_trace_orchestrator:trace(post_interposition_fun, {node(), OriginNode, Type, OriginalMessage, RewrittenMessage})
     end, 
 
     lists:foreach(fun({_Name, Node}) ->
