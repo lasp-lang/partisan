@@ -179,6 +179,7 @@ node_postcondition(_NodeState, Command, Response) ->
 
 -define(TABLE, table).
 -define(RECEIVER, receiver).
+-define(RECEIVER_LOOP, receiver_loop).
 
 -define(ETS, prop_partisan).
 -define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
@@ -285,6 +286,9 @@ node_begin_case() ->
         RemoteFun = fun() ->
             %% Create ETS table for the results.
             ?TABLE = ets:new(?TABLE, [set, named_table, public]),
+
+            %% Register ourselves.
+            true = erlang:register(?RECEIVER_LOOP, self()),
 
             %% Define loop function for receiving and registering values.
             ReceiverFun = fun(F) ->
