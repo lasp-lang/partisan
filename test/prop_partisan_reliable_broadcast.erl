@@ -340,7 +340,31 @@ node_begin_case() ->
 
 %% @private
 node_end_case() ->
-    node_debug("ending case", []),
+    node_debug("ending case by terminating ~p", [broadcast_module()]),
+
+    %% Get nodes.
+    [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
+
+    %% Stop the backend.
+    lists:foreach(fun({ShortName, _}) ->
+        %% node_debug("starting ~p at node ~p with node list ~p ", [?BROADCAST_MODULE, ShortName, SublistNodeProjection]),
+        Pid = rpc:call(?NAME(ShortName), erlang, whereis, [broadcast_module()]),
+        node_debug("process is running on node ~p with id ~p~n", [ShortName, Pid]),
+        node_debug("asking node ~p to terminate process.", [ShortName]),
+        ok = rpc:call(?NAME(ShortName), broadcast_module(), stop, [])
+    end, Nodes),
+
+    %% Stop the receiver.
+    lists:foreach(fun({ShortName, _}) ->
+        terminate = rpc:call(?NAME(ShortName), erlang, send, [?RECEIVER, terminate])
+    end, Nodes),
+
+    %% Stop the receiver loop.
+    lists:foreach(fun({ShortName, _}) ->
+        terminate = rpc:call(?NAME(ShortName), erlang, send, [?RECEIVER_LOOP, terminate])
+    end, Nodes),
+
+    node_debug("ended.", []),
 
     ok.
 
