@@ -36,7 +36,7 @@
          enable/0,
          identify/1,
          print/0,
-         perform_preloads/0]).
+         perform_preloads/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -91,10 +91,10 @@ identify(Identifier) ->
     gen_server:call({global, ?MODULE}, {identify, Identifier}, infinity).
 
 %% @doc Perform preloads.
-perform_preloads() ->
+perform_preloads(Nodes) ->
     %% This is a replay, so load the preloads.
     replay_debug("loading preload omissions.", []),
-    preload_omissions(),
+    preload_omissions(Nodes),
     replay_debug("preloads finished.", []),
 
     ok.
@@ -548,7 +548,7 @@ format_message_payload_for_json(MessagePayload) ->
     list_to_binary(lists:flatten(io_lib:format("~w", [MessagePayload]))).
 
 %% @private
-preload_omissions() ->
+preload_omissions(Nodes) ->
     PreloadOmissionFile = preload_omission_file(),
 
     case PreloadOmissionFile of 
@@ -610,7 +610,7 @@ preload_omissions() ->
     lager:info("Background annotations are: ~p", [BackgroundAnnotations]),
 
     %% Install faulted tracing interposition function.
-    lists:foreach(fun(Node) ->
+    lists:foreach(fun({_, Node}) ->
         InterpositionFun = fun({forward_message, _N, M}) ->
             lager:info("~p: interposition called for message: ~p", [node(), M]),
 
@@ -644,10 +644,10 @@ preload_omissions() ->
         %% Install function.
         lager:info("Installing faulted pre-interposition for node: ~p", [Node]),
         ok = rpc:call(Node, ?MANAGER, add_interposition_fun, [{faulted, Node}, InterpositionFun])
-    end, nodes()),
+    end, Nodes),
 
     %% Install faulted_for_background tracing interposition function.
-    lists:foreach(fun(Node) ->
+    lists:foreach(fun({_, Node}) ->
         InterpositionFun = fun({forward_message, _N, M}) ->
             lager:info("~p: interposition called for message: ~p", [node(), M]),
 
@@ -697,7 +697,7 @@ preload_omissions() ->
         %% Install function.
         lager:info("Installing faulted_for_background pre-interposition for node: ~p", [Node]),
         ok = rpc:call(Node, ?MANAGER, add_interposition_fun, [{faulted_for_background, Node}, InterpositionFun])
-    end, nodes()),
+    end, Nodes),
 
     ok.
 
