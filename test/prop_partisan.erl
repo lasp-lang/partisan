@@ -29,7 +29,7 @@
 -compile([export_all]).
 
 %% System model.
--define(SYSTEM_MODEL, prop_partisan_paxoid).
+-define(SYSTEM_MODEL, prop_partisan_reliable_broadcast).
 
 -import(?SYSTEM_MODEL,
         [node_commands/0,
@@ -100,7 +100,7 @@ prop_sequential() ->
         default ->
             ?FORALL(Cmds, commands(?MODULE), 
                 begin
-                    start_nodes(),
+                    start_or_reload_nodes(),
                     node_begin_case(),
                     {History, State, Result} = run_commands(?MODULE, Cmds), 
                     node_end_case(),
@@ -112,7 +112,7 @@ prop_sequential() ->
         finite_fault ->
             ?FORALL(Cmds, finite_fault_commands(?MODULE), 
                 begin
-                    start_nodes(),
+                    start_or_reload_nodes(),
                     node_begin_case(),
                     {History, State, Result} = run_commands(?MODULE, Cmds), 
                     node_end_case(),
@@ -124,7 +124,7 @@ prop_sequential() ->
         single_success ->
             ?FORALL(Cmds, single_success_commands(?MODULE), 
                 begin
-                    start_nodes(),
+                    start_or_reload_nodes(),
                     node_begin_case(),
                     {History, State, Result} = run_commands(?MODULE, Cmds), 
                     node_end_case(),
@@ -680,15 +680,9 @@ sync_leave_cluster(Node) ->
 %%% Helper Functions
 %%%===================================================================
 
-start_nodes() ->
+start_or_reload_nodes() ->
     Self = node(),
     lager:info("~p: ~p starting nodes!", [?MODULE, Self]),
-
-    %% Nuke epmd first.
-    [] = os:cmd("pkill -9 epmd"),
-
-    %% Create an ets table for test configuration.
-    ?MODULE = ets:new(?MODULE, [named_table]),
 
     %% Special configuration for the cluster.
     Config = [{partisan_dispatch, true},
@@ -713,14 +707,72 @@ start_nodes() ->
               {disable_fast_receive, true},
               {membership_strategy, partisan_full_membership_strategy}],
 
-    %% Initialize a cluster.
-    Nodes = ?SUPPORT:start(prop_partisan,
-                           Config,
-                           [{partisan_peer_service_manager, ?MANAGER},
-                           {num_nodes, ?TEST_NUM_NODES},
-                           {cluster_nodes, ?CLUSTER_NODES}]),
+    debug("running nodes: ~p~n", [nodes()]),
+    RunningNodes = nodes(),
 
-    lager:info("~p: ~p started nodes: ~p", [?MODULE, Self, Nodes]),
+    %% Get the running nodes that epmd things are running.
+    EpmdOutput = os:cmd("epmd -names"),
+
+    %% Cluster and start options.
+    Options = [{partisan_peer_service_manager, ?MANAGER}, 
+                {num_nodes, ?TEST_NUM_NODES}, 
+                {cluster_nodes, ?CLUSTER_NODES}],
+
+    Nodes = case RunningNodes =/= [] andalso not restart_nodes() of 
+        false ->
+            debug("starting instances, restart_nodes => ~p", [restart_nodes()]),
+
+            %% If there are running nodes and we don't want to restart them.
+            case RunningNodes of 
+                [] ->
+                    debug("starting nodes for initial run.", []);
+                _ ->
+                    ok
+            end,
+
+            %% Nuke epmd first.
+            % [] = os:cmd("pkill -9 epmd"),
+
+            %% Initialize a cluster.
+            Nodes1 = ?SUPPORT:start(prop_partisan, Config, Options),
+
+            %% Create an ets table for test configuration.
+            ?MODULE = ets:new(?MODULE, [named_table]),
+
+            %% Insert all nodes into group for all nodes.
+            true = ets:insert(?MODULE, {nodes, Nodes1}),
+
+            %% Insert name to node mappings for lookup.
+            %% Caveat, because sometimes we won't know ahead of time what FQDN the node will
+            %% come online with when using partisan.
+            lists:foreach(fun({Name, Node}) ->
+                true = ets:insert(?MODULE, {Name, Node})
+            end, Nodes1),
+
+            debug("~p started nodes: ~p, restart_nodes: ~p, running_nodes; ~p", [Self, Nodes1, restart_nodes(), RunningNodes]),
+
+            Nodes1;
+        true ->
+            debug("not starting instances, restart_nodes => ~p, running_nodes; ~p", [restart_nodes(), RunningNodes]),
+
+            %% Get nodes.
+            [{nodes, Nodes1}] = ets:lookup(prop_partisan, nodes),
+
+            %% Restart Partisan.
+            lists:foreach(fun({ShortName, _}) ->
+                ok = rpc:call(?NAME(ShortName), application, stop, [partisan]),
+                {ok, _} = rpc:call(?NAME(ShortName), application, ensure_all_started, [partisan])
+            end, Nodes1),
+
+            debug("Reclustering nodes.", []),
+            lists:foreach(fun(Node) -> ?SUPPORT:cluster(Node, Nodes1, Options, Config) end, Nodes1),
+
+            debug("~p reusing nodes: ~p", [Self, Nodes1]),
+
+            Nodes1
+    end,
+
+    debug("before start, epmd though the following: ~p~n", [EpmdOutput]),
 
     %% Deterministically seed the random number generator.
     partisan_config:seed(),
@@ -732,7 +784,7 @@ start_nodes() ->
     ok = partisan_trace_orchestrator:enable(),
 
     %% Perform preloads.
-    ok = partisan_trace_orchestrator:perform_preloads(),
+    ok = partisan_trace_orchestrator:perform_preloads(Nodes),
 
     %% Identify trace.
     TraceRandomNumber = rand:uniform(100000),
@@ -742,7 +794,7 @@ start_nodes() ->
 
     %% Add send and receive pre-interposition functions to enforce message ordering.
     PreInterpositionFun = fun({Type, OriginNode, OriginalMessage}) ->
-        %% TODO: THis needs to be fixed: replay and trace need to be done
+        %% TODO: This needs to be fixed: replay and trace need to be done
         %% atomically otherwise processes will race to write trace entry when
         %% they are unblocked from retry: this means that under replay the trace
         %% file might generate small permutations of messages which means it's
@@ -756,64 +808,62 @@ start_nodes() ->
 
         ok
     end, 
-
     lists:foreach(fun({_Name, Node}) ->
-        rpc:call(Node, 
-                 ?MANAGER, 
-                 add_pre_interposition_fun, 
-                 ['$tracing', PreInterpositionFun])
-        end, Nodes),
+        rpc:call(Node, ?MANAGER, add_pre_interposition_fun, ['$tracing', PreInterpositionFun])
+    end, Nodes),
 
     %% Add send and receive post-interposition functions to perform tracing.
     PostInterpositionFun = fun({Type, OriginNode, OriginalMessage}, {Type, OriginNode, RewrittenMessage}) ->
         %% Record outgoing message after transformation.
-        ok = partisan_trace_orchestrator:trace(post_interposition_fun, {node(), OriginNode, Type, OriginalMessage, RewrittenMessage}),
-        
-        ok
+        ok = partisan_trace_orchestrator:trace(post_interposition_fun, {node(), OriginNode, Type, OriginalMessage, RewrittenMessage})
     end, 
-
     lists:foreach(fun({_Name, Node}) ->
-        rpc:call(Node, 
-                 ?MANAGER, 
-                 add_post_interposition_fun, 
-                 ['$tracing', PostInterpositionFun])
-        end, Nodes),
+        rpc:call(Node, ?MANAGER, add_post_interposition_fun, ['$tracing', PostInterpositionFun])
+    end, Nodes),
 
     %% Enable tracing.
     lists:foreach(fun({_Name, Node}) ->
-        rpc:call(Node, 
-                 partisan_config,
-                 set,
-                 [tracing, false])
-        end, Nodes),
-
-    %% Insert all nodes into group for all nodes.
-    true = ets:insert(?MODULE, {nodes, Nodes}),
-
-    %% Insert name to node mappings for lookup.
-    %% Caveat, because sometimes we won't know ahead of time what FQDN the node will
-    %% come online with when using partisan.
-    lists:foreach(fun({Name, Node}) ->
-        true = ets:insert(?MODULE, {Name, Node})
+        rpc:call(Node, partisan_config, set, [tracing, false])
     end, Nodes),
 
     ok.
 
 stop_nodes() ->
-    %% Get list of nodes that were started at the start
-    %% of the test.
-    [{nodes, Nodes}] = ets:lookup(?MODULE, nodes),
+    case restart_nodes() of 
+        true ->
+            debug("terminating instances, restart_nodes => true", []),
 
-    %% Print trace.
-    partisan_trace_orchestrator:print(),
+            %% Get list of nodes that were started at the start
+            %% of the test.
+            [{nodes, Nodes}] = ets:lookup(?MODULE, nodes),
 
-    %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+            %% Print trace.
+            partisan_trace_orchestrator:print(),
 
-    %% Delete the table.
-    ets:delete(?MODULE),
+            %% Stop nodes.
+            ?SUPPORT:stop(Nodes),
+
+            %% Delete the table.
+            ets:delete(?MODULE);
+        false ->
+            debug("not terminating instances, restart_nodes => false", []),
+
+            %% Print trace.
+            partisan_trace_orchestrator:print(),
+
+            ok
+    end,
 
     ok.
+
+%% @private
+restart_nodes() ->
+    case os:getenv("RESTART_NODES") of 
+        "false" ->
+            false;
+        _ ->
+            true
+    end.
 
 %% Determine if a bunch of operations succeeded or failed.
 all_to_ok_or_error(List) ->

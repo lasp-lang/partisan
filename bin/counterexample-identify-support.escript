@@ -5,6 +5,16 @@
 -define(SCHEDULES, schedules).
 
 main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexampleConsultFile, PreloadOmissionFile]) ->
+    %% Start distribution.
+    {ok, Hostname} = inet:gethostname(), 
+    os:cmd(os:find_executable("epmd") ++ " -daemon"),
+    case net_kernel:start([list_to_atom("support@" ++ Hostname), shortnames]) of
+        {ok, _} ->
+            ok;
+        {error, {already_started, _}} ->
+            ok
+    end,
+
     %% Get module as string.
     ModuleString = os:getenv("IMPLEMENTATION_MODULE"),
 
@@ -758,10 +768,12 @@ execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {I
                     % io:format("=> OmissionTypes for this test: ~p~n", [OmissionTypes]),
 
                     %% Run the trace.
-                    Command = "rm -rf priv/lager; NOISE=" ++ os:getenv("NOISE", "false") ++ " IMPLEMENTATION_MODULE=" ++ os:getenv("IMPLEMENTATION_MODULE") ++ " SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
+                    Command = "rm -rf priv/lager; USE_STARTED_NODES=" ++ os:getenv("USE_STARTED_NODES", "false") ++ " RESTART_NODES=" ++ os:getenv("RESTART_NODES", "true") ++ " NOISE=" ++ os:getenv("NOISE", "false") ++ " IMPLEMENTATION_MODULE=" ++ os:getenv("IMPLEMENTATION_MODULE") ++ " SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
                     io:format("Executing command for iteration ~p:~n", [Iteration]),
                     io:format("~p~n", [Command]),
-                    Output = os:cmd(Command),
+                    CommandFun = fun() -> os:cmd(Command) end,
+                    {CTime, Output} = timer:tc(CommandFun),
+                    io:format("Time: ~p ms. ~n", [CTime / 1000]),
 
                     ClassificationsExplored = ClassificationsExplored0 ++ [Classification],
                     % io:format("=> Classification now: ~p~n", [ClassificationsExplored]),
