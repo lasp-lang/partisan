@@ -274,14 +274,15 @@ node_begin_case() ->
 
     %% Start the backend.
     lists:foreach(fun({ShortName, _}) ->
-        %% node_debug("starting ~p at node ~p with node list ~p ", [?BROADCAST_MODULE, ShortName, SublistNodeProjection]),
-        {ok, _Pid} = rpc:call(?NAME(ShortName), broadcast_module(), start_link, [])
+        % node_debug("starting ~p at node ~p with node list ~p ", [broadcast_module(), ShortName, SublistNodeProjection]),
+        {ok, Pid} = rpc:call(?NAME(ShortName), broadcast_module(), start_link, []),
+        node_debug("backend started with pid ~p at node ~p", [Pid, ShortName])
     end, Nodes),
 
     lists:foreach(fun({ShortName, _}) ->
-        node_debug("spawning broadcast receiver on node ~p", [ShortName]),
-
         Self = self(),
+
+        node_debug("spawning broadcast receiver on node ~p, our pid is: ~p", [ShortName, Self]),
 
         RemoteFun = fun() ->
             %% Create ETS table for the results.
@@ -329,9 +330,13 @@ node_begin_case() ->
 
         receive
             ready ->
-                {ok, Pid}
+                {ok, Pid};
+            Other ->
+                node_debug("received other message: ~p", [Other]),
+                error
         after 
             10000 ->
+                node_debug("timer fired, never received the message!", []),
                 error
         end
     end, Nodes),

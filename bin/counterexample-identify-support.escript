@@ -768,7 +768,7 @@ execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {I
                     % io:format("=> OmissionTypes for this test: ~p~n", [OmissionTypes]),
 
                     %% Run the trace.
-                    Command = "rm -rf priv/lager; NOISE=" ++ os:getenv("NOISE", "false") ++ " IMPLEMENTATION_MODULE=" ++ os:getenv("IMPLEMENTATION_MODULE") ++ " SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
+                    Command = "rm -rf priv/lager; USE_STARTED_NODES=" ++ os:getenv("USE_STARTED_NODES", "false") ++ " RESTART_NODES=" ++ os:getenv("RESTART_NODES", "true") ++ " NOISE=" ++ os:getenv("NOISE", "false") ++ " IMPLEMENTATION_MODULE=" ++ os:getenv("IMPLEMENTATION_MODULE") ++ " SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
                     io:format("Executing command for iteration ~p:~n", [Iteration]),
                     io:format("~p~n", [Command]),
                     CommandFun = fun() -> os:cmd(Command) end,

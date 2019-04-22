@@ -28,7 +28,8 @@
 %% API
 -export([start_link/0,
          broadcast/2,
-         update/1]).
+         update/1,
+         stop/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -64,6 +65,9 @@
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+stop() ->
+    gen_server:stop(?MODULE, normal, infinity).
 
 %% @doc Broadcast.
 %% Avoid using call by sending a message and waiting for a response.

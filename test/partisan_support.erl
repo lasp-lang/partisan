@@ -29,7 +29,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 
--compile([export_all]).
+-compile([nowarn_export_all, export_all]).
 
 %% @private
 start(Case, Config, Options) ->

@@ -784,7 +784,7 @@ start_or_reload_nodes() ->
     ok = partisan_trace_orchestrator:enable(),
 
     %% Perform preloads.
-    ok = partisan_trace_orchestrator:perform_preloads(),
+    ok = partisan_trace_orchestrator:perform_preloads(Nodes),
 
     %% Identify trace.
     TraceRandomNumber = rand:uniform(100000),
