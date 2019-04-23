@@ -5,6 +5,16 @@
 -define(SCHEDULES, schedules).
 
 main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexampleConsultFile, PreloadOmissionFile]) ->
+    %% Start distribution.
+    {ok, Hostname} = inet:gethostname(), 
+    os:cmd(os:find_executable("epmd") ++ " -daemon"),
+    case net_kernel:start([list_to_atom("support@" ++ Hostname), shortnames]) of
+        {ok, _} ->
+            ok;
+        {error, {already_started, _}} ->
+            ok
+    end,
+
     %% Get module as string.
     ModuleString = os:getenv("IMPLEMENTATION_MODULE"),
 
@@ -122,8 +132,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
 
     ok.
 
-%% @private
-filter_trace_lines(TraceLines, BackgroundAnnotations) ->
+filter_trace_lines(_, TraceLines, BackgroundAnnotations) ->
     %% Filter the trace into message trace lines.
     MessageTraceLines = lists:filter(fun({Type, Message}) ->
         case Type =:= pre_interposition_fun of 
@@ -167,10 +176,10 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Causal
             io:format("Using difference types for powerset generation: ~p~n", [DifferenceTypes]),
 
             %% Use message trace.
-            FilteredTraceLines = filter_trace_lines(TraceLines, BackgroundAnnotations),
+            FilteredTraceLines = filter_trace_lines(implementation_module(), TraceLines, BackgroundAnnotations),
 
             %% Generate powerset using *only* the new messages.
-            FilteredDifferenceTraceLines = filter_trace_lines(DifferenceTraceLines, BackgroundAnnotations),
+            FilteredDifferenceTraceLines = filter_trace_lines(implementation_module(), DifferenceTraceLines, BackgroundAnnotations),
             {Time, L} = timer:tc(fun() -> powerset(FilteredDifferenceTraceLines) end),
 
             % io:format("FilteredDifferenceTraceLines: ~p~n", [FilteredDifferenceTraceLines]),
@@ -189,12 +198,12 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Causal
             {FilteredTraceLines, FinalPowerset};
         false ->
             %% Generate all.
-            FilteredTraceLines = filter_trace_lines(TraceLines, BackgroundAnnotations),
+            FilteredTraceLines = filter_trace_lines(implementation_module(), TraceLines, BackgroundAnnotations),
             io:format("Beginning powerset generation, length(FilteredTraceLines): ~p~n", [length(FilteredTraceLines)]),
-            {Time, L} = timer:tc(fun() -> powerset(FilteredTraceLines) end),
-            io:format("Number of message sets in powerset: ~p~n", [length(L)]),
+            {Time, FinalPowerset} = timer:tc(fun() -> powerset(FilteredTraceLines) end),
+            io:format("Number of message sets in powerset: ~p~n", [length(FinalPowerset)]),
             io:format("Powerset generation took: ~p~n", [Time]),
-            {FilteredTraceLines, L}
+            {FilteredTraceLines, FinalPowerset}
     end,
 
     TracesToIterate = case os:getenv("SUBLIST") of 
@@ -376,10 +385,10 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Causal
 
                 case ScheduleValid of
                     true ->
-                    %    io:format("schedule_valid_omissions: ~p~n", [ScheduleValidOmissions]),
-                    %    io:format("schedule_valid_causality: ~p~n", [ScheduleValidCausality]),
-                    %    io:format("schedule_valid: ~p~n", [ScheduleValid]),
-                    ok;
+                        % io:format("schedule_valid_omissions: ~p~n", [ScheduleValidOmissions]),
+                        % io:format("schedule_valid_causality: ~p~n", [ScheduleValidCausality]),
+                        % io:format("schedule_valid: ~p~n", [ScheduleValid]),
+                        ok;
                     false ->
                         ok
                 end,
@@ -387,8 +396,8 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Causal
                 ClassifySchedule = classify_schedule(3, CausalityAnnotations, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes),
                 % io:format("Classification: ~p~n", [dict:to_list(ClassifySchedule)]),
 
-                io:format("=> length(BackgroundOmissions): ~p~n", [length(BackgroundOmissions)]),
-                io:format("=> length(lists:usort(BackgroundOmissions)): ~p~n", [length(lists:usort(BackgroundOmissions))]),
+                % io:format("=> length(BackgroundOmissions): ~p~n", [length(BackgroundOmissions)]),
+                % io:format("=> length(lists:usort(BackgroundOmissions)): ~p~n", [length(lists:usort(BackgroundOmissions))]),
 
                 case os:getenv("PRELOAD_SCHEDULES") of 
                     "true" ->
@@ -730,8 +739,11 @@ execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {I
         false ->
             invalid;
         true ->
-            case lists:member(Classification, ClassificationsExplored0) of 
+            case lists:member(Classification, ClassificationsExplored0) andalso pruning() of  
                 true ->
+                    io:format("Classification: ~p~n", [Classification]),
+                    io:format("Classifications explored: ~p~n", [ClassificationsExplored0]),
+
                     pruned;
                 false ->
                     %% Write out a new omission file from the previously used trace.
@@ -756,10 +768,12 @@ execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {I
                     % io:format("=> OmissionTypes for this test: ~p~n", [OmissionTypes]),
 
                     %% Run the trace.
-                    Command = "rm -rf priv/lager; NOISE=" ++ os:getenv("NOISE", "false") ++ " IMPLEMENTATION_MODULE=" ++ os:getenv("IMPLEMENTATION_MODULE") ++ " SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
+                    Command = "rm -rf priv/lager; USE_STARTED_NODES=" ++ os:getenv("USE_STARTED_NODES", "false") ++ " RESTART_NODES=" ++ os:getenv("RESTART_NODES", "true") ++ " NOISE=" ++ os:getenv("NOISE", "false") ++ " IMPLEMENTATION_MODULE=" ++ os:getenv("IMPLEMENTATION_MODULE") ++ " SHRINKING=true REPLAY=true PRELOAD_OMISSIONS_FILE=" ++ PreloadOmissionFile ++ " REPLAY_TRACE_FILE=" ++ ReplayTraceFile ++ " TRACE_FILE=" ++ TraceFile ++ " ./rebar3 proper --retry | tee /tmp/partisan.output",
                     io:format("Executing command for iteration ~p:~n", [Iteration]),
                     io:format("~p~n", [Command]),
-                    Output = os:cmd(Command),
+                    CommandFun = fun() -> os:cmd(Command) end,
+                    {CTime, Output} = timer:tc(CommandFun),
+                    io:format("Time: ~p ms. ~n", [CTime / 1000]),
 
                     ClassificationsExplored = ClassificationsExplored0 ++ [Classification],
                     % io:format("=> Classification now: ~p~n", [ClassificationsExplored]),
@@ -955,16 +969,17 @@ update_faulted_nodes(TraceLines, {_Type, Message} = Line, Omissions, BackgroundA
                             %% Conditional resolve.
                             case LastMessageForTracingNode =:= Line of 
                                 true ->
-                                    io:format("Node ~p is already faulted, sends no more messages, keeping faulted.~n", [TracingNode]),
+                                    % io:format("Node ~p is already faulted, sends no more messages, keeping faulted.~n", [TracingNode]),
+
                                     %% Keep faulted if this is the last message the node sends.
                                     FaultedNodes0;
                                 false ->
+                                    % io:format("Removing ~p from list of faulted nodes for message type: ~p.~n", [TracingNode, MessageType]),
+                                    % io:format("=> last message for tracing node: ~p~n", [LastMessageForTracingNode]),
+                                    % io:format("=> is last non-background send for node? ~p~n", [LastMessageForTracingNode =:= Line]),
+
                                     %% If successful sends are happening as part of the protocol (non-background)
                                     %% after this final omission, then set the node as recovered.
-                                    io:format("Removing ~p from list of faulted nodes for message type: ~p.~n", [TracingNode, MessageType]),
-                                    io:format("=> last message for tracing node: ~p~n", [LastMessageForTracingNode]),
-                                    io:format("=> is last non-background send for node? ~p~n", [LastMessageForTracingNode =:= Line]),
-
                                     dict:store(TracingNode, false, FaultedNodes0)
                             end;
                         false ->
@@ -978,22 +993,23 @@ update_faulted_nodes(TraceLines, {_Type, Message} = Line, Omissions, BackgroundA
                             case LastMessageForTracingNode =:= Line of 
                                 true ->
                                     %% Set faulted if this is the last message the node sends.
-                                    io:format("Adding ~p to list of faulted nodes for message type: ~p.~n", [TracingNode, MessageType]),
-                                    io:format("=> node ~p is involved in ~p omissions.~n", [TracingNode, length(OmissionsForTracingNode)]),
-                                    io:format("=> is last omission for node? ~p~n", [LastOmissionForTracingNode =:= Line]),
+                                    % io:format("Adding ~p to list of faulted nodes for message type: ~p.~n", [TracingNode, MessageType]),
+                                    % io:format("=> node ~p is involved in ~p omissions.~n", [TracingNode, length(OmissionsForTracingNode)]),
+                                    % io:format("=> is last omission for node? ~p~n", [LastOmissionForTracingNode =:= Line]),
 
                                     dict:store(TracingNode, true, FaultedNodes0);
                                 false ->
-                                    io:format("Node ~p is not faulted, sends more messages, keeping NOT faulted.~n", [TracingNode]),
+                                    % io:format("Node ~p is not faulted, sends more messages, keeping NOT faulted.~n", [TracingNode]),
+
                                     %% If successful sends are happening as part of the protocol (non-background)
                                     %% after this final omission, then leave the node as non-crashed.
                                     FaultedNodes0
                             end;
                         false ->
                             %% Otherwise, set as fauled.
-                            io:format("Adding ~p to list of faulted nodes for message type: ~p.~n", [TracingNode, MessageType]),
-                            io:format("=> node ~p is involved in ~p omissions.~n", [TracingNode, length(OmissionsForTracingNode)]),
-                            io:format("=> is last omission for node? ~p~n", [LastOmissionForTracingNode =:= Line]),
+                            % io:format("Adding ~p to list of faulted nodes for message type: ~p.~n", [TracingNode, MessageType]),
+                            % io:format("=> node ~p is involved in ~p omissions.~n", [TracingNode, length(OmissionsForTracingNode)]),
+                            % io:format("=> is last omission for node? ~p~n", [LastOmissionForTracingNode =:= Line]),
 
                             dict:store(TracingNode, true, FaultedNodes0)
                     end
@@ -1002,4 +1018,11 @@ update_faulted_nodes(TraceLines, {_Type, Message} = Line, Omissions, BackgroundA
             FaultedNodes0
     end.
 
-
+%% @private
+pruning() ->
+    case os:getenv("PRUNING") of 
+        "false" ->
+            false;
+        _ ->
+            true
+    end.

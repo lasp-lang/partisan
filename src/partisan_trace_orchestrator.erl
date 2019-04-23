@@ -36,7 +36,7 @@
          enable/0,
          identify/1,
          print/0,
-         perform_preloads/0]).
+         perform_preloads/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -91,10 +91,10 @@ identify(Identifier) ->
     gen_server:call({global, ?MODULE}, {identify, Identifier}, infinity).
 
 %% @doc Perform preloads.
-perform_preloads() ->
+perform_preloads(Nodes) ->
     %% This is a replay, so load the preloads.
     replay_debug("loading preload omissions.", []),
-    preload_omissions(),
+    preload_omissions(Nodes),
     replay_debug("preloads finished.", []),
 
     ok.
@@ -548,7 +548,7 @@ format_message_payload_for_json(MessagePayload) ->
     list_to_binary(lists:flatten(io_lib:format("~w", [MessagePayload]))).
 
 %% @private
-preload_omissions() ->
+preload_omissions(Nodes) ->
     PreloadOmissionFile = preload_omission_file(),
 
     case PreloadOmissionFile of 
@@ -558,7 +558,7 @@ preload_omissions() ->
             {ok, [Omissions]} = file:consult(PreloadOmissionFile),
 
             %% Preload each omission at the correct node.
-            OmissionNodes = lists:foldl(fun({T, Message}, OmissionNodes0) ->
+            lists:foldl(fun({T, Message}, OmissionNodes0) ->
                 case T of
                     pre_interposition_fun ->
                         {TracingNode, forward_message, OriginNode, MessagePayload} = Message,
@@ -572,12 +572,12 @@ preload_omissions() ->
                                         MessagePayload ->
                                             lager:info("~p: dropping packet from ~p to ~p due to preload interposition.", [node(), TracingNode, OriginNode]),
 
-                                            case partisan_config:get(faulted) of 
+                                            case partisan_config:get(fauled_for_background) of 
                                                 true ->
                                                     ok;
                                                 _ ->
                                                     lager:info("~p: setting node ~p to faulted due to preload interposition hit on message: ~p", [node(), TracingNode, Message]),
-                                                    partisan_config:set(faulted, true)
+                                                    partisan_config:set(fauled_for_background, true)
                                             end,
 
                                             undefined;
@@ -602,67 +602,102 @@ preload_omissions() ->
                         replay_debug("unknown preload: ~p", [Other]),
                         OmissionNodes0
                 end
-            end, [], Omissions),
-
-            replay_debug("Nodes involved in omissions (possibly faulted): ~p", [OmissionNodes]),
-
-            %% Load background annotations.
-            BackgroundAnnotations = background_annotations(),
-            lager:info("Background annotations are: ~p", [BackgroundAnnotations]),
-
-            %% Install faulted tracing interposition function.
-            %% TODO: ONLY BACKGROUND.
-            lists:foreach(fun(Node) ->
-                InterpositionFun = fun({forward_message, _N, M}) ->
-                    lager:info("~p: interposition called for message: ~p", [node(), M]),
-
-                    case partisan_config:get(faulted) of 
-                        true ->
-                            case M of 
-                                undefined ->
-                                    undefined;
-                                _ ->
-                                    MessageType = message_type(forward_message, M),
-
-                                    case lists:member(element(2, MessageType), BackgroundAnnotations) of 
-                                        true ->
-                                            lager:info("~p: faulted during forward_message of background message, message ~p should be dropped.", [node(), M]),
-                                            undefined;
-                                        false ->
-                                            lager:info("~p: faulted, but forward_message payload is not background message: ~p, message_type: ~p", [node(), M, MessageType]),
-                                            M
-                                    end
-                            end;
-                        _ ->
-                            M
-                    end;
-                    ({receive_message, _N, M}) -> 
-                        case partisan_config:get(faulted) of 
-                            true ->
-                                case M of 
-                                    undefined ->
-                                        undefined;
-                                    _ ->
-                                        MessageType = message_type(receive_message, M),
-
-                                        case lists:member(element(2, MessageType), BackgroundAnnotations) of 
-                                            true ->
-                                                lager:info("~p: faulted during receive_message of background message, message ~p should be dropped.", [node(), M]),
-                                                undefined;
-                                            false ->
-                                                lager:info("~p: faulted, but receive_message payload is not background message: ~p, message_type: ~p", [node(), M, MessageType]),
-                                                M
-                                        end
-                                end;
-                            _ ->
-                                M
-                        end
-                end,
-
-                %% Install function.
-                ok = rpc:call(Node, ?MANAGER, add_interposition_fun, [{faulted, Node}, InterpositionFun])
-            end, OmissionNodes)
+            end, [], Omissions)
     end,
+
+    %% Load background annotations.
+    BackgroundAnnotations = background_annotations(),
+    lager:info("Background annotations are: ~p", [BackgroundAnnotations]),
+
+    %% Install faulted tracing interposition function.
+    lists:foreach(fun({_, Node}) ->
+        InterpositionFun = fun({forward_message, _N, M}) ->
+            lager:info("~p: interposition called for message: ~p", [node(), M]),
+
+            case partisan_config:get(faulted) of 
+                true ->
+                    case M of 
+                        undefined ->
+                            undefined;
+                        _ ->
+                            lager:info("~p: faulted during forward_message of background message, message ~p should be dropped.", [node(), M]),
+                            undefined
+                    end;
+                _ ->
+                    M
+            end;
+            ({receive_message, _N, M}) -> 
+                case partisan_config:get(faulted) of 
+                    true ->
+                        case M of 
+                            undefined ->
+                                undefined;
+                            _ ->
+                                lager:info("~p: faulted during receive_message of background message, message ~p should be dropped.", [node(), M]),
+                                undefined
+                        end;
+                    _ ->
+                        M
+                end
+        end,
+
+        %% Install function.
+        lager:info("Installing faulted pre-interposition for node: ~p", [Node]),
+        ok = rpc:call(Node, ?MANAGER, add_interposition_fun, [{faulted, Node}, InterpositionFun])
+    end, Nodes),
+
+    %% Install faulted_for_background tracing interposition function.
+    lists:foreach(fun({_, Node}) ->
+        InterpositionFun = fun({forward_message, _N, M}) ->
+            lager:info("~p: interposition called for message: ~p", [node(), M]),
+
+            case partisan_config:get(faulted_for_background) of 
+                true ->
+                    case M of 
+                        undefined ->
+                            undefined;
+                        _ ->
+                            MessageType = message_type(forward_message, M),
+
+                            case lists:member(element(2, MessageType), BackgroundAnnotations) of 
+                                true ->
+                                    lager:info("~p: faulted_for_background during forward_message of background message, message ~p should be dropped.", [node(), M]),
+                                    undefined;
+                                false ->
+                                    lager:info("~p: faulted_for_background, but forward_message payload is not background message: ~p, message_type: ~p", [node(), M, MessageType]),
+                                    M
+                            end
+                    end;
+                _ ->
+                    M
+            end;
+            ({receive_message, _N, M}) -> 
+                case partisan_config:get(faulted_for_background) of 
+                    true ->
+                        case M of 
+                            undefined ->
+                                undefined;
+                            _ ->
+                                MessageType = message_type(receive_message, M),
+
+                                case lists:member(element(2, MessageType), BackgroundAnnotations) of 
+                                    true ->
+                                        lager:info("~p: faulted_for_background during receive_message of background message, message ~p should be dropped.", [node(), M]),
+                                        undefined;
+                                    false ->
+                                        lager:info("~p: faulted_for_background, but receive_message payload is not background message: ~p, message_type: ~p", [node(), M, MessageType]),
+                                        M
+                                end
+                        end;
+                    _ ->
+                        M
+                end
+        end,
+
+        %% Install function.
+        lager:info("Installing faulted_for_background pre-interposition for node: ~p", [Node]),
+        ok = rpc:call(Node, ?MANAGER, add_interposition_fun, [{faulted_for_background, Node}, InterpositionFun])
+    end, Nodes),
 
     ok.
 
