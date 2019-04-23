@@ -31,6 +31,7 @@
 -define(PERFORM_SUMMARY, false).
 
 -define(GROUP, paxoid).
+-define(TIMEOUT, 10000).
 
 %%%===================================================================
 %%% Generators
@@ -53,7 +54,10 @@ names() ->
 
 %% What node-specific operations should be called.
 node_commands() ->
-    [{call, ?MODULE, next_id, [node_name()]}].
+    [
+     {call, ?MODULE, next_id, [node_name()]},
+     {call, ?MODULE, set_fault, [node_name(), boolean()]}
+    ].
 
 %% Assertion commands.
 node_assertion_functions() ->
@@ -61,7 +65,7 @@ node_assertion_functions() ->
 
 %% Global functions.
 node_global_functions() ->
-    [max_id].
+    [max_id, sleep].
 
 %% What should the initial node state be.
 node_initial_state() ->
@@ -74,6 +78,10 @@ node_functions() ->
     lists:map(fun({call, _Mod, Fun, _Args}) -> Fun end, node_commands()).
 
 %% Precondition.
+node_precondition(_NodeState, {call, ?MODULE, sleep, []}) ->
+    true;
+node_precondition(_NodeState, {call, ?MODULE, set_fault, [_Node, _Value]}) ->
+    true;
 node_precondition(_NodeState, {call, ?MODULE, next_id, [_Node]}) ->
     true;
 node_precondition(_NodeState, _Command) ->
@@ -86,23 +94,38 @@ node_next_state(_State, NodeState, _Response, _Command) ->
     NodeState.
 
 %% Postconditions for node commands.
-node_postcondition(#node_state{counter=Counter}, {call, ?MODULE, max_id, []}, Results) ->
+node_postcondition(#node_state{counter=_Counter}, {call, ?MODULE, max_id, []}, Results) ->
     node_debug("postcondition received ~p from max_id", [Results]),
 
-    lists:all(fun({Node, Result}) -> 
-        case Counter =:= Result of
-            true ->
-                true;
-            false ->
-                node_debug("=> node: ~p has wrong value: ~p, should be ~p", [Node, Result, Counter]),
-                false
-        end
-    end, Results);
-node_postcondition(_NodeState, {call, ?MODULE, next_id, [_Node]}, {badrpc,timeout}) ->
+    % lists:all(fun({Node, Result}) -> 
+    %     case Counter =:= Result of
+    %         true ->
+    %             true;
+    %         false ->
+    %             node_debug("=> node: ~p has wrong value: ~p, should be ~p", [Node, Result, Counter]),
+    %             false
+    %     end
+    % end, Results);
+
     true;
+node_postcondition(_NodeState, {call, ?MODULE, set_fault, [_Node, _Value]}, ok) ->
+    true;
+node_postcondition(_NodeState, {call, ?MODULE, sleep, []}, _Result) ->
+    true;
+node_postcondition(_NodeState, {call, ?MODULE, next_id, [_Node]}, {badrpc,timeout}) ->
+    false;
 node_postcondition(#node_state{counter=Counter}, {call, ?MODULE, next_id, [_Node]}, Value) ->
-    node_debug("postcondition received ~p from next_id when value should be: ~p", [Value, Counter]),
-    Counter + 1 =:= Value;
+    node_debug("postcondition received ~p from next_id when value should be: ~p", [Value, Counter + 1]),
+
+    case Counter + 1 =:= Value of 
+        false ->
+            node_debug("********* violation!~n", []),
+            ok;
+        true ->
+            ok
+    end,
+
+    true;
 node_postcondition(_NodeState, Command, Response) ->
     node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
                [Command, Response]),
@@ -121,12 +144,35 @@ node_postcondition(_NodeState, Command, Response) ->
 -define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
 
 %% @private
+sleep() ->
+    RunnerNode = node(),
+
+    ?PROPERTY_MODULE:command_preamble(RunnerNode, [sleep]),
+
+    timer:sleep(4000),
+
+    ?PROPERTY_MODULE:command_conclusion(RunnerNode, [sleep]),
+
+    ok.
+
+%% @private
+set_fault(Node, Value) ->
+    ?PROPERTY_MODULE:command_preamble(Node, [set_fault, Node, Value]),
+
+    Result = rpc:call(?NAME(Node), partisan_config, set, [faulted, Value], ?TIMEOUT),
+
+    ?PROPERTY_MODULE:command_conclusion(Node, [set_fault, Node, Value]),
+
+    Result.
+
+%% @private
 next_id(Node) ->
-    ?PROPERTY_MODULE:command_preamble(Node, [next_id]),
+    ?PROPERTY_MODULE:command_preamble(Node, [next_id, Node]),
 
-    Result = rpc:call(?NAME(Node), paxoid, next_id, [?GROUP], 5000),
+    Result = rpc:call(?NAME(Node), paxoid, next_id, [?GROUP], ?TIMEOUT),
+    node_debug("*** next_id for node: ~p yieleded: ~p", [node(), Result]),
 
-    ?PROPERTY_MODULE:command_conclusion(Node, [next_id]),
+    ?PROPERTY_MODULE:command_conclusion(Node, [next_id, Node]),
 
     Result.
 
@@ -139,8 +185,8 @@ max_id() ->
     ?PROPERTY_MODULE:command_preamble(RunnerNode, [max_id]),
 
     Results = lists:map(fun(Node) ->
-        {ok, Result} = rpc:call(?NAME(Node), paxoid, max_id, [?GROUP], 5000),
-        node_debug("result of max_id: ~p~n", [Result]),
+        {ok, Result} = rpc:call(?NAME(Node), paxoid, max_id, [?GROUP], ?TIMEOUT),
+        node_debug("node: ~p result of max_id: ~p~n", [Node, Result]),
         {Node, Result}
     end, names()),
 
@@ -217,7 +263,7 @@ node_begin_case() ->
 
     %% Sleep.
     node_debug("sleeping for convergence", []),
-    timer:sleep(50000),
+    timer:sleep(1000),
     node_debug("done.", []),
 
     ok.

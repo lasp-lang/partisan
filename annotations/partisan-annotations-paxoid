@@ -1,3 +1,8 @@
-[{{forward_message,step_accepted}, [{{receive_message, step_accept}, 1}]},
- {{forward_message,step_accept}, [{{receive_message, step_prepared}, 3}]},
- {{forward_message,step_prepared}, [{{receive_message, step_prepare}, 1}]}].
+[
+   {causality, [
+      {{forward_message,step_accepted}, [{{receive_message, step_accept}, 1}]},
+      {{forward_message,step_accept}, [{{receive_message, step_prepared}, 3}]},
+      {{forward_message,step_prepared}, [{{receive_message, step_prepare}, 1}]}
+   ]},
+   {background, [sync_info]}
+].

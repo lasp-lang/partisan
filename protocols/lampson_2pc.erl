@@ -28,7 +28,8 @@
 %% API
 -export([start_link/0,
          broadcast/2,
-         update/1]).
+         update/1,
+         stop/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -63,6 +64,9 @@
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+stop() ->
+    gen_server:stop(?MODULE, normal, infinity).
 
 %% @doc Broadcast.
 %% Avoid using call by sending a message and waiting for a response.
@@ -104,6 +108,9 @@ init([]) ->
     %% Start with initial membership.
     {ok, Membership} = partisan_peer_service:members(),
     lager:info("Starting with membership: ~p", [Membership]),
+
+    %% Schedule heartbeat.
+    schedule_heartbeat(),
 
     {ok, #state{membership=membership(Membership)}}.
 
@@ -156,6 +163,29 @@ handle_cast(Msg, State) ->
 
 %% @private
 %% Incoming messages.
+handle_info({heartbeat, FromNode}, State) ->
+    lager:info("~p: received heartbeat at node: ~p from node: ~p", [node(), node(), FromNode]),
+    {noreply, State};
+handle_info(heartbeat, #state{membership=Membership}=State) ->
+    MyNode = partisan_peer_service_manager:mynode(),
+
+    %% Send heartbeat.
+    lists:foreach(fun(N) ->
+        lager:info("~p: sending heartbeat message to node ~p", [node(), N]),
+
+        %% Catch shutdown race with sending heartbeat.
+        try
+            partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {heartbeat, MyNode}, [])
+        catch
+            _:_ ->
+                ok
+        end
+    end, membership(Membership)),
+
+    %% Reschedule.
+    schedule_heartbeat(),
+
+    {noreply, State};
 handle_info({coordinator_timeout, Id}, State) ->
     %% Find transaction record.
     case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
@@ -251,6 +281,7 @@ handle_info({abort, #transaction{id=Id, coordinator=Coordinator}}, State) ->
     true = ets:delete(?PARTICIPATING_TRANSACTIONS, Id),
 
     MyNode = partisan_peer_service_manager:mynode(),
+
     lager:info("~p: sending abort ack message to node ~p: ~p", [node(), Coordinator, Id]),
     partisan_pluggable_peer_service_manager:forward_message(Coordinator, undefined, ?MODULE, {abort_ack, MyNode, Id}, []),
 
@@ -332,3 +363,12 @@ code_change(_OldVsn, State, _Extra) ->
 %% @private -- sort to remove nondeterminism in node selection.
 membership(Membership) ->
     lists:usort(Membership).
+
+%% @private
+schedule_heartbeat() ->
+    case os:getenv("NOISE") of 
+        "true" ->
+            erlang:send_after(10, self(), heartbeat);
+        _ ->
+            ok
+    end.

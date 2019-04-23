@@ -288,7 +288,7 @@ append_ann(Tag, Val, []) ->
 %% initially it contains `top' and `external'.
 
 -spec intraprocedural(cerl:cerl()) ->
-        {outlist(), dict:dict(), escapes(), dict:dict(), dict:dict(), sets:set()}.
+        {outlist(), dict:dict(), escapes(), dict:dict(), dict:dict(), sets:set(), sets:set()}.
 
 intraprocedural(Tree) ->
     %% Note that we use different name spaces for variable labels and
