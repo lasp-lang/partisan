@@ -28,38 +28,6 @@
 
 -compile([export_all]).
 
-%% System model.
--define(SYSTEM_MODEL, prop_partisan_reliable_broadcast).
-
--import(?SYSTEM_MODEL,
-        [node_commands/0,
-         node_initial_state/0,
-         node_functions/0,
-         node_precondition/2,
-         node_postcondition/3,
-         node_next_state/4,
-         node_begin_property/0,
-         node_begin_case/0,
-         node_end_case/0,
-         node_assertion_functions/0,
-         node_global_functions/0]).
-
-%% Fault model.
--define(FAULT_MODEL, prop_partisan_crash_fault_model).
-
--import(?FAULT_MODEL,
-        [fault_commands/0,
-         fault_initial_state/0,
-         fault_functions/1,
-         fault_precondition/2,
-         fault_postcondition/3,
-         fault_next_state/4,
-         fault_is_crashed/2,
-         fault_begin_functions/0,
-         fault_end_functions/0,
-         fault_global_functions/0,
-         fault_num_resolvable_faults/1]).
-
 %% General test configuration
 -define(CLUSTER_NODES, true).
 -define(MANAGER, partisan_pluggable_peer_service_manager).
@@ -163,17 +131,17 @@ finite_fault_commands(Module) ->
                 true ->
                     case rand:uniform(10) rem 2 =:= 0 of 
                         true ->
-                            [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_heal,[]}}];
+                            [{set,{var,0},{call,fault_model(),resolve_all_faults_with_heal,[]}}];
                         false ->
-                            [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_crash,[]}}]
+                            [{set,{var,0},{call,fault_model(),resolve_all_faults_with_crash,[]}}]
                     end;
                 false ->
-                    [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_heal,[]}}]
+                    [{set,{var,0},{call,fault_model(),resolve_all_faults_with_heal,[]}}]
             end,
 
             %% Only global node commands.
             CommandsWithOnlyGlobalNodeCommands = lists:map(fun(Fun) ->
-                {set,{var,0},{call,?SYSTEM_MODEL,Fun,[]}}
+                {set,{var,0},{call,system_model(),Fun,[]}}
             end, node_global_functions()), 
 
             %% Derive final command sequence.
@@ -243,11 +211,10 @@ single_success_commands(Module) ->
 
             %% Only global node commands.
             CommandsWithOnlyGlobalNodeCommands = lists:map(fun(Fun) ->
-                {set,{var,0},{call,?SYSTEM_MODEL,Fun,[]}}
+                {set,{var,0},{call,system_model(),Fun,[]}}
             end, node_global_functions()), 
 
             %% Derive final command sequence.
-            %% TODO: FIX ME.
             FinalCommands0 = case os:getenv("IMPLEMENTATION_MODULE", "false") of
                 "paxoid" ->
                     [
@@ -789,7 +756,7 @@ start_or_reload_nodes() ->
     %% Identify trace.
     TraceRandomNumber = rand:uniform(100000),
     %% lager:info("~p: trace random generated: ~p", [?MODULE, TraceRandomNumber]),
-    TraceIdentifier = atom_to_list(?SYSTEM_MODEL) ++ "_" ++ integer_to_list(TraceRandomNumber),
+    TraceIdentifier = atom_to_list(system_model()) ++ "_" ++ integer_to_list(TraceRandomNumber),
     ok = partisan_trace_orchestrator:identify(TraceIdentifier),
 
     %% Add send and receive pre-interposition functions to enforce message ordering.
@@ -1008,3 +975,139 @@ scheduler() ->
         Other ->
             list_to_atom(Other)
     end.
+
+%%%===================================================================
+%%% Fault Model Imports
+%%%===================================================================
+
+%% @private
+fault_model() ->
+    case os:getenv("FAULT_MODEL") of
+        false ->
+            prop_partisan_crash_fault_model;
+        SystemModel ->
+            list_to_atom(SystemModel)
+    end.
+
+%% @private
+fault_commands() ->
+    FaultModel = fault_model(),
+    FaultModel:fault_commands().
+
+%% @private
+fault_initial_state() ->
+    FaultModel = fault_model(),
+    FaultModel:fault_initial_state().
+
+%% @private
+fault_functions(JoinedNodes) ->
+    FaultModel = fault_model(),
+    FaultModel:fault_functions(JoinedNodes).
+
+%% @private
+fault_precondition(FaultModelState, Call) ->
+    FaultModel = fault_model(),
+    FaultModel:fault_precondition(FaultModelState, Call).
+
+%% @private
+fault_next_state(PropertyState, FaultModelState, Response, Call) ->
+    FaultModel = fault_model(),
+    FaultModel:fault_next_state(PropertyState, FaultModelState, Response, Call).
+
+%% @private
+fault_postcondition(FaultModelState, Call, Response) ->
+    FaultModel = fault_model(),
+    FaultModel:fault_postcondition(FaultModelState, Call, Response).
+
+%% @private
+fault_is_crashed(FaultModelState, Name) ->
+    FaultModel = fault_model(),
+    FaultModel:fault_is_crashed(FaultModelState, Name).
+
+%% @private
+fault_begin_functions() ->
+    FaultModel = fault_model(),
+    FaultModel:fault_begin_functions().
+
+%% @private
+fault_end_functions() ->
+    FaultModel = fault_model(),
+    FaultModel:fault_end_functions().
+
+%% @private
+fault_global_functions() ->
+    FaultModel = fault_model(),
+    FaultModel:fault_global_functions().
+
+%% @private
+fault_num_resolvable_faults(FaultModelState) ->
+    FaultModel = fault_model(),
+    FaultModel:fault_num_resolvable_faults(FaultModelState).
+
+%%%===================================================================
+%%% System Model Imports
+%%%===================================================================
+
+%% @private
+system_model() ->
+    case os:getenv("SYSTEM_MODEL") of
+        false ->
+            exit({error, no_system_model_specified});
+        SystemModel ->
+            list_to_atom(SystemModel)
+    end.
+
+%% @private
+node_commands() ->
+    SystemModel = system_model(),
+    SystemModel:node_commands().
+
+%% @private
+node_initial_state() ->
+    SystemModel = system_model(),
+    SystemModel:node_initial_state().
+
+%% @private
+node_functions() ->
+    SystemModel = system_model(),
+    SystemModel:node_functions().
+
+%% @private
+node_postcondition(NodeState, Call, Response) ->
+    SystemModel = system_model(),
+    SystemModel:node_postcondition(NodeState, Call, Response).
+
+%% @private
+node_precondition(NodeState, Call) ->
+    SystemModel = system_model(),
+    SystemModel:node_precondition(NodeState, Call).
+
+%% @private
+node_next_state(PropertyState, NodeState, Response, Call) ->
+    SystemModel = system_model(),
+    SystemModel:node_next_state(PropertyState, NodeState, Response, Call).
+
+%% @private
+node_begin_property() ->
+    SystemModel = system_model(),
+    SystemModel:node_begin_property().
+
+%% @private
+node_begin_case() ->
+    SystemModel = system_model(),
+    SystemModel:node_begin_case().
+
+%% @private
+node_end_case() ->
+    SystemModel = system_model(),
+    SystemModel:node_end_case().
+
+%% @private
+node_assertion_functions() ->
+    SystemModel = system_model(),
+    SystemModel:node_assertion_functions().
+
+%% @private
+node_global_functions() ->
+    SystemModel = system_model(),
+    SystemModel:node_global_functions().
