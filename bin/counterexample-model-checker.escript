@@ -110,7 +110,7 @@ main([TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexample
     %% Perform recursive analysis of the traces.
     PreviousIteration = 1,
     PreviousClassificationsExplored = [],
-    analyze(1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLinesWithoutFailure, [], [], []}]),
+    analyze(1, 0, 0, 0, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLinesWithoutFailure, [], [], []}]),
 
     %% Should we try to find witnesses?
     case os:getenv("FIND_WITNESSES") of 
@@ -161,10 +161,10 @@ filter_trace_lines(_, TraceLines, BackgroundAnnotations) ->
     MessageTraceLines.
 
 %% @private
-analyze(_Pass, _PreloadOmissionFile, _ReplayTraceFile, _TraceFile, _Causality, _CausalityAnnotations, _BackgroundAnnotations, _PreviousIteration, _PreviousClassificationsExplored, []) ->
+analyze(_Pass, _NumPassed0, _NumFailed0, _NumPruned0, _PreloadOmissionFile, _ReplayTraceFile, _TraceFile, _Causality, _CausalityAnnotations, _BackgroundAnnotations, _PreviousIteration, _PreviousClassificationsExplored, []) ->
     ok;
 
-analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLines, BaseOmissions, DifferenceTypes, DifferenceTraceLines}|RestTraceLines]) ->
+analyze(Pass, NumPassed0, NumFailed0, NumPruned0, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLines, BaseOmissions, DifferenceTypes, DifferenceTraceLines}|RestTraceLines]) ->
     io:format("Beginning analyze pass: ~p with previous iteration: ~p, traces remaining: ~p~n", [Pass, PreviousIteration, length(RestTraceLines)]),
 
     %% Generate the powerset of tracelines.
@@ -262,7 +262,7 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Causal
                 %% Generate a new trace.
                 io:format("Generating new trace based on message omissions (~p omissions, iteration ~p): ~n", [length(Omissions), GenIteration0]),
 
-                {FinalTraceLines, _, _, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes, _, BackgroundOmissions} = lists:foldl(fun({Type, Message} = Line, {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0, FaultedNodes0, BackgroundOmissions0}) ->
+                {FinalTraceLines, _, _, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes, _, _BackgroundOmissions} = lists:foldl(fun({Type, Message} = Line, {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0, FaultedNodes0, BackgroundOmissions0}) ->
                     case Type =:= pre_interposition_fun of 
                         true ->
                             {TracingNode, InterpositionType, OriginNode, MessagePayload} = Message,
@@ -441,7 +441,7 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Causal
                 % io:format("Pruned through early causality and annotation checks.~n", []),
                 {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0}
         end
-    end, {PreviousIteration, 0, 0, 0, PreviousClassificationsExplored, RestTraceLines}, TracesToIterate),
+    end, {PreviousIteration, NumPassed0, NumFailed0, NumPruned0, PreviousClassificationsExplored, RestTraceLines}, TracesToIterate),
 
     %% Run generated schedules stored in the ETS table.
     {PreloadNumPassed, PreloadNumFailed, PreloadNumPruned, PreloadClassificationsExplored, PreloadAdditionalTraces} = ets:foldl(fun({Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, {PreloadNumPassed0, PreloadNumFailed0, PreloadNumPruned0, PreloadClassificationsExplored0, PreloadAdditionalTraces0}) ->
@@ -458,14 +458,14 @@ analyze(Pass, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, Causal
     end, {GenNumPassed, GenNumFailed, GenNumPruned, GenClassificationsExplored, GenAdditionalTraces}, ?SCHEDULES),
 
     io:format("~n", []),
-    io:format("Pass: ~p, Iterations: ~p - ~p, Results: ~p, Failed: ~p, Pruned: ~p~n", [Pass, PreviousIteration, GenIteration, PreloadNumPassed, PreloadNumFailed, PreloadNumPruned]),
+    io:format("Pass: ~p, Iterations: ~p - ~p, Aggregate: Passed: ~p, Failed: ~p, Pruned: ~p~n", [Pass, PreviousIteration, GenIteration, PreloadNumPassed, PreloadNumFailed, PreloadNumPruned]),
 
     %% Should we explore any new schedules we have discovered?
     case os:getenv("RECURSIVE") of 
         "true" ->
-            analyze(Pass + 1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, 1, [], PreloadAdditionalTraces);
+            analyze(Pass + 1, PreloadNumPassed, PreloadNumFailed, PreloadNumPruned, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, 1, [], PreloadAdditionalTraces);
         _ ->
-            analyze(Pass + 1, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, GenIteration, PreloadClassificationsExplored, RestTraceLines)
+            analyze(Pass + 1, PreloadNumPassed, PreloadNumFailed, PreloadNumPruned, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, GenIteration, PreloadClassificationsExplored, RestTraceLines)
     end.
 
 %% @doc Generate the powerset of messages.
@@ -903,9 +903,6 @@ update_faulted_nodes(TraceLines, {_Type, Message} = Line, Omissions, BackgroundA
     %% Destructure message.
     {TracingNode, InterpositionType, _OriginNode, _MessagePayload} = Message,
 
-    %% Get message type.
-    {forward_message, MessageType} = message_type(Message),
-
     %% Filter omissions for the tracing node.
     OmissionsFilterFun = fun({Type1, Message1}) ->
         case Type1 of 
@@ -974,6 +971,9 @@ update_faulted_nodes(TraceLines, {_Type, Message} = Line, Omissions, BackgroundA
                                     %% Keep faulted if this is the last message the node sends.
                                     FaultedNodes0;
                                 false ->
+                                    % %% Get message type.
+                                    % {forward_message, MessageType} = message_type(Message),
+
                                     % io:format("Removing ~p from list of faulted nodes for message type: ~p.~n", [TracingNode, MessageType]),
                                     % io:format("=> last message for tracing node: ~p~n", [LastMessageForTracingNode]),
                                     % io:format("=> is last non-background send for node? ~p~n", [LastMessageForTracingNode =:= Line]),
