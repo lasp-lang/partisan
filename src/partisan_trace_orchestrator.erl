@@ -30,6 +30,7 @@
 %% API
 -export([start_link/0,
          start_link/1,
+         stop/0,
          trace/2,
          replay/2,
          reset/0,
@@ -61,6 +62,9 @@
 %% @doc Same as start_link([]).
 start_link() ->
     start_link([]).
+
+stop() ->
+    gen_server:stop({global, ?MODULE}, normal, infinity).
 
 %% @doc Start and link to calling process.
 start_link(Args) ->
