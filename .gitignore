@@ -33,3 +33,5 @@ test/*/RAND
 results.csv
 erl_crash.dump
 data-root*/
+Mnesia.*/
+node*/
