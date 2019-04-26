@@ -677,9 +677,6 @@ start_or_reload_nodes() ->
     debug("running nodes: ~p~n", [nodes()]),
     RunningNodes = nodes(),
 
-    %% Get the running nodes that epmd things are running.
-    EpmdOutput = os:cmd("epmd -names"),
-
     %% Cluster and start options.
     Options = [{partisan_peer_service_manager, ?MANAGER}, 
                 {num_nodes, ?TEST_NUM_NODES}, 
@@ -731,15 +728,13 @@ start_or_reload_nodes() ->
                 {ok, _} = rpc:call(?NAME(ShortName), application, ensure_all_started, [partisan])
             end, Nodes1),
 
-            debug("Reclustering nodes.", []),
+            debug("reclustering nodes.", []),
             lists:foreach(fun(Node) -> ?SUPPORT:cluster(Node, Nodes1, Options, Config) end, Nodes1),
 
             debug("~p reusing nodes: ~p", [Self, Nodes1]),
 
             Nodes1
     end,
-
-    debug("before start, epmd though the following: ~p~n", [EpmdOutput]),
 
     %% Deterministically seed the random number generator.
     partisan_config:seed(),
