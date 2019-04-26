@@ -763,26 +763,25 @@ background_annotations() ->
 
     case filelib:is_file(AnnotationsFile) of 
         false ->
-            io:format("Annotations file doesn't exist: ~p~n", [AnnotationsFile]);
+            io:format("Annotations file doesn't exist: ~p~n", [AnnotationsFile]),
+            [];
         true ->
-            ok
-    end,
+            {ok, [RawAnnotations]} = file:consult(AnnotationsFile),
+            io:format("Raw annotations loaded: ~p~n", [RawAnnotations]),
+            AllAnnotations = dict:from_list(RawAnnotations),
+            io:format("Annotations loaded: ~p~n", [dict:to_list(AllAnnotations)]),
 
-    {ok, [RawAnnotations]} = file:consult(AnnotationsFile),
-    io:format("Raw annotations loaded: ~p~n", [RawAnnotations]),
-    AllAnnotations = dict:from_list(RawAnnotations),
-    io:format("Annotations loaded: ~p~n", [dict:to_list(AllAnnotations)]),
+            {ok, RawCausalityAnnotations} = dict:find(causality, AllAnnotations),
+            io:format("Raw causality annotations loaded: ~p~n", [RawCausalityAnnotations]),
 
-    {ok, RawCausalityAnnotations} = dict:find(causality, AllAnnotations),
-    io:format("Raw causality annotations loaded: ~p~n", [RawCausalityAnnotations]),
+            CausalityAnnotations = dict:from_list(RawCausalityAnnotations),
+            io:format("Causality annotations loaded: ~p~n", [dict:to_list(CausalityAnnotations)]),
 
-    CausalityAnnotations = dict:from_list(RawCausalityAnnotations),
-    io:format("Causality annotations loaded: ~p~n", [dict:to_list(CausalityAnnotations)]),
+            {ok, BackgroundAnnotations} = dict:find(background, AllAnnotations),
+            io:format("Background annotations loaded: ~p~n", [BackgroundAnnotations]),
 
-    {ok, BackgroundAnnotations} = dict:find(background, AllAnnotations),
-    io:format("Background annotations loaded: ~p~n", [BackgroundAnnotations]),
-
-    BackgroundAnnotations.
+            BackgroundAnnotations
+    end.
 
 %%%===================================================================
 %%% Trace filtering: super hack, until we can refactor these messages.
