@@ -163,6 +163,24 @@ start(Case, Config, Options) ->
             %% Configure random seed on the nodes.
             ok = rpc:call(Node, partisan_config, set, [random_seed, {1, 1, 1}]),
 
+            Replaying = case ?config(replaying, Config) of
+                              undefined ->
+                                  false;
+                              RP ->
+                                  RP
+                          end,
+            debug("Setting replaying to: ~p", [Replaying]),
+            ok = rpc:call(Node, partisan_config, set, [replaying, Replaying]),
+
+            Shrinking = case ?config(shrinking, Config) of
+                              undefined ->
+                                  false;
+                              SH ->
+                                  SH
+                          end,
+            debug("Setting shrinking to: ~p", [Shrinking]),
+            ok = rpc:call(Node, partisan_config, set, [shrinking, Shrinking]),
+
             MembershipStrategy = case ?config(membership_strategy, Config) of
                               undefined ->
                                   ?DEFAULT_MEMBERSHIP_STRATEGY;
