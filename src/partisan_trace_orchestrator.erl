@@ -611,7 +611,7 @@ preload_omissions(Nodes) ->
 
     %% Load background annotations.
     BackgroundAnnotations = background_annotations(),
-    lager:info("Background annotations are: ~p", [BackgroundAnnotations]),
+    debug("background annotations are: ~p", [BackgroundAnnotations]),
 
     %% Install faulted tracing interposition function.
     lists:foreach(fun({_, Node}) ->
@@ -646,7 +646,7 @@ preload_omissions(Nodes) ->
         end,
 
         %% Install function.
-        lager:info("Installing faulted pre-interposition for node: ~p", [Node]),
+        replay_debug("installing faulted pre-interposition for node: ~p", [Node]),
         ok = rpc:call(Node, ?MANAGER, add_interposition_fun, [{faulted, Node}, InterpositionFun])
     end, Nodes),
 
@@ -699,7 +699,7 @@ preload_omissions(Nodes) ->
         end,
 
         %% Install function.
-        lager:info("Installing faulted_for_background pre-interposition for node: ~p", [Node]),
+        replay_debug("installing faulted_for_background pre-interposition for node: ~p", [Node]),
         ok = rpc:call(Node, ?MANAGER, add_interposition_fun, [{faulted_for_background, Node}, InterpositionFun])
     end, Nodes),
 
