@@ -423,6 +423,13 @@ replay_trace_file() ->
 
 %% @private
 initialize_state() ->
+    case os:getenv("REPLAY_DEBUG", "false") of
+        "true" ->
+            partisan_config:set(replay_debug, true);
+        _ ->
+            partisan_config:set(replay_debug, false)
+    end,
+
     case os:getenv("REPLAY") of 
         false ->
             %% This is not a replay, so store the current trace.
@@ -541,6 +548,14 @@ write_json_trace(Trace) ->
 
 %% Should we do replay debugging?
 replay_debug(Line, Args) ->
+    case partisan_config:get(replay_debug) of 
+        true ->
+            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+        _ ->
+            ok
+    end.
+
+debug(Line, Args) ->
     lager:info("~p: " ++ Line, [?MODULE] ++ Args).
 
 %% @private
@@ -557,6 +572,7 @@ preload_omissions(Nodes) ->
 
     case PreloadOmissionFile of 
         undefined ->
+            replay_debug("no preload omissions file...", []),
             ok;
         _ ->
             {ok, [Omissions]} = file:consult(PreloadOmissionFile),
@@ -567,7 +583,7 @@ preload_omissions(Nodes) ->
                     pre_interposition_fun ->
                         {TracingNode, forward_message, OriginNode, MessagePayload} = Message,
 
-                        replay_debug("Enabling preload omission for ~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload]) ,
+                        replay_debug("enabling preload omission for ~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload]) ,
 
                         InterpositionFun = fun({forward_message, N, M}) ->
                             case N of
