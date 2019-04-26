@@ -665,6 +665,8 @@ start_or_reload_nodes() ->
               {broadcast, false},
               {disterl, false},
               {hash, undefined},
+              {shrinking, false},
+              {replaying, false},
               {egress_delay, ?EGRESS_DELAY},
               {ingress_delay, ?INGRESS_DELAY},
               {membership_strategy_tracing, false},
