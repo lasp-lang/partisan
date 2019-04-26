@@ -39,7 +39,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, {membership}).
+-record(state, {next_id, membership}).
 
 -record(transaction, {id,
                       coordinator,
@@ -112,7 +112,7 @@ init([]) ->
     %% Schedule heartbeat.
     schedule_heartbeat(),
 
-    {ok, #state{membership=membership(Membership)}}.
+    {ok, #state{next_id=0, membership=membership(Membership)}}.
 
 %% @private
 handle_call(Msg, _From, State) ->
@@ -120,10 +120,10 @@ handle_call(Msg, _From, State) ->
     {reply, ok, State}.
 
 %% @private
-handle_cast({broadcast, From, ServerRef, Message}, #state{membership=Membership}=State) ->
+handle_cast({broadcast, From, ServerRef, Message}, #state{next_id=NextId, membership=Membership}=State) ->
     %% Generate unique transaction id.
     MyNode = partisan_peer_service_manager:mynode(),
-    Id = {MyNode, erlang:unique_integer([monotonic, positive])},
+    Id = {MyNode, NextId},
 
     %% Create transaction in a preparing state.
     Transaction = #transaction{
@@ -153,7 +153,7 @@ handle_cast({broadcast, From, ServerRef, Message}, #state{membership=Membership}
         partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {prepare, Transaction}, [])
     end, membership(Membership)),
 
-    {noreply, State};
+    {noreply, State#state{next_id=NextId + 1}};
 handle_cast({update, Membership0}, State) ->
     Membership = membership(Membership0),
     {noreply, State#state{membership=Membership}};
