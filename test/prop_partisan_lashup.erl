@@ -45,16 +45,16 @@ names() ->
     lists:map(NameFun, lists:seq(1, ?TEST_NUM_NODES)).
 
 key() ->
-    [a, b, c].
+    integer().
 
 value() ->
-    integer().
+    true.
 
 %%%===================================================================
 %%% Node Functions
 %%%===================================================================
 
--record(node_state, {}).
+-record(node_state, {values}).
 
 %% What node-specific operations should be called.
 node_commands() ->
@@ -73,7 +73,7 @@ node_global_functions() ->
 %% What should the initial node state be.
 node_initial_state() ->
     node_debug("initializing", []),
-    #node_state{}.
+    #node_state{values=dict:new()}.
 
 %% Names of the node functions so we kow when we can dispatch to the node
 %% pre- and postconditions.
@@ -91,12 +91,38 @@ node_precondition(_NodeState, _Command) ->
     false.
 
 %% Next state.
+node_next_state(_State, #node_state{values=Values0} = NodeState, {ok, _}, {call, ?MODULE, update, [_Node, Key, Value]}) ->
+    Values = dict:store([a, b, Key], Value, Values0),
+    NodeState#node_state{values=Values};
 node_next_state(_State, NodeState, _Response, _Command) ->
     NodeState.
 
 %% Postconditions for node commands.
-node_postcondition(_NodeState, {call, ?MODULE, check_delivery, []}, _Result) ->
-    true;
+node_postcondition(#node_state{values=Values}, {call, ?MODULE, check_delivery, []}, Results) ->
+    node_debug("checking postcondition for check_delivery...", []),
+
+    %% For each value we sent...
+    Result = dict:fold(fun(Key, Value, Acc1) ->
+        %% Make sure each node received it.
+        dict:fold(fun(Node, NodeResults, Acc2) ->
+            case NodeResults of 
+                {badrpc, nodedown} ->
+                    Acc2 andalso true;
+                _ ->
+                    case lists:member(Key, NodeResults) of 
+                        true ->
+                            node_debug("=> node: ~p received key: ~p", [Node, Key]),
+                            Acc2 andalso true;
+                        false ->
+                            node_debug("=> node: ~p didn't receive key: ~p, value: ~p, only received: ~p", [Node, Key, Value, NodeResults]),
+                            Acc2 andalso false
+                    end
+            end
+        end, Acc1, Results)
+    end, true, Values),
+
+    node_debug("postcondition result for check_delivery: ~p", [Result]),
+    Result;
 node_postcondition(_NodeState, {call, ?MODULE, update, [_Node, _Key, _Value]}, {ok, _Result}) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, sleep, []}, _Result) ->
@@ -120,7 +146,7 @@ node_postcondition(_NodeState, Command, Response) ->
 
 %% @private
 update(Node, Key, Value) ->
-    ?PROPERTY_MODULE:command_preamble(Node, [update, Node]),
+    ?PROPERTY_MODULE:command_preamble(Node, [update, Node, Key, Value]),
 
     Key1 = [a, b, Key],
 
@@ -132,7 +158,7 @@ update(Node, Key, Value) ->
                 }]),
     node_debug("received result to write with result: ~p", [Result]),
 
-    ?PROPERTY_MODULE:command_conclusion(Node, [update, Node]),
+    ?PROPERTY_MODULE:command_conclusion(Node, [update, Node, Key, Value]),
 
     Result.
 
@@ -142,7 +168,7 @@ sleep() ->
 
     ?PROPERTY_MODULE:command_preamble(RunnerNode, [sleep]),
 
-    timer:sleep(4000),
+    timer:sleep(20000),
 
     ?PROPERTY_MODULE:command_conclusion(RunnerNode, [sleep]),
 
@@ -203,6 +229,10 @@ node_begin_case() ->
         node_debug("enabling register_pid_for_encoding at node ~p", [ShortName]),
         ok = rpc:call(?NAME(ShortName), partisan_config, set, [register_pid_for_encoding, true])
     end, Nodes),
+
+    %% Remove the old mnesia files.
+    RmResult = os:cmd("rm -rf Mnesia.*"),
+    node_debug("removing old mnesia files: result: ~p", [RmResult]),
 
     %% Load, configure, and start lashup.
     lists:foreach(fun({ShortName, _}) ->

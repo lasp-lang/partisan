@@ -30,6 +30,7 @@
 %% API
 -export([start_link/0,
          start_link/1,
+         stop/0,
          trace/2,
          replay/2,
          reset/0,
@@ -61,6 +62,9 @@
 %% @doc Same as start_link([]).
 start_link() ->
     start_link([]).
+
+stop() ->
+    gen_server:stop({global, ?MODULE}, normal, infinity).
 
 %% @doc Start and link to calling process.
 start_link(Args) ->
@@ -419,6 +423,13 @@ replay_trace_file() ->
 
 %% @private
 initialize_state() ->
+    case os:getenv("REPLAY_DEBUG", "false") of
+        "true" ->
+            partisan_config:set(replay_debug, true);
+        _ ->
+            partisan_config:set(replay_debug, false)
+    end,
+
     case os:getenv("REPLAY") of 
         false ->
             %% This is not a replay, so store the current trace.
@@ -537,6 +548,14 @@ write_json_trace(Trace) ->
 
 %% Should we do replay debugging?
 replay_debug(Line, Args) ->
+    case partisan_config:get(replay_debug) of 
+        true ->
+            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+        _ ->
+            ok
+    end.
+
+debug(Line, Args) ->
     lager:info("~p: " ++ Line, [?MODULE] ++ Args).
 
 %% @private
@@ -553,6 +572,7 @@ preload_omissions(Nodes) ->
 
     case PreloadOmissionFile of 
         undefined ->
+            replay_debug("no preload omissions file...", []),
             ok;
         _ ->
             {ok, [Omissions]} = file:consult(PreloadOmissionFile),
@@ -563,7 +583,7 @@ preload_omissions(Nodes) ->
                     pre_interposition_fun ->
                         {TracingNode, forward_message, OriginNode, MessagePayload} = Message,
 
-                        replay_debug("Enabling preload omission for ~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload]) ,
+                        replay_debug("enabling preload omission for ~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload]) ,
 
                         InterpositionFun = fun({forward_message, N, M}) ->
                             case N of
@@ -607,7 +627,7 @@ preload_omissions(Nodes) ->
 
     %% Load background annotations.
     BackgroundAnnotations = background_annotations(),
-    lager:info("Background annotations are: ~p", [BackgroundAnnotations]),
+    debug("background annotations are: ~p", [BackgroundAnnotations]),
 
     %% Install faulted tracing interposition function.
     lists:foreach(fun({_, Node}) ->
@@ -642,7 +662,7 @@ preload_omissions(Nodes) ->
         end,
 
         %% Install function.
-        lager:info("Installing faulted pre-interposition for node: ~p", [Node]),
+        replay_debug("installing faulted pre-interposition for node: ~p", [Node]),
         ok = rpc:call(Node, ?MANAGER, add_interposition_fun, [{faulted, Node}, InterpositionFun])
     end, Nodes),
 
@@ -695,7 +715,7 @@ preload_omissions(Nodes) ->
         end,
 
         %% Install function.
-        lager:info("Installing faulted_for_background pre-interposition for node: ~p", [Node]),
+        replay_debug("installing faulted_for_background pre-interposition for node: ~p", [Node]),
         ok = rpc:call(Node, ?MANAGER, add_interposition_fun, [{faulted_for_background, Node}, InterpositionFun])
     end, Nodes),
 
@@ -743,26 +763,25 @@ background_annotations() ->
 
     case filelib:is_file(AnnotationsFile) of 
         false ->
-            io:format("Annotations file doesn't exist: ~p~n", [AnnotationsFile]);
+            io:format("Annotations file doesn't exist: ~p~n", [AnnotationsFile]),
+            [];
         true ->
-            ok
-    end,
+            {ok, [RawAnnotations]} = file:consult(AnnotationsFile),
+            io:format("Raw annotations loaded: ~p~n", [RawAnnotations]),
+            AllAnnotations = dict:from_list(RawAnnotations),
+            io:format("Annotations loaded: ~p~n", [dict:to_list(AllAnnotations)]),
 
-    {ok, [RawAnnotations]} = file:consult(AnnotationsFile),
-    io:format("Raw annotations loaded: ~p~n", [RawAnnotations]),
-    AllAnnotations = dict:from_list(RawAnnotations),
-    io:format("Annotations loaded: ~p~n", [dict:to_list(AllAnnotations)]),
+            {ok, RawCausalityAnnotations} = dict:find(causality, AllAnnotations),
+            io:format("Raw causality annotations loaded: ~p~n", [RawCausalityAnnotations]),
 
-    {ok, RawCausalityAnnotations} = dict:find(causality, AllAnnotations),
-    io:format("Raw causality annotations loaded: ~p~n", [RawCausalityAnnotations]),
+            CausalityAnnotations = dict:from_list(RawCausalityAnnotations),
+            io:format("Causality annotations loaded: ~p~n", [dict:to_list(CausalityAnnotations)]),
 
-    CausalityAnnotations = dict:from_list(RawCausalityAnnotations),
-    io:format("Causality annotations loaded: ~p~n", [dict:to_list(CausalityAnnotations)]),
+            {ok, BackgroundAnnotations} = dict:find(background, AllAnnotations),
+            io:format("Background annotations loaded: ~p~n", [BackgroundAnnotations]),
 
-    {ok, BackgroundAnnotations} = dict:find(background, AllAnnotations),
-    io:format("Background annotations loaded: ~p~n", [BackgroundAnnotations]),
-
-    BackgroundAnnotations.
+            BackgroundAnnotations
+    end.
 
 %%%===================================================================
 %%% Trace filtering: super hack, until we can refactor these messages.
