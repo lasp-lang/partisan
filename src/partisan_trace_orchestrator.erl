@@ -110,7 +110,7 @@ perform_preloads(Nodes) ->
 %% @private
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
-    lager:info("Test orchestrator started on node: ~p", [node()]),
+    debug("test orchestrator started on node: ~p", [node()]),
     State = initialize_state(),
     {ok, State}.
 
