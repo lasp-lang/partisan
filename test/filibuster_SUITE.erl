@@ -160,39 +160,37 @@ model_checker_test(_Config) ->
     %% Open up the counterexample file.
     {ok, Base} = file:get_cwd(),
     CounterexampleFilePath = filename:join([Base, "../../", ?COUNTEREXAMPLE_FILE]),
-    Counterexample = case file:consult(CounterexampleFilePath) of
-        {ok, [C]} ->
-            C;
+    case file:consult(CounterexampleFilePath) of
+        {ok, [Counterexample]} ->
+            %% Test execution begins here.
+
+            %% Initialize the checker.
+            TraceFile = "/tmp/partisan-latest.trace",
+            ReplayTraceFile = "/tmp/partisan-replay.trace",
+            CounterexampleConsultFile = "/tmp/partisan-counterexample.consult",
+            RebarCounterexampleConsultFile = CounterexampleFilePath,
+            PreloadOmissionFile = "/tmp/partisan-preload.trace",
+            init(Nodes, Counterexample, TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexampleConsultFile, PreloadOmissionFile),
+
+            debug("finished with test, beginning teardown...", []),
+
+            %% Teardown begins here.
+
+            %% Get list of nodes that were started at the start
+            %% of the test.
+            [{nodes, Nodes}] = ets:lookup(?ETS, nodes),
+
+            %% Stop nodes.
+            ?SUPPORT:stop(Nodes),
+
+            %% Delete the table.
+            ets:delete(?ETS),
+
+            ok;
         {error, _} ->
-            ct:fail("no counterexamples to run.", []),
-            error
-    end,
-
-    %% Test execution begins here.
-
-    %% Initialize the checker.
-    TraceFile = "/tmp/partisan-latest.trace",
-    ReplayTraceFile = "/tmp/partisan-replay.trace",
-    CounterexampleConsultFile = "/tmp/partisan-counterexample.consult",
-    RebarCounterexampleConsultFile = CounterexampleFilePath,
-    PreloadOmissionFile = "/tmp/partisan-preload.trace",
-    init(Nodes, Counterexample, TraceFile, ReplayTraceFile, CounterexampleConsultFile, RebarCounterexampleConsultFile, PreloadOmissionFile),
-
-    debug("finished with test, beginning teardown...", []),
-
-    %% Teardown begins here.
-
-    %% Get list of nodes that were started at the start
-    %% of the test.
-    [{nodes, Nodes}] = ets:lookup(?ETS, nodes),
-
-    %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
-
-    %% Delete the table.
-    ets:delete(?ETS),
-
-    ok.
+            debug("no counterexamples to run.", []),
+            ok
+    end.
 
 %% ===================================================================
 %% Test Runner
