@@ -731,7 +731,11 @@ start_or_reload_nodes() ->
             end, Nodes1),
 
             debug("reclustering nodes.", []),
-            lists:foreach(fun(Node) -> ?SUPPORT:cluster(Node, Nodes1, Options, Config) end, Nodes1),
+            ClusterFun = fun() ->
+                lists:foreach(fun(Node) -> ?SUPPORT:cluster(Node, Nodes1, Options, Config) end, Nodes1)
+            end,
+            {ClusterTime, _} = timer:tc(ClusterFun),
+            debug("reclustering nodes took ~p ms", [ClusterTime / 1000]),
 
             debug("~p reusing nodes: ~p", [Self, Nodes1]),
 
