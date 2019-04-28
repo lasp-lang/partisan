@@ -796,6 +796,7 @@ start_or_reload_nodes() ->
 
     ok.
 
+%% @private
 stop_nodes() ->
     case restart_nodes() of 
         true ->
