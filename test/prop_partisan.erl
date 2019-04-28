@@ -833,7 +833,7 @@ restart_nodes() ->
             true
     end.
 
-%% Determine if a bunch of operations succeeded or failed.
+%% @private -- Determine if a bunch of operations succeeded or failed.
 all_to_ok_or_error(List) ->
     case lists:all(fun(X) -> X =:= ok end, List) of
         true ->
@@ -842,12 +842,15 @@ all_to_ok_or_error(List) ->
             {error, some_operations_failed, List}
     end.
 
+%% @private
 enough_nodes_connected(Nodes) ->
     length(Nodes) >= 3.
 
+%% @private
 enough_nodes_connected_to_issue_remove(Nodes) ->
     length(Nodes) > 3.
 
+%% @private
 initial_state_debug(Line, Args) ->
     case ?INITIAL_STATE_DEBUG of
         true ->
@@ -856,6 +859,7 @@ initial_state_debug(Line, Args) ->
             ok
     end.
 
+%% @private
 precondition_debug(Line, Args) ->
     case ?PRECONDITION_DEBUG of
         true ->
