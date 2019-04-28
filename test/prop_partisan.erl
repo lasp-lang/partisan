@@ -864,6 +864,7 @@ precondition_debug(Line, Args) ->
             ok
     end.
 
+%% @private
 postcondition_debug(Line, Args) ->
     case ?POSTCONDITION_DEBUG of
         true ->
@@ -872,6 +873,7 @@ postcondition_debug(Line, Args) ->
             ok
     end.
 
+%% @private
 debug(Line, Args) ->
     case ?DEBUG of
         true ->
@@ -880,9 +882,11 @@ debug(Line, Args) ->
             ok
     end.
 
+%% @private
 is_joined(Node, Cluster) ->
     lists:member(Node, Cluster).
 
+%% @private
 cluster_commands(_State) ->
     [
     % TODO: Disabled, because nodes shutdown on removal from the cluster.
@@ -890,13 +894,16 @@ cluster_commands(_State) ->
     {call, ?MODULE, sync_leave_cluster, [node_name()]}
     ].
 
+%% @private
 name_to_nodename(Name) ->
     [{_, NodeName}] = ets:lookup(?MODULE, Name),
     NodeName.
 
+%% @private
 ensure_tracing_started() ->
     partisan_trace_orchestrator:start_link().
 
+%% @private
 wait_until_nodes_agree_on_membership(Nodes) ->
     AgreementFun = fun(Node) ->
         %% Get membership at node.
