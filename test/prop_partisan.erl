@@ -216,40 +216,40 @@ single_success_commands(Module) ->
 
             %% Derive final command sequence.
             FinalCommands0 = case os:getenv("IMPLEMENTATION_MODULE", "false") of
-                "paxoid" ->
-                    [
-                        %% Sleep for initialization.
-                        {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
+                % "paxoid" ->
+                %     [
+                %         %% Sleep for initialization.
+                %         {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
 
-                        %% Write to node_3.
-                        {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_2]}},
+                %         %% Write to node_3.
+                %         {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_2]}},
 
-                        % Fault node_3, wait for failure detection.
-                        {set, {var, 0}, {call, prop_partisan_paxoid, set_fault, [node_3, true]}},
-                        {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
+                %         % Fault node_3, wait for failure detection.
+                %         {set, {var, 0}, {call, prop_partisan_paxoid, set_fault, [node_3, true]}},
+                %         {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
 
-                        %% Write to node_1.
-                        {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_1]}},
+                %         %% Write to node_1.
+                %         {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_1]}},
 
-                        % Fault node_1, unfault node_3, wait for failure detection.
-                        {set, {var, 0}, {call, prop_partisan_paxoid, set_fault, [node_1, true]}},
-                        {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
-                        {set, {var, 0}, {call, prop_partisan_paxoid, set_fault, [node_3, false]}},
+                %         % Fault node_1, unfault node_3, wait for failure detection.
+                %         {set, {var, 0}, {call, prop_partisan_paxoid, set_fault, [node_1, true]}},
+                %         {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
+                %         {set, {var, 0}, {call, prop_partisan_paxoid, set_fault, [node_3, false]}},
 
-                        %% Write to node_3.
-                        {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_3]}},
-                        {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
+                %         %% Write to node_3.
+                %         {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_3]}},
+                %         {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
 
-                        %% Write to node_3 again.
-                        {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_4]}},
-                        {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}}
-                    ] ++ 
+                %         %% Write to node_3 again.
+                %         {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_4]}},
+                %         {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}}
+                %     ] ++ 
 
-                    %% Global node commands. 
-                    CommandsWithOnlyGlobalNodeCommands ++ 
+                %     %% Global node commands. 
+                %     CommandsWithOnlyGlobalNodeCommands ++ 
 
-                    %% Forced failure command. 
-                    FailureCommands;
+                %     %% Forced failure command. 
+                %     FailureCommands;
                 _ ->
                     lists:flatten(
                         %% Node commands, without global assertions.  Take only the first.
@@ -724,18 +724,54 @@ start_or_reload_nodes() ->
             %% Get nodes.
             [{nodes, Nodes1}] = ets:lookup(prop_partisan, nodes),
 
-            %% Restart Partisan.
-            lists:foreach(fun({ShortName, _}) ->
-                ok = rpc:call(?NAME(ShortName), application, stop, [partisan]),
-                {ok, _} = rpc:call(?NAME(ShortName), application, ensure_all_started, [partisan])
-            end, Nodes1),
+            %% Remove all interposition funs.
+            lists:foreach(fun(Node) ->
+                % fault_debug("getting interposition funs at node ~p", [Node]),
 
-            debug("reclustering nodes.", []),
-            ClusterFun = fun() ->
-                lists:foreach(fun(Node) -> ?SUPPORT:cluster(Node, Nodes1, Options, Config) end, Nodes1)
+                case rpc:call(?NAME(Node), ?MANAGER, get_interposition_funs, []) of 
+                    {badrpc, nodedown} ->
+                        ok;
+                    {ok, InterpositionFuns0} ->
+                        InterpositionFuns = dict:to_list(InterpositionFuns0),
+                        % fault_debug("=> ~p", [InterpositionFuns]),
+
+                        lists:foreach(fun({InterpositionName, _Function}) ->
+                            % fault_debug("=> removing interposition: ~p", [InterpositionName]),
+                            ok = rpc:call(?NAME(Node), ?MANAGER, remove_interposition_fun, [InterpositionName])
+                    end, InterpositionFuns)
+                end
+            end, names()),
+
+            case full_restart() of 
+                true ->
+                    %% Restart Partisan.
+                    lists:foreach(fun({ShortName, _}) ->
+                        ok = rpc:call(?NAME(ShortName), application, stop, [partisan]),
+                        {ok, _} = rpc:call(?NAME(ShortName), applicatioShortNamen, ensure_all_started, [partisan])
+                    end, Nodes1),
+
+                    debug("reclustering nodes.", []),
+                    ClusterFun = fun() ->
+                        lists:foreach(fun(Node) -> ?SUPPORT:cluster(Node, Nodes1, Options, Config) end, Nodes1)
+                    end,
+                    {ClusterTime, _} = timer:tc(ClusterFun),
+                    debug("reclustering nodes took ~p ms", [ClusterTime / 1000]),
+
+                    ok;
+                false ->
+                    %% Set faulted back to false.
+                    lists:foreach(fun(Node) ->
+                        ok = rpc:call(?NAME(Node), partisan_config, set, [faulted, false])
+                    end, names()),
+
+                    %% Stop tracing infrastructure.
+                    partisan_trace_orchestrator:stop(),
+
+                    %% Start tracing infrastructure.
+                    partisan_trace_orchestrator:start_link(),
+
+                    ok
             end,
-            {ClusterTime, _} = timer:tc(ClusterFun),
-            debug("reclustering nodes took ~p ms", [ClusterTime / 1000]),
 
             debug("~p reusing nodes: ~p", [Self, Nodes1]),
 
@@ -824,6 +860,15 @@ stop_nodes() ->
     end,
 
     ok.
+
+%% @private
+full_restart() ->
+    case os:getenv("FULL_RESTART") of 
+        "true" ->
+            true;
+        _ ->
+            false
+    end.
 
 %% @private
 restart_nodes() ->
