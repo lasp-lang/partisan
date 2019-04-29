@@ -359,7 +359,7 @@ handle_info({precommit_ack, FromNode, Id}, State) ->
                     CoordinatorStatus = commit_finalizing,
 
                     %% Reply to caller.
-                    lager:info("replying to the caller: ~p", From),
+                    lager:info("all precommit_acks received, replying to the caller: ~p", [From]),
                     partisan_pluggable_peer_service_manager:forward_message(From, ok),
 
                     %% Update local state before sending decision to participants.
@@ -385,6 +385,7 @@ handle_info({precommit, #transaction{id=Id, coordinator=Coordinator} = Transacti
     true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=precommit}}),
 
     %% Repond to coordinator that we are now committed.
+    lager:info("~p: sending precommit_ack message to node ~p: ~p", [node(), Coordinator, Id]),
     MyNode = partisan_peer_service_manager:mynode(),
     partisan_pluggable_peer_service_manager:forward_message(Coordinator, undefined, ?MODULE, {precommit_ack, MyNode, Id}, []),
 
