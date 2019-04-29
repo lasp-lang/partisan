@@ -670,9 +670,9 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
                     end
                 end, {[], false, [], [], [], [], dict:new(), []}, TraceLines),
 
-                % debug("PrefixMessageTypes: ~p~n", [PrefixMessageTypes]),
-                % debug("OmittedMessageTypes: ~p~n", [OmittedMessageTypes]),
-                % debug("ConditionalMessageTypes: ~p~n", [ConditionalMessageTypes]),
+                debug("PrefixMessageTypes: ~p~n", [PrefixMessageTypes]),
+                debug("OmittedMessageTypes: ~p~n", [OmittedMessageTypes]),
+                debug("ConditionalMessageTypes: ~p~n", [ConditionalMessageTypes]),
                 % debug("length(MessageTypes): ~p~n", [length(PrefixMessageTypes ++ OmittedMessageTypes ++ ConditionalMessageTypes)]),
 
                 %% Is this schedule valid for these omissions?
@@ -958,6 +958,8 @@ identify_minimal_witnesses() ->
 
 %% @private
 classify_schedule(_N, CausalityAnnotations, PrefixSchedule, _OmittedSchedule, ConditionalSchedule) ->
+    debug("classifying schedule using causality annotations: ~p", [dict:to_list(CausalityAnnotations)]),
+
     DerivedSchedule = PrefixSchedule ++ ConditionalSchedule,
 
     Classification = lists:foldl(fun({Type, Preconditions}, Dict0) ->
@@ -965,33 +967,39 @@ classify_schedule(_N, CausalityAnnotations, PrefixSchedule, _OmittedSchedule, Co
             case Precondition of 
                 {PreconditionType, N} ->
                     Num = length(lists:filter(fun(T) -> T =:= PreconditionType end, DerivedSchedule)),
-                    % debug("=> * found ~p messages of type ~p~n", [Num, PreconditionType]),
+                    debug("=> * found ~p messages of type ~p~n", [Num, PreconditionType]),
                     Acc andalso Num >= N;
                 true ->
+                    debug("=> * found true precondition", []),
                     Acc andalso true
             end
         end, true, Preconditions),
 
-        % debug("=> type: ~p, preconditions: ~p~n", [Type, Result]),
+        debug("=> type: ~p, preconditions: ~p~n", [Type, Result]),
         dict:store(Type, Result, Dict0)
     end, dict:new(), dict:to_list(CausalityAnnotations)),
 
-    % debug("classification: ~p~n", [dict:to_list(Classification)]),
+    debug("classification: ~p~n", [dict:to_list(Classification)]),
 
     Classification.
 
 %% @private
 classify_schedule(_N, CausalityAnnotations, CandidateTrace0) ->
+    % debug("classifying schedule using causality annotations: ~p", [dict:to_list(CausalityAnnotations)]),
+
     CandidateTrace = message_types(CandidateTrace0),
 
     Classification = lists:foldl(fun({Type, Preconditions}, Dict0) ->
         Result = lists:foldl(fun(Precondition, Acc) ->
+            % debug("checking precondition: ~p", [Precondition]),
+
             case Precondition of 
                 {{_, PreconditionType}, N} ->
                     Num = length(lists:filter(fun(T) -> T =:= {forward_message, PreconditionType} end, CandidateTrace)),
                     % debug("=> * found ~p messages of type ~p~n", [Num, PreconditionType]),
                     Acc andalso Num >= N;
                 true ->
+                    % debug("=> * found true precondition", []),
                     Acc andalso true
             end
         end, true, Preconditions),
