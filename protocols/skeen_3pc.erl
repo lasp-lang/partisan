@@ -196,7 +196,7 @@ handle_info({participant_timeout, Id}, State) ->
 handle_info({coordinator_timeout, Id}, State) ->
     %% Find transaction record.
     case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
-        [{_Id, #transaction{coordinator_status=CoordinatorStatus, participants=Participants, from=From} = Transaction0}] ->
+        [{_Id, #transaction{coordinator_status=CoordinatorStatus, participants=Participants, precommitted=Precommitted, from=From} = Transaction0}] ->
             lager:info("Coordinator timeout when participant ~p was in the ~p state.", [node(), CoordinatorStatus]),
 
             case CoordinatorStatus of 
@@ -221,19 +221,28 @@ handle_info({coordinator_timeout, Id}, State) ->
                 commit_finalizing ->
                     lager:info("Coordinator ~p in commit_finalizing state, moving to abort.", [node()]),
 
-                    %% Update local state.
-                    Transaction = Transaction0#transaction{coordinator_status=aborting},
-                    true = ets:insert(?COORDINATING_TRANSACTIONS, {Id, Transaction}),
+                    %% Have we made a decision?
+                    case lists:usort(Participants) =:= lists:usort(Precommitted) of 
+                        true ->
+                            %% Decision has already been made, participants have been told to commit.
+                            ok;
+                        false ->
+                            %% Update local state.
+                            Transaction = Transaction0#transaction{coordinator_status=aborting},
+                            true = ets:insert(?COORDINATING_TRANSACTIONS, {Id, Transaction}),
 
-                    %% Reply to caller.
-                    lager:info("Aborting transaction: ~p", [Id]),
-                    partisan_pluggable_peer_service_manager:forward_message(From, error),
+                            %% Reply to caller.
+                            lager:info("Aborting transaction: ~p", [Id]),
+                            partisan_pluggable_peer_service_manager:forward_message(From, error),
 
-                    %% Send notification to abort.
-                    lists:foreach(fun(N) ->
-                        lager:info("~p: sending abort message to node ~p: ~p", [node(), N, Id]),
-                        partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {abort, Transaction}, [])
-                    end, membership(Participants)),
+                            %% Send notification to abort.
+                            lists:foreach(fun(N) ->
+                                lager:info("~p: sending abort message to node ~p: ~p", [node(), N, Id]),
+                                partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {abort, Transaction}, [])
+                            end, membership(Participants)),
+
+                            ok
+                    end,
 
                     %% Can't do anything; block.
                     ok;
