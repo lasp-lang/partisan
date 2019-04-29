@@ -417,7 +417,7 @@ init(Nodes, _Counterexample, TraceFile, ReplayTraceFile, CounterexampleConsultFi
     %% Perform recursive analysis of the traces.
     PreviousIteration = 1,
     PreviousClassificationsExplored = [],
-    analyze(Nodes, Counterexample, 1, 0, 0, 0, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLinesWithoutFailure, [], [], []}]),
+    analyze(StartTime, Nodes, Counterexample, 1, 0, 0, 0, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLinesWithoutFailure, [], [], []}]),
 
     %% Should we try to find witnesses?
     case os:getenv("FIND_WITNESSES") of 
@@ -468,10 +468,10 @@ filter_trace_lines(_, TraceLines, BackgroundAnnotations) ->
     MessageTraceLines.
 
 %% @private
-analyze(_Nodes, _Counterexample, _Pass, _NumPassed0, _NumFailed0, _NumPruned0, _PreloadOmissionFile, _ReplayTraceFile, _TraceFile, _Causality, _CausalityAnnotations, _BackgroundAnnotations, _PreviousIteration, _PreviousClassificationsExplored, []) ->
+analyze(_StartTime, _Nodes, _Counterexample, _Pass, _NumPassed0, _NumFailed0, _NumPruned0, _PreloadOmissionFile, _ReplayTraceFile, _TraceFile, _Causality, _CausalityAnnotations, _BackgroundAnnotations, _PreviousIteration, _PreviousClassificationsExplored, []) ->
     ok;
 
-analyze(Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPruned0, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLines, BaseOmissions, DifferenceTypes, DifferenceTraceLines}|RestTraceLines]) ->
+analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPruned0, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLines, BaseOmissions, DifferenceTypes, DifferenceTraceLines}|RestTraceLines]) ->
     debug("Beginning analyze pass: ~p with previous iteration: ~p, traces remaining: ~p~n", [Pass, PreviousIteration, length(RestTraceLines)]),
 
     %% Generate the powerset of tracelines.
@@ -722,7 +722,7 @@ analyze(Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPruned0, Preload
                                 ok
                         end,
 
-                        case execute_schedule(Nodes, Counterexample, PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, GenClassificationsExplored0, GenAdditionalTraces0) of
+                        case execute_schedule(StartTime, Nodes, Counterexample, PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, GenClassificationsExplored0, GenAdditionalTraces0) of
                             pruned ->
                                 debug("Schedule pruned.~n", []),
                                 {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0};
@@ -752,7 +752,7 @@ analyze(Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPruned0, Preload
 
     %% Run generated schedules stored in the ETS table.
     {PreloadNumPassed, PreloadNumFailed, PreloadNumPruned, PreloadClassificationsExplored, PreloadAdditionalTraces} = ets:foldl(fun({Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, {PreloadNumPassed0, PreloadNumFailed0, PreloadNumPruned0, PreloadClassificationsExplored0, PreloadAdditionalTraces0}) ->
-        case execute_schedule(Nodes, Counterexample, PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, PreloadClassificationsExplored0, PreloadAdditionalTraces0) of
+        case execute_schedule(StartTime, Nodes, Counterexample, PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, PreloadClassificationsExplored0, PreloadAdditionalTraces0) of
             pruned ->
                 {PreloadNumPassed0, PreloadNumFailed0, PreloadNumPruned0 + 1, PreloadClassificationsExplored0, PreloadAdditionalTraces0};
             {passed, ClassificationsExplored, NewTraces} ->
@@ -770,9 +770,9 @@ analyze(Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPruned0, Preload
     %% Should we explore any new schedules we have discovered?
     case os:getenv("RECURSIVE") of 
         "true" ->
-            analyze(Nodes, Counterexample, Pass + 1, PreloadNumPassed, PreloadNumFailed, PreloadNumPruned, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, 1, [], PreloadAdditionalTraces);
+            analyze(StartTime, Nodes, Counterexample, Pass + 1, PreloadNumPassed, PreloadNumFailed, PreloadNumPruned, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, 1, [], PreloadAdditionalTraces);
         _ ->
-            analyze(Nodes, Counterexample, Pass + 1, PreloadNumPassed, PreloadNumFailed, PreloadNumPruned, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, GenIteration, PreloadClassificationsExplored, RestTraceLines)
+            analyze(StartTime, Nodes, Counterexample, Pass + 1, PreloadNumPassed, PreloadNumFailed, PreloadNumPruned, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, GenIteration, PreloadClassificationsExplored, RestTraceLines)
     end.
 
 %% @doc Generate the powerset of messages.
@@ -1039,7 +1039,7 @@ message_types(TraceLines) ->
     end, TraceLines).
 
 %% @privae
-execute_schedule(Nodes, Counterexample, PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, ClassificationsExplored0, NewTraces0) ->
+execute_schedule(StartTime, Nodes, Counterexample, PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, ClassificationsExplored0, NewTraces0) ->
     Classification = dict:to_list(ClassifySchedule),
 
     case ScheduleValid of 
@@ -1140,6 +1140,11 @@ execute_schedule(Nodes, Counterexample, PreloadOmissionFile, ReplayTraceFile, Tr
                                 false ->
                                     ok;
                                 "true" ->
+                                    EndTime = os:timestamp(),
+                                    Difference = timer:now_diff(EndTime, StartTime),
+                                    DifferenceMs = Difference / 1000,
+                                    DifferenceSec = DifferenceMs / 1000,
+                                    debug("Counterexample identified in ~p seconds.~n", [DifferenceSec]),
                                     exit({error, counterexample_found});
                                 _Other ->
                                     ok
