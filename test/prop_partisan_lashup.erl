@@ -237,7 +237,14 @@ node_begin_case() ->
     %% Load, configure, and start lashup.
     lists:foreach(fun({ShortName, _}) ->
         node_debug("starting lashup at node ~p", [ShortName]),
-        ok = rpc:call(?NAME(ShortName), application, load, [lashup]),
+        case rpc:call(?NAME(ShortName), application, load, [lashup]) of 
+            ok ->
+                ok;
+            {error, {already_loaded, paxoid}} ->
+                ok;
+            Other ->
+                exit({error, {load_failed, Other}})
+        end,
 
         node_debug("starting lashup at node ~p", [ShortName]),
         {ok, _} = rpc:call(?NAME(ShortName), application, ensure_all_started, [lashup])

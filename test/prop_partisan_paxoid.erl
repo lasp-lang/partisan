@@ -55,8 +55,8 @@ names() ->
 %% What node-specific operations should be called.
 node_commands() ->
     [
-     {call, ?MODULE, next_id, [node_name()]},
-     {call, ?MODULE, set_fault, [node_name(), boolean()]}
+    %  {call, ?MODULE, set_fault, [node_name(), boolean()]},
+     {call, ?MODULE, next_id, [node_name()]}
     ].
 
 %% Assertion commands.
@@ -88,6 +88,8 @@ node_precondition(_NodeState, _Command) ->
     false.
 
 %% Next state.
+node_next_state(_State, NodeState, {badrpc, timeout}, {call, ?MODULE, next_id, [_Node]}) ->
+    NodeState;
 node_next_state(_State, #node_state{counter=Counter}=NodeState, _Value, {call, ?MODULE, next_id, [_Node]}) ->
     NodeState#node_state{counter=Counter+1};
 node_next_state(_State, NodeState, _Response, _Command) ->
@@ -113,7 +115,7 @@ node_postcondition(_NodeState, {call, ?MODULE, set_fault, [_Node, _Value]}, ok) 
 node_postcondition(_NodeState, {call, ?MODULE, sleep, []}, _Result) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, next_id, [_Node]}, {badrpc,timeout}) ->
-    false;
+    true;
 node_postcondition(#node_state{counter=Counter}, {call, ?MODULE, next_id, [_Node]}, Value) ->
     node_debug("postcondition received ~p from next_id when value should be: ~p", [Value, Counter + 1]),
 
@@ -241,7 +243,14 @@ node_begin_case() ->
     %% Load, configure, and start paxoid.
     lists:foreach(fun({ShortName, _}) ->
         node_debug("starting paxoid at node ~p", [ShortName]),
-        ok = rpc:call(?NAME(ShortName), application, load, [paxoid]),
+        case rpc:call(?NAME(ShortName), application, load, [paxoid]) of 
+            ok ->
+                ok;
+            {error, {already_loaded, paxoid}} ->
+                ok;
+            Other ->
+                exit({error, {load_failed, Other}})
+        end,
 
         node_debug("configuring paxoid at node ~p", [ShortName]),
         ok = rpc:call(?NAME(ShortName), application, set_env, [paxoid, predefined, [paxoid]]),
