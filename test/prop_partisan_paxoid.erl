@@ -129,7 +129,7 @@ node_postcondition(#node_state{counter=Counter}, {call, ?MODULE, next_id, [_Node
 
     case Counter + 1 =:= Value of 
         false ->
-            node_debug("********* violation!~n", []),
+            node_debug("postcondition: sequence has been duplicated: value is ~p should be ~p", [Value, Counter + 1]),
             ok;
         true ->
             ok
@@ -180,7 +180,7 @@ next_id(Node) ->
     ?PROPERTY_MODULE:command_preamble(Node, [next_id, Node]),
 
     Result = rpc:call(?NAME(Node), paxoid, next_id, [?GROUP], ?TIMEOUT),
-    node_debug("*** next_id for node: ~p yieleded: ~p", [node(), Result]),
+    node_debug("next_id for node: ~p yieleded: ~p", [node(), Result]),
 
     ?PROPERTY_MODULE:command_conclusion(Node, [next_id, Node]),
 
