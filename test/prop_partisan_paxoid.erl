@@ -99,7 +99,7 @@ node_next_state(_State, NodeState, _Response, _Command) ->
 node_postcondition(#node_state{counter=Counter}, {call, ?MODULE, max_id, []}, Results) ->
     node_debug("postcondition received ~p from max_id", [Results]),
 
-    lists:all(fun({Node, Result}) -> 
+    CorrectNodes = lists:filter(fun({Node, Result}) -> 
         case Counter =:= Result of
             true ->
                 true;
@@ -107,13 +107,23 @@ node_postcondition(#node_state{counter=Counter}, {call, ?MODULE, max_id, []}, Re
                 case Result of 
                     undefined ->
                         %% Crashed node.
-                        true; 
+                        false; 
                     _ ->
                         node_debug("=> node: ~p has wrong value: ~p, should be ~p", [Node, Result, Counter]),
                         false
                 end
         end
-    end, Results);
+    end, Results),
+
+    node_debug("=> number of correct nodes: ~p", [length(CorrectNodes)]),
+    case length(CorrectNodes) >= (length(names()) / 2 + 1) of 
+        true ->
+            node_debug("=> majority present!", []),
+            true;
+        false ->
+            node_debug("=> majority NOT present!", []),
+            false
+    end;
 node_postcondition(_NodeState, {call, ?MODULE, set_fault, [_Node, _Value]}, ok) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, sleep, []}, _Result) ->
