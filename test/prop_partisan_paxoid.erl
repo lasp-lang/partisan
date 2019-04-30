@@ -191,6 +191,9 @@ next_id(Node) ->
     Result = rpc:call(?NAME(Node), paxoid, next_id, [?GROUP], ?TIMEOUT),
     node_debug("next_id for node: ~p yieleded: ~p", [node(), Result]),
 
+    node_debug("sleeping...", []),
+    timer:sleep(2000),
+
     ?PROPERTY_MODULE:command_conclusion(Node, [next_id, Node]),
 
     Result.
