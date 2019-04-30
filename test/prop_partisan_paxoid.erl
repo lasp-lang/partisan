@@ -121,6 +121,9 @@ node_postcondition(_NodeState, {call, ?MODULE, sleep, []}, _Result) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, next_id, [_Node]}, {badrpc,timeout}) ->
     true;
+node_postcondition(_NodeState, {call, ?MODULE, next_id, [_Node]}, {badrpc, _}) ->
+    %% badrpc is fine, timeout is acceptable if no write occurred.
+    true;
 node_postcondition(#node_state{counter=Counter}, {call, ?MODULE, next_id, [_Node]}, Value) ->
     node_debug("postcondition received ~p from next_id when value should be: ~p", [Value, Counter + 1]),
 
