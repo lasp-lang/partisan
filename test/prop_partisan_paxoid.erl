@@ -28,9 +28,8 @@
 
 -compile([export_all]).
 
--define(PERFORM_SUMMARY, false).
-
 -define(GROUP, paxoid).
+
 -define(TIMEOUT, 10000).
 
 %%%===================================================================
