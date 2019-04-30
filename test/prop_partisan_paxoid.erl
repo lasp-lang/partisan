@@ -278,6 +278,14 @@ node_begin_case() ->
     ok.
 
 %% @private
+node_crash(Node) ->
+    %% Stop paxoid.
+    node_debug("stopping paxoid on node ~p", [Node]),
+    ok = rpc:call(?NAME(Node), application, stop, [paxoid]),
+
+    ok.
+
+%% @private
 node_end_case() ->
     node_debug("ending case", []),
 
