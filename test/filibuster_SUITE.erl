@@ -553,6 +553,9 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
                 false
         end,
 
+        % debug("EarlyCausality: ~p~n", [EarlyCausality]),
+        % debug("EarlyClassification: ~p~n", [EarlyClassification]),
+
         % debug("OmissionTypes: ~p~n", [message_types(Omissions)]),
         % DifferenceOmissionTypes = message_types(Omissions) -- message_types(BaseOmissions),
         % debug("DifferenceOmissionTypes: ~p~n", [DifferenceOmissionTypes]),
@@ -841,44 +844,58 @@ message_type(Message) ->
 %% @private
 schedule_valid_causality(Causality, PrefixSchedule, _OmittedSchedule, ConditionalSchedule) ->
     DerivedSchedule = PrefixSchedule ++ ConditionalSchedule,
-    % debug("derived_schedule: ~p~n", [length(DerivedSchedule)]),
-    % debug("prefix_schedule: ~p~n", [length(PrefixSchedule)]),
-    % debug("omitted_schedule: ~p~n", [length(OmittedSchedule)]),
-    % debug("conditional_schedule: ~p~n", [length(ConditionalSchedule)]),
+    % debug("length(DerivedSchedule): ~p~n", [length(DerivedSchedule)]),
+    % debug("length(PrefixSchedule): ~p~n", [length(PrefixSchedule)]),
+    % debug("length(OmittedSchedule): ~p~n", [length(OmittedSchedule)]),
+    % debug("length(ConditionalSchedule): ~p~n", [length(ConditionalSchedule)]),
+    % debug("Causality: ~p~n", [dict:to_list(Causality)]),
 
     RequirementsMet = lists:foldl(fun(Type, Acc) ->
         % debug("=> Type: ~p~n", [Type]),
 
-        All = lists:foldl(fun({K, V}, Acc1) ->
+        {AtLeastOneDependency, SatifyingDependency} = lists:foldl(fun({K, V}, {_AtLeastOne, Found}) ->
             % debug("=> V: ~p~n", [V]),
 
-            case lists:member(Type, V) of 
+            case Found of 
                 true ->
-                    % debug("=> Presence of ~p requires: ~p~n", [Type, K]),
-
-                    case lists:member(K, DerivedSchedule) of 
-                        true ->
-                            % debug("=> Present!~n", []),
-                            true andalso Acc1;
-                        false ->
-                            % debug("=> NOT Present!~n", []),
-                            false andalso Acc1
-                    end;
+                    % debug("=> already found satisfyng dependency for ~p, not checking further~n", [Type]),
+                    {true, true};
                 false ->
-                    % debug("=> * fallthrough: ~p not in ~p.~n", [Type, V]),
-                    true andalso Acc1
-            end
-        end, Acc, dict:to_list(Causality)),
+                    case lists:member(Type, V) of 
+                        true ->
+                            % debug("=> Presence of ~p requires: ~p~n", [Type, K]),
 
-        All andalso Acc
+                            case lists:member(K, DerivedSchedule) of 
+                                true ->
+                                    % debug("=> Present!~n", []),
+                                    {true, true};
+                                false ->
+                                    % debug("=> NOT Present!~n", []),
+                                    {true, false}
+                            end;
+                        false ->
+                            % debug("=> * fallthrough: ~p not in ~p.~n", [Type, V]),
+                            {false, false}
+                    end
+            end
+        end, {false, false}, dict:to_list(Causality)),
+
+        case AtLeastOneDependency of 
+            true ->
+                %% We searched at least once, but didn't find one.
+                SatifyingDependency andalso Acc;
+            false ->
+                %% This message has no dependencies, therefore it can always occur.
+                Acc
+        end
     end, true, DerivedSchedule),
 
     case RequirementsMet of 
         true ->
-            % debug("Causality verified.~n", []),
+            debug("Causality verified.~n", []),
             ok;
         false ->
-            % debug("Schedule does not represent a valid schedule!~n", []),
+            debug("Schedule does not represent a valid schedule!~n", []),
             ok
     end,
 
@@ -958,7 +975,7 @@ identify_minimal_witnesses() ->
 
 %% @private
 classify_schedule(_N, CausalityAnnotations, PrefixSchedule, _OmittedSchedule, ConditionalSchedule) ->
-    debug("classifying schedule using causality annotations: ~p", [dict:to_list(CausalityAnnotations)]),
+    % debug("classifying schedule using causality annotations: ~p", [dict:to_list(CausalityAnnotations)]),
 
     DerivedSchedule = PrefixSchedule ++ ConditionalSchedule,
 
@@ -967,19 +984,19 @@ classify_schedule(_N, CausalityAnnotations, PrefixSchedule, _OmittedSchedule, Co
             case Precondition of 
                 {PreconditionType, N} ->
                     Num = length(lists:filter(fun(T) -> T =:= PreconditionType end, DerivedSchedule)),
-                    debug("=> * found ~p messages of type ~p~n", [Num, PreconditionType]),
+                    % debug("=> * found ~p messages of type ~p~n", [Num, PreconditionType]),
                     Acc andalso Num >= N;
                 true ->
-                    debug("=> * found true precondition", []),
+                    % debug("=> * found true precondition", []),
                     Acc andalso true
             end
         end, true, Preconditions),
 
-        debug("=> type: ~p, preconditions: ~p~n", [Type, Result]),
+        % debug("=> type: ~p, preconditions: ~p~n", [Type, Result]),
         dict:store(Type, Result, Dict0)
     end, dict:new(), dict:to_list(CausalityAnnotations)),
 
-    debug("classification: ~p~n", [dict:to_list(Classification)]),
+    % debug("classification: ~p~n", [dict:to_list(Classification)]),
 
     Classification.
 
@@ -1028,7 +1045,7 @@ ensure_preconditions_present(Causality, CausalityAnnotations, BackgroundAnnotati
                     true ->
                         Acc andalso true;
                     false ->
-                        debug("Precondition not found for message type: ~p~n", [Message]),
+                        % debug("Precondition not found for message type: ~p~n", [Message]),
                         Acc andalso false
                 end
         end
@@ -1170,45 +1187,56 @@ execute_schedule(StartTime, Nodes, Counterexample, PreloadOmissionFile, ReplayTr
 schedule_valid_causality(Causality, CandidateTrace0) ->
     CandidateTrace = message_types(CandidateTrace0),
 
-    % debug("derived_schedule: ~p~n", [length(DerivedSchedule)]),
-    % debug("prefix_schedule: ~p~n", [length(PrefixSchedule)]),
-    % debug("omitted_schedule: ~p~n", [length(OmittedSchedule)]),
-    % debug("conditional_schedule: ~p~n", [length(ConditionalSchedule)]),
+    % debug("CandidateTrace: ~p~n", [CandidateTrace]),
+    % debug("Causality: ~p~n", [dict:to_list(Causality)]),
 
     RequirementsMet = lists:foldl(fun(Type, Acc) ->
         % debug("=> Type: ~p~n", [Type]),
 
-        All = lists:foldl(fun({K, V}, Acc1) ->
+        {AtLeastOneDependency, SatifyingDependency} = lists:foldl(fun({K, V}, {_AtLeastOne, Found}) ->
             % debug("=> V: ~p~n", [V]),
 
-            case lists:member(Type, V) of 
+            case Found of 
                 true ->
-                    % debug("=> Presence of ~p requires: ~p~n", [Type, K]),
-
-                    SearchType = case K of 
-                        {receive_message, T} ->
-                            {forward_message, T};
-                        Other ->
-                            Other
-                    end,
-
-                    % debug("=> Rewriting to look for send of same message type: ~p~n", [SearchType]),
-
-                    case lists:member(SearchType, CandidateTrace) of 
-                        true ->
-                            % debug("=> Present!~n", []),
-                            true andalso Acc1;
-                        false ->
-                            % debug("=> NOT Present!~n", []),
-                            false andalso Acc1
-                    end;
+                    % debug("=> already found satisfying dependency for ~p, not checking further~n", [Type]),
+                    {true, true};
                 false ->
-                    % debug("=> * fallthrough: ~p not in ~p.~n", [Type, V]),
-                    true andalso Acc1
-            end
-        end, Acc, dict:to_list(Causality)),
+                    case lists:member(Type, V) of 
+                        true ->
+                            % debug("=> Presence of ~p requires: ~p~n", [Type, K]),
 
-        All andalso Acc
+                            SearchType = case K of 
+                                {receive_message, T} ->
+                                    {forward_message, T};
+                                Other ->
+                                    Other
+                            end,
+
+                            % debug("=> Rewriting to look for send of same message type: ~p~n", [SearchType]),
+
+                            case lists:member(SearchType, CandidateTrace) of 
+                                true ->
+                                    % debug("=> Present!~n", []),
+                                    {true, true};
+                                false ->
+                                    % debug("=> NOT Present!~n", []),
+                                    {true, false}
+                            end;
+                        false ->
+                            % debug("=> * fallthrough: ~p not in ~p.~n", [Type, V]),
+                            {false, false}
+                    end
+            end
+        end, {false, false}, dict:to_list(Causality)),
+
+        case AtLeastOneDependency of 
+            true ->
+                %% We searched at least once, but didn't find one.
+                SatifyingDependency andalso Acc;
+            false ->
+                %% This message has no dependencies, therefore it can always occur.
+                Acc
+        end
     end, true, CandidateTrace),
 
     case RequirementsMet of 
