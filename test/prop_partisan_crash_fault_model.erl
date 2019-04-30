@@ -587,16 +587,15 @@ wait_until_result(Fun, Result, Retry, Delay) when Retry > 0 ->
     end.
 
 %% @private
-internal_crash(Name) ->
-    case ct_slave:stop(Name) of
-        {ok, _} ->
-            ok;
-        {error, stop_timeout, _} ->
-            fault_debug("Failed to stop node ~p: stop_timeout!", [Name]),
-            internal_crash(Name),
-            ok;
-        {error, not_started, _} ->
-            ok;
-        Error ->
-            ct:fail(Error)
+system_model() ->
+    case os:getenv("SYSTEM_MODEL") of
+        false ->
+            exit({error, no_system_model_specified});
+        SystemModel ->
+            list_to_atom(SystemModel)
     end.
+
+%% @private
+internal_crash(Name) ->
+    SystemModel = system_model(),
+    SystemModel:node_crash(Name).
