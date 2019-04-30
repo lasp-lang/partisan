@@ -308,7 +308,14 @@ node_end_case() ->
     node_debug("stopping paxoid", []),
     lists:foreach(fun({ShortName, _}) ->
         node_debug("stopping paxoid on node ~p", [ShortName]),
-        ok = rpc:call(?NAME(ShortName), application, stop, [paxoid])
+        case rpc:call(?NAME(ShortName), application, stop, [paxoid]) of 
+            ok ->
+                ok;
+            {error, {not_started, paxoid}} ->
+                ok;
+            Other ->
+                ct:fail({error, Other})
+        end
     end, Nodes),
 
     ok.
