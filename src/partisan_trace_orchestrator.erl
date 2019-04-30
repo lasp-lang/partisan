@@ -767,18 +767,18 @@ background_annotations() ->
             [];
         true ->
             {ok, [RawAnnotations]} = file:consult(AnnotationsFile),
-            io:format("Raw annotations loaded: ~p~n", [RawAnnotations]),
+            % io:format("Raw annotations loaded: ~p~n", [RawAnnotations]),
             AllAnnotations = dict:from_list(RawAnnotations),
-            io:format("Annotations loaded: ~p~n", [dict:to_list(AllAnnotations)]),
+            % io:format("Annotations loaded: ~p~n", [dict:to_list(AllAnnotations)]),
 
-            {ok, RawCausalityAnnotations} = dict:find(causality, AllAnnotations),
-            io:format("Raw causality annotations loaded: ~p~n", [RawCausalityAnnotations]),
+            % {ok, RawCausalityAnnotations} = dict:find(causality, AllAnnotations),
+            % io:format("Raw causality annotations loaded: ~p~n", [RawCausalityAnnotations]),
 
-            CausalityAnnotations = dict:from_list(RawCausalityAnnotations),
-            io:format("Causality annotations loaded: ~p~n", [dict:to_list(CausalityAnnotations)]),
+            % CausalityAnnotations = dict:from_list(RawCausalityAnnotations),
+            % io:format("Causality annotations loaded: ~p~n", [dict:to_list(CausalityAnnotations)]),
 
             {ok, BackgroundAnnotations} = dict:find(background, AllAnnotations),
-            io:format("Background annotations loaded: ~p~n", [BackgroundAnnotations]),
+            % io:format("Background annotations loaded: ~p~n", [BackgroundAnnotations]),
 
             BackgroundAnnotations
     end.
