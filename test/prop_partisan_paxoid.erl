@@ -55,7 +55,8 @@ names() ->
 node_commands() ->
     [
     %  {call, ?MODULE, set_fault, [node_name(), boolean()]},
-     {call, ?MODULE, next_id, [node_name()]}
+     {call, ?MODULE, next_id, [node_name()]},
+     {call, ?MODULE, sleep, []}
     ].
 
 %% Assertion commands.
