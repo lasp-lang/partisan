@@ -337,7 +337,7 @@ init(Nodes, _Counterexample, TraceFile, ReplayTraceFile, CounterexampleConsultFi
 
     {ok, [RawCausality]} = file:consult(CausalityFile),
     Causality = dict:from_list(RawCausality),
-    debug("Causality loaded: ~p~n", [dict:to_list(Causality)]),
+    % debug("Causality loaded: ~p~n", [dict:to_list(Causality)]),
 
     %% Open the annotations file.
     AnnotationsFile = BasePath ++ "/annotations/partisan-annotations-" ++ ModuleString,
@@ -351,9 +351,9 @@ init(Nodes, _Counterexample, TraceFile, ReplayTraceFile, CounterexampleConsultFi
     end,
 
     {ok, [RawAnnotations]} = file:consult(AnnotationsFile),
-    debug("Raw annotations loaded: ~p~n", [RawAnnotations]),
+    % debug("Raw annotations loaded: ~p~n", [RawAnnotations]),
     AllAnnotations = dict:from_list(RawAnnotations),
-    debug("Annotations loaded: ~p~n", [dict:to_list(AllAnnotations)]),
+    % debug("Annotations loaded: ~p~n", [dict:to_list(AllAnnotations)]),
 
     {ok, RawCausalityAnnotations} = dict:find(causality, AllAnnotations),
     debug("Raw causality annotations loaded: ~p~n", [RawCausalityAnnotations]),
