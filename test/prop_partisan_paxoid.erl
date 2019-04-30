@@ -88,7 +88,8 @@ node_precondition(_NodeState, _Command) ->
     false.
 
 %% Next state.
-node_next_state(_State, NodeState, {badrpc, timeout}, {call, ?MODULE, next_id, [_Node]}) ->
+node_next_state(_State, NodeState, {badrpc, _}, {call, ?MODULE, next_id, [_Node]}) ->
+    %% don't advance expected counter if a badrpc is generated.
     NodeState;
 node_next_state(_State, #node_state{counter=Counter}=NodeState, _Value, {call, ?MODULE, next_id, [_Node]}) ->
     NodeState#node_state{counter=Counter+1};
