@@ -115,5 +115,8 @@ skeen-3pc: kill bin-perms compile
 lampson-2pc-noise: kill bin-perms compile
 	SYSTEM_MODEL=prop_partisan_reliable_broadcast EXIT_ON_COUNTEREXAMPLE=true NOISE=true RECURSIVE=false PRELOAD_SCHEDULES=false MODULE=lampson_2pc SUBLIST=0 bin/check-model.sh
 
+paxoid: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_paxoid RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=paxoid SUBLIST=0 bin/check-paxoid.sh
+
 lashup: kill bin-perms compile
 	SYSTEM_MODEL=prop_partisan_lashup RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=lashup SUBLIST=0 bin/check-lashup.sh
