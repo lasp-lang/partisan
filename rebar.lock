@@ -35,7 +35,7 @@
  {<<"merkerl">>,{pkg,<<"merkerl">>,<<"1.0.1">>},1},
  {<<"paxoid">>,
   {git,"git://github.com/cmeiklejohn/paxoid",
-       {ref,"10074f2308507eb3b2ca7b01eb2d3e20f723dbd3"}},
+       {ref,"897eb32a54a53a1e95a0e6cfbbfdadc0014cc8ab"}},
   0},
  {<<"prometheus">>,{pkg,<<"prometheus">>,<<"4.2.0">>},1},
  {<<"quickrand">>,{pkg,<<"quickrand">>,<<"1.7.5">>},1},
