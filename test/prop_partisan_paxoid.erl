@@ -194,9 +194,14 @@ max_id() ->
     ?PROPERTY_MODULE:command_preamble(RunnerNode, [max_id]),
 
     Results = lists:map(fun(Node) ->
-        {ok, Result} = rpc:call(?NAME(Node), paxoid, max_id, [?GROUP], ?TIMEOUT),
-        node_debug("node: ~p result of max_id: ~p~n", [Node, Result]),
-        {Node, Result}
+        case rpc:call(?NAME(Node), paxoid, max_id, [?GROUP], ?TIMEOUT) of 
+            {ok, Result} ->
+                node_debug("node: ~p result of max_id: ~p~n", [Node, Result]),
+                {Node, Result};
+            {badrpc, _} ->
+                node_debug("node: ~p result of max_id undefined: crash", [Node]),
+                {Node, undefined}
+        end
     end, names()),
 
     ?PROPERTY_MODULE:command_conclusion(RunnerNode, [max_id]),
