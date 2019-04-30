@@ -221,7 +221,7 @@ resolve_all_faults_with_crash() ->
                 ToCrash;
             {ok, InterpositionFuns0} ->
                 InterpositionFuns = dict:to_list(InterpositionFuns0),
-                fault_debug("=> InterpositionFuns: ~p", [InterpositionFuns]),
+                % fault_debug("=> InterpositionFuns: ~p", [InterpositionFuns]),
 
                 %% TODO: This is not good -- previous code made an assumption
                 %% that interposition funs define whether or not a node is faulted.
@@ -229,7 +229,7 @@ resolve_all_faults_with_crash() ->
                 InterpositionFuns1 = lists:filter(fun({{InterpositionType, _}, _}) ->
                     lists:member(InterpositionType, [send_omission, receive_omission])
                 end, InterpositionFuns),
-                fault_debug("=> InterpositionFuns1: ~p", [InterpositionFuns1]),
+                % fault_debug("=> InterpositionFuns1: ~p", [InterpositionFuns1]),
 
                 %% Remove all interposition functions.
                 ToCrash1 = lists:map(fun({_InterpositionName, _Function}) ->
