@@ -252,19 +252,19 @@ node_begin_case() ->
 
     %% Enable pid encoding.
     lists:foreach(fun({ShortName, _}) ->
-        node_debug("enabling pid_encoding at node ~p", [ShortName]),
+        % node_debug("enabling pid_encoding at node ~p", [ShortName]),
         ok = rpc:call(?NAME(ShortName), partisan_config, set, [pid_encoding, true])
     end, Nodes),
 
     %% Enable register_pid_for_encoding.
     lists:foreach(fun({ShortName, _}) ->
-        node_debug("enabling register_pid_for_encoding at node ~p", [ShortName]),
+        % node_debug("enabling register_pid_for_encoding at node ~p", [ShortName]),
         ok = rpc:call(?NAME(ShortName), partisan_config, set, [register_pid_for_encoding, true])
     end, Nodes),
 
     %% Load, configure, and start paxoid.
     lists:foreach(fun({ShortName, _}) ->
-        node_debug("starting paxoid at node ~p", [ShortName]),
+        % node_debug("starting paxoid at node ~p", [ShortName]),
         case rpc:call(?NAME(ShortName), application, load, [paxoid]) of 
             ok ->
                 ok;
@@ -274,35 +274,35 @@ node_begin_case() ->
                 exit({error, {load_failed, Other}})
         end,
 
-        node_debug("configuring paxoid at node ~p", [ShortName]),
+        % node_debug("configuring paxoid at node ~p", [ShortName]),
         ok = rpc:call(?NAME(ShortName), application, set_env, [paxoid, predefined, [paxoid]]),
 
-        node_debug("starting paxoid at node ~p", [ShortName]),
+        % node_debug("starting paxoid at node ~p", [ShortName]),
         {ok, _} = rpc:call(?NAME(ShortName), application, ensure_all_started, [paxoid])
     end, Nodes),
 
     %% Join.
     OtherNodes = lists:map(fun({ShortName, _}) -> ?NAME(ShortName) end, tl(Nodes)),
     {FirstName, _} = hd(Nodes),
-    node_debug("joining all nodes with paxoid to first node: ~p: ~p", [FirstName, OtherNodes]),
+    % node_debug("joining all nodes with paxoid to first node: ~p: ~p", [FirstName, OtherNodes]),
     ok = rpc:call(?NAME(FirstName), paxoid, join, [?GROUP, OtherNodes]),
 
     %% Info.
-    node_debug("getting info from paxoid on first node", []),
-    {ok, Info} = rpc:call(?NAME(FirstName), paxoid, info, [?GROUP]),
-    node_debug("=> info: ~p", [Info]),
+    % node_debug("getting info from paxoid on first node", []),
+    % {ok, Info} = rpc:call(?NAME(FirstName), paxoid, info, [?GROUP]),
+    % node_debug("=> info: ~p", [Info]),
 
     %% Sleep.
-    node_debug("sleeping for convergence", []),
+    % node_debug("sleeping for convergence", []),
     timer:sleep(1000),
-    node_debug("done.", []),
+    % node_debug("done.", []),
 
     ok.
 
 %% @private
 node_crash(Node) ->
     %% Stop paxoid.
-    node_debug("stopping paxoid on node ~p", [Node]),
+    % node_debug("stopping paxoid on node ~p", [Node]),
     ok = rpc:call(?NAME(Node), application, stop, [paxoid]),
 
     ok.
