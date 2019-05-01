@@ -49,14 +49,13 @@ names() ->
 %%% Node Functions
 %%%===================================================================
 
--record(node_state, {counter}).
+-record(node_state, {counter, node_writes}).
 
 %% What node-specific operations should be called.
 node_commands() ->
     [
-    %  {call, ?MODULE, set_fault, [node_name(), boolean()]},
      {call, ?MODULE, next_id, [node_name()]},
-     {call, ?MODULE, wait, [node_name()]},
+    %  {call, ?MODULE, wait, [node_name()]},
      {call, ?MODULE, sleep, []}
     ].
 
@@ -71,7 +70,7 @@ node_global_functions() ->
 %% What should the initial node state be.
 node_initial_state() ->
     node_debug("initializing", []),
-    #node_state{counter=0}.
+    #node_state{counter=0, node_writes=dict:new()}.
 
 %% Names of the node functions so we kow when we can dispatch to the node
 %% pre- and postconditions.
@@ -83,8 +82,6 @@ node_precondition(_NodeState, {call, ?MODULE, sleep, []}) ->
     true;
 node_precondition(_NodeState, {call, ?MODULE, wait, [_Node]}) ->
     true;
-node_precondition(_NodeState, {call, ?MODULE, set_fault, [_Node, _Value]}) ->
-    true;
 node_precondition(_NodeState, {call, ?MODULE, next_id, [_Node]}) ->
     true;
 node_precondition(_NodeState, _Command) ->
@@ -94,33 +91,78 @@ node_precondition(_NodeState, _Command) ->
 node_next_state(_State, NodeState, {badrpc, _}, {call, ?MODULE, next_id, [_Node]}) ->
     %% don't advance expected counter if a badrpc is generated.
     NodeState;
-node_next_state(_State, #node_state{counter=Counter}=NodeState, _Value, {call, ?MODULE, next_id, [_Node]}) ->
-    NodeState#node_state{counter=Counter+1};
+node_next_state(_State, #node_state{counter=Counter, node_writes=NodeWrites0}=NodeState, _Value, {call, ?MODULE, next_id, [Node]}) ->
+    NodeWrites = dict:update_counter(Node, 1, NodeWrites0),
+    NodeState#node_state{counter=Counter+1, node_writes=NodeWrites};
 node_next_state(_State, NodeState, _Response, _Command) ->
     NodeState.
 
 %% Postconditions for node commands.
-node_postcondition(#node_state{counter=Counter}, {call, ?MODULE, max_id, []}, Results) ->
+node_postcondition(#node_state{node_writes=NodeWrites, counter=Counter}, {call, ?MODULE, max_id, []}, Results) ->
     node_debug("postcondition received ~p from max_id", [Results]),
 
-    CorrectNodes = lists:filter(fun({Node, Result}) -> 
-        case Result >= Counter of
-            true ->
+    %% Find the crashed nodes.
+    CrashedNodes = lists:filter(fun({_Node, Result}) -> 
+        case Result of 
+            undefined ->
                 true;
-            false ->
-                case Result of 
-                    undefined ->
-                        %% Crashed node.
-                        false; 
-                    _ ->
+            _ ->
+                false
+        end
+    end, Results),
+
+    %% Find the number of writes done by crashed nodes.
+    ConditionalWrites = lists:foldl(fun({Node, _Results}, Writes) ->
+        case dict:find(Node, NodeWrites) of 
+            {ok, Value} ->
+                node_debug("=> node ~p found writes ~p", [Node, Value]),
+                Writes + Value;
+            Other ->
+                node_debug("=> node ~p FOUND NO writes ~p", [Node, Other]),
+                Writes
+        end
+    end, 0, CrashedNodes),
+
+    LowerBound = Counter - ConditionalWrites,
+
+    node_debug("NodeWrites: ~p", [dict:to_list(NodeWrites)]),
+    node_debug("CrashedNodes: ~p", [CrashedNodes]),
+    node_debug("ConditionalWrites: ~p", [ConditionalWrites]),
+    node_debug("LowerBound: ~p", [LowerBound]),
+
+    %% Ensure that a majority of nodes account for all the writes.
+    CorrectNodes = lists:filter(fun({Node, Result}) -> 
+        case Result of 
+            undefined ->
+                false;
+            _ ->
+                case Result >= LowerBound of 
+                    true ->
+                        true;
+                    false ->
                         node_debug("=> node: ~p has wrong value: ~p, should be ~p", [Node, Result, Counter]),
                         false
                 end
         end
     end, Results),
 
-    node_debug("=> number of correct nodes: ~p", [length(CorrectNodes)]),
-    case length(CorrectNodes) >= (length(names()) / 2 + 1) of 
+    AllResults = lists:map(fun({_Node, Result}) -> Result end, CorrectNodes),
+
+    Agreement = case lists:usort(AllResults) of
+        [_] ->
+            true;
+        _ ->
+            false
+    end,
+
+    node_debug("lists:usort(AllResults): ~p", [lists:usort(AllResults)]),
+    node_debug("AllResults: ~p", [AllResults]),
+    node_debug("Agreement: ~p", [Agreement]),
+    node_debug("length(CorrectNodes): ~p", [length(CorrectNodes)]),
+
+    MajorityNodes = (length(names()) / 2) + 1,
+
+    case length(CorrectNodes) >= MajorityNodes andalso Agreement of 
         true ->
             node_debug("=> majority present!", []),
             true;
@@ -128,14 +170,12 @@ node_postcondition(#node_state{counter=Counter}, {call, ?MODULE, max_id, []}, Re
             node_debug("=> majority NOT present!", []),
             false
     end;
-node_postcondition(_NodeState, {call, ?MODULE, set_fault, [_Node, _Value]}, ok) ->
-    true;
 node_postcondition(_NodeState, {call, ?MODULE, wait, [_Node]}, _Result) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, sleep, []}, _Result) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, next_id, [_Node]}, {badrpc,timeout}) ->
-    true;
+    false;
 node_postcondition(_NodeState, {call, ?MODULE, next_id, [_Node]}, {badrpc, _}) ->
     %% badrpc is fine, timeout is acceptable if no write occurred.
     true;
@@ -191,24 +231,14 @@ sleep() ->
     ok.
 
 %% @private
-set_fault(Node, Value) ->
-    ?PROPERTY_MODULE:command_preamble(Node, [set_fault, Node, Value]),
-
-    Result = rpc:call(?NAME(Node), partisan_config, set, [faulted, Value], ?TIMEOUT),
-
-    ?PROPERTY_MODULE:command_conclusion(Node, [set_fault, Node, Value]),
-
-    Result.
-
-%% @private
 next_id(Node) ->
     ?PROPERTY_MODULE:command_preamble(Node, [next_id, Node]),
 
     Result = rpc:call(?NAME(Node), paxoid, next_id, [?GROUP], ?TIMEOUT),
     node_debug("next_id for node: ~p yieleded: ~p", [node(), Result]),
 
-    node_debug("sleeping 250ms...", []),
-    timer:sleep(250),
+    % node_debug("sleeping 250ms...", []),
+    % timer:sleep(250),
 
     ?PROPERTY_MODULE:command_conclusion(Node, [next_id, Node]),
 
