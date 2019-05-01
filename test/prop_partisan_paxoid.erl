@@ -56,6 +56,7 @@ node_commands() ->
     [
     %  {call, ?MODULE, set_fault, [node_name(), boolean()]},
      {call, ?MODULE, next_id, [node_name()]},
+     {call, ?MODULE, wait, [node_name()]},
      {call, ?MODULE, sleep, []}
     ].
 
@@ -80,6 +81,8 @@ node_functions() ->
 %% Precondition.
 node_precondition(_NodeState, {call, ?MODULE, sleep, []}) ->
     true;
+node_precondition(_NodeState, {call, ?MODULE, wait, [_Node]}) ->
+    true;
 node_precondition(_NodeState, {call, ?MODULE, set_fault, [_Node, _Value]}) ->
     true;
 node_precondition(_NodeState, {call, ?MODULE, next_id, [_Node]}) ->
@@ -101,7 +104,7 @@ node_postcondition(#node_state{counter=Counter}, {call, ?MODULE, max_id, []}, Re
     node_debug("postcondition received ~p from max_id", [Results]),
 
     CorrectNodes = lists:filter(fun({Node, Result}) -> 
-        case Counter =:= Result of
+        case Result >= Counter of
             true ->
                 true;
             false ->
@@ -126,6 +129,8 @@ node_postcondition(#node_state{counter=Counter}, {call, ?MODULE, max_id, []}, Re
             false
     end;
 node_postcondition(_NodeState, {call, ?MODULE, set_fault, [_Node, _Value]}, ok) ->
+    true;
+node_postcondition(_NodeState, {call, ?MODULE, wait, [_Node]}, _Result) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, sleep, []}, _Result) ->
     true;
@@ -164,12 +169,22 @@ node_postcondition(_NodeState, Command, Response) ->
 -define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
 
 %% @private
+wait(Node) ->
+    ?PROPERTY_MODULE:command_preamble(Node, [wait]),
+
+    timer:sleep(2000),
+
+    ?PROPERTY_MODULE:command_conclusion(Node, [wait]),
+
+    ok.
+
+%% @private
 sleep() ->
     RunnerNode = node(),
 
     ?PROPERTY_MODULE:command_preamble(RunnerNode, [sleep]),
 
-    timer:sleep(4000),
+    timer:sleep(30000),
 
     ?PROPERTY_MODULE:command_conclusion(RunnerNode, [sleep]),
 
@@ -192,8 +207,8 @@ next_id(Node) ->
     Result = rpc:call(?NAME(Node), paxoid, next_id, [?GROUP], ?TIMEOUT),
     node_debug("next_id for node: ~p yieleded: ~p", [node(), Result]),
 
-    node_debug("sleeping...", []),
-    timer:sleep(2000),
+    node_debug("sleeping 250ms...", []),
+    timer:sleep(250),
 
     ?PROPERTY_MODULE:command_conclusion(Node, [next_id, Node]),
 
