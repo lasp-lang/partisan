@@ -266,11 +266,21 @@ resolve_all_faults_with_crash() ->
         end
     end, [], names()),
 
+    %% Any faulted nodes.
+    NodesToCrash1 = lists:foldl(fun(N, Acc) ->
+        case rpc:call(?NAME(N), partisan_config, get, [faulted]) of 
+            true ->
+                Acc ++ [N];
+            false ->
+                Acc
+        end 
+    end, [], names()),
+
     %% Crash faulted nodes.
     lists:foreach(fun(N) -> 
         fault_debug("crashing faulted node: ~p", [N]),
         internal_crash(N) 
-    end, NodesToCrash),
+    end, lists:usort(NodesToCrash ++ NodesToCrash1)),
 
     %% Sleep.
     timer:sleep(10000),
