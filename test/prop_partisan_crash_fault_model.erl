@@ -266,12 +266,12 @@ resolve_all_faults_with_crash() ->
         end
     end, [], names()),
 
-    %% Any faulted nodes.
+    %% Any faulted nodes should also be crashed.
     NodesToCrash1 = lists:foldl(fun(N, Acc) ->
         case rpc:call(?NAME(N), partisan_config, get, [faulted]) of 
             true ->
                 Acc ++ [N];
-            false ->
+            _ ->
                 Acc
         end 
     end, [], names()),
