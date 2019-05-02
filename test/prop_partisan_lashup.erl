@@ -297,8 +297,4 @@ node_end_case() ->
         end
     end, Nodes),
 
-    % %% Remove the old mnesia files.
-    % RmResult = os:cmd("rm -rf Mnesia.*"),
-    % node_debug("removing old mnesia files: result: ~p", [RmResult]),
-
     ok.
