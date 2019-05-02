@@ -68,7 +68,7 @@ node_assertion_functions() ->
 
 %% Global functions.
 node_global_functions() ->
-    [].
+    [sleep].
 
 %% What should the initial node state be.
 node_initial_state() ->
@@ -82,6 +82,8 @@ node_functions() ->
 
 %% Precondition.
 node_precondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}) ->
+    true;
+node_precondition(_NodeState, {call, ?MODULE, sleep, []}) ->
     true;
 node_precondition(#node_state{values=Values}, {call, ?MODULE, read, [_Node, Key]}) ->
     % node_debug("checking precondition for read operation on key: ~p with values: ~p", [Key, dict:to_list(Values)]),
@@ -103,6 +105,8 @@ node_next_state(_State, #node_state{values=Values0}=NodeState, _Response, {call,
     NodeState#node_state{values=Values};
 node_next_state(_State, NodeState, _Response, {call, ?MODULE, read, [_Node, _Key]}) ->
     NodeState;
+node_next_state(_State, NodeState, _Response, {call, ?MODULE, sleep, []}) ->
+    NodeState;
 node_next_state(_State, NodeState, Response, Command) ->
     node_debug("generic next_state called (this probably shouldn't be hit), command: ~p response: ~p", [Command, Response]),
     NodeState.
@@ -115,6 +119,8 @@ node_postcondition(#node_state{values=Values}, {call, ?MODULE, read, [_Node, Key
         _ ->
             false
     end;
+node_postcondition(_NodeState, {call, ?MODULE, sleep, []}, _Result) ->
+    true;
 node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {ok, _}) ->
     true;
 node_postcondition(_NodeState, Command, Response) ->
@@ -133,6 +139,19 @@ node_postcondition(_NodeState, Command, Response) ->
 
 -define(ETS, prop_partisan).
 -define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
+
+%% @private
+sleep() ->
+    RunnerNode = node(),
+
+    ?PROPERTY_MODULE:command_preamble(RunnerNode, [sleep]),
+
+    node_debug("sleeping for convergence...", []),
+    timer:sleep(40000),
+
+    ?PROPERTY_MODULE:command_conclusion(RunnerNode, [sleep]),
+
+    ok.
 
 %% @private
 write(Node, Key, Value) ->
