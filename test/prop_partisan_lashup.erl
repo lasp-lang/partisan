@@ -59,7 +59,8 @@ value() ->
 %% What node-specific operations should be called.
 node_commands() ->
     [
-     {call, ?MODULE, update, [node_name(), key(), value()]}
+     {call, ?MODULE, update, [node_name(), key(), value()]},
+     {call, ?MODULE, sleep, []}
     ].
 
 %% Assertion commands.
@@ -68,7 +69,7 @@ node_assertion_functions() ->
 
 %% Global functions.
 node_global_functions() ->
-    [sleep, check_delivery].
+    [check_delivery, sleep].
 
 %% What should the initial node state be.
 node_initial_state() ->
@@ -168,7 +169,8 @@ sleep() ->
 
     ?PROPERTY_MODULE:command_preamble(RunnerNode, [sleep]),
 
-    timer:sleep(20000),
+    node_debug("sleeping for convergence...", []),
+    timer:sleep(40000),
 
     ?PROPERTY_MODULE:command_conclusion(RunnerNode, [sleep]),
 
@@ -220,36 +222,44 @@ node_begin_case() ->
 
     %% Enable pid encoding.
     lists:foreach(fun({ShortName, _}) ->
-        node_debug("enabling pid_encoding at node ~p", [ShortName]),
+        % node_debug("enabling pid_encoding at node ~p", [ShortName]),
         ok = rpc:call(?NAME(ShortName), partisan_config, set, [pid_encoding, true])
     end, Nodes),
 
     %% Enable register_pid_for_encoding.
     lists:foreach(fun({ShortName, _}) ->
-        node_debug("enabling register_pid_for_encoding at node ~p", [ShortName]),
+        % node_debug("enabling register_pid_for_encoding at node ~p", [ShortName]),
         ok = rpc:call(?NAME(ShortName), partisan_config, set, [register_pid_for_encoding, true])
     end, Nodes),
 
     %% Load, configure, and start lashup.
     lists:foreach(fun({ShortName, _}) ->
-        node_debug("starting lashup at node ~p", [ShortName]),
+        % node_debug("starting lashup at node ~p", [ShortName]),
         case rpc:call(?NAME(ShortName), application, load, [lashup]) of 
             ok ->
                 ok;
-            {error, {already_loaded, paxoid}} ->
+            {error, {already_loaded, lashup}} ->
                 ok;
             Other ->
                 exit({error, {load_failed, Other}})
         end,
 
-        node_debug("starting lashup at node ~p", [ShortName]),
+        % node_debug("starting lashup at node ~p", [ShortName]),
         {ok, _} = rpc:call(?NAME(ShortName), application, ensure_all_started, [lashup])
     end, Nodes),
 
     %% Sleep.
-    node_debug("sleeping for convergence", []),
+    % node_debug("sleeping for convergence", []),
     timer:sleep(1000),
-    node_debug("done.", []),
+    % node_debug("done.", []),
+
+    ok.
+
+%% @private
+node_crash(Node) ->
+    %% Stop lashup.
+    % node_debug("stopping lashup on node ~p", [Node]),
+    ok = rpc:call(?NAME(Node), application, stop, [lashup]),
 
     ok.
 
@@ -261,18 +271,34 @@ node_end_case() ->
     [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
 
     %% Stop lashup.
-    node_debug("stopping lashup", []),
     lists:foreach(fun({ShortName, _}) ->
-        node_debug("stopping lashup on node ~p", [ShortName]),
+        % node_debug("stopping lashup on node ~p", [ShortName]),
         case rpc:call(?NAME(ShortName), application, stop, [lashup]) of 
             ok ->
                 ok;
             {badrpc, nodedown} ->
                 ok;
-            Other ->
-                node_debug("cannot terminate instance: ~p", [Other]),
+            {error, {not_started, lashup}} ->
+                ok;
+            LashupError ->
+                node_debug("cannot terminate lashup: ~p", [LashupError]),
+                exit({error, shutdown_failed})
+        end,
+
+        % node_debug("stopping prometheus on node ~p", [ShortName]),
+        case rpc:call(?NAME(ShortName), application, stop, [prometheus]) of 
+            ok ->
+                ok;
+            {badrpc, nodedown} ->
+                ok;
+            PrometheusError ->
+                node_debug("cannot terminate prometheus: ~p", [PrometheusError]),
                 exit({error, shutdown_failed})
         end
     end, Nodes),
+
+    % %% Remove the old mnesia files.
+    % RmResult = os:cmd("rm -rf Mnesia.*"),
+    % node_debug("removing old mnesia files: result: ~p", [RmResult]),
 
     ok.
