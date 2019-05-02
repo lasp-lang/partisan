@@ -120,3 +120,6 @@ paxoid: kill bin-perms compile
 
 lashup: kill bin-perms compile
 	SYSTEM_MODEL=prop_partisan_lashup RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=lashup SUBLIST=0 bin/check-lashup.sh
+
+zraft: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_zraft RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=zraft SUBLIST=0 bin/check-zraft.sh
