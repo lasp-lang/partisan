@@ -139,10 +139,15 @@ finite_fault_commands(Module) ->
                     [{set,{var,0},{call,fault_model(),resolve_all_faults_with_heal,[]}}]
             end,
 
-            %% Only global node commands.
-            CommandsWithOnlyGlobalNodeCommands = lists:map(fun(Fun) ->
+            %% Only global node commands without global assertions.
+            CommandsWithOnlyGlobalNodeCommandsWithoutAssertions = lists:map(fun(Fun) ->
                 {set,{var,0},{call,system_model(),Fun,[]}}
-            end, node_global_functions()), 
+            end, node_global_functions() -- node_assertion_functions()), 
+
+            %% Only global node commands with global assertions.
+            CommandsWithOnlyGlobalNodeCommandsAssertionsOnly = lists:map(fun(Fun) ->
+                {set,{var,0},{call,system_model(),Fun,[]}}
+            end, node_assertion_functions()), 
 
             %% Derive final command sequence.
             FinalCommands0 = lists:flatten(
@@ -152,8 +157,12 @@ finite_fault_commands(Module) ->
                 %% Commands to resolve failures.
                 ResolveCommands ++ 
 
+                %% Global commands without assertions.
+                CommandsWithOnlyGlobalNodeCommandsWithoutAssertions ++
+
                 %% Global assertions only.
-                CommandsWithOnlyGlobalNodeCommands),
+                CommandsWithOnlyGlobalNodeCommandsAssertionsOnly
+            ),
 
             %% Renumber command sequence.
             {FinalCommands, _} = lists:foldl(fun({set,{var,_Nth},{call,Mod,Fun,Args}}, {Acc, Next}) ->
