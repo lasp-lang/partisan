@@ -673,9 +673,9 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
                     end
                 end, {[], false, [], [], [], [], dict:new(), []}, TraceLines),
 
-                debug("PrefixMessageTypes: ~p~n", [PrefixMessageTypes]),
-                debug("OmittedMessageTypes: ~p~n", [OmittedMessageTypes]),
-                debug("ConditionalMessageTypes: ~p~n", [ConditionalMessageTypes]),
+                % debug("PrefixMessageTypes: ~p~n", [PrefixMessageTypes]),
+                % debug("OmittedMessageTypes: ~p~n", [OmittedMessageTypes]),
+                % debug("ConditionalMessageTypes: ~p~n", [ConditionalMessageTypes]),
                 % debug("length(MessageTypes): ~p~n", [length(PrefixMessageTypes ++ OmittedMessageTypes ++ ConditionalMessageTypes)]),
 
                 %% Is this schedule valid for these omissions?
