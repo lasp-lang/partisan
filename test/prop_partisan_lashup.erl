@@ -230,10 +230,6 @@ node_begin_case() ->
         ok = rpc:call(?NAME(ShortName), partisan_config, set, [register_pid_for_encoding, true])
     end, Nodes),
 
-    %% Remove the old mnesia files.
-    RmResult = os:cmd("rm -rf Mnesia.*"),
-    node_debug("removing old mnesia files: result: ~p", [RmResult]),
-
     %% Load, configure, and start lashup.
     lists:foreach(fun({ShortName, _}) ->
         node_debug("starting lashup at node ~p", [ShortName]),
