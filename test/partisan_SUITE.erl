@@ -1275,7 +1275,6 @@ otp_test(Config) ->
 
     %% Start the test backend on all the clients.
     lists:foreach(fun({_, Node}) ->
-        ct:pal("Going to start test backend on node ~p", [Node]),
         {ok, _} = rpc:call(Node, partisan_test_server, start_link, [])
     end, Nodes),
 

@@ -443,11 +443,11 @@ do_send(Dest, Msg) ->
     % end.
 
 do_multi_call(Nodes, Name, Req, infinity) ->
-    Tag = make_ref(),
+	Tag = partisan_util:ref(make_ref()),
     Monitors = send_nodes(Nodes, Name, Tag, Req),
     rec_nodes(Tag, Monitors, Name, undefined);
 do_multi_call(Nodes, Name, Req, Timeout) ->
-    Tag = make_ref(),
+	Tag = partisan_util:ref(make_ref()),
     Caller = self(),
     Receiver =
 	spawn(
@@ -484,12 +484,14 @@ do_multi_call(Nodes, Name, Req, Timeout) ->
 send_nodes(Nodes, Name, Tag, Req) ->
     send_nodes(Nodes, Name, Tag, Req, []).
 
-send_nodes([Node|Tail], Name, Tag, Req, Monitors)
+send_nodes([Node|Tail], Name, Tag, Req, _Monitors)
   when is_atom(Node) ->
-    Monitor = start_monitor(Node, Name),
+    % Monitor = start_monitor(Node, Name),
     %% Handle non-existing names in rec_nodes.
-    catch {Name, Node} ! {'$gen_call', {self(), {Tag, Node}}, Req},
-    send_nodes(Tail, Name, Tag, Req, [Monitor | Monitors]);
+	partisan_pluggable_peer_service_manager:forward_message(Node, undefined, Name, {'$gen_call', {self(), {Tag, Node}}, Req}, []),
+    % catch {Name, Node} ! {'$gen_call', {self(), {Tag, Node}}, Req},
+    % send_nodes(Tail, Name, Tag, Req, [Monitor | Monitors]);
+    send_nodes(Tail, Name, Tag, Req, []);
 send_nodes([_Node|Tail], Name, Tag, Req, Monitors) ->
     %% Skip non-atom Node
     send_nodes(Tail, Name, Tag, Req, Monitors);
@@ -511,11 +513,11 @@ rec_nodes(Tag, [{N,R}|Tail], Name, Badnodes, Replies, Time, TimerId ) ->
 	{'DOWN', R, _, _, _} ->
 	    rec_nodes(Tag, Tail, Name, [N|Badnodes], Replies, Time, TimerId);
 	{{Tag, N}, Reply} ->  %% Tag is bound !!!
-	    erlang:demonitor(R, [flush]),
+	    % erlang:demonitor(R, [flush]),
 	    rec_nodes(Tag, Tail, Name, Badnodes, 
 		      [{N,Reply}|Replies], Time, TimerId);
 	{timeout, TimerId, _} ->	
-	    erlang:demonitor(R, [flush]),
+	    % erlang:demonitor(R, [flush]),
 	    %% Collect all replies that already have arrived
 	    rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies)
     end;
@@ -523,16 +525,16 @@ rec_nodes(Tag, [N|Tail], Name, Badnodes, Replies, Time, TimerId) ->
     %% R6 node
     receive
 	{nodedown, N} ->
-	    monitor_node(N, false),
+	    % monitor_node(N, false),
 	    rec_nodes(Tag, Tail, Name, [N|Badnodes], Replies, 2000, TimerId);
 	{{Tag, N}, Reply} ->  %% Tag is bound !!!
 	    receive {nodedown, N} -> ok after 0 -> ok end,
-	    monitor_node(N, false),
+	    % monitor_node(N, false),
 	    rec_nodes(Tag, Tail, Name, Badnodes,
 		      [{N,Reply}|Replies], 2000, TimerId);
 	{timeout, TimerId, _} ->	
 	    receive {nodedown, N} -> ok after 0 -> ok end,
-	    monitor_node(N, false),
+	    % monitor_node(N, false),
 	    %% Collect all replies that already have arrived
 	    rec_nodes_rest(Tag, Tail, Name, [N | Badnodes], Replies)
     after Time ->
@@ -542,7 +544,7 @@ rec_nodes(Tag, [N|Tail], Name, Badnodes, Replies, Time, TimerId) ->
 			      Replies, infinity, TimerId);
 		_ -> % badnode
 		    receive {nodedown, N} -> ok after 0 -> ok end,
-		    monitor_node(N, false),
+		    % monitor_node(N, false),
 		    rec_nodes(Tag, Tail, Name, [N|Badnodes],
 			      Replies, 2000, TimerId)
 	    end
@@ -566,25 +568,25 @@ rec_nodes_rest(Tag, [{N,R}|Tail], Name, Badnodes, Replies) ->
 	{'DOWN', R, _, _, _} ->
 	    rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies);
 	{{Tag, N}, Reply} -> %% Tag is bound !!!
-	    erlang:demonitor(R, [flush]),
+	    % erlang:demonitor(R, [flush]),
 	    rec_nodes_rest(Tag, Tail, Name, Badnodes, [{N,Reply}|Replies])
     after 0 ->
-	    erlang:demonitor(R, [flush]),
+	    % erlang:demonitor(R, [flush]),
 	    rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies)
     end;
 rec_nodes_rest(Tag, [N|Tail], Name, Badnodes, Replies) ->
     %% R6 node
     receive
 	{nodedown, N} ->
-	    monitor_node(N, false),
+	    % monitor_node(N, false),
 	    rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies);
 	{{Tag, N}, Reply} ->  %% Tag is bound !!!
 	    receive {nodedown, N} -> ok after 0 -> ok end,
-	    monitor_node(N, false),
+	    % monitor_node(N, false),
 	    rec_nodes_rest(Tag, Tail, Name, Badnodes, [{N,Reply}|Replies])
     after 0 ->
 	    receive {nodedown, N} -> ok after 0 -> ok end,
-	    monitor_node(N, false),
+	    % monitor_node(N, false),
 	    rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies)
     end;
 rec_nodes_rest(_Tag, [], _Name, Badnodes, Replies) ->
@@ -595,21 +597,21 @@ rec_nodes_rest(_Tag, [], _Name, Badnodes, Replies) ->
 %%% Monitor functions
 %%% ---------------------------------------------------
 
-start_monitor(Node, Name) when is_atom(Node), is_atom(Name) ->
-    if node() =:= nonode@nohost, Node =/= nonode@nohost ->
-	    Ref = make_ref(),
-	    self() ! {'DOWN', Ref, process, {Name, Node}, noconnection},
-	    {Node, Ref};
-       true ->
-	    case catch erlang:monitor(process, {Name, Node}) of
-		{'EXIT', _} ->
-		    %% Remote node is R6
-		    monitor_node(Node, true),
-		    Node;
-		Ref when is_reference(Ref) ->
-		    {Node, Ref}
-	    end
-    end.
+% start_monitor(Node, Name) when is_atom(Node), is_atom(Name) ->
+%     if node() =:= nonode@nohost, Node =/= nonode@nohost ->
+% 	    Ref = make_ref(),
+% 	    self() ! {'DOWN', Ref, process, {Name, Node}, noconnection},
+% 	    {Node, Ref};
+%        true ->
+% 	    case catch erlang:monitor(process, {Name, Node}) of
+% 		{'EXIT', _} ->
+% 		    %% Remote node is R6
+% 		    monitor_node(Node, true),
+% 		    Node;
+% 		Ref when is_reference(Ref) ->
+% 		    {Node, Ref}
+% 	    end
+%     end.
 
 %% ---------------------------------------------------
 %% Helper functions for try-catch of callbacks.
