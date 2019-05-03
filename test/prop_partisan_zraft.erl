@@ -209,7 +209,7 @@ node_begin_case() ->
 
     %% Load, configure, and start zraft.
     lists:foreach(fun({ShortName, _}) ->
-        node_debug("starting zraft_lib at node ~p", [ShortName]),
+        % node_debug("starting zraft_lib at node ~p", [ShortName]),
         case rpc:call(?NAME(ShortName), application, load, [zraft_lib]) of 
             ok ->
                 ok;
@@ -219,14 +219,14 @@ node_begin_case() ->
                 exit({error, {load_failed, Other}})
         end,
 
-        node_debug("starting zraft_lib at node ~p", [ShortName]),
+        % node_debug("starting zraft_lib at node ~p", [ShortName]),
         {ok, _} = rpc:call(?NAME(ShortName), application, ensure_all_started, [zraft_lib])
     end, Nodes),
 
     %% Sleep.
-    node_debug("sleeping for convergence", []),
+    % node_debug("sleeping for convergence", []),
     timer:sleep(1000),
-    node_debug("done.", []),
+    % node_debug("done.", []),
 
     %% Get first node.
     FirstNode = {FirstName, _} = hd(Nodes),
