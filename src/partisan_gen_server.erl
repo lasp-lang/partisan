@@ -427,12 +427,20 @@ decode_msg(Msg, Parent, Name, State, Mod, Time, HibernateAfterTimeout, Debug, Hi
 %%% Send/receive functions
 %%% ---------------------------------------------------
 do_send(Dest, Msg) ->
-    case catch erlang:send(Dest, Msg, [noconnect]) of
-	noconnect ->
-	    spawn(erlang, send, [Dest,Msg]);
-	Other ->
-	    Other
-    end.
+	{Node, Process} = case Dest of 
+		{RemoteProcess, RemoteNode} ->
+			{RemoteNode, RemoteProcess};
+		_ ->
+			{node(), Dest}
+	end,	
+	partisan_pluggable_peer_service_manager:forward_message(Node, undefined, Process, Msg, []).
+
+    % case catch erlang:send(Dest, Msg, [noconnect]) of
+	% noconnect ->
+	%     spawn(erlang, send, [Dest,Msg]);
+	% Other ->
+	%     Other
+    % end.
 
 do_multi_call(Nodes, Name, Req, infinity) ->
     Tag = make_ref(),
