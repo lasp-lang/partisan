@@ -632,7 +632,7 @@ preload_omissions(Nodes) ->
     %% Install faulted tracing interposition function.
     lists:foreach(fun({_, Node}) ->
         InterpositionFun = fun({forward_message, _N, M}) ->
-            lager:info("~p: interposition called for message: ~p", [node(), M]),
+            % lager:info("~p: interposition called for message to ~p message: ~p", [node(), N, M]),
 
             case partisan_config:get(faulted) of 
                 true ->
