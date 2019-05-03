@@ -1284,8 +1284,30 @@ otp_test(Config) ->
     ok = rpc:call(FirstName, partisan_gen_server, call, [{partisan_test_server, SecondName}, call, 1000]),
 
     %% Ensure that a cast works.
+    Self = self(),
+
+    CastReceiverFun = fun() ->
+        receive 
+            ok ->
+                Self ! ok
+        end
+    end,
+    CastReceiverPid = rpc:call(SecondName, erlang, spawn, [CastReceiverFun]),
+    true = rpc:call(SecondName, erlang, register, [cast_receiver, CastReceiverPid]),
+
     [{_, FirstName}, {_, SecondName} | _] = Nodes,
-    ok = rpc:call(FirstName, partisan_gen_server, cast, [{partisan_test_server, SecondName}, {cast, partisan_util:pid()}]),
+    ok = rpc:call(FirstName, partisan_gen_server, cast, [{partisan_test_server, SecondName}, {cast, cast_receiver}]),
+
+    receive
+        ok ->
+            ok;
+        Other ->
+            error_logger:format("Received invalid response: ~p", [Other]),
+            ct:fail({error, wrong_message})
+    after 
+        1000 ->
+            ct:fail({error, no_message})
+    end,
 
     %% Stop nodes.
     ?SUPPORT:stop(Nodes),
