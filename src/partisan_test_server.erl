@@ -26,7 +26,8 @@
 %% API
 -export([start_link/0,
          call/0,
-         cast/1
+         cast/1,
+         delayed_reply_call/0
         ]).
 
 %% partisan_gen_server callbacks
@@ -49,6 +50,9 @@ start_link() ->
 call() ->
     partisan_gen_server:call(?MODULE, call, infinity).
 
+delayed_reply_call() ->
+    partisan_gen_server:call(?MODULE, delay_reply_call, infinity).
+
 cast(ServerRef) ->
     partisan_gen_server:call(?MODULE, {cast, ServerRef}, infinity).
 
@@ -61,6 +65,10 @@ init([]) ->
     {ok, #state{}}.
 
 %% @private
+handle_call(delayed_reply_call, From, State) ->
+    lager:info("Received delayed_reply_call message from ~p in the handle_call handler.", [From]),
+    partisan_gen_server:reply(From, ok),
+    {noreply, State};
 handle_call(call, From, State) ->
     lager:info("Received call message from ~p in the handle_call handler.", [From]),
     {reply, ok, State};
