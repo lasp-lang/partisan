@@ -1269,15 +1269,23 @@ otp_test(Config) ->
     %% Pause for clustering.
     timer:sleep(1000),
 
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %% gen_server tests.
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
     %% Start the test backend on all the clients.
     lists:foreach(fun({_, Node}) ->
         ct:pal("Going to start test backend on node ~p", [Node]),
-        ok = rpc:call(Node, partisan_test_backend, start_link, [])
+        {ok, _} = rpc:call(Node, partisan_test_server, start_link, [])
     end, Nodes),
 
     %% Ensure that a regular call works.
-    {_, FirstName} = FirstNode = hd(Nodes),
-    ok = rpc:call(FirstName, partisan_test_backend, ok, []),
+    [{_, FirstName}, {_, SecondName} | _] = Nodes,
+    ok = rpc:call(FirstName, partisan_gen_server, call, [{partisan_test_server, SecondName}, call, 1000]),
+
+    %% Ensure that a cast works.
+    [{_, FirstName}, {_, SecondName} | _] = Nodes,
+    ok = rpc:call(FirstName, partisan_gen_server, cast, [{partisan_test_server, SecondName}, {cast, partisan_util:pid()}]),
 
     %% Stop nodes.
     ?SUPPORT:stop(Nodes),

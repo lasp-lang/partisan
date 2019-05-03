@@ -852,7 +852,7 @@ handle_info(periodic, #state{pending=Pending,
                              pre_interposition_funs=PreInterpositionFuns,
                              connections=Connections0}=State) ->
     {ok, Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:periodic(MembershipStrategyState0),
-    lager:info("Periodic fired! Generated ~p messages to send.", [length(OutgoingMessages)]),
+    % lager:info("Periodic fired! Generated ~p messages to send.", [length(OutgoingMessages)]),
 
     %% Establish any new connections.
     Connections = establish_connections(Pending,

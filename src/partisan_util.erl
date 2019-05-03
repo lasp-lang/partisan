@@ -34,6 +34,7 @@
          gensym/1,
          pid/0,
          pid/1,
+         ref/1,
          registered_name/1]).
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
