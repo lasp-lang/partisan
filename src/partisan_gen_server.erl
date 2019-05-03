@@ -246,6 +246,7 @@ cast_msg(Request) -> {'$gen_cast',Request}.
 %% Send a reply to the client.
 %% -----------------------------------------------------------------
 reply({To, Tag}, Reply) ->
+	error_logger:format("reply called with to: ~p tag ~p reply: ~p", [To, Tag, Reply]),
 	partisan_pluggable_peer_service_manager:forward_message(To, {Tag, Reply}).
     % catch To ! {Tag, Reply}.
 
