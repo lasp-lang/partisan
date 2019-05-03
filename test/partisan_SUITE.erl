@@ -202,7 +202,8 @@ groups() ->
        client_server_manager_test,
        pid_test,
        rejoin_test,
-       transform_test]},
+       transform_test,
+       otp_test]},
        
      {hyparview, [],
       [ 
@@ -1243,6 +1244,40 @@ connectivity_test(Config) ->
     lists:foreach(fun({_Name, Node}) ->
                     ok = check_forward_message(Node, Manager, Nodes)
                   end, Nodes),
+
+    %% Stop nodes.
+    ?SUPPORT:stop(Nodes),
+
+    ok.
+
+otp_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
+
+    %% Specify servers.
+    Servers = ?SUPPORT:node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
+
+    %% Start nodes.
+    Nodes = ?SUPPORT:start(otp_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Start the test backend on all the clients.
+    lists:foreach(fun({_, Node}) ->
+        ct:pal("Going to start test backend on node ~p", [Node]),
+        ok = rpc:call(Node, partisan_test_backend, start_link, [])
+    end, Nodes),
+
+    %% Ensure that a regular call works.
+    {_, FirstName} = FirstNode = hd(Nodes),
+    ok = rpc:call(FirstName, partisan_test_backend, ok, []),
 
     %% Stop nodes.
     ?SUPPORT:stop(Nodes),
