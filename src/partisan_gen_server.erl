@@ -234,6 +234,8 @@ cast({Name,Node}=Dest, Request) when is_atom(Name), is_atom(Node) ->
 cast(Dest, Request) when is_atom(Dest) ->
     do_cast(Dest, Request);
 cast(Dest, Request) when is_pid(Dest) ->
+    do_cast(Dest, Request);
+cast({partisan_remote_reference, _, _} = Dest, Request) ->
     do_cast(Dest, Request).
 
 do_cast(Dest, Request) -> 
