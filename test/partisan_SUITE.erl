@@ -1282,6 +1282,10 @@ otp_test(Config) ->
     [{_, FirstName}, {_, SecondName} | _] = Nodes,
     ok = rpc:call(FirstName, partisan_gen_server, call, [{partisan_test_server, SecondName}, call, 1000]),
 
+    %% Ensure that a regular call with delayed response works.
+    [{_, FirstName}, {_, SecondName} | _] = Nodes,
+    ok = rpc:call(FirstName, partisan_gen_server, call, [{partisan_test_server, SecondName}, delayed_reply_call, 1000]),
+
     %% Ensure that a cast works.
     Self = self(),
 
