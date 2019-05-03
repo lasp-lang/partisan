@@ -62,6 +62,9 @@ shell:
 tail-logs:
 	tail -F priv/lager/*/log/*.log
 
+unsorted-logs:
+	cat priv/lager/*/log/*.log
+
 logs:
 	cat priv/lager/*/log/*.log | sort -k2M # -k3n -k4
 
