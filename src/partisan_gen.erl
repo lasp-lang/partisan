@@ -169,19 +169,19 @@ do_call(Process, Label, Request, Timeout) ->
 	Message = {Label, {self(), Ref}, Request},
 
 	%% Send message via Partisan.
-	error_logger:format("Sending message to ~p ~p: ~p~n", [Node, ServerRef, Message]),
+	lager:info("Sending message from ~p to ~p ~p: ~p~n", [node(), Node, ServerRef, Message]),
 	partisan_pluggable_peer_service_manager:forward_message(Node, undefined, ServerRef, Message, []),
-	error_logger:format("Message sent!~n", []),
+	lager:info("=> Message sent!~n", []),
 
 	%% Wait for reply.
 	receive
 		{Ref, Reply} ->
 			{ok, Reply};
 		Other ->
-			error_logger:format("Received unexpected response: ~p~n", [Other]),
+			lager:warning("Received unexpected response: ~p~n", [Other]),
 			exit(timeout)
 	after Timeout ->
-		error_logger:format("Timed out waiting for response!~n", []),
+		lager:warning("Timed out waiting for response!~n", []),
 		exit(timeout)
 	end.
 
