@@ -207,12 +207,6 @@ node_begin_case() ->
         ok = rpc:call(?NAME(ShortName), partisan_config, set, [pid_encoding, true])
     end, Nodes),
 
-    %% Enable register_pid_for_encoding.
-    lists:foreach(fun({ShortName, _}) ->
-        % node_debug("enabling register_pid_for_encoding at node ~p", [ShortName]),
-        ok = rpc:call(?NAME(ShortName), partisan_config, set, [register_pid_for_encoding, true])
-    end, Nodes),
-
     %% Load, configure, and start zraft.
     lists:foreach(fun({ShortName, _}) ->
         node_debug("starting zraft_lib at node ~p", [ShortName]),
