@@ -164,6 +164,9 @@ cast_message(Name, Channel, ServerRef, Message, Options) ->
     ok.
 
 %% @doc Gensym support for forwarding.
+forward_message(Pid, Message) when is_pid(Pid) ->
+    forward_message(node(), ?DEFAULT_CHANNEL, Pid, Message);
+
 forward_message({partisan_remote_reference, Name, ServerRef}, Message) ->
     forward_message(Name, ?DEFAULT_CHANNEL, ServerRef, Message).
 
