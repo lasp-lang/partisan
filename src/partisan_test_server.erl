@@ -49,8 +49,8 @@ start_link() ->
 call() ->
     partisan_gen_server:call(?MODULE, call, infinity).
 
-cast(Pid) ->
-    partisan_gen_server:call(?MODULE, {cast, Pid}, infinity).
+cast(ServerRef) ->
+    partisan_gen_server:call(?MODULE, {cast, ServerRef}, infinity).
 
 %%%===================================================================
 %%% partisan_gen_server callbacks
@@ -68,9 +68,9 @@ handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 %% @private
-handle_cast({cast, Pid}, State) ->
-    lager:info("Received cast message with pid: ~p in the handle_call handler.", [Pid]),
-    partisan_pluggable_peer_service_manager:forward_message(Pid, ok),
+handle_cast({cast, ServerRef}, State) ->
+    lager:info("Received cast message with server_ref: ~p in the handle_call handler.", [ServerRef]),
+    ServerRef ! ok,
     {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
