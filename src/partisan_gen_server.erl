@@ -199,24 +199,24 @@ stop(Name, Reason, Timeout) ->
 %% is handled here (? Shall we do that here (or rely on timeouts) ?).
 %% ----------------------------------------------------------------- 
 call(Name, Request) ->
-	error_logger:format("Making call to ~p~n", [Name]),
+	lager:info("Making call to ~p~n", [Name]),
 
     case catch partisan_gen:call(Name, '$gen_call', Request) of
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
-		error_logger:format("Exit: ~p", [Reason]),
+		lager:warning("Exit: ~p", [Reason]),
 	    exit({Reason, {?MODULE, call, [Name, Request]}})
     end.
 
 call(Name, Request, Timeout) ->
-	error_logger:format("Making call to ~p~n", [Name]),
+	lager:info("Making call to ~p~n", [Name]),
 
     case catch partisan_gen:call(Name, '$gen_call', Request, Timeout) of
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
-		error_logger:format("Exit: ~p", [Reason]),
+		lager:warning("Exit: ~p", [Reason]),
 	    exit({Reason, {?MODULE, call, [Name, Request, Timeout]}})
     end.
 
