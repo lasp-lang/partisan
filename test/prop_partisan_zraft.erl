@@ -380,7 +380,7 @@ node_begin_case() ->
     %%%===================================================================
 
     %% Create light session.
-    ZraftSession = rpc:call(?NAME(FirstName), zraft_client, light_session, [FirstNode, 500, 500]),
+    ZraftSession = rpc:call(?NAME(FirstName), zraft_client, light_session, [FirstNode, 250, 250]),
     true = ets:insert(prop_partisan, {zraft_session, ZraftSession}),
 
     %% Perform a single write using light session.
