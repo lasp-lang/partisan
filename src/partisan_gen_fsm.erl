@@ -300,7 +300,7 @@ sync_send_all_state_event(Name, Event, Timeout) ->
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
-		lager:info("[cmeik] exit for ~p", [Reason]),
+		lager:info("[cmeik] exit for ~p after node: ~p sending event: ~p to ~p", [Reason, node(), Event, Name]),
 	    exit({Reason, {?MODULE, sync_send_all_state_event,
 			   [Name, Event, Timeout]}})
     end.
