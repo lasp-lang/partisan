@@ -724,7 +724,9 @@ start_or_reload_nodes() ->
                 true = ets:insert(?MODULE, {Name, Node})
             end, Nodes1),
 
-            debug("~p started nodes: ~p, restart_nodes: ~p, running_nodes; ~p", [Self, Nodes1, restart_nodes(), RunningNodes]),
+            debug("~p started nodes: ~p", [Self, Nodes1]), 
+            debug("~p restart_nodes: ~p", [Self, restart_nodes()]),
+            debug("~p running_nodes: ~p", [Self, RunningNodes]),
 
             Nodes1;
         true ->
