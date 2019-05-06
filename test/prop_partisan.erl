@@ -541,7 +541,7 @@ names() ->
     NameFun = fun(N) -> 
         list_to_atom("node_" ++ integer_to_list(N)) 
     end,
-    lists:map(NameFun, lists:seq(1, ?TEST_NUM_NODES)).
+    lists:map(NameFun, lists:seq(1, node_num_nodes())).
 
 %%%===================================================================
 %%% Trace Support
@@ -690,7 +690,7 @@ start_or_reload_nodes() ->
 
     %% Cluster and start options.
     Options = [{partisan_peer_service_manager, ?MANAGER}, 
-                {num_nodes, ?TEST_NUM_NODES}, 
+                {num_nodes, node_num_nodes()},
                 {cluster_nodes, ?CLUSTER_NODES}],
 
     Nodes = case RunningNodes =/= [] andalso not restart_nodes() of 
@@ -1123,6 +1123,11 @@ system_model() ->
         SystemModel ->
             list_to_atom(SystemModel)
     end.
+
+%% @private
+node_num_nodes() ->
+    SystemModel = system_model(),
+    SystemModel:node_num_nodes().
 
 %% @private
 node_commands() ->

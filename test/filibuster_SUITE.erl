@@ -136,7 +136,7 @@ model_checker_test(_Config) ->
 
     %% Cluster and start options.
     Options = [{partisan_peer_service_manager, ?MANAGER}, 
-                {num_nodes, ?TEST_NUM_NODES}, 
+                {num_nodes, node_num_nodes()},
                 {cluster_nodes, ?CLUSTER_NODES}],
 
     %% Initialize a cluster.
@@ -300,6 +300,11 @@ system_model() ->
         SystemModel ->
             list_to_atom(SystemModel)
     end.
+
+%% 
+node_num_nodes() ->
+    SystemModel = system_model(),
+    SystemModel:node_num_nodes().
 
 %% ===================================================================
 %% Model Checker

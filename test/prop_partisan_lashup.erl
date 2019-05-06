@@ -42,7 +42,7 @@ names() ->
     NameFun = fun(N) -> 
         list_to_atom("node_" ++ integer_to_list(N)) 
     end,
-    lists:map(NameFun, lists:seq(1, ?TEST_NUM_NODES)).
+    lists:map(NameFun, lists:seq(1, node_num_nodes())).
 
 key() ->
     integer().
@@ -55,6 +55,10 @@ value() ->
 %%%===================================================================
 
 -record(node_state, {values}).
+
+%% How many nodes to run?
+node_num_nodes() ->
+    4.
 
 %% What node-specific operations should be called.
 node_commands() ->
