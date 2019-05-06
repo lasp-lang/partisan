@@ -47,7 +47,7 @@ key() ->
     oneof(keys()).
 
 keys() ->
-    [a, b, c].
+    [a, b, c, d, e, f].
 
 value() ->
     integer().
