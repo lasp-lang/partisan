@@ -65,8 +65,8 @@ node_num_nodes() ->
 %% What node-specific operations should be called.
 node_commands() ->
     [
-        {call, ?MODULE, read, [node_name(), key()]},
-        {call, ?MODULE, write, [node_name(), key(), value()]},
+        % {call, ?MODULE, read, [node_name(), key()]},
+        % {call, ?MODULE, write, [node_name(), key(), value()]},
 
         {call, ?MODULE, session_read, [node_name(), key()]},
         {call, ?MODULE, session_write, [node_name(), key(), value()]}
