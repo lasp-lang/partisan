@@ -126,3 +126,6 @@ lashup: kill bin-perms compile
 
 zraft: kill bin-perms compile
 	SYSTEM_MODEL=prop_partisan_zraft RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=zraft SUBLIST=0 bin/check-zraft.sh
+
+hbbft: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_hbbft RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=hbbft SUBLIST=0 bin/check-hbbft.sh
