@@ -124,6 +124,10 @@ node_precondition(_NodeState, _Command) ->
     false.
 
 %% Next state.
+node_next_state(_State, NodeState, {error, timeout}, {call, ?MODULE, session_read, [_Node, _Key]}) ->
+    NodeState;
+node_next_state(_State, NodeState, {error, timeout}, {call, ?MODULE, session_write, [_Node, _Key, _Value]}) ->
+    NodeState;
 node_next_state(_State, NodeState, {error, noproc}, {call, ?MODULE, write, [_Node, _Key, _Value]}) ->
     NodeState;
 node_next_state(_State, #node_state{values=Values0}=NodeState, _Response, {call, ?MODULE, session_write, [_Node, Key, Value]}) ->
@@ -165,8 +169,17 @@ node_postcondition(#node_state{values=Values}, {call, ?MODULE, check_delivery, [
                 end
         end
     end, true, Results);
+node_postcondition(_NodeState, {call, ?MODULE, session_read, [_Node, _Key]}, {error, timeout}) ->
+    node_debug("=> read failed, leader unavailable...", []),
+    true;
+node_postcondition(_NodeState, {call, ?MODULE, session_write, [_Node, _Key, _Value]}, {error, timeout}) ->
+    node_debug("=> write failed, leader unavailable...", []),
+    true;
 node_postcondition(_NodeState, {call, ?MODULE, read, [_Node, _Key]}, {error, noproc}) ->
     node_debug("=> read failed, leader unavailable...", []),
+    true;
+node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {error, noproc}) ->
+    node_debug("=> write failed, leader unavailable...", []),
     true;
 node_postcondition(#node_state{values=Values}, {call, ?MODULE, session_read, [_Node, Key]}, {{ok, Value}, _}) ->
     case dict:find(Key, Values) of 
@@ -187,9 +200,6 @@ node_postcondition(_NodeState, {call, ?MODULE, sleep, []}, _Result) ->
 node_postcondition(_NodeState, {call, ?MODULE, session_write, [_Node, _Key, _Value]}, {ok, _}) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {ok, _}) ->
-    true;
-node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {error, noproc}) ->
-    node_debug("=> write failed, leader unavailable...", []),
     true;
 node_postcondition(_NodeState, Command, Response) ->
     node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
