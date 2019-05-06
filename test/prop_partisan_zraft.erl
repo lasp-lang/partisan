@@ -44,7 +44,10 @@ names() ->
     lists:map(NameFun, lists:seq(1, ?TEST_NUM_NODES)).
 
 key() ->
-    oneof([a, b, c]).
+    oneof(keys()).
+
+keys() ->
+    [a, b, c].
 
 value() ->
     integer().
@@ -59,16 +62,19 @@ value() ->
 node_commands() ->
     [
         {call, ?MODULE, read, [node_name(), key()]},
-        {call, ?MODULE, write, [node_name(), key(), value()]}
+        {call, ?MODULE, write, [node_name(), key(), value()]},
+
+        {call, ?MODULE, session_read, [node_name(), key()]},
+        {call, ?MODULE, session_write, [node_name(), key(), value()]}
     ].
 
 %% Assertion commands.
 node_assertion_functions() ->
-    [].
+    [check_delivery].
 
 %% Global functions.
 node_global_functions() ->
-    [sleep].
+    [check_delivery, sleep].
 
 %% What should the initial node state be.
 node_initial_state() ->
@@ -81,10 +87,24 @@ node_functions() ->
     lists:map(fun({call, _Mod, Fun, _Args}) -> Fun end, node_commands()).
 
 %% Precondition.
+node_precondition(_NodeState, {call, ?MODULE, check_delivery, []}) ->
+    true;
+node_precondition(_NodeState, {call, ?MODULE, session_write, [_Node, _Key, _Value]}) ->
+    true;
 node_precondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}) ->
     true;
 node_precondition(_NodeState, {call, ?MODULE, sleep, []}) ->
     true;
+node_precondition(#node_state{values=Values}, {call, ?MODULE, session_read, [_Node, Key]}) ->
+    % node_debug("checking precondition for session_read operation on key: ~p with values: ~p", [Key, dict:to_list(Values)]),
+
+    case dict:find(Key, Values) of 
+        {ok, _} ->
+            true;
+        Other ->
+            node_debug("=> did NOT find key in values: ~p", [Other]),
+            false
+    end;
 node_precondition(#node_state{values=Values}, {call, ?MODULE, read, [_Node, Key]}) ->
     % node_debug("checking precondition for read operation on key: ~p with values: ~p", [Key, dict:to_list(Values)]),
 
@@ -100,9 +120,16 @@ node_precondition(_NodeState, _Command) ->
     false.
 
 %% Next state.
+node_next_state(_State, NodeState, {error, noproc}, {call, ?MODULE, write, [_Node, _Key, _Value]}) ->
+    NodeState;
+node_next_state(_State, #node_state{values=Values0}=NodeState, _Response, {call, ?MODULE, session_write, [_Node, Key, Value]}) ->
+    Values = dict:store(Key, Value, Values0),
+    NodeState#node_state{values=Values};
 node_next_state(_State, #node_state{values=Values0}=NodeState, _Response, {call, ?MODULE, write, [_Node, Key, Value]}) ->
     Values = dict:store(Key, Value, Values0),
     NodeState#node_state{values=Values};
+node_next_state(_State, NodeState, _Response, {call, ?MODULE, session_read, [_Node, _Key]}) ->
+    NodeState;
 node_next_state(_State, NodeState, _Response, {call, ?MODULE, read, [_Node, _Key]}) ->
     NodeState;
 node_next_state(_State, NodeState, _Response, {call, ?MODULE, sleep, []}) ->
@@ -112,6 +139,38 @@ node_next_state(_State, NodeState, Response, Command) ->
     NodeState.
 
 %% Postconditions for node commands.
+node_postcondition(#node_state{values=Values}, {call, ?MODULE, check_delivery, []}, Results) ->
+    node_debug("verifying all written results are found: ~p", [Results]),
+
+    lists:foldl(fun({Key, Value}, All) ->
+        case dict:find(Key, Values) of 
+            {ok, Value} ->
+                node_debug("=> found key ~p with value ~p", [Key, Value]),
+                true andalso All;
+            {ok, Other} ->
+                node_debug("=> didn't find key ~p with correct value: ~p, found ~p", [Key, Value, Other]),
+                false andalso All;
+            error ->
+                case Value of 
+                    not_found ->
+                        node_debug("=> key ~p not_found, FINE.", [Key]),
+                        true andalso All;
+                    _ ->
+                        node_debug("=> not_found, key ~p should be ~p", [Key, Value]),
+                        false andalso All
+                end
+        end
+    end, true, Results);
+node_postcondition(_NodeState, {call, ?MODULE, read, [_Node, _Key]}, {error, noproc}) ->
+    node_debug("=> read failed, leader unavailable...", []),
+    true;
+node_postcondition(#node_state{values=Values}, {call, ?MODULE, session_read, [_Node, Key]}, {{ok, Value}, _}) ->
+    case dict:find(Key, Values) of 
+        {ok, Value} ->
+            true;
+        _ ->
+            false
+    end;
 node_postcondition(#node_state{values=Values}, {call, ?MODULE, read, [_Node, Key]}, {{ok, Value}, _}) ->
     case dict:find(Key, Values) of 
         {ok, Value} ->
@@ -121,7 +180,12 @@ node_postcondition(#node_state{values=Values}, {call, ?MODULE, read, [_Node, Key
     end;
 node_postcondition(_NodeState, {call, ?MODULE, sleep, []}, _Result) ->
     true;
+node_postcondition(_NodeState, {call, ?MODULE, session_write, [_Node, _Key, _Value]}, {ok, _}) ->
+    true;
 node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {ok, _}) ->
+    true;
+node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {error, noproc}) ->
+    node_debug("=> write failed, leader unavailable...", []),
     true;
 node_postcondition(_NodeState, Command, Response) ->
     node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
@@ -152,6 +216,65 @@ sleep() ->
     ?PROPERTY_MODULE:command_conclusion(RunnerNode, [sleep]),
 
     ok.
+
+%% @private
+check_delivery() ->
+    RunnerNode = node(),
+
+    ?PROPERTY_MODULE:command_preamble(RunnerNode, [check_delivery]),
+
+    %% Get first node.
+    [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
+    {FirstName, _} = hd(Nodes),
+
+    %% Get session.
+    [{zraft_session, ZraftSession}] = ets:lookup(prop_partisan, zraft_session),
+
+    Result = lists:map(fun(Key) ->
+        node_debug("=> retrieving value for key: ~p", [Key]),
+
+        case rpc:call(?NAME(FirstName), zraft_client, query, [ZraftSession, Key, 1000]) of 
+            {{ok, Value}, _} ->
+                node_debug("=> found value: ~p", [Value]),
+                {Key, Value};
+            {not_found, _} ->
+                node_debug("=> key not found", []),
+                {Key, not_found};
+            {error, all_failed} ->
+                node_debug("=> all nodes failed!", []),
+                {Key, failed}
+        end
+    end, keys()),
+
+    ?PROPERTY_MODULE:command_conclusion(RunnerNode, [check_delivery]),
+
+    Result.
+
+%% @private
+session_read(Node, Key) ->
+    ?PROPERTY_MODULE:command_preamble(Node, [session_read, Node, Key]),
+
+    %% Get session.
+    [{zraft_session, ZraftSession}] = ets:lookup(prop_partisan, zraft_session),
+
+    Result = rpc:call(?NAME(Node), zraft_client, query, [ZraftSession, Key, 1000]),
+
+    ?PROPERTY_MODULE:command_conclusion(Node, [session_read, Node, Key]),
+
+    Result.
+
+%% @private
+session_write(Node, Key, Value) ->
+    ?PROPERTY_MODULE:command_preamble(Node, [session_write, Node, Key, Value]),
+
+    %% Get session.
+    [{zraft_session, ZraftSession}] = ets:lookup(prop_partisan, zraft_session),
+
+    Result = rpc:call(?NAME(Node), zraft_client, write, [ZraftSession, {Key, Value}, 1000]),
+
+    ?PROPERTY_MODULE:command_conclusion(Node, [session_write, Node, Key, Value]),
+
+    Result.
 
 %% @private
 write(Node, Key, Value) ->
@@ -231,8 +354,16 @@ node_begin_case() ->
     %% Get first node.
     FirstNode = {FirstName, _} = hd(Nodes),
 
+    %%%===================================================================
+    %%% Raft: initialize
+    %%%===================================================================
+
     %% Initialize a Raft cluster.
     {ok, Nodes} = rpc:call(?NAME(FirstName), zraft_client, create, [Nodes, zraft_dict_backend]),
+
+    %%%===================================================================
+    %%% Raft: sessionless
+    %%%===================================================================
 
     %% Perform a single write.
     {ok, FirstNode} = rpc:call(?NAME(FirstName), zraft_client, write, [FirstNode, {1, 1}, 1000]),
@@ -240,7 +371,21 @@ node_begin_case() ->
     %% Perform a single read.
     {{ok, 1}, FirstNode} = rpc:call(?NAME(FirstName), zraft_client, query, [FirstNode, 1, 1000]),
 
-    node_debug("zraft_lib fully initializaed...", []),
+    %%%===================================================================
+    %%% Raft: light session
+    %%%===================================================================
+
+    %% Create light session.
+    ZraftSession = rpc:call(?NAME(FirstName), zraft_client, light_session, [FirstNode, 500, 500]),
+    true = ets:insert(prop_partisan, {zraft_session, ZraftSession}),
+
+    %% Perform a single write using light session.
+    {ok, ZraftSession} = rpc:call(?NAME(FirstName), zraft_client, write, [ZraftSession, {1, 1}, 1000]),
+
+    %% Perform a single read using light session.
+    {{ok, 1}, ZraftSession} = rpc:call(?NAME(FirstName), zraft_client, query, [ZraftSession, 1, 1000]),
+
+    node_debug("zraft_lib fully initialized...", []),
 
     ok.
 
