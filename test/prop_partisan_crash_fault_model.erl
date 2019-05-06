@@ -363,7 +363,13 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, general_omissi
 
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, general_omissions=GeneralOmissions}, {call, _Mod, end_omission, [Node]}) ->
     %% We must be in the middle of a general omission to resolve it.
-    lists:member(Node, GeneralOmissions) andalso not lists:member(Node, CrashedNodes);
+    Result = lists:member(Node, GeneralOmissions) andalso not lists:member(Node, CrashedNodes),
+
+    fault_debug("precondition for end_omission, node: ~p result: ~p", [Node, Result]),
+    fault_debug("=> is node ~p faulted: ~p", [Node, lists:member(Node, GeneralOmissions)]),
+    fault_debug("=> is node ~p NOT crashed: ~p", [Node, not lists:member(Node, CrashedNodes)]),
+
+    Result;
 
 %% Receive omission.
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, receive_omissions=ReceiveOmissions}=FaultModelState, {call, _Mod, begin_receive_omission, [SourceNode, DestinationNode]}=Call) ->
