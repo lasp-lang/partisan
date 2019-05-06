@@ -763,22 +763,22 @@ background_annotations() ->
 
     case filelib:is_file(AnnotationsFile) of 
         false ->
-            io:format("Annotations file doesn't exist: ~p~n", [AnnotationsFile]),
+            debug("Annotations file doesn't exist: ~p~n", [AnnotationsFile]),
             [];
         true ->
             {ok, [RawAnnotations]} = file:consult(AnnotationsFile),
-            % io:format("Raw annotations loaded: ~p~n", [RawAnnotations]),
+            % debug("Raw annotations loaded: ~p~n", [RawAnnotations]),
             AllAnnotations = dict:from_list(RawAnnotations),
-            % io:format("Annotations loaded: ~p~n", [dict:to_list(AllAnnotations)]),
+            % debug("Annotations loaded: ~p~n", [dict:to_list(AllAnnotations)]),
 
             % {ok, RawCausalityAnnotations} = dict:find(causality, AllAnnotations),
-            % io:format("Raw causality annotations loaded: ~p~n", [RawCausalityAnnotations]),
+            % debug("Raw causality annotations loaded: ~p~n", [RawCausalityAnnotations]),
 
             % CausalityAnnotations = dict:from_list(RawCausalityAnnotations),
-            % io:format("Causality annotations loaded: ~p~n", [dict:to_list(CausalityAnnotations)]),
+            % debug("Causality annotations loaded: ~p~n", [dict:to_list(CausalityAnnotations)]),
 
             {ok, BackgroundAnnotations} = dict:find(background, AllAnnotations),
-            % io:format("Background annotations loaded: ~p~n", [BackgroundAnnotations]),
+            % debug("Background annotations loaded: ~p~n", [BackgroundAnnotations]),
 
             BackgroundAnnotations
     end.
