@@ -239,9 +239,11 @@ send_event(Name, Event) ->
 		_ ->
 			{node(), Name}
 	end,	
+	lager:info("[cmeik] sending event to node: ~p name: ~p event: ~p", [Node, Process, Event]),
 	partisan_pluggable_peer_service_manager:forward_message(Node, undefined, Process, {'$gen_event', Event}, []),
 	ok.
 
+	% lager:info("[cmeik] sending event to name: ~p with event: ~p", [Name, Event]),
     % Name ! {'$gen_event', Event},
     % ok.
 
@@ -250,6 +252,7 @@ sync_send_event(Name, Event) ->
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
+		lager:info("[cmeik] exit for ~p", [Reason]),
 	    exit({Reason, {?MODULE, sync_send_event, [Name, Event]}})
     end.
 
@@ -258,6 +261,7 @@ sync_send_event(Name, Event, Timeout) ->
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
+		lager:info("[cmeik] exit for ~p", [Reason]),
 	    exit({Reason, {?MODULE, sync_send_event, [Name, Event, Timeout]}})
     end.
 
@@ -274,9 +278,11 @@ send_all_state_event(Name, Event) ->
 		_ ->
 			{node(), Name}
 	end,	
+	lager:info("[cmeik] sending all state event to node ~p name ~p event ~p", [Node, Process, Event]),
 	partisan_pluggable_peer_service_manager:forward_message(Node, undefined, Process, {'$gen_all_state_event', Event}, []),
 	ok.
 
+	% lager:info("[cmeik] sending all state event to name: ~p and event: ~p", [Name, Event]),
     % Name ! {'$gen_all_state_event', Event},
     % ok.
 
@@ -285,6 +291,7 @@ sync_send_all_state_event(Name, Event) ->
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
+		lager:info("[cmeik] exit for ~p", [Reason]),
 	    exit({Reason, {?MODULE, sync_send_all_state_event, [Name, Event]}})
     end.
 
@@ -293,6 +300,7 @@ sync_send_all_state_event(Name, Event, Timeout) ->
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
+		lager:info("[cmeik] exit for ~p", [Reason]),
 	    exit({Reason, {?MODULE, sync_send_all_state_event,
 			   [Name, Event, Timeout]}})
     end.

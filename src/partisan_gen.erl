@@ -171,7 +171,7 @@ do_call(Process, Label, Request, Timeout) ->
 	%% Send message via Partisan.
 	lager:info("Sending message from ~p to ~p ~p: ~p~n", [node(), Node, ServerRef, Message]),
 	partisan_pluggable_peer_service_manager:forward_message(Node, undefined, ServerRef, Message, []),
-	lager:info("=> Message sent!~n", []),
+	% lager:info("=> Message sent!~n", []),
 
 	%% Wait for reply.
 	receive
@@ -181,7 +181,7 @@ do_call(Process, Label, Request, Timeout) ->
 			lager:warning("Received unexpected response: ~p~n", [Other]),
 			exit(timeout)
 	after Timeout ->
-		lager:warning("Timed out waiting for response!~n", []),
+		lager:warning("Timed out at node: ~p waiting for response to message: ~p~n", [node(), Message]),
 		exit(timeout)
 	end.
 
