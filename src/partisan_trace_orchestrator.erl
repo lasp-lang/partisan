@@ -640,7 +640,7 @@ preload_omissions(Nodes) ->
                         undefined ->
                             undefined;
                         _ ->
-                            lager:info("~p: faulted during forward_message of background message, message ~p should be dropped.", [node(), M]),
+                            replay_debug("~p: faulted during forward_message of background message, message ~p should be dropped.", [node(), M]),
                             undefined
                     end;
                 _ ->
@@ -653,7 +653,7 @@ preload_omissions(Nodes) ->
                             undefined ->
                                 undefined;
                             _ ->
-                                lager:info("~p: faulted during receive_message of background message, message ~p should be dropped.", [node(), M]),
+                                replay_debug("~p: faulted during receive_message of background message, message ~p should be dropped.", [node(), M]),
                                 undefined
                         end;
                     _ ->
@@ -669,7 +669,7 @@ preload_omissions(Nodes) ->
     %% Install faulted_for_background tracing interposition function.
     lists:foreach(fun({_, Node}) ->
         InterpositionFun = fun({forward_message, _N, M}) ->
-            lager:info("~p: interposition called for message: ~p", [node(), M]),
+            replay_debug("~p: interposition called for message: ~p", [node(), M]),
 
             case partisan_config:get(faulted_for_background) of 
                 true ->
