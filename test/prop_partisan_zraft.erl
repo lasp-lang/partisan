@@ -161,7 +161,7 @@ node_postcondition(#node_state{values=Values}, {call, ?MODULE, check_delivery, [
             error ->
                 case Value of 
                     not_found ->
-                        node_debug("=> key ~p not_found, FINE.", [Key]),
+                        node_debug("=> key ~p not_found, wasn't written.", [Key]),
                         true andalso All;
                     _ ->
                         node_debug("=> not_found, key ~p should be ~p", [Key, Value]),
@@ -239,15 +239,15 @@ check_delivery() ->
 
     %% Get first node.
     [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
-    {FirstName, _} = hd(Nodes),
+    [{_FirstName, _}, {SecondName, _} | _] = Nodes,
 
     %% Get session.
     [{zraft_session, ZraftSession}] = ets:lookup(prop_partisan, zraft_session),
 
     Result = lists:map(fun(Key) ->
-        node_debug("=> retrieving value for key: ~p", [Key]),
+        node_debug("=> retrieving value for key: ~p at node: ~p", [Key, SecondName]),
 
-        case rpc:call(?NAME(FirstName), zraft_client, query, [ZraftSession, Key, 1000]) of 
+        case rpc:call(?NAME(SecondName), zraft_client, query, [ZraftSession, Key, 1000]) of 
             {{ok, Value}, _} ->
                 node_debug("=> found value: ~p", [Value]),
                 {Key, Value};
