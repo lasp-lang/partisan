@@ -101,6 +101,8 @@ node_postcondition(_NodeState, {call, ?MODULE, wait, [_Node]}, _Result) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, sleep, []}, _Result) ->
     true;
+node_postcondition(_NodeState, {call, ?MODULE, check, []}, undefined) ->
+    true;
 node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, check, []}, Chains) ->
     %% Get pubkey.
     [{pubkey, PubKey}] = ets:lookup(prop_partisan, pubkey),
@@ -121,6 +123,11 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
 
                           %% check they're all members of the original message list
                           true = sets:is_subset(sets:from_list(BlockTxns), sets:from_list(Messages ++ InitialMessages)),
+
+                          node_debug("length(BlockTxns): ~p", length(BlockTxns)),
+                          node_debug("length(Messages ++ InitialMessages): ~p", length(Messages ++ InitialMessages)),
+                          true = length(BlockTxns) =:= length(Messages ++ InitialMessages),
+
                           node_debug("chain contains ~p distinct transactions~n", [length(BlockTxns)])
                   end, sets:to_list(Chains)),
 
@@ -150,50 +157,52 @@ node_postcondition(_NodeState, Command, Response) ->
 check() ->
     %% Get workers.
     [{workers, Workers}] = ets:lookup(prop_partisan, workers),
+    
+    %% Get at_least_one_transaction.
+    case ets:lookup(prop_partisan, at_least_one_transaction) of 
+        [{at_least_one_transaction, true}] ->
+            %% Wait for all the worker's mailboxes to settle and wait for the chains to converge.
+            ok = wait_until(fun() ->
+                                    Chains = sets:from_list(lists:map(fun({_Node, {ok, W}}) ->
+                                                                            {ok, Blocks} = partisan_hbbft_worker:get_blocks(W),
+                                                                            Blocks
+                                                                    end, Workers)),
 
-    %% Wait for all the worker's mailboxes to settle and wait for the chains to converge.
-    ok = wait_until(fun() ->
-                            Chains = sets:from_list(lists:map(fun({_Node, {ok, W}}) ->
-                                                                      {ok, Blocks} = partisan_hbbft_worker:get_blocks(W),
-                                                                      Blocks
-                                                              end, Workers)),
+                                    0 == lists:sum([element(2, rpc:call(?NAME(Name1), erlang, process_info, [W, message_queue_len])) || {{Name1, _}, {ok, W}} <- Workers]) andalso
+                                    1 == sets:size(Chains) andalso
+                                    0 /= length(hd(sets:to_list(Chains)))
+                            end, 60*2, 500),
 
-                            0 == lists:sum([element(2, rpc:call(?NAME(Name1), erlang, process_info, [W, message_queue_len])) || {{Name1, _}, {ok, W}} <- Workers]) andalso
-                            1 == sets:size(Chains) andalso
-                            0 /= length(hd(sets:to_list(Chains)))
-                    end, 60*2, 500),
+            Chains = sets:from_list(lists:map(fun({_Node, {ok, Worker}}) ->
+                                                    {ok, Blocks} = partisan_hbbft_worker:get_blocks(Worker),
+                                                    Blocks
+                                            end, Workers)),
+            node_debug("~p distinct chains~n", [sets:size(Chains)]),
 
-    Chains = sets:from_list(lists:map(fun({_Node, {ok, Worker}}) ->
-                                              {ok, Blocks} = partisan_hbbft_worker:get_blocks(Worker),
-                                              Blocks
-                                      end, Workers)),
-    node_debug("~p distinct chains~n", [sets:size(Chains)]),
-
-    Chains.
+            Chains;
+        [] ->
+            undefined
+    end.
 
 %% @private
 submit_transaction(Node, Message) ->
     ?PROPERTY_MODULE:command_preamble(Node, [submit_transaction, Node]),
 
-    %% Get number of nodes.
-    [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
-    N = length(Nodes),
-
     %% Get workers.
     [{workers, Workers}] = ets:lookup(prop_partisan, workers),
 
-    %% Generate a message.
-    node_debug("Message: ~p", [Message]),
+    %% Mark that we did at least one transaction.
+    true = ets:insert(prop_partisan, {at_least_one_transaction, true}),
 
-    %% Determine destinations.
-    Destinations = random_n(rand:uniform(N), Workers),
-    node_debug("Destinations: ~p", [Destinations]),
+    %% Submit transaction to a random subset of nodes.
+    lists:foreach(fun({_Node, {ok, Worker}}) ->
+        partisan_hbbft_worker:submit_transaction(Message, Worker)
+    end, Workers),
 
-    %% Submit transaction.
-    lists:foreach(fun({_Node, {ok, Destination}}) ->
-        partisan_hbbft_worker:submit_transaction(Message, Destination),
-        partisan_hbbft_worker:start_on_demand(Destination)
-    end, Destinations),
+    %% Start on demand on all nodes.
+    lists:foreach(fun({_Node, {ok, Worker}}) ->
+        partisan_hbbft_worker:start_on_demand(Worker)
+    end, Workers),
 
     ?PROPERTY_MODULE:command_conclusion(Node, [submit_transaction, Node]),
 
