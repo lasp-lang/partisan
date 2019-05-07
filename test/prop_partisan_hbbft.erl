@@ -34,6 +34,9 @@
 %%% Generators
 %%%===================================================================
 
+message() ->
+    crypto:strong_rand_bytes(128).
+
 node_name() ->
     oneof(names()).
 
@@ -47,27 +50,26 @@ names() ->
 %%% Node Functions
 %%%===================================================================
 
--record(node_state, {}).
+-record(node_state, {messages}).
 
 %% What node-specific operations should be called.
 node_commands() ->
     [
-        {call, ?MODULE, submit_transaction, [node_name()]},
-        {call, ?MODULE, wait, [node_name()]}
+        {call, ?MODULE, submit_transaction, [node_name(), message()]}
     ].
 
 %% Assertion commands.
 node_assertion_functions() ->
-    [].
+    [check].
 
 %% Global functions.
 node_global_functions() ->
-    [sleep].
+    [sleep, check].
 
 %% What should the initial node state be.
 node_initial_state() ->
     node_debug("initializing", []),
-    #node_state{}.
+    #node_state{messages=[]}.
 
 %% Names of the node functions so we kow when we can dispatch to the node
 %% pre- and postconditions.
@@ -75,26 +77,55 @@ node_functions() ->
     lists:map(fun({call, _Mod, Fun, _Args}) -> Fun end, node_commands()).
 
 %% Precondition.
-node_precondition(_NodeState, {call, ?MODULE, submit_transaction, [_Node]}) ->
+node_precondition(_NodeState, {call, ?MODULE, submit_transaction, [_Node, _Message]}) ->
     true;
 node_precondition(_NodeState, {call, ?MODULE, wait, [_Node]}) ->
     true;
 node_precondition(_NodeState, {call, ?MODULE, sleep, []}) ->
     true;
+node_precondition(_NodeState, {call, ?MODULE, check, []}) ->
+    true;
 node_precondition(_NodeState, _Command) ->
     false.
 
 %% Next state.
+node_next_state(_State, #node_state{messages=Messages}=NodeState, _Response, {call, ?MODULE, submit_transaction, [_Node, Message]}) ->
+    NodeState#node_state{messages=Messages ++ [Message]};
 node_next_state(_State, NodeState, _Response, _Command) ->
     NodeState.
 
 %% Postconditions for node commands.
-node_postcondition(_NodeState, {call, ?MODULE, submit_transaction, [_Node]}, _Result) ->
+node_postcondition(_NodeState, {call, ?MODULE, submit_transaction, [_Node, _Message]}, _Result) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, wait, [_Node]}, _Result) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, sleep, []}, _Result) ->
     true;
+node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, check, []}, Chains) ->
+    %% Get pubkey.
+    [{pubkey, PubKey}] = ets:lookup(prop_partisan, pubkey),
+
+    lists:foreach(fun(Chain) ->
+                          %ct:pal("Chain: ~p~n", [Chain]),
+                          ct:pal("chain is of height ~p~n", [length(Chain)]),
+
+                          %% verify they are cryptographically linked,
+                          true = partisan_hbbft_worker:verify_chain(Chain, PubKey),
+
+                          %% check all transactions are unique
+                          BlockTxns = lists:flatten([ partisan_hbbft_worker:block_transactions(B) || B <- Chain ]),
+                          true = length(BlockTxns) == sets:size(sets:from_list(BlockTxns)),
+
+                          %% check they're all members of the original message list
+                          true = sets:is_subset(sets:from_list(BlockTxns), sets:from_list(Messages)),
+                          ct:pal("chain contains ~p distinct transactions~n", [length(BlockTxns)])
+                  end, sets:to_list(Chains)),
+
+    %% Check we actually converged and made a chain.
+    OneChain = (1 == sets:size(Chains)),
+    NonTrivialLength = (0 < length(hd(sets:to_list(Chains)))),
+
+    OneChain andalso NonTrivialLength;
 node_postcondition(_NodeState, Command, Response) ->
     node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
                [Command, Response]),
@@ -113,7 +144,32 @@ node_postcondition(_NodeState, Command, Response) ->
 -define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
 
 %% @private
-submit_transaction(Node) ->
+check() ->
+    %% Get workers.
+    [{workers, Workers}] = ets:lookup(prop_partisan, workers),
+
+    %% Wait for all the worker's mailboxes to settle and wait for the chains to converge.
+    ok = wait_until(fun() ->
+                            Chains = sets:from_list(lists:map(fun({_Node, {ok, W}}) ->
+                                                                      {ok, Blocks} = partisan_hbbft_worker:get_blocks(W),
+                                                                      Blocks
+                                                              end, Workers)),
+
+                            0 == lists:sum([element(2, rpc:call(?NAME(Name1), erlang, process_info, [W, message_queue_len])) || {{Name1, _}, {ok, W}} <- Workers]) andalso
+                            1 == sets:size(Chains) andalso
+                            0 /= length(hd(sets:to_list(Chains)))
+                    end, 60*2, 500),
+
+    Chains = sets:from_list(lists:map(fun({_Node, {ok, Worker}}) ->
+                                              {ok, Blocks} = partisan_hbbft_worker:get_blocks(Worker),
+                                              Blocks
+                                      end, Workers)),
+    ct:pal("~p distinct chains~n", [sets:size(Chains)]),
+
+    Chains.
+
+%% @private
+submit_transaction(Node, Message) ->
     ?PROPERTY_MODULE:command_preamble(Node, [submit_transaction, Node]),
 
     %% Get number of nodes.
@@ -124,15 +180,14 @@ submit_transaction(Node) ->
     [{workers, Workers}] = ets:lookup(prop_partisan, workers),
 
     %% Generate a message.
-    Msg = crypto:strong_rand_bytes(128),
-    node_debug("Msg: ~p", [Msg]),
+    node_debug("Message: ~p", [Message]),
 
     %% Determine destinations.
     Destinations = random_n(rand:uniform(N), Workers),
     node_debug("Destinations: ~p", [Destinations]),
 
     %% Submit transaction.
-    [rpc:call(?NAME(Node), partisan_hbbft_worker, submit_transaction, [Msg, Destination]) || {_Node, {ok, Destination}} <- Destinations],
+    [rpc:call(?NAME(Node), partisan_hbbft_worker, submit_transaction, [Message, Destination]) || {_Node, {ok, Destination}} <- Destinations],
 
     ?PROPERTY_MODULE:command_conclusion(Node, [submit_transaction, Node]),
 
@@ -229,6 +284,9 @@ node_begin_case() ->
     {ok, Dealer} = dealer:new(N, F+1, 'SS512'),
     {ok, {PubKey, PrivateKeys}} = dealer:deal(Dealer),
 
+    %% Store pubkey.
+    true = ets:insert(prop_partisan, {pubkey, PubKey}),
+
     %% each node gets a secret key
     NodesSKs = lists:zip(Nodes, PrivateKeys),
 
@@ -292,7 +350,6 @@ node_begin_case() ->
                   end, sets:to_list(Chains)),
 
     %% check we actually converged and made a chain
-
     true = (1 == sets:size(Chains)),
     true = (0 < length(hd(sets:to_list(Chains)))),
 
