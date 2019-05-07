@@ -124,8 +124,8 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
                           %% check they're all members of the original message list
                           true = sets:is_subset(sets:from_list(BlockTxns), sets:from_list(Messages ++ InitialMessages)),
 
-                          node_debug("length(BlockTxns): ~p", length(BlockTxns)),
-                          node_debug("length(Messages ++ InitialMessages): ~p", length(Messages ++ InitialMessages)),
+                          node_debug("length(BlockTxns): ~p", [length(BlockTxns)]),
+                          node_debug("length(Messages ++ InitialMessages): ~p", [length(Messages ++ InitialMessages)]),
                           true = length(BlockTxns) =:= length(Messages ++ InitialMessages),
 
                           node_debug("chain contains ~p distinct transactions~n", [length(BlockTxns)])
