@@ -105,9 +105,12 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
     %% Get pubkey.
     [{pubkey, PubKey}] = ets:lookup(prop_partisan, pubkey),
 
+    %% Get initial messages.
+    [{initial_messages, InitialMessages}] = ets:lookup(prop_partisan, initial_messages),
+
     lists:foreach(fun(Chain) ->
-                          %ct:pal("Chain: ~p~n", [Chain]),
-                          ct:pal("chain is of height ~p~n", [length(Chain)]),
+                          %node_debug("Chain: ~p~n", [Chain]),
+                          node_debug("chain is of height ~p~n", [length(Chain)]),
 
                           %% verify they are cryptographically linked,
                           true = partisan_hbbft_worker:verify_chain(Chain, PubKey),
@@ -117,8 +120,8 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
                           true = length(BlockTxns) == sets:size(sets:from_list(BlockTxns)),
 
                           %% check they're all members of the original message list
-                          true = sets:is_subset(sets:from_list(BlockTxns), sets:from_list(Messages)),
-                          ct:pal("chain contains ~p distinct transactions~n", [length(BlockTxns)])
+                          true = sets:is_subset(sets:from_list(BlockTxns), sets:from_list(Messages ++ InitialMessages)),
+                          node_debug("chain contains ~p distinct transactions~n", [length(BlockTxns)])
                   end, sets:to_list(Chains)),
 
     %% Check we actually converged and made a chain.
@@ -164,7 +167,7 @@ check() ->
                                               {ok, Blocks} = partisan_hbbft_worker:get_blocks(Worker),
                                               Blocks
                                       end, Workers)),
-    ct:pal("~p distinct chains~n", [sets:size(Chains)]),
+    node_debug("~p distinct chains~n", [sets:size(Chains)]),
 
     Chains.
 
@@ -187,7 +190,10 @@ submit_transaction(Node, Message) ->
     node_debug("Destinations: ~p", [Destinations]),
 
     %% Submit transaction.
-    [rpc:call(?NAME(Node), partisan_hbbft_worker, submit_transaction, [Message, Destination]) || {_Node, {ok, Destination}} <- Destinations],
+    lists:foreach(fun({_Node, {ok, Destination}}) ->
+        partisan_hbbft_worker:submit_transaction(Message, Destination),
+        partisan_hbbft_worker:start_on_demand(Destination)
+    end, Destinations),
 
     ?PROPERTY_MODULE:command_conclusion(Node, [submit_transaction, Node]),
 
@@ -251,15 +257,9 @@ node_begin_case() ->
         ok = rpc:call(?NAME(ShortName), partisan_config, set, [pid_encoding, true])
     end, Nodes),
 
-    %% Enable register_pid_for_encoding.
-    lists:foreach(fun({ShortName, _}) ->
-        % node_debug("enabling register_pid_for_encoding at node ~p", [ShortName]),
-        ok = rpc:call(?NAME(ShortName), partisan_config, set, [register_pid_for_encoding, true])
-    end, Nodes),
-
     %% Load, configure, and start hbbft.
     lists:foreach(fun({ShortName, _}) ->
-        node_debug("loading hbbft at node ~p", [ShortName]),
+        % node_debug("loading hbbft at node ~p", [ShortName]),
         case rpc:call(?NAME(ShortName), application, load, [hbbft]) of 
             ok ->
                 ok;
@@ -269,13 +269,15 @@ node_begin_case() ->
                 exit({error, {load_failed, Other}})
         end,
 
-        node_debug("starting hbbft at node ~p", [ShortName]),
+        % node_debug("starting hbbft at node ~p", [ShortName]),
         {ok, _} = rpc:call(?NAME(ShortName), application, ensure_all_started, [hbbft])
     end, Nodes),
 
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %% Start hbbft test
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+    node_debug("warming up hbbft...", []),
 
     %% Master starts the dealer.
     N = length(Nodes),
@@ -304,59 +306,76 @@ node_begin_case() ->
     %% store workers in the ets table
     true = ets:insert(prop_partisan, {workers, Workers}),
 
-    %% generate a bunch of msgs
-    Msgs = [crypto:strong_rand_bytes(128) || _ <- lists:seq(1, N*20)],
+    case os:getenv("BOOTSTRAP") of 
+        "true" ->
+            %% generate a bunch of msgs
+            Msgs = [crypto:strong_rand_bytes(128) || _ <- lists:seq(1, N*20)],
 
-    %% feed the nodes some msgs
-    lists:foreach(fun(Msg) ->
-                          Destinations = random_n(rand:uniform(N), Workers),
-                          ct:pal("destinations ~p~n", [Destinations]),
-                          [partisan_hbbft_worker:submit_transaction(Msg, Destination) || {_Node, {ok, Destination}} <- Destinations]
-                  end, Msgs),
+            %% feed the nodes some msgs
+            lists:foreach(fun(Msg) ->
+                                Destinations = random_n(rand:uniform(N), Workers),
+                                %   node_debug("destinations ~p~n", [Destinations]),
+                                [partisan_hbbft_worker:submit_transaction(Msg, Destination) || {_Node, {ok, Destination}} <- Destinations]
+                        end, Msgs),
 
-    %% wait for all the worker's mailboxes to settle and.
-    %% wait for the chains to converge
-    ok = wait_until(fun() ->
-                            Chains = sets:from_list(lists:map(fun({_Node, {ok, W}}) ->
-                                                                      {ok, Blocks} = partisan_hbbft_worker:get_blocks(W),
-                                                                      Blocks
-                                                              end, Workers)),
+            %% wait for all the worker's mailboxes to settle and.
+            %% wait for the chains to converge
+            ok = wait_until(fun() ->
+                                    Chains = sets:from_list(lists:map(fun({_Node, {ok, W}}) ->
+                                                                            {ok, Blocks} = partisan_hbbft_worker:get_blocks(W),
+                                                                            Blocks
+                                                                    end, Workers)),
 
-                            0 == lists:sum([element(2, rpc:call(?NAME(Name1), erlang, process_info, [W, message_queue_len])) || {{Name1, _}, {ok, W}} <- Workers]) andalso
-                            1 == sets:size(Chains) andalso
-                            0 /= length(hd(sets:to_list(Chains)))
-                    end, 60*2, 500),
+                                    0 == lists:sum([element(2, rpc:call(?NAME(Name1), erlang, process_info, [W, message_queue_len])) || {{Name1, _}, {ok, W}} <- Workers]) andalso
+                                    1 == sets:size(Chains) andalso
+                                    0 /= length(hd(sets:to_list(Chains)))
+                            end, 60*2, 500),
 
-    Chains = sets:from_list(lists:map(fun({_Node, {ok, Worker}}) ->
-                                              {ok, Blocks} = partisan_hbbft_worker:get_blocks(Worker),
-                                              Blocks
-                                      end, Workers)),
-    ct:pal("~p distinct chains~n", [sets:size(Chains)]),
+            Chains = sets:from_list(lists:map(fun({_Node, {ok, Worker}}) ->
+                                                    {ok, Blocks} = partisan_hbbft_worker:get_blocks(Worker),
+                                                    Blocks
+                                            end, Workers)),
+            node_debug("~p distinct chains~n", [sets:size(Chains)]),
 
-    lists:foreach(fun(Chain) ->
-                          %ct:pal("Chain: ~p~n", [Chain]),
-                          ct:pal("chain is of height ~p~n", [length(Chain)]),
+            lists:foreach(fun(Chain) ->
+                                %node_debug("Chain: ~p~n", [Chain]),
+                                node_debug("chain is of height ~p~n", [length(Chain)]),
 
-                          %% verify they are cryptographically linked,
-                          true = partisan_hbbft_worker:verify_chain(Chain, PubKey),
+                                %% verify they are cryptographically linked,
+                                true = partisan_hbbft_worker:verify_chain(Chain, PubKey),
 
-                          %% check all transactions are unique
-                          BlockTxns = lists:flatten([ partisan_hbbft_worker:block_transactions(B) || B <- Chain ]),
-                          true = length(BlockTxns) == sets:size(sets:from_list(BlockTxns)),
+                                %% check all transactions are unique
+                                BlockTxns = lists:flatten([partisan_hbbft_worker:block_transactions(B) || B <- Chain]),
+                                true = length(BlockTxns) == sets:size(sets:from_list(BlockTxns)),
 
-                          %% check they're all members of the original message list
-                          true = sets:is_subset(sets:from_list(BlockTxns), sets:from_list(Msgs)),
-                          ct:pal("chain contains ~p distinct transactions~n", [length(BlockTxns)])
-                  end, sets:to_list(Chains)),
+                                %% check they're all members of the original message list
+                                true = sets:is_subset(sets:from_list(BlockTxns), sets:from_list(Msgs)),
+                                node_debug("chain contains ~p distinct transactions~n", [length(BlockTxns)])
+                        end, sets:to_list(Chains)),
 
-    %% check we actually converged and made a chain
-    true = (1 == sets:size(Chains)),
-    true = (0 < length(hd(sets:to_list(Chains)))),
+            %% check we actually converged and made a chain
+            true = (1 == sets:size(Chains)),
+            true = (0 < length(hd(sets:to_list(Chains)))),
+
+            %% Insert into initial messages.
+            true = ets:insert(prop_partisan, {initial_messages, Msgs}),
+
+            ok;
+        _ ->
+            node_debug("bypassing bootstrap...", []),
+
+            %% Insert into initial messages.
+            true = ets:insert(prop_partisan, {initial_messages, []}),
+
+            ok
+    end,
 
     %% Sleep.
     node_debug("sleeping for convergence", []),
     timer:sleep(1000),
     node_debug("done.", []),
+
+    node_debug("hbbft initialized!", []),
 
     ok.
 
