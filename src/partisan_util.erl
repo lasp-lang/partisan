@@ -364,7 +364,7 @@ pid(Pid) ->
                 false ->
                     [_, B, C] = string:split(pid_to_list(Pid), ".", all),
                     RewrittenProcessIdentifier = "<0." ++ B ++ "." ++ C,
-                    lager:info("rewriting remote reference id: ~p", [RewrittenProcessIdentifier]),
+                    % lager:info("rewriting remote reference id: ~p", [RewrittenProcessIdentifier]),
                     {partisan_remote_reference, Node, {partisan_process_reference, RewrittenProcessIdentifier}}
             end
     end.
@@ -383,11 +383,11 @@ process_forward(ServerRef, Message) ->
                 Name = list_to_atom(RegisteredName),
                 Name ! Message;
             {partisan_remote_reference, OtherNode, {partisan_process_reference, ProcessIdentifier}} ->
-                lager:info("process reference is: ~p", [ProcessIdentifier]),
+                % lager:info("process reference is: ~p", [ProcessIdentifier]),
                 case string:split(ProcessIdentifier, ".", all) of 
                     ["<0",_B,_C] ->
                         Pid = list_to_pid(ProcessIdentifier),
-                        lager:info("pid reference is: ~p", [Pid]),
+                        % lager:info("pid reference is: ~p", [Pid]),
                         Pid ! Message;
                     [_,B,C] ->
                         %% Remote written pid from Distributed Erlang.
