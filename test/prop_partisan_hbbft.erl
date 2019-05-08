@@ -287,6 +287,7 @@ node_begin_case() ->
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 
     node_debug("warming up hbbft...", []),
+    node_debug("nodes: ~p", [Nodes]),
 
     %% Master starts the dealer.
     N = length(Nodes),
@@ -308,6 +309,7 @@ node_begin_case() ->
     %% start a hbbft_worker on each node
     Workers = lists:map(fun({I, {{Name1, _} = FullName, SK}}) ->
         {ok, Worker} = rpc:call(?NAME(Name1), partisan_hbbft_worker, start_link, [N, F, I, tpke_privkey:serialize(SK), BatchSize, false]),
+        node_debug("worker started on node ~p with pid ~p", [Name1, Worker]),
         {FullName, {ok, Worker}}
     end, enumerate(NodesSKs)),
     ok = global:sync(),
