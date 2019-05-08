@@ -404,9 +404,23 @@ node_begin_case() ->
 
 %% @private
 node_crash(Node) ->
-    %% Get workers and terminate them.
+    node_debug("node crash executing for node ~p", [Node]),
+
+    %% Get full name of node to crash.
+    NodeToCrash = ?NAME(Node),
+
+    %% Get workers and terminate them if they are on that node.
     [{workers, Workers}] = ets:lookup(prop_partisan, workers),
-    lists:foreach(fun({_, {ok, W}}) -> ok = partisan_hbbft_worker:stop(W) end, Workers),
+
+    lists:foreach(fun({_, {ok, W}}) -> 
+        case node(W) of 
+            NodeToCrash ->
+                node_debug("terminating process: ~p", [W]),
+                catch partisan_hbbft_worker:stop(W);
+            _ ->
+                ok
+        end
+    end, Workers),
     ok = global:sync(),
 
     %% Stop hbbft.
