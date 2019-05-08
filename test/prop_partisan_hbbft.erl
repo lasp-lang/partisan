@@ -167,20 +167,14 @@ check() ->
         [{at_least_one_transaction, true}] ->
             %% Wait for all the worker's mailboxes to settle and wait for the chains to converge.
             ok = wait_until(fun() ->
-                                    Chains = sets:from_list(lists:map(fun({_Node, {ok, W}}) ->
-                                                                            {ok, Blocks} = partisan_hbbft_worker:get_blocks(W),
-                                                                            Blocks
-                                                                    end, Workers)),
+                                    Chains = chains(Workers),
 
                                     0 == lists:sum([element(2, rpc:call(?NAME(Name1), erlang, process_info, [W, message_queue_len])) || {{Name1, _}, {ok, W}} <- Workers]) andalso
                                     1 == sets:size(Chains) andalso
                                     0 /= length(hd(sets:to_list(Chains)))
                             end, 60*2, 500),
 
-            Chains = sets:from_list(lists:map(fun({_Node, {ok, Worker}}) ->
-                                                    {ok, Blocks} = partisan_hbbft_worker:get_blocks(Worker),
-                                                    Blocks
-                                            end, Workers)),
+            Chains = chains(Workers),
             node_debug("~p distinct chains~n", [sets:size(Chains)]),
 
             Chains;
@@ -460,4 +454,18 @@ wait_until(Fun, Retry, Delay) when Retry > 0 ->
         _ ->
             timer:sleep(Delay),
             wait_until(Fun, Retry-1, Delay)
-    end.
+    end.%% @private
+chains(Workers) ->
+    sets:from_list(lists:foldl(fun({_Node, {ok, W}}, Acc) ->
+                                        node_debug("getting blocks for worker: ~p", [W]),
+
+                                        try
+                                            {ok, Blocks} = partisan_hbbft_worker:get_blocks(W),
+                                            node_debug("=> Blocks: ~p", [Blocks]),
+                                            Acc ++ [Blocks]
+                                        catch
+                                            _:Error ->
+                                                node_debug("=> received error: ~p", [Error]),
+                                                Acc
+                                        end
+                               end, [], Workers)).
