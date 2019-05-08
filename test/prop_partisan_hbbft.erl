@@ -397,7 +397,7 @@ node_crash(Node) ->
 
     %% Stop hbbft.
     % node_debug("stopping hbbft on node ~p", [Node]),
-    ok = rpc:call(?NAME(Node), application, stop, [hbbft]),
+    % ok = rpc:call(?NAME(Node), application, stop, [hbbft]),
 
     ok.
 
