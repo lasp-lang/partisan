@@ -169,11 +169,17 @@ do_send([{unicast, Dest, Msg}|T], State) ->
     lager:info("~p unicasting ~p to ~p~n", [State#state.id, Msg, global:whereis_name(name(Dest))]),
     case os:getenv("PARTISAN") of 
         "true" ->
-            Process = global:whereis_name(name(Dest)),
-            Node = node(Process),
-            Message = {hbbft, State#state.id, Msg},
-            lager:info("Sending partisan message to node ~p process ~p: ~p", [Node, Process, Message]),
-            partisan_pluggable_peer_service_manager:cast_message(Node, undefined, Process, Message, []);
+            try
+                Process = global:whereis_name(name(Dest)),
+                Node = node(Process),
+                Message = {hbbft, State#state.id, Msg},
+                lager:info("Sending partisan message to node ~p process ~p: ~p", [Node, Process, Message]),
+                partisan_pluggable_peer_service_manager:cast_message(Node, undefined, Process, Message, [])
+            catch
+                _:_ ->
+                    %% Node might have gone offline.
+                    ok
+            end;
         _ ->
             gen_server:cast({global, name(Dest)}, {hbbft, State#state.id, Msg})
     end,
@@ -184,11 +190,17 @@ do_send([{multicast, Msg}|T], State) ->
     case os:getenv("PARTISAN") of 
         "true" ->
             lists:foreach(fun(Dest) ->
-                Process = global:whereis_name(name(Dest)),
-                Node = node(Process),
-                Message = {hbbft, State#state.id, Msg},
-                lager:info("Sending partisan message to node ~p process ~p: ~p", [Node, Process, Message]),
-                partisan_pluggable_peer_service_manager:cast_message(Node, undefined, Process, Message, [])
+                try
+                    Process = global:whereis_name(name(Dest)),
+                    Node = node(Process),
+                    Message = {hbbft, State#state.id, Msg},
+                    lager:info("Sending partisan message to node ~p process ~p: ~p", [Node, Process, Message]),
+                    partisan_pluggable_peer_service_manager:cast_message(Node, undefined, Process, Message, [])
+                catch
+                    _:_ ->
+                        %% Node might have gone offline.
+                        ok
+                end
             end, lists:seq(0, State#state.n - 1));
         _ ->
             [gen_server:cast({global, name(Dest)}, {hbbft, State#state.id, Msg}) || Dest <- lists:seq(0, State#state.n - 1)]
