@@ -169,7 +169,12 @@ check() ->
             ok = wait_until(fun() ->
                                     Chains = chains(Workers),
 
-                                    0 == lists:sum([element(2, rpc:call(?NAME(Name1), erlang, process_info, [W, message_queue_len])) || {{Name1, _}, {ok, W}} <- Workers]) andalso
+                                    node_debug("Chains: ~p", [sets:to_list(Chains)]),
+                                    node_debug("message_queue_lens(Workers): ~p should = 0", [message_queue_lens(Workers)]),
+                                    node_debug("sets:size(Chains): ~p should = 1", [sets:size(Chains)]),
+                                    node_debug("length(hd(sets:to_list(Chains))): ~p should /= 0", [length(hd(sets:to_list(Chains)))]),
+
+                                    0 == message_queue_lens(Workers) andalso
                                     1 == sets:size(Chains) andalso
                                     0 /= length(hd(sets:to_list(Chains)))
                             end, 60*2, 500),
@@ -335,7 +340,7 @@ node_begin_case() ->
                                                                             Blocks
                                                                     end, Workers)),
 
-                                    0 == lists:sum([element(2, rpc:call(?NAME(Name1), erlang, process_info, [W, message_queue_len])) || {{Name1, _}, {ok, W}} <- Workers]) andalso
+                                    0 == message_queue_lens(Workers) andalso
                                     1 == sets:size(Chains) andalso
                                     0 /= length(hd(sets:to_list(Chains)))
                             end, 60*2, 500),
@@ -454,7 +459,22 @@ wait_until(Fun, Retry, Delay) when Retry > 0 ->
         _ ->
             timer:sleep(Delay),
             wait_until(Fun, Retry-1, Delay)
-    end.%% @private
+    end.
+
+%% @private
+message_queue_lens(Workers) ->
+    Values = lists:map(fun({{Name1, _}, {ok, W}}) ->
+        try
+            Result = rpc:call(?NAME(Name1), erlang, process_info, [W, message_queue_len]),
+            element(2, Result)
+        catch
+            _:_ ->
+                0
+        end
+    end, Workers),
+    lists:sum(Values).
+
+%% @private
 chains(Workers) ->
     sets:from_list(lists:foldl(fun({_Node, {ok, W}}, Acc) ->
                                         node_debug("getting blocks for worker: ~p", [W]),
