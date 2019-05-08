@@ -226,7 +226,7 @@ sleep() ->
     ?PROPERTY_MODULE:command_preamble(RunnerNode, [sleep]),
 
     node_debug("sleeping...", []),
-    timer:sleep(1000),
+    timer:sleep(60000),
 
     ?PROPERTY_MODULE:command_conclusion(RunnerNode, [sleep]),
 
