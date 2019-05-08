@@ -126,6 +126,10 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
 
                           node_debug("length(BlockTxns): ~p", [length(BlockTxns)]),
                           node_debug("length(Messages ++ InitialMessages): ~p", [length(Messages ++ InitialMessages)]),
+
+                          Difference = sets:subtract(sets:from_list(Messages ++ InitialMessages), sets:from_list(BlockTxns)),
+                          node_debug("Difference: ~p", [sets:to_list(Difference)]),
+
                           true = length(BlockTxns) =:= length(Messages ++ InitialMessages),
 
                           node_debug("chain contains ~p distinct transactions~n", [length(BlockTxns)])
