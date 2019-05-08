@@ -240,7 +240,7 @@ sleep() ->
 
 %% How many nodes?
 node_num_nodes() ->
-    5.
+    7.
 
 %% Should we do node debugging?
 node_debug(Line, Args) ->
