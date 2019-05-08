@@ -118,7 +118,7 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
                           true = partisan_hbbft_worker:verify_chain(Chain, PubKey),
 
                           %% check all transactions are unique
-                          BlockTxns = lists:flatten([ partisan_hbbft_worker:block_transactions(B) || B <- Chain ]),
+                          BlockTxns = lists:flatten([partisan_hbbft_worker:block_transactions(B) || B <- Chain]),
                           true = length(BlockTxns) == sets:size(sets:from_list(BlockTxns)),
 
                           %% check they're all members of the original message list
