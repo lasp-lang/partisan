@@ -435,7 +435,7 @@ node_end_case() ->
 
     %% Get workers and terminate them.
     [{workers, Workers}] = ets:lookup(prop_partisan, workers),
-    lists:foreach(fun({_, {ok, W}}) -> ok = partisan_hbbft_worker:stop(W) end, Workers),
+    lists:foreach(fun({_, {ok, W}}) -> catch partisan_hbbft_worker:stop(W) end, Workers),
     ok = global:sync(),
 
     %% Get nodes.
