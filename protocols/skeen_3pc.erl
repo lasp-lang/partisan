@@ -39,6 +39,8 @@
          terminate/2,
          code_change/3]).
 
+-compile([{parse_transform, lager_transform}]).
+
 -record(state, {next_id, membership}).
 
 -record(transaction, {id,
