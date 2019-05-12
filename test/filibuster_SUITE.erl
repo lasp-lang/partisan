@@ -600,7 +600,7 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
         % DifferenceOmissionTypes = message_types(Omissions) -- message_types(BaseOmissions),
         % debug("DifferenceOmissionTypes: ~p~n", [DifferenceOmissionTypes]),
 
-        case EarlyOmissions andalso EarlyCausality andalso not lists:member(EarlyClassification, GenClassificationsExplored0) of
+        case EarlyOmissions andalso EarlyCausality andalso not classification_explored(EarlyClassification, GenClassificationsExplored0) of
             true ->
                 debug("~n", []),
                 % debug("Entering generation pass.~n", []),
@@ -1111,7 +1111,7 @@ execute_schedule(StartTime, Nodes, Counterexample, PreloadOmissionFile, ReplayTr
         false ->
             invalid;
         true ->
-            case lists:member(Classification, ClassificationsExplored0) andalso pruning() of  
+            case classification_explored(Classification, ClassificationsExplored0) andalso pruning() of  
                 true ->
                     debug("Classification: ~p~n", [Classification]),
                     debug("Classifications explored: ~p~n", [ClassificationsExplored0]),
@@ -1417,4 +1417,12 @@ pruning() ->
             false;
         _ ->
             true
+    end.
+%% @private
+classification_explored(Classification, ClassificationsExplored) ->
+    case Classification of 
+        [] ->
+            false;
+        _ ->
+            lists:member(Classification, ClassificationsExplored)
     end.
