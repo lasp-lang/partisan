@@ -208,6 +208,16 @@ model_checker_test(_Config) ->
             %% Stop nodes.
             ?SUPPORT:stop(Nodes),
 
+            %% Get base dir.
+            {ok, Base} = file:get_cwd(),
+            BasePath = Base ++ "/../../../../",
+
+            %% Analyze cover information.
+            ImplementationModule = implementation_module(),
+            {ok, AnalysisFileResults} = cover:analyze_to_file(ImplementationModule, [html]),
+            CoverageFile = os:cmd("find " ++ BasePath ++ " -name " ++ AnalysisFileResults ++ " | tail -1"),
+            debug("Coverage file: ~p", [lists:sublist(CoverageFile, 1, length(CoverageFile) - 1)]),
+
             %% Delete the table.
             ets:delete(?ETS),
 
