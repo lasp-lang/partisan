@@ -106,6 +106,18 @@ make bin-perms:
 	chmod 755 bin/*.sh
 	chmod 755 bin/*.escript
 
+demers-anti-entropy: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=demers_anti_entropy SUBLIST=0 bin/check-model.sh
+
+demers-rumor-mongering: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=demers_rumor_mongering SUBLIST=0 bin/check-model.sh
+
+demers-direct-mail-acked: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=demers_direct_mail_acked SUBLIST=0 bin/check-model.sh
+
+demers-direct-mail: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=demers_direct_mail SUBLIST=0 bin/check-model.sh
+
 lampson-2pc: kill bin-perms compile
 	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=lampson_2pc SUBLIST=0 bin/check-model.sh
 
