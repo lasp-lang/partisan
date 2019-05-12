@@ -1014,8 +1014,18 @@ identify_minimal_witnesses() ->
     ok.
 
 %% @private
-classify_schedule(_N, CausalityAnnotations, PrefixSchedule, _OmittedSchedule, ConditionalSchedule) ->
+classify_schedule(_N, CausalityAnnotations0, PrefixSchedule, _OmittedSchedule, ConditionalSchedule) ->
     % debug("classifying schedule using causality annotations: ~p", [dict:to_list(CausalityAnnotations)]),
+
+    %% Remove any annotations where the condition is trivially true before classifying.
+    CausalityAnnotations = dict:fold(fun(Key, Value, Acc) ->
+        case Value of 
+            [true] ->
+                Acc;
+            _ ->
+                dict:store(Key, Value, Acc)
+        end
+    end, dict:new(), CausalityAnnotations0),
 
     DerivedSchedule = PrefixSchedule ++ ConditionalSchedule,
 
@@ -1041,8 +1051,18 @@ classify_schedule(_N, CausalityAnnotations, PrefixSchedule, _OmittedSchedule, Co
     Classification.
 
 %% @private
-classify_schedule(_N, CausalityAnnotations, CandidateTrace0) ->
+classify_schedule(_N, CausalityAnnotations0, CandidateTrace0) ->
     % debug("classifying schedule using causality annotations: ~p", [dict:to_list(CausalityAnnotations)]),
+
+    %% Remove any annotations where the condition is trivially true before classifying.
+    CausalityAnnotations = dict:fold(fun(Key, Value, Acc) ->
+        case Value of 
+            [true] ->
+                Acc;
+            _ ->
+                dict:store(Key, Value, Acc)
+        end
+    end, dict:new(), CausalityAnnotations0),
 
     CandidateTrace = message_types(CandidateTrace0),
 
