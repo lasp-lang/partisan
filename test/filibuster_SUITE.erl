@@ -765,7 +765,9 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
                                 ok
                         end,
 
-                        case execute_schedule(StartTime, Nodes, Counterexample, PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, GenClassificationsExplored0, GenAdditionalTraces0) of
+                        GenNumExplored = GenNumPassed0 + GenNumFailed0,
+
+                        case execute_schedule(StartTime, GenNumExplored + 1, Nodes, Counterexample, PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {GenIteration0, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, GenClassificationsExplored0, GenAdditionalTraces0) of
                             pruned ->
                                 debug("Schedule pruned.~n", []),
                                 {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0 + 1, GenClassificationsExplored0, GenAdditionalTraces0};
@@ -795,7 +797,9 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
 
     %% Run generated schedules stored in the ETS table.
     {PreloadNumPassed, PreloadNumFailed, PreloadNumPruned, PreloadClassificationsExplored, PreloadAdditionalTraces} = ets:foldl(fun({Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, {PreloadNumPassed0, PreloadNumFailed0, PreloadNumPruned0, PreloadClassificationsExplored0, PreloadAdditionalTraces0}) ->
-        case execute_schedule(StartTime, Nodes, Counterexample, PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, PreloadClassificationsExplored0, PreloadAdditionalTraces0) of
+        PreloadNumExplored = PreloadNumPassed0 + PreloadNumFailed0,
+
+        case execute_schedule(StartTime, PreloadNumExplored + 1, Nodes, Counterexample, PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, PreloadClassificationsExplored0, PreloadAdditionalTraces0) of
             pruned ->
                 {PreloadNumPassed0, PreloadNumFailed0, PreloadNumPruned0 + 1, PreloadClassificationsExplored0, PreloadAdditionalTraces0};
             {passed, ClassificationsExplored, NewTraces} ->
@@ -1124,7 +1128,7 @@ message_types(TraceLines) ->
     end, TraceLines).
 
 %% @privae
-execute_schedule(StartTime, Nodes, Counterexample, PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, ClassificationsExplored0, NewTraces0) ->
+execute_schedule(StartTime, CurrentIteration, Nodes, Counterexample, PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, ClassificationsExplored0, NewTraces0) ->
     Classification = dict:to_list(ClassifySchedule),
 
     case ScheduleValid of 
@@ -1229,7 +1233,7 @@ execute_schedule(StartTime, Nodes, Counterexample, PreloadOmissionFile, ReplayTr
                                     Difference = timer:now_diff(EndTime, StartTime),
                                     DifferenceMs = Difference / 1000,
                                     DifferenceSec = DifferenceMs / 1000,
-                                    debug("Counterexample identified in ~p seconds.~n", [DifferenceSec]),
+                                    debug("Counterexample identified in ~p seconds at iteration: ~p.~n", [DifferenceSec, CurrentIteration]),
                                     exit({error, counterexample_found});
                                 _Other ->
                                     ok
