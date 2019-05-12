@@ -157,6 +157,31 @@ model_checker_test(_Config) ->
 
     debug("~p started nodes: ~p", [Self, Nodes]),
 
+    %% Get implementation module.
+    ImplementationModule = implementation_module(),
+
+    %% Compile cover.
+    {ok, Base} = file:get_cwd(),
+    {ok, ImplementationModule} = cover:compile(filename:join([Base, "../../../../protocols/" ++ atom_to_list(ImplementationModule) ++ ".erl"])),
+
+    %% Print cover modules.
+    % CoverModules = cover:modules(),
+    % debug("cover:modules: ~p", [CoverModules]),
+
+    %% Start cover on all nodes. 
+    %% TODO: Replace me with cover:start(Nodes)
+    lists:map(fun({_, Node}) ->
+        case rpc:call(Node, cover, remote_start, [node()]) of
+            {ok, _RPid} ->
+                ok;
+            {error, {already_started, _}} ->
+                ok;
+            Error ->
+                debug("Could not start cover on ~w: ~tp\n", [Node, Error]),
+                ct:fail({error, could_not_start_cover})
+        end
+    end, Nodes),
+
     %% Open up the counterexample file.
     {ok, Base} = file:get_cwd(),
     CounterexampleFilePath = filename:join([Base, "../../", ?COUNTEREXAMPLE_FILE]),
