@@ -103,6 +103,142 @@ groups() ->
 %% Tests.
 %% ===================================================================
 
+annotations_test(_Config) ->
+    lager:info("~p: starting nodes!", [?MODULE]),
+
+    %% Get self.
+    Self = self(),
+
+    %% Special configuration for the cluster.
+    Config = [{partisan_dispatch, true},
+              {parallelism, ?PARALLELISM},
+              {tls, false},
+              {binary_padding, false},
+              {channels, ?CHANNELS},
+              {vnode_partitioning, ?VNODE_PARTITIONING},
+              {causal_labels, ?CAUSAL_LABELS},
+              {pid_encoding, false},
+              {sync_join, false},
+              {forward_options, []},
+              {broadcast, false},
+              {disterl, false},
+              {hash, undefined},
+              {egress_delay, ?EGRESS_DELAY},
+              {ingress_delay, ?INGRESS_DELAY},
+              {membership_strategy_tracing, false},
+              {periodic_enabled, false},
+              {distance_enabled, false},
+              {replaying, false},
+              {shrinking, false},
+              {disable_fast_forward, true},
+              {disable_fast_receive, true},
+              {membership_strategy, partisan_full_membership_strategy}],
+
+    %% Cluster and start options.
+    Options = [{partisan_peer_service_manager, ?MANAGER}, 
+                {num_nodes, node_num_nodes()},
+                {cluster_nodes, ?CLUSTER_NODES}],
+
+    %% Initialize a cluster.
+    Nodes = ?SUPPORT:start(prop_partisan, Config, Options),
+
+    %% Create an ets table for test configuration.
+    ?ETS = ets:new(?ETS, [named_table]),
+
+    %% Insert all nodes into group for all nodes.
+    true = ets:insert(?ETS, {nodes, Nodes}),
+
+    %% Insert name to node mappings for lookup.
+    %% Caveat, because sometimes we won't know ahead of time what FQDN the node will
+    %% come online with when using partisan.
+    lists:foreach(fun({Name, Node}) ->
+        true = ets:insert(?ETS, {Name, Node})
+    end, Nodes),
+
+    debug("~p started nodes: ~p", [Self, Nodes]),
+
+    %% Get base path.
+    {ok, Base} = file:get_cwd(),
+    BasePath = Base ++ "/../../../../",
+
+    %% Get module as string.
+    ModuleString = os:getenv("IMPLEMENTATION_MODULE"),
+
+    %% Set up path to the trace file.
+    TraceFile = "/tmp/partisan-latest.trace",
+
+    %% Open up the counterexample file.
+    {ok, Base} = file:get_cwd(),
+    CounterexampleFilePath = filename:join([Base, "../../", ?COUNTEREXAMPLE_FILE]),
+    case file:consult(CounterexampleFilePath) of
+        {ok, [Counterexample]} ->
+            %% Test execution begins here.
+
+            %% Open the annotations file.
+            AnnotationsFile = BasePath ++ "/annotations/partisan-annotations-" ++ ModuleString,
+
+            case filelib:is_file(AnnotationsFile) of 
+                false ->
+                    debug("Annotations file doesn't exist: ~p~n", [AnnotationsFile]),
+                    ct:fail({notfound, AnnotationsFile});
+                true ->
+                    ok
+            end,
+
+            {ok, [RawAnnotations]} = file:consult(AnnotationsFile),
+            % debug("Raw annotations loaded: ~p~n", [RawAnnotations]),
+            AllAnnotations = dict:from_list(RawAnnotations),
+            % debug("Annotations loaded: ~p~n", [dict:to_list(AllAnnotations)]),
+
+            {ok, RawCausalityAnnotations} = dict:find(causality, AllAnnotations),
+            debug("Raw causality annotations loaded: ~p~n", [RawCausalityAnnotations]),
+
+            CausalityAnnotations = dict:from_list(RawCausalityAnnotations),
+            debug("Causality annotations loaded: ~p~n", [dict:to_list(CausalityAnnotations)]),
+
+            {ok, BackgroundAnnotations} = dict:find(background, AllAnnotations),
+            debug("Background annotations loaded: ~p~n", [BackgroundAnnotations]),
+
+            %% Iterate on the test here.
+            lists:foreach(fun(_) ->
+                %% Run an execution of the test.
+                CommandFun = fun() ->
+                    Replaying = true,
+                    Shrinking = true,
+                    Tracing = false,
+                    PerformPreloads = true,
+                    execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, Counterexample)
+                end,
+                {CTime, _ReturnValue} = timer:tc(CommandFun),
+                debug("Time: ~p ms. ~n", [CTime / 1000]),
+
+                %% Open the trace file.
+                {ok, TraceLines} = file:consult(TraceFile),
+                MessageTypesFromTraceLines = message_types(hd(TraceLines)),
+                % debug("MessageTypesFromTraceLines: ~p", [MessageTypesFromTraceLines]),
+
+                %% Verify annotations.
+                verify_annotations(CausalityAnnotations, MessageTypesFromTraceLines)
+            end, lists:seq(1, 1)),
+
+            %% Teardown begins here.
+
+            %% Get list of nodes that were started at the start
+            %% of the test.
+            [{nodes, Nodes}] = ets:lookup(?ETS, nodes),
+
+            %% Stop nodes.
+            ?SUPPORT:stop(Nodes),
+
+            %% Delete the table.
+            ets:delete(?ETS),
+
+            ok;
+        {error, _} ->
+            debug("no counterexamples to run.", []),
+            ok
+    end.
+
 model_checker_test(_Config) ->
     lager:info("~p: starting nodes!", [?MODULE]),
 
@@ -231,15 +367,15 @@ model_checker_test(_Config) ->
 %% Test Runner
 %% ===================================================================
 
-execute(Nodes, {M, F, A}) ->
+execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
     %% Ensure replaying option is set.
     lists:foreach(fun({ShortName, _}) ->
-        ok = rpc:call(?NAME(ShortName), partisan_config, set, [replaying, true])
+        ok = rpc:call(?NAME(ShortName), partisan_config, set, [replaying, Replaying])
     end, Nodes),
 
     %% Ensure shrinking option is set.
     lists:foreach(fun({ShortName, _}) ->
-        ok = rpc:call(?NAME(ShortName), partisan_config, set, [shrinking, true])
+        ok = rpc:call(?NAME(ShortName), partisan_config, set, [shrinking, Shrinking])
     end, Nodes),
 
     %% Deterministically seed the random number generator.
@@ -255,13 +391,18 @@ execute(Nodes, {M, F, A}) ->
     ok = partisan_trace_orchestrator:enable(),
 
     %% Set replay.
-    partisan_config:set(replaying, true),
+    partisan_config:set(replaying, Replaying),
 
     %% Set shrinking.
-    partisan_config:set(shrinking, true),
+    partisan_config:set(shrinking, Shrinking),
 
-    %% Perform preloads.
-    ok = partisan_trace_orchestrator:perform_preloads(Nodes),
+    %% Perform preloads.    
+    case PerformPreloads of 
+        true ->
+            ok = partisan_trace_orchestrator:perform_preloads(Nodes);
+        false ->
+            ok
+    end,
 
     %% Identify trace.
     TraceRandomNumber = rand:uniform(100000),
@@ -300,7 +441,7 @@ execute(Nodes, {M, F, A}) ->
 
     %% Enable tracing.
     lists:foreach(fun({_Name, Node}) ->
-        rpc:call(Node, partisan_config, set, [tracing, false])
+        rpc:call(Node, partisan_config, set, [tracing, Tracing])
     end, Nodes),
 
     %% Run proper.
@@ -1165,7 +1306,11 @@ execute_schedule(StartTime, CurrentIteration, Nodes, Counterexample, PreloadOmis
 
                     %% Run the trace.
                     CommandFun = fun() ->
-                        execute(Nodes, Counterexample)
+                        Replaying = true,
+                        Shrinking = true,
+                        Tracing = false,
+                        PerformPreloads = true,
+                        execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, Counterexample)
                     end,
                     {CTime, ReturnValue} = timer:tc(CommandFun),
                     debug("Time: ~p ms. ~n", [CTime / 1000]),
@@ -1442,6 +1587,83 @@ pruning() ->
         _ ->
             true
     end.
+
+%% @private
+%% From: https://stackoverflow.com/questions/1459152/erlang-listsindex-of-function
+index_of(Item, List) -> index_of(Item, List, 1).
+
+index_of(_, [], _)  -> not_found;
+index_of(Item, [Item|_], Index) -> Index;
+index_of(Item, [_|Tl], Index) -> index_of(Item, Tl, Index+1).
+
+%% @private
+verify_annotations(CausalityAnnotations, MessageTypesFromTraceLines) ->
+    Results = lists:foldl(fun({MessageType, Requirements}, Acc) ->
+        debug("Verifying annotation ~p against the trace.", [MessageType]),
+
+        %% Is the message present in the trace?
+        IsPresent = lists:member(MessageType, MessageTypesFromTraceLines),
+        debug("=> is present in the trace: ~p", [IsPresent]),
+
+        case IsPresent of
+            true ->
+                debug("=> has the following requirements: ~p", [Requirements]),
+
+                %% Find first occurence of the message in the trace.
+                Nth = index_of(MessageType, MessageTypesFromTraceLines),
+                debug("=> ~p is index: ~p", [MessageType, Nth]),
+
+                %% Generate prefix trace.
+                PrefixTrace = lists:sublist(MessageTypesFromTraceLines, 1, Nth),
+
+                %% Look at each requirement.
+                PossiblyWrong = lists:foldl(fun(Requirement, Acc1) ->
+                    debug(" -> examining requirement: ~p", [Requirement]),
+
+                    case Requirement of 
+                        true ->
+                            debug(" -> criteria trivially true, MET!", []),
+                            Acc1;
+                        {Message, Criteria} ->
+                            %% Find all messages meeting the criteria.
+                            CriteriaMessages = lists:filter(fun(N) -> N =:= Message end, PrefixTrace),
+                            debug(" -> found ~p messages fitting criteria", [length(CriteriaMessages)]),
+
+                            case Criteria of 
+                                N when N =< length(CriteriaMessages) ->
+                                    %% Weakest precondition candidiate.
+                                    debug(" -> criteria, MET!", []),
+                                    Acc1;
+                                _ ->
+                                    %% Precondition is too strong -- not met.
+                                    debug(" -> criteria TOO STRONG!", []),
+                                    Acc1 ++ [{Requirement, length(CriteriaMessages)}]
+                            end
+                    end
+                end, [], Requirements),
+
+                case PossiblyWrong of 
+                    [] ->
+                        debug("=> at the end of requirements analysis, requirements correct!", []),
+                        Acc;
+                    _ ->
+                        debug("=> at the end of requirements analaysis, possible incorrect annotations: ~p", [PossiblyWrong]),
+                        Acc ++ [{MessageType, PossiblyWrong}]
+                end;
+            false ->
+                %% Do nothing.
+                Acc
+        end
+    end, [], dict:to_list(CausalityAnnotations)),
+
+    lists:foreach(fun({MessageType, Requirements}) ->
+        lists:foreach(fun({Requirement, Observed}) ->
+            debug("WARNING: Annotation ~p for ~p potentially too strong based on trace (observed ~p message(s)).", [MessageType, Requirement, Observed])
+        end, Requirements)
+    end, Results),
+
+    Results.
+
 %% @private
 classification_explored(Classification, ClassificationsExplored) ->
     case Classification of 
