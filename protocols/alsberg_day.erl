@@ -25,6 +25,7 @@
 
 %% API
 -export([start_link/0,
+         stop/0,
          write/2,
          read/1,
          update/1]).
@@ -39,8 +40,6 @@
 
 -record(state, {store, membership=[]}).
 
--include("partisan.hrl").
-
 -define(PB_TIMEOUT,       1000).
 -define(PB_RETRY_TIMEOUT, 100).
 
@@ -50,6 +49,9 @@
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+stop() ->
+    gen_server:stop(?MODULE).
 
 %% @doc Notifies us of membership update.
 update(LocalState0) ->
@@ -102,7 +104,7 @@ init([]) ->
 
     %% Start with initial membership.
     {ok, Membership} = partisan_peer_service:members(),
-    lager:info("Starting with membership: ~p", [Membership]),
+    partisan_logger:info("Starting with membership: ~p", [Membership]),
 
     {ok, #state{membership=Membership, store=Store}}.
 
@@ -118,7 +120,7 @@ handle_cast({update, Membership0}, State) ->
 handle_cast({write, {FromPid, FromRequestId}=From, Key, Value}, #state{membership=[Primary, Collaborator|_Rest], store=Store0}=State) ->
     case node() of 
         Primary ->
-            lager:info("~p: node ~p received write for key ~p with value ~p", [?MODULE, node(), Key, Value]),
+            partisan_logger:info("~p: node ~p received write for key ~p with value ~p", [?MODULE, node(), Key, Value]),
 
             %% Write value locally.
             Store = write(Key, Value, Store0),
@@ -126,12 +128,12 @@ handle_cast({write, {FromPid, FromRequestId}=From, Key, Value}, #state{membershi
             %% Forward to collaboration message.
             Myself = pnode(),
             psend(Collaborator, {collaborate, From, Myself, Key, Value}),
-            lager:info("~p: node ~p sent replication request for key ~p with value ~p", [?MODULE, node(), Key, Value]),
+            partisan_logger:info("~p: node ~p sent replication request for key ~p with value ~p", [?MODULE, node(), Key, Value]),
 
             %% Wait for collaboration ack before proceeding for n-host resilience (n = 2).
             receive
                 {collaborate_ack, From, Key, Value} ->
-                    lager:info("~p: node ~p ack received for key ~p value ~p", [?MODULE, node(), Key, Value]),
+                    partisan_logger:info("~p: node ~p ack received for key ~p value ~p", [?MODULE, node(), Key, Value]),
 
                     %% Reply to caller.
                     psend(FromPid, {response, FromRequestId, ok}),
@@ -158,7 +160,7 @@ handle_cast({read, {FromPid, FromRequestId}=From, Key}, #state{membership=[Prima
     case node() of 
         Primary ->
             Value = read(Key, Store),
-            lager:info("~p: node ~p received read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
+            partisan_logger:info("~p: node ~p received read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
 
             %% Send the response back to the user.
             psend(FromPid, {response, FromRequestId, {ok, Value}}),
@@ -180,7 +182,7 @@ handle_info({forwarded_write, {FromPid, FromRequestId}=From, Key, Value}, #state
     %% Figure 2c: I think this algorithm is not correct, but we'll see.
 
     Store = write(Key, Value, Store0),
-    lager:info("~p: node ~p received forwarded write for key ~p with value ~p", [?MODULE, node(), Key, Value]),
+    partisan_logger:info("~p: node ~p received forwarded write for key ~p with value ~p", [?MODULE, node(), Key, Value]),
 
     %% Send backup message to backups.
     lists:foreach(fun(Backup) -> psend(Backup, {backup, From, Key, Value}) end, Backups),
@@ -196,7 +198,7 @@ handle_info({forwarded_write, {FromPid, FromRequestId}=From, Key, Value}, #state
 %% @private
 handle_info({forwarded_read, {FromPid, FromRequestId}, Key}, #state{store=Store}=State) ->
     Value = read(Key, Store),
-    lager:info("~p: node ~p received forwarded read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
+    partisan_logger:info("~p: node ~p received forwarded read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
 
     %% Send the response to the caller.
     psend(FromPid, {response, FromRequestId, {ok, Value}}),
@@ -210,14 +212,14 @@ handle_info({forwarded_read, {FromPid, FromRequestId}, Key}, #state{store=Store}
 handle_info({collaborate, {FromPid, FromRequestId}=From, SourceNode, Key, Value}, #state{membership=[_Primary, _Collaborator | Backups], store=Store0}=State) ->
     %% Write value locally.
     Store = write(Key, Value, Store0),
-    lager:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
+    partisan_logger:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     %% On ack, reply to caller.
     psend(FromPid, {response, FromRequestId, ok}),
 
     %% Send write acknowledgement.
     psend(SourceNode, {collaborate_ack, From, Key, Value}),
-    lager:info("~p: node ~p acknowledging value for key ~p value ~p", [?MODULE, node(), Key, Value]),
+    partisan_logger:info("~p: node ~p acknowledging value for key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     %% Send backup message to backups.
     lists:foreach(fun(Backup) -> psend(Backup, {backup, From, Key, Value}) end, Backups),
@@ -228,7 +230,7 @@ handle_info({collaborate, {FromPid, FromRequestId}=From, SourceNode, Key, Value}
 handle_info({backup, _From, _SourceNode, Key, Value}, #state{store=Store0}=State) ->
     %% Write value locally.
     Store = write(Key, Value, Store0),
-    lager:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
+    partisan_logger:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
 
     {noreply, State#state{store=Store}};
 
