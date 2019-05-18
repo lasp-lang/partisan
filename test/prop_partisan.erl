@@ -35,8 +35,6 @@
 %% Debug.
 -define(DEBUG, true).
 -define(INITIAL_STATE_DEBUG, false).
--define(PRECONDITION_DEBUG, true).
--define(POSTCONDITION_DEBUG, true).
 
 %% Partisan connection and forwarding settings.
 -define(EGRESS_DELAY, 0).                           %% How many milliseconds to delay outgoing messages?
@@ -918,17 +916,17 @@ initial_state_debug(Line, Args) ->
 
 %% @private
 precondition_debug(Line, Args) ->
-    case ?PRECONDITION_DEBUG of
-        true ->
+    case os:getenv("PRECONDITION_DEBUG") of 
+        "true" ->
             lager:info("~p: " ++ Line, [?MODULE] ++ Args);
-        false ->
+        _ ->
             ok
     end.
 
 %% @private
 postcondition_debug(Line, Args) ->
-    case ?POSTCONDITION_DEBUG of
-        true ->
+    case os:getenv("POSTCONDITION_DEBUG") of
+        "true" ->
             lager:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok

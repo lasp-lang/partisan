@@ -232,12 +232,13 @@ sleep() ->
     [{workers, Workers}] = ets:lookup(prop_partisan, workers),
 
     %% Start on demand on all nodes.
-    lists:foreach(fun({_Node, {ok, Worker}}) ->
+    lists:foreach(fun({Node, {ok, Worker}}) ->
+        node_debug("forcing start on demand for node: ~p, worker: ~p", [Node, Worker]),
         %% This may fail if the node has been crashed because it was faulty.
         catch partisan_hbbft_worker:start_on_demand(Worker)
     end, Workers),
 
-    node_debug("sleeping...", []),
+    node_debug("sleeping for 60 seconds...", []),
     timer:sleep(60000),
 
     ?PROPERTY_MODULE:command_conclusion(RunnerNode, [sleep]),
@@ -337,17 +338,20 @@ node_begin_case() ->
             %% feed the nodes some msgs
             lists:foreach(fun(Msg) ->
                                 Destinations = random_n(rand:uniform(N), Workers),
-                                %   node_debug("destinations ~p~n", [Destinations]),
+                                node_debug("destinations ~p~n", [Destinations]),
                                 [partisan_hbbft_worker:submit_transaction(Msg, Destination) || {_Node, {ok, Destination}} <- Destinations]
                         end, Msgs),
+            node_debug("transactions submitted!", []),
 
             %% wait for all the worker's mailboxes to settle and.
             %% wait for the chains to converge
             ok = wait_until(fun() ->
-                                    Chains = sets:from_list(lists:map(fun({_Node, {ok, W}}) ->
-                                                                            {ok, Blocks} = partisan_hbbft_worker:get_blocks(W),
-                                                                            Blocks
-                                                                    end, Workers)),
+                                    Chains = chains(Workers),
+
+                                    node_debug("Chains: ~p", [sets:to_list(Chains)]),
+                                    node_debug("message_queue_lens(Workers): ~p should = 0", [message_queue_lens(Workers)]),
+                                    node_debug("sets:size(Chains): ~p should = 1", [sets:size(Chains)]),
+                                    node_debug("length(hd(sets:to_list(Chains))): ~p should /= 0", [length(hd(sets:to_list(Chains)))]),
 
                                     0 == message_queue_lens(Workers) andalso
                                     1 == sets:size(Chains) andalso
