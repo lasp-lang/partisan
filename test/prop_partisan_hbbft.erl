@@ -146,11 +146,21 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
                           node_debug("chain contains ~p distinct transactions~n", [length(BlockTxns)])
                   end, sets:to_list(Chains)),
 
+    BufferEmpty = case wait_until(fun() ->
+                          StillInBuf = sets:intersection([ sets:from_list(B) || B <- buffers(Workers)]),
+                          length(sets:to_list(StillInBuf)) =:= 0
+                  end, 60*2, 500) of 
+        ok ->
+            true;
+        _ ->
+            false
+    end,
+
     %% Check we actually converged and made a chain.
     OneChain = (1 == sets:size(Chains)),
     NonTrivialLength = (0 < length(hd(sets:to_list(Chains)))),
 
-    OneChain andalso NonTrivialLength;
+    OneChain andalso NonTrivialLength andalso BufferEmpty;
 node_postcondition(_NodeState, Command, Response) ->
     node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
                [Command, Response]),
