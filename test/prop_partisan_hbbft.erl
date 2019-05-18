@@ -337,9 +337,7 @@ node_begin_case() ->
 
             %% feed the nodes some msgs
             lists:foreach(fun(Msg) ->
-                                Destinations = random_n(rand:uniform(N), Workers),
-                                node_debug("destinations ~p~n", [Destinations]),
-                                [partisan_hbbft_worker:submit_transaction(Msg, Destination) || {_Node, {ok, Destination}} <- Destinations]
+                                [partisan_hbbft_worker:submit_transaction(Msg, Worker) || {_Node, {ok, Worker}} <- Workers]
                         end, Msgs),
             node_debug("transactions submitted!", []),
 
