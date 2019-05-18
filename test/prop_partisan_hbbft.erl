@@ -341,6 +341,11 @@ node_begin_case() ->
                         end, Msgs),
             node_debug("transactions submitted!", []),
 
+            %% Start on demand on all nodes.
+            lists:foreach(fun({_Node, {ok, Worker}}) ->
+                partisan_hbbft_worker:start_on_demand(Worker)
+            end, Workers),
+
             %% wait for all the worker's mailboxes to settle and.
             %% wait for the chains to converge
             case wait_until(fun() ->
