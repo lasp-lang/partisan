@@ -187,18 +187,18 @@ check() ->
     case ets:lookup(prop_partisan, at_least_one_transaction) of 
         [{at_least_one_transaction, true}] ->
             %% Wait for all the worker's mailboxes to settle and wait for the chains to converge.
-            ok = wait_until(fun() ->
-                                    Chains = chains(Workers),
+            wait_until(fun() ->
+                            Chains = chains(Workers),
 
-                                    node_debug("Chains: ~p", [sets:to_list(Chains)]),
-                                    node_debug("message_queue_lens(Workers): ~p should = 0", [message_queue_lens(Workers)]),
-                                    node_debug("sets:size(Chains): ~p should = 1", [sets:size(Chains)]),
-                                    node_debug("length(hd(sets:to_list(Chains))): ~p should /= 0", [length(hd(sets:to_list(Chains)))]),
+                            node_debug("Chains: ~p", [sets:to_list(Chains)]),
+                            node_debug("message_queue_lens(Workers): ~p should = 0", [message_queue_lens(Workers)]),
+                            node_debug("sets:size(Chains): ~p should = 1", [sets:size(Chains)]),
+                            node_debug("length(hd(sets:to_list(Chains))): ~p should /= 0", [length(hd(sets:to_list(Chains)))]),
 
-                                    0 == message_queue_lens(Workers) andalso
-                                    1 == sets:size(Chains) andalso
-                                    0 /= length(hd(sets:to_list(Chains)))
-                            end, 60*2, 500),
+                            0 == message_queue_lens(Workers) andalso
+                            1 == sets:size(Chains) andalso
+                            0 /= length(hd(sets:to_list(Chains)))
+                       end, 60*2, 500),
 
             Chains = chains(Workers),
             node_debug("~p distinct chains~n", [sets:size(Chains)]),
