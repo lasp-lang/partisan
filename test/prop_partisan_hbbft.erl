@@ -110,6 +110,8 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
     %% Get initial messages.
     [{initial_messages, InitialMessages}] = ets:lookup(prop_partisan, initial_messages),
 
+    [{workers, Workers}] = ets:lookup(prop_partisan, workers),
+
     lists:foreach(fun(Chain) ->
                           %node_debug("Chain: ~p~n", [Chain]),
                           node_debug("chain is of height ~p~n", [length(Chain)]),
@@ -126,11 +128,20 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
 
                           node_debug("length(BlockTxns): ~p", [length(BlockTxns)]),
                           node_debug("length(Messages ++ InitialMessages): ~p", [length(Messages ++ InitialMessages)]),
+                          %% find all the transactions still in everyone's buffer
+                          StillInBuf = sets:intersection([ sets:from_list(B) || B <- buffers(Workers)]),
 
-                          Difference = sets:subtract(sets:from_list(Messages ++ InitialMessages), sets:from_list(BlockTxns)),
+                          node_debug("length(StillInBuf): ~p", [sets:size(StillInBuf)]),
+
+                          Difference = sets:subtract(sets:subtract(sets:from_list(Messages ++ InitialMessages), sets:from_list(BlockTxns)), StillInBuf),
                           node_debug("Difference: ~p", [sets:to_list(Difference)]),
 
-                          true = length(BlockTxns) =:= length(Messages ++ InitialMessages),
+                          case length(BlockTxns) =:= length(Messages ++ InitialMessages) - sets:size(StillInBuf) of
+                              true -> ok;
+                              false ->
+                                  statuses(Workers),
+                                  erlang:error(failed)
+                          end,
 
                           node_debug("chain contains ~p distinct transactions~n", [length(BlockTxns)])
                   end, sets:to_list(Chains)),
@@ -238,8 +249,8 @@ sleep() ->
         catch partisan_hbbft_worker:start_on_demand(Worker)
     end, Workers),
 
-    node_debug("sleeping for 60 seconds...", []),
-    timer:sleep(60000),
+    %node_debug("sleeping for 60 seconds...", []),
+    %timer:sleep(60000),
 
     ?PROPERTY_MODULE:command_conclusion(RunnerNode, [sleep]),
 
@@ -533,8 +544,8 @@ statuses(Workers) ->
 
                                         try
                                             {ok, Status} = partisan_hbbft_worker:get_status(W),
-                                            #{acs := #{completed_bba_count := BBAC, successful_bba_count := BBAS, completed_rbc_count := RBCC}} = Status,
-                                            node_debug("=> Status: rbc completed: ~p bba completed ~p bba successful ~p", [RBCC, BBAC, BBAS]),
+                                            #{buf := Buf, round := Round, acs := #{completed_bba_count := BBAC, successful_bba_count := BBAS, completed_rbc_count := RBCC}} = Status,
+                                            node_debug("=> Status: rbc completed: ~p bba completed ~p bba successful ~p Buffer size ~p Round ~p", [RBCC, BBAC, BBAS, Buf, Round]),
                                             Acc ++ [Status]
                                         catch
                                             _:Error ->
@@ -542,3 +553,18 @@ statuses(Workers) ->
                                                 Acc
                                         end
                                end, [], Workers)).
+
+%% @private
+buffers(Workers) ->
+    lists:foldl(fun({_Node, {ok, W}}, Acc) ->
+                        node_debug("getting buffer for worker: ~p", [W]),
+
+                        try
+                            {ok, Buf} = partisan_hbbft_worker:get_buf(W),
+                            Acc ++ [Buf]
+                        catch
+                            _:Error ->
+                                node_debug("=> received error: ~p", [Error]),
+                                Acc
+                        end
+                end, [], Workers).

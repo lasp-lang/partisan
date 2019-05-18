@@ -2,7 +2,7 @@
 
 -behaviour(gen_server).
 
--export([start_link/6, submit_transaction/2, start_on_demand/1, get_blocks/1, get_status/1, stop/1]).
+-export([start_link/6, submit_transaction/2, start_on_demand/1, get_blocks/1, get_status/1, get_buf/1, stop/1]).
 -export([verify_chain/2, block_transactions/1]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
@@ -41,7 +41,10 @@ get_blocks(Pid) ->
     gen_server:call(Pid, get_blocks, infinity).
 
 get_status(Pid) ->
-    gen_server:call(Pid, ge10status, infinity).
+    gen_server:call(Pid, get_status, infinity).
+
+get_buf(Pid) ->
+    gen_server:call(Pid, get_buf, infinity).
 
 verify_chain([], _) ->
     true;
@@ -108,6 +111,8 @@ handle_call(get_blocks, _From, State) ->
     {reply, {ok, State#state.blocks}, State};
 handle_call(get_status, _From, State) ->
     {reply, {ok, hbbft:status(State#state.hbbft)}, State};
+handle_call(get_buf, _From, State) ->
+    {reply, {ok, hbbft:buf(State#state.hbbft)}, State};
 handle_call(Msg, _From, State) ->
     lager:info("unhandled msg ~p~n", [Msg]),
     {reply, ok, State}.
