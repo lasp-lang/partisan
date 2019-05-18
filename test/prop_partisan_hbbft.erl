@@ -345,7 +345,7 @@ node_begin_case() ->
 
             %% wait for all the worker's mailboxes to settle and.
             %% wait for the chains to converge
-            ok = wait_until(fun() ->
+            case wait_until(fun() ->
                                     Chains = chains(Workers),
 
                                     node_debug("Chains: ~p", [sets:to_list(Chains)]),
@@ -356,7 +356,13 @@ node_begin_case() ->
                                     0 == message_queue_lens(Workers) andalso
                                     1 == sets:size(Chains) andalso
                                     0 /= length(hd(sets:to_list(Chains)))
-                            end, 60*2, 500),
+                            end, 60*2, 500) of
+                ok ->
+                    ok;
+                _ ->
+                    statuses(Workers),
+                    erlang:error(failed)
+            end,
 
             Chains = sets:from_list(lists:map(fun({_Node, {ok, Worker}}) ->
                                                     {ok, Blocks} = partisan_hbbft_worker:get_blocks(Worker),
@@ -510,6 +516,23 @@ chains(Workers) ->
                                             {ok, Blocks} = partisan_hbbft_worker:get_blocks(W),
                                             node_debug("=> Blocks: ~p", [Blocks]),
                                             Acc ++ [Blocks]
+                                        catch
+                                            _:Error ->
+                                                node_debug("=> received error: ~p", [Error]),
+                                                Acc
+                                        end
+                               end, [], Workers)).
+
+%% @private
+statuses(Workers) ->
+    sets:from_list(lists:foldl(fun({_Node, {ok, W}}, Acc) ->
+                                        node_debug("getting status for worker: ~p", [W]),
+
+                                        try
+                                            {ok, Status} = partisan_hbbft_worker:get_status(W),
+                                            #{acs := #{completed_bba_count := BBAC, successful_bba_count := BBAS, completed_rbc_count := RBCC}} = Status,
+                                            node_debug("=> Status: rbc completed: ~p bba completed ~p bba successful ~p", [RBCC, BBAC, BBAS]),
+                                            Acc ++ [Status]
                                         catch
                                             _:Error ->
                                                 node_debug("=> received error: ~p", [Error]),

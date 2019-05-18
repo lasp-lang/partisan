@@ -2,7 +2,7 @@
 
 -behaviour(gen_server).
 
--export([start_link/6, submit_transaction/2, start_on_demand/1, get_blocks/1, stop/1]).
+-export([start_link/6, submit_transaction/2, start_on_demand/1, get_blocks/1, get_status/1, stop/1]).
 -export([verify_chain/2, block_transactions/1]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
@@ -21,7 +21,8 @@
           tempblock :: undefined | #block{},
           sk :: tpke_privkey:privkey(),
           ssk :: tpke_privkey:privkey_serialized(),
-          to_serialize = false :: boolean()
+          to_serialize = false :: boolean(),
+          defer_queue = []
          }).
 
 start_link(N, F, ID, SK, BatchSize, ToSerialize) ->
@@ -38,6 +39,9 @@ start_on_demand(Pid) ->
 
 get_blocks(Pid) ->
     gen_server:call(Pid, get_blocks, infinity).
+
+get_status(Pid) ->
+    gen_server:call(Pid, ge10status, infinity).
 
 verify_chain([], _) ->
     true;
@@ -95,19 +99,21 @@ init([N, F, ID, SK, BatchSize, ToSerialize]) ->
     {ok, #state{hbbft=HBBFT, blocks=[], id=ID, n=N, sk=DSK, ssk=SK, to_serialize=ToSerialize}}.
 
 handle_call(start_on_demand, _From, State = #state{hbbft=HBBFT, sk=SK}) ->
-    NewState = dispatch(hbbft:start_on_demand(maybe_deserialize_hbbft(HBBFT, SK)), State),
+    NewState = dispatch(hbbft:start_on_demand(maybe_deserialize_hbbft(HBBFT, SK)), undefined, State),
     {reply, ok, NewState};
 handle_call({submit_txn, Txn}, _From, State = #state{hbbft=HBBFT, sk=SK}) ->
-    NewState = dispatch(hbbft:input(maybe_deserialize_hbbft(HBBFT, SK), Txn), State),
+    NewState = dispatch(hbbft:input(maybe_deserialize_hbbft(HBBFT, SK), Txn), undefined, State),
     {reply, ok, NewState};
 handle_call(get_blocks, _From, State) ->
     {reply, {ok, State#state.blocks}, State};
+handle_call(get_status, _From, State) ->
+    {reply, {ok, hbbft:status(State#state.hbbft)}, State};
 handle_call(Msg, _From, State) ->
     lager:info("unhandled msg ~p~n", [Msg]),
     {reply, ok, State}.
 
 handle_cast({hbbft, PeerID, Msg}, State = #state{hbbft=HBBFT, sk=SK}) ->
-    NewState = dispatch(hbbft:handle_msg(maybe_deserialize_hbbft(HBBFT, SK), PeerID, Msg), State),
+    NewState = handle_defers(dispatch(hbbft:handle_msg(maybe_deserialize_hbbft(HBBFT, SK), PeerID, Msg), {PeerID, Msg}, State)),
     {noreply, NewState};
 handle_cast({block, NewBlock}, State=#state{sk=SK, hbbft=HBBFT}) ->
     case lists:member(NewBlock, State#state.blocks) of
@@ -120,7 +126,7 @@ handle_cast({block, NewBlock}, State=#state{sk=SK, hbbft=HBBFT}) ->
                     lager:info("~p skipping to next round~n", [self()]),
                     %% remove any transactions we have from our queue (drop the signature messages, they're not needed)
                     {NewHBBFT, _} = hbbft:finalize_round(maybe_deserialize_hbbft(HBBFT, SK), NewBlock#block.transactions, term_to_binary(NewBlock)),
-                    NewState = dispatch(hbbft:next_round(maybe_deserialize_hbbft(NewHBBFT, SK)), State#state{blocks=[NewBlock | State#state.blocks]}),
+                    NewState = dispatch(hbbft:next_round(maybe_deserialize_hbbft(NewHBBFT, SK)), undefined, State#state{blocks=[NewBlock | State#state.blocks]}),
                     {noreply, NewState#state{tempblock=undefined}};
                 false ->
                     lager:info("invalid block proposed~n"),
@@ -137,10 +143,10 @@ handle_info(Msg, State) ->
     lager:info("unhandled msg ~p~n", [Msg]),
     {noreply, State}.
 
-dispatch({NewHBBFT, {send, ToSend}}, State) ->
+dispatch({NewHBBFT, {send, ToSend}}, _Msg, State) ->
     do_send(ToSend, State),
     State#state{hbbft=maybe_serialize_HBBFT(NewHBBFT, State#state.to_serialize)};
-dispatch({NewHBBFT, {result, {transactions, _, Txns}}}, State) ->
+dispatch({NewHBBFT, {result, {transactions, _, Txns}}}, _Msg, State) ->
     NewBlock = case State#state.blocks of
                    [] ->
                        %% genesis block
@@ -149,18 +155,22 @@ dispatch({NewHBBFT, {result, {transactions, _, Txns}}}, State) ->
                        #block{prev_hash=hash_block(PrevBlock), transactions=Txns, signature= <<>>}
                end,
     %% tell the badger to finish the round
-    dispatch(hbbft:finalize_round(maybe_deserialize_hbbft(NewHBBFT, State#state.sk), Txns, term_to_binary(NewBlock)), State#state{tempblock=NewBlock});
-dispatch({NewHBBFT, {result, {signature, Sig}}}, State = #state{tempblock=NewBlock0}) ->
+    dispatch(hbbft:finalize_round(maybe_deserialize_hbbft(NewHBBFT, State#state.sk), Txns, term_to_binary(NewBlock)), undefined, State#state{tempblock=NewBlock});
+dispatch({NewHBBFT, {result, {signature, Sig}}}, _Msg, State = #state{tempblock=NewBlock0}) ->
     NewBlock = NewBlock0#block{signature=Sig},
     [ gen_server:cast({global, name(Dest)}, {block, NewBlock}) || Dest <- lists:seq(0, State#state.n - 1)],
-    dispatch(hbbft:next_round(maybe_deserialize_hbbft(NewHBBFT, State#state.sk)), State#state{blocks=[NewBlock|State#state.blocks], tempblock=undefined});
-dispatch({NewHBBFT, ok}, State) ->
+    dispatch(hbbft:next_round(maybe_deserialize_hbbft(NewHBBFT, State#state.sk)), undefined, State#state{blocks=[NewBlock|State#state.blocks], tempblock=undefined});
+dispatch({NewHBBFT, ok}, _Msg, State) ->
     State#state{hbbft=maybe_serialize_HBBFT(NewHBBFT, State#state.to_serialize)};
-dispatch({NewHBBFT, Other}, State) ->
-    lager:info("UNHANDLED ~p~n", [Other]),
+dispatch(ignore, _Msg, State) ->
+    State;
+dispatch({_NewHBBFT, defer}, Msg, State) ->
+    State#state{defer_queue=[Msg|State#state.defer_queue]};
+dispatch({NewHBBFT, Other}, Msg, State) ->
+    lager:info("UNHANDLED ~p ~p~n", [Other, Msg]),
     State#state{hbbft=maybe_serialize_HBBFT(NewHBBFT, State#state.to_serialize)};
-dispatch(Other, State) ->
-    lager:info("UNHANDLED2 ~p~n", [Other]),
+dispatch(Other, Msg, State) ->
+    lager:info("UNHANDLED2 ~p ~p~n", [Other, Msg]),
     State.
 
 do_send([], _) ->
@@ -227,3 +237,11 @@ maybe_serialize_HBBFT(HBBFT, ToSerialize) ->
         true -> HBBFT;
         false -> element(1, hbbft:serialize(HBBFT, false))
     end.
+
+handle_defers(State = #state{defer_queue=[]}) ->
+    State;
+handle_defers(State) ->
+    lists:foldl(fun({PeerID, Msg}, Acc) ->
+                        #state{hbbft=HBBFT, sk=SK} = Acc,
+                         dispatch(hbbft:handle_msg(maybe_deserialize_hbbft(HBBFT, SK), PeerID, Msg), {PeerID, Msg}, State)
+                end, State#state{defer_queue=[]}, lists:reverse(State#state.defer_queue)).
