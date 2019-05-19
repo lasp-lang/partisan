@@ -53,6 +53,7 @@
          add_interposition_fun/2,
          remove_interposition_fun/1,
          get_interposition_funs/0,
+         get_pre_interposition_funs/0,
          add_post_interposition_fun/2,
          remove_post_interposition_fun/1,
          inject_partition/2,
@@ -313,6 +314,10 @@ get_interposition_funs() ->
     gen_server:call(?MODULE, get_interposition_funs, infinity).
 
 %% @doc
+get_pre_interposition_funs() ->
+    gen_server:call(?MODULE, get_pre_interposition_funs, infinity).
+
+%% @doc
 add_post_interposition_fun(Name, PostInterpositionFun) ->
     gen_server:call(?MODULE, {add_post_interposition_fun, Name, PostInterpositionFun}, infinity).
 
@@ -430,6 +435,9 @@ handle_call({remove_interposition_fun, Name}, _From, #state{interposition_funs=I
 
 handle_call(get_interposition_funs, _From, #state{interposition_funs=InterpositionFuns}=State) ->
     {reply, {ok, InterpositionFuns}, State};
+
+handle_call(get_pre_interposition_funs, _From, #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
+    {reply, {ok, PreInterpositionFuns}, State};
 
 handle_call({add_post_interposition_fun, Name, PostInterpositionFun}, _From, #state{post_interposition_funs=PostInterpositionFuns0}=State) ->
     PostInterpositionFuns = dict:store(Name, PostInterpositionFun, PostInterpositionFuns0),
