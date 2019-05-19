@@ -300,6 +300,18 @@ node_begin_case() ->
         ok = rpc:call(?NAME(ShortName), partisan_config, set, [pid_encoding, true])
     end, Nodes),
 
+    %% Enable replay (for pre-interposition async.)
+    lists:foreach(fun({ShortName, _}) ->
+        ok = rpc:call(?NAME(ShortName), partisan_config, set, [replaying, true])
+    end, Nodes),
+    partisan_config:set(replaying, true),
+
+    %% Enable shrink (for pre-interposition async.)
+    lists:foreach(fun({ShortName, _}) ->
+        ok = rpc:call(?NAME(ShortName), partisan_config, set, [shrinking, true])
+    end, Nodes),
+    partisan_config:set(shrinking, true),
+
     %% Load, configure, and start hbbft.
     lists:foreach(fun({ShortName, _}) ->
         % node_debug("loading hbbft at node ~p", [ShortName]),
