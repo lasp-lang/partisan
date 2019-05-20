@@ -176,6 +176,8 @@ dispatch(ignore, _Msg, State) ->
     State;
 dispatch({_NewHBBFT, defer}, Msg, State) ->
     State#state{defer_queue=[Msg|State#state.defer_queue]};
+dispatch({_NewHBBFT, already_started}, _Msg, State) ->
+    State;
 dispatch({NewHBBFT, Other}, Msg, State) ->
     lager:info("UNHANDLED ~p ~p~n", [Other, Msg]),
     State#state{hbbft=maybe_serialize_HBBFT(NewHBBFT, State#state.to_serialize)};
