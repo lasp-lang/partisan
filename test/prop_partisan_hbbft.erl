@@ -160,6 +160,10 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
             false
     end,
 
+    StillInBuf = sets:intersection([ sets:from_list(B) || B <- buffers(Workers)]),
+    StillInBufLength = length(sets:to_list(StillInBuf)),
+    node_debug("StillInBufLength: ~p", [StillInBufLength]),
+
     %% Check we actually converged and made a chain.
     OneChain = (1 == sets:size(Chains)),
     NonTrivialLength = (0 < length(hd(sets:to_list(Chains)))),
