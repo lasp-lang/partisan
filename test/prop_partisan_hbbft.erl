@@ -554,11 +554,11 @@ message_queue_lens(Workers) ->
 %% @private
 chains(Workers) ->
     sets:from_list(lists:foldl(fun({_Node, {ok, W}}, Acc) ->
-                                        node_debug("getting blocks for worker: ~p", [W]),
+                                        % node_debug("getting blocks for worker: ~p", [W]),
 
                                         try
                                             {ok, Blocks} = partisan_hbbft_worker:get_blocks(W),
-                                            node_debug("=> Blocks: ~p", [Blocks]),
+                                            % node_debug("=> Blocks: ~p", [Blocks]),
                                             Acc ++ [Blocks]
                                         catch
                                             _:Error ->
@@ -587,8 +587,6 @@ statuses(Workers) ->
 %% @private
 buffers(Workers) ->
     lists:foldl(fun({_Node, {ok, W}}, Acc) ->
-                        node_debug("getting buffer for worker: ~p", [W]),
-
                         try
                             {ok, Buf} = partisan_hbbft_worker:get_buf(W),
                             Acc ++ [Buf]
