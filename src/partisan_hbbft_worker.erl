@@ -188,7 +188,7 @@ dispatch(Other, Msg, State) ->
 do_send([], _) ->
     ok;
 do_send([{unicast, Dest, Msg}|T], State) ->
-    lager:info("~p unicasting ~p to ~p~n", [State#state.id, Msg, global:whereis_name(name(Dest))]),
+    % lager:info("~p unicasting ~p to ~p~n", [State#state.id, Msg, global:whereis_name(name(Dest))]),
     case os:getenv("PARTISAN") of 
         "true" ->
             try
@@ -208,7 +208,7 @@ do_send([{unicast, Dest, Msg}|T], State) ->
 
     do_send(T, State);
 do_send([{multicast, Msg}|T], State) ->
-    lager:info("~p multicasting ~p to ~p~n", [State#state.id, Msg, [global:whereis_name(name(Dest)) || Dest <- lists:seq(0, State#state.n - 1)]]),
+    % lager:info("~p multicasting ~p to ~p~n", [State#state.id, Msg, [global:whereis_name(name(Dest)) || Dest <- lists:seq(0, State#state.n - 1)]]),
     case os:getenv("PARTISAN") of 
         "true" ->
             lists:foreach(fun(Dest) ->
