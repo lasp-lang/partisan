@@ -29,6 +29,7 @@
 -compile([export_all]).
 
 -define(TIMEOUT, 10000).
+-define(RETRY_SECONDS, 240).
 
 %%%===================================================================
 %%% Generators
@@ -147,10 +148,12 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
                         ok
                   end, sets:to_list(Chains)),
 
+    node_debug("Waiting for buffer flush before final assertion...", []),
+
     BufferEmpty = case wait_until(fun() ->
                           StillInBuf = sets:intersection([ sets:from_list(B) || B <- buffers(Workers)]),
                           length(sets:to_list(StillInBuf)) =:= 0
-                  end, 60*2, 500) of 
+                  end, ?RETRY_SECONDS*2, 500) of 
         ok ->
             true;
         _ ->
@@ -199,7 +202,7 @@ check() ->
                             0 == message_queue_lens(Workers) andalso
                             1 == sets:size(Chains) andalso
                             0 /= length(hd(sets:to_list(Chains)))
-                       end, 60*2, 500),
+                       end, ?RETRY_SECONDS*2, 500),
 
             Chains = chains(Workers),
             node_debug("~p distinct chains~n", [sets:size(Chains)]),
