@@ -168,7 +168,15 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
     OneChain = (1 == sets:size(Chains)),
     NonTrivialLength = (0 < length(hd(sets:to_list(Chains)))),
 
-    OneChain andalso NonTrivialLength andalso BufferEmpty;
+    node_debug("OneChain: ~p", [OneChain]),
+    Length = length(hd(sets:to_list(Chains))),
+    node_debug("NonTrivialLength: ~p", [NonTrivialLength]),
+    node_debug("Length: ~p", [Length]),
+    node_debug("BufferEmpty: ~p", [BufferEmpty]),
+
+    Result = OneChain andalso NonTrivialLength andalso BufferEmpty,
+    node_debug("postcondition: ~p", [Result]),
+    Result;
 node_postcondition(_NodeState, Command, Response) ->
     node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
                [Command, Response]),
