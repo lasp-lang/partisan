@@ -2,7 +2,7 @@
 
 -behaviour(gen_server).
 
--export([start_link/6, submit_transaction/2, start_on_demand/1, get_blocks/1, get_status/1, get_buf/1, stop/1]).
+-export([start_link/6, submit_transaction/2, start_on_demand/1, get_blocks/1, get_status/1, get_buf/1, stop/1, terminate/2]).
 -export([verify_chain/2, block_transactions/1]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
@@ -147,6 +147,11 @@ handle_cast(Msg, State) ->
 handle_info(Msg, State) ->
     lager:info("unhandled msg ~p~n", [Msg]),
     {noreply, State}.
+
+%% @private
+terminate(_Reason, _State) ->
+    lager:info("Terminating hbbft worker.", []),
+    ok.
 
 dispatch({NewHBBFT, {send, ToSend}}, _Msg, State) ->
     do_send(ToSend, State),
