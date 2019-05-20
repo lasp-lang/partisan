@@ -362,6 +362,9 @@ init([]) ->
     %% Schedule periodic.
     schedule_periodic(),
 
+    %% Schedule instrumentation.
+    schedule_instrumentation(),
+
     %% Schedule distance metric.
     schedule_distance(),
 
@@ -857,6 +860,12 @@ handle_info(distance, #state{pending=Pending,
 
     {noreply, State#state{connections=Connections}};
 
+handle_info(instrumentation, State) ->
+    MessageQueueLen = process_info(self(), message_queue_len),
+    lager:info("message_queue_len: ~p", [MessageQueueLen]),
+    schedule_instrumentation(),
+    {noreply, State};
+
 handle_info(periodic, #state{pending=Pending,
                              membership_strategy=MembershipStrategy,
                              membership_strategy_state=MembershipStrategyState0,
@@ -1252,6 +1261,15 @@ schedule_distance() ->
             DistanceInterval = partisan_config:get(distance_interval, 10000),
             erlang:send_after(DistanceInterval, ?MODULE, distance);
         false ->
+            ok
+    end.
+
+%% @private
+schedule_instrumentation() ->
+    case partisan_config:get(instrumentation, false) of 
+        true ->
+            erlang:send_after(1000, ?MODULE, instrumentation);
+        _ ->
             ok
     end.
 
