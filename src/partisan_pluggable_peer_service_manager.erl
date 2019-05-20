@@ -591,7 +591,7 @@ handle_call({receive_message, Peer, OriginalMessage},
     %% Run all interposition functions.
     DeliveryFun = fun() ->
         %% Fire pre-interposition functions.
-        PreFoldFun = fun(Name, PreInterpositionFun, ok) ->
+        PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
             PreInterpositionFun({receive_message, Peer, OriginalMessage}),
             ok
         end,
