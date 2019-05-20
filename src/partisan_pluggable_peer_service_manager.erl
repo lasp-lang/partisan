@@ -1276,7 +1276,7 @@ schedule_instrumentation() ->
 
 %% @private
 schedule_periodic() ->
-    case partisan_config:get(distance_enabled, false) of 
+    case partisan_config:get(periodic_enabled, false) of 
         true ->
             PeriodicInterval = partisan_config:get(periodic_interval, ?PERIODIC_INTERVAL),
             erlang:send_after(PeriodicInterval, ?MODULE, periodic);
