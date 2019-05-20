@@ -60,7 +60,7 @@ shell:
 	${REBAR} shell --apps partisan
 
 tail-logs:
-	tail -F priv/lager/*/log/*.log
+	tail ---disable-inotify -F priv/lager/*/log/*.log
 
 unsorted-logs:
 	cat priv/lager/*/log/*.log
