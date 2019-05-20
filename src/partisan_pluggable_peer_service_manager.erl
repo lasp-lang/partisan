@@ -585,6 +585,7 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Ori
 handle_call({receive_message, Peer, OriginalMessage}, 
             From, 
             #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
+    %% lager:info("~p: receive message invoked for message from peer ~p: ~p", [node(), Peer, OriginalMessage]),
     %% lager:info("number of receive_message pre_interposition_funs ~p", [length(dict:to_list(PreInterpositionFuns))]),
 
     %% Run all interposition functions.
