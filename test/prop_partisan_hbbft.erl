@@ -114,7 +114,7 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
 
     lists:foreach(fun(Chain) ->
                           %node_debug("Chain: ~p~n", [Chain]),
-                          node_debug("chain is of height ~p~n", [length(Chain)]),
+                          %node_debug("chain is of height ~p~n", [length(Chain)]),
 
                           %% verify they are cryptographically linked,
                           true = partisan_hbbft_worker:verify_chain(Chain, PubKey),
@@ -126,15 +126,15 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
                           %% check they're all members of the original message list
                           true = sets:is_subset(sets:from_list(BlockTxns), sets:from_list(Messages ++ InitialMessages)),
 
-                          node_debug("length(BlockTxns): ~p", [length(BlockTxns)]),
-                          node_debug("length(Messages ++ InitialMessages): ~p", [length(Messages ++ InitialMessages)]),
+                          %node_debug("length(BlockTxns): ~p", [length(BlockTxns)]),
+                          %node_debug("length(Messages ++ InitialMessages): ~p", [length(Messages ++ InitialMessages)]),
                           %% find all the transactions still in everyone's buffer
                           StillInBuf = sets:intersection([ sets:from_list(B) || B <- buffers(Workers)]),
 
-                          node_debug("length(StillInBuf): ~p", [sets:size(StillInBuf)]),
+                          %node_debug("length(StillInBuf): ~p", [sets:size(StillInBuf)]),
 
-                          Difference = sets:subtract(sets:subtract(sets:from_list(Messages ++ InitialMessages), sets:from_list(BlockTxns)), StillInBuf),
-                          node_debug("Difference: ~p", [sets:to_list(Difference)]),
+                          %Difference = sets:subtract(sets:subtract(sets:from_list(Messages ++ InitialMessages), sets:from_list(BlockTxns)), StillInBuf),
+                          %node_debug("Difference: ~p", [sets:to_list(Difference)]),
 
                           case length(BlockTxns) =:= length(Messages ++ InitialMessages) - sets:size(StillInBuf) of
                               true -> ok;
@@ -143,7 +143,8 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
                                   erlang:error(failed)
                           end,
 
-                          node_debug("chain contains ~p distinct transactions~n", [length(BlockTxns)])
+                          %node_debug("chain contains ~p distinct transactions~n", [length(BlockTxns)])
+                        ok
                   end, sets:to_list(Chains)),
 
     BufferEmpty = case wait_until(fun() ->
