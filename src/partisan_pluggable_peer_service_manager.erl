@@ -591,8 +591,7 @@ handle_call({receive_message, Peer, OriginalMessage},
     %% Run all interposition functions.
     DeliveryFun = fun() ->
         %% Fire pre-interposition functions.
-        PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
-            % lager:info("firing receive_message preinterposition fun for original message: ~p", [OriginalMessage]),
+        PreFoldFun = fun(Name, PreInterpositionFun, ok) ->
             PreInterpositionFun({receive_message, Peer, OriginalMessage}),
             ok
         end,
