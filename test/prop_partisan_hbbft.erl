@@ -320,6 +320,12 @@ node_begin_case() ->
     end, Nodes),
     partisan_config:set(shrinking, true),
 
+    %% Disable tracing.
+    lists:foreach(fun({ShortName, _}) ->
+        ok = rpc:call(?NAME(ShortName), partisan_config, set, [tracing, false])
+    end, Nodes),
+    partisan_config:set(shrinking, true),
+
     %% Load, configure, and start hbbft.
     lists:foreach(fun({ShortName, _}) ->
         % node_debug("loading hbbft at node ~p", [ShortName]),
