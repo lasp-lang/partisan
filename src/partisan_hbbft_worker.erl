@@ -168,7 +168,23 @@ dispatch({NewHBBFT, {result, {transactions, _, Txns}}}, _Msg, State) ->
     dispatch(hbbft:finalize_round(maybe_deserialize_hbbft(NewHBBFT, State#state.sk), Txns, term_to_binary(NewBlock)), undefined, State#state{tempblock=NewBlock});
 dispatch({NewHBBFT, {result, {signature, Sig}}}, _Msg, State = #state{tempblock=NewBlock0}) ->
     NewBlock = NewBlock0#block{signature=Sig},
-    [ gen_server:cast({global, name(Dest)}, {block, NewBlock}) || Dest <- lists:seq(0, State#state.n - 1)],
+    case os:getenv("PARTISAN") of 
+        "true" ->
+            lists:foreach(fun(Dest) ->
+                try
+                    Process = global:whereis_name(name(Dest)),
+                    Node = node(Process),
+                    Message = {block, NewBlock},
+                    ok = partisan_pluggable_peer_service_manager:cast_message(Node, undefined, Process, Message, [])
+                catch
+                    _:_ ->
+                        %% Node might have gone offline.
+                        ok
+                end
+            end, lists:seq(0, State#state.n - 1));
+        false ->
+            [ gen_server:cast({global, name(Dest)}, {block, NewBlock}) || Dest <- lists:seq(0, State#state.n - 1)]
+    end,
     dispatch(hbbft:next_round(maybe_deserialize_hbbft(NewHBBFT, State#state.sk)), undefined, State#state{blocks=[NewBlock|State#state.blocks], tempblock=undefined});
 dispatch({NewHBBFT, ok}, _Msg, State) ->
     State#state{hbbft=maybe_serialize_HBBFT(NewHBBFT, State#state.to_serialize)};
