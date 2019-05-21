@@ -656,6 +656,10 @@ handle_cast({receive_message, From, Peer, OriginalMessage},
         undefined ->
             gen_server:reply(From, ok),
             {noreply, State};
+        {'$delay', NewMessage} ->
+            lager:info("Delaying receive_message due to interposition result: ~p", [NewMessage]),
+            gen_server:cast(?MODULE, {receive_message, From, Peer, NewMessage}),
+            {noreply, State};
         _ ->
             handle_message(Message, From, State)
     end;
@@ -750,6 +754,10 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
             end,
 
             {noreply, State#state{vclock=VClock}};
+        {'$delay', NewMessage} ->
+            lager:info("Delaying forward_message due to interposition result: ~p", [NewMessage]),
+            gen_server:cast(?MODULE, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, NewMessage, Options}),
+            {noreply, State};
         _ ->
             %% Store for reliability, if necessary.
             Result = case proplists:get_value(ack, Options, false) of
