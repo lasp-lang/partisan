@@ -638,8 +638,10 @@ handle_cast({receive_message, From, Peer, OriginalMessage},
     %% lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
 
     %% Filter messages using interposition functions.
-    FoldFun = fun(_Name, InterpositionFun, M) ->
-        InterpositionFun({receive_message, Peer, M})
+    FoldFun = fun(_InterpositionName, InterpositionFun, M) ->
+        InterpositionResult = InterpositionFun({receive_message, Peer, M}),
+        % lager:info("result from interposition ~p is ~p", [InterpositionName, InterpositionResult]),
+        InterpositionResult
     end,
     Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
 
@@ -674,8 +676,10 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
     %% lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
 
     %% Filter messages using interposition functions.
-    FoldFun = fun(_Name, InterpositionFun, M) ->
-        InterpositionFun({forward_message, Name, M})
+    FoldFun = fun(_InterpositionName, InterpositionFun, M) ->
+        InterpositionResult = InterpositionFun({forward_message, Name, M}),
+        % lager:info("result from interposition ~p is ~p", [InterpositionName, InterpositionResult]),
+        InterpositionResult
     end,
     Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
 
