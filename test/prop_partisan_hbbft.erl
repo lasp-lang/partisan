@@ -150,6 +150,17 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
 
     node_debug("Waiting for buffer flush before final assertion...", []),
 
+    %% Make sure only the tolerance level of nodes has crashed.
+    Crashed = lists:foldl(fun({_Node, {ok, W}}, Acc) ->
+        try
+            {ok, _Status} = partisan_hbbft_worker:get_status(W),
+            Acc
+        catch
+            _:_ ->
+                Acc + 1
+        end
+    end, 0, Workers),
+
     BufferEmpty = case wait_until(fun() ->
                           StillInBuf = sets:intersection([ sets:from_list(B) || B <- buffers(Workers)]),
                           length(sets:to_list(StillInBuf)) =:= 0
@@ -174,7 +185,16 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
     node_debug("Length: ~p", [Length]),
     node_debug("BufferEmpty: ~p", [BufferEmpty]),
 
-    Result = OneChain andalso NonTrivialLength andalso BufferEmpty,
+    node_debug("Crashed: ~p", [Crashed]),
+
+    Tolerance = case os:getenv("FAULT_TOLERANCE") of 
+        false ->
+            1;
+        ToleranceString ->
+            list_to_integer(ToleranceString)
+    end,
+
+    Result = OneChain andalso NonTrivialLength andalso BufferEmpty andalso Crashed =< Tolerance,
     node_debug("postcondition: ~p", [Result]),
     Result;
 node_postcondition(_NodeState, Command, Response) ->
@@ -198,7 +218,7 @@ node_postcondition(_NodeState, Command, Response) ->
 check() ->
     %% Get workers.
     [{workers, Workers}] = ets:lookup(prop_partisan, workers),
-    
+
     %% Get at_least_one_transaction.
     case ets:lookup(prop_partisan, at_least_one_transaction) of 
         [{at_least_one_transaction, true}] ->
