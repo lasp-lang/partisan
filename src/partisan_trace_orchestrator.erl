@@ -629,33 +629,35 @@ preload_omissions(Nodes) ->
 
                         replay_debug("enabling preload omission for ~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload]) ,
 
-                        InterpositionFun = fun({forward_message, N, M}) ->
-                            case N of
-                                OriginNode ->
-                                    case M of 
-                                        MessagePayload ->
-                                            lager:info("~p: dropping packet from ~p to ~p due to preload interposition.", [node(), TracingNode, OriginNode]),
+                        InterpositionFun = fun
+                            ({forward_message, N, M}) ->
+                                case N of
+                                    OriginNode ->
+                                        case M of 
+                                            MessagePayload ->
+                                                lager:info("~p: dropping packet from ~p to ~p due to preload interposition.", [node(), TracingNode, OriginNode]),
 
-                                            case partisan_config:get(fauled_for_background) of 
-                                                true ->
-                                                    ok;
-                                                _ ->
-                                                    lager:info("~p: setting node ~p to faulted due to preload interposition hit on message: ~p", [node(), TracingNode, Message]),
-                                                    partisan_config:set(fauled_for_background, true)
-                                            end,
+                                                case partisan_config:get(fauled_for_background) of 
+                                                    true ->
+                                                        ok;
+                                                    _ ->
+                                                        lager:info("~p: setting node ~p to faulted due to preload interposition hit on message: ~p", [node(), TracingNode, Message]),
+                                                        partisan_config:set(fauled_for_background, true)
+                                                end,
 
-                                            undefined;
-                                        Other ->
-                                            lager:info("~p: allowing message, doesn't match interposition payload while node matches", [node()]),
-                                            lager:info("~p: => expecting: ~p", [node(), MessagePayload]),
-                                            lager:info("~p: => got: ~p", [node(), Other]),
-                                            M
-                                    end;
-                                OtherNode ->
-                                    lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), TracingNode, OtherNode]),
-                                    M
-                            end;
-                            ({receive_message, _N, M}) -> M
+                                                undefined;
+                                            Other ->
+                                                lager:info("~p: allowing message, doesn't match interposition payload while node matches", [node()]),
+                                                lager:info("~p: => expecting: ~p", [node(), MessagePayload]),
+                                                lager:info("~p: => got: ~p", [node(), Other]),
+                                                M
+                                        end;
+                                    OtherNode ->
+                                        lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), TracingNode, OtherNode]),
+                                        M
+                                end;
+                            ({receive_message, _N, M}) -> 
+                                M
                         end,
 
                         %% Install function.
