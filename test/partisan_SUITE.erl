@@ -97,6 +97,8 @@ init_per_group(with_causal_send, Config) ->
     [{causal_labels, [default]}, {forward_options, [{causal_label, default}]}] ++ Config;
 init_per_group(with_causal_send_and_ack, Config) ->
     [{causal_labels, [default]}, {forward_options, [{causal_label, default}, {ack, true}]}] ++ Config;
+init_per_group(with_forward_delay_interposition, Config) ->
+    [{disable_fast_forward, true}] ++ Config;
 init_per_group(with_forward_interposition, Config) ->
     [{disable_fast_forward, true}] ++ Config;
 init_per_group(with_receive_interposition, Config) ->
@@ -176,6 +178,8 @@ all() ->
 
      %% Fault injection.
 
+     {group, with_forward_delay_interposition, []},
+
      {group, with_forward_interposition, []},
 
      {group, with_receive_interposition, []},
@@ -247,6 +251,9 @@ groups() ->
 
      {with_forward_interposition, [],
       [forward_interposition_test]},
+
+     {with_forward_delay_interposition, [],
+      [forward_delay_interposition_test]},
 
      {with_receive_interposition, [],
       [receive_interposition_test]},
@@ -1310,6 +1317,77 @@ otp_test(Config) ->
     after 
         1000 ->
             ct:fail({error, no_message})
+    end,
+
+    %% Stop nodes.
+    ?SUPPORT:stop(Nodes),
+
+    ok.
+
+forward_delay_interposition_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
+
+    %% Specify servers.
+    Servers = ?SUPPORT:node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
+
+    %% Start nodes.
+    Nodes = ?SUPPORT:start(forward_delay_interposition_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Test on_down callback.
+    [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
+
+    %% Messages.
+    Message1 = message1,
+    Message2 = message2,
+
+    %% Set message filter.
+    InterpositionFun = fun
+            ({forward_message, _N, M}) ->
+                case M of 
+                    Message1 ->
+                        {'$delay', Message2};
+                    _ ->
+                        M
+                end;
+            ({_, _, M}) -> 
+                M
+    end,
+    ok = rpc:call(Node3, Manager, add_interposition_fun, [Node4, InterpositionFun]),
+
+    %% Spawn receiver.
+    Self = self(),
+
+    ReceiverFun = fun() ->
+        receive 
+            X ->
+                Self ! X
+        end
+    end,
+    Pid = rpc:call(Node4, erlang, spawn, [ReceiverFun]),
+    true = rpc:call(Node4, erlang, register, [receiver, Pid]),
+
+    %% Send message.
+    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message1, []]),
+
+    %% Wait to receive message.
+    receive
+        Message1 ->
+            ct:fail("Received message we shouldn't have!");
+        Message2 ->
+            ct:pal("Received correct message!")
+    after 
+        1000 ->
+            ok
     end,
 
     %% Stop nodes.
