@@ -269,8 +269,8 @@ sleep() ->
     [{workers, Workers}] = ets:lookup(prop_partisan, workers),
 
     %% Start on demand on all nodes.
-    lists:foreach(fun({Node, {ok, Worker}}) ->
-        node_debug("forcing start on demand for node: ~p, worker: ~p", [Node, Worker]),
+    lists:foreach(fun({_Node, {ok, Worker}}) ->
+        % node_debug("forcing start on demand for node: ~p, worker: ~p", [Node, Worker]),
         %% This may fail if the node has been crashed because it was faulty.
         catch partisan_hbbft_worker:start_on_demand(Worker)
     end, Workers),
