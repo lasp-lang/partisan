@@ -29,6 +29,7 @@
          write/2,
          read/1,
          read_local/1,
+         state/0,
          update/1]).
 
 %% gen_server callbacks
@@ -55,6 +56,10 @@ stop() ->
 update(LocalState0) ->
     LocalState = partisan_peer_service:decode(LocalState0),
     gen_server:cast(?MODULE, {update, LocalState}).
+
+%% @doc Issue write operations.
+state() ->
+    gen_server:call(?MODULE, state).
 
 %% @doc Issue write operations.
 write(Key, Value) ->
@@ -121,6 +126,10 @@ init([]) ->
                 outstanding=Outstanding}}.
 
 %% @private
+handle_call(state, _From, #state{store=Store}=State) ->
+    {reply, {ok, Store}, State};
+
+%% @private
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
@@ -138,7 +147,10 @@ handle_cast({read_local, From, Key}, #state{store=Store}=State) ->
     partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value}),
 
     {noreply, State};
-handle_cast({read, From, Key}=Request, #state{membership=[Primary|_Rest], store=Store}=State) ->
+handle_cast({read, From, Key}, #state{membership=[Primary|_Rest], store=Store}=State) ->
+    %% TODO: HACK to get around problem in interprocedural analysis.
+    Request = {read, From, Key}, 
+
     case node() of 
         Primary ->
             %% Get the value.
@@ -155,7 +167,10 @@ handle_cast({read, From, Key}=Request, #state{membership=[Primary|_Rest], store=
 
             {noreply, State}
     end;
-handle_cast({write, From, Key, Value}=Request, #state{membership=[Primary|Rest]=Membership, outstanding=Outstanding0, store=Store0}=State) ->
+handle_cast({write, From, Key, Value}, #state{membership=[Primary|Rest]=Membership, outstanding=Outstanding0, store=Store0}=State) ->
+    %% TODO: HACK to get around problem in interprocedural analysis.
+    Request = {write, From, Key, Value},
+
     case node() of 
         Primary ->
             %% Add to list of outstanding requests.
@@ -166,7 +181,7 @@ handle_cast({write, From, Key, Value}=Request, #state{membership=[Primary|Rest]=
             CoordinatorNode = node(),
 
             lists:foreach(fun(Node) ->
-                partisan_pluggable_peer_service_manager:forward_message(Node, {collaborate, CoordinatorNode, Request})
+                partisan_pluggable_peer_service_manager:forward_message(Node, undefined, ?MODULE, {collaborate, CoordinatorNode, Request}, [])
             end, Rest),
 
             %% Write to storage.
@@ -182,7 +197,10 @@ handle_cast({write, From, Key, Value}=Request, #state{membership=[Primary|Rest]=
     end.
 
 %% @private
-handle_info({collaborate_ack, ReplyingNode, {write, From, _Key, Value} = Request}, #state{outstanding=Outstanding0}=State) ->
+handle_info({collaborate_ack, ReplyingNode, {write, From, Key, Value}}, #state{outstanding=Outstanding0}=State) ->
+    %% TODO: HACK to get around problem in interprocedural analysis.
+    Request = {write, From, Key, Value}, 
+
     case dict:find(Request, Outstanding0) of
         {ok, {Membership, Replies0}} ->
             %% Update list of nodes that have acknowledged.
@@ -190,7 +208,7 @@ handle_info({collaborate_ack, ReplyingNode, {write, From, _Key, Value} = Request
 
             case lists:usort(Membership) =:= lists:usort(Replies) of 
                 true ->
-                    partisan_logger:info("Received all replies for request ~p, acknowleding to user."),
+                    partisan_logger:info("Received all replies for request ~p, acknowleding to user.", []),
                     partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value});
                 false ->
                     partisan_logger:info("Received replies from: ~p, but need replies from: ~p", [Replies, Membership -- Replies]),
@@ -206,7 +224,10 @@ handle_info({collaborate_ack, ReplyingNode, {write, From, _Key, Value} = Request
 
             {noreply, State}
     end;
-handle_info({collaborate, CoordinatorNode, {write, _From, Key, Value}=Request}, #state{membership=[Primary|_Rest], store=Store0}=State) ->
+handle_info({collaborate, CoordinatorNode, {write, From, Key, Value}}, #state{membership=[Primary|_Rest], store=Store0}=State) ->
+    %% TODO: HACK to get around problem in interprocedural analysis.
+    Request = {write, From, Key, Value},
+
     case node() of 
         Primary ->
             %% Do nothing.
@@ -218,7 +239,7 @@ handle_info({collaborate, CoordinatorNode, {write, _From, Key, Value}=Request}, 
             %% Reply with collaborate acknowledgement.
             ReplyingNode = node(),
             partisan_logger:info("Node ~p is backup, responding to the primary ~p with acknowledgement", [node(), CoordinatorNode]),
-            partisan_pluggable_peer_service_manager:forward_message(CoordinatorNode, {collaborate_ack, ReplyingNode, Request}),
+            partisan_pluggable_peer_service_manager:forward_message(CoordinatorNode, undefined, ?MODULE, {collaborate_ack, ReplyingNode, Request}, []),
 
             {noreply, State#state{store=Store}}
     end;
