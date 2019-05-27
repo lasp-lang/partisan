@@ -38,6 +38,9 @@ key() ->
 value() ->
     oneof([1, 2, 3]).
 
+primary_node_name() ->
+    oneof([hd(names())]).
+
 node_name() ->
     oneof(names()).
 
@@ -59,8 +62,8 @@ node_num_nodes() ->
 
 %% What node-specific operations should be called.
 node_commands() ->
-    [{call, ?MODULE, write, [node_name(), key(), value()]},
-     {call, ?MODULE, read, [node_name(), key()]}].
+    [{call, ?MODULE, write, [primary_node_name(), key(), value()]},
+     {call, ?MODULE, read, [primary_node_name(), key()]}].
 
 %% Assertion commands.
 node_assertion_functions() ->
@@ -96,8 +99,6 @@ node_next_state(_State, NodeState, _Response, {call, ?MODULE, verify, []}) ->
     NodeState;
 node_next_state(_State, NodeState, _Response, {call, ?MODULE, read, [_Node, _Key]}) ->
     NodeState;
-node_next_state(_State, NodeState, {error, not_primary}, {call, ?MODULE, write, [_Node, _Key, _Value]}) ->
-    NodeState;
 node_next_state(_State, #node_state{store=Store0}=NodeState, _Response, {call, ?MODULE, write, [_Node, Key, Value]}) ->
     Store = dict:store(Key, Value, Store0),
     NodeState#node_state{store=Store};
@@ -106,8 +107,6 @@ node_next_state(_State, NodeState, Response, Command) ->
     NodeState.
 
 %% Postconditions for node commands.
-node_postcondition(_NodeState, {call, ?MODULE, read, [_Node, _Key]}, {error, not_primary}) ->
-    true;
 node_postcondition(#node_state{store=Store}, {call, ?MODULE, read, [Node, Key]}, {ok, Value}) ->
     case dict:find(Key, Store) of
         {ok, Value} ->
@@ -121,8 +120,6 @@ node_postcondition(#node_state{store=Store}, {call, ?MODULE, read, [Node, Key]},
             false
     end;
 node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {ok, _Value}) ->
-    true;
-node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {error, not_primary}) ->
     true;
 node_postcondition(#node_state{store=Store}=_NodeState, {call, ?MODULE, verify, []}, AllResults) ->
     FoldResult = dict:fold(fun(Key, Value, Acc) ->
