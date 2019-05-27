@@ -40,7 +40,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, {store, membership=[], outstanding}).
+-record(state, {next_id, store, membership=[], outstanding}).
 
 %%%===================================================================
 %%% API
@@ -63,11 +63,7 @@ state() ->
 
 %% @doc Issue write operations.
 write(Key, Value) ->
-    %% TODO: Bit of a hack just to get this working.
-    true = erlang:register(write_coordinator, self()),
-    From = partisan_util:registered_name(write_coordinator),
-
-    gen_server:cast(?MODULE, {write, From, Key, Value}),
+    gen_server:cast(?MODULE, {write, self(), Key, Value}),
 
     receive
         Response ->
@@ -76,11 +72,7 @@ write(Key, Value) ->
 
 %% @doc Issue read operations.
 read(Key) ->
-    %% TODO: Bit of a hack just to get this working.
-    true = erlang:register(read_coordinator, self()),
-    From = partisan_util:registered_name(read_coordinator),
-
-    gen_server:cast(?MODULE, {read, From, Key}),
+    gen_server:cast(?MODULE, {read, self(), Key}),
 
     receive
         Response ->
@@ -121,7 +113,8 @@ init([]) ->
     Membership = membership(Membership0),
     Outstanding = dict:new(),
 
-    {ok, #state{store=Store,
+    {ok, #state{next_id=0,
+                store=Store,
                 membership=Membership,
                 outstanding=Outstanding}}.
 
@@ -147,9 +140,20 @@ handle_cast({read_local, From, Key}, #state{store=Store}=State) ->
     partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value}),
 
     {noreply, State};
-handle_cast({read, From, Key}, #state{membership=[Primary|_Rest], store=Store}=State) ->
+handle_cast({read, From0, Key}, #state{next_id=NextId, membership=[Primary|_Rest], store=Store}=State) ->
+    %% TODO: Bit of a hack just to get this working.
+    From = list_to_atom("read_coordinator_" ++ integer_to_list(NextId)),
+    try
+        true = erlang:unregister(From)
+    catch
+        _:_ ->
+            ok
+    end,
+    true = erlang:register(From, From0),
+    EncodedFrom = partisan_util:registered_name(From),
+
     %% TODO: HACK to get around problem in interprocedural analysis.
-    Request = {read, From, Key}, 
+    Request = {read, EncodedFrom, Key}, 
 
     case node() of 
         Primary ->
@@ -159,20 +163,32 @@ handle_cast({read, From, Key}, #state{membership=[Primary|_Rest], store=Store}=S
             %% Reply to the caller.
             partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value}),
 
-            {noreply, State};
+            {noreply, State#state{next_id=NextId+1}};
         _ ->
             %% Reply to caller.
             partisan_logger:info("Node ~p is not the primary for request: ~p", [node(), Request]),
             partisan_pluggable_peer_service_manager:forward_message(From, {error, not_primary}),
 
-            {noreply, State}
+            {noreply, State#state{next_id=NextId+1}}
     end;
-handle_cast({write, From, Key, Value}, #state{membership=[Primary|Rest]=Membership, outstanding=Outstanding0, store=Store0}=State) ->
+handle_cast({write, From0, Key, Value}, #state{next_id=NextId, membership=[Primary|Rest]=Membership, outstanding=Outstanding0, store=Store0}=State) ->
+    %% TODO: Bit of a hack just to get this working.
+    From = list_to_atom("write_coordinator_" ++ integer_to_list(NextId)),
+    try
+        true = erlang:unregister(From)
+    catch
+        _:_ ->
+            ok
+    end,
+    true = erlang:register(From, From0),
+    EncodedFrom = partisan_util:registered_name(From),
+
     %% TODO: HACK to get around problem in interprocedural analysis.
-    Request = {write, From, Key, Value},
+    Request = {write, EncodedFrom, Key, Value},
 
     case node() of 
         Primary ->
+
             %% Add to list of outstanding requests.
             Replies = [node()],
             Outstanding = dict:store(Request, {Membership, Replies}, Outstanding0),
@@ -181,22 +197,20 @@ handle_cast({write, From, Key, Value}, #state{membership=[Primary|Rest]=Membersh
             CoordinatorNode = node(),
 
             lists:foreach(fun(Node) ->
+                partisan_logger:info("sending collaborate message to node ~p for request ~p", [Node, Request]),
                 partisan_pluggable_peer_service_manager:forward_message(Node, undefined, ?MODULE, {collaborate, CoordinatorNode, Request}, [])
             end, Rest),
 
             %% Write to storage.
             Store = write(Key, Value, Store0),
 
-            %% Reply to the caller: this is a bug in the implementation.
-            partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value}),
-
-            {noreply, State#state{store=Store, outstanding=Outstanding}};
+            {noreply, State#state{store=Store, outstanding=Outstanding, next_id=NextId+1}};
         _ ->
             %% Reply to caller.
             partisan_logger:info("Node ~p is not the primary for request: ~p", [node(), Request]),
-            partisan_pluggable_peer_service_manager:forward_message(From, {error, not_primary}),
+            partisan_pluggable_peer_service_manager:forward_message(EncodedFrom, {error, not_primary}),
 
-            {noreply, State}
+            {noreply, State#state{next_id=NextId+1}}
     end.
 
 %% @private
