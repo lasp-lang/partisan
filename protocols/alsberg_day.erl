@@ -211,7 +211,7 @@ handle_info({collaborate_ack, ReplyingNode, {write, From, Key, Value}}, #state{o
 
             case lists:usort(Membership) =:= lists:usort(Replies) of 
                 true ->
-                    partisan_logger:info("Received all replies for request ~p, acknowleding to user.", []),
+                    partisan_logger:info("Node ~p received all replies for request ~p, acknowleding to user.", [node(), Request]),
                     partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value});
                 false ->
                     partisan_logger:info("Received replies from: ~p, but need replies from: ~p", [Replies, Membership -- Replies]),
