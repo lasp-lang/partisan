@@ -187,6 +187,9 @@ handle_cast({write, From, Key, Value}, #state{membership=[Primary|Rest]=Membersh
             %% Write to storage.
             Store = write(Key, Value, Store0),
 
+            %% Reply to the caller: this is a bug in the implementation.
+            partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value}),
+
             {noreply, State#state{store=Store, outstanding=Outstanding}};
         _ ->
             %% Reply to caller.
