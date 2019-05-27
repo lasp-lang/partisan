@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 export USE_STARTED_NODES=false
-export RESTART_NODES=true
+export RESTART_NODES=false
 # export EXIT_ON_COUNTEREXAMPLE=true
 
 echo "Performing static analaysis..."
