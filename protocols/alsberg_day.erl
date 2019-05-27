@@ -26,6 +26,7 @@
 %% API
 -export([start_link/0,
          stop/0,
+         timeout/0,
          write/2,
          read/1,
          read_local/1,
@@ -51,6 +52,9 @@ start_link() ->
 
 stop() ->
     gen_server:stop(?MODULE).
+
+timeout() ->
+    4000.
 
 %% @doc Notifies us of membership update.
 update(LocalState0) ->
