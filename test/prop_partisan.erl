@@ -223,40 +223,6 @@ single_success_commands(Module) ->
 
             %% Derive final command sequence.
             FinalCommands0 = case os:getenv("IMPLEMENTATION_MODULE", "false") of
-                % "paxoid" ->
-                %     [
-                %         %% Sleep for initialization.
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
-
-                %         %% Write to node_3.
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_2]}},
-
-                %         % Fault node_3, wait for failure detection.
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, set_fault, [node_3, true]}},
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
-
-                %         %% Write to node_1.
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_1]}},
-
-                %         % Fault node_1, unfault node_3, wait for failure detection.
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, set_fault, [node_1, true]}},
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, set_fault, [node_3, false]}},
-
-                %         %% Write to node_3.
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_3]}},
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
-
-                %         %% Write to node_3 again.
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_4]}},
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}}
-                %     ] ++ 
-
-                %     %% Global node commands. 
-                %     CommandsWithOnlyGlobalNodeCommands ++ 
-
-                %     %% Forced failure command. 
-                %     FailureCommands;
                 _ ->
                     lists:flatten(
                         %% Node commands, without global assertions.  Take only the first.
