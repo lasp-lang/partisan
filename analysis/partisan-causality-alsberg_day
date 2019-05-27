@@ -1,0 +1,2 @@
+[{{receive_message,collaborate_ack},[{forward_message,ok}]},
+ {{receive_message,collaborate},[{forward_message,collaborate_ack}]}].
