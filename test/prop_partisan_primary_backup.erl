@@ -224,6 +224,10 @@ node_begin_case() ->
     ok.
 
 %% @private
+node_crash(Node) ->
+    ok = rpc:call(?NAME(Node), implementation_module(), stop, []).
+
+%% @private
 node_end_case() ->
     node_debug("ending case by terminating ~p", [implementation_module()]),
 
