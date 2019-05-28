@@ -232,10 +232,15 @@ node_end_case() ->
 
     %% Stop the backend.
     lists:foreach(fun({ShortName, _}) ->
-        _Pid = rpc:call(?NAME(ShortName), erlang, whereis, [implementation_module()]),
-        % node_debug("process is running on node ~p with id ~p~n", [ShortName, Pid]),
-        % node_debug("asking node ~p to terminate process.", [ShortName]),
-        ok = rpc:call(?NAME(ShortName), implementation_module(), stop, [])
+        case rpc:call(?NAME(ShortName), implementation_module(), stop, []) of
+            ok ->
+                ok;
+            {badrpc, _} ->
+                ok;
+            Error ->
+                ct:fail("Couldn't terminate process for reason: ~p", [Error]),
+                ok
+        end
     end, Nodes),
 
     node_debug("ended.", []),
