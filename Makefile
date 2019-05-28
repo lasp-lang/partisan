@@ -144,3 +144,6 @@ hbbft: kill bin-perms compile
 
 alsberg-day: kill bin-perms compile
 	SYSTEM_MODEL=prop_partisan_primary_backup RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=alsberg_day SUBLIST=0 bin/filibuster.sh
+
+alsberg-day-acked: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_primary_backup RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=alsberg_day_acked SUBLIST=0 bin/filibuster.sh
