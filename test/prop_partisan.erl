@@ -145,7 +145,9 @@ finite_fault_commands(Module) ->
             %% Only global node commands with global assertions.
             CommandsWithOnlyGlobalNodeCommandsAssertionsOnly = lists:map(fun(Fun) ->
                 {set,{var,0},{call,system_model(),Fun,[]}}
-            end, node_assertion_functions()), 
+            end, sets:to_list(
+                sets:intersection(
+                    sets:from_list(node_assertion_functions()), sets:from_list(node_global_functions())))), 
 
             %% Derive final command sequence.
             FinalCommands0 = lists:flatten(
@@ -197,17 +199,27 @@ single_success_commands(Module) ->
                 end
             end, Commands),
 
-            %% Get first non-global command.
-            FirstNonGlobalCommand = case length(CommandsWithoutGlobalNodeCommands) > 0 of
+            %% Filter out assertions.
+            CommandsWithoutGlobalNodeCommandsWithoutAssertions = lists:filter(fun({set,{var,_Nth},{call,_Mod,Fun,_Args}}) ->
+                case lists:member(Fun, node_assertion_functions()) of 
+                    true ->
+                        false;
+                    _ ->
+                        true
+                end
+            end, CommandsWithoutGlobalNodeCommands),
+
+            %% Get first non-global command (that's not an assertion.)
+            FirstNonGlobalCommand = case length(CommandsWithoutGlobalNodeCommandsWithoutAssertions) > 0 of
                 true ->
-                    [hd(CommandsWithoutGlobalNodeCommands)];
+                    [hd(CommandsWithoutGlobalNodeCommandsWithoutAssertions)];
                 false ->
                     []
             end,
             % io:format("FirstNonGlobalCommand: ~p~n", [FirstNonGlobalCommand]),
 
             %% Generate failure command.
-            FailureCommands = case length(CommandsWithoutGlobalNodeCommands) > 0 of
+            FailureCommands = case length(CommandsWithoutGlobalNodeCommandsWithoutAssertions) > 0 of
                 true ->
                     %% Only fail if we have at least *one* command that
                     %% performs application behavior.
