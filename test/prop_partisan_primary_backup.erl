@@ -117,8 +117,15 @@ node_postcondition(#node_state{store=Store}, {call, ?MODULE, read, [Node, Key]},
         error ->
             %% Didn't find the value in the dict, fine, if we never wrote it.
             Result = Value =:= not_found,
-            node_debug("read at node ~p for key ~p returned other value: ~p when expecting: not_found",
-                       [Node, Key, Value]),
+
+            case Result of 
+                false ->
+                    node_debug("read at node ~p for key ~p returned other value: ~p when expecting: not_found",
+                            [Node, Key, Value]);
+                _ ->
+                    ok
+            end,
+
             Result;
         Other ->
             node_debug("read at node ~p for key ~p returned other value: ~p when expecting: ~p",
@@ -129,6 +136,8 @@ node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {o
     true;
 node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {badrpc, timeout}) ->
     true;
+node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, deadlock) ->
+    false;
 node_postcondition(#node_state{store=Store}=_NodeState, {call, ?MODULE, verify, []}, AllResults) ->
     %% Everything we think we wrote is there.
     StoreToNodeResult = dict:fold(fun(Key, Value, Acc) ->
@@ -298,18 +307,29 @@ implementation_module() ->
 %% @private
 rpc_with_timeout(Node, Function, Args) ->
     ImplementationModule = implementation_module(),
+    Timeout = ImplementationModule:timeout(),
     
-    Timeout = case scheduler() of 
+    Result = case scheduler() of 
         finite_fault ->
-            %% 10 seconds to indicate deadlock.
-            10000;
+            Self = self(),
+
+            spawn_link(fun() -> 
+                RpcResult = rpc:call(?NAME(Node), ImplementationModule, Function, Args, Timeout),
+                Self ! {result, RpcResult}
+            end),
+
+            receive 
+                {result, RpcResult} ->
+                    RpcResult
+            after
+                10000 ->
+                    deadlock
+            end;
         _ ->
-            ImplementationModule:timeout()
+            rpc:call(?NAME(Node), ImplementationModule, Function, Args, Timeout)
     end,
 
-    Result = rpc:call(?NAME(Node), ImplementationModule, Function, Args, Timeout),
     node_debug("Result of RPC for ~p(~p) => ~p", [Function, Args, Result]),
-
     Result.
 
 %% @private
