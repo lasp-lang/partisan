@@ -28,5 +28,5 @@ export EXIT_ON_COUNTEREXAMPLE=false
 # echo "Running multi run fault-injector [without fault-injection]..."
 # rm -rf priv/lager; pkill -9 beam.smp; SYSTEM_MODEL=${SYSTEM_MODEL} RESTART_NODES=false IMPLEMENTATION_MODULE=${MODULE} NUM_TESTS=${NUM_TESTS} SCHEDULER=finite_fault bin/counterexample-find.sh
 
-echo "Running multi run fault-injector [with fault-injection f = 1]..."
-rm -rf priv/lager; pkill -9 beam.smp; FAULT_INJECTION=true FAULT_TOLERANCE=1 SYSTEM_MODEL=${SYSTEM_MODEL} RESTART_NODES=false IMPLEMENTATION_MODULE=${MODULE} NUM_TESTS=${NUM_TESTS} SCHEDULER=finite_fault bin/counterexample-find.sh
+# echo "Running multi run fault-injector [with fault-injection f = 1]..."
+# rm -rf priv/lager; pkill -9 beam.smp; FAULT_INJECTION=true FAULT_TOLERANCE=1 SYSTEM_MODEL=${SYSTEM_MODEL} RESTART_NODES=false IMPLEMENTATION_MODULE=${MODULE} NUM_TESTS=${NUM_TESTS} SCHEDULER=finite_fault bin/counterexample-find.sh

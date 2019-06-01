@@ -116,10 +116,13 @@ node_postcondition(#node_state{store=Store}, {call, ?MODULE, read, [Node, Key]},
             true;
         error ->
             %% Didn't find the value in the dict, fine, if we never wrote it.
-            Value =:= not_found;
+            Result = Value =:= not_found,
+            node_debug("read at node ~p for key ~p returned other value: ~p when expecting: not_found",
+                       [Node, Key, Value]),
+            Result;
         Other ->
             node_debug("read at node ~p for key ~p returned other value: ~p when expecting: ~p",
-                    [Node, Key, Other, Value]),
+                       [Node, Key, Other, Value]),
             false
     end;
 node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {ok, _Value}) ->
@@ -185,28 +188,16 @@ node_postcondition(_NodeState, Command, Response) ->
 
 %% @private
 read(Node, Key) ->
-    ImplementationModule = implementation_module(),
-
     ?PROPERTY_MODULE:command_preamble(Node, [read, Node, Key]),
-
-    Result = rpc:call(?NAME(Node), ImplementationModule, read, [Key], ImplementationModule:timeout()),
-    node_debug("read of key ~p returned: ~p", [Key, Result]),
-
+    Result = rpc_with_timeout(Node, read, [Key]),
     ?PROPERTY_MODULE:command_conclusion(Node, [read, Node, Key]),
-
     Result.
 
 %% @private
 write(Node, Key, Value) ->
-    ImplementationModule = implementation_module(),
-
     ?PROPERTY_MODULE:command_preamble(Node, [write, Node, Key, Value]),
-
-    Result = rpc:call(?NAME(Node), implementation_module(), write, [Key, Value], ImplementationModule:timeout()),
-    node_debug("write of key ~p value ~p returned: ~p", [Key, Value, Result]),
-
+    Result = rpc_with_timeout(Node, write, [Key, Value]),
     ?PROPERTY_MODULE:command_conclusion(Node, [write, Node, Key, Value]),
-
     Result.
 
 %% @private
@@ -300,6 +291,32 @@ implementation_module() ->
     case os:getenv("IMPLEMENTATION_MODULE") of 
         false ->
             error({error, no_implementation_module});
+        Other ->
+            list_to_atom(Other)
+    end.
+
+%% @private
+rpc_with_timeout(Node, Function, Args) ->
+    ImplementationModule = implementation_module(),
+    
+    Timeout = case scheduler() of 
+        finite_fault ->
+            %% 10 seconds to indicate deadlock.
+            10000;
+        _ ->
+            ImplementationModule:timeout()
+    end,
+
+    Result = rpc:call(?NAME(Node), ImplementationModule, Function, Args, Timeout),
+    node_debug("Result of RPC for ~p(~p) => ~p", [Function, Args, Result]),
+
+    Result.
+
+%% @private
+scheduler() ->
+    case os:getenv("SCHEDULER") of
+        false ->
+            default;
         Other ->
             list_to_atom(Other)
     end.
