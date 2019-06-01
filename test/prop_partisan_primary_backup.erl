@@ -322,14 +322,14 @@ rpc_with_timeout(Node, Function, Args) ->
                 {result, RpcResult} ->
                     RpcResult
             after
-                10000 ->
+                20000 ->
                     deadlock
             end;
         _ ->
             rpc:call(?NAME(Node), ImplementationModule, Function, Args, Timeout)
     end,
 
-    node_debug("Result of RPC for ~p(~p) => ~p", [Function, Args, Result]),
+    node_debug("result of RPC for ~p(~p) => ~p", [Function, Args, Result]),
     Result.
 
 %% @private
