@@ -82,7 +82,9 @@ node_functions() ->
 node_precondition(_NodeState, {call, ?MODULE, submit_transaction, [_Node, _Message]}) ->
     true;
 node_precondition(_NodeState, {call, ?MODULE, trigger_sync, [Node1, Node2]}) ->
-    Node1 /= Node2;
+    Node1 /= Node2 andalso
+        erlang:is_process_alive(Node1) andalso
+        erlang:is_process_alive(Node2);
 node_precondition(_NodeState, {call, ?MODULE, wait, [_Node]}) ->
     true;
 node_precondition(_NodeState, {call, ?MODULE, sleep, []}) ->
