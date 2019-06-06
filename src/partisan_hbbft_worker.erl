@@ -5,6 +5,8 @@
 -export([start_link/6, submit_transaction/2, start_on_demand/1, get_blocks/1, get_status/1, get_buf/1, stop/1, terminate/2]).
 -export([verify_chain/2, block_transactions/1]).
 
+-export([sync/2, fetch_from/2]).
+
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
 
 -record(block, {
@@ -33,6 +35,12 @@ stop(Pid) ->
 
 submit_transaction(Msg, Pid) ->
     gen_server:call(Pid, {submit_txn, Msg}, infinity).
+
+sync(Pid, Target) ->
+    gen_server:call(Pid, {sync, Target}, infinity).
+
+fetch_from(Pid, Highest) ->
+    gen_server:call(Pid, {fetch_from, Highest}, infinity).
 
 start_on_demand(Pid) ->
     gen_server:call(Pid, start_on_demand, infinity).
@@ -107,6 +115,28 @@ handle_call(start_on_demand, _From, State = #state{hbbft=HBBFT, sk=SK}) ->
 handle_call({submit_txn, Txn}, _From, State = #state{hbbft=HBBFT, sk=SK}) ->
     NewState = dispatch(hbbft:input(maybe_deserialize_hbbft(HBBFT, SK), Txn), undefined, State),
     {reply, ok, NewState};
+handle_call({sync, Target}, _From, #state{blocks = Blocks} = State) ->
+    case self() of
+        Target ->
+            %% deadlock avoidance, also handled at the prop level
+            {reply, ok, State};
+        _ ->
+            %% todo check for disjoint chain if there is ever a
+            %% possiblity of bad sync (I don't think there is right now)
+            {ok, FetchedBlocks} = fetch_from(Target, hd(Blocks)),
+            Blocks1 = lists:append(FetchedBlocks, Blocks),
+            {reply, ok, State#state{blocks = Blocks1}}
+    end;
+handle_call({fetch_from, Highest}, _From, #state{blocks = Blocks} = State) ->
+    case lists:member(Highest, Blocks) of
+        true ->
+            Fetched = lists:takewhile(fun(B) -> B /= Highest end, Blocks),
+            {reply, {ok, Fetched}, State};
+        false ->
+            %% the syncer is higher than the syncee or there is a
+            %% disjoint chain, so return [] to noop
+            {reply, {ok, []}, State}
+    end;
 handle_call(get_blocks, _From, State) ->
     {reply, {ok, State#state.blocks}, State};
 handle_call(get_status, _From, State) ->
