@@ -202,6 +202,7 @@ node_postcondition(#node_state{values=Values}, {call, ?MODULE, read, [_Node, Key
 node_postcondition(_NodeState, {call, ?MODULE, sleep, []}, _Result) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, session_write, [_Node, _Key, _Value]}, {ok, _}) ->
+    node_debug("=> write returned OK.", []),
     true;
 node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {ok, _}) ->
     true;
@@ -229,7 +230,7 @@ sleep() ->
     ?PROPERTY_MODULE:command_preamble(RunnerNode, [sleep]),
 
     node_debug("sleeping for convergence...", []),
-    timer:sleep(40000),
+    timer:sleep(1000),
 
     ?PROPERTY_MODULE:command_conclusion(RunnerNode, [sleep]),
 
