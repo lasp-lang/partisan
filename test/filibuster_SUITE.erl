@@ -1010,6 +1010,9 @@ message_type(Message) ->
             MessageType1 = element(1, MessagePayload),
 
             ActualType = case MessageType1 of 
+                '$gen_sync_all_state_event' ->
+                    CastMessage = element(2, MessagePayload),
+                    element(1, CastMessage);
                 '$gen_cast' ->
                     CastMessage = element(2, MessagePayload),
                     element(1, CastMessage);
@@ -1023,6 +1026,9 @@ message_type(Message) ->
             MessageType1 = element(1, Payload),
 
             ActualType = case MessageType1 of 
+                '$gen_sync_all_state_event' ->
+                    CastMessage = element(2, Payload),
+                    element(1, CastMessage);
                 '$gen_cast' ->
                     CastMessage = element(2, Payload),
                     element(1, CastMessage);
