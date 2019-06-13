@@ -30,8 +30,9 @@
          write/2,
          read/1,
          read_local/1,
-         state/0,
-         update/1]).
+         store/0,
+         update/1,
+         membership/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -68,9 +69,11 @@ update(LocalState0) ->
     LocalState = partisan_peer_service:decode(LocalState0),
     gen_server:cast(?MODULE, {update, LocalState}).
 
-%% @doc Issue write operations.
-state() ->
-    gen_server:call(?MODULE, state).
+store() ->
+    gen_server:call(?MODULE, store).
+
+membership() ->
+    gen_server:call(?MODULE, membership).
 
 %% @doc Issue write operations.
 write(Key, Value) ->
@@ -140,7 +143,9 @@ init([]) ->
                 outstanding=Outstanding}}.
 
 %% @private
-handle_call(state, _From, #state{store=Store}=State) ->
+handle_call(membership, _From, #state{membership=Membership}=State) ->
+    {reply, {ok, Membership}, State};
+handle_call(store, _From, #state{store=Store}=State) ->
     {reply, {ok, Store}, State};
 
 %% @private
