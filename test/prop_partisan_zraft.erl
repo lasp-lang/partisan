@@ -150,7 +150,7 @@ node_next_state(_State, NodeState, Response, Command) ->
 node_postcondition(#node_state{values=Values}, {call, ?MODULE, check_delivery, []}, Results) ->
     node_debug("verifying all written results are found: ~p", [Results]),
 
-    lists:foldl(fun({Key, Value}, All) ->
+    PostconditionResult = lists:foldl(fun({Key, Value}, All) ->
         case dict:find(Key, Values) of 
             {ok, Value} ->
                 node_debug("=> found key ~p with value ~p", [Key, Value]),
@@ -168,7 +168,11 @@ node_postcondition(#node_state{values=Values}, {call, ?MODULE, check_delivery, [
                         false andalso All
                 end
         end
-    end, true, Results);
+    end, true, Results),
+
+    node_debug("=> postcondition result: ~p", [PostconditionResult]),
+
+    PostconditionResult;
 node_postcondition(_NodeState, {call, ?MODULE, session_read, [_Node, _Key]}, {error, timeout}) ->
     node_debug("=> read failed, leader unavailable...", []),
     true;
