@@ -60,7 +60,7 @@ value() ->
 
 %% How many nodes to run?
 node_num_nodes() ->
-    5.
+    3.
 
 %% What node-specific operations should be called.
 node_commands() ->
