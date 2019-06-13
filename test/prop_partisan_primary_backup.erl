@@ -142,18 +142,50 @@ node_postcondition(#node_state{store=Store}=_NodeState, {call, ?MODULE, verify, 
     %% Everything we think we wrote is there.
     StoreToNodeResult = dict:fold(fun(Key, Value, Acc) ->
         All = dict:fold(fun(Node, Results, Acc1) ->
-            case dict:find(Key, Results) of 
-                {ok, Value} ->
+            % node_debug("looking at reuslts: ~p", [Results]),
+
+            case Results of 
+                badrpc ->
+                    node_debug("=> node crashed, considering valid.", []),
                     Acc1 andalso true;
-                Other ->
-                    node_debug("Node ~p did not contain result for key: ~p, instead: ~p, should have: ~p", [Node, Key, Other, Value]),
-                    node_debug("=> Results for node ~p are: ~p", [Node, dict:to_list(Results)]),
-                    Acc1 andalso false
+                _ ->
+                    case dict:find(Key, Results) of 
+                        {ok, Value} ->
+                            Acc1 andalso true;
+                        Other ->
+                            node_debug("Node ~p did not contain result for key: ~p, instead: ~p, should have: ~p", [Node, Key, Other, Value]),
+                            node_debug("=> Results for node ~p are: ~p", [Node, dict:to_list(Results)]),
+                            Acc1 andalso false
+                    end
             end
         end, true, AllResults),
 
         Acc andalso All
     end, true, Store),
+
+    %% Everything we think we wrote is there.
+    NodesMissingValues = dict:fold(fun(Key, Value, Acc) ->
+        NodesAcc = dict:fold(fun(Node, Results, Acc1) ->
+            % node_debug("looking at reuslts: ~p", [Results]),
+
+            case Results of 
+                badrpc ->
+                    node_debug("=> node crashed, considering valid.", []),
+                    Acc1 ++ [Node];
+                _ ->
+                    case dict:find(Key, Results) of 
+                        {ok, Value} ->
+                            Acc1;
+                        Other ->
+                            node_debug("Node ~p did not contain result for key: ~p, instead: ~p, should have: ~p", [Node, Key, Other, Value]),
+                            node_debug("=> Results for node ~p are: ~p", [Node, dict:to_list(Results)]),
+                            Acc1 ++ [Node]
+                    end
+            end
+        end, [], AllResults),
+
+        lists:usort(Acc ++ NodesAcc)
+    end, [], Store),
 
     %% Everything there is something we wrote.
     NodeToStoreResult = dict:fold(fun(Node, Results, Acc) ->
@@ -176,11 +208,16 @@ node_postcondition(#node_state{store=Store}=_NodeState, {call, ?MODULE, verify, 
         end
     end, true, AllResults),
 
+    Tolerance = fault_tolerance(),
+    node_debug("=> Tolerance: ~p", [Tolerance]),
+
     node_debug("=> written values: ~p", [dict:to_list(Store)]),
     node_debug("=> StoreToNodeResult: ~p", [StoreToNodeResult]),
     node_debug("=> NodeToStoreResult: ~p", [NodeToStoreResult]),
+    node_debug("=> NodesMissingValues: ~p", [NodesMissingValues]),
 
-    StoreToNodeResult andalso NodeToStoreResult;
+    (StoreToNodeResult andalso NodeToStoreResult) orelse
+    (not StoreToNodeResult andalso NodeToStoreResult andalso length(NodesMissingValues) =< Tolerance);
 node_postcondition(_NodeState, Command, Response) ->
     node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
                [Command, Response]),
@@ -219,7 +256,7 @@ verify() ->
     timer:sleep(1000),
 
     Results = lists:foldl(fun(Node, Acc) ->
-        case rpc:call(?NAME(Node), implementation_module(), state, [], infinity) of
+        case rpc:call(?NAME(Node), implementation_module(), store, [], infinity) of
             {ok, State} ->
                 dict:store(Node, State, Acc);
             {badrpc, _} ->
@@ -339,4 +376,13 @@ scheduler() ->
             default;
         Other ->
             list_to_atom(Other)
+    end.
+
+%% @private
+fault_tolerance() ->
+    case os:getenv("FAULT_TOLERANCE") of 
+        false ->
+            0;
+        ToleranceString ->
+            list_to_integer(ToleranceString)
     end.
