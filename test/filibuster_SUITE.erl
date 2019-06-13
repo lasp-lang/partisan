@@ -298,7 +298,14 @@ model_checker_test(_Config) ->
 
     %% Compile cover.
     {ok, Base} = file:get_cwd(),
-    {ok, ImplementationModule} = cover:compile(filename:join([Base, "../../../../protocols/" ++ atom_to_list(ImplementationModule) ++ ".erl"])),
+    CoverModule = filename:join([Base, "../../../../protocols/" ++ atom_to_list(ImplementationModule) ++ ".erl"]),
+    case filelib:is_file(CoverModule) of 
+        true ->
+            {ok, _ImplementationModule} = cover:compile(filename:join([Base, "../../../../protocols/" ++ atom_to_list(ImplementationModule) ++ ".erl"])),
+            ok;
+        false ->
+            ok
+    end,
 
     %% Print cover modules.
     % CoverModules = cover:modules(),
