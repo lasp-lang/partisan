@@ -165,13 +165,13 @@ handle_cast({read, From0, Key}, #state{next_id=NextId, membership=[Primary|_Rest
             Value = read(Key, Store),
 
             %% Reply to the caller.
-            partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value}),
+            partisan_pluggable_peer_service_manager:forward_message(EncodedFrom, {ok, Value}),
 
             {noreply, State#state{next_id=NextId+1}};
         _ ->
             %% Reply to caller.
             partisan_logger:info("Node ~p is not the primary for request: ~p", [node(), Request]),
-            partisan_pluggable_peer_service_manager:forward_message(From, {error, not_primary}),
+            partisan_pluggable_peer_service_manager:forward_message(EncodedFrom, {error, not_primary}),
 
             {noreply, State#state{next_id=NextId+1}}
     end;
