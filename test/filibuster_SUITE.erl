@@ -375,6 +375,8 @@ model_checker_test(_Config) ->
 %% ===================================================================
 
 execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
+    debug("execute starting...", []), 
+
     %% Ensure replaying option is set.
     lists:foreach(fun({ShortName, _}) ->
         ok = rpc:call(?NAME(ShortName), partisan_config, set, [replaying, Replaying])
@@ -452,6 +454,7 @@ execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
     end, Nodes),
 
     %% Run proper.
+    debug("running proper check for ~p:~p(~p)...", [M, F, A]),
     Result = proper:check(M:F(), A, []),
     debug("execute result: ~p", [Result]),
 
@@ -460,6 +463,8 @@ execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
 
     %% Stop tracing infrastructure.
     partisan_trace_orchestrator:stop(),
+
+    debug("execute returning: ~p", [Result]),
     
     Result.
 
@@ -1311,11 +1316,11 @@ execute_schedule(StartTime, CurrentIteration, Nodes, Counterexample, PreloadOmis
                     ClassificationsExplored = ClassificationsExplored0 ++ [Classification],
                     % debug("=> Classification for this test: ~p~n", [Classification]),
 
-                    % MessageTypes = message_types(FinalTraceLines),
-                    % debug("=> MessageTypes for this test: ~p~n", [MessageTypes]),
+                    MessageTypes = message_types(FinalTraceLines),
+                    debug("=> MessageTypes for this test: ~p~n", [MessageTypes]),
 
-                    % OmissionTypes = message_types(Omissions),
-                    % debug("=> OmissionTypes for this test: ~p~n", [OmissionTypes]),
+                    OmissionTypes = message_types(Omissions),
+                    debug("=> OmissionTypes for this test: ~p~n", [OmissionTypes]),
 
                     %% Run the trace.
                     CommandFun = fun() ->
