@@ -29,8 +29,8 @@
  {<<"jsx">>,{pkg,<<"jsx">>,<<"2.8.0">>},0},
  {<<"lager">>,{pkg,<<"lager">>,<<"3.6.8">>},0},
  {<<"lashup">>,
-  {git,"git://github.com/dcos/lashup",
-       {ref,"2efc19e40b6aee84ffb3c70f5f8f3225f767f7f1"}},
+  {git,"git://github.com/cmeiklejohn/lashup",
+       {ref,"afea85c3642f0aba7433e02333efe6e379459294"}},
   0},
  {<<"meck">>,
   {git,"git://github.com/eproxus/meck.git",
@@ -55,11 +55,7 @@
  {<<"stacktrace_compat">>,{pkg,<<"stacktrace_compat">>,<<"1.0.1">>},0},
  {<<"time_compat">>,{pkg,<<"time_compat">>,<<"0.0.1">>},0},
  {<<"types">>,{pkg,<<"types">>,<<"0.1.8">>},0},
- {<<"uuid">>,{pkg,<<"uuid_erl">>,<<"1.7.5">>},0},
- {<<"zraft_lib">>,
-  {git,"git://github.com/cmeiklejohn/zraft_lib",
-       {ref,"11edc75da378c5f6d1679e7d44d46b5f046ca102"}},
-  0}]}.
+ {<<"uuid">>,{pkg,<<"uuid_erl">>,<<"1.7.5">>},0}]}.
 [
 {pkg_hash,[
  {<<"acceptor_pool">>, <<"679D741DF87FC13599B1AEF2DF8F78F1F880449A6BEFAB7C44FB6FAE0E92A2DE">>},
