@@ -78,7 +78,7 @@ node_assertion_functions() ->
 
 %% Global functions.
 node_global_functions() ->
-    [check_delivery, sleep].
+    [sleep, check_delivery].
 
 %% What should the initial node state be.
 node_initial_state() ->
