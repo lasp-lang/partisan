@@ -259,7 +259,7 @@ submit_transaction(Node, Message) ->
     %% Mark that we did at least one transaction.
     true = ets:insert(prop_partisan, {at_least_one_transaction, true}),
 
-    %% Submit transaction to a random subset of nodes.
+    %% Submit transaction to all workers.
     lists:foreach(fun({_Node, {ok, Worker}}) ->
         partisan_hbbft_worker:submit_transaction(Message, Worker)
     end, Workers),
@@ -474,6 +474,23 @@ node_begin_case() ->
                                     node_debug("sets:size(Chains): ~p should = 1", [sets:size(Chains)]),
                                     node_debug("length(hd(sets:to_list(Chains))): ~p should /= 0", [length(hd(sets:to_list(Chains)))]),
 
+                                    case length(hd(sets:to_list(Chains))) > 0 of
+                                        true ->
+                                            lists:foreach(fun(X) ->
+                                                node_debug("looking at chain ~p...", [X]),
+                                                Chain = lists:nth(X, sets:to_list(Chains)),
+
+                                                %% check all transactions are unique
+                                                node_debug("=> number of blocks: ~p", [length(Chain)]),
+                                                BlockTxns = lists:flatten([partisan_hbbft_worker:block_transactions(B) || B <- Chain]),
+                                                node_debug("=> number of transactions: ~p", [length(BlockTxns)])
+                                            end, lists:seq(1, length(sets:to_list(Chains)))),
+                                            
+                                            ok;
+                                        false ->
+                                            ok
+                                    end,
+
                                     0 == message_queue_lens(Workers) andalso
                                     1 == sets:size(Chains) andalso
                                     0 /= length(hd(sets:to_list(Chains)))
@@ -516,7 +533,12 @@ node_begin_case() ->
             true = ets:insert(prop_partisan, {initial_messages, Msgs}),
 
             %% TEMP: force a failure here.
-            exit({error, forced_failure}),
+            case os:getenv("BOOTSTRAP_FAILURE") of 
+                "true" ->
+                    exit({error, forced_failure});
+                _ ->
+                    ok
+            end,
 
             ok;
         _ ->
