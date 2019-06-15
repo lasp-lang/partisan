@@ -56,7 +56,8 @@ names() ->
 %% What node-specific operations should be called.
 node_commands() ->
     [
-        {call, ?MODULE, submit_transaction, [node_name(), message()]}
+        {call, ?MODULE, submit_transaction, [node_name(), message()]},
+        {call, ?MODULE, trigger_sync, [node_name(), node_name()]}
     ].
 
 %% Assertion commands.
@@ -80,6 +81,8 @@ node_functions() ->
 %% Precondition.
 node_precondition(_NodeState, {call, ?MODULE, submit_transaction, [_Node, _Message]}) ->
     true;
+node_precondition(_NodeState, {call, ?MODULE, trigger_sync, [Node1, Node2]}) ->
+    Node1 /= Node2;
 node_precondition(_NodeState, {call, ?MODULE, wait, [_Node]}) ->
     true;
 node_precondition(_NodeState, {call, ?MODULE, sleep, []}) ->
@@ -265,6 +268,15 @@ submit_transaction(Node, Message) ->
     end, Workers),
 
     ?PROPERTY_MODULE:command_conclusion(Node, [submit_transaction, Node]),
+
+    ok.
+
+trigger_sync(Node1, Node2) ->
+    ?PROPERTY_MODULE:command_preamble(Node1, [trigger_sync, Node1]),
+
+    partisan_hbbft_worker:sync(Node1, Node2),
+
+    ?PROPERTY_MODULE:command_conclusion(Node1, [submit_transaction, Node1]),
 
     ok.
 
