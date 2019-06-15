@@ -276,7 +276,16 @@ submit_transaction(Node, Message) ->
 trigger_sync(Node1, Node2) ->
     ?PROPERTY_MODULE:command_preamble(Node1, [trigger_sync, Node1, Node2]),
 
-    partisan_hbbft_worker:sync(Node1, Node2),
+    %% Get workers.
+    [{workers, Workers}] = ets:lookup(prop_partisan, workers),
+
+    %% Get node 1's worker.
+    {ok, Node1Worker} = proplists:get_value({Node1, ?NAME(Node1)}, Workers),
+
+    %% Get node 2's worker.
+    {ok, Node2Worker} = proplists:get_value({Node2, ?NAME(Node2)}, Workers),
+
+    partisan_hbbft_worker:sync(Node1Worker, Node2Worker),
 
     ?PROPERTY_MODULE:command_conclusion(Node1, [trigger_sync, Node1, Node2]),
 
