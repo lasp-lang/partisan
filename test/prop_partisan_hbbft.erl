@@ -445,22 +445,31 @@ node_begin_case() ->
             Msgs = [crypto:strong_rand_bytes(128) || _ <- lists:seq(1, NumMsgs)],
 
             %% feed the nodes some msgs
+            node_debug("submitting transactions...", []),
             lists:foreach(fun(Msg) ->
-                                [partisan_hbbft_worker:submit_transaction(Msg, Worker) || {_Node, {ok, Worker}} <- Workers]
-                        end, Msgs),
+                node_debug("=> message ~p", [Msg]),
+
+                lists:foreach(fun({_Node, {ok, Worker}}) ->
+                    node_debug("=> => txn for worker ~p", [Worker]),
+                    partisan_hbbft_worker:submit_transaction(Msg, Worker)
+                end, Workers)
+            end, Msgs),
             node_debug("transactions submitted!", []),
 
             %% Start on demand on all nodes.
+            node_debug("issuing start_on_demands...", []),
             lists:foreach(fun({_Node, {ok, Worker}}) ->
                 partisan_hbbft_worker:start_on_demand(Worker)
             end, Workers),
 
+            node_debug("waiting for mailboxes to settle...", []),
             %% wait for all the worker's mailboxes to settle and.
             %% wait for the chains to converge
             case wait_until(fun() ->
                                     Chains = chains(Workers),
 
-                                    node_debug("Chains: ~p", [sets:to_list(Chains)]),
+                                    node_debug("====================================", []),
+                                    % node_debug("Chains: ~p", [sets:to_list(Chains)]),
                                     node_debug("message_queue_lens(Workers): ~p should = 0", [message_queue_lens(Workers)]),
                                     node_debug("sets:size(Chains): ~p should = 1", [sets:size(Chains)]),
                                     node_debug("length(hd(sets:to_list(Chains))): ~p should /= 0", [length(hd(sets:to_list(Chains)))]),
@@ -475,6 +484,7 @@ node_begin_case() ->
                     statuses(Workers),
                     erlang:error(failed)
             end,
+            node_debug("mailboxes settled...", []),
 
             Chains = sets:from_list(lists:map(fun({_Node, {ok, Worker}}) ->
                                                     {ok, Blocks} = partisan_hbbft_worker:get_blocks(Worker),
@@ -504,6 +514,9 @@ node_begin_case() ->
 
             %% Insert into initial messages.
             true = ets:insert(prop_partisan, {initial_messages, Msgs}),
+
+            %% TEMP: force a failure here.
+            exit({error, forced_failure}),
 
             ok;
         _ ->
@@ -595,6 +608,7 @@ shuffle(List) ->
 
 %% @private
 wait_until(Fun, Retry, Delay) when Retry > 0 ->
+    node_debug("wait_until trying again, retries remaining: ~p...", [Retry]),
     Res = Fun(),
     case Res of
         true ->
