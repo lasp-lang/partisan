@@ -241,7 +241,7 @@ do_send([{unicast, Dest, Msg}|T], State) ->
                 Process = global:whereis_name(name(Dest)),
                 Node = node(Process),
                 Message = {hbbft, State#state.id, Msg},
-                lager:info("Sending partisan message to node ~p process ~p: ~p", [Node, Process, Message]),
+                % lager:info("Sending partisan message to node ~p process ~p: ~p", [Node, Process, Message]),
                 ok = partisan_pluggable_peer_service_manager:cast_message(Node, undefined, Process, Message, [])
             catch
                 _:_ ->
@@ -262,7 +262,7 @@ do_send([{multicast, Msg}|T], State) ->
                     Process = global:whereis_name(name(Dest)),
                     Node = node(Process),
                     Message = {hbbft, State#state.id, Msg},
-                    lager:info("Sending partisan message to node ~p process ~p: ~p", [Node, Process, Message]),
+                    % lager:info("Sending partisan message to node ~p process ~p: ~p", [Node, Process, Message]),
                     ok = partisan_pluggable_peer_service_manager:cast_message(Node, undefined, Process, Message, [])
                 catch
                     _:_ ->
