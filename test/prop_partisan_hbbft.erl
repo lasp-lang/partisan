@@ -430,8 +430,19 @@ node_begin_case() ->
 
     case os:getenv("BOOTSTRAP") of 
         "true" ->
+            node_debug("beginning bootstrap...", []),
+
+            %% Configure the number of bootstrap transactions.
+            NumMsgs = case os:getenv("BOOTSTRAP_MESSAGES") of 
+                false ->
+                    N * BatchSize;
+                Other ->
+                    list_to_integer(Other)
+            end,
+            node_debug("setting number of bootstrap messages to: ~p", [NumMsgs]),
+
             %% generate a bunch of msgs
-            Msgs = [crypto:strong_rand_bytes(128) || _ <- lists:seq(1, N*20)],
+            Msgs = [crypto:strong_rand_bytes(128) || _ <- lists:seq(1, NumMsgs)],
 
             %% feed the nodes some msgs
             lists:foreach(fun(Msg) ->
