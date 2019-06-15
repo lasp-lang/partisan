@@ -272,11 +272,11 @@ submit_transaction(Node, Message) ->
     ok.
 
 trigger_sync(Node1, Node2) ->
-    ?PROPERTY_MODULE:command_preamble(Node1, [trigger_sync, Node1]),
+    ?PROPERTY_MODULE:command_preamble(Node1, [trigger_sync, Node1, Node2]),
 
     partisan_hbbft_worker:sync(Node1, Node2),
 
-    ?PROPERTY_MODULE:command_conclusion(Node1, [submit_transaction, Node1]),
+    ?PROPERTY_MODULE:command_conclusion(Node1, [trigger_sync, Node1, Node2]),
 
     ok.
 
