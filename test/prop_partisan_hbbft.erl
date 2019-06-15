@@ -231,7 +231,7 @@ check() ->
             wait_until(fun() ->
                             Chains = chains(Workers),
 
-                            node_debug("Chains: ~p", [sets:to_list(Chains)]),
+                            % node_debug("Chains: ~p", [sets:to_list(Chains)]),
                             node_debug("message_queue_lens(Workers): ~p should = 0", [message_queue_lens(Workers)]),
                             node_debug("sets:size(Chains): ~p should = 1", [sets:size(Chains)]),
                             node_debug("length(hd(sets:to_list(Chains))): ~p should /= 0", [length(hd(sets:to_list(Chains)))]),
