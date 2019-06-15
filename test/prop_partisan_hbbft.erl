@@ -403,7 +403,7 @@ node_begin_case() ->
     %% Master starts the dealer.
     N = length(Nodes),
     F = (N div 3),
-    BatchSize = 20,
+    BatchSize = 1,
     {ok, Dealer} = dealer:new(N, F+1, 'SS512'),
     {ok, {PubKey, PrivateKeys}} = dealer:deal(Dealer),
 
