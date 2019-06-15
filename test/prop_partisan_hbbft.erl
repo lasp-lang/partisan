@@ -99,6 +99,8 @@ node_next_state(_State, NodeState, _Response, _Command) ->
     NodeState.
 
 %% Postconditions for node commands.
+node_postcondition(_NodeState, {call, ?MODULE, trigger_sync, [_Node1, _Node2]}, ok) ->
+    true;
 node_postcondition(_NodeState, {call, ?MODULE, submit_transaction, [_Node, _Message]}, _Result) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, wait, [_Node]}, _Result) ->
