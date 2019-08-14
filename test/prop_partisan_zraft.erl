@@ -60,7 +60,7 @@ value() ->
 
 %% How many nodes to run?
 node_num_nodes() ->
-    5.
+    3.
 
 %% What node-specific operations should be called.
 node_commands() ->
@@ -78,7 +78,7 @@ node_assertion_functions() ->
 
 %% Global functions.
 node_global_functions() ->
-    [check_delivery, sleep].
+    [sleep, check_delivery].
 
 %% What should the initial node state be.
 node_initial_state() ->
@@ -150,7 +150,7 @@ node_next_state(_State, NodeState, Response, Command) ->
 node_postcondition(#node_state{values=Values}, {call, ?MODULE, check_delivery, []}, Results) ->
     node_debug("verifying all written results are found: ~p", [Results]),
 
-    lists:foldl(fun({Key, Value}, All) ->
+    PostconditionResult = lists:foldl(fun({Key, Value}, All) ->
         case dict:find(Key, Values) of 
             {ok, Value} ->
                 node_debug("=> found key ~p with value ~p", [Key, Value]),
@@ -168,7 +168,11 @@ node_postcondition(#node_state{values=Values}, {call, ?MODULE, check_delivery, [
                         false andalso All
                 end
         end
-    end, true, Results);
+    end, true, Results),
+
+    node_debug("=> postcondition result: ~p", [PostconditionResult]),
+
+    PostconditionResult;
 node_postcondition(_NodeState, {call, ?MODULE, session_read, [_Node, _Key]}, {error, timeout}) ->
     node_debug("=> read failed, leader unavailable...", []),
     true;
@@ -198,6 +202,7 @@ node_postcondition(#node_state{values=Values}, {call, ?MODULE, read, [_Node, Key
 node_postcondition(_NodeState, {call, ?MODULE, sleep, []}, _Result) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, session_write, [_Node, _Key, _Value]}, {ok, _}) ->
+    node_debug("=> write returned OK.", []),
     true;
 node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {ok, _}) ->
     true;
@@ -225,7 +230,7 @@ sleep() ->
     ?PROPERTY_MODULE:command_preamble(RunnerNode, [sleep]),
 
     node_debug("sleeping for convergence...", []),
-    timer:sleep(40000),
+    timer:sleep(1000),
 
     ?PROPERTY_MODULE:command_conclusion(RunnerNode, [sleep]),
 
@@ -342,6 +347,12 @@ node_begin_case() ->
     lists:foreach(fun({ShortName, _}) ->
         % node_debug("enabling pid_encoding at node ~p", [ShortName]),
         ok = rpc:call(?NAME(ShortName), partisan_config, set, [pid_encoding, true])
+    end, Nodes),
+
+    %% Enable register_pid_for_encoding.
+    lists:foreach(fun({ShortName, _}) ->
+        node_debug("enabling register_pid_for_encoding at node ~p", [ShortName]),
+        ok = rpc:call(?NAME(ShortName), partisan_config, set, [register_pid_for_encoding, true])
     end, Nodes),
 
     %% Load, configure, and start zraft.

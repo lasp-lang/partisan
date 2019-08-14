@@ -300,7 +300,14 @@ model_checker_test(_Config) ->
 
     %% Compile cover.
     {ok, Base} = file:get_cwd(),
-    {ok, ImplementationModule} = cover:compile(filename:join([Base, "../../../../protocols/" ++ atom_to_list(ImplementationModule) ++ ".erl"])),
+    CoverModule = filename:join([Base, "../../../../protocols/" ++ atom_to_list(ImplementationModule) ++ ".erl"]),
+    case filelib:is_file(CoverModule) of 
+        true ->
+            {ok, _ImplementationModule} = cover:compile(filename:join([Base, "../../../../protocols/" ++ atom_to_list(ImplementationModule) ++ ".erl"])),
+            ok;
+        false ->
+            ok
+    end,
 
     %% Print cover modules.
     % CoverModules = cover:modules(),
@@ -370,6 +377,8 @@ model_checker_test(_Config) ->
 %% ===================================================================
 
 execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
+    debug("execute starting...", []), 
+
     %% Ensure replaying option is set.
     lists:foreach(fun({ShortName, _}) ->
         ok = rpc:call(?NAME(ShortName), partisan_config, set, [replaying, Replaying])
@@ -419,6 +428,7 @@ execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
     end, Nodes),
 
     %% Run proper.
+    debug("running proper check for ~p:~p(~p)...", [M, F, A]),
     Result = proper:check(M:F(), A, []),
     debug("execute result: ~p", [Result]),
 
@@ -427,6 +437,8 @@ execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
 
     %% Stop tracing infrastructure.
     partisan_trace_orchestrator:stop(),
+
+    debug("execute returning: ~p", [Result]),
     
     Result.
 
@@ -977,6 +989,9 @@ message_type(Message) ->
             MessageType1 = element(1, MessagePayload),
 
             ActualType = case MessageType1 of 
+                '$gen_sync_all_state_event' ->
+                    CastMessage = element(2, MessagePayload),
+                    element(1, CastMessage);
                 '$gen_cast' ->
                     CastMessage = element(2, MessagePayload),
                     element(1, CastMessage);
@@ -990,6 +1005,9 @@ message_type(Message) ->
             MessageType1 = element(1, Payload),
 
             ActualType = case MessageType1 of 
+                '$gen_sync_all_state_event' ->
+                    CastMessage = element(2, Payload),
+                    element(1, CastMessage);
                 '$gen_cast' ->
                     CastMessage = element(2, Payload),
                     element(1, CastMessage);
@@ -1272,11 +1290,11 @@ execute_schedule(StartTime, CurrentIteration, Nodes, Counterexample, PreloadOmis
                     ClassificationsExplored = ClassificationsExplored0 ++ [Classification],
                     % debug("=> Classification for this test: ~p~n", [Classification]),
 
-                    % MessageTypes = message_types(FinalTraceLines),
-                    % debug("=> MessageTypes for this test: ~p~n", [MessageTypes]),
+                    MessageTypes = message_types(FinalTraceLines),
+                    debug("=> MessageTypes for this test: ~p~n", [MessageTypes]),
 
-                    % OmissionTypes = message_types(Omissions),
-                    % debug("=> OmissionTypes for this test: ~p~n", [OmissionTypes]),
+                    OmissionTypes = message_types(Omissions),
+                    debug("=> OmissionTypes for this test: ~p~n", [OmissionTypes]),
 
                     %% Run the trace.
                     CommandFun = fun() ->
