@@ -234,7 +234,7 @@ maybe_initiate_parallel_connections(Connections0, Channel, Node, ListenAddr, Par
 
 term_to_iolist(Term) ->
     [131, term_to_iolist_(Term)].
-        
+
 term_to_iolist_([]) ->
     106;
 term_to_iolist_({}) ->
@@ -444,6 +444,9 @@ process_forward(ServerRef, Message) ->
                 Pid ! Message;
             {global, Name} ->
                 Pid = global:whereis_name(Name),
+                Pid ! Message;
+            {via, Module, Name} ->
+                Pid =  Module:whereis_name(Name),
                 Pid ! Message;
             _ ->
                 ServerRef ! Message,
