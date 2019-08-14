@@ -41,7 +41,6 @@
 -define(PERIODIC_ENABLED, true).
 
 %% Test variables.
--define(TEST_NUM_NODES, 4).
 -define(MEMBERSHIP_STRATEGY_TRACING, false).
 
 -record(property_state, 

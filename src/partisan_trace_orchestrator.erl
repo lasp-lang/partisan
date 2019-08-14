@@ -34,7 +34,7 @@
          trace/2,
          replay/2,
          reset/0,
-         enable/0,
+         enable/1,
          identify/1,
          print/0,
          perform_preloads/1]).
@@ -50,6 +50,7 @@
 -record(state, {previous_trace=[],
                 trace=[], 
                 enabled=false,
+                nodes=[],
                 replay=false,
                 shrinking=false,
                 blocked_processes=[],
@@ -72,15 +73,15 @@ start_link(Args) ->
 
 %% @doc Record trace message.
 trace(Type, Message) ->
-    gen_server:call({global, ?MODULE}, {trace, Type, Message}, infinity).
+    gen_server:cast({global, ?MODULE}, {trace, Type, Message}).
 
 %% @doc Replay trace.
 replay(Type, Message) ->
     gen_server:call({global, ?MODULE}, {replay, Type, Message}, infinity).
 
 %% @doc Enable trace.
-enable() ->
-    gen_server:call({global, ?MODULE}, enable, infinity).
+enable(Nodes) ->
+    gen_server:call({global, ?MODULE}, {enable, Nodes}, infinity).
 
 %% @doc Reset trace.
 reset() ->
@@ -117,14 +118,45 @@ init([]) ->
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
-handle_call(enable, _From, #state{enabled=false}=State) ->
-    replay_debug("enabling tracing.", []),
-    {reply, ok, State#state{enabled=true}};
-handle_call(_Message, _From, #state{enabled=false}=State) ->
-    % replay_debug("ignoring ~p as tracing is disabled.", [Message]),
+handle_call({enable, Nodes}, _From, #state{enabled=false}=State) ->
+    lager:info("enabling tracing for nodes: ~p", [Nodes]),
+
+    %% Add send and receive pre-interposition functions to enforce message ordering.
+    PreInterpositionFun = fun({Type, OriginNode, OriginalMessage}) ->
+        %% TODO: This needs to be fixed: replay and trace need to be done
+        %% atomically otherwise processes will race to write trace entry when
+        %% they are unblocked from retry: this means that under replay the trace
+        %% file might generate small permutations of messages which means it's
+        %% technically not the same trace.
+        lager:info("pre interposition fired for message type: ~p", [Type]),
+
+        %% Under replay ensure they match the trace order (but only for pre-interposition messages).
+        ok = partisan_trace_orchestrator:replay(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
+
+        %% Record message incoming and outgoing messages.
+        ok = partisan_trace_orchestrator:trace(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
+
+        ok
+    end, 
+    lists:foreach(fun({_Name, Node}) ->
+        lager:info("Installing $tracing pre-interposition function on node: ~p", [Node]),
+        ok = rpc:call(Node, ?MANAGER, add_pre_interposition_fun, ['$tracing', PreInterpositionFun])
+    end, Nodes),
+
+    %% Add send and receive post-interposition functions to perform tracing.
+    PostInterpositionFun = fun({Type, OriginNode, OriginalMessage}, {Type, OriginNode, RewrittenMessage}) ->
+        %% Record outgoing message after transformation.
+    lager:info("post interposition fired for message type: ~p", [Type]),
+        ok = partisan_trace_orchestrator:trace(post_interposition_fun, {node(), OriginNode, Type, OriginalMessage, RewrittenMessage})
+    end, 
+    lists:foreach(fun({_Name, Node}) ->
+        ok = rpc:call(Node, ?MANAGER, add_post_interposition_fun, ['$tracing', PostInterpositionFun])
+    end, Nodes),
+
+    {reply, ok, State#state{nodes=Nodes, enabled=true}};
+handle_call(Message, _From, #state{enabled=false}=State) ->
+    replay_debug("ignoring ~p as tracing is disabled.", [Message]),
     {reply, ok, State};
-handle_call({trace, Type, Message}, _From, #state{trace=Trace0}=State) ->
-    {reply, ok, State#state{trace=Trace0++[{Type, Message}]}};
 handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0, replay=Replay, shrinking=Shrinking, blocked_processes=BlockedProcesses0}=State) ->
     case Replay of 
         true ->
@@ -263,6 +295,8 @@ handle_call(Msg, _From, State) ->
 
 %% @private
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
+handle_cast({trace, Type, Message}, #state{trace=Trace0}=State) ->
+    {noreply, State#state{trace=Trace0++[{Type, Message}]}};
 handle_cast(Msg, State) ->
     replay_debug("Unhandled cast messages: ~p", [Msg]),
     {noreply, State}.
@@ -275,7 +309,17 @@ handle_info(Msg, State) ->
 
 %% @private
 -spec terminate(term(), #state{}) -> term().
-terminate(_Reason, _State) ->
+terminate(_Reason, #state{nodes=Nodes}) ->
+    lists:foreach(fun({_Name, Node}) ->
+        replay_debug("removing tracing pre-interposition on node: ~p", [Node]),
+        rpc:call(Node, ?MANAGER, remove_pre_interposition_fun, ['$tracing'])
+    end, Nodes),
+
+    lists:foreach(fun({_Name, Node}) ->
+        replay_debug("removing tracing post-interposition on node: ~p", [Node]),
+        rpc:call(Node, ?MANAGER, remove_post_interposition_fun, ['$tracing'])
+    end, Nodes),
+
     ok.
 
 %% @private
@@ -585,33 +629,35 @@ preload_omissions(Nodes) ->
 
                         replay_debug("enabling preload omission for ~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload]) ,
 
-                        InterpositionFun = fun({forward_message, N, M}) ->
-                            case N of
-                                OriginNode ->
-                                    case M of 
-                                        MessagePayload ->
-                                            lager:info("~p: dropping packet from ~p to ~p due to preload interposition.", [node(), TracingNode, OriginNode]),
+                        InterpositionFun = fun
+                            ({forward_message, N, M}) ->
+                                case N of
+                                    OriginNode ->
+                                        case M of 
+                                            MessagePayload ->
+                                                lager:info("~p: dropping packet from ~p to ~p due to preload interposition.", [node(), TracingNode, OriginNode]),
 
-                                            case partisan_config:get(fauled_for_background) of 
-                                                true ->
-                                                    ok;
-                                                _ ->
-                                                    lager:info("~p: setting node ~p to faulted due to preload interposition hit on message: ~p", [node(), TracingNode, Message]),
-                                                    partisan_config:set(fauled_for_background, true)
-                                            end,
+                                                case partisan_config:get(fauled_for_background) of 
+                                                    true ->
+                                                        ok;
+                                                    _ ->
+                                                        lager:info("~p: setting node ~p to faulted due to preload interposition hit on message: ~p", [node(), TracingNode, Message]),
+                                                        partisan_config:set(fauled_for_background, true)
+                                                end,
 
-                                            undefined;
-                                        Other ->
-                                            lager:info("~p: allowing message, doesn't match interposition payload while node matches", [node()]),
-                                            lager:info("~p: => expecting: ~p", [node(), MessagePayload]),
-                                            lager:info("~p: => got: ~p", [node(), Other]),
-                                            M
-                                    end;
-                                OtherNode ->
-                                    lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), TracingNode, OtherNode]),
-                                    M
-                            end;
-                            ({receive_message, _N, M}) -> M
+                                                undefined;
+                                            Other ->
+                                                lager:info("~p: allowing message, doesn't match interposition payload while node matches", [node()]),
+                                                lager:info("~p: => expecting: ~p", [node(), MessagePayload]),
+                                                lager:info("~p: => got: ~p", [node(), Other]),
+                                                M
+                                        end;
+                                    OtherNode ->
+                                        lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), TracingNode, OtherNode]),
+                                        M
+                                end;
+                            ({receive_message, _N, M}) -> 
+                                M
                         end,
 
                         %% Install function.
@@ -632,7 +678,7 @@ preload_omissions(Nodes) ->
     %% Install faulted tracing interposition function.
     lists:foreach(fun({_, Node}) ->
         InterpositionFun = fun({forward_message, _N, M}) ->
-            lager:info("~p: interposition called for message: ~p", [node(), M]),
+            % lager:info("~p: interposition called for message to ~p message: ~p", [node(), N, M]),
 
             case partisan_config:get(faulted) of 
                 true ->
@@ -640,7 +686,7 @@ preload_omissions(Nodes) ->
                         undefined ->
                             undefined;
                         _ ->
-                            lager:info("~p: faulted during forward_message of background message, message ~p should be dropped.", [node(), M]),
+                            replay_debug("~p: faulted during forward_message of background message, message ~p should be dropped.", [node(), M]),
                             undefined
                     end;
                 _ ->
@@ -653,7 +699,7 @@ preload_omissions(Nodes) ->
                             undefined ->
                                 undefined;
                             _ ->
-                                lager:info("~p: faulted during receive_message of background message, message ~p should be dropped.", [node(), M]),
+                                replay_debug("~p: faulted during receive_message of background message, message ~p should be dropped.", [node(), M]),
                                 undefined
                         end;
                     _ ->
@@ -669,7 +715,7 @@ preload_omissions(Nodes) ->
     %% Install faulted_for_background tracing interposition function.
     lists:foreach(fun({_, Node}) ->
         InterpositionFun = fun({forward_message, _N, M}) ->
-            lager:info("~p: interposition called for message: ~p", [node(), M]),
+            replay_debug("~p: interposition called for message: ~p", [node(), M]),
 
             case partisan_config:get(faulted_for_background) of 
                 true ->
@@ -763,22 +809,22 @@ background_annotations() ->
 
     case filelib:is_file(AnnotationsFile) of 
         false ->
-            io:format("Annotations file doesn't exist: ~p~n", [AnnotationsFile]),
+            debug("Annotations file doesn't exist: ~p~n", [AnnotationsFile]),
             [];
         true ->
             {ok, [RawAnnotations]} = file:consult(AnnotationsFile),
-            io:format("Raw annotations loaded: ~p~n", [RawAnnotations]),
+            % debug("Raw annotations loaded: ~p~n", [RawAnnotations]),
             AllAnnotations = dict:from_list(RawAnnotations),
-            io:format("Annotations loaded: ~p~n", [dict:to_list(AllAnnotations)]),
+            % debug("Annotations loaded: ~p~n", [dict:to_list(AllAnnotations)]),
 
-            {ok, RawCausalityAnnotations} = dict:find(causality, AllAnnotations),
-            io:format("Raw causality annotations loaded: ~p~n", [RawCausalityAnnotations]),
+            % {ok, RawCausalityAnnotations} = dict:find(causality, AllAnnotations),
+            % debug("Raw causality annotations loaded: ~p~n", [RawCausalityAnnotations]),
 
-            CausalityAnnotations = dict:from_list(RawCausalityAnnotations),
-            io:format("Causality annotations loaded: ~p~n", [dict:to_list(CausalityAnnotations)]),
+            % CausalityAnnotations = dict:from_list(RawCausalityAnnotations),
+            % debug("Causality annotations loaded: ~p~n", [dict:to_list(CausalityAnnotations)]),
 
             {ok, BackgroundAnnotations} = dict:find(background, AllAnnotations),
-            io:format("Background annotations loaded: ~p~n", [BackgroundAnnotations]),
+            % debug("Background annotations loaded: ~p~n", [BackgroundAnnotations]),
 
             BackgroundAnnotations
     end.

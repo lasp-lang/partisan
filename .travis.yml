@@ -1,16 +1,13 @@
 language: erlang
 otp_release:
   - 20.3
-  - 21.2
 install:
   - make
   - ./rebar3 update
 before_script:
   - epmd -daemon
 script:
-  - make test
-  - make xref
-  - make dialyzer
+  - SYSTEM_MODEL=prop_partisan_reliable_broadcast IMPLEMENTATION_MODULE=lampson_2pc make test
 notifications:
   email: christopher.meiklejohn@gmail.com
   slack: lasp-lang:hiPRNnbUa3zdGrrXZfGRAF7D

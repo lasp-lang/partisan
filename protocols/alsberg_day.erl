@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2018 Christopher S. Meiklejohn.  All Rights Reserved.
+%% Copyright (c) 2019 Christopher S. Meiklejohn.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -25,8 +25,12 @@
 
 %% API
 -export([start_link/0,
+         stop/0,
+         timeout/0,
          write/2,
          read/1,
+         read_local/1,
+         state/0,
          update/1]).
 
 %% gen_server callbacks
@@ -37,12 +41,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, {store, membership=[]}).
-
--include("partisan.hrl").
-
--define(PB_TIMEOUT,       1000).
--define(PB_RETRY_TIMEOUT, 100).
+-record(state, {next_id, store, membership=[], outstanding}).
 
 %%%===================================================================
 %%% API
@@ -51,39 +50,50 @@
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
+stop() ->
+    gen_server:stop(?MODULE).
+
+timeout() ->
+    4000.
+
 %% @doc Notifies us of membership update.
 update(LocalState0) ->
     LocalState = partisan_peer_service:decode(LocalState0),
     gen_server:cast(?MODULE, {update, LocalState}).
 
 %% @doc Issue write operations.
-write(Key, Value) ->
-    From = pself(),
-    RequestId = prequestid(),
+state() ->
+    gen_server:call(?MODULE, state).
 
-    gen_server:cast(?MODULE, {write, {From, RequestId}, Key, Value}),
+%% @doc Issue write operations.
+write(Key, Value) ->
+    gen_server:cast(?MODULE, {write, self(), Key, Value}),
 
     receive
-        {response, RequestId, Response} ->
+        Response ->
             Response
-    after
-        ?PB_TIMEOUT ->
-            {error, timeout}
     end.
 
 %% @doc Issue read operations.
 read(Key) ->
-    From = pself(),
-    RequestId = prequestid(),
-
-    gen_server:cast(?MODULE, {read, {From, RequestId}, Key}),
+    gen_server:cast(?MODULE, {read, self(), Key}),
 
     receive
-        {response, RequestId, Response} ->
+        Response ->
             Response
-    after
-        ?PB_TIMEOUT ->
-            {error, timeout}
+    end.
+
+%% @doc Issue read operations.
+read_local(Key) ->
+    %% TODO: Bit of a hack just to get this working.
+    true = erlang:register(read_coordinator, self()),
+    From = partisan_util:registered_name(read_coordinator),
+
+    gen_server:cast(?MODULE, {read_local, From, Key}),
+
+    receive
+        Response ->
+            Response
     end.
 
 %%%===================================================================
@@ -92,19 +102,29 @@ read(Key) ->
 
 %% @private
 init([]) ->
-    Store = dict:new(),
-
-    %% Seed the random number generator using the deterministic seed.
+    %% Seed the random number generator.
     partisan_config:seed(),
 
     %% Register membership update callback.
     partisan_peer_service:add_sup_callback(fun ?MODULE:update/1),
 
     %% Start with initial membership.
-    {ok, Membership} = partisan_peer_service:members(),
-    lager:info("Starting with membership: ~p", [Membership]),
+    {ok, Membership0} = partisan_peer_service:members(),
+    partisan_logger:info("Starting with membership: ~p", [Membership0]),
 
-    {ok, #state{membership=Membership, store=Store}}.
+    %% Initialization values.
+    Store = dict:new(),
+    Membership = membership(Membership0),
+    Outstanding = dict:new(),
+
+    {ok, #state{next_id=0,
+                store=Store,
+                membership=Membership,
+                outstanding=Outstanding}}.
+
+%% @private
+handle_call(state, _From, #state{store=Store}=State) ->
+    {reply, {ok, Store}, State};
 
 %% @private
 handle_call(_Msg, _From, State) ->
@@ -112,128 +132,141 @@ handle_call(_Msg, _From, State) ->
 
 %% @private
 handle_cast({update, Membership0}, State) ->
-    Membership = lists:usort(Membership0), %% Must sort list or random selection with seed is *nondeterministic.*
+    Membership = membership(Membership0),
     {noreply, State#state{membership=Membership}};
 
-handle_cast({write, {FromPid, FromRequestId}=From, Key, Value}, #state{membership=[Primary, Collaborator|_Rest], store=Store0}=State) ->
-    case node() of 
-        Primary ->
-            lager:info("~p: node ~p received write for key ~p with value ~p", [?MODULE, node(), Key, Value]),
-
-            %% Write value locally.
-            Store = write(Key, Value, Store0),
-
-            %% Forward to collaboration message.
-            Myself = pnode(),
-            psend(Collaborator, {collaborate, From, Myself, Key, Value}),
-            lager:info("~p: node ~p sent replication request for key ~p with value ~p", [?MODULE, node(), Key, Value]),
-
-            %% Wait for collaboration ack before proceeding for n-host resilience (n = 2).
-            receive
-                {collaborate_ack, From, Key, Value} ->
-                    lager:info("~p: node ~p ack received for key ~p value ~p", [?MODULE, node(), Key, Value]),
-
-                    %% Reply to caller.
-                    psend(FromPid, {response, FromRequestId, ok}),
-
-                    {noreply, State#state{store=Store}}
-            after
-                %% We have to timeout, otherwise we block the gen_server.
-                ?PB_RETRY_TIMEOUT ->
-                    %% Reply to caller.
-                    psend(FromPid, {response, FromRequestId, {error, timeout}}),
-
-                    {noreply, State}
-            end;
-        _ ->
-            %% Forward the write request to the primary.
-            psend(Primary, {forwarded_write, From, Key, Value}),
-
-            %% Return control, because backup requests may arrive before response does 
-            %% under concurrent scheduling.
-            {noreply, State}
-    end;
 %% @private
-handle_cast({read, {FromPid, FromRequestId}=From, Key}, #state{membership=[Primary|_Rest], store=Store}=State) ->
-    case node() of 
-        Primary ->
-            Value = read(Key, Store),
-            lager:info("~p: node ~p received read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
-
-            %% Send the response back to the user.
-            psend(FromPid, {response, FromRequestId, {ok, Value}}),
-
-            {noreply, State};
-        _ ->
-            %% Forward the read request to the primary.
-            psend(Primary, {forwarded_read, From, Key}),
-
-            %% Return control, because backup requests may arrive before response does 
-            %% under concurrent scheduling.
-            {noreply, State}
-    end;
-handle_cast(_Msg, State) ->
-    {noreply, State}.
-
-%% @private
-handle_info({forwarded_write, {FromPid, FromRequestId}=From, Key, Value}, #state{membership=[_Primary|Backups], store=Store0}=State) ->
-    %% Figure 2c: I think this algorithm is not correct, but we'll see.
-
-    Store = write(Key, Value, Store0),
-    lager:info("~p: node ~p received forwarded write for key ~p with value ~p", [?MODULE, node(), Key, Value]),
-
-    %% Send backup message to backups.
-    lists:foreach(fun(Backup) -> psend(Backup, {backup, From, Key, Value}) end, Backups),
-
-    %% Send the response to the caller.
-    psend(FromPid, {response, FromRequestId, ok}),
-
-    %% No need to send acknowledgement back to the forwarder: 
-    %%  - not needed for control flow.
-
-    {noreply, State#state{store=Store}};
-
-%% @private
-handle_info({forwarded_read, {FromPid, FromRequestId}, Key}, #state{store=Store}=State) ->
+handle_cast({read_local, From, Key}, #state{store=Store}=State) ->
+    %% Get the value.
     Value = read(Key, Store),
-    lager:info("~p: node ~p received forwarded read for key ~p and returning value ~p", [?MODULE, node(), Key, Value]),
 
-    %% Send the response to the caller.
-    psend(FromPid, {response, FromRequestId, {ok, Value}}),
-
-    %% No need to send acknowledgement back to the forwarder: 
-    %%  - not needed for control flow.
+    %% Reply to the caller.
+    partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value}),
 
     {noreply, State};
+handle_cast({read, From0, Key}, #state{next_id=NextId, membership=[Primary|_Rest], store=Store}=State) ->
+    %% TODO: Bit of a hack just to get this working.
+    From = list_to_atom("read_coordinator_" ++ integer_to_list(NextId)),
+    try
+        true = erlang:unregister(From)
+    catch
+        _:_ ->
+            ok
+    end,
+    true = erlang:register(From, From0),
+    EncodedFrom = partisan_util:registered_name(From),
+
+    %% TODO: HACK to get around problem in interprocedural analysis.
+    Request = {read, EncodedFrom, Key}, 
+
+    case node() of 
+        Primary ->
+            %% Get the value.
+            Value = read(Key, Store),
+
+            %% Reply to the caller.
+            partisan_pluggable_peer_service_manager:forward_message(EncodedFrom, {ok, Value}),
+
+            {noreply, State#state{next_id=NextId+1}};
+        _ ->
+            %% Reply to caller.
+            partisan_logger:info("Node ~p is not the primary for request: ~p", [node(), Request]),
+            partisan_pluggable_peer_service_manager:forward_message(EncodedFrom, {error, not_primary}),
+
+            {noreply, State#state{next_id=NextId+1}}
+    end;
+handle_cast({write, From0, Key, Value}, #state{next_id=NextId, membership=[Primary|Rest]=Membership, outstanding=Outstanding0, store=Store0}=State) ->
+    %% TODO: Bit of a hack just to get this working.
+    From = list_to_atom("write_coordinator_" ++ integer_to_list(NextId)),
+    try
+        true = erlang:unregister(From)
+    catch
+        _:_ ->
+            ok
+    end,
+    true = erlang:register(From, From0),
+    EncodedFrom = partisan_util:registered_name(From),
+
+    %% TODO: HACK to get around problem in interprocedural analysis.
+    Request = {write, EncodedFrom, Key, Value},
+
+    case node() of 
+        Primary ->
+
+            %% Add to list of outstanding requests.
+            Replies = [node()],
+            Outstanding = dict:store(Request, {Membership, Replies}, Outstanding0),
+
+            %% Send collaboration message to other nodes.
+            CoordinatorNode = node(),
+
+            lists:foreach(fun(Node) ->
+                partisan_logger:info("sending collaborate message to node ~p for request ~p", [Node, Request]),
+                partisan_pluggable_peer_service_manager:forward_message(Node, undefined, ?MODULE, {collaborate, CoordinatorNode, Request}, [])
+            end, Rest),
+
+            %% Write to storage.
+            Store = write(Key, Value, Store0),
+
+            {noreply, State#state{store=Store, outstanding=Outstanding, next_id=NextId+1}};
+        _ ->
+            %% Reply to caller.
+            partisan_logger:info("Node ~p is not the primary for request: ~p", [node(), Request]),
+            partisan_pluggable_peer_service_manager:forward_message(EncodedFrom, {error, not_primary}),
+
+            {noreply, State#state{next_id=NextId+1}}
+    end.
 
 %% @private
-handle_info({collaborate, {FromPid, FromRequestId}=From, SourceNode, Key, Value}, #state{membership=[_Primary, _Collaborator | Backups], store=Store0}=State) ->
-    %% Write value locally.
-    Store = write(Key, Value, Store0),
-    lager:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
+handle_info({collaborate_ack, ReplyingNode, {write, From, Key, Value}}, #state{outstanding=Outstanding0}=State) ->
+    %% TODO: HACK to get around problem in interprocedural analysis.
+    Request = {write, From, Key, Value}, 
 
-    %% On ack, reply to caller.
-    psend(FromPid, {response, FromRequestId, ok}),
+    case dict:find(Request, Outstanding0) of
+        {ok, {Membership, Replies0}} ->
+            %% Update list of nodes that have acknowledged.
+            Replies = Replies0 ++ [ReplyingNode],
 
-    %% Send write acknowledgement.
-    psend(SourceNode, {collaborate_ack, From, Key, Value}),
-    lager:info("~p: node ~p acknowledging value for key ~p value ~p", [?MODULE, node(), Key, Value]),
+            case lists:usort(Membership) =:= lists:usort(Replies) of 
+                true ->
+                    partisan_logger:info("Node ~p received all replies for request ~p, acknowleding to user.", [node(), Request]),
+                    partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value});
+                false ->
+                    partisan_logger:info("Received replies from: ~p, but need replies from: ~p", [Replies, Membership -- Replies]),
+                    ok
+            end,
 
-    %% Send backup message to backups.
-    lists:foreach(fun(Backup) -> psend(Backup, {backup, From, Key, Value}) end, Backups),
+            %% Update list.
+            Outstanding = dict:store(Request, {Membership, Replies}, Outstanding0),
 
-    {noreply, State#state{store=Store}};
+            {noreply, State#state{outstanding=Outstanding}};
+        _ ->
+            partisan_logger:info("Received reply for unknown request: ~p", [Request]),
 
-%% @private
-handle_info({backup, _From, _SourceNode, Key, Value}, #state{store=Store0}=State) ->
-    %% Write value locally.
-    Store = write(Key, Value, Store0),
-    lager:info("~p: node ~p storing updated value key ~p value ~p", [?MODULE, node(), Key, Value]),
+            {noreply, State}
+    end;
+handle_info({collaborate, CoordinatorNode, {write, From, Key, Value}}, #state{membership=[Primary|_Rest], store=Store0}=State) ->
+    %% TODO: HACK to get around problem in interprocedural analysis.
+    Request = {write, From, Key, Value},
 
-    {noreply, State#state{store=Store}};
+    case node() of 
+        Primary ->
+            %% Do nothing.
+            {noreply, State};
+        _ ->
+            %% Write to storage.
+            Store = write(Key, Value, Store0),
 
-%% @private
-handle_info(_Msg, State) ->
+            %% Reply with collaborate acknowledgement.
+            ReplyingNode = node(),
+            partisan_logger:info("Node ~p is backup, responding to the primary ~p with acknowledgement", [node(), CoordinatorNode]),
+            partisan_pluggable_peer_service_manager:forward_message(CoordinatorNode, undefined, ?MODULE, {collaborate_ack, ReplyingNode, Request}, []),
+
+            {noreply, State#state{store=Store}}
+    end;
+handle_info(Msg, State) ->
+    partisan_logger:info("Received message ~p with no handler!", [Msg]),
+
     {noreply, State}.
 
 %% @private
@@ -243,51 +276,6 @@ terminate(_Reason, _State) ->
 %% @private
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-
-%%%===================================================================
-%%% Partisan functions
-%%%===================================================================
-
-%% @private
-pmanager() ->
-    partisan_config:get(partisan_peer_service_manager).
-
-%% @private
-%%
-%% [{ack, true}] ensures all messages are retried until acknowledged in the runtime
-%% so, no retry logic is required.
-psend({partisan_remote_reference, Destination, ServerRef}, Message) ->
-    Manager = pmanager(),
-    Manager:forward_message(Destination, undefined, ServerRef, Message, [{ack, true}]);
-psend(Destination, Message) ->
-    Manager = pmanager(),
-    Manager:forward_message(Destination, undefined, ?MODULE, Message, [{ack, true}]).
-
-%% @private
-pnode() ->
-    node().
-
-%%%===================================================================
-%%% Conditional support for determinism
-%%%===================================================================
-
-%% @private
-prequestid() ->
-    case partisan_config:get(tracing, false) of 
-        true ->
-            99999;
-        false ->
-            erlang:unique_integer([monotonic, positive])
-    end.
-
-%% @private
-pself() ->
-    case partisan_config:get(tracing, false) of 
-        true ->
-            proxy;
-        false ->
-            partisan_util:pid()
-    end.
 
 %%%===================================================================
 %%% Internal functions
@@ -305,3 +293,7 @@ read(Key, Store) ->
 %% @private
 write(Key, Value, Store) ->
     dict:store(Key, Value, Store).
+
+%% @private
+membership(Membership) ->
+    lists:usort(Membership).

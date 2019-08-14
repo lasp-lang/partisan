@@ -983,14 +983,14 @@ partisan_forward_call(M, F, A, St) ->
 	try 
 		case {concrete(M), concrete(F)} of 
 			{partisan_pluggable_peer_service_manager, forward_message} ->
-				io:format("=> found partisan call ~p:~p/~p~n", [concrete(M), concrete(F), length(A)]),
+				% io:format("=> found partisan call ~p:~p/~p~n", [concrete(M), concrete(F), length(A)]),
 
 				MessageType = message_type_from_args(A),
 				% io:format("message type from send: ~p~n", [MessageType]),
 
 				St#intraprocedural_state{sends = sets:add_element(MessageType, St#intraprocedural_state.sends)};
 			{partisan_pluggable_peer_service_manager, cast_message} ->
-				io:format("=> found partisan call ~p:~p/~p~n", [concrete(M), concrete(F), length(A)]),
+				% io:format("=> found partisan call ~p:~p/~p~n", [concrete(M), concrete(F), length(A)]),
 
 				MessageType = message_type_from_args(A),
 				% io:format("message type from send: ~p~n", [MessageType]),

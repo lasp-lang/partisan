@@ -161,7 +161,8 @@ start(Case, Config, Options) ->
             ok = partisan_config:set(random_seed, {1, 1, 1}),
 
             %% Configure random seed on the nodes.
-            ok = rpc:call(Node, partisan_config, set, [random_seed, {1, 1, 1}]),
+            PHashNode = erlang:phash2([Node]),
+            ok = rpc:call(Node, partisan_config, set, [random_seed, {PHashNode, 1, 1}]),
 
             Replaying = case ?config(replaying, Config) of
                               undefined ->
