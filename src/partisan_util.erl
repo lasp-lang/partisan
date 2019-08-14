@@ -34,6 +34,7 @@
          gensym/1,
          pid/0,
          pid/1,
+         ref/1,
          registered_name/1]).
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
@@ -300,7 +301,8 @@ gensym(Name) when is_atom(Name) ->
 gensym(Pid) when is_pid(Pid) ->
     {partisan_process_reference, pid_to_list(Pid)};
 gensym(Ref) when is_reference(Ref) ->
-    {partisan_encoded_reference, term_to_binary(Ref)}.
+    % {partisan_encoded_reference, binary_to_list(term_to_binary(Ref))}.
+    {partisan_encoded_reference, 1}.
 
 ref(Ref) ->
     GenSym = gensym(Ref),
@@ -319,14 +321,16 @@ pid(Pid) ->
             case partisan_config:get(register_pid_for_encoding, false) of 
                 true ->
                     Unique = erlang:unique_integer([monotonic, positive]),
-                    Name = "partisan_registered_name_" ++ integer_to_list(Unique),
 
-                    case process_info(Pid, registered_name) of 
+                    Name = case process_info(Pid, registered_name) of 
                         {registered_name, OldName} ->
                             lager:info("unregistering pid: ~p with name: ~p", [Pid, OldName]),
-                            unregister(OldName);
+
+                            %% TODO: Race condition on unregister/register.
+                            unregister(OldName),
+                            atom_to_list(OldName);
                         [] ->
-                            ok
+                            "partisan_registered_name_" ++ integer_to_list(Unique)
                     end,
 
                     lager:info("registering pid: ~p as name: ~p at node: ~p", [Pid, Name, Node]),
@@ -336,25 +340,30 @@ pid(Pid) ->
                     {partisan_remote_reference, Node, {partisan_process_reference, pid_to_list(Pid)}}
             end;
         _ ->
-            %% This is super dangerous.
+            %% This is even mmore super dangerous.
             case partisan_config:get(register_pid_for_encoding, false) of 
                 true ->
                     Unique = erlang:unique_integer([monotonic, positive]),
+
                     Name = "partisan_registered_name_" ++ integer_to_list(Unique),
                     [_, B, C] = string:split(pid_to_list(Pid), ".", all),
                     RewrittenProcessIdentifier = "<0." ++ B ++ "." ++ C,
+
                     RegisterFun = fun() ->
                         RewrittenPid = list_to_pid(RewrittenProcessIdentifier),
 
-                        case process_info(RewrittenPid, registered_name) of 
+                        NewName = case process_info(RewrittenPid, registered_name) of 
                             {registered_name, OldName} ->
                                 lager:info("unregistering pid: ~p with name: ~p", [Pid, OldName]),
-                                unregister(OldName);
+
+                                %% TODO: Race condition on unregister/register.
+                                unregister(OldName),
+                                atom_to_list(OldName);
                             [] ->
-                                ok
+                                Name
                         end,
 
-                        erlang:register(list_to_atom(Name), RewrittenPid)
+                        erlang:register(list_to_atom(NewName), RewrittenPid)
                     end,
                     lager:info("registering pid: ~p as name: ~p at node: ~p", [Pid, Name, Node]),
                     %% TODO: Race here unless we wait.
@@ -363,7 +372,7 @@ pid(Pid) ->
                 false ->
                     [_, B, C] = string:split(pid_to_list(Pid), ".", all),
                     RewrittenProcessIdentifier = "<0." ++ B ++ "." ++ C,
-                    lager:info("rewriting remote reference id: ~p", [RewrittenProcessIdentifier]),
+                    % lager:info("rewriting remote reference id: ~p", [RewrittenProcessIdentifier]),
                     {partisan_remote_reference, Node, {partisan_process_reference, RewrittenProcessIdentifier}}
             end
     end.
@@ -374,6 +383,13 @@ registered_name(Name) ->
     {partisan_remote_reference, Node, GenSym}.
 
 process_forward(ServerRef, Message) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("node ~p recieved message ~p for ~p", [node(), Message, ServerRef]);
+        false ->
+            ok
+    end,
+
     Node = partisan_peer_service_manager:mynode(),
 
     try
@@ -382,11 +398,26 @@ process_forward(ServerRef, Message) ->
                 Name = list_to_atom(RegisteredName),
                 Name ! Message;
             {partisan_remote_reference, OtherNode, {partisan_process_reference, ProcessIdentifier}} ->
-                lager:info("process reference is: ~p", [ProcessIdentifier]),
+                % lager:info("process reference is: ~p", [ProcessIdentifier]),
+
                 case string:split(ProcessIdentifier, ".", all) of 
                     ["<0",_B,_C] ->
                         Pid = list_to_pid(ProcessIdentifier),
-                        lager:info("pid reference is: ~p", [Pid]),
+
+                        case partisan_config:get(tracing, ?TRACING) of
+                            true ->
+                                lager:info("pid reference is: ~p", [Pid]),
+
+                                case is_process_alive(Pid) of
+                                    true ->
+                                        ok;
+                                    false ->
+                                        lager:info("Process ~p is NOT ALIVE for message: ~p", [ServerRef, Message])
+                                end;
+                            false ->
+                                ok
+                        end,
+
                         Pid ! Message;
                     [_,B,C] ->
                         %% Remote written pid from Distributed Erlang.

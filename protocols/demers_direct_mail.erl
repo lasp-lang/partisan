@@ -20,12 +20,11 @@
 
 -module(demers_direct_mail).
 
--include("partisan.hrl").
-
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 %% API
 -export([start_link/0,
+         stop/0,
          broadcast/2,
          update/1]).
 
@@ -37,7 +36,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, {membership}).
+-record(state, {next_id, membership}).
 
 %%%===================================================================
 %%% API
@@ -45,6 +44,9 @@
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+stop() ->
+    gen_server:stop(?MODULE).
 
 %% @doc Broadcast.
 broadcast(ServerRef, Message) ->
@@ -72,22 +74,20 @@ init([]) ->
 
     %% Start with initial membership.
     {ok, Membership} = partisan_peer_service:members(),
-    lager:info("Starting with membership: ~p", [Membership]),
+    partisan_logger:info("Starting with membership: ~p", [Membership]),
 
-    {ok, #state{membership=membership(Membership)}}.
+    {ok, #state{next_id=0, membership=membership(Membership)}}.
 
 %% @private
 handle_call(Msg, _From, State) ->
-    lager:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
+    partisan_logger:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
     {reply, ok, State}.
 
 %% @private
-handle_cast({broadcast, ServerRef, Message}, #state{membership=Membership}=State) ->
-    Manager = manager(),
-
+handle_cast({broadcast, ServerRef, Message}, #state{next_id=NextId, membership=Membership}=State) ->
     %% Generate message id.
     MyNode = partisan_peer_service_manager:mynode(),
-    Id = {MyNode, erlang:unique_integer([monotonic, positive])},
+    Id = {MyNode, NextId},
 
     %% Forward to process.
     partisan_util:process_forward(ServerRef, Message),
@@ -97,22 +97,22 @@ handle_cast({broadcast, ServerRef, Message}, #state{membership=Membership}=State
 
     %% Forward message.
     lists:foreach(fun(N) ->
-        lager:info("~p: sending broadcast message to node ~p: ~p", [node(), N, Message]),
-        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {broadcast, Id, ServerRef, Message}, [])
+        partisan_logger:info("~p: sending broadcast message to node ~p: ~p", [node(), N, Message]),
+        partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {broadcast, Id, ServerRef, Message}, [])
     end, membership(Membership) -- [MyNode]),
 
-    {noreply, State};
+    {noreply, State#state{next_id=NextId + 1}};
 handle_cast({update, Membership0}, State) ->
     Membership = membership(Membership0),
     {noreply, State#state{membership=Membership}};
 handle_cast(Msg, State) ->
-    lager:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
+    partisan_logger:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
 
 %% @private
 %% Incoming messages.
 handle_info({broadcast, Id, ServerRef, Message}, State) ->
-    lager:info("~p received value from broadcast: ~p", [node(), Message]),
+    partisan_logger:info("~p received value from broadcast: ~p", [node(), Message]),
 
     case ets:lookup(?MODULE, Id) of
         [] ->
@@ -142,10 +142,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-
-%% @private
-manager() ->
-    partisan_config:get(partisan_peer_service_manager).
 
 %% @private -- sort to remove nondeterminism in node selection.
 membership(Membership) ->

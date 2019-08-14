@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_partisan_crash_fault_model).
+-module(prop_partisan_arbitrary_fault_model).
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
@@ -31,6 +31,7 @@
 -define(MANAGER, partisan_pluggable_peer_service_manager).
 
 -record(fault_model_state, {tolerance,
+                            reorderings,
                             crashed_nodes,
                             send_omissions,
                             receive_omissions,
@@ -89,6 +90,45 @@ crash(Name, JoinedNames) ->
     ?PROPERTY_MODULE:command_conclusion(Name, [crash, JoinedNames]),
 
     ok.
+
+%% Reordering.
+begin_reordering(Node) ->
+    ?PROPERTY_MODULE:command_preamble(Node, [begin_reordering, Node]),
+
+    fault_debug("begin_reordering, node: ~p", [Node]),
+
+    InterpositionFun = fun
+        ({receive_message, _N, Message}) ->
+            Message;
+        ({forward_message, _N, Message}) -> 
+            case Message of 
+                undefined ->
+                    undefined;
+                _ ->
+                    case rand:uniform(10) rem 2 =:= 0 of 
+                        true ->
+                            {'$delay', Message};
+                        false ->
+                            Message
+                    end
+            end
+    end,
+    Result = rpc:call(?NAME(Node), ?MANAGER, add_interposition_fun, [{'$delay', Node}, InterpositionFun]),
+
+    ?PROPERTY_MODULE:command_conclusion(Node, [begin_reordering, Node]),
+
+    Result.
+
+end_reordering(Node) ->
+    ?PROPERTY_MODULE:command_preamble(Node, [end_reordering, Node]),
+
+    fault_debug("end_reordering, node: ~p", [Node]),
+
+    Result = rpc:call(?NAME(Node), ?MANAGER, remove_interposition_fun, [{'$delay', Node}]),
+
+    ?PROPERTY_MODULE:command_conclusion(Node, [end_reordering, Node]),
+
+    Result.
 
 %% Create a general omission failure.
 begin_omission(Node) ->
@@ -311,7 +351,11 @@ fault_commands() ->
 
      %% General omission failure.
      {call, ?MODULE, begin_omission, [node_name()]},
-     {call, ?MODULE, end_omission, [node_name()]}
+     {call, ?MODULE, end_omission, [node_name()]},
+
+     %% Reordering.
+     {call, ?MODULE, begin_reordering, [node_name()]},
+     {call, ?MODULE, end_reordering, [node_name()]}
     ].
 
 %% Names of the node functions so we kow when we can dispatch to the node
@@ -321,11 +365,11 @@ fault_functions(_JoinedNodes) ->
 
 %% Commands to induce failures.
 fault_begin_functions() ->
-    [begin_receive_omission, begin_send_omission, begin_omission].
+    [begin_receive_omission, begin_send_omission, begin_omission, begin_reordering].
 
 %% Commands to resolve failures.
 fault_end_functions() ->
-    [end_send_omission, end_receive_omission, end_omission].
+    [end_send_omission, end_receive_omission, end_omission, end_reordering].
 
 %% Commands to resolve global failures.
 fault_global_functions() ->
@@ -346,12 +390,32 @@ fault_initial_state() ->
     SendOmissions = dict:new(),
     ReceiveOmissions = dict:new(),
     GeneralOmissions = [],
+    Reorderings = [],
 
     #fault_model_state{tolerance=Tolerance,
+                       reorderings=Reorderings,
                        crashed_nodes=CrashedNodes, 
                        send_omissions=SendOmissions,
                        receive_omissions=ReceiveOmissions,
                        general_omissions=GeneralOmissions}.
+
+%% Reorderings.
+fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, reorderings=Reorderings}=FaultModelState, {call, _Mod, begin_reordering, [Node]}=Call) ->
+    %% Fault must be allowed at this moment.
+    fault_allowed(Call, FaultModelState) andalso 
+
+    %% Both nodes have to be non-crashed.
+    not lists:member(Node, Reorderings) andalso not lists:member(Node, CrashedNodes);
+
+fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, reorderings=Reorderings}, {call, _Mod, end_reordering, [Node]}) ->
+    %% We must be in the middle of a general omission to resolve it.
+    Result = lists:member(Node, Reorderings) andalso not lists:member(Node, CrashedNodes),
+
+    % fault_debug("precondition for end_reordering, node: ~p result: ~p", [Node, Result]),
+    % fault_debug("=> is node ~p faulted: ~p", [Node, lists:member(Node, Reorderings)]),
+    % fault_debug("=> is node ~p NOT crashed: ~p", [Node, not lists:member(Node, CrashedNodes)]),
+
+    Result;
 
 %% General omission.
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, general_omissions=GeneralOmissions}=FaultModelState, {call, _Mod, begin_omission, [Node]}=Call) ->
@@ -365,9 +429,9 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, general_omissi
     %% We must be in the middle of a general omission to resolve it.
     Result = lists:member(Node, GeneralOmissions) andalso not lists:member(Node, CrashedNodes),
 
-    fault_debug("precondition for end_omission, node: ~p result: ~p", [Node, Result]),
-    fault_debug("=> is node ~p faulted: ~p", [Node, lists:member(Node, GeneralOmissions)]),
-    fault_debug("=> is node ~p NOT crashed: ~p", [Node, not lists:member(Node, CrashedNodes)]),
+    % fault_debug("precondition for end_omission, node: ~p result: ~p", [Node, Result]),
+    % fault_debug("=> is node ~p faulted: ~p", [Node, lists:member(Node, GeneralOmissions)]),
+    % fault_debug("=> is node ~p NOT crashed: ~p", [Node, not lists:member(Node, CrashedNodes)]),
 
     Result;
 
@@ -441,6 +505,13 @@ fault_precondition(_FaultModelState, {call, Mod, Fun, [_Node|_]=Args}) ->
     fault_debug("fault precondition fired for ~p:~p(~p)", [Mod, Fun, Args]),
     false.
 
+%% Reordering.
+fault_next_state(_State, #fault_model_state{reorderings=Reorderings} = FaultModelState, _Res, {call, _Mod, begin_reordering, [Node]}) ->
+    FaultModelState#fault_model_state{reorderings=Reorderings ++ [Node]};
+
+fault_next_state(_State, #fault_model_state{reorderings=Reorderings} = FaultModelState, _Res, {call, _Mod, end_reordering, [Node]}) ->
+    FaultModelState#fault_model_state{reorderings=Reorderings -- [Node]};
+
 %% General omission.
 fault_next_state(_State, #fault_model_state{general_omissions=GeneralOmissions} = FaultModelState, _Res, {call, _Mod, begin_omission, [Node]}) ->
     FaultModelState#fault_model_state{general_omissions=GeneralOmissions ++ [Node]};
@@ -494,6 +565,13 @@ fault_next_state(_State,
 
 fault_next_state(_State, FaultModelState, _Res, _Call) ->
     FaultModelState.
+
+%% Reorderings.
+fault_postcondition(_FaultModelState, {call, _Mod, begin_reordering, [_Node]}, ok) ->
+    true;
+
+fault_postcondition(_FaultModelState, {call, _Mod, end_reordering, [_Node]}, ok) ->
+    true;
 
 %% General omission.
 fault_postcondition(_FaultModelState, {call, _Mod, begin_omission, [_Node]}, ok) ->
@@ -552,7 +630,7 @@ fault_num_resolvable_faults(#fault_model_state{general_omissions=GeneralOmission
     length(ResolvableFaults).
 
 %% The nodes that are faulted.
-active_faults(#fault_model_state{crashed_nodes=CrashedNodes, general_omissions=GeneralOmissions, send_omissions=SendOmissions0, receive_omissions=ReceiveOmissions0}) ->
+active_faults(#fault_model_state{crashed_nodes=CrashedNodes, reorderings=Reorderings, general_omissions=GeneralOmissions, send_omissions=SendOmissions0, receive_omissions=ReceiveOmissions0}) ->
     SendOmissions = lists:map(fun({{SourceNode, _DestinationNode}, true}) -> SourceNode end, 
                         dict:to_list(SendOmissions0)),
     % fault_debug("=> => send_omissions: ~p", [SendOmissions]),
@@ -561,13 +639,26 @@ active_faults(#fault_model_state{crashed_nodes=CrashedNodes, general_omissions=G
                         dict:to_list(ReceiveOmissions0)),
     % fault_debug("=> => receive_omissions: ~p", [ReceiveOmissions]),
 
-    lists:usort(SendOmissions ++ ReceiveOmissions ++ CrashedNodes ++ GeneralOmissions).
+    lists:usort(SendOmissions ++ ReceiveOmissions ++ CrashedNodes ++ GeneralOmissions ++ Reorderings).
 
 %% Is crashed?
 fault_is_crashed(#fault_model_state{crashed_nodes=CrashedNodes}, Name) ->
     lists:member(Name, CrashedNodes).
 
 %% Is this fault allowed?
+fault_allowed({call, _Mod, begin_reordering, [Node] = _Args}, #fault_model_state{tolerance=Tolerance}=FaultModelState) ->
+    %% We can tolerate another failure.
+    NumActiveFaults = num_active_faults(FaultModelState),
+
+    %% Node is already in faulted state -- send or receive omission.
+    IsAlreadyFaulted = lists:member(Node, active_faults(FaultModelState)),
+
+    %% Compute and log result.
+    Result = NumActiveFaults < Tolerance orelse IsAlreadyFaulted,
+
+    fault_debug("=> ~p num_active_faults: ~p is_already_faulted(~p): ~p: result: ~p", [begin_reordering, NumActiveFaults, Node, IsAlreadyFaulted, Result]),
+
+    Result;
 fault_allowed({call, _Mod, begin_omission, [Node] = _Args}, #fault_model_state{tolerance=Tolerance}=FaultModelState) ->
     %% We can tolerate another failure.
     NumActiveFaults = num_active_faults(FaultModelState),

@@ -20,12 +20,11 @@
 
 -module(demers_anti_entropy).
 
--include("partisan.hrl").
-
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 %% API
 -export([start_link/0,
+         stop/0,
          broadcast/2,
          update/1]).
 
@@ -37,7 +36,9 @@
          terminate/2,
          code_change/3]).
 
--record(state, {membership}).
+-define(FANOUT, 2).
+
+-record(state, {next_id, membership}).
 
 %%%===================================================================
 %%% API
@@ -45,6 +46,9 @@
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+stop() ->
+    gen_server:stop(?MODULE).
 
 %% @doc Broadcast.
 broadcast(ServerRef, Message) ->
@@ -72,23 +76,23 @@ init([]) ->
 
     %% Start with initial membership.
     {ok, Membership} = partisan_peer_service:members(),
-    lager:info("Starting with membership: ~p", [Membership]),
+    partisan_logger:info("Starting with membership: ~p", [Membership]),
 
     %% Schedule anti-entropy.
     schedule_anti_entropy(),
 
-    {ok, #state{membership=membership(Membership)}}.
+    {ok, #state{next_id=0, membership=membership(Membership)}}.
 
 %% @private
 handle_call(Msg, _From, State) ->
-    lager:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
+    partisan_logger:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
     {reply, ok, State}.
 
 %% @private
-handle_cast({broadcast, ServerRef, Message}, State) ->
+handle_cast({broadcast, ServerRef, Message}, #state{next_id=NextId}=State) ->
     %% Generate message id.
     MyNode = partisan_peer_service_manager:mynode(),
-    Id = {MyNode, erlang:unique_integer([monotonic, positive])},
+    Id = {MyNode, NextId},
 
     %% Forward to process.
     partisan_util:process_forward(ServerRef, Message),
@@ -96,20 +100,19 @@ handle_cast({broadcast, ServerRef, Message}, State) ->
     %% Store outgoing message.
     true = ets:insert(?MODULE, {Id, {ServerRef, Message}}),
 
-    {noreply, State};
+    {noreply, State#state{next_id=NextId}};
 
 handle_cast({update, Membership0}, State) ->
     Membership = membership(Membership0),
     {noreply, State#state{membership=Membership}};
 
 handle_cast(Msg, State) ->
-    lager:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
+    partisan_logger:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
 
 %% @private
 %% Incoming messages.
 handle_info(antientropy, #state{membership=Membership}=State) ->
-    Manager = manager(),
     MyNode = partisan_peer_service_manager:mynode(),
 
     %% Get all of our messages.
@@ -118,10 +121,10 @@ handle_info(antientropy, #state{membership=Membership}=State) ->
     end, [], ?MODULE),
 
     %% Forward to random subset of peers.
-    AntiEntropyMembers = select_random_sublist(membership(Membership), ?GOSSIP_FANOUT),
+    AntiEntropyMembers = select_random_sublist(membership(Membership), ?FANOUT),
 
     lists:foreach(fun(N) ->
-        Manager:forward_message(N, ?GOSSIP_CHANNEL, ?MODULE, {push, MyNode, OurMessages}, [])
+        partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {push, MyNode, OurMessages}, [])
     end, AntiEntropyMembers -- [MyNode]),
 
     %% Reschedule.
@@ -130,7 +133,6 @@ handle_info(antientropy, #state{membership=Membership}=State) ->
     {noreply, State};
 
 handle_info({push, FromNode, TheirMessages}, State) ->
-    Manager = manager(),
     MyNode = partisan_peer_service_manager:mynode(),
 
     %% Encorporate their messages and process them if we didn't see them.
@@ -155,8 +157,8 @@ handle_info({push, FromNode, TheirMessages}, State) ->
     end, [], ?MODULE),
 
     %% Forward message back to sender.
-    lager:info("~p: sending messages to node ~p", [node(), FromNode]),
-    Manager:forward_message(FromNode, ?GOSSIP_CHANNEL, ?MODULE, {pull, MyNode, OurMessages}, []),
+    partisan_logger:info("~p: sending messages to node ~p", [node(), FromNode]),
+    partisan_pluggable_peer_service_manager:forward_message(FromNode, undefined, ?MODULE, {pull, MyNode, OurMessages}, []),
 
     {noreply, State};
 
@@ -194,17 +196,13 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-%% @private
-manager() ->
-    partisan_config:get(partisan_peer_service_manager).
-
 %% @private -- sort to remove nondeterminism in node selection.
 membership(Membership) ->
     lists:usort(Membership).
 
 %% @private
 schedule_anti_entropy() ->
-    Interval = 1000,
+    Interval = 2000,
     erlang:send_after(Interval, ?MODULE, antientropy).
 
 %% @private

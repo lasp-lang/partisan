@@ -18,18 +18,19 @@
 %%
 %% -------------------------------------------------------------------
 
--module(partisan_test_backend).
+-module(partisan_test_server).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
--behaviour(gen_server).
+-behaviour(partisan_gen_server).
 
 %% API
 -export([start_link/0,
-         store/2,
-         ack/1,
-         outstanding/0]).
+         call/0,
+         cast/1,
+         delayed_reply_call/0
+        ]).
 
-%% gen_server callbacks
+%% partisan_gen_server callbacks
 -export([init/1,
          handle_call/3,
          handle_cast/2,
@@ -44,27 +45,41 @@
 %%%===================================================================
 
 start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+    partisan_gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
-ok() ->
-    gen_server:call(?MODULE, ok, infinity).
+call() ->
+    partisan_gen_server:call(?MODULE, call, infinity).
+
+delayed_reply_call() ->
+    partisan_gen_server:call(?MODULE, delay_reply_call, infinity).
+
+cast(ServerRef) ->
+    partisan_gen_server:call(?MODULE, {cast, ServerRef}, infinity).
 
 %%%===================================================================
-%%% gen_server callbacks
+%%% partisan_gen_server callbacks
 %%%===================================================================
 
 %% @private
 init([]) ->
-    {ok, #state{}};
+    {ok, #state{}}.
 
 %% @private
-handle_call(ok, _From, State) ->
-    lager:info("Received ok message in the handle_call handler.", []),
+handle_call(delayed_reply_call, From, State) ->
+    lager:info("Received delayed_reply_call message from ~p in the handle_call handler.", [From]),
+    partisan_gen_server:reply(From, ok),
+    {noreply, State};
+handle_call(call, From, State) ->
+    lager:info("Received call message from ~p in the handle_call handler.", [From]),
     {reply, ok, State};
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 %% @private
+handle_cast({cast, ServerRef}, State) ->
+    lager:info("Received cast message with server_ref: ~p in the handle_call handler.", [ServerRef]),
+    ServerRef ! ok,
+    {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 

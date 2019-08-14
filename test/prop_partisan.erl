@@ -35,8 +35,6 @@
 %% Debug.
 -define(DEBUG, true).
 -define(INITIAL_STATE_DEBUG, false).
--define(PRECONDITION_DEBUG, true).
--define(POSTCONDITION_DEBUG, true).
 
 %% Partisan connection and forwarding settings.
 -define(EGRESS_DELAY, 0).                           %% How many milliseconds to delay outgoing messages?
@@ -147,7 +145,9 @@ finite_fault_commands(Module) ->
             %% Only global node commands with global assertions.
             CommandsWithOnlyGlobalNodeCommandsAssertionsOnly = lists:map(fun(Fun) ->
                 {set,{var,0},{call,system_model(),Fun,[]}}
-            end, node_assertion_functions()), 
+            end, sets:to_list(
+                sets:intersection(
+                    sets:from_list(node_assertion_functions()), sets:from_list(node_global_functions())))), 
 
             %% Derive final command sequence.
             FinalCommands0 = lists:flatten(
@@ -199,17 +199,27 @@ single_success_commands(Module) ->
                 end
             end, Commands),
 
-            %% Get first non-global command.
-            FirstNonGlobalCommand = case length(CommandsWithoutGlobalNodeCommands) > 0 of
+            %% Filter out assertions.
+            CommandsWithoutGlobalNodeCommandsWithoutAssertions = lists:filter(fun({set,{var,_Nth},{call,_Mod,Fun,_Args}}) ->
+                case lists:member(Fun, node_assertion_functions()) of 
+                    true ->
+                        false;
+                    _ ->
+                        true
+                end
+            end, CommandsWithoutGlobalNodeCommands),
+
+            %% Get first non-global command (that's not an assertion.)
+            FirstNonGlobalCommand = case length(CommandsWithoutGlobalNodeCommandsWithoutAssertions) > 0 of
                 true ->
-                    [hd(CommandsWithoutGlobalNodeCommands)];
+                    [hd(CommandsWithoutGlobalNodeCommandsWithoutAssertions)];
                 false ->
                     []
             end,
             % io:format("FirstNonGlobalCommand: ~p~n", [FirstNonGlobalCommand]),
 
             %% Generate failure command.
-            FailureCommands = case length(CommandsWithoutGlobalNodeCommands) > 0 of
+            FailureCommands = case length(CommandsWithoutGlobalNodeCommandsWithoutAssertions) > 0 of
                 true ->
                     %% Only fail if we have at least *one* command that
                     %% performs application behavior.
@@ -225,40 +235,6 @@ single_success_commands(Module) ->
 
             %% Derive final command sequence.
             FinalCommands0 = case os:getenv("IMPLEMENTATION_MODULE", "false") of
-                % "paxoid" ->
-                %     [
-                %         %% Sleep for initialization.
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
-
-                %         %% Write to node_3.
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_2]}},
-
-                %         % Fault node_3, wait for failure detection.
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, set_fault, [node_3, true]}},
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
-
-                %         %% Write to node_1.
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_1]}},
-
-                %         % Fault node_1, unfault node_3, wait for failure detection.
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, set_fault, [node_1, true]}},
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, set_fault, [node_3, false]}},
-
-                %         %% Write to node_3.
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_3]}},
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
-
-                %         %% Write to node_3 again.
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_4]}},
-                %         {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}}
-                %     ] ++ 
-
-                %     %% Global node commands. 
-                %     CommandsWithOnlyGlobalNodeCommands ++ 
-
-                %     %% Forced failure command. 
-                %     FailureCommands;
                 _ ->
                     lists:flatten(
                         %% Node commands, without global assertions.  Take only the first.
@@ -541,7 +517,7 @@ names() ->
     NameFun = fun(N) -> 
         list_to_atom("node_" ++ integer_to_list(N)) 
     end,
-    lists:map(NameFun, lists:seq(1, ?TEST_NUM_NODES)).
+    lists:map(NameFun, lists:seq(1, node_num_nodes())).
 
 %%%===================================================================
 %%% Trace Support
@@ -690,7 +666,7 @@ start_or_reload_nodes() ->
 
     %% Cluster and start options.
     Options = [{partisan_peer_service_manager, ?MANAGER}, 
-                {num_nodes, ?TEST_NUM_NODES}, 
+                {num_nodes, node_num_nodes()},
                 {cluster_nodes, ?CLUSTER_NODES}],
 
     Nodes = case RunningNodes =/= [] andalso not restart_nodes() of 
@@ -724,7 +700,9 @@ start_or_reload_nodes() ->
                 true = ets:insert(?MODULE, {Name, Node})
             end, Nodes1),
 
-            debug("~p started nodes: ~p, restart_nodes: ~p, running_nodes; ~p", [Self, Nodes1, restart_nodes(), RunningNodes]),
+            debug("~p started nodes: ~p", [Self, Nodes1]), 
+            debug("~p restart_nodes: ~p", [Self, restart_nodes()]),
+            debug("~p running_nodes: ~p", [Self, RunningNodes]),
 
             Nodes1;
         true ->
@@ -794,7 +772,7 @@ start_or_reload_nodes() ->
     ok = partisan_trace_orchestrator:reset(),
 
     %% Start tracing.
-    ok = partisan_trace_orchestrator:enable(),
+    ok = partisan_trace_orchestrator:enable(Nodes),
 
     %% Perform preloads.
     ok = partisan_trace_orchestrator:perform_preloads(Nodes),
@@ -916,17 +894,17 @@ initial_state_debug(Line, Args) ->
 
 %% @private
 precondition_debug(Line, Args) ->
-    case ?PRECONDITION_DEBUG of
-        true ->
+    case os:getenv("PRECONDITION_DEBUG") of 
+        "true" ->
             lager:info("~p: " ++ Line, [?MODULE] ++ Args);
-        false ->
+        _ ->
             ok
     end.
 
 %% @private
 postcondition_debug(Line, Args) ->
-    case ?POSTCONDITION_DEBUG of
-        true ->
+    case os:getenv("POSTCONDITION_DEBUG") of
+        "true" ->
             lager:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
@@ -1123,6 +1101,11 @@ system_model() ->
         SystemModel ->
             list_to_atom(SystemModel)
     end.
+
+%% @private
+node_num_nodes() ->
+    SystemModel = system_model(),
+    SystemModel:node_num_nodes().
 
 %% @private
 node_commands() ->

@@ -97,6 +97,8 @@ init_per_group(with_causal_send, Config) ->
     [{causal_labels, [default]}, {forward_options, [{causal_label, default}]}] ++ Config;
 init_per_group(with_causal_send_and_ack, Config) ->
     [{causal_labels, [default]}, {forward_options, [{causal_label, default}, {ack, true}]}] ++ Config;
+init_per_group(with_forward_delay_interposition, Config) ->
+    [{disable_fast_forward, true}] ++ Config;
 init_per_group(with_forward_interposition, Config) ->
     [{disable_fast_forward, true}] ++ Config;
 init_per_group(with_receive_interposition, Config) ->
@@ -176,6 +178,8 @@ all() ->
 
      %% Fault injection.
 
+     {group, with_forward_delay_interposition, []},
+
      {group, with_forward_interposition, []},
 
      {group, with_receive_interposition, []},
@@ -247,6 +251,9 @@ groups() ->
 
      {with_forward_interposition, [],
       [forward_interposition_test]},
+
+     {with_forward_delay_interposition, [],
+      [forward_delay_interposition_test]},
 
      {with_receive_interposition, [],
       [receive_interposition_test]},
@@ -1269,15 +1276,119 @@ otp_test(Config) ->
     %% Pause for clustering.
     timer:sleep(1000),
 
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %% gen_server tests.
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
     %% Start the test backend on all the clients.
     lists:foreach(fun({_, Node}) ->
-        ct:pal("Going to start test backend on node ~p", [Node]),
-        ok = rpc:call(Node, partisan_test_backend, start_link, [])
+        {ok, _} = rpc:call(Node, partisan_test_server, start_link, [])
     end, Nodes),
 
     %% Ensure that a regular call works.
-    {_, FirstName} = FirstNode = hd(Nodes),
-    ok = rpc:call(FirstName, partisan_test_backend, ok, []),
+    [{_, FirstName}, {_, SecondName} | _] = Nodes,
+    ok = rpc:call(FirstName, partisan_gen_server, call, [{partisan_test_server, SecondName}, call, 1000]),
+
+    %% Ensure that a regular call with delayed response works.
+    [{_, FirstName}, {_, SecondName} | _] = Nodes,
+    ok = rpc:call(FirstName, partisan_gen_server, call, [{partisan_test_server, SecondName}, delayed_reply_call, 1000]),
+
+    %% Ensure that a cast works.
+    Self = self(),
+
+    CastReceiverFun = fun() ->
+        receive 
+            ok ->
+                Self ! ok
+        end
+    end,
+    CastReceiverPid = rpc:call(SecondName, erlang, spawn, [CastReceiverFun]),
+    true = rpc:call(SecondName, erlang, register, [cast_receiver, CastReceiverPid]),
+
+    [{_, FirstName}, {_, SecondName} | _] = Nodes,
+    ok = rpc:call(FirstName, partisan_gen_server, cast, [{partisan_test_server, SecondName}, {cast, cast_receiver}]),
+
+    receive
+        ok ->
+            ok;
+        Other ->
+            error_logger:format("Received invalid response: ~p", [Other]),
+            ct:fail({error, wrong_message})
+    after 
+        1000 ->
+            ct:fail({error, no_message})
+    end,
+
+    %% Stop nodes.
+    ?SUPPORT:stop(Nodes),
+
+    ok.
+
+forward_delay_interposition_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
+
+    %% Specify servers.
+    Servers = ?SUPPORT:node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
+
+    %% Start nodes.
+    Nodes = ?SUPPORT:start(forward_delay_interposition_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {servers, Servers},
+                   {clients, Clients}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Test on_down callback.
+    [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
+
+    %% Messages.
+    Message1 = message1,
+    Message2 = message2,
+
+    %% Set message filter.
+    InterpositionFun = fun
+            ({forward_message, _N, M}) ->
+                case M of 
+                    Message1 ->
+                        {'$delay', Message2};
+                    _ ->
+                        M
+                end;
+            ({_, _, M}) -> 
+                M
+    end,
+    ok = rpc:call(Node3, Manager, add_interposition_fun, [Node4, InterpositionFun]),
+
+    %% Spawn receiver.
+    Self = self(),
+
+    ReceiverFun = fun() ->
+        receive 
+            X ->
+                Self ! X
+        end
+    end,
+    Pid = rpc:call(Node4, erlang, spawn, [ReceiverFun]),
+    true = rpc:call(Node4, erlang, register, [receiver, Pid]),
+
+    %% Send message.
+    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message1, []]),
+
+    %% Wait to receive message.
+    receive
+        Message1 ->
+            ct:fail("Received message we shouldn't have!");
+        Message2 ->
+            ct:pal("Received correct message!")
+    after 
+        1000 ->
+            ok
+    end,
 
     %% Stop nodes.
     ?SUPPORT:stop(Nodes),
