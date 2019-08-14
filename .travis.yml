@@ -7,7 +7,7 @@ install:
 before_script:
   - epmd -daemon
 script:
-  - SYSTEM_MODEL=prop_partisan_reliable_broadcast MODULE=lampson_2pc make test
+  - SYSTEM_MODEL=prop_partisan_reliable_broadcast IMPLEMENTATION_MODULE=lampson_2pc make test
   - make xref
   - make dialyzer
 notifications:
