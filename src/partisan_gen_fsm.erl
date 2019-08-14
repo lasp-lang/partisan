@@ -278,7 +278,7 @@ send_all_state_event(Name, Event) ->
 		_ ->
 			{node(), Name}
 	end,	
-	lager:info("[cmeik] sending all state event to node ~p name ~p event ~p", [Node, Process, Event]),
+	lager:info("[cmeik] sending all state event from node: ~p to node ~p name ~p event ~p", [node(), Node, Process, Event]),
 	partisan_pluggable_peer_service_manager:forward_message(Node, undefined, Process, {'$gen_all_state_event', Event}, []),
 	ok.
 
@@ -287,6 +287,7 @@ send_all_state_event(Name, Event) ->
     % ok.
 
 sync_send_all_state_event(Name, Event) ->
+	lager:info("calling sync_send_all_event with name ~p", [Name]),
     case catch partisan_gen:call(Name, '$gen_sync_all_state_event', Event) of
 	{ok,Res} ->
 	    Res;
@@ -296,6 +297,7 @@ sync_send_all_state_event(Name, Event) ->
     end.
 
 sync_send_all_state_event(Name, Event, Timeout) ->
+	lager:info("calling sync_send_all_event with name ~p", [Name]),
     case catch partisan_gen:call(Name, '$gen_sync_all_state_event', Event, Timeout) of
 	{ok,Res} ->
 	    Res;

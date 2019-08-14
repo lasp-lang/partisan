@@ -166,7 +166,7 @@ do_call(Process, Label, Request, Timeout) ->
 	end,
 
 	%% Generate message.
-	Message = {Label, {self(), Ref}, Request},
+	Message = {Label, {partisan_util:pid(), Ref}, Request},
 
 	%% Send message via Partisan.
 	lager:info("Sending message from ~p to ~p ~p: ~p~n", [node(), Node, ServerRef, Message]),
