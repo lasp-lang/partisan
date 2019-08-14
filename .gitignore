@@ -32,3 +32,7 @@ test/*/RAND
 .DS_Store
 results.csv
 erl_crash.dump
+data-root*/
+Mnesia*
+node*/
+_checkouts.old/

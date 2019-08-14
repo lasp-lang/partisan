@@ -29,7 +29,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 
--compile([export_all]).
+-compile([nowarn_export_all, export_all]).
 
 %% @private
 start(Case, Config, Options) ->
@@ -161,7 +161,26 @@ start(Case, Config, Options) ->
             ok = partisan_config:set(random_seed, {1, 1, 1}),
 
             %% Configure random seed on the nodes.
-            ok = rpc:call(Node, partisan_config, set, [random_seed, {1, 1, 1}]),
+            PHashNode = erlang:phash2([Node]),
+            ok = rpc:call(Node, partisan_config, set, [random_seed, {PHashNode, 1, 1}]),
+
+            Replaying = case ?config(replaying, Config) of
+                              undefined ->
+                                  false;
+                              RP ->
+                                  RP
+                          end,
+            debug("Setting replaying to: ~p", [Replaying]),
+            ok = rpc:call(Node, partisan_config, set, [replaying, Replaying]),
+
+            Shrinking = case ?config(shrinking, Config) of
+                              undefined ->
+                                  false;
+                              SH ->
+                                  SH
+                          end,
+            debug("Setting shrinking to: ~p", [Shrinking]),
+            ok = rpc:call(Node, partisan_config, set, [shrinking, Shrinking]),
 
             MembershipStrategy = case ?config(membership_strategy, Config) of
                               undefined ->

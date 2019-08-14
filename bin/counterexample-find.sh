@@ -18,7 +18,7 @@ rm -rf ${PRELOAD_OMISSION_FILE}
 
 # Generate counterexample.
 echo "Generating counterexample..."
-make kill; rm -rf priv/lager; TRACE_FILE=${TRACE_FILE} ./rebar3 proper -m prop_partisan -p prop_sequential --noshrink -n ${NUM_TESTS}
+make kill; rm -rf priv/lager; IMPLEMENTATION_MODULE=${MODULE} TRACE_FILE=${TRACE_FILE} ./rebar3 proper -m prop_partisan -p prop_sequential --noshrink -n ${NUM_TESTS}
 
 RETVAL=$?
 

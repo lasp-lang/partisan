@@ -152,7 +152,7 @@ socket(Conn) ->
 do_connect(Address, Port, Options, Timeout, Transport, Control, PartisanOptions) ->
    Monotonic = proplists:get_value(monotonic, PartisanOptions, false),
 
-   case Transport:connect(Address, Port, Options, Timeout) of
+   case Transport:connect(Address, Port, Options ++ [{nodelay, true}], Timeout) of
        {ok, Socket} ->
            {ok, #connection{socket = Socket, transport = Transport, control = Control, monotonic = Monotonic}};
        Error ->

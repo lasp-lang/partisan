@@ -48,13 +48,17 @@ names() ->
     NameFun = fun(N) -> 
         list_to_atom("node_" ++ integer_to_list(N)) 
     end,
-    lists:map(NameFun, lists:seq(1, ?TEST_NUM_NODES)).
+    lists:map(NameFun, lists:seq(1, node_num_nodes())).
 
 %%%===================================================================
 %%% Node Functions
 %%%===================================================================
 
 -record(node_state, {sent, failed_to_send}).
+
+%% How many nodes to run?
+node_num_nodes() ->
+    4.
 
 %% What node-specific operations should be called.
 node_commands() ->
@@ -179,6 +183,7 @@ node_postcondition(_NodeState, Command, Response) ->
 
 -define(TABLE, table).
 -define(RECEIVER, receiver).
+-define(RECEIVER_LOOP, receiver_loop).
 
 -define(ETS, prop_partisan).
 -define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
@@ -192,7 +197,7 @@ broadcast(Node, {Id, Value}) ->
     %% Transmit message.
     FullMessage = {Id, Node, Value},
     node_debug("broadcast from node ~p message: ~p", [Node, FullMessage]),
-    Result = rpc:call(?NAME(Node), broadcast_module(), broadcast, [?RECEIVER, FullMessage], 2000),
+    Result = rpc:call(?NAME(Node), broadcast_module(), broadcast, [?RECEIVER, FullMessage], 4000),
 
     %% Sleep for 2 second, giving time for message to propagate (1 second timer.)
     node_debug("=> sleeping for propagation", []),
@@ -254,9 +259,10 @@ node_debug(Line, Args) ->
 loop() ->
     receive
         terminate ->
-            ok
-    end,
-    loop().
+            ok;
+        _ ->
+            loop()
+    end.
 
 %% @private
 node_begin_property() ->
@@ -267,20 +273,27 @@ node_begin_case() ->
     %% Get nodes.
     [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
 
+    %% Print nodes.
+    node_debug("nodes are: ~p", [Nodes]),
+
     %% Start the backend.
     lists:foreach(fun({ShortName, _}) ->
-        %% node_debug("starting ~p at node ~p with node list ~p ", [?BROADCAST_MODULE, ShortName, SublistNodeProjection]),
-        {ok, _Pid} = rpc:call(?NAME(ShortName), broadcast_module(), start_link, [])
+        % node_debug("starting ~p at node ~p with node list ~p ", [broadcast_module(), ShortName, SublistNodeProjection]),
+        {ok, Pid} = rpc:call(?NAME(ShortName), broadcast_module(), start_link, []),
+        node_debug("backend started with pid ~p at node ~p", [Pid, ShortName])
     end, Nodes),
 
     lists:foreach(fun({ShortName, _}) ->
-        %% node_debug("spawning broadcast receiver on node ~p", [ShortName]),
-
         Self = self(),
+
+        node_debug("spawning broadcast receiver on node ~p, our pid is: ~p", [ShortName, Self]),
 
         RemoteFun = fun() ->
             %% Create ETS table for the results.
             ?TABLE = ets:new(?TABLE, [set, named_table, public]),
+
+            %% Register ourselves.
+            true = erlang:register(?RECEIVER_LOOP, self()),
 
             %% Define loop function for receiving and registering values.
             ReceiverFun = fun(F) ->
@@ -289,21 +302,26 @@ node_begin_case() ->
                         Received = ets:foldl(fun(Term, Acc) -> Acc ++ [Term] end, [], ?TABLE),
                         Sorted = lists:keysort(1, Received),
                         node_debug("node ~p received request for stored values: ~p", [ShortName, Sorted]),
-                        Sender ! Sorted;
+                        Sender ! Sorted,
+                        F(F);
                     {Id, SourceNode, Value} ->
                         node_debug("node ~p received origin: ~p id ~p and value: ~p", [ShortName, SourceNode, Id, Value]),
-                        true = ets:insert(?TABLE, {Id, SourceNode, Value});
+                        true = ets:insert(?TABLE, {Id, SourceNode, Value}),
+                        F(F);
+                    terminate ->
+                        node_debug("node ~p terminating receiver", [ShortName]),
+                        ok;
                     Other ->
-                        node_debug("node ~p received other: ~p", [ShortName, Other])
-                end,
-                F(F)
+                        node_debug("node ~p received other: ~p", [ShortName, Other]),
+                        F(F)
+                end
             end,
 
             %% Spawn locally.
             Pid = erlang:spawn(fun() -> ReceiverFun(ReceiverFun) end),
 
             %% Register name.
-            erlang:register(?RECEIVER, Pid),
+            true = erlang:register(?RECEIVER, Pid),
 
             %% Prevent races by notifying process is registered.
             Self ! ready,
@@ -316,9 +334,13 @@ node_begin_case() ->
 
         receive
             ready ->
-                {ok, Pid}
+                {ok, Pid};
+            Other ->
+                node_debug("received other message: ~p", [Other]),
+                error
         after 
             10000 ->
+                node_debug("timer fired, never received the message!", []),
                 error
         end
     end, Nodes),
@@ -327,18 +349,42 @@ node_begin_case() ->
 
 %% @private
 node_end_case() ->
-    node_debug("ending case", []),
+    node_debug("ending case by terminating ~p", [broadcast_module()]),
+
+    %% Get nodes.
+    [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
+
+    %% Stop the backend.
+    lists:foreach(fun({ShortName, _}) ->
+        %% node_debug("starting ~p at node ~p with node list ~p ", [?BROADCAST_MODULE, ShortName, SublistNodeProjection]),
+        Pid = rpc:call(?NAME(ShortName), erlang, whereis, [broadcast_module()]),
+        node_debug("process is running on node ~p with id ~p~n", [ShortName, Pid]),
+        node_debug("asking node ~p to terminate process.", [ShortName]),
+        ok = rpc:call(?NAME(ShortName), broadcast_module(), stop, [])
+    end, Nodes),
+
+    %% Stop the receiver.
+    lists:foreach(fun({ShortName, _}) ->
+        terminate = rpc:call(?NAME(ShortName), erlang, send, [?RECEIVER, terminate])
+    end, Nodes),
+
+    %% Stop the receiver loop.
+    lists:foreach(fun({ShortName, _}) ->
+        terminate = rpc:call(?NAME(ShortName), erlang, send, [?RECEIVER_LOOP, terminate])
+    end, Nodes),
+
+    node_debug("ended.", []),
 
     ok.
 
 %% @private
 broadcast_module() ->
-    Module = case os:getenv("BROADCAST_MODULE") of 
+    Module = case os:getenv("IMPLEMENTATION_MODULE") of 
         false ->
             lampson_2pc;
         Other ->
             list_to_atom(Other)
     end,
 
-    node_debug("broadcast module is defined as ~p", [Module]),
+    % node_debug("broadcast module is defined as ~p", [Module]),
     Module.

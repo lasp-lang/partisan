@@ -53,6 +53,7 @@
          add_interposition_fun/2,
          remove_interposition_fun/1,
          get_interposition_funs/0,
+         get_pre_interposition_funs/0,
          add_post_interposition_fun/2,
          remove_post_interposition_fun/1,
          inject_partition/2,
@@ -164,6 +165,9 @@ cast_message(Name, Channel, ServerRef, Message, Options) ->
     ok.
 
 %% @doc Gensym support for forwarding.
+forward_message(Pid, Message) when is_pid(Pid) ->
+    forward_message(node(), ?DEFAULT_CHANNEL, Pid, Message);
+
 forward_message({partisan_remote_reference, Name, ServerRef}, Message) ->
     forward_message(Name, ?DEFAULT_CHANNEL, ServerRef, Message).
 
@@ -310,6 +314,10 @@ get_interposition_funs() ->
     gen_server:call(?MODULE, get_interposition_funs, infinity).
 
 %% @doc
+get_pre_interposition_funs() ->
+    gen_server:call(?MODULE, get_pre_interposition_funs, infinity).
+
+%% @doc
 add_post_interposition_fun(Name, PostInterpositionFun) ->
     gen_server:call(?MODULE, {add_post_interposition_fun, Name, PostInterpositionFun}, infinity).
 
@@ -353,6 +361,9 @@ init([]) ->
 
     %% Schedule periodic.
     schedule_periodic(),
+
+    %% Schedule instrumentation.
+    schedule_instrumentation(),
 
     %% Schedule distance metric.
     schedule_distance(),
@@ -427,6 +438,9 @@ handle_call({remove_interposition_fun, Name}, _From, #state{interposition_funs=I
 
 handle_call(get_interposition_funs, _From, #state{interposition_funs=InterpositionFuns}=State) ->
     {reply, {ok, InterpositionFuns}, State};
+
+handle_call(get_pre_interposition_funs, _From, #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
+    {reply, {ok, PreInterpositionFuns}, State};
 
 handle_call({add_post_interposition_fun, Name, PostInterpositionFun}, _From, #state{post_interposition_funs=PostInterpositionFuns0}=State) ->
     PostInterpositionFuns = dict:store(Name, PostInterpositionFun, PostInterpositionFuns0),
@@ -571,13 +585,13 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Ori
 handle_call({receive_message, Peer, OriginalMessage}, 
             From, 
             #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
+    %% lager:info("~p: receive message invoked for message from peer ~p: ~p", [node(), Peer, OriginalMessage]),
     %% lager:info("number of receive_message pre_interposition_funs ~p", [length(dict:to_list(PreInterpositionFuns))]),
 
     %% Run all interposition functions.
     DeliveryFun = fun() ->
         %% Fire pre-interposition functions.
         PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
-            % lager:info("firing receive_message preinterposition fun for original message: ~p", [OriginalMessage]),
             PreInterpositionFun({receive_message, Peer, OriginalMessage}),
             ok
         end,
@@ -624,8 +638,10 @@ handle_cast({receive_message, From, Peer, OriginalMessage},
     %% lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
 
     %% Filter messages using interposition functions.
-    FoldFun = fun(_Name, InterpositionFun, M) ->
-        InterpositionFun({receive_message, Peer, M})
+    FoldFun = fun(_InterpositionName, InterpositionFun, M) ->
+        InterpositionResult = InterpositionFun({receive_message, Peer, M}),
+        % lager:info("result from interposition ~p is ~p", [InterpositionName, InterpositionResult]),
+        InterpositionResult
     end,
     Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
 
@@ -642,6 +658,10 @@ handle_cast({receive_message, From, Peer, OriginalMessage},
         undefined ->
             gen_server:reply(From, ok),
             {noreply, State};
+        {'$delay', NewMessage} ->
+            lager:info("Delaying receive_message due to interposition result: ~p", [NewMessage]),
+            gen_server:cast(?MODULE, {receive_message, From, Peer, NewMessage}),
+            {noreply, State};
         _ ->
             handle_message(Message, From, State)
     end;
@@ -656,8 +676,10 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
     %% lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
 
     %% Filter messages using interposition functions.
-    FoldFun = fun(_Name, InterpositionFun, M) ->
-        InterpositionFun({forward_message, Name, M})
+    FoldFun = fun(_InterpositionName, InterpositionFun, M) ->
+        InterpositionResult = InterpositionFun({forward_message, Name, M}),
+        % lager:info("result from interposition ~p is ~p", [InterpositionName, InterpositionResult]),
+        InterpositionResult
     end,
     Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
 
@@ -736,6 +758,10 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
             end,
 
             {noreply, State#state{vclock=VClock}};
+        {'$delay', NewMessage} ->
+            lager:info("Delaying receive_message due to interposition result: ~p", [NewMessage]),
+            gen_server:cast(?MODULE, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, NewMessage, Options}),
+            {noreply, State};
         _ ->
             %% Store for reliability, if necessary.
             Result = case proplists:get_value(ack, Options, false) of
@@ -846,13 +872,19 @@ handle_info(distance, #state{pending=Pending,
 
     {noreply, State#state{connections=Connections}};
 
+handle_info(instrumentation, State) ->
+    MessageQueueLen = process_info(self(), message_queue_len),
+    lager:info("message_queue_len: ~p", [MessageQueueLen]),
+    schedule_instrumentation(),
+    {noreply, State};
+
 handle_info(periodic, #state{pending=Pending,
                              membership_strategy=MembershipStrategy,
                              membership_strategy_state=MembershipStrategyState0,
                              pre_interposition_funs=PreInterpositionFuns,
                              connections=Connections0}=State) ->
     {ok, Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:periodic(MembershipStrategyState0),
-    lager:info("Periodic fired! Generated ~p messages to send.", [length(OutgoingMessages)]),
+    % lager:info("Periodic fired! Generated ~p messages to send.", [length(OutgoingMessages)]),
 
     %% Establish any new connections.
     Connections = establish_connections(Pending,
@@ -1245,8 +1277,17 @@ schedule_distance() ->
     end.
 
 %% @private
+schedule_instrumentation() ->
+    case partisan_config:get(instrumentation, false) of 
+        true ->
+            erlang:send_after(1000, ?MODULE, instrumentation);
+        _ ->
+            ok
+    end.
+
+%% @private
 schedule_periodic() ->
-    case partisan_config:get(distance_enabled, false) of 
+    case partisan_config:get(periodic_enabled, false) of 
         true ->
             PeriodicInterval = partisan_config:get(periodic_interval, ?PERIODIC_INTERVAL),
             erlang:send_after(PeriodicInterval, ?MODULE, periodic);

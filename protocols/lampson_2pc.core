@@ -1,0 +1,796 @@
+module 'lampson_2pc' ['broadcast'/2,
+		      'code_change'/3,
+		      'handle_call'/3,
+		      'handle_cast'/2,
+		      'handle_info'/2,
+		      'init'/1,
+		      'module_info'/0,
+		      'module_info'/1,
+		      'start_link'/0,
+		      'terminate'/2,
+		      'update'/1]
+    attributes [%% Line 1
+		'file' =
+		    %% Line 1
+		    [{[108|[97|[109|[112|[115|[111|[110|[95|[50|[112|[99|[46|[101|[114|[108]]]]]]]]]]]]]]],1}],
+		%% Line 26
+		'author' =
+		    %% Line 26
+		    [67|[104|[114|[105|[115|[116|[111|[112|[104|[101|[114|[32|[83|[46|[32|[77|[101|[105|[107|[108|[101|[106|[111|[104|[110|[32|[60|[99|[104|[114|[105|[115|[116|[111|[112|[104|[101|[114|[46|[109|[101|[105|[107|[108|[101|[106|[111|[104|[110|[64|[103|[109|[97|[105|[108|[46|[99|[111|[109|[62]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]],
+		%% Line 43
+		'record' =
+		    %% Line 43
+		    [{'state',[{'record_field',43,{'atom',43,'membership'}}]}],
+		%% Line 45
+		'record' =
+		    %% Line 45
+		    [{'transaction',[{'record_field',45,{'atom',45,'id'}}|[{'record_field',46,{'atom',46,'coordinator'}}|[{'record_field',47,{'atom',47,'from'}}|[{'record_field',48,{'atom',48,'participants'}}|[{'record_field',49,{'atom',49,'coordinator_status'}}|[{'record_field',50,{'atom',50,'participant_status'}}|[{'record_field',51,{'atom',51,'prepared'}}|[{'record_field',52,{'atom',52,'committed'}}|[{'record_field',53,{'atom',53,'aborted'}}|[{'record_field',54,{'atom',54,'uncertain'}}|[{'record_field',55,{'atom',55,'server_ref'}}|[{'record_field',56,{'atom',56,'message'}}]]]]]]]]]]]]}]]
+'start_link'/0 =
+    %% Line 66
+    fun () ->
+	%% Line 67
+	call 'gen_server':'start_link'
+	    ({'local','lampson_2pc'}, 'lampson_2pc', [], [])
+'broadcast'/2 =
+    %% Line 71
+    fun (_1,_0) ->
+	let <_2> =
+	    call %% Line 73
+		 'erlang':%% Line 73
+			  'self'
+		()
+	in  %% Line 73
+	    case call 'erlang':'register'
+		     ('txn_coordinator', _2) of
+	      <'true'> when 'true' ->
+		  let <From> =
+		      call %% Line 74
+			   'partisan_util':%% Line 74
+					   'registered_name'
+			  (%% Line 74
+			   'txn_coordinator')
+		  in  do  %% Line 76
+			  call 'gen_server':'cast'
+			      ('lampson_2pc', {'broadcast',From,_1,_0})
+			  %% Line 78
+			  receive
+			    %% Line 79
+			    <Response> when 'true' ->
+				%% Line 80
+				Response
+			  after 'infinity' ->
+			    'true'
+	      ( <_3> when 'true' ->
+		    primop 'match_fail'
+			({'badmatch',_3})
+		-| ['compiler_generated'] )
+	    end
+'update'/1 =
+    %% Line 84
+    fun (_0) ->
+	let <LocalState> =
+	    call %% Line 85
+		 'partisan_peer_service':%% Line 85
+					 'decode'
+		(_0)
+	in  %% Line 86
+	    call 'gen_server':'cast'
+		('lampson_2pc', {'update',LocalState})
+'init'/1 =
+    %% Line 93
+    fun (_0) ->
+	case _0 of
+	  <[]> when 'true' ->
+	      do  %% Line 95
+		  call 'partisan_config':'seed'
+		      ()
+		  do  %% Line 98
+		      call 'partisan_peer_service':'add_sup_callback'
+			  (fun 'lampson_2pc':'update'/1)
+		      %% Line 101
+		      case call 'ets':'new'
+			       ('coordinating_transactions_table', ['set'|['named_table'|['public']]]) of
+			<'coordinating_transactions_table'> when 'true' ->
+			    %% Line 104
+			    case call 'ets':'new'
+				     ('participating_transactions_table', ['set'|['named_table'|['public']]]) of
+			      <'participating_transactions_table'> when 'true' ->
+				  %% Line 107
+				  case call 'partisan_peer_service':'members'
+					   () of
+				    <{'ok',Membership}> when 'true' ->
+					do  %% Line 108
+					    call 'lager':'info'
+						([83|[116|[97|[114|[116|[105|[110|[103|[32|[119|[105|[116|[104|[32|[109|[101|[109|[98|[101|[114|[115|[104|[105|[112|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]], [Membership|[]])
+					    let <_5> =
+						apply %% Line 110
+						      'membership'/1
+						    (%% Line 110
+						     Membership)
+					    in  %% Line 110
+						{'ok',{'state',_5}}
+				    ( <_4> when 'true' ->
+					  primop 'match_fail'
+					      ({'badmatch',_4})
+				      -| ['compiler_generated'] )
+				  end
+			      ( <_3> when 'true' ->
+				    primop 'match_fail'
+					({'badmatch',_3})
+				-| ['compiler_generated'] )
+			    end
+			( <_2> when 'true' ->
+			      primop 'match_fail'
+				  ({'badmatch',_2})
+			  -| ['compiler_generated'] )
+		      end
+	  ( <_6> when 'true' ->
+		( primop 'match_fail'
+		      ({'function_clause',_6})
+		  -| [{'function_name',{'init',1}}] )
+	    -| ['compiler_generated'] )
+	end
+'handle_call'/3 =
+    %% Line 113
+    fun (_2,_1,_0) ->
+	do  %% Line 114
+	    call 'lager':'warning'
+		([85|[110|[104|[97|[110|[100|[108|[101|[100|[32|[99|[97|[108|[108|[32|[109|[101|[115|[115|[97|[103|[101|[115|[32|[97|[116|[32|[109|[111|[100|[117|[108|[101|[32|[126|[112|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], ['lampson_2pc'|[_2|[]]])
+	    %% Line 115
+	    {'reply','ok',_0}
+'handle_cast'/2 =
+    %% Line 118
+    fun (_1,_0) ->
+	case <_1,_0> of
+	  <{'broadcast',From,ServerRef,Message},State = {'state',Membership}> when 'true' ->
+	      let <Manager> =
+		  apply %% Line 119
+			'manager'/0
+		      ()
+	      in  let <MyNode> =
+		      call %% Line 122
+			   'partisan_peer_service_manager':%% Line 122
+							   'mynode'
+			  ()
+		  in  let <_4> =
+			  call %% Line 123
+			       'erlang':%% Line 123
+					'unique_integer'
+			      (%% Line 123
+			       ['monotonic'|['positive']])
+		      in  let <Id> = {%% Line 123
+			       MyNode,_4}
+			  in  let <Transaction> =
+				  {%% Line 126
+				   'transaction',%% Line 127
+						 Id,%% Line 128
+						    MyNode,%% Line 129
+							   From,%% Line 130
+								Membership,%% Line 131
+									   'preparing',%% Line 132
+										       'undefined',%% Line 133
+												   [],%% Line 134
+												      [],%% Line 135
+													 [],%% Line 136
+													    [],%% Line 137
+													       ServerRef,%% Line 138
+															 Message}
+			      in  %% Line 142
+				  case call 'ets':'insert'
+					   ('coordinating_transactions_table', {Id,Transaction}) of
+				    <'true'> when 'true' ->
+					let <_8> =
+					    call %% Line 145
+						 'erlang':%% Line 145
+							  'self'
+						()
+					in  do  %% Line 145
+						call 'erlang':'send_after'
+						    (1000, _8, {'coordinator_timeout',Id})
+						let <_13> =
+						    fun (_11) ->
+							let <_10> =
+							    call %% Line 149
+								 'erlang':%% Line 149
+									  'node'
+								()
+							in  do  %% Line 149
+								call 'lager':'info'
+								    ([126|[112|[58|[32|[115|[101|[110|[100|[105|[110|[103|[32|[112|[114|[101|[112|[97|[114|[101|[32|[109|[101|[115|[115|[97|[103|[101|[32|[116|[111|[32|[110|[111|[100|[101|[32|[126|[112|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_10|[_11|[Message|[]]]])
+								%% Line 150
+								call Manager:'forward_message'
+								    (_11, 'transactions', 'lampson_2pc', {'prepare',Transaction}, [])
+						in  let <_9> =
+							apply %% Line 151
+							      'membership'/1
+							    (%% Line 151
+							     Membership)
+						    in  do  %% Line 148
+							    call 'lists':'foreach'
+								(_13, _9)
+							    %% Line 153
+							    {'noreply',State}
+				    ( <_7> when 'true' ->
+					  primop 'match_fail'
+					      ({'badmatch',_7})
+				      -| ['compiler_generated'] )
+				  end
+	  %% Line 154
+	  <{'update',Membership0},State> when 'true' ->
+	      let <Membership> =
+		  apply %% Line 155
+			'membership'/1
+		      (%% Line 155
+		       Membership0)
+	      in  %% Line 156
+		  case State of
+		    <{'state',_rec1}> when 'true' ->
+			let <_17> = {'state',Membership}
+			in  {'noreply',_17}
+		    ( <_20> when 'true' ->
+			  ( call ( 'erlang'
+				   -| ['compiler_generated'] ):( 'error'
+								 -| ['compiler_generated'] )
+				(( {'badrecord','state'}
+				   -| ['compiler_generated'] ))
+			    -| ['compiler_generated'] )
+		      -| ['compiler_generated'] )
+		  end
+	  %% Line 157
+	  <Msg,State> when 'true' ->
+	      do  %% Line 158
+		  call 'lager':'warning'
+		      ([85|[110|[104|[97|[110|[100|[108|[101|[100|[32|[99|[97|[115|[116|[32|[109|[101|[115|[115|[97|[103|[101|[115|[32|[97|[116|[32|[109|[111|[100|[117|[108|[101|[32|[126|[112|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], ['lampson_2pc'|[Msg|[]]])
+		  %% Line 159
+		  {'noreply',State}
+	end
+'handle_info'/2 =
+    %% Line 163
+    fun (_1,_0) ->
+	case <_1,_0> of
+	  <{'coordinator_timeout',Id},State> when 'true' ->
+	      let <Manager> =
+		  apply %% Line 164
+			'manager'/0
+		      ()
+	      in  do  %% Line 167
+		      case call 'ets':'lookup'
+			       ('coordinating_transactions_table', Id) of
+			%% Line 168
+			<[{_X_Id,Transaction0 = {'transaction',_81,_82,From,Participants,CoordinatorStatus,_83,_84,_85,_86,_87,_88,_89}}|[]]> when 'true' ->
+			    %% Line 169
+			    case CoordinatorStatus of
+			      %% Line 170
+			      <'committing'> when 'true' ->
+				  'ok'
+			      %% Line 173
+			      <'aborting'> when 'true' ->
+				  'ok'
+			      %% Line 176
+			      <'preparing'> when 'true' ->
+				  do  %% Line 177
+				      call 'lager':'info'
+					  ([82|[101|[99|[101|[105|[118|[101|[100|[32|[99|[111|[111|[114|[100|[105|[110|[97|[116|[111|[114|[32|[116|[105|[109|[101|[111|[117|[116|[32|[102|[111|[114|[32|[116|[114|[97|[110|[115|[97|[99|[116|[105|[111|[110|[32|[105|[100|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [Id|[]])
+				      let <_5> =
+					  call %% Line 180
+					       'erlang':%% Line 180
+							'setelement'
+					      (%% Line 180
+					       6, %% Line 180
+						  Transaction0, %% Line 180
+								'aborting')
+				      in  %% Line 181
+					  case call 'ets':'insert'
+						   ('coordinating_transactions_table', {Id,_5}) of
+					    <'true'> when 'true' ->
+						do  %% Line 184
+						    call 'lager':'info'
+							([65|[98|[111|[114|[116|[105|[110|[103|[32|[116|[114|[97|[110|[115|[97|[99|[116|[105|[111|[110|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]], [Id|[]])
+						    do  %% Line 185
+							call Manager:'forward_message'
+							    (From, 'error')
+							let <_12> =
+							    fun (_10) ->
+								let <_9> =
+								    call %% Line 189
+									 'erlang':%% Line 189
+										  'node'
+									()
+								in  do  %% Line 189
+									call 'lager':'info'
+									    ([126|[112|[58|[32|[115|[101|[110|[100|[105|[110|[103|[32|[97|[98|[111|[114|[116|[32|[109|[101|[115|[115|[97|[103|[101|[32|[116|[111|[32|[110|[111|[100|[101|[32|[126|[112|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_9|[_10|[Id|[]]]])
+									%% Line 190
+									call Manager:'forward_message'
+									    (_10, 'transactions', 'lampson_2pc', {'abort',_5}, [])
+							in  let <_8> =
+								apply %% Line 191
+								      'membership'/1
+								    (%% Line 191
+								     Participants)
+							    in  %% Line 188
+								call 'lists':'foreach'
+								    (_12, _8)
+					    ( <_7> when 'true' ->
+						  primop 'match_fail'
+						      ({'badmatch',_7})
+					      -| ['compiler_generated'] )
+					  end
+			      ( <_13> when 'true' ->
+				    primop 'match_fail'
+					({'case_clause',_13})
+				-| ['compiler_generated'] )
+			    end
+			%% Line 193
+			<[]> when 'true' ->
+			    %% Line 194
+			    call 'lager':'error'
+				([78|[111|[116|[105|[102|[105|[99|[97|[116|[105|[111|[110|[32|[102|[111|[114|[32|[99|[111|[111|[114|[100|[105|[110|[97|[116|[111|[114|[32|[116|[105|[109|[101|[111|[117|[116|[32|[109|[101|[115|[115|[97|[103|[101|[32|[98|[117|[116|[32|[110|[111|[32|[116|[114|[97|[110|[115|[97|[99|[116|[105|[111|[110|[32|[102|[111|[117|[110|[100|[33]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]])
+			( <_14> when 'true' ->
+			      primop 'match_fail'
+				  ({'case_clause',_14})
+			  -| ['compiler_generated'] )
+		      end
+		      %% Line 197
+		      {'noreply',State}
+	  %% Line 198
+	  <{'abort_ack',FromNode,Id},State> when 'true' ->
+	      do  %% Line 200
+		  case call 'ets':'lookup'
+			   ('coordinating_transactions_table', Id) of
+		    %% Line 201
+		    <[{_X_Id,Transaction = {'transaction',_103,_104,_105,Participants,_106,_107,_108,_109,Aborted0,_110,_111,_112}}|[]]> when 'true' ->
+			do  %% Line 202
+			    call 'lager':'info'
+				([82|[101|[99|[101|[105|[118|[101|[100|[32|[97|[98|[111|[114|[116|[95|[97|[99|[107|[32|[102|[114|[111|[109|[32|[110|[111|[100|[101|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [FromNode|[]])
+			    let <_15> =
+				call %% Line 205
+				     'erlang':%% Line 205
+					      '++'
+				    (%% Line 205
+				     Aborted0, %% Line 205
+					       [FromNode|[]])
+			    in  let <Aborted> =
+				    call %% Line 205
+					 'lists':%% Line 205
+						 'usort'
+					(_15)
+				in  let <_18> =
+					call %% Line 208
+					     'lists':%% Line 208
+						     'usort'
+					    (%% Line 208
+					     Participants)
+				    in  let <_17> =
+					    call %% Line 208
+						 'lists':%% Line 208
+							 'usort'
+						(%% Line 208
+						 Aborted)
+					in  %% Line 208
+					    case <> of
+					      %% Line 209
+					      <>
+						  when call 'erlang':'=:='
+							(_18,
+							 _17) ->
+						  %% Line 211
+						  case call 'ets':'delete'
+							   ('coordinating_transactions_table', Id) of
+						    <'true'> when 'true' ->
+							'ok'
+						    ( <_19> when 'true' ->
+							  primop 'match_fail'
+							      ({'badmatch',_19})
+						      -| ['compiler_generated'] )
+						  end
+					      %% Line 214
+					      <> when 'true' ->
+						  do  %% Line 215
+						      call 'lager':'info'
+							  ([78|[111|[116|[32|[97|[108|[108|[32|[112|[97|[114|[116|[105|[99|[105|[112|[97|[110|[116|[115|[32|[104|[97|[118|[101|[32|[97|[98|[111|[114|[116|[101|[100|[32|[121|[101|[116|[58|[32|[126|[112|[32|[33|[61|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [Aborted|[Participants|[]]])
+						      let <_22> =
+							  call %% Line 218
+							       'erlang':%% Line 218
+									'setelement'
+							      (%% Line 218
+							       10, %% Line 218
+								   Transaction, %% Line 218
+										Aborted)
+						      in  %% Line 218
+							  case call 'ets':'insert'
+								   ('coordinating_transactions_table', {Id,_22}) of
+							    <'true'> when 'true' ->
+								'ok'
+							    ( <_23> when 'true' ->
+								  primop 'match_fail'
+								      ({'badmatch',_23})
+							      -| ['compiler_generated'] )
+							  end
+					    end
+		    %% Line 222
+		    <[]> when 'true' ->
+			%% Line 223
+			call 'lager':'error'
+			    ([78|[111|[116|[105|[102|[105|[99|[97|[116|[105|[111|[110|[32|[102|[111|[114|[32|[97|[98|[111|[114|[116|[95|[97|[99|[107|[32|[109|[101|[115|[115|[97|[103|[101|[32|[98|[117|[116|[32|[110|[111|[32|[116|[114|[97|[110|[115|[97|[99|[116|[105|[111|[110|[32|[102|[111|[117|[110|[100|[33]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]])
+		    ( <_25> when 'true' ->
+			  primop 'match_fail'
+			      ({'case_clause',_25})
+		      -| ['compiler_generated'] )
+		  end
+		  %% Line 226
+		  {'noreply',State}
+	  %% Line 227
+	  <{'commit_ack',FromNode,Id},State> when 'true' ->
+	      do  %% Line 229
+		  case call 'ets':'lookup'
+			   ('coordinating_transactions_table', Id) of
+		    %% Line 230
+		    <[{_X_Id,Transaction = {'transaction',_126,_127,_128,Participants,_129,_130,_131,Committed0,_132,_133,_134,_135}}|[]]> when 'true' ->
+			do  %% Line 231
+			    call 'lager':'info'
+				([82|[101|[99|[101|[105|[118|[101|[100|[32|[99|[111|[109|[109|[105|[116|[95|[97|[99|[107|[32|[102|[114|[111|[109|[32|[110|[111|[100|[101|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [FromNode|[]])
+			    let <_26> =
+				call %% Line 234
+				     'erlang':%% Line 234
+					      '++'
+				    (%% Line 234
+				     Committed0, %% Line 234
+						 [FromNode|[]])
+			    in  let <Committed> =
+				    call %% Line 234
+					 'lists':%% Line 234
+						 'usort'
+					(_26)
+				in  let <_29> =
+					call %% Line 237
+					     'lists':%% Line 237
+						     'usort'
+					    (%% Line 237
+					     Participants)
+				    in  let <_28> =
+					    call %% Line 237
+						 'lists':%% Line 237
+							 'usort'
+						(%% Line 237
+						 Committed)
+					in  %% Line 237
+					    case <> of
+					      %% Line 238
+					      <>
+						  when call 'erlang':'=:='
+							(_29,
+							 _28) ->
+						  %% Line 240
+						  case call 'ets':'delete'
+							   ('coordinating_transactions_table', Id) of
+						    <'true'> when 'true' ->
+							'ok'
+						    ( <_30> when 'true' ->
+							  primop 'match_fail'
+							      ({'badmatch',_30})
+						      -| ['compiler_generated'] )
+						  end
+					      %% Line 243
+					      <> when 'true' ->
+						  do  %% Line 244
+						      call 'lager':'info'
+							  ([78|[111|[116|[32|[97|[108|[108|[32|[112|[97|[114|[116|[105|[99|[105|[112|[97|[110|[116|[115|[32|[104|[97|[118|[101|[32|[99|[111|[109|[109|[105|[116|[116|[101|[100|[32|[121|[101|[116|[58|[32|[126|[112|[32|[33|[61|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [Committed|[Participants|[]]])
+						      let <_33> =
+							  call %% Line 247
+							       'erlang':%% Line 247
+									'setelement'
+							      (%% Line 247
+							       9, %% Line 247
+								  Transaction, %% Line 247
+									       Committed)
+						      in  %% Line 247
+							  case call 'ets':'insert'
+								   ('coordinating_transactions_table', {Id,_33}) of
+							    <'true'> when 'true' ->
+								'ok'
+							    ( <_34> when 'true' ->
+								  primop 'match_fail'
+								      ({'badmatch',_34})
+							      -| ['compiler_generated'] )
+							  end
+					    end
+		    %% Line 251
+		    <[]> when 'true' ->
+			%% Line 252
+			call 'lager':'error'
+			    ([78|[111|[116|[105|[102|[105|[99|[97|[116|[105|[111|[110|[32|[102|[111|[114|[32|[99|[111|[109|[109|[105|[116|[95|[97|[99|[107|[32|[109|[101|[115|[115|[97|[103|[101|[32|[98|[117|[116|[32|[110|[111|[32|[116|[114|[97|[110|[115|[97|[99|[116|[105|[111|[110|[32|[102|[111|[117|[110|[100|[33]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]])
+		    ( <_36> when 'true' ->
+			  primop 'match_fail'
+			      ({'case_clause',_36})
+		      -| ['compiler_generated'] )
+		  end
+		  %% Line 255
+		  {'noreply',State}
+	  %% Line 256
+	  <{'abort',{'transaction',Id,Coordinator,_149,_150,_151,_152,_153,_154,_155,_156,_157,_158}},State> when 'true' ->
+	      let <Manager> =
+		  apply %% Line 257
+			'manager'/0
+		      ()
+	      in  %% Line 259
+		  case call 'ets':'delete'
+			   ('participating_transactions_table', Id) of
+		    <'true'> when 'true' ->
+			let <MyNode> =
+			    call %% Line 261
+				 'partisan_peer_service_manager':%% Line 261
+								 'mynode'
+				()
+			in  let <_40> =
+				call %% Line 262
+				     'erlang':%% Line 262
+					      'node'
+				    ()
+			    in  do  %% Line 262
+				    call 'lager':'info'
+					([126|[112|[58|[32|[115|[101|[110|[100|[105|[110|[103|[32|[97|[98|[111|[114|[116|[32|[97|[99|[107|[32|[109|[101|[115|[115|[97|[103|[101|[32|[116|[111|[32|[110|[111|[100|[101|[32|[126|[112|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_40|[Coordinator|[Id|[]]]])
+				    do  %% Line 263
+					call Manager:'forward_message'
+					    (Coordinator, 'transactions', 'lampson_2pc', {'abort_ack',MyNode,Id}, [])
+					%% Line 265
+					{'noreply',State}
+		    ( <_38> when 'true' ->
+			  primop 'match_fail'
+			      ({'badmatch',_38})
+		      -| ['compiler_generated'] )
+		  end
+	  %% Line 266
+	  <{'commit',Transaction = {'transaction',Id,Coordinator,_159,_160,_161,_162,_163,_164,_165,_166,ServerRef,Message}},State> when 'true' ->
+	      let <Manager> =
+		  apply %% Line 267
+			'manager'/0
+		      ()
+	      in  let <_44> =
+		      call %% Line 270
+			   'erlang':%% Line 270
+				    'setelement'
+			  (%% Line 270
+			   7, %% Line 270
+			      Transaction, %% Line 270
+					   'commit')
+		  in  %% Line 270
+		      case call 'ets':'insert'
+			       ('participating_transactions_table', {Id,_44}) of
+			<'true'> when 'true' ->
+			    do  %% Line 273
+				call 'partisan_util':'process_forward'
+				    (ServerRef, Message)
+				let <MyNode> =
+				    call %% Line 276
+					 'partisan_peer_service_manager':%% Line 276
+									 'mynode'
+					()
+				in  let <_47> =
+					call %% Line 277
+					     'erlang':%% Line 277
+						      'node'
+					    ()
+				    in  do  %% Line 277
+					    call 'lager':'info'
+						([126|[112|[58|[32|[115|[101|[110|[100|[105|[110|[103|[32|[99|[111|[109|[109|[105|[116|[32|[97|[99|[107|[32|[109|[101|[115|[115|[97|[103|[101|[32|[116|[111|[32|[110|[111|[100|[101|[32|[126|[112|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_47|[Coordinator|[Id|[]]]])
+					    do  %% Line 278
+						call Manager:'forward_message'
+						    (Coordinator, 'transactions', 'lampson_2pc', {'commit_ack',MyNode,Id}, [])
+						%% Line 280
+						{'noreply',State}
+			( <_45> when 'true' ->
+			      primop 'match_fail'
+				  ({'badmatch',_45})
+			  -| ['compiler_generated'] )
+		      end
+	  %% Line 281
+	  <{'prepared',FromNode,Id},State> when 'true' ->
+	      let <Manager> =
+		  apply %% Line 282
+			'manager'/0
+		      ()
+	      in  do  %% Line 285
+		      case call 'ets':'lookup'
+			       ('coordinating_transactions_table', Id) of
+			%% Line 286
+			<[{_X_Id,Transaction0 = {'transaction',_180,_181,From,Participants,_182,_183,Prepared0,_184,_185,_186,_187,_188}}|[]]> when 'true' ->
+			    let <_49> =
+				call %% Line 288
+				     'erlang':%% Line 288
+					      '++'
+				    (%% Line 288
+				     Prepared0, %% Line 288
+						[FromNode|[]])
+			    in  let <Prepared> =
+				    call %% Line 288
+					 'lists':%% Line 288
+						 'usort'
+					(_49)
+				in  let <_52> =
+					call %% Line 291
+					     'lists':%% Line 291
+						     'usort'
+					    (%% Line 291
+					     Participants)
+				    in  let <_51> =
+					    call %% Line 291
+						 'lists':%% Line 291
+							 'usort'
+						(%% Line 291
+						 Prepared)
+					in  %% Line 291
+					    case <> of
+					      %% Line 292
+					      <>
+						  when call 'erlang':'=:='
+							(_52,
+							 _51) ->
+						  let <_55> =
+						      call %% Line 297
+							   'erlang':%% Line 297
+								    'setelement'
+							  (%% Line 297
+							   8, %% Line 297
+							      Transaction0, %% Line 297
+									    Prepared)
+						  in  let <_57> =
+							  call %% Line 297
+							       'erlang':%% Line 297
+									'setelement'
+							      (%% Line 297
+							       6, _55, %% Line 294
+								       'committing')
+						      in  %% Line 298
+							  case call 'ets':'insert'
+								   ('coordinating_transactions_table', {Id,_57}) of
+							    <'true'> when 'true' ->
+								do  %% Line 301
+								    call 'lager':'info'
+									([114|[101|[112|[108|[121|[105|[110|[103|[32|[116|[111|[32|[116|[104|[101|[32|[99|[97|[108|[108|[101|[114|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]], From)
+								    do  %% Line 302
+									call Manager:'forward_message'
+									    (From, 'ok')
+									let <_64> =
+									    fun (_62) ->
+										let <_61> =
+										    call %% Line 306
+											 'erlang':%% Line 306
+												  'node'
+											()
+										in  do  %% Line 306
+											call 'lager':'info'
+											    ([126|[112|[58|[32|[115|[101|[110|[100|[105|[110|[103|[32|[99|[111|[109|[109|[105|[116|[32|[109|[101|[115|[115|[97|[103|[101|[32|[116|[111|[32|[110|[111|[100|[101|[32|[126|[112|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_61|[_62|[Id|[]]]])
+											%% Line 307
+											call Manager:'forward_message'
+											    (_62, 'transactions', 'lampson_2pc', {'commit',_57}, [])
+									in  let <_60> =
+										apply %% Line 308
+										      'membership'/1
+										    (%% Line 308
+										     Participants)
+									    in  %% Line 305
+										call 'lists':'foreach'
+										    (_64, _60)
+							    ( <_59> when 'true' ->
+								  primop 'match_fail'
+								      ({'badmatch',_59})
+							      -| ['compiler_generated'] )
+							  end
+					      %% Line 309
+					      <> when 'true' ->
+						  let <_67> =
+						      call %% Line 311
+							   'erlang':%% Line 311
+								    'setelement'
+							  (%% Line 311
+							   8, %% Line 311
+							      Transaction0, %% Line 311
+									    Prepared)
+						  in  %% Line 311
+						      case call 'ets':'insert'
+							       ('coordinating_transactions_table', {Id,_67}) of
+							<'true'> when 'true' ->
+							    'ok'
+							( <_68> when 'true' ->
+							      primop 'match_fail'
+								  ({'badmatch',_68})
+							  -| ['compiler_generated'] )
+						      end
+					    end
+			%% Line 313
+			<[]> when 'true' ->
+			    %% Line 314
+			    call 'lager':'error'
+				([78|[111|[116|[105|[102|[105|[99|[97|[116|[105|[111|[110|[32|[102|[111|[114|[32|[112|[114|[101|[112|[97|[114|[101|[100|[32|[109|[101|[115|[115|[97|[103|[101|[32|[98|[117|[116|[32|[110|[111|[32|[116|[114|[97|[110|[115|[97|[99|[116|[105|[111|[110|[32|[102|[111|[117|[110|[100|[33]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]])
+			( <_70> when 'true' ->
+			      primop 'match_fail'
+				  ({'case_clause',_70})
+			  -| ['compiler_generated'] )
+		      end
+		      %% Line 317
+		      {'noreply',State}
+	  %% Line 318
+	  <{'prepare',Transaction = {'transaction',Id,Coordinator,_216,_217,_218,_219,_220,_221,_222,_223,_224,_225}},State> when 'true' ->
+	      let <Manager> =
+		  apply %% Line 319
+			'manager'/0
+		      ()
+	      in  let <_74> =
+		      call %% Line 322
+			   'erlang':%% Line 322
+				    'setelement'
+			  (%% Line 322
+			   7, %% Line 322
+			      Transaction, %% Line 322
+					   'prepared')
+		  in  %% Line 322
+		      case call 'ets':'insert'
+			       ('participating_transactions_table', {Id,_74}) of
+			<'true'> when 'true' ->
+			    let <MyNode> =
+				call %% Line 325
+				     'partisan_peer_service_manager':%% Line 325
+								     'mynode'
+				    ()
+			    in  let <_77> =
+				    call %% Line 326
+					 'erlang':%% Line 326
+						  'node'
+					()
+				in  do  %% Line 326
+					call 'lager':'info'
+					    ([126|[112|[58|[32|[115|[101|[110|[100|[105|[110|[103|[32|[112|[114|[101|[112|[97|[114|[101|[100|[32|[109|[101|[115|[115|[97|[103|[101|[32|[116|[111|[32|[110|[111|[100|[101|[32|[126|[112|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_77|[Coordinator|[Id|[]]]])
+					do  %% Line 327
+					    call Manager:'forward_message'
+						(Coordinator, 'transactions', 'lampson_2pc', {'prepared',MyNode,Id}, [])
+					    %% Line 329
+					    {'noreply',State}
+			( <_75> when 'true' ->
+			      primop 'match_fail'
+				  ({'badmatch',_75})
+			  -| ['compiler_generated'] )
+		      end
+	  %% Line 330
+	  <Msg,State> when 'true' ->
+	      let <_78> =
+		  call %% Line 331
+		       'erlang':%% Line 331
+				'node'
+		      ()
+	      in  do  %% Line 331
+		      call 'lager':'info'
+			  ([126|[112|[32|[114|[101|[99|[101|[105|[118|[101|[100|[32|[117|[110|[104|[97|[110|[100|[108|[101|[100|[32|[109|[101|[115|[115|[97|[103|[101|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_78|[Msg|[]]])
+		      %% Line 332
+		      {'noreply',State}
+	end
+'terminate'/2 =
+    %% Line 335
+    fun (_1,_0) ->
+	%% Line 336
+	'ok'
+'code_change'/3 =
+    %% Line 339
+    fun (_2,_1,_0) ->
+	%% Line 340
+	{'ok',_1}
+'manager'/0 =
+    %% Line 347
+    fun () ->
+	%% Line 348
+	call 'partisan_config':'get'
+	    ('partisan_peer_service_manager')
+'membership'/1 =
+    %% Line 351
+    fun (_0) ->
+	%% Line 352
+	call 'lists':'usort'
+	    (_0)
+'module_info'/0 =
+    fun () ->
+	call 'erlang':'get_module_info'
+	    ('lampson_2pc')
+'module_info'/1 =
+    fun (_0) ->
+	call 'erlang':'get_module_info'
+	    ('lampson_2pc', _0)
+end
