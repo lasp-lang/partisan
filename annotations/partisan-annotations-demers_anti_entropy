@@ -1,0 +1,7 @@
+[
+    {causality, [
+        {{forward_message, pull}, [{{receive_message, pull}, 1}]},
+        {{forward_message, push}, [true]}
+    ]},
+    {background, []}
+].

@@ -22,4 +22,4 @@ cp ${TRACE_FILE} ${SAVED_TRACE_FILE}
 
 # Shrink counterexample, which should copy files in place.
 echo "Deriving schedules to test for counterexample support..."
-bin/counterexample-identify-support.escript ${TRACE_FILE} ${REPLAY_TRACE_FILE} ${COUNTEREXAMPLE_CONSULT_FILE} ${REBAR_COUNTEREXAMPLE_CONSULT_FILE} ${PRELOAD_OMISSION_FILE}
+bin/counterexample-model-checker.escript ${TRACE_FILE} ${REPLAY_TRACE_FILE} ${COUNTEREXAMPLE_CONSULT_FILE} ${REBAR_COUNTEREXAMPLE_CONSULT_FILE} ${PRELOAD_OMISSION_FILE}

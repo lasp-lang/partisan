@@ -60,10 +60,13 @@ shell:
 	${REBAR} shell --apps partisan
 
 tail-logs:
-	tail -F priv/lager/*/log/*.log
+	tail ---disable-inotify -F priv/lager/*/log/*.log
+
+unsorted-logs:
+	cat priv/lager/*/log/*.log
 
 logs:
-	cat priv/lager/*/log/*.log
+	cat priv/lager/*/log/*.log | sort -k2M # -k3n -k4
 
 ##
 ## Release targets
@@ -103,29 +106,47 @@ make bin-perms:
 	chmod 755 bin/*.sh
 	chmod 755 bin/*.escript
 
-demers-direct-mail-test: kill bin-perms
-	bin/demers-direct-mail-test.sh
+demers-anti-entropy: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=demers_anti_entropy SUBLIST=0 bin/check-model.sh
 
-demers-direct-mail-acked-test: kill bin-perms
-	bin/demers-direct-mail-acked-test.sh
+demers-rumor-mongering: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=demers_rumor_mongering SUBLIST=0 bin/check-model.sh
 
-demers-anti-entropy-test: kill bin-perms
-	bin/demers-anti-entropy-test.sh
+demers-direct-mail-acked: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=demers_direct_mail_acked SUBLIST=0 bin/check-model.sh
 
-demers-rumor_mongering-test: kill bin-perms
-	bin/demers-rumor-mongering-test.sh
-
-riak-ensemble: kill bin-perms compile
-	clear; rm -rf priv/lager; pkill -9 beam.smp; MODULE=lampson_2pc NUM_TESTS=2 SCHEDULER=single_success bin/counterexample-find.sh
-
-riak-ensemble-replay: kill bin-perms compile
-	clear; rm -rf priv/lager; pkill -9 beam.smp; MODULE=lampson_2pc bin/counterexample-replay.sh
+demers-direct-mail: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=demers_direct_mail SUBLIST=0 bin/check-model.sh
 
 lampson-2pc: kill bin-perms compile
-	RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=lampson_2pc SUBLIST=0 bin/check-model.sh
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=lampson_2pc SUBLIST=0 bin/check-model.sh
 
 bernstein-ctp: kill bin-perms compile
-	RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=bernstein_ctp SUBLIST=0 bin/check-model.sh
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=bernstein_ctp SUBLIST=0 bin/check-model.sh
 
 skeen-3pc: kill bin-perms compile
-	RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=skeen_3pc SUBLIST=0 bin/check-model.sh
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=skeen_3pc SUBLIST=0 bin/check-model.sh
+
+lampson-2pc-noise: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast EXIT_ON_COUNTEREXAMPLE=true NOISE=true RECURSIVE=false PRELOAD_SCHEDULES=false MODULE=lampson_2pc SUBLIST=0 bin/check-model.sh
+
+paxoid: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_paxoid RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=paxoid SUBLIST=0 bin/check-paxoid.sh
+
+lashup: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_lashup RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=lashup SUBLIST=0 bin/check-lashup.sh
+
+zraft: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_zraft RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=zraft SUBLIST=0 bin/check-zraft.sh
+
+hbbft: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_hbbft RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=hbbft SUBLIST=0 bin/check-hbbft.sh
+
+alsberg-day: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_primary_backup RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=alsberg_day SUBLIST=0 bin/filibuster.sh
+
+alsberg-day-acked: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_primary_backup RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=alsberg_day_acked SUBLIST=0 bin/filibuster.sh
+
+alsberg-day-acked-membership: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_primary_backup RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=alsberg_day_acked_membership SUBLIST=0 bin/filibuster.sh

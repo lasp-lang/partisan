@@ -288,7 +288,7 @@ append_ann(Tag, Val, []) ->
 %% initially it contains `top' and `external'.
 
 -spec intraprocedural(cerl:cerl()) ->
-        {outlist(), dict:dict(), escapes(), dict:dict(), dict:dict(), sets:set()}.
+        {outlist(), dict:dict(), escapes(), dict:dict(), dict:dict(), sets:set(), sets:set()}.
 
 intraprocedural(Tree) ->
     %% Note that we use different name spaces for variable labels and
@@ -399,6 +399,8 @@ intraprocedural_loop(T, L, St0) ->
     end.
 
 visit(T, L, St) ->
+	% io:fwrite("attempting to analze: T: ~p L: ~p~n", [T, L]),
+
     case type(T) of
 	literal ->
 	    {[empty()], St};
@@ -529,7 +531,10 @@ visit(T, L, St) ->
 	    %% any external closures as arguments. We regard a module as
 	    %% a tuple of function variables in the body of a `letrec'.
 	    visit(c_letrec(module_defs(T), c_tuple(module_exports(T))),
-		  L, St)
+		  L, St);
+	map -> 
+		%% Ignore maps.
+		{none, St}
     end.
 
 visit_clause(T, Xs, L, St) ->
@@ -975,15 +980,27 @@ is_pure_op(M, F, A) -> erl_bifs:is_pure(M, F, A).
 
 %% TODO: Document me.
 partisan_forward_call(M, F, A, St) ->
-	case {concrete(M), concrete(F)} of 
-		{partisan_pluggable_peer_service_manager, forward_message} ->
-			% io:format("=> found partisan call ~p:~p/~p~n", [concrete(M), concrete(F), length(A)]),
+	try 
+		case {concrete(M), concrete(F)} of 
+			{partisan_pluggable_peer_service_manager, forward_message} ->
+				% io:format("=> found partisan call ~p:~p/~p~n", [concrete(M), concrete(F), length(A)]),
 
-			MessageType = message_type_from_args(A),
-			% io:format("message type from send: ~p~n", [MessageType]),
+				MessageType = message_type_from_args(A),
+				% io:format("message type from send: ~p~n", [MessageType]),
 
-			St#intraprocedural_state{sends = sets:add_element(MessageType, St#intraprocedural_state.sends)};
-		_ ->
+				St#intraprocedural_state{sends = sets:add_element(MessageType, St#intraprocedural_state.sends)};
+			{partisan_pluggable_peer_service_manager, cast_message} ->
+				% io:format("=> found partisan call ~p:~p/~p~n", [concrete(M), concrete(F), length(A)]),
+
+				MessageType = message_type_from_args(A),
+				% io:format("message type from send: ~p~n", [MessageType]),
+
+				St#intraprocedural_state{sends = sets:add_element(MessageType, St#intraprocedural_state.sends)};
+			_ ->
+				St
+		end
+	catch
+		_:_ ->
 			St
 	end.
 

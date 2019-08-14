@@ -1,7 +1,12 @@
-[{{forward_message, prepared}, [{{receive_message, prepare}, 1}]},
- {{forward_message, commit}, [{{receive_message, prepared}, 3}]},
- {{forward_message, ok}, [{{receive_message, prepared}, 3}]},
- {{forward_message, commit_ack}, [{{receive_message, commit}, 1}]},
- {{forward_message, abort_ack}, [{{receive_message, abort}, 1}]},
- {{forward_message, decision_request}, [{{receive_message, prepared}, 3}]},
- {{forward_message, decision}, [{{receive_message, decision_request}, 1}]}].
+[
+    {causality, [
+        {{forward_message, prepared}, [{{receive_message, prepare}, 1}]},
+        {{forward_message, commit}, [{{receive_message, prepared}, 3}]},
+        {{forward_message, ok}, [{{receive_message, prepared}, 3}]},
+        {{forward_message, commit_ack}, [{{receive_message, commit}, 1}]},
+        {{forward_message, abort_ack}, [{{receive_message, abort}, 1}]},
+        {{forward_message, decision_request}, [{{receive_message, prepared}, 3}]},
+        {{forward_message, decision}, [{{receive_message, decision_request}, 1}]}
+    ]},
+    {background, []}
+].
