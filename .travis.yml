@@ -8,8 +8,6 @@ before_script:
   - epmd -daemon
 script:
   - SYSTEM_MODEL=prop_partisan_reliable_broadcast IMPLEMENTATION_MODULE=lampson_2pc make test
-  - make xref
-  - make dialyzer
 notifications:
   email: christopher.meiklejohn@gmail.com
   slack: lasp-lang:hiPRNnbUa3zdGrrXZfGRAF7D
