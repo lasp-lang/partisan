@@ -48,13 +48,17 @@ names() ->
     NameFun = fun(N) -> 
         list_to_atom("node_" ++ integer_to_list(N)) 
     end,
-    lists:map(NameFun, lists:seq(1, ?TEST_NUM_NODES)).
+    lists:map(NameFun, lists:seq(1, node_num_nodes())).
 
 %%%===================================================================
 %%% Node Functions
 %%%===================================================================
 
 -record(node_state, {sent, failed_to_send}).
+
+%% How many nodes to run?
+node_num_nodes() ->
+    4.
 
 %% What node-specific operations should be called.
 node_commands() ->
@@ -382,5 +386,5 @@ broadcast_module() ->
             list_to_atom(Other)
     end,
 
-    node_debug("broadcast module is defined as ~p", [Module]),
+    % node_debug("broadcast module is defined as ~p", [Module]),
     Module.

@@ -35,8 +35,6 @@
 %% Debug.
 -define(DEBUG, true).
 -define(INITIAL_STATE_DEBUG, false).
--define(PRECONDITION_DEBUG, true).
--define(POSTCONDITION_DEBUG, true).
 
 %% Partisan connection and forwarding settings.
 -define(EGRESS_DELAY, 0).                           %% How many milliseconds to delay outgoing messages?
@@ -139,10 +137,17 @@ finite_fault_commands(Module) ->
                     [{set,{var,0},{call,fault_model(),resolve_all_faults_with_heal,[]}}]
             end,
 
-            %% Only global node commands.
-            CommandsWithOnlyGlobalNodeCommands = lists:map(fun(Fun) ->
+            %% Only global node commands without global assertions.
+            CommandsWithOnlyGlobalNodeCommandsWithoutAssertions = lists:map(fun(Fun) ->
                 {set,{var,0},{call,system_model(),Fun,[]}}
-            end, node_global_functions()), 
+            end, node_global_functions() -- node_assertion_functions()), 
+
+            %% Only global node commands with global assertions.
+            CommandsWithOnlyGlobalNodeCommandsAssertionsOnly = lists:map(fun(Fun) ->
+                {set,{var,0},{call,system_model(),Fun,[]}}
+            end, sets:to_list(
+                sets:intersection(
+                    sets:from_list(node_assertion_functions()), sets:from_list(node_global_functions())))), 
 
             %% Derive final command sequence.
             FinalCommands0 = lists:flatten(
@@ -152,8 +157,12 @@ finite_fault_commands(Module) ->
                 %% Commands to resolve failures.
                 ResolveCommands ++ 
 
+                %% Global commands without assertions.
+                CommandsWithOnlyGlobalNodeCommandsWithoutAssertions ++
+
                 %% Global assertions only.
-                CommandsWithOnlyGlobalNodeCommands),
+                CommandsWithOnlyGlobalNodeCommandsAssertionsOnly
+            ),
 
             %% Renumber command sequence.
             {FinalCommands, _} = lists:foldl(fun({set,{var,_Nth},{call,Mod,Fun,Args}}, {Acc, Next}) ->
@@ -190,17 +199,27 @@ single_success_commands(Module) ->
                 end
             end, Commands),
 
-            %% Get first non-global command.
-            FirstNonGlobalCommand = case length(CommandsWithoutGlobalNodeCommands) > 0 of
+            %% Filter out assertions.
+            CommandsWithoutGlobalNodeCommandsWithoutAssertions = lists:filter(fun({set,{var,_Nth},{call,_Mod,Fun,_Args}}) ->
+                case lists:member(Fun, node_assertion_functions()) of 
+                    true ->
+                        false;
+                    _ ->
+                        true
+                end
+            end, CommandsWithoutGlobalNodeCommands),
+
+            %% Get first non-global command (that's not an assertion.)
+            FirstNonGlobalCommand = case length(CommandsWithoutGlobalNodeCommandsWithoutAssertions) > 0 of
                 true ->
-                    [hd(CommandsWithoutGlobalNodeCommands)];
+                    [hd(CommandsWithoutGlobalNodeCommandsWithoutAssertions)];
                 false ->
                     []
             end,
             % io:format("FirstNonGlobalCommand: ~p~n", [FirstNonGlobalCommand]),
 
             %% Generate failure command.
-            FailureCommands = case length(CommandsWithoutGlobalNodeCommands) > 0 of
+            FailureCommands = case length(CommandsWithoutGlobalNodeCommandsWithoutAssertions) > 0 of
                 true ->
                     %% Only fail if we have at least *one* command that
                     %% performs application behavior.
@@ -216,40 +235,6 @@ single_success_commands(Module) ->
 
             %% Derive final command sequence.
             FinalCommands0 = case os:getenv("IMPLEMENTATION_MODULE", "false") of
-                "paxoid" ->
-                    [
-                        %% Sleep for initialization.
-                        {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
-
-                        %% Write to node_3.
-                        {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_2]}},
-
-                        % Fault node_3, wait for failure detection.
-                        {set, {var, 0}, {call, prop_partisan_paxoid, set_fault, [node_3, true]}},
-                        {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
-
-                        %% Write to node_1.
-                        {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_1]}},
-
-                        % Fault node_1, unfault node_3, wait for failure detection.
-                        {set, {var, 0}, {call, prop_partisan_paxoid, set_fault, [node_1, true]}},
-                        {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
-                        {set, {var, 0}, {call, prop_partisan_paxoid, set_fault, [node_3, false]}},
-
-                        %% Write to node_3.
-                        {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_3]}},
-                        {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}},
-
-                        %% Write to node_3 again.
-                        {set, {var, 0}, {call, prop_partisan_paxoid, next_id, [node_4]}},
-                        {set, {var, 0}, {call, prop_partisan_paxoid, sleep, []}}
-                    ] ++ 
-
-                    %% Global node commands. 
-                    CommandsWithOnlyGlobalNodeCommands ++ 
-
-                    %% Forced failure command. 
-                    FailureCommands;
                 _ ->
                     lists:flatten(
                         %% Node commands, without global assertions.  Take only the first.
@@ -532,7 +517,7 @@ names() ->
     NameFun = fun(N) -> 
         list_to_atom("node_" ++ integer_to_list(N)) 
     end,
-    lists:map(NameFun, lists:seq(1, ?TEST_NUM_NODES)).
+    lists:map(NameFun, lists:seq(1, node_num_nodes())).
 
 %%%===================================================================
 %%% Trace Support
@@ -665,6 +650,8 @@ start_or_reload_nodes() ->
               {broadcast, false},
               {disterl, false},
               {hash, undefined},
+              {shrinking, false},
+              {replaying, false},
               {egress_delay, ?EGRESS_DELAY},
               {ingress_delay, ?INGRESS_DELAY},
               {membership_strategy_tracing, false},
@@ -677,12 +664,9 @@ start_or_reload_nodes() ->
     debug("running nodes: ~p~n", [nodes()]),
     RunningNodes = nodes(),
 
-    %% Get the running nodes that epmd things are running.
-    EpmdOutput = os:cmd("epmd -names"),
-
     %% Cluster and start options.
     Options = [{partisan_peer_service_manager, ?MANAGER}, 
-                {num_nodes, ?TEST_NUM_NODES}, 
+                {num_nodes, node_num_nodes()},
                 {cluster_nodes, ?CLUSTER_NODES}],
 
     Nodes = case RunningNodes =/= [] andalso not restart_nodes() of 
@@ -716,7 +700,9 @@ start_or_reload_nodes() ->
                 true = ets:insert(?MODULE, {Name, Node})
             end, Nodes1),
 
-            debug("~p started nodes: ~p, restart_nodes: ~p, running_nodes; ~p", [Self, Nodes1, restart_nodes(), RunningNodes]),
+            debug("~p started nodes: ~p", [Self, Nodes1]), 
+            debug("~p restart_nodes: ~p", [Self, restart_nodes()]),
+            debug("~p running_nodes: ~p", [Self, RunningNodes]),
 
             Nodes1;
         true ->
@@ -725,21 +711,59 @@ start_or_reload_nodes() ->
             %% Get nodes.
             [{nodes, Nodes1}] = ets:lookup(prop_partisan, nodes),
 
-            %% Restart Partisan.
-            lists:foreach(fun({ShortName, _}) ->
-                ok = rpc:call(?NAME(ShortName), application, stop, [partisan]),
-                {ok, _} = rpc:call(?NAME(ShortName), application, ensure_all_started, [partisan])
-            end, Nodes1),
+            %% Remove all interposition funs.
+            lists:foreach(fun(Node) ->
+                % fault_debug("getting interposition funs at node ~p", [Node]),
 
-            debug("Reclustering nodes.", []),
-            lists:foreach(fun(Node) -> ?SUPPORT:cluster(Node, Nodes1, Options, Config) end, Nodes1),
+                case rpc:call(?NAME(Node), ?MANAGER, get_interposition_funs, []) of 
+                    {badrpc, nodedown} ->
+                        ok;
+                    {ok, InterpositionFuns0} ->
+                        InterpositionFuns = dict:to_list(InterpositionFuns0),
+                        % fault_debug("=> ~p", [InterpositionFuns]),
+
+                        lists:foreach(fun({InterpositionName, _Function}) ->
+                            % fault_debug("=> removing interposition: ~p", [InterpositionName]),
+                            ok = rpc:call(?NAME(Node), ?MANAGER, remove_interposition_fun, [InterpositionName])
+                    end, InterpositionFuns)
+                end
+            end, names()),
+
+            case full_restart() of 
+                true ->
+                    %% Restart Partisan.
+                    lists:foreach(fun({ShortName, _}) ->
+                        ok = rpc:call(?NAME(ShortName), application, stop, [partisan]),
+                        {ok, _} = rpc:call(?NAME(ShortName), applicatioShortNamen, ensure_all_started, [partisan])
+                    end, Nodes1),
+
+                    debug("reclustering nodes.", []),
+                    ClusterFun = fun() ->
+                        lists:foreach(fun(Node) -> ?SUPPORT:cluster(Node, Nodes1, Options, Config) end, Nodes1)
+                    end,
+                    {ClusterTime, _} = timer:tc(ClusterFun),
+                    debug("reclustering nodes took ~p ms", [ClusterTime / 1000]),
+
+                    ok;
+                false ->
+                    %% Set faulted back to false.
+                    lists:foreach(fun(Node) ->
+                        ok = rpc:call(?NAME(Node), partisan_config, set, [faulted, false])
+                    end, names()),
+
+                    %% Stop tracing infrastructure.
+                    partisan_trace_orchestrator:stop(),
+
+                    %% Start tracing infrastructure.
+                    partisan_trace_orchestrator:start_link(),
+
+                    ok
+            end,
 
             debug("~p reusing nodes: ~p", [Self, Nodes1]),
 
             Nodes1
     end,
-
-    debug("before start, epmd though the following: ~p~n", [EpmdOutput]),
 
     %% Deterministically seed the random number generator.
     partisan_config:seed(),
@@ -748,7 +772,7 @@ start_or_reload_nodes() ->
     ok = partisan_trace_orchestrator:reset(),
 
     %% Start tracing.
-    ok = partisan_trace_orchestrator:enable(),
+    ok = partisan_trace_orchestrator:enable(Nodes),
 
     %% Perform preloads.
     ok = partisan_trace_orchestrator:perform_preloads(Nodes),
@@ -795,6 +819,7 @@ start_or_reload_nodes() ->
 
     ok.
 
+%% @private
 stop_nodes() ->
     case restart_nodes() of 
         true ->
@@ -824,6 +849,15 @@ stop_nodes() ->
     ok.
 
 %% @private
+full_restart() ->
+    case os:getenv("FULL_RESTART") of 
+        "true" ->
+            true;
+        _ ->
+            false
+    end.
+
+%% @private
 restart_nodes() ->
     case os:getenv("RESTART_NODES") of 
         "false" ->
@@ -832,7 +866,7 @@ restart_nodes() ->
             true
     end.
 
-%% Determine if a bunch of operations succeeded or failed.
+%% @private -- Determine if a bunch of operations succeeded or failed.
 all_to_ok_or_error(List) ->
     case lists:all(fun(X) -> X =:= ok end, List) of
         true ->
@@ -841,12 +875,15 @@ all_to_ok_or_error(List) ->
             {error, some_operations_failed, List}
     end.
 
+%% @private
 enough_nodes_connected(Nodes) ->
     length(Nodes) >= 3.
 
+%% @private
 enough_nodes_connected_to_issue_remove(Nodes) ->
     length(Nodes) > 3.
 
+%% @private
 initial_state_debug(Line, Args) ->
     case ?INITIAL_STATE_DEBUG of
         true ->
@@ -855,22 +892,25 @@ initial_state_debug(Line, Args) ->
             ok
     end.
 
+%% @private
 precondition_debug(Line, Args) ->
-    case ?PRECONDITION_DEBUG of
-        true ->
+    case os:getenv("PRECONDITION_DEBUG") of 
+        "true" ->
             lager:info("~p: " ++ Line, [?MODULE] ++ Args);
-        false ->
+        _ ->
             ok
     end.
 
+%% @private
 postcondition_debug(Line, Args) ->
-    case ?POSTCONDITION_DEBUG of
-        true ->
+    case os:getenv("POSTCONDITION_DEBUG") of
+        "true" ->
             lager:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
 
+%% @private
 debug(Line, Args) ->
     case ?DEBUG of
         true ->
@@ -879,9 +919,11 @@ debug(Line, Args) ->
             ok
     end.
 
+%% @private
 is_joined(Node, Cluster) ->
     lists:member(Node, Cluster).
 
+%% @private
 cluster_commands(_State) ->
     [
     % TODO: Disabled, because nodes shutdown on removal from the cluster.
@@ -889,13 +931,16 @@ cluster_commands(_State) ->
     {call, ?MODULE, sync_leave_cluster, [node_name()]}
     ].
 
+%% @private
 name_to_nodename(Name) ->
     [{_, NodeName}] = ets:lookup(?MODULE, Name),
     NodeName.
 
+%% @private
 ensure_tracing_started() ->
     partisan_trace_orchestrator:start_link().
 
+%% @private
 wait_until_nodes_agree_on_membership(Nodes) ->
     AgreementFun = fun(Node) ->
         %% Get membership at node.
@@ -1056,6 +1101,11 @@ system_model() ->
         SystemModel ->
             list_to_atom(SystemModel)
     end.
+
+%% @private
+node_num_nodes() ->
+    SystemModel = system_model(),
+    SystemModel:node_num_nodes().
 
 %% @private
 node_commands() ->
