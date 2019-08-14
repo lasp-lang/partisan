@@ -22,7 +22,7 @@ cp ${COUNTEREXAMPLE_CONSULT_FILE} ${REBAR_COUNTEREXAMPLE_CONSULT_FILE}
 
 # Replay counterexample.
 echo "Replaying counterexample..."
-make kill; pkill -9 beam.smp; rm -rf priv/lager; REPLAY=true REPLAY_TRACE_FILE=${REPLAY_TRACE_FILE} TRACE_FILE=${TRACE_FILE} ./rebar3 proper --retry
+make kill; pkill -9 beam.smp; rm -rf priv/lager; IMPLEMENTATION_MODULE=${MODULE} REPLAY=true REPLAY_TRACE_FILE=${REPLAY_TRACE_FILE} TRACE_FILE=${TRACE_FILE} ./rebar3 proper --retry
 
 RETVAL=$?
 

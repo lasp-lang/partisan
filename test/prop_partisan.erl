@@ -28,38 +28,6 @@
 
 -compile([export_all]).
 
-%% System model.
--define(SYSTEM_MODEL, prop_partisan_reliable_broadcast).
-
--import(?SYSTEM_MODEL,
-        [node_commands/0,
-         node_initial_state/0,
-         node_functions/0,
-         node_precondition/2,
-         node_postcondition/3,
-         node_next_state/4,
-         node_begin_property/0,
-         node_begin_case/0,
-         node_end_case/0,
-         node_assertion_functions/0,
-         node_global_functions/0]).
-
-%% Fault model.
--define(FAULT_MODEL, prop_partisan_crash_fault_model).
-
--import(?FAULT_MODEL,
-        [fault_commands/0,
-         fault_initial_state/0,
-         fault_functions/1,
-         fault_precondition/2,
-         fault_postcondition/3,
-         fault_next_state/4,
-         fault_is_crashed/2,
-         fault_begin_functions/0,
-         fault_end_functions/0,
-         fault_global_functions/0,
-         fault_num_resolvable_faults/1]).
-
 %% General test configuration
 -define(CLUSTER_NODES, true).
 -define(MANAGER, partisan_pluggable_peer_service_manager).
@@ -67,8 +35,6 @@
 %% Debug.
 -define(DEBUG, true).
 -define(INITIAL_STATE_DEBUG, false).
--define(PRECONDITION_DEBUG, true).
--define(POSTCONDITION_DEBUG, true).
 
 %% Partisan connection and forwarding settings.
 -define(EGRESS_DELAY, 0).                           %% How many milliseconds to delay outgoing messages?
@@ -100,7 +66,7 @@ prop_sequential() ->
         default ->
             ?FORALL(Cmds, commands(?MODULE), 
                 begin
-                    start_nodes(),
+                    start_or_reload_nodes(),
                     node_begin_case(),
                     {History, State, Result} = run_commands(?MODULE, Cmds), 
                     node_end_case(),
@@ -112,7 +78,7 @@ prop_sequential() ->
         finite_fault ->
             ?FORALL(Cmds, finite_fault_commands(?MODULE), 
                 begin
-                    start_nodes(),
+                    start_or_reload_nodes(),
                     node_begin_case(),
                     {History, State, Result} = run_commands(?MODULE, Cmds), 
                     node_end_case(),
@@ -124,7 +90,7 @@ prop_sequential() ->
         single_success ->
             ?FORALL(Cmds, single_success_commands(?MODULE), 
                 begin
-                    start_nodes(),
+                    start_or_reload_nodes(),
                     node_begin_case(),
                     {History, State, Result} = run_commands(?MODULE, Cmds), 
                     node_end_case(),
@@ -163,18 +129,25 @@ finite_fault_commands(Module) ->
                 true ->
                     case rand:uniform(10) rem 2 =:= 0 of 
                         true ->
-                            [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_heal,[]}}];
+                            [{set,{var,0},{call,fault_model(),resolve_all_faults_with_heal,[]}}];
                         false ->
-                            [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_crash,[]}}]
+                            [{set,{var,0},{call,fault_model(),resolve_all_faults_with_crash,[]}}]
                     end;
                 false ->
-                    [{set,{var,0},{call,?FAULT_MODEL,resolve_all_faults_with_heal,[]}}]
+                    [{set,{var,0},{call,fault_model(),resolve_all_faults_with_heal,[]}}]
             end,
 
-            %% Only global node commands.
-            CommandsWithOnlyGlobalNodeCommands = lists:map(fun(Fun) ->
-                {set,{var,0},{call,?SYSTEM_MODEL,Fun,[]}}
-            end, node_global_functions()), 
+            %% Only global node commands without global assertions.
+            CommandsWithOnlyGlobalNodeCommandsWithoutAssertions = lists:map(fun(Fun) ->
+                {set,{var,0},{call,system_model(),Fun,[]}}
+            end, node_global_functions() -- node_assertion_functions()), 
+
+            %% Only global node commands with global assertions.
+            CommandsWithOnlyGlobalNodeCommandsAssertionsOnly = lists:map(fun(Fun) ->
+                {set,{var,0},{call,system_model(),Fun,[]}}
+            end, sets:to_list(
+                sets:intersection(
+                    sets:from_list(node_assertion_functions()), sets:from_list(node_global_functions())))), 
 
             %% Derive final command sequence.
             FinalCommands0 = lists:flatten(
@@ -184,8 +157,12 @@ finite_fault_commands(Module) ->
                 %% Commands to resolve failures.
                 ResolveCommands ++ 
 
+                %% Global commands without assertions.
+                CommandsWithOnlyGlobalNodeCommandsWithoutAssertions ++
+
                 %% Global assertions only.
-                CommandsWithOnlyGlobalNodeCommands),
+                CommandsWithOnlyGlobalNodeCommandsAssertionsOnly
+            ),
 
             %% Renumber command sequence.
             {FinalCommands, _} = lists:foldl(fun({set,{var,_Nth},{call,Mod,Fun,Args}}, {Acc, Next}) ->
@@ -222,16 +199,27 @@ single_success_commands(Module) ->
                 end
             end, Commands),
 
-            %% Get first non-global command.
-            FirstNonGlobalCommand = case length(CommandsWithoutGlobalNodeCommands) > 0 of
+            %% Filter out assertions.
+            CommandsWithoutGlobalNodeCommandsWithoutAssertions = lists:filter(fun({set,{var,_Nth},{call,_Mod,Fun,_Args}}) ->
+                case lists:member(Fun, node_assertion_functions()) of 
+                    true ->
+                        false;
+                    _ ->
+                        true
+                end
+            end, CommandsWithoutGlobalNodeCommands),
+
+            %% Get first non-global command (that's not an assertion.)
+            FirstNonGlobalCommand = case length(CommandsWithoutGlobalNodeCommandsWithoutAssertions) > 0 of
                 true ->
-                    [hd(CommandsWithoutGlobalNodeCommands)];
+                    [hd(CommandsWithoutGlobalNodeCommandsWithoutAssertions)];
                 false ->
                     []
             end,
+            % io:format("FirstNonGlobalCommand: ~p~n", [FirstNonGlobalCommand]),
 
             %% Generate failure command.
-            FailureCommands = case length(CommandsWithoutGlobalNodeCommands) > 0 of
+            FailureCommands = case length(CommandsWithoutGlobalNodeCommandsWithoutAssertions) > 0 of
                 true ->
                     %% Only fail if we have at least *one* command that
                     %% performs application behavior.
@@ -242,19 +230,22 @@ single_success_commands(Module) ->
 
             %% Only global node commands.
             CommandsWithOnlyGlobalNodeCommands = lists:map(fun(Fun) ->
-                {set,{var,0},{call,?SYSTEM_MODEL,Fun,[]}}
+                {set,{var,0},{call,system_model(),Fun,[]}}
             end, node_global_functions()), 
 
             %% Derive final command sequence.
-            FinalCommands0 = lists:flatten(
-                %% Node commands, without global assertions.  Take only the first.
-                FirstNonGlobalCommand ++
+            FinalCommands0 = case os:getenv("IMPLEMENTATION_MODULE", "false") of
+                _ ->
+                    lists:flatten(
+                        %% Node commands, without global assertions.  Take only the first.
+                        FirstNonGlobalCommand ++
 
-                %% Global assertions only.
-                CommandsWithOnlyGlobalNodeCommands ++ 
-            
-                %% Final failure commands
-                FailureCommands),
+                        %% Global assertions only.
+                        CommandsWithOnlyGlobalNodeCommands ++ 
+
+                        %% Final failure commands
+                        FailureCommands)
+            end,
 
             %% Renumber command sequence.
             {FinalCommands, _} = lists:foldl(fun({set,{var,_Nth},{call,Mod,Fun,Args}}, {Acc, Next}) ->
@@ -526,7 +517,7 @@ names() ->
     NameFun = fun(N) -> 
         list_to_atom("node_" ++ integer_to_list(N)) 
     end,
-    lists:map(NameFun, lists:seq(1, ?TEST_NUM_NODES)).
+    lists:map(NameFun, lists:seq(1, node_num_nodes())).
 
 %%%===================================================================
 %%% Trace Support
@@ -641,15 +632,9 @@ sync_leave_cluster(Node) ->
 %%% Helper Functions
 %%%===================================================================
 
-start_nodes() ->
+start_or_reload_nodes() ->
     Self = node(),
     lager:info("~p: ~p starting nodes!", [?MODULE, Self]),
-
-    %% Nuke epmd first.
-    [] = os:cmd("pkill -9 epmd"),
-
-    %% Create an ets table for test configuration.
-    ?MODULE = ets:new(?MODULE, [named_table]),
 
     %% Special configuration for the cluster.
     Config = [{partisan_dispatch, true},
@@ -665,6 +650,8 @@ start_nodes() ->
               {broadcast, false},
               {disterl, false},
               {hash, undefined},
+              {shrinking, false},
+              {replaying, false},
               {egress_delay, ?EGRESS_DELAY},
               {ingress_delay, ?INGRESS_DELAY},
               {membership_strategy_tracing, false},
@@ -674,14 +661,109 @@ start_nodes() ->
               {disable_fast_receive, true},
               {membership_strategy, partisan_full_membership_strategy}],
 
-    %% Initialize a cluster.
-    Nodes = ?SUPPORT:start(prop_partisan,
-                           Config,
-                           [{partisan_peer_service_manager, ?MANAGER},
-                           {num_nodes, ?TEST_NUM_NODES},
-                           {cluster_nodes, ?CLUSTER_NODES}]),
+    debug("running nodes: ~p~n", [nodes()]),
+    RunningNodes = nodes(),
 
-    lager:info("~p: ~p started nodes: ~p", [?MODULE, Self, Nodes]),
+    %% Cluster and start options.
+    Options = [{partisan_peer_service_manager, ?MANAGER}, 
+                {num_nodes, node_num_nodes()},
+                {cluster_nodes, ?CLUSTER_NODES}],
+
+    Nodes = case RunningNodes =/= [] andalso not restart_nodes() of 
+        false ->
+            debug("starting instances, restart_nodes => ~p", [restart_nodes()]),
+
+            %% If there are running nodes and we don't want to restart them.
+            case RunningNodes of 
+                [] ->
+                    debug("starting nodes for initial run.", []);
+                _ ->
+                    ok
+            end,
+
+            %% Nuke epmd first.
+            % [] = os:cmd("pkill -9 epmd"),
+
+            %% Initialize a cluster.
+            Nodes1 = ?SUPPORT:start(prop_partisan, Config, Options),
+
+            %% Create an ets table for test configuration.
+            ?MODULE = ets:new(?MODULE, [named_table]),
+
+            %% Insert all nodes into group for all nodes.
+            true = ets:insert(?MODULE, {nodes, Nodes1}),
+
+            %% Insert name to node mappings for lookup.
+            %% Caveat, because sometimes we won't know ahead of time what FQDN the node will
+            %% come online with when using partisan.
+            lists:foreach(fun({Name, Node}) ->
+                true = ets:insert(?MODULE, {Name, Node})
+            end, Nodes1),
+
+            debug("~p started nodes: ~p", [Self, Nodes1]), 
+            debug("~p restart_nodes: ~p", [Self, restart_nodes()]),
+            debug("~p running_nodes: ~p", [Self, RunningNodes]),
+
+            Nodes1;
+        true ->
+            debug("not starting instances, restart_nodes => ~p, running_nodes; ~p", [restart_nodes(), RunningNodes]),
+
+            %% Get nodes.
+            [{nodes, Nodes1}] = ets:lookup(prop_partisan, nodes),
+
+            %% Remove all interposition funs.
+            lists:foreach(fun(Node) ->
+                % fault_debug("getting interposition funs at node ~p", [Node]),
+
+                case rpc:call(?NAME(Node), ?MANAGER, get_interposition_funs, []) of 
+                    {badrpc, nodedown} ->
+                        ok;
+                    {ok, InterpositionFuns0} ->
+                        InterpositionFuns = dict:to_list(InterpositionFuns0),
+                        % fault_debug("=> ~p", [InterpositionFuns]),
+
+                        lists:foreach(fun({InterpositionName, _Function}) ->
+                            % fault_debug("=> removing interposition: ~p", [InterpositionName]),
+                            ok = rpc:call(?NAME(Node), ?MANAGER, remove_interposition_fun, [InterpositionName])
+                    end, InterpositionFuns)
+                end
+            end, names()),
+
+            case full_restart() of 
+                true ->
+                    %% Restart Partisan.
+                    lists:foreach(fun({ShortName, _}) ->
+                        ok = rpc:call(?NAME(ShortName), application, stop, [partisan]),
+                        {ok, _} = rpc:call(?NAME(ShortName), applicatioShortNamen, ensure_all_started, [partisan])
+                    end, Nodes1),
+
+                    debug("reclustering nodes.", []),
+                    ClusterFun = fun() ->
+                        lists:foreach(fun(Node) -> ?SUPPORT:cluster(Node, Nodes1, Options, Config) end, Nodes1)
+                    end,
+                    {ClusterTime, _} = timer:tc(ClusterFun),
+                    debug("reclustering nodes took ~p ms", [ClusterTime / 1000]),
+
+                    ok;
+                false ->
+                    %% Set faulted back to false.
+                    lists:foreach(fun(Node) ->
+                        ok = rpc:call(?NAME(Node), partisan_config, set, [faulted, false])
+                    end, names()),
+
+                    %% Stop tracing infrastructure.
+                    partisan_trace_orchestrator:stop(),
+
+                    %% Start tracing infrastructure.
+                    partisan_trace_orchestrator:start_link(),
+
+                    ok
+            end,
+
+            debug("~p reusing nodes: ~p", [Self, Nodes1]),
+
+            Nodes1
+    end,
 
     %% Deterministically seed the random number generator.
     partisan_config:seed(),
@@ -689,85 +771,102 @@ start_nodes() ->
     %% Reset trace.
     ok = partisan_trace_orchestrator:reset(),
 
+    %% Start tracing.
+    ok = partisan_trace_orchestrator:enable(Nodes),
+
     %% Perform preloads.
-    ok = partisan_trace_orchestrator:perform_preloads(),
+    ok = partisan_trace_orchestrator:perform_preloads(Nodes),
 
     %% Identify trace.
     TraceRandomNumber = rand:uniform(100000),
     %% lager:info("~p: trace random generated: ~p", [?MODULE, TraceRandomNumber]),
-    TraceIdentifier = atom_to_list(?SYSTEM_MODEL) ++ "_" ++ integer_to_list(TraceRandomNumber),
+    TraceIdentifier = atom_to_list(system_model()) ++ "_" ++ integer_to_list(TraceRandomNumber),
     ok = partisan_trace_orchestrator:identify(TraceIdentifier),
 
     %% Add send and receive pre-interposition functions to enforce message ordering.
     PreInterpositionFun = fun({Type, OriginNode, OriginalMessage}) ->
-        %% Record message incoming and outgoing messages.
-        ok = partisan_trace_orchestrator:trace(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
+        %% TODO: This needs to be fixed: replay and trace need to be done
+        %% atomically otherwise processes will race to write trace entry when
+        %% they are unblocked from retry: this means that under replay the trace
+        %% file might generate small permutations of messages which means it's
+        %% technically not the same trace.
 
         %% Under replay ensure they match the trace order (but only for pre-interposition messages).
         ok = partisan_trace_orchestrator:replay(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
 
+        %% Record message incoming and outgoing messages.
+        ok = partisan_trace_orchestrator:trace(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
+
         ok
     end, 
-
     lists:foreach(fun({_Name, Node}) ->
-        rpc:call(Node, 
-                 ?MANAGER, 
-                 add_pre_interposition_fun, 
-                 ['$tracing', PreInterpositionFun])
-        end, Nodes),
+        rpc:call(Node, ?MANAGER, add_pre_interposition_fun, ['$tracing', PreInterpositionFun])
+    end, Nodes),
 
     %% Add send and receive post-interposition functions to perform tracing.
     PostInterpositionFun = fun({Type, OriginNode, OriginalMessage}, {Type, OriginNode, RewrittenMessage}) ->
         %% Record outgoing message after transformation.
-        ok = partisan_trace_orchestrator:trace(post_interposition_fun, {node(), OriginNode, Type, OriginalMessage, RewrittenMessage}),
-        
-        ok
+        ok = partisan_trace_orchestrator:trace(post_interposition_fun, {node(), OriginNode, Type, OriginalMessage, RewrittenMessage})
     end, 
-
     lists:foreach(fun({_Name, Node}) ->
-        rpc:call(Node, 
-                 ?MANAGER, 
-                 add_post_interposition_fun, 
-                 ['$tracing', PostInterpositionFun])
-        end, Nodes),
+        rpc:call(Node, ?MANAGER, add_post_interposition_fun, ['$tracing', PostInterpositionFun])
+    end, Nodes),
 
     %% Enable tracing.
     lists:foreach(fun({_Name, Node}) ->
-        rpc:call(Node, 
-                 partisan_config,
-                 set,
-                 [tracing, false])
-        end, Nodes),
-
-    %% Insert all nodes into group for all nodes.
-    true = ets:insert(?MODULE, {nodes, Nodes}),
-
-    %% Insert name to node mappings for lookup.
-    %% Caveat, because sometimes we won't know ahead of time what FQDN the node will
-    %% come online with when using partisan.
-    lists:foreach(fun({Name, Node}) ->
-        true = ets:insert(?MODULE, {Name, Node})
+        rpc:call(Node, partisan_config, set, [tracing, false])
     end, Nodes),
 
     ok.
 
+%% @private
 stop_nodes() ->
-    %% Get list of nodes that were started at the start
-    %% of the test.
-    [{nodes, Nodes}] = ets:lookup(?MODULE, nodes),
+    case restart_nodes() of 
+        true ->
+            debug("terminating instances, restart_nodes => true", []),
 
-    %% Print trace.
-    partisan_trace_orchestrator:print(),
+            %% Get list of nodes that were started at the start
+            %% of the test.
+            [{nodes, Nodes}] = ets:lookup(?MODULE, nodes),
 
-    %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+            %% Print trace.
+            partisan_trace_orchestrator:print(),
 
-    %% Delete the table.
-    ets:delete(?MODULE),
+            %% Stop nodes.
+            ?SUPPORT:stop(Nodes),
+
+            %% Delete the table.
+            ets:delete(?MODULE);
+        false ->
+            debug("not terminating instances, restart_nodes => false", []),
+
+            %% Print trace.
+            partisan_trace_orchestrator:print(),
+
+            ok
+    end,
 
     ok.
 
-%% Determine if a bunch of operations succeeded or failed.
+%% @private
+full_restart() ->
+    case os:getenv("FULL_RESTART") of 
+        "true" ->
+            true;
+        _ ->
+            false
+    end.
+
+%% @private
+restart_nodes() ->
+    case os:getenv("RESTART_NODES") of 
+        "false" ->
+            false;
+        _ ->
+            true
+    end.
+
+%% @private -- Determine if a bunch of operations succeeded or failed.
 all_to_ok_or_error(List) ->
     case lists:all(fun(X) -> X =:= ok end, List) of
         true ->
@@ -776,12 +875,15 @@ all_to_ok_or_error(List) ->
             {error, some_operations_failed, List}
     end.
 
+%% @private
 enough_nodes_connected(Nodes) ->
     length(Nodes) >= 3.
 
+%% @private
 enough_nodes_connected_to_issue_remove(Nodes) ->
     length(Nodes) > 3.
 
+%% @private
 initial_state_debug(Line, Args) ->
     case ?INITIAL_STATE_DEBUG of
         true ->
@@ -790,22 +892,25 @@ initial_state_debug(Line, Args) ->
             ok
     end.
 
+%% @private
 precondition_debug(Line, Args) ->
-    case ?PRECONDITION_DEBUG of
-        true ->
+    case os:getenv("PRECONDITION_DEBUG") of 
+        "true" ->
             lager:info("~p: " ++ Line, [?MODULE] ++ Args);
-        false ->
+        _ ->
             ok
     end.
 
+%% @private
 postcondition_debug(Line, Args) ->
-    case ?POSTCONDITION_DEBUG of
-        true ->
+    case os:getenv("POSTCONDITION_DEBUG") of
+        "true" ->
             lager:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
 
+%% @private
 debug(Line, Args) ->
     case ?DEBUG of
         true ->
@@ -814,9 +919,11 @@ debug(Line, Args) ->
             ok
     end.
 
+%% @private
 is_joined(Node, Cluster) ->
     lists:member(Node, Cluster).
 
+%% @private
 cluster_commands(_State) ->
     [
     % TODO: Disabled, because nodes shutdown on removal from the cluster.
@@ -824,13 +931,16 @@ cluster_commands(_State) ->
     {call, ?MODULE, sync_leave_cluster, [node_name()]}
     ].
 
+%% @private
 name_to_nodename(Name) ->
     [{_, NodeName}] = ets:lookup(?MODULE, Name),
     NodeName.
 
+%% @private
 ensure_tracing_started() ->
     partisan_trace_orchestrator:start_link().
 
+%% @private
 wait_until_nodes_agree_on_membership(Nodes) ->
     AgreementFun = fun(Node) ->
         %% Get membership at node.
@@ -910,3 +1020,144 @@ scheduler() ->
         Other ->
             list_to_atom(Other)
     end.
+
+%%%===================================================================
+%%% Fault Model Imports
+%%%===================================================================
+
+%% @private
+fault_model() ->
+    case os:getenv("FAULT_MODEL") of
+        false ->
+            prop_partisan_crash_fault_model;
+        SystemModel ->
+            list_to_atom(SystemModel)
+    end.
+
+%% @private
+fault_commands() ->
+    FaultModel = fault_model(),
+    FaultModel:fault_commands().
+
+%% @private
+fault_initial_state() ->
+    FaultModel = fault_model(),
+    FaultModel:fault_initial_state().
+
+%% @private
+fault_functions(JoinedNodes) ->
+    FaultModel = fault_model(),
+    FaultModel:fault_functions(JoinedNodes).
+
+%% @private
+fault_precondition(FaultModelState, Call) ->
+    FaultModel = fault_model(),
+    FaultModel:fault_precondition(FaultModelState, Call).
+
+%% @private
+fault_next_state(PropertyState, FaultModelState, Response, Call) ->
+    FaultModel = fault_model(),
+    FaultModel:fault_next_state(PropertyState, FaultModelState, Response, Call).
+
+%% @private
+fault_postcondition(FaultModelState, Call, Response) ->
+    FaultModel = fault_model(),
+    FaultModel:fault_postcondition(FaultModelState, Call, Response).
+
+%% @private
+fault_is_crashed(FaultModelState, Name) ->
+    FaultModel = fault_model(),
+    FaultModel:fault_is_crashed(FaultModelState, Name).
+
+%% @private
+fault_begin_functions() ->
+    FaultModel = fault_model(),
+    FaultModel:fault_begin_functions().
+
+%% @private
+fault_end_functions() ->
+    FaultModel = fault_model(),
+    FaultModel:fault_end_functions().
+
+%% @private
+fault_global_functions() ->
+    FaultModel = fault_model(),
+    FaultModel:fault_global_functions().
+
+%% @private
+fault_num_resolvable_faults(FaultModelState) ->
+    FaultModel = fault_model(),
+    FaultModel:fault_num_resolvable_faults(FaultModelState).
+
+%%%===================================================================
+%%% System Model Imports
+%%%===================================================================
+
+%% @private
+system_model() ->
+    case os:getenv("SYSTEM_MODEL") of
+        false ->
+            exit({error, no_system_model_specified});
+        SystemModel ->
+            list_to_atom(SystemModel)
+    end.
+
+%% @private
+node_num_nodes() ->
+    SystemModel = system_model(),
+    SystemModel:node_num_nodes().
+
+%% @private
+node_commands() ->
+    SystemModel = system_model(),
+    SystemModel:node_commands().
+
+%% @private
+node_initial_state() ->
+    SystemModel = system_model(),
+    SystemModel:node_initial_state().
+
+%% @private
+node_functions() ->
+    SystemModel = system_model(),
+    SystemModel:node_functions().
+
+%% @private
+node_postcondition(NodeState, Call, Response) ->
+    SystemModel = system_model(),
+    SystemModel:node_postcondition(NodeState, Call, Response).
+
+%% @private
+node_precondition(NodeState, Call) ->
+    SystemModel = system_model(),
+    SystemModel:node_precondition(NodeState, Call).
+
+%% @private
+node_next_state(PropertyState, NodeState, Response, Call) ->
+    SystemModel = system_model(),
+    SystemModel:node_next_state(PropertyState, NodeState, Response, Call).
+
+%% @private
+node_begin_property() ->
+    SystemModel = system_model(),
+    SystemModel:node_begin_property().
+
+%% @private
+node_begin_case() ->
+    SystemModel = system_model(),
+    SystemModel:node_begin_case().
+
+%% @private
+node_end_case() ->
+    SystemModel = system_model(),
+    SystemModel:node_end_case().
+
+%% @private
+node_assertion_functions() ->
+    SystemModel = system_model(),
+    SystemModel:node_assertion_functions().
+
+%% @private
+node_global_functions() ->
+    SystemModel = system_model(),
+    SystemModel:node_global_functions().

@@ -30,6 +30,7 @@
          listen_addrs/0,
          set/2,
          seed/0,
+         seed/1,
          get/1,
          get/2]).
 
@@ -133,6 +134,7 @@ init() ->
                            {orchestration_strategy, ?DEFAULT_ORCHESTRATION_STRATEGY},
                            {random_seed, random_seed()},
                            {random_promotion, true},
+                           {register_pid_for_encoding, false},
                            {replaying, false},
                            {reservations, []},
                            {shrinking, false},
@@ -149,8 +151,13 @@ init() ->
     ok.
 
 %% Seed the process.
+seed(Seed) ->
+    rand:seed(exsplus, Seed).
+
+%% Seed the process.
 seed() ->
     RandomSeed = random_seed(),
+    lager:info("node ~p choosing random seed: ~p", [node(), RandomSeed]),
     rand:seed(exsplus, RandomSeed).
 
 %% Return a random seed, either from the environment or one that's generated for the run.
