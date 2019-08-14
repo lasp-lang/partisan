@@ -29,6 +29,7 @@
 -compile([export_all]).
 
 -define(TIMEOUT, 10000).
+-define(RETRY_SECONDS, 240).
 
 %%%===================================================================
 %%% Generators
@@ -55,7 +56,8 @@ names() ->
 %% What node-specific operations should be called.
 node_commands() ->
     [
-        {call, ?MODULE, submit_transaction, [node_name(), message()]}
+        {call, ?MODULE, submit_transaction, [node_name(), message()]},
+        {call, ?MODULE, trigger_sync, [node_name(), node_name()]}
     ].
 
 %% Assertion commands.
@@ -79,6 +81,8 @@ node_functions() ->
 %% Precondition.
 node_precondition(_NodeState, {call, ?MODULE, submit_transaction, [_Node, _Message]}) ->
     true;
+node_precondition(_NodeState, {call, ?MODULE, trigger_sync, [Node1, Node2]}) ->
+    Node1 /= Node2;
 node_precondition(_NodeState, {call, ?MODULE, wait, [_Node]}) ->
     true;
 node_precondition(_NodeState, {call, ?MODULE, sleep, []}) ->
@@ -95,6 +99,8 @@ node_next_state(_State, NodeState, _Response, _Command) ->
     NodeState.
 
 %% Postconditions for node commands.
+node_postcondition(_NodeState, {call, ?MODULE, trigger_sync, [_Node1, _Node2]}, ok) ->
+    true;
 node_postcondition(_NodeState, {call, ?MODULE, submit_transaction, [_Node, _Message]}, _Result) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, wait, [_Node]}, _Result) ->
@@ -110,9 +116,11 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
     %% Get initial messages.
     [{initial_messages, InitialMessages}] = ets:lookup(prop_partisan, initial_messages),
 
+    [{workers, Workers}] = ets:lookup(prop_partisan, workers),
+
     lists:foreach(fun(Chain) ->
                           %node_debug("Chain: ~p~n", [Chain]),
-                          node_debug("chain is of height ~p~n", [length(Chain)]),
+                          %node_debug("chain is of height ~p~n", [length(Chain)]),
 
                           %% verify they are cryptographically linked,
                           true = partisan_hbbft_worker:verify_chain(Chain, PubKey),
@@ -124,22 +132,76 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
                           %% check they're all members of the original message list
                           true = sets:is_subset(sets:from_list(BlockTxns), sets:from_list(Messages ++ InitialMessages)),
 
-                          node_debug("length(BlockTxns): ~p", [length(BlockTxns)]),
-                          node_debug("length(Messages ++ InitialMessages): ~p", [length(Messages ++ InitialMessages)]),
+                          %node_debug("length(BlockTxns): ~p", [length(BlockTxns)]),
+                          %node_debug("length(Messages ++ InitialMessages): ~p", [length(Messages ++ InitialMessages)]),
+                          %% find all the transactions still in everyone's buffer
+                          StillInBuf = sets:intersection([ sets:from_list(B) || B <- buffers(Workers)]),
 
-                          Difference = sets:subtract(sets:from_list(Messages ++ InitialMessages), sets:from_list(BlockTxns)),
-                          node_debug("Difference: ~p", [sets:to_list(Difference)]),
+                          %node_debug("length(StillInBuf): ~p", [sets:size(StillInBuf)]),
 
-                          true = length(BlockTxns) =:= length(Messages ++ InitialMessages),
+                          %Difference = sets:subtract(sets:subtract(sets:from_list(Messages ++ InitialMessages), sets:from_list(BlockTxns)), StillInBuf),
+                          %node_debug("Difference: ~p", [sets:to_list(Difference)]),
 
-                          node_debug("chain contains ~p distinct transactions~n", [length(BlockTxns)])
+                          case length(BlockTxns) =:= length(Messages ++ InitialMessages) - sets:size(StillInBuf) of
+                              true -> ok;
+                              false ->
+                                  statuses(Workers),
+                                  erlang:error(failed)
+                          end,
+
+                          %node_debug("chain contains ~p distinct transactions~n", [length(BlockTxns)])
+                        ok
                   end, sets:to_list(Chains)),
+
+    node_debug("Waiting for buffer flush before final assertion...", []),
+
+    %% Make sure only the tolerance level of nodes has crashed.
+    Crashed = lists:foldl(fun({_Node, {ok, W}}, Acc) ->
+        try
+            {ok, _Status} = partisan_hbbft_worker:get_status(W),
+            Acc
+        catch
+            _:_ ->
+                Acc + 1
+        end
+    end, 0, Workers),
+
+    BufferEmpty = case wait_until(fun() ->
+                          StillInBuf = sets:intersection([ sets:from_list(B) || B <- buffers(Workers)]),
+                          length(sets:to_list(StillInBuf)) =:= 0
+                  end, ?RETRY_SECONDS*2, 500) of 
+        ok ->
+            true;
+        _ ->
+            false
+    end,
+
+    StillInBuf = sets:intersection([ sets:from_list(B) || B <- buffers(Workers)]),
+    StillInBufLength = length(sets:to_list(StillInBuf)),
+    node_debug("StillInBufLength: ~p", [StillInBufLength]),
 
     %% Check we actually converged and made a chain.
     OneChain = (1 == sets:size(Chains)),
     NonTrivialLength = (0 < length(hd(sets:to_list(Chains)))),
 
-    OneChain andalso NonTrivialLength;
+    node_debug("OneChain: ~p", [OneChain]),
+    Length = length(hd(sets:to_list(Chains))),
+    node_debug("NonTrivialLength: ~p", [NonTrivialLength]),
+    node_debug("Length: ~p", [Length]),
+    node_debug("BufferEmpty: ~p", [BufferEmpty]),
+
+    node_debug("Crashed: ~p", [Crashed]),
+
+    Tolerance = case os:getenv("FAULT_TOLERANCE") of 
+        false ->
+            1;
+        ToleranceString ->
+            list_to_integer(ToleranceString)
+    end,
+
+    Result = OneChain andalso NonTrivialLength andalso BufferEmpty andalso Crashed =< Tolerance,
+    node_debug("postcondition: ~p", [Result]),
+    Result;
 node_postcondition(_NodeState, Command, Response) ->
     node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
                [Command, Response]),
@@ -161,23 +223,23 @@ node_postcondition(_NodeState, Command, Response) ->
 check() ->
     %% Get workers.
     [{workers, Workers}] = ets:lookup(prop_partisan, workers),
-    
+
     %% Get at_least_one_transaction.
     case ets:lookup(prop_partisan, at_least_one_transaction) of 
         [{at_least_one_transaction, true}] ->
             %% Wait for all the worker's mailboxes to settle and wait for the chains to converge.
-            ok = wait_until(fun() ->
-                                    Chains = chains(Workers),
+            wait_until(fun() ->
+                            Chains = chains(Workers),
 
-                                    node_debug("Chains: ~p", [sets:to_list(Chains)]),
-                                    node_debug("message_queue_lens(Workers): ~p should = 0", [message_queue_lens(Workers)]),
-                                    node_debug("sets:size(Chains): ~p should = 1", [sets:size(Chains)]),
-                                    node_debug("length(hd(sets:to_list(Chains))): ~p should /= 0", [length(hd(sets:to_list(Chains)))]),
+                            % node_debug("Chains: ~p", [sets:to_list(Chains)]),
+                            node_debug("message_queue_lens(Workers): ~p should = 0", [message_queue_lens(Workers)]),
+                            node_debug("sets:size(Chains): ~p should = 1", [sets:size(Chains)]),
+                            node_debug("length(hd(sets:to_list(Chains))): ~p should /= 0", [length(hd(sets:to_list(Chains)))]),
 
-                                    0 == message_queue_lens(Workers) andalso
-                                    1 == sets:size(Chains) andalso
-                                    0 /= length(hd(sets:to_list(Chains)))
-                            end, 60*2, 500),
+                            0 == message_queue_lens(Workers) andalso
+                            1 == sets:size(Chains) andalso
+                            0 /= length(hd(sets:to_list(Chains)))
+                       end, ?RETRY_SECONDS*2, 500),
 
             Chains = chains(Workers),
             node_debug("~p distinct chains~n", [sets:size(Chains)]),
@@ -197,7 +259,7 @@ submit_transaction(Node, Message) ->
     %% Mark that we did at least one transaction.
     true = ets:insert(prop_partisan, {at_least_one_transaction, true}),
 
-    %% Submit transaction to a random subset of nodes.
+    %% Submit transaction to all workers.
     lists:foreach(fun({_Node, {ok, Worker}}) ->
         partisan_hbbft_worker:submit_transaction(Message, Worker)
     end, Workers),
@@ -208,6 +270,24 @@ submit_transaction(Node, Message) ->
     end, Workers),
 
     ?PROPERTY_MODULE:command_conclusion(Node, [submit_transaction, Node]),
+
+    ok.
+
+trigger_sync(Node1, Node2) ->
+    ?PROPERTY_MODULE:command_preamble(Node1, [trigger_sync, Node1, Node2]),
+
+    %% Get workers.
+    [{workers, Workers}] = ets:lookup(prop_partisan, workers),
+
+    %% Get node 1's worker.
+    {ok, Node1Worker} = proplists:get_value({Node1, ?NAME(Node1)}, Workers),
+
+    %% Get node 2's worker.
+    {ok, Node2Worker} = proplists:get_value({Node2, ?NAME(Node2)}, Workers),
+
+    partisan_hbbft_worker:sync(Node1Worker, Node2Worker),
+
+    ?PROPERTY_MODULE:command_conclusion(Node1, [trigger_sync, Node1, Node2]),
 
     ok.
 
@@ -233,12 +313,13 @@ sleep() ->
 
     %% Start on demand on all nodes.
     lists:foreach(fun({_Node, {ok, Worker}}) ->
+        % node_debug("forcing start on demand for node: ~p, worker: ~p", [Node, Worker]),
         %% This may fail if the node has been crashed because it was faulty.
         catch partisan_hbbft_worker:start_on_demand(Worker)
     end, Workers),
 
-    node_debug("sleeping...", []),
-    timer:sleep(60000),
+    %node_debug("sleeping for 60 seconds...", []),
+    %timer:sleep(60000),
 
     ?PROPERTY_MODULE:command_conclusion(RunnerNode, [sleep]),
 
@@ -278,6 +359,24 @@ node_begin_case() ->
         ok = rpc:call(?NAME(ShortName), partisan_config, set, [pid_encoding, true])
     end, Nodes),
 
+    %% Enable replay (for pre-interposition async.)
+    lists:foreach(fun({ShortName, _}) ->
+        ok = rpc:call(?NAME(ShortName), partisan_config, set, [replaying, true])
+    end, Nodes),
+    partisan_config:set(replaying, true),
+
+    %% Enable shrink (for pre-interposition async.)
+    lists:foreach(fun({ShortName, _}) ->
+        ok = rpc:call(?NAME(ShortName), partisan_config, set, [shrinking, true])
+    end, Nodes),
+    partisan_config:set(shrinking, true),
+
+    %% Disable tracing.
+    lists:foreach(fun({ShortName, _}) ->
+        ok = rpc:call(?NAME(ShortName), partisan_config, set, [tracing, false])
+    end, Nodes),
+    partisan_config:set(shrinking, true),
+
     %% Load, configure, and start hbbft.
     lists:foreach(fun({ShortName, _}) ->
         % node_debug("loading hbbft at node ~p", [ShortName]),
@@ -304,7 +403,7 @@ node_begin_case() ->
     %% Master starts the dealer.
     N = length(Nodes),
     F = (N div 3),
-    BatchSize = 20,
+    BatchSize = 1,
     {ok, Dealer} = dealer:new(N, F+1, 'SS512'),
     {ok, {PubKey, PrivateKeys}} = dealer:deal(Dealer),
 
@@ -331,28 +430,78 @@ node_begin_case() ->
 
     case os:getenv("BOOTSTRAP") of 
         "true" ->
+            node_debug("beginning bootstrap...", []),
+
+            %% Configure the number of bootstrap transactions.
+            NumMsgs = case os:getenv("BOOTSTRAP_MESSAGES") of 
+                false ->
+                    N * BatchSize;
+                Other ->
+                    list_to_integer(Other)
+            end,
+            node_debug("setting number of bootstrap messages to: ~p", [NumMsgs]),
+
             %% generate a bunch of msgs
-            Msgs = [crypto:strong_rand_bytes(128) || _ <- lists:seq(1, N*20)],
+            Msgs = [crypto:strong_rand_bytes(128) || _ <- lists:seq(1, NumMsgs)],
 
             %% feed the nodes some msgs
+            node_debug("submitting transactions...", []),
             lists:foreach(fun(Msg) ->
-                                Destinations = random_n(rand:uniform(N), Workers),
-                                %   node_debug("destinations ~p~n", [Destinations]),
-                                [partisan_hbbft_worker:submit_transaction(Msg, Destination) || {_Node, {ok, Destination}} <- Destinations]
-                        end, Msgs),
+                node_debug("=> message ~p", [Msg]),
 
+                lists:foreach(fun({_Node, {ok, Worker}}) ->
+                    node_debug("=> => txn for worker ~p", [Worker]),
+                    partisan_hbbft_worker:submit_transaction(Msg, Worker)
+                end, Workers)
+            end, Msgs),
+            node_debug("transactions submitted!", []),
+
+            %% Start on demand on all nodes.
+            node_debug("issuing start_on_demands...", []),
+            lists:foreach(fun({_Node, {ok, Worker}}) ->
+                partisan_hbbft_worker:start_on_demand(Worker)
+            end, Workers),
+
+            node_debug("waiting for mailboxes to settle...", []),
             %% wait for all the worker's mailboxes to settle and.
             %% wait for the chains to converge
-            ok = wait_until(fun() ->
-                                    Chains = sets:from_list(lists:map(fun({_Node, {ok, W}}) ->
-                                                                            {ok, Blocks} = partisan_hbbft_worker:get_blocks(W),
-                                                                            Blocks
-                                                                    end, Workers)),
+            case wait_until(fun() ->
+                                    Chains = chains(Workers),
+
+                                    node_debug("====================================", []),
+                                    % node_debug("Chains: ~p", [sets:to_list(Chains)]),
+                                    node_debug("message_queue_lens(Workers): ~p should = 0", [message_queue_lens(Workers)]),
+                                    node_debug("sets:size(Chains): ~p should = 1", [sets:size(Chains)]),
+                                    node_debug("length(hd(sets:to_list(Chains))): ~p should /= 0", [length(hd(sets:to_list(Chains)))]),
+
+                                    case length(hd(sets:to_list(Chains))) > 0 of
+                                        true ->
+                                            lists:foreach(fun(X) ->
+                                                node_debug("looking at chain ~p...", [X]),
+                                                Chain = lists:nth(X, sets:to_list(Chains)),
+
+                                                %% check all transactions are unique
+                                                node_debug("=> number of blocks: ~p", [length(Chain)]),
+                                                BlockTxns = lists:flatten([partisan_hbbft_worker:block_transactions(B) || B <- Chain]),
+                                                node_debug("=> number of transactions: ~p", [length(BlockTxns)])
+                                            end, lists:seq(1, length(sets:to_list(Chains)))),
+                                            
+                                            ok;
+                                        false ->
+                                            ok
+                                    end,
 
                                     0 == message_queue_lens(Workers) andalso
                                     1 == sets:size(Chains) andalso
                                     0 /= length(hd(sets:to_list(Chains)))
-                            end, 60*2, 500),
+                            end, 60*2, 500) of
+                ok ->
+                    ok;
+                _ ->
+                    statuses(Workers),
+                    erlang:error(failed)
+            end,
+            node_debug("mailboxes settled...", []),
 
             Chains = sets:from_list(lists:map(fun({_Node, {ok, Worker}}) ->
                                                     {ok, Blocks} = partisan_hbbft_worker:get_blocks(Worker),
@@ -382,6 +531,14 @@ node_begin_case() ->
 
             %% Insert into initial messages.
             true = ets:insert(prop_partisan, {initial_messages, Msgs}),
+
+            %% TEMP: force a failure here.
+            case os:getenv("BOOTSTRAP_FAILURE") of 
+                "true" ->
+                    exit({error, forced_failure});
+                _ ->
+                    ok
+            end,
 
             ok;
         _ ->
@@ -473,6 +630,7 @@ shuffle(List) ->
 
 %% @private
 wait_until(Fun, Retry, Delay) when Retry > 0 ->
+    node_debug("wait_until trying again, retries remaining: ~p...", [Retry]),
     Res = Fun(),
     case Res of
         true ->
@@ -500,11 +658,11 @@ message_queue_lens(Workers) ->
 %% @private
 chains(Workers) ->
     sets:from_list(lists:foldl(fun({_Node, {ok, W}}, Acc) ->
-                                        node_debug("getting blocks for worker: ~p", [W]),
+                                        % node_debug("getting blocks for worker: ~p", [W]),
 
                                         try
                                             {ok, Blocks} = partisan_hbbft_worker:get_blocks(W),
-                                            node_debug("=> Blocks: ~p", [Blocks]),
+                                            % node_debug("=> Blocks: ~p", [Blocks]),
                                             Acc ++ [Blocks]
                                         catch
                                             _:Error ->
@@ -512,3 +670,33 @@ chains(Workers) ->
                                                 Acc
                                         end
                                end, [], Workers)).
+
+%% @private
+statuses(Workers) ->
+    sets:from_list(lists:foldl(fun({_Node, {ok, W}}, Acc) ->
+                                        node_debug("getting status for worker: ~p", [W]),
+
+                                        try
+                                            {ok, Status} = partisan_hbbft_worker:get_status(W),
+                                            #{buf := Buf, round := Round, acs := #{completed_bba_count := BBAC, successful_bba_count := BBAS, completed_rbc_count := RBCC}} = Status,
+                                            node_debug("=> Status: rbc completed: ~p bba completed ~p bba successful ~p Buffer size ~p Round ~p", [RBCC, BBAC, BBAS, Buf, Round]),
+                                            Acc ++ [Status]
+                                        catch
+                                            _:Error ->
+                                                node_debug("=> received error: ~p", [Error]),
+                                                Acc
+                                        end
+                               end, [], Workers)).
+
+%% @private
+buffers(Workers) ->
+    lists:foldl(fun({_Node, {ok, W}}, Acc) ->
+                        try
+                            {ok, Buf} = partisan_hbbft_worker:get_buf(W),
+                            Acc ++ [Buf]
+                        catch
+                            _:Error ->
+                                node_debug("=> received error: ~p", [Error]),
+                                Acc
+                        end
+                end, [], Workers).

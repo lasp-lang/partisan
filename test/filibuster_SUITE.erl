@@ -199,6 +199,8 @@ annotations_test(_Config) ->
             {ok, BackgroundAnnotations} = dict:find(background, AllAnnotations),
             debug("Background annotations loaded: ~p~n", [BackgroundAnnotations]),
 
+            debug("Everything loaded, about to start on the test....", []),
+
             %% Iterate on the test here.
             lists:foreach(fun(_) ->
                 %% Run an execution of the test.
@@ -215,7 +217,7 @@ annotations_test(_Config) ->
                 %% Open the trace file.
                 {ok, TraceLines} = file:consult(TraceFile),
                 MessageTypesFromTraceLines = message_types(hd(TraceLines)),
-                % debug("MessageTypesFromTraceLines: ~p", [MessageTypesFromTraceLines]),
+                debug("MessageTypesFromTraceLines: ~p", [MessageTypesFromTraceLines]),
 
                 %% Verify annotations.
                 verify_annotations(CausalityAnnotations, MessageTypesFromTraceLines)
@@ -397,7 +399,8 @@ execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
     ok = partisan_trace_orchestrator:reset(),
 
     %% Start tracing.
-    ok = partisan_trace_orchestrator:enable(),
+    lager:info("enabling tracing for nodes: ~p", [Nodes]),
+    ok = partisan_trace_orchestrator:enable(Nodes),
 
     %% Set replay.
     partisan_config:set(replaying, Replaying),
@@ -418,35 +421,6 @@ execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
     %% lager:info("~p: trace random generated: ~p", [?MODULE, TraceRandomNumber]),
     TraceIdentifier = atom_to_list(system_model()) ++ "_" ++ integer_to_list(TraceRandomNumber),
     ok = partisan_trace_orchestrator:identify(TraceIdentifier),
-
-    %% Add send and receive pre-interposition functions to enforce message ordering.
-    PreInterpositionFun = fun({Type, OriginNode, OriginalMessage}) ->
-        %% TODO: This needs to be fixed: replay and trace need to be done
-        %% atomically otherwise processes will race to write trace entry when
-        %% they are unblocked from retry: this means that under replay the trace
-        %% file might generate small permutations of messages which means it's
-        %% technically not the same trace.
-
-        %% Under replay ensure they match the trace order (but only for pre-interposition messages).
-        ok = partisan_trace_orchestrator:replay(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
-
-        %% Record message incoming and outgoing messages.
-        ok = partisan_trace_orchestrator:trace(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
-
-        ok
-    end, 
-    lists:foreach(fun({_Name, Node}) ->
-        rpc:call(Node, ?MANAGER, add_pre_interposition_fun, ['$tracing', PreInterpositionFun])
-    end, Nodes),
-
-    %% Add send and receive post-interposition functions to perform tracing.
-    PostInterpositionFun = fun({Type, OriginNode, OriginalMessage}, {Type, OriginNode, RewrittenMessage}) ->
-        %% Record outgoing message after transformation.
-        ok = partisan_trace_orchestrator:trace(post_interposition_fun, {node(), OriginNode, Type, OriginalMessage, RewrittenMessage})
-    end, 
-    lists:foreach(fun({_Name, Node}) ->
-        rpc:call(Node, ?MANAGER, add_post_interposition_fun, ['$tracing', PostInterpositionFun])
-    end, Nodes),
 
     %% Enable tracing.
     lists:foreach(fun({_Name, Node}) ->

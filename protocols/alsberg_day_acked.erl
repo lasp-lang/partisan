@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(alsberg_day).
+-module(alsberg_day_acked).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -behaviour(gen_server).
@@ -54,7 +54,7 @@ stop() ->
     gen_server:stop(?MODULE).
 
 timeout() ->
-    4000.
+    infinity.
 
 %% @doc Notifies us of membership update.
 update(LocalState0) ->
@@ -116,6 +116,9 @@ init([]) ->
     Store = dict:new(),
     Membership = membership(Membership0),
     Outstanding = dict:new(),
+
+    %% Schedule retry.
+    schedule_retry(),
 
     {ok, #state{next_id=0,
                 store=Store,
@@ -227,17 +230,15 @@ handle_info({collaborate_ack, ReplyingNode, {write, From, Key, Value}}, #state{o
             %% Update list of nodes that have acknowledged.
             Replies = Replies0 ++ [ReplyingNode],
 
-            case lists:usort(Membership) =:= lists:usort(Replies) of 
+            Outstanding = case lists:usort(Membership) =:= lists:usort(Replies) of 
                 true ->
                     partisan_logger:info("Node ~p received all replies for request ~p, acknowleding to user.", [node(), Request]),
-                    partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value});
+                    partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value}),
+                    dict:erase(Request, Outstanding0);
                 false ->
                     partisan_logger:info("Received replies from: ~p, but need replies from: ~p", [Replies, Membership -- Replies]),
-                    ok
+                    dict:store(Request, {Membership, Replies}, Outstanding0)
             end,
-
-            %% Update list.
-            Outstanding = dict:store(Request, {Membership, Replies}, Outstanding0),
 
             {noreply, State#state{outstanding=Outstanding}};
         _ ->
@@ -263,6 +264,66 @@ handle_info({collaborate, CoordinatorNode, {write, From, Key, Value}}, #state{me
             partisan_pluggable_peer_service_manager:forward_message(CoordinatorNode, undefined, ?MODULE, {collaborate_ack, ReplyingNode, Request}, []),
 
             {noreply, State#state{store=Store}}
+    end;
+handle_info(retry, #state{outstanding=Outstanding}=State) ->
+    dict:fold(fun(Request, {[_Primary|Rest], _Replies}, _Acc) ->
+        %% Send collaboration message to other nodes.
+        CoordinatorNode = node(),
+
+        lists:foreach(fun(Node) ->
+            partisan_logger:info("sending retry collaborate message to node ~p for request ~p", [Node, Request]),
+            partisan_pluggable_peer_service_manager:forward_message(Node, undefined, ?MODULE, {retry_collaborate, CoordinatorNode, Request}, [])
+        end, Rest)
+    end, [], Outstanding),
+
+    {noreply, State};
+handle_info({retry_collaborate, CoordinatorNode, {write, From, Key, Value}}, #state{membership=[Primary|_Rest], store=Store0}=State) ->
+    %% TODO: HACK to get around problem in interprocedural analysis.
+    Request = {write, From, Key, Value},
+
+    %% TODO: Reduce duplication.
+    case node() of 
+        Primary ->
+            %% Do nothing.
+            {noreply, State};
+        _ ->
+            %% Write to storage.
+            Store = write(Key, Value, Store0),
+
+            %% Reply with collaborate acknowledgement.
+            ReplyingNode = node(),
+            partisan_logger:info("Node ~p is backup, responding to the primary ~p with acknowledgement", [node(), CoordinatorNode]),
+            partisan_pluggable_peer_service_manager:forward_message(CoordinatorNode, undefined, ?MODULE, {retry_collaborate_ack, ReplyingNode, Request}, []),
+
+            {noreply, State#state{store=Store}}
+    end;
+handle_info({retry_collaborate_ack, ReplyingNode, {write, From, Key, Value}}, #state{outstanding=Outstanding0}=State) ->
+    %% TODO: HACK to get around problem in interprocedural analysis.
+    Request = {write, From, Key, Value}, 
+
+    %% TODO: Reduce duplication.
+    case dict:find(Request, Outstanding0) of
+        {ok, {Membership, Replies0}} ->
+            %% Update list of nodes that have acknowledged.
+            Replies = Replies0 ++ [ReplyingNode],
+
+            case lists:usort(Membership) =:= lists:usort(Replies) of 
+                true ->
+                    partisan_logger:info("Node ~p received all replies for request ~p, acknowleding to user.", [node(), Request]),
+                    partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value});
+                false ->
+                    partisan_logger:info("Received replies from: ~p, but need replies from: ~p", [Replies, Membership -- Replies]),
+                    ok
+            end,
+
+            %% Update list.
+            Outstanding = dict:store(Request, {Membership, Replies}, Outstanding0),
+
+            {noreply, State#state{outstanding=Outstanding}};
+        _ ->
+            partisan_logger:info("Received reply for unknown request: ~p", [Request]),
+
+            {noreply, State}
     end;
 handle_info(Msg, State) ->
     partisan_logger:info("Received message ~p with no handler!", [Msg]),
@@ -297,3 +358,7 @@ write(Key, Value, Store) ->
 %% @private
 membership(Membership) ->
     lists:usort(Membership).
+
+%% @private
+schedule_retry() ->
+    erlang:send_after(1000, self(), retry).

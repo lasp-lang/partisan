@@ -383,6 +383,13 @@ registered_name(Name) ->
     {partisan_remote_reference, Node, GenSym}.
 
 process_forward(ServerRef, Message) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("node ~p recieved message ~p for ~p", [node(), Message, ServerRef]);
+        false ->
+            ok
+    end,
+
     Node = partisan_peer_service_manager:mynode(),
 
     try
@@ -392,10 +399,25 @@ process_forward(ServerRef, Message) ->
                 Name ! Message;
             {partisan_remote_reference, OtherNode, {partisan_process_reference, ProcessIdentifier}} ->
                 % lager:info("process reference is: ~p", [ProcessIdentifier]),
+
                 case string:split(ProcessIdentifier, ".", all) of 
                     ["<0",_B,_C] ->
                         Pid = list_to_pid(ProcessIdentifier),
-                        % lager:info("pid reference is: ~p", [Pid]),
+
+                        case partisan_config:get(tracing, ?TRACING) of
+                            true ->
+                                lager:info("pid reference is: ~p", [Pid]),
+
+                                case is_process_alive(Pid) of
+                                    true ->
+                                        ok;
+                                    false ->
+                                        lager:info("Process ~p is NOT ALIVE for message: ~p", [ServerRef, Message])
+                                end;
+                            false ->
+                                ok
+                        end,
+
                         Pid ! Message;
                     [_,B,C] ->
                         %% Remote written pid from Distributed Erlang.

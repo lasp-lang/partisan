@@ -1,0 +1,6 @@
+[{{receive_message,retry_collaborate_ack},[{forward_message,ok}]},
+ {{receive_message,collaborate_ack},[{forward_message,ok}]},
+ {{receive_message,heartbeat},[{forward_message,heartbeat}]},
+ {{receive_message,retry_collaborate},
+  [{forward_message,retry_collaborate_ack}]},
+ {{receive_message,collaborate},[{forward_message,collaborate_ack}]}].

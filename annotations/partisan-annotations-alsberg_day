@@ -1,0 +1,7 @@
+[
+    {causality, [
+        {{forward_message, collaborate_ack}, [{{receive_message, collaborate}, 1}]},
+        {{forward_message, ok}, [{{receive_message, collaborate_ack}, 2}]}
+    ]},
+    {background, []}
+].

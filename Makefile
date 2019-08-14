@@ -60,7 +60,7 @@ shell:
 	${REBAR} shell --apps partisan
 
 tail-logs:
-	tail -F priv/lager/*/log/*.log
+	tail ---disable-inotify -F priv/lager/*/log/*.log
 
 unsorted-logs:
 	cat priv/lager/*/log/*.log
@@ -141,3 +141,12 @@ zraft: kill bin-perms compile
 
 hbbft: kill bin-perms compile
 	SYSTEM_MODEL=prop_partisan_hbbft RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=hbbft SUBLIST=0 bin/check-hbbft.sh
+
+alsberg-day: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_primary_backup RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=alsberg_day SUBLIST=0 bin/filibuster.sh
+
+alsberg-day-acked: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_primary_backup RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=alsberg_day_acked SUBLIST=0 bin/filibuster.sh
+
+alsberg-day-acked-membership: kill bin-perms compile
+	SYSTEM_MODEL=prop_partisan_primary_backup RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=alsberg_day_acked_membership SUBLIST=0 bin/filibuster.sh
