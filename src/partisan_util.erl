@@ -33,7 +33,9 @@
          term_to_iolist/1,
          gensym/1,
          pid/0,
-         pid/1]).
+         pid/1,
+         ref/1,
+         registered_name/1]).
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
 %%      works by treating the list as an array-based tree where, for
@@ -163,6 +165,8 @@ dispatch_pid(PartitionKey, Channel, Entries) ->
             %% Entries for channel.
             ChannelEntries = lists:filter(fun({_, C, _}) ->
                 case C of
+                    {monotonic, Channel} ->
+                        true;
                     Channel ->
                         true;
                     _ ->
@@ -269,6 +273,15 @@ term_to_iolist_(T) when is_list(T) ->
         false ->
             [108, <<Len:32/integer-big>>, [[term_to_iolist_(E) || E <- T]], 106]
     end;
+term_to_iolist_(T) when is_reference(T) ->
+    case partisan_config:get(ref_encoding, true) of
+        false ->
+            <<131, Rest/binary>> = term_to_binary(T),
+            Rest;
+        true ->
+            <<131, Rest/binary>> = term_to_binary(ref(T)),
+            Rest
+    end;
 term_to_iolist_(T) when is_pid(T) ->
     case partisan_config:get(pid_encoding, true) of
         false ->
@@ -283,22 +296,148 @@ term_to_iolist_(T) ->
     <<131, Rest/binary>> = term_to_binary(T),
     Rest.
 
+gensym(Name) when is_atom(Name) ->
+    {partisan_registered_name_reference, atom_to_list(Name)};
 gensym(Pid) when is_pid(Pid) ->
-    {partisan_process_reference, pid_to_list(Pid)}.
+    {partisan_process_reference, pid_to_list(Pid)};
+gensym(Ref) when is_reference(Ref) ->
+    % {partisan_encoded_reference, binary_to_list(term_to_binary(Ref))}.
+    {partisan_encoded_reference, 1}.
+
+ref(Ref) ->
+    GenSym = gensym(Ref),
+    Node = partisan_peer_service_manager:mynode(),
+    {partisan_remote_reference, Node, GenSym}.
 
 pid() ->
     pid(self()).
 
 pid(Pid) ->
-    GenSym = gensym(Pid),
+    Node = node(Pid),
+
+    case partisan_peer_service_manager:mynode() of
+        Node ->
+            %% This is super dangerous.
+            case partisan_config:get(register_pid_for_encoding, false) of 
+                true ->
+                    Unique = erlang:unique_integer([monotonic, positive]),
+
+                    Name = case process_info(Pid, registered_name) of 
+                        {registered_name, OldName} ->
+                            lager:info("unregistering pid: ~p with name: ~p", [Pid, OldName]),
+
+                            %% TODO: Race condition on unregister/register.
+                            unregister(OldName),
+                            atom_to_list(OldName);
+                        [] ->
+                            "partisan_registered_name_" ++ integer_to_list(Unique)
+                    end,
+
+                    lager:info("registering pid: ~p as name: ~p at node: ~p", [Pid, Name, Node]),
+                    true = erlang:register(list_to_atom(Name), Pid),
+                    {partisan_remote_reference, Node, {partisan_registered_name_reference, Name}};
+                false ->
+                    {partisan_remote_reference, Node, {partisan_process_reference, pid_to_list(Pid)}}
+            end;
+        _ ->
+            %% This is even mmore super dangerous.
+            case partisan_config:get(register_pid_for_encoding, false) of 
+                true ->
+                    Unique = erlang:unique_integer([monotonic, positive]),
+
+                    Name = "partisan_registered_name_" ++ integer_to_list(Unique),
+                    [_, B, C] = string:split(pid_to_list(Pid), ".", all),
+                    RewrittenProcessIdentifier = "<0." ++ B ++ "." ++ C,
+
+                    RegisterFun = fun() ->
+                        RewrittenPid = list_to_pid(RewrittenProcessIdentifier),
+
+                        NewName = case process_info(RewrittenPid, registered_name) of 
+                            {registered_name, OldName} ->
+                                lager:info("unregistering pid: ~p with name: ~p", [Pid, OldName]),
+
+                                %% TODO: Race condition on unregister/register.
+                                unregister(OldName),
+                                atom_to_list(OldName);
+                            [] ->
+                                Name
+                        end,
+
+                        erlang:register(list_to_atom(NewName), RewrittenPid)
+                    end,
+                    lager:info("registering pid: ~p as name: ~p at node: ~p", [Pid, Name, Node]),
+                    %% TODO: Race here unless we wait.
+                    _ = rpc:call(Node, erlang, spawn, [RegisterFun]),
+                    {partisan_remote_reference, Node, {partisan_registered_name_reference, Name}};
+                false ->
+                    [_, B, C] = string:split(pid_to_list(Pid), ".", all),
+                    RewrittenProcessIdentifier = "<0." ++ B ++ "." ++ C,
+                    % lager:info("rewriting remote reference id: ~p", [RewrittenProcessIdentifier]),
+                    {partisan_remote_reference, Node, {partisan_process_reference, RewrittenProcessIdentifier}}
+            end
+    end.
+
+registered_name(Name) ->
+    GenSym = gensym(Name),
     Node = partisan_peer_service_manager:mynode(),
     {partisan_remote_reference, Node, GenSym}.
 
 process_forward(ServerRef, Message) ->
+    case partisan_config:get(tracing, ?TRACING) of
+        true ->
+            lager:info("node ~p recieved message ~p for ~p", [node(), Message, ServerRef]);
+        false ->
+            ok
+    end,
+
+    Node = partisan_peer_service_manager:mynode(),
+
     try
         case ServerRef of
-            {partisan_remote_reference, _, {partisan_process_reference, ProcessIdentifier}} ->
-                Pid = list_to_pid(ProcessIdentifier),
+            {partisan_remote_reference, _, {partisan_registered_name_reference, RegisteredName}} ->
+                Name = list_to_atom(RegisteredName),
+                Name ! Message;
+            {partisan_remote_reference, OtherNode, {partisan_process_reference, ProcessIdentifier}} ->
+                % lager:info("process reference is: ~p", [ProcessIdentifier]),
+
+                case string:split(ProcessIdentifier, ".", all) of 
+                    ["<0",_B,_C] ->
+                        Pid = list_to_pid(ProcessIdentifier),
+
+                        case partisan_config:get(tracing, ?TRACING) of
+                            true ->
+                                lager:info("pid reference is: ~p", [Pid]),
+
+                                case is_process_alive(Pid) of
+                                    true ->
+                                        ok;
+                                    false ->
+                                        lager:info("Process ~p is NOT ALIVE for message: ~p", [ServerRef, Message])
+                                end;
+                            false ->
+                                ok
+                        end,
+
+                        Pid ! Message;
+                    [_,B,C] ->
+                        %% Remote written pid from Distributed Erlang.
+                        case OtherNode =:= Node of 
+                            true ->
+                                RewrittenProcessIdentifier = "<0." ++ B ++ "." ++ C,
+                                lager:info("rewritten process reference is: ~p", [RewrittenProcessIdentifier]),
+                                Pid = list_to_pid(RewrittenProcessIdentifier),
+                                lager:info("pid reference is: ~p", [Pid]),
+                                Pid ! Message;
+                            false ->
+                                lager:info("unknown destination, dropping message for process reference: ~p, other_node: ~p, node: ~p, message: ~p", [ProcessIdentifier, OtherNode, Node, Message]),
+                                ok
+                        end;
+                    _ ->
+                        lager:info("couldn't deserialize unknown process reference: ~p", [ProcessIdentifier]),
+                        ok
+                end;
+            {partisan_registered_name_reference, RegisteredName} ->
+                Pid = list_to_atom(RegisteredName),
                 Pid ! Message;
             {partisan_process_reference, ProcessIdentifier} ->
                 Pid = list_to_pid(ProcessIdentifier),
@@ -311,6 +450,7 @@ process_forward(ServerRef, Message) ->
                 Pid ! Message;
             _ ->
                 ServerRef ! Message,
+
                 case partisan_config:get(tracing, ?TRACING) of
                     true ->
                         case is_pid(ServerRef) of

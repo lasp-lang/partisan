@@ -76,15 +76,11 @@ handle_info(_, State) ->
 code_change(_, State, _) ->
     {ok, State}.
 
-terminate(_, {Socket, MRef}) ->
+terminate(_, {Socket, _MRef}) ->
     % Socket may already be down but need to ensure it is closed to avoid
     % eaddrinuse error on restart
-    case demonitor(MRef, [flush, info]) of
-        true  ->
-            gen_tcp:close(Socket);
-        false ->
-            ok
-    end.
+    _ = (catch gen_tcp:close(Socket)),
+    ok.
 
 %% private
 maybe_update_port_config(PeerIP, 0, Socket) ->

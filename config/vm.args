@@ -1,0 +1,17 @@
+## Name of the node
+-name ${NODE_NAME}
+
+## Cookie for distributed erlang
+-setcookie ${COOKIE}
+
+## Increase distribution port buffer size.
++zdbbl 32768
+
+## Enable multi_time_warp
++C multi_time_warp
+
+## Hidden nodes
+-hidden
+
+## Explicit connections only.
+-connect_all false

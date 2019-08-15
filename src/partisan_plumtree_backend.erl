@@ -130,10 +130,8 @@ exchange(_Peer) ->
 %% @private
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
-    %% Seed the process at initialization.
-    rand_compat:seed(erlang:phash2([partisan_peer_service_manager:mynode()]),
-                     erlang:monotonic_time(),
-                     erlang:unique_integer()),
+    %% Seed the random number generator.
+    partisan_config:seed(),
 
     schedule_heartbeat(),
 
