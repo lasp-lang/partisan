@@ -23,13 +23,13 @@
 %%%
 %%% The idea behind THIS server is that the user module
 %%% provides (different) functions to handle different
-%%% kind of inputs. 
+%%% kind of inputs.
 %%% If the Parent process terminates the Module:terminate/2
 %%% function is called.
 %%%
 %%% The user module should export:
 %%%
-%%%   init(Args)  
+%%%   init(Args)
 %%%     ==> {ok, State}
 %%%         {ok, State, Timeout}
 %%%         ignore
@@ -41,21 +41,21 @@
 %%%        {reply, Reply, State, Timeout}
 %%%        {noreply, State}
 %%%        {noreply, State, Timeout}
-%%%        {stop, Reason, Reply, State}  
+%%%        {stop, Reason, Reply, State}
 %%%              Reason = normal | shutdown | Term terminate(State) is called
 %%%
 %%%   handle_cast(Msg, State)
 %%%
 %%%    ==> {noreply, State}
 %%%        {noreply, State, Timeout}
-%%%        {stop, Reason, State} 
+%%%        {stop, Reason, State}
 %%%              Reason = normal | shutdown | Term terminate(State) is called
 %%%
 %%%   handle_info(Info, State) Info is e.g. {'EXIT', P, R}, {nodedown, N}, ...
 %%%
 %%%    ==> {noreply, State}
 %%%        {noreply, State, Timeout}
-%%%        {stop, Reason, State} 
+%%%        {stop, Reason, State}
 %%%              Reason = normal | shutdown | Term, terminate(State) is called
 %%%
 %%%   terminate(Reason, State) Let the user module clean up
@@ -110,6 +110,13 @@
 -define(
    STACKTRACE(),
    try throw(ok) catch _ -> erlang:get_stacktrace() end).
+
+
+-ifdef(OTP_RELEASE).
+-define(get_log(Debug), sys:get_log(Debug)).
+-else.
+-define(get_log(Debug), sys:get_debug(log, Debug, [])).
+-endif.
 
 %%%=========================================================================
 %%%  API
@@ -197,7 +204,7 @@ stop(Name, Reason, Timeout) ->
 %% be monitored.
 %% If the client is trapping exits and is linked server termination
 %% is handled here (? Shall we do that here (or rely on timeouts) ?).
-%% ----------------------------------------------------------------- 
+%% -----------------------------------------------------------------
 call(Name, Request) ->
 	lager:info("Making call to ~p~n", [Name]),
 
@@ -229,7 +236,7 @@ cast({global,Name}, Request) ->
 cast({via, Mod, Name}, Request) ->
     catch Mod:send(Name, cast_msg(Request)),
     ok;
-cast({Name,Node}=Dest, Request) when is_atom(Name), is_atom(Node) -> 
+cast({Name,Node}=Dest, Request) when is_atom(Name), is_atom(Node) ->
     do_cast(Dest, Request);
 cast(Dest, Request) when is_atom(Dest) ->
     do_cast(Dest, Request);
@@ -238,10 +245,10 @@ cast(Dest, Request) when is_pid(Dest) ->
 cast({partisan_remote_reference, _, _} = Dest, Request) ->
     do_cast(Dest, Request).
 
-do_cast(Dest, Request) -> 
+do_cast(Dest, Request) ->
     do_send(Dest, cast_msg(Request)),
     ok.
-    
+
 cast_msg(Request) -> {'$gen_cast',Request}.
 
 %% -----------------------------------------------------------------
@@ -252,9 +259,9 @@ reply({To, Tag}, Reply) ->
 	partisan_pluggable_peer_service_manager:forward_message(To, {Tag, Reply}).
     % catch To ! {Tag, Reply}.
 
-%% ----------------------------------------------------------------- 
+%% -----------------------------------------------------------------
 %% Asynchronous broadcast, returns nothing, it's just send 'n' pray
-%%-----------------------------------------------------------------  
+%%-----------------------------------------------------------------
 abcast(Name, Request) when is_atom(Name) ->
     do_abcast([node() | nodes()], Name, cast_msg(Request)).
 
@@ -270,36 +277,36 @@ do_abcast([], _,_) -> abcast.
 %%% Make a call to servers at several nodes.
 %%% Returns: {[Replies],[BadNodes]}
 %%% A Timeout can be given
-%%% 
+%%%
 %%% A middleman process is used in case late answers arrives after
 %%% the timeout. If they would be allowed to glog the callers message
-%%% queue, it would probably become confused. Late answers will 
+%%% queue, it would probably become confused. Late answers will
 %%% now arrive to the terminated middleman and so be discarded.
 %%% -----------------------------------------------------------------
 multi_call(Name, Req)
   when is_atom(Name) ->
     do_multi_call([node() | nodes()], Name, Req, infinity).
 
-multi_call(Nodes, Name, Req) 
+multi_call(Nodes, Name, Req)
   when is_list(Nodes), is_atom(Name) ->
     do_multi_call(Nodes, Name, Req, infinity).
 
 multi_call(Nodes, Name, Req, infinity) ->
     do_multi_call(Nodes, Name, Req, infinity);
-multi_call(Nodes, Name, Req, Timeout) 
+multi_call(Nodes, Name, Req, Timeout)
   when is_list(Nodes), is_atom(Name), is_integer(Timeout), Timeout >= 0 ->
     do_multi_call(Nodes, Name, Req, Timeout).
 
 
 %%-----------------------------------------------------------------
-%% enter_loop(Mod, Options, State, <ServerName>, <TimeOut>) ->_ 
-%%   
-%% Description: Makes an existing process into a partisan_gen_server. 
-%%              The calling process will enter the partisan_gen_server receive 
+%% enter_loop(Mod, Options, State, <ServerName>, <TimeOut>) ->_
+%%
+%% Description: Makes an existing process into a partisan_gen_server.
+%%              The calling process will enter the partisan_gen_server receive
 %%              loop and become a partisan_gen_server process.
-%%              The process *must* have been started using one of the 
-%%              start functions in proc_lib, see proc_lib(3). 
-%%              The user is responsible for any initialization of the 
+%%              The process *must* have been started using one of the
+%%              start functions in proc_lib, see proc_lib(3).
+%%              The user is responsible for any initialization of the
 %%              process, including registering a name for it.
 %%-----------------------------------------------------------------
 enter_loop(Mod, Options, State) ->
@@ -342,10 +349,10 @@ init_it(Starter, Parent, Name0, Mod, Args, Options) ->
 
     case init_it(Mod, Args) of
 	{ok, {ok, State}} ->
-	    proc_lib:init_ack(Starter, {ok, self()}), 	    
+	    proc_lib:init_ack(Starter, {ok, self()}),
 	    loop(Parent, Name, State, Mod, infinity, HibernateAfterTimeout, Debug);
 	{ok, {ok, State, Timeout}} ->
-	    proc_lib:init_ack(Starter, {ok, self()}), 	    
+	    proc_lib:init_ack(Starter, {ok, self()}),
 	    loop(Parent, Name, State, Mod, Timeout, HibernateAfterTimeout, Debug);
 	{ok, {stop, Reason}} ->
 	    %% For consistency, we must make sure that the
@@ -430,12 +437,12 @@ decode_msg(Msg, Parent, Name, State, Mod, Time, HibernateAfterTimeout, Debug, Hi
 %%% Send/receive functions
 %%% ---------------------------------------------------
 do_send(Dest, Msg) ->
-	{Node, Process} = case Dest of 
+	{Node, Process} = case Dest of
 		{RemoteProcess, RemoteNode} ->
 			{RemoteNode, RemoteProcess};
 		_ ->
 			{node(), Dest}
-	end,	
+	end,
 	partisan_pluggable_peer_service_manager:forward_message(Node, undefined, Process, Msg, []).
 
     % case catch erlang:send(Dest, Msg, [noconnect]) of
@@ -479,7 +486,7 @@ do_multi_call(Nodes, Name, Req, Timeout) ->
 	{'DOWN',Mref,_,_,{Receiver,Tag,Result}} ->
 	    Result;
 	{'DOWN',Mref,_,_,Reason} ->
-	    %% The middleman code failed. Or someone did 
+	    %% The middleman code failed. Or someone did
 	    %% exit(_, kill) on the middleman process => Reason==killed
 	    exit(Reason)
     end.
@@ -498,7 +505,7 @@ send_nodes([Node|Tail], Name, Tag, Req, _Monitors)
 send_nodes([_Node|Tail], Name, Tag, Req, Monitors) ->
     %% Skip non-atom Node
     send_nodes(Tail, Name, Tag, Req, Monitors);
-send_nodes([], _Name, _Tag, _Req, Monitors) -> 
+send_nodes([], _Name, _Tag, _Req, Monitors) ->
     Monitors.
 
 %% Against old nodes:
@@ -508,7 +515,7 @@ send_nodes([], _Name, _Tag, _Req, Monitors) ->
 %% Against contemporary nodes:
 %% Wait for reply, server 'DOWN', or timeout from TimerId.
 
-rec_nodes(Tag, Nodes, Name, TimerId) -> 
+rec_nodes(Tag, Nodes, Name, TimerId) ->
     rec_nodes(Tag, Nodes, Name, [], [], 2000, TimerId).
 
 rec_nodes(Tag, [{N,R}|Tail], Name, Badnodes, Replies, Time, TimerId ) ->
@@ -517,9 +524,9 @@ rec_nodes(Tag, [{N,R}|Tail], Name, Badnodes, Replies, Time, TimerId ) ->
 	    rec_nodes(Tag, Tail, Name, [N|Badnodes], Replies, Time, TimerId);
 	{{Tag, N}, Reply} ->  %% Tag is bound !!!
 	    % erlang:demonitor(R, [flush]),
-	    rec_nodes(Tag, Tail, Name, Badnodes, 
+	    rec_nodes(Tag, Tail, Name, Badnodes,
 		      [{N,Reply}|Replies], Time, TimerId);
-	{timeout, TimerId, _} ->	
+	{timeout, TimerId, _} ->
 	    % erlang:demonitor(R, [flush]),
 	    %% Collect all replies that already have arrived
 	    rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies)
@@ -535,7 +542,7 @@ rec_nodes(Tag, [N|Tail], Name, Badnodes, Replies, Time, TimerId) ->
 	    % monitor_node(N, false),
 	    rec_nodes(Tag, Tail, Name, Badnodes,
 		      [{N,Reply}|Replies], 2000, TimerId);
-	{timeout, TimerId, _} ->	
+	{timeout, TimerId, _} ->
 	    receive {nodedown, N} -> ok after 0 -> ok end,
 	    % monitor_node(N, false),
 	    %% Collect all replies that already have arrived
@@ -882,7 +889,7 @@ error_info(_Reason, application_controller, _From, _Msg, _State, _Debug) ->
     %% of it instead
     ok;
 error_info(Reason, Name, From, Msg, State, Debug) ->
-    Reason1 = 
+    Reason1 =
 	case Reason of
 	    {undef,[{M,F,A,L}|MFAs]} ->
 		case code:is_loaded(M) of
@@ -898,7 +905,7 @@ error_info(Reason, Name, From, Msg, State, Debug) ->
 		end;
 	    _ ->
 		error_logger:limit_term(Reason)
-	end,    
+	end,
     {ClientFmt, ClientArgs} = client_stacktrace(From),
     LimitedState = error_logger:limit_term(State),
     error_logger:format("** Generic server ~tp terminating \n"
@@ -934,7 +941,7 @@ client_stacktrace(From) when is_pid(From) ->
 format_status(Opt, StatusData) ->
     [PDict, SysState, Parent, Debug, [Name, State, Mod, _Time, _HibernateAfterTimeout]] = StatusData,
     Header = partisan_gen:format_status_header("Status for generic server", Name),
-    Log = sys:get_debug(log, Debug, []),
+    Log = ?get_log(Debug),
     Specfic = case format_status(Opt, Mod, PDict, State) of
 		  S when is_list(S) -> S;
 		  S -> [S]

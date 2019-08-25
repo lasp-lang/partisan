@@ -1,5 +1,7 @@
 language: erlang
 otp_release:
+  - 22.0
+  - 21.3
   - 20.3
 install:
   - wget https://s3.amazonaws.com/rebar3/rebar3 && chmod u+x rebar3

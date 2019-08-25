@@ -20,7 +20,7 @@
 -module(partisan_gen_fsm).
 
 %%%-----------------------------------------------------------------
-%%%   
+%%%
 %%% This state machine is somewhat more pure than state_lib.  It is
 %%% still based on State dispatching (one function per state), but
 %%% allows a function handle_event to take care of events in all states.
@@ -146,6 +146,12 @@
 
 -import(error_logger, [format/2]).
 
+-ifdef(OTP_RELEASE).
+-define(get_log(Debug), sys:get_log(Debug)).
+-else.
+-define(get_log(Debug), sys:get_debug(log, Debug, [])).
+-endif.
+
 %%% ---------------------------------------------------
 %%% Interface functions.
 %%% ---------------------------------------------------
@@ -233,12 +239,12 @@ send_event({via, Mod, Name}, Event) ->
     catch Mod:send(Name, {'$gen_event', Event}),
     ok;
 send_event(Name, Event) ->
-	{Node, Process} = case Name of 
+	{Node, Process} = case Name of
 		{RemoteProcess, RemoteNode} ->
 			{RemoteNode, RemoteProcess};
 		_ ->
 			{node(), Name}
-	end,	
+	end,
 	lager:info("[cmeik] sending event to node: ~p name: ~p event: ~p", [Node, Process, Event]),
 	partisan_pluggable_peer_service_manager:forward_message(Node, undefined, Process, {'$gen_event', Event}, []),
 	ok.
@@ -272,12 +278,12 @@ send_all_state_event({via, Mod, Name}, Event) ->
     catch Mod:send(Name, {'$gen_all_state_event', Event}),
     ok;
 send_all_state_event(Name, Event) ->
-	{Node, Process} = case Name of 
+	{Node, Process} = case Name of
 		{RemoteProcess, RemoteNode} ->
 			{RemoteNode, RemoteProcess};
 		_ ->
 			{node(), Name}
-	end,	
+	end,
 	lager:info("[cmeik] sending all state event from node: ~p to node ~p name ~p event ~p", [node(), Node, Process, Event]),
 	partisan_pluggable_peer_service_manager:forward_message(Node, undefined, Process, {'$gen_all_state_event', Event}, []),
 	ok.
@@ -313,7 +319,7 @@ sync_send_all_state_event(Name, Event, Timeout) ->
 %% e.g. when straddling a failover, or turn up in a restarted
 %% instance of the process.
 
-%% Returns Ref, sends event {timeout,Ref,Msg} after Time 
+%% Returns Ref, sends event {timeout,Ref,Msg} after Time
 %% to the (then) current state.
 start_timer(Time, Msg) ->
     erlang:start_timer(Time, self(), {'$gen_timer', Msg}).
@@ -328,7 +334,7 @@ cancel_timer(Ref) ->
     case erlang:cancel_timer(Ref) of
 	false ->
 	    receive {timeout, Ref, _} -> 0
-	    after 0 -> false 
+	    after 0 -> false
 	    end;
 	RemainingTime ->
 	    RemainingTime
@@ -375,10 +381,10 @@ init_it(Starter, Parent, Name0, Mod, Args, Options) ->
 	HibernateAfterTimeout = partisan_gen:hibernate_after(Options),
 	case catch Mod:init(Args) of
 	{ok, StateName, StateData} ->
-	    proc_lib:init_ack(Starter, {ok, self()}), 	    
+	    proc_lib:init_ack(Starter, {ok, self()}),
 	    loop(Parent, Name, StateName, StateData, Mod, infinity, HibernateAfterTimeout, Debug);
 	{ok, StateName, StateData, Timeout} ->
-	    proc_lib:init_ack(Starter, {ok, self()}), 	    
+	    proc_lib:init_ack(Starter, {ok, self()}),
 	    loop(Parent, Name, StateName, StateData, Mod, Timeout, HibernateAfterTimeout, Debug);
 	{stop, Reason} ->
 	    partisan_gen:unregister_name(Name0),
@@ -509,7 +515,7 @@ print_event(Dev, return, {Name, StateName}) ->
 handle_msg(Msg, Parent, Name, StateName, StateData, Mod, _Time, HibernateAfterTimeout) -> %No debug here
     From = from(Msg),
     case catch dispatch(Msg, Mod, StateName, StateData) of
-	{next_state, NStateName, NStateData} ->	    
+	{next_state, NStateName, NStateData} ->
 	    loop(Parent, Name, NStateName, NStateData, Mod, infinity, HibernateAfterTimeout, []);
 	{next_state, NStateName, NStateData, Time1} ->
 	    loop(Parent, Name, NStateName, NStateData, Mod, Time1, HibernateAfterTimeout, []);
@@ -631,7 +637,7 @@ terminate(Reason, Name, Msg, Mod, StateName, StateData, Debug) ->
     end.
 
 error_info(Reason, Name, Msg, StateName, StateData, Debug) ->
-    Reason1 = 
+    Reason1 =
 	case Reason of
 	    {undef,[{M,F,A,L}|MFAs]} ->
 		case code:is_loaded(M) of
@@ -688,7 +694,7 @@ format_status(Opt, StatusData) ->
 	StatusData,
     Header = partisan_gen:format_status_header("Status for state machine",
                                       Name),
-    Log = sys:get_debug(log, Debug, []),
+    Log = ?get_log(Debug),
     Specfic = format_status(Opt, Mod, PDict, StateData),
     Specfic = case format_status(Opt, Mod, PDict, StateData) of
 		  S when is_list(S) -> S;
