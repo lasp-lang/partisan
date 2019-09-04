@@ -107,10 +107,13 @@
 %% Internal exports
 -export([init_it/6]).
 
--define(
-   STACKTRACE(),
-   try throw(ok) catch _ -> erlang:get_stacktrace() end).
+-ifdef(OTP_RELEASE).
+-define(WITH_STACKTRACE(T, R, S), T:R:S ->).
+-else.
+-define(WITH_STACKTRACE(T, R, S), T:R -> S = erlang:get_stacktrace(),).
+-endif.
 
+-define(STACKTRACE(), try throw(ok) catch ?WITH_STACKTRACE(_T, _R, S) S end).
 
 -ifdef(OTP_RELEASE).
 -define(get_log(Debug), sys:get_log(Debug)).
@@ -382,7 +385,8 @@ init_it(Mod, Args) ->
 	{ok, Mod:init(Args)}
     catch
 	throw:R -> {ok, R};
-	Class:R -> {'EXIT', Class, R, erlang:get_stacktrace()}
+    ?WITH_STACKTRACE(Class, R, S)
+        {'EXIT', Class, R, S}
     end.
 
 %%%========================================================================
@@ -642,20 +646,23 @@ try_dispatch(Mod, Func, Msg, State) ->
     try
 	{ok, Mod:Func(Msg, State)}
     catch
-	throw:R ->
-	    {ok, R};
-        error:undef = R when Func == handle_info ->
-            case erlang:function_exported(Mod, handle_info, 2) of
-                false ->
-                    error_logger:warning_msg("** Undefined handle_info in ~p~n"
-                                             "** Unhandled message: ~tp~n",
-                                             [Mod, Msg]),
-                    {ok, {noreply, State}};
-                true ->
-                    {'EXIT', error, R, erlang:get_stacktrace()}
-            end;
-	Class:R ->
-	    {'EXIT', Class, R, erlang:get_stacktrace()}
+        throw:R ->
+            {ok, R};
+        ?WITH_STACKTRACE(Class, R, S)
+            case {Class, R} of
+                {error, undef} when Func == handle_info ->
+                    case erlang:function_exported(Mod, handle_info, 2) of
+                        false ->
+                            error_logger:warning_msg("** Undefined handle_info in ~p~n"
+                                                     "** Unhandled message: ~tp~n",
+                                                     [Mod, Msg]),
+                            {ok, {noreply, State}};
+                        true ->
+                            {'EXIT', error, R, S}
+                    end;
+                _ ->
+                    {'EXIT', Class, R, S}
+            end
     end.
 
 try_handle_call(Mod, Msg, From, State) ->
@@ -664,8 +671,8 @@ try_handle_call(Mod, Msg, From, State) ->
     catch
 	throw:R ->
 	    {ok, R};
-	Class:R ->
-	    {'EXIT', Class, R, erlang:get_stacktrace()}
+    ?WITH_STACKTRACE(Class, R, S)
+	    {'EXIT', Class, R, S}
     end.
 
 try_terminate(Mod, Reason, State) ->
@@ -676,8 +683,8 @@ try_terminate(Mod, Reason, State) ->
 	    catch
 		throw:R ->
 		    {ok, R};
-		Class:R ->
-		    {'EXIT', Class, R, erlang:get_stacktrace()}
+        ?WITH_STACKTRACE(Class, R, S)
+		    {'EXIT', Class, R, S}
 	   end;
 	false ->
 	    {ok, ok}
