@@ -8,5 +8,5 @@ RUN cd /opt && \
 
 # Run.
 CMD cd /opt/partisan && \
-    chmod 755 /opt/partisan/_build/default/rel/partisan/bin/env && \
-    /opt/partisan/_build/default/rel/partisan/bin/env
+    chmod 755 /opt/partisan/_build/test/rel/partisan/bin/env && \
+    /opt/partisan/_build/test/rel/partisan/bin/env
