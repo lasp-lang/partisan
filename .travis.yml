@@ -11,7 +11,8 @@ install:
 before_script:
   - epmd -daemon
 script:
-  - SYSTEM_MODEL=prop_partisan_reliable_broadcast IMPLEMENTATION_MODULE=lampson_2pc make test
+  - make verify-lampson-2pc
+  - ./rebar3 ct --suite=partisan_SUITE
 notifications:
   email: christopher.meiklejohn@gmail.com
   slack: lasp-lang:hiPRNnbUa3zdGrrXZfGRAF7D
