@@ -346,7 +346,7 @@ pid(Pid) ->
                     Unique = erlang:unique_integer([monotonic, positive]),
 
                     Name = "partisan_registered_name_" ++ integer_to_list(Unique),
-                    [_, B, C] = string:split(pid_to_list(Pid), ".", all),
+                    [_, B, C] = split(pid_to_list(Pid), "."),
                     RewrittenProcessIdentifier = "<0." ++ B ++ "." ++ C,
 
                     RegisterFun = fun() ->
@@ -370,7 +370,7 @@ pid(Pid) ->
                     _ = rpc:call(Node, erlang, spawn, [RegisterFun]),
                     {partisan_remote_reference, Node, {partisan_registered_name_reference, Name}};
                 false ->
-                    [_, B, C] = string:split(pid_to_list(Pid), ".", all),
+                    [_, B, C] = split(pid_to_list(Pid), "."),
                     RewrittenProcessIdentifier = "<0." ++ B ++ "." ++ C,
                     % lager:info("rewriting remote reference id: ~p", [RewrittenProcessIdentifier]),
                     {partisan_remote_reference, Node, {partisan_process_reference, RewrittenProcessIdentifier}}
@@ -400,7 +400,7 @@ process_forward(ServerRef, Message) ->
             {partisan_remote_reference, OtherNode, {partisan_process_reference, ProcessIdentifier}} ->
                 % lager:info("process reference is: ~p", [ProcessIdentifier]),
 
-                case string:split(ProcessIdentifier, ".", all) of 
+                case split(ProcessIdentifier, ".") of 
                     ["<0",_B,_C] ->
                         Pid = list_to_pid(ProcessIdentifier),
 
@@ -482,3 +482,11 @@ process_forward(ServerRef, Message) ->
         _:Error ->
             lager:info("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
     end.
+
+split(Subject0, Pattern0) ->
+    Subject = list_to_binary(Subject0),
+    Pattern = list_to_binary(Pattern0),
+    Results0 = binary:split(Subject, Pattern, [global]),
+    Results = lists:map(fun(X) -> binary_to_list(X) end, Results0),
+    lager:info("Results of split: ~p", Results),
+    Results.
