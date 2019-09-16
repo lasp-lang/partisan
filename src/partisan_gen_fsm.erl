@@ -486,30 +486,30 @@ system_replace_state(StateFun, [Name, StateName, StateData, Mod, Time, Hibernate
 print_event(Dev, {in, Msg}, {Name, StateName}) ->
     case Msg of
 	{'$gen_event', Event} ->
-	    io:format(Dev, "*DBG* ~tp got event ~tp in state ~tw~n",
+	    io:format(Dev, "*DBG* ~tp got event ~tp in state ~w~n",
 		      [Name, Event, StateName]);
 	{'$gen_all_state_event', Event} ->
 	    io:format(Dev,
-		      "*DBG* ~tp got all_state_event ~tp in state ~tw~n",
+		      "*DBG* ~tp got all_state_event ~tp in state ~w~n",
 		      [Name, Event, StateName]);
 	{timeout, Ref, {'$gen_timer', Message}} ->
 	    io:format(Dev,
-		      "*DBG* ~tp got timer ~tp in state ~tw~n",
+		      "*DBG* ~tp got timer ~tp in state ~w~n",
 		      [Name, {timeout, Ref, Message}, StateName]);
 	{timeout, _Ref, {'$gen_event', Event}} ->
 	    io:format(Dev,
-		      "*DBG* ~tp got timer ~tp in state ~tw~n",
+		      "*DBG* ~tp got timer ~tp in state ~w~n",
 		      [Name, Event, StateName]);
 	_ ->
-	    io:format(Dev, "*DBG* ~tp got ~tp in state ~tw~n",
+	    io:format(Dev, "*DBG* ~tp got ~tp in state ~w~n",
 		      [Name, Msg, StateName])
     end;
 print_event(Dev, {out, Msg, To, StateName}, Name) ->
-    io:format(Dev, "*DBG* ~tp sent ~tp to ~tw~n"
-	           "      and switched to state ~tw~n",
+    io:format(Dev, "*DBG* ~tp sent ~tp to ~w~n"
+	           "      and switched to state ~w~n",
 	      [Name, Msg, To, StateName]);
 print_event(Dev, return, {Name, StateName}) ->
-    io:format(Dev, "*DBG* ~tp switched to state ~tw~n",
+    io:format(Dev, "*DBG* ~tp switched to state ~w~n",
 	      [Name, StateName]).
 
 handle_msg(Msg, Parent, Name, StateName, StateData, Mod, _Time, HibernateAfterTimeout) -> %No debug here

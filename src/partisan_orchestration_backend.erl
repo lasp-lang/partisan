@@ -497,19 +497,19 @@ prefix(File) ->
 %% @private
 schedule_build_graph() ->
     %% Add random jitter.
-    Jitter = rand_compat:uniform(?BUILD_GRAPH_INTERVAL),
+    Jitter = rand:uniform(?BUILD_GRAPH_INTERVAL),
     timer:send_after(?BUILD_GRAPH_INTERVAL + Jitter, ?BUILD_GRAPH_MESSAGE).
 
 %% @private
 schedule_artifact_upload() ->
     %% Add random jitter.
-    Jitter = rand_compat:uniform(?ARTIFACT_INTERVAL),
+    Jitter = rand:uniform(?ARTIFACT_INTERVAL),
     timer:send_after(?ARTIFACT_INTERVAL + Jitter, ?ARTIFACT_MESSAGE).
 
 %% @private
 schedule_membership_refresh() ->
     %% Add random jitter.
-    Jitter = rand_compat:uniform(?REFRESH_INTERVAL),
+    Jitter = rand:uniform(?REFRESH_INTERVAL),
     timer:send_after(?REFRESH_INTERVAL + Jitter, ?REFRESH_MESSAGE).
 
 %% @private

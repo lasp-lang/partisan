@@ -7,7 +7,7 @@
 
 -export([sync/2, fetch_from/2]).
 
--export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, code_change/3]).
 
 -record(block, {
           prev_hash :: binary(),
@@ -177,6 +177,9 @@ handle_cast(Msg, State) ->
 handle_info(Msg, State) ->
     lager:info("unhandled msg ~p~n", [Msg]),
     {noreply, State}.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
 
 %% @private
 terminate(_Reason, _State) ->

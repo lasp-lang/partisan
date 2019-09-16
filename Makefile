@@ -73,10 +73,10 @@ logs:
 ##
 
 rel:
-	${REBAR} release
+	${REBAR} as test release
 
 stage:
-	${REBAR} release -d
+	${REBAR} as test release -d
 
 DIALYZER_APPS = kernel stdlib erts sasl eunit syntax_tools compiler crypto
 

@@ -3,7 +3,7 @@
               {vsn,"git"},
               {registered,[]},
               {applications,[kernel,stdlib,crypto,lager,types,acceptor_pool,
-                             ssl,rand_compat,uuid]},
+                             ssl,uuid]},
               {mod,{partisan_app,[]}},
               {modules,[]},
               {included_applications,[]},

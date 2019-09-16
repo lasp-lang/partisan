@@ -555,7 +555,7 @@ random_other_node(OrdSet) ->
     case Size of
         0 -> undefined;
         _ ->
-            lists:nth(rand_compat:uniform(Size),
+            lists:nth(rand:uniform(Size),
                      ordsets:to_list(OrdSet))
     end.
 
