@@ -202,7 +202,7 @@ groups() ->
        leave_test,
        self_leave_test,
        on_down_test,
-       rpc_test,
+    %    rpc_test,
        client_server_manager_test,
        pid_test,
        rejoin_test,
@@ -275,7 +275,8 @@ groups() ->
      
      {with_channels, [],
       [basic_test,
-       rpc_test]},
+    %    rpc_test
+     ]},
 
      {with_no_channels, [],
       [basic_test]},
