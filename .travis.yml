@@ -12,6 +12,7 @@ before_script:
   - epmd -daemon
 script:
   - make verify-lampson-2pc
+  - make verify-bernstein-ctp
   - ./rebar3 ct --suite=partisan_SUITE
 notifications:
   email: christopher.meiklejohn@gmail.com

@@ -99,15 +99,22 @@ compose: containerize
 	docker-compose down; docker-compose rm; docker-compose up
 
 ##
+## CI targets
+##
+
+verify-lampson-2pc: kill bin-perms compile
+	make lampson-2pc | grep "Passed: 7, Failed: 1"
+
+verify-bernstein-ctp: kill bin-perms compile
+	make bernstein-ctp | grep "Passed: 11, Failed: 1"
+
+##
 ## Testing targets
 ##
 
 make bin-perms:
 	chmod 755 bin/*.sh
 	chmod 755 bin/*.escript
-
-verify-lampson-2pc: kill bin-perms compile
-	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false IMPLEMENTATION_MODULE=lampson_2pc SUBLIST=0 bin/check-model.sh | grep "Passed: 7, Failed: 1"
 
 demers-anti-entropy: kill bin-perms compile
 	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false IMPLEMENTATION_MODULE=demers_anti_entropy SUBLIST=0 bin/check-model.sh
