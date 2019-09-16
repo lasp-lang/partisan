@@ -274,7 +274,7 @@ groups() ->
       [performance_test]},
      
      {with_channels, [],
-      [basic_test,
+      [basic_test
     %    rpc_test
      ]},
 
