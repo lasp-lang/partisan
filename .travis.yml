@@ -6,8 +6,8 @@ otp_release:
   - 19.3
 install:
   - wget https://s3.amazonaws.com/rebar3/rebar3 && chmod u+x rebar3
-  - make
   - ./rebar3 update
+  - make
 before_script:
   - epmd -daemon
 script:
