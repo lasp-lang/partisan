@@ -487,6 +487,4 @@ split(Subject0, Pattern0) ->
     Subject = list_to_binary(Subject0),
     Pattern = list_to_binary(Pattern0),
     Results0 = binary:split(Subject, Pattern, [global]),
-    Results = lists:map(fun(X) -> binary_to_list(X) end, Results0),
-    lager:info("Results of split: ~p", Results),
-    Results.
+    lists:map(fun(X) -> binary_to_list(X) end, Results0).
