@@ -286,7 +286,6 @@ handle_call(print, _From, #state{trace=Trace}=State) ->
     end, Trace),
 
     write_trace(Trace),
-    write_json_trace(Trace),
 
     {reply, ok, State};
 handle_call(Msg, _From, State) ->
@@ -540,56 +539,6 @@ write_trace(Trace) ->
 
     ok.
 
-%% @private -- in the JSON output only put the messages that were really sent.
-write_json_trace(Trace) ->
-    %% Write trace.
-    FilteredJsonTrace = lists:foldl(fun({Type, Message}, Acc) ->
-        case Type of 
-            post_interposition_fun ->
-                %% Destructure message.
-                {TracingNode, OriginNode, InterpositionType, MessagePayload, RewrittenMessagePayload} = Message,
-
-                case RewrittenMessagePayload of 
-                    undefined ->
-                        Acc;
-                    _ ->
-                        %% Ignore all membership strategy messages for now.
-                        case is_membership_strategy_message(InterpositionType, MessagePayload) of 
-                            true ->
-                                Acc;
-                            false ->
-                                NewObject = [
-                                    {type, post_interposition_fun},
-                                    {tracing_node, TracingNode},
-                                    {origin_node, OriginNode},
-                                    {interposition_type, InterpositionType},
-                                    {message_payload, format_message_payload_for_json(MessagePayload)},
-                                    {rewritten_message_payload, format_message_payload_for_json(RewrittenMessagePayload)}
-                                ],
-
-                                Acc ++ [NewObject]
-                        end
-                end;
-            _ ->
-                Acc
-        end
-    end, [], Trace),
-
-    %% Print the trace.
-    % [io:format("~p~n", [Item]) || Item <- FilteredJsonTrace],
-
-    %% Encode as JSON.
-    EncodedJsonTrace = jsx:encode(FilteredJsonTrace),
-
-    %% Write to file.
-    JsonTraceFile = trace_file() ++ ".json",
-    replay_debug("writing JSON trace.", []),
-    {ok, Io} = file:open(JsonTraceFile, [write, {encoding, utf8}]),
-    io:format(Io, "~s", [jsx:prettify(EncodedJsonTrace)]),
-    file:close(Io),
-
-    ok.
-
 %% Should we do replay debugging?
 replay_debug(Line, Args) ->
     case partisan_config:get(replay_debug) of 
@@ -605,10 +554,6 @@ debug(Line, Args) ->
 %% @private
 membership_strategy_tracing() ->
     partisan_config:get(membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING).
-
-%% @private
-format_message_payload_for_json(MessagePayload) ->
-    list_to_binary(lists:flatten(io_lib:format("~w", [MessagePayload]))).
 
 %% @private
 preload_omissions(Nodes) ->
