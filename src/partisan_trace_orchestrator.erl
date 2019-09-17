@@ -486,7 +486,7 @@ initialize_state() ->
             replay_debug("loading previous trace for replay.", []),
 
             ReplayTraceFile = replay_trace_file(),
-            {ok, [Lines]} = file:consult(ReplayTraceFile),
+            {ok, Lines} = partisan_trace_file:read(ReplayTraceFile),
 
             lists:foreach(fun(Line) -> replay_debug("~p", [Line]) end, Lines),
 

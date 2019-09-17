@@ -1283,9 +1283,7 @@ execute_schedule(StartTime, CurrentIteration, Nodes, Counterexample, PreloadOmis
 
                     %% Write out replay trace.
                     debug("Writing out new replay trace file!~n", []),
-                    {ok, TraceIo} = file:open(ReplayTraceFile, [write, {encoding, utf8}]),
-                    [io:format(TraceIo, "~p.~n", [TraceLine]) || TraceLine <- [FinalTraceLines]],
-                    ok = file:close(TraceIo),
+                    ok = partisan_trace_file:write(ReplayTraceFile, FinalTraceLines),
 
                     ClassificationsExplored = ClassificationsExplored0 ++ [Classification],
                     % debug("=> Classification for this test: ~p~n", [Classification]),
