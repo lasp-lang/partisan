@@ -108,6 +108,9 @@ verify-lampson-2pc: kill bin-perms compile
 verify-bernstein-ctp: kill bin-perms compile
 	make bernstein-ctp | grep "Passed: 11, Failed: 1"
 
+verify-skeen-3pc: kill bin-perms compile
+	make skeen-3pc | grep "Passed: 25, Failed: 1"
+
 ##
 ## Testing targets
 ##

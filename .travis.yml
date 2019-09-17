@@ -13,6 +13,7 @@ before_script:
 script:
   - make verify-lampson-2pc
   - make verify-bernstein-ctp
+  - make verify-skeen-3pc
   - ./rebar3 ct --suite=partisan_SUITE
 notifications:
   email: christopher.meiklejohn@gmail.com
