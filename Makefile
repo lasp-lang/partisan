@@ -99,6 +99,19 @@ compose: containerize
 	docker-compose down; docker-compose rm; docker-compose up
 
 ##
+## CI targets
+##
+
+verify-lampson-2pc: kill bin-perms compile
+	make lampson-2pc | grep "Passed: 7, Failed: 1"
+
+verify-bernstein-ctp: kill bin-perms compile
+	make bernstein-ctp | grep "Passed: 11, Failed: 1"
+
+verify-skeen-3pc: kill bin-perms compile
+	make skeen-3pc | grep "Passed: 25, Failed: 1"
+
+##
 ## Testing targets
 ##
 
@@ -107,46 +120,46 @@ make bin-perms:
 	chmod 755 bin/*.escript
 
 demers-anti-entropy: kill bin-perms compile
-	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=demers_anti_entropy SUBLIST=0 bin/check-model.sh
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false IMPLEMENTATION_MODULE=demers_anti_entropy SUBLIST=0 bin/check-model.sh
 
 demers-rumor-mongering: kill bin-perms compile
-	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=demers_rumor_mongering SUBLIST=0 bin/check-model.sh
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false IMPLEMENTATION_MODULE=demers_rumor_mongering SUBLIST=0 bin/check-model.sh
 
 demers-direct-mail-acked: kill bin-perms compile
-	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=demers_direct_mail_acked SUBLIST=0 bin/check-model.sh
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false IMPLEMENTATION_MODULE=demers_direct_mail_acked SUBLIST=0 bin/check-model.sh
 
 demers-direct-mail: kill bin-perms compile
-	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=demers_direct_mail SUBLIST=0 bin/check-model.sh
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false IMPLEMENTATION_MODULE=demers_direct_mail SUBLIST=0 bin/check-model.sh
 
 lampson-2pc: kill bin-perms compile
-	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=lampson_2pc SUBLIST=0 bin/check-model.sh
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false IMPLEMENTATION_MODULE=lampson_2pc SUBLIST=0 bin/check-model.sh
 
 bernstein-ctp: kill bin-perms compile
-	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=bernstein_ctp SUBLIST=0 bin/check-model.sh
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false IMPLEMENTATION_MODULE=bernstein_ctp SUBLIST=0 bin/check-model.sh
 
 skeen-3pc: kill bin-perms compile
-	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=skeen_3pc SUBLIST=0 bin/check-model.sh
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast RECURSIVE=true PRELOAD_SCHEDULES=false IMPLEMENTATION_MODULE=skeen_3pc SUBLIST=0 bin/check-model.sh
 
 lampson-2pc-noise: kill bin-perms compile
-	SYSTEM_MODEL=prop_partisan_reliable_broadcast EXIT_ON_COUNTEREXAMPLE=true NOISE=true RECURSIVE=false PRELOAD_SCHEDULES=false MODULE=lampson_2pc SUBLIST=0 bin/check-model.sh
+	SYSTEM_MODEL=prop_partisan_reliable_broadcast EXIT_ON_COUNTEREXAMPLE=true NOISE=true RECURSIVE=false PRELOAD_SCHEDULES=false IMPLEMENTATION_MODULE=lampson_2pc SUBLIST=0 bin/check-model.sh
 
 paxoid: kill bin-perms compile
-	SYSTEM_MODEL=prop_partisan_paxoid RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=paxoid SUBLIST=0 bin/check-paxoid.sh
+	SYSTEM_MODEL=prop_partisan_paxoid RECURSIVE=true PRELOAD_SCHEDULES=false IMPLEMENTATION_MODULE=paxoid SUBLIST=0 bin/check-paxoid.sh
 
 lashup: kill bin-perms compile
-	SYSTEM_MODEL=prop_partisan_lashup RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=lashup SUBLIST=0 bin/check-lashup.sh
+	SYSTEM_MODEL=prop_partisan_lashup RECURSIVE=true PRELOAD_SCHEDULES=false IMPLEMENTATION_MODULE=lashup SUBLIST=0 bin/check-lashup.sh
 
 zraft: kill bin-perms compile
-	SYSTEM_MODEL=prop_partisan_zraft RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=zraft SUBLIST=0 bin/check-zraft.sh
+	SYSTEM_MODEL=prop_partisan_zraft RECURSIVE=true PRELOAD_SCHEDULES=false IMPLEMENTATION_MODULE=zraft SUBLIST=0 bin/check-zraft.sh
 
 hbbft: kill bin-perms compile
-	SYSTEM_MODEL=prop_partisan_hbbft RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=hbbft SUBLIST=0 bin/check-hbbft.sh
+	SYSTEM_MODEL=prop_partisan_hbbft RECURSIVE=true PRELOAD_SCHEDULES=false IMPLEMENTATION_MODULE=hbbft SUBLIST=0 bin/check-hbbft.sh
 
 alsberg-day: kill bin-perms compile
-	SYSTEM_MODEL=prop_partisan_primary_backup RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=alsberg_day SUBLIST=0 bin/filibuster.sh
+	SYSTEM_MODEL=prop_partisan_primary_backup RECURSIVE=true PRELOAD_SCHEDULES=false IMPLEMENTATION_MODULE=alsberg_day SUBLIST=0 bin/filibuster.sh
 
 alsberg-day-acked: kill bin-perms compile
-	SYSTEM_MODEL=prop_partisan_primary_backup RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=alsberg_day_acked SUBLIST=0 bin/filibuster.sh
+	SYSTEM_MODEL=prop_partisan_primary_backup RECURSIVE=true PRELOAD_SCHEDULES=false IMPLEMENTATION_MODULE=alsberg_day_acked SUBLIST=0 bin/filibuster.sh
 
 alsberg-day-acked-membership: kill bin-perms compile
-	SYSTEM_MODEL=prop_partisan_primary_backup RECURSIVE=true PRELOAD_SCHEDULES=false MODULE=alsberg_day_acked_membership SUBLIST=0 bin/filibuster.sh
+	SYSTEM_MODEL=prop_partisan_primary_backup RECURSIVE=true PRELOAD_SCHEDULES=false IMPLEMENTATION_MODULE=alsberg_day_acked_membership SUBLIST=0 bin/filibuster.sh

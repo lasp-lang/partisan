@@ -4,6 +4,16 @@ if [ -z $NUM_TESTS ]; then
     NUM_TESTS=10
 fi
 
+if [ -z ${SYSTEM_MODEL} ]; then 
+    echo "SYSTEM_MODEL is unset"
+    exit 1;
+fi
+
+if [ -z ${IMPLEMENTATION_MODULE} ]; then 
+    echo "IMPLEMENTATION_MODULE is unset"
+    exit 1;
+fi
+
 echo "Setting num tests to ${NUM_TESTS}..."
 
 TRACE_FILE=/tmp/partisan-latest.trace
@@ -18,7 +28,7 @@ rm -rf ${PRELOAD_OMISSION_FILE}
 
 # Generate counterexample.
 echo "Generating counterexample..."
-make kill; rm -rf priv/lager; IMPLEMENTATION_MODULE=${MODULE} TRACE_FILE=${TRACE_FILE} ./rebar3 proper -m prop_partisan -p prop_sequential --noshrink -n ${NUM_TESTS}
+make kill; rm -rf priv/lager; IMPLEMENTATION_MODULE=${IMPLEMENTATION_MODULE} TRACE_FILE=${TRACE_FILE} ./rebar3 proper -m prop_partisan -p prop_sequential --noshrink -n ${NUM_TESTS}
 
 RETVAL=$?
 

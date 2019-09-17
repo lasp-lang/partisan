@@ -486,7 +486,7 @@ initialize_state() ->
             replay_debug("loading previous trace for replay.", []),
 
             ReplayTraceFile = replay_trace_file(),
-            {ok, [Lines]} = file:consult(ReplayTraceFile),
+            {ok, Lines} = partisan_trace_file:read(ReplayTraceFile),
 
             lists:foreach(fun(Line) -> replay_debug("~p", [Line]) end, Lines),
 
@@ -531,11 +531,9 @@ write_trace(Trace) ->
         end
     end, Trace),
 
+    %% Write the trace file out.
     TraceFile = trace_file(),
-    replay_debug("writing trace.", []),
-    {ok, Io} = file:open(TraceFile, [write, {encoding, utf8}]),
-    io:format(Io, "~p.~n", [FilteredTrace]),
-    file:close(Io),
+    ok = partisan_trace_file:write(TraceFile, FilteredTrace),
 
     ok.
 
