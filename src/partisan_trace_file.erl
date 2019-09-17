@@ -31,15 +31,20 @@ read(TraceFile) ->
     [{num_keys, NumKeys}] = dets:lookup(TraceRef, num_keys),
 
     %% Look them up.
-    TraceFile = lists:foldl(fun(N, Acc) ->
+    TraceLines = lists:foldl(fun(N, Acc) ->
         [{N, Entry}] = dets:lookup(TraceRef, N),
         Acc ++ [Entry]
     end, [], lists:seq(1, NumKeys)),
 
+    %% Print output.
+    % lists:foreach(fun(Line) ->
+    %     lager:info("~p~n", [Line])
+    % end, TraceLines),
+
     %% Close table.
     dets:close(TraceRef),
 
-    {ok, TraceFile}.
+    {ok, TraceLines}.
 
 write(TraceFile, TraceLines) ->
     %% Number trace.

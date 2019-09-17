@@ -215,8 +215,8 @@ annotations_test(_Config) ->
                 debug("Time: ~p ms. ~n", [CTime / 1000]),
 
                 %% Open the trace file.
-                {ok, TraceLines} = file:consult(TraceFile),
-                MessageTypesFromTraceLines = message_types(hd(TraceLines)),
+                {ok, TraceLines} = partisan_trace_file:read(TraceFile),
+                MessageTypesFromTraceLines = message_types(TraceLines),
                 debug("MessageTypesFromTraceLines: ~p", [MessageTypesFromTraceLines]),
 
                 %% Verify annotations.
@@ -486,7 +486,7 @@ init(Nodes, _Counterexample, TraceFile, ReplayTraceFile, CounterexampleConsultFi
     ?SCHEDULES = ets:new(?SCHEDULES, [named_table, ordered_set]),
 
     %% Open the trace file.
-    {ok, TraceLines} = file:consult(TraceFile),
+    {ok, TraceLines} = partisan_trace_file:read(TraceFile),
 
     {ok, Base} = file:get_cwd(),
     BasePath = Base ++ "/../../../../",
@@ -579,7 +579,7 @@ init(Nodes, _Counterexample, TraceFile, ReplayTraceFile, CounterexampleConsultFi
             _ ->
                 true
         end
-    end, hd(TraceLines)),
+    end, TraceLines),
 
     %% Perform recursive analysis of the traces.
     PreviousIteration = 1,
@@ -1316,14 +1316,14 @@ execute_schedule(StartTime, CurrentIteration, Nodes, Counterexample, PreloadOmis
                     % debug("=> Classification now: ~p~n", [ClassificationsExplored]),
 
                     %% New trace?
-                    {ok, NewTraceLines} = file:consult(TraceFile),
-                    debug("=> Executed test and test contained ~p lines compared to original trace with ~p lines.~n", [length(hd(NewTraceLines)), length(TraceLines)]),
+                    {ok, NewTraceLines} = partisan_trace_file:read(TraceFile),
+                    debug("=> Executed test and test contained ~p lines compared to original trace with ~p lines.~n", [length(NewTraceLines), length(TraceLines)]),
 
                     MessageTypesFromTraceLines = message_types(TraceLines),
                     % debug("=> MessageTypesFromTraceLines: ~p~n", [MessageTypesFromTraceLines]),
-                    MessageTypesFromNewTraceLines = message_types(hd(NewTraceLines)),
+                    MessageTypesFromNewTraceLines = message_types(NewTraceLines),
                     % debug("=> MessageTypesFromNewTraceLines: ~p~n", [MessageTypesFromNewTraceLines]),
-                    DifferenceTraceLines = hd(NewTraceLines) -- TraceLines,
+                    DifferenceTraceLines = NewTraceLines -- TraceLines,
                     % debug("=> DifferenceTraceLines: ~p~n", [DifferenceTraceLines]),
 
                     DifferenceTypes = lists:usort(MessageTypesFromNewTraceLines) -- lists:usort(MessageTypesFromTraceLines),
@@ -1338,7 +1338,7 @@ execute_schedule(StartTime, CurrentIteration, Nodes, Counterexample, PreloadOmis
                                     debug("=> * Similar trace already exists, ignoring!~n", []),
                                     NewTraces0;
                                 false ->
-                                    NewTraces0 ++ [{hd(NewTraceLines), Omissions, DifferenceTypes, DifferenceTraceLines}]
+                                    NewTraces0 ++ [{NewTraceLines, Omissions, DifferenceTypes, DifferenceTraceLines}]
                             end;
                         false ->
                             NewTraces0
