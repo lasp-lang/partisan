@@ -562,7 +562,7 @@ preload_omissions(Nodes) ->
             replay_debug("no preload omissions file...", []),
             ok;
         _ ->
-            {ok, [Omissions]} = file:consult(PreloadOmissionFile),
+            {ok, Omissions} = partisan_trace_file:read(PreloadOmissionFile),
 
             %% Preload each omission at the correct node.
             lists:foldl(fun({T, Message}, OmissionNodes0) ->

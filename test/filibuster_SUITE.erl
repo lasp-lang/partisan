@@ -1277,9 +1277,7 @@ execute_schedule(StartTime, CurrentIteration, Nodes, Counterexample, PreloadOmis
                 false ->
                     %% Write out a new omission file from the previously used trace.
                     debug("Writing out new preload omissions file!~n", []),
-                    {ok, PreloadOmissionIo} = file:open(PreloadOmissionFile, [write, {encoding, utf8}]),
-                    [io:format(PreloadOmissionIo, "~p.~n", [O]) || O <- [Omissions]],
-                    ok = file:close(PreloadOmissionIo),
+                    ok = partisan_trace_file:write(PreloadOmissionFile, Omissions),
 
                     %% Write out replay trace.
                     debug("Writing out new replay trace file!~n", []),
