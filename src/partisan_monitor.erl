@@ -3,7 +3,7 @@
 -behaviour(partisan_gen_server).
 
 % API
--export([start_link/0, monitor/1, demonitor/1]).
+-export([start_link/0, monitor/1, demonitor/1, demonitor/2]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -19,12 +19,22 @@
 start_link() ->
     partisan_gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
+monitor(Pid) when is_pid(Pid) ->
+    erlang:monitor(pid);
 monitor({partisan_remote_reference, Node,
          {partisan_process_reference, PidAsList}}) ->
     partisan_gen_server:call({?MODULE, Node}, {monitor, PidAsList}).
 
+demonitor(Ref) when is_reference(Ref) ->
+    erlang:demonitor(Ref);
 demonitor({partisan_remote_reference, Node,
            {partisan_encoded_reference, _}} = PartisanRef) ->
+    partisan_gen_server:call({?MODULE, Node}, {demonitor, PartisanRef}).
+
+demonitor(Ref, Opts) when is_reference(Ref) ->
+    erlang:demonitor(Ref, Opts);
+demonitor({partisan_remote_reference, Node,
+           {partisan_encoded_reference, _}} = PartisanRef, _Opts) ->
     partisan_gen_server:call({?MODULE, Node}, {demonitor, PartisanRef}).
 
 %%%===================================================================
@@ -44,7 +54,7 @@ handle_call({monitor, PidAsList}, {PartisanRemote, _PartisanRemoteRef}, State) -
     {reply, PartisanRef, StateFinal};
 handle_call({demonitor, PartisanRef}, _From, State) ->
     Ref = maps:get(PartisanRef, State),
-    erlang:demonitor(Ref),
+    erlang:demonitor(Ref, [flush]),
     State1 = maps:remove(PartisanRef, State),
     StateFinal = maps:remove(Ref, State1),
     {reply, true, StateFinal};
