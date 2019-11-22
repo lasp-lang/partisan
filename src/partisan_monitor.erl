@@ -1,3 +1,4 @@
+%% @doc This module is responsible for monitoring processes on remote nodes.
 -module(partisan_monitor).
 
 -behaviour(partisan_gen_server).
@@ -19,6 +20,10 @@
 start_link() ->
     partisan_gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
+%% @doc when you attempt to monitor a partisan_remote_reference, it is not
+%% guaranteed that you will receive the DOWN message. A few reasons for not
+%% receiving the message are message loss, tree reconfiguration and the node
+%% is no longer reachable.
 monitor(Pid) when is_pid(Pid) ->
     erlang:monitor(pid);
 monitor({partisan_remote_reference, Node,
