@@ -48,7 +48,8 @@ init([]) ->
                  ?CHILD(Manager, worker),
                  ?CHILD(partisan_peer_service_events, worker),
                  ?CHILD(partisan_plumtree_backend, worker),
-                 ?CHILD(partisan_plumtree_broadcast, worker)
+                 ?CHILD(partisan_plumtree_broadcast, worker),
+                 ?CHILD(partisan_monitor, worker)
                  ]),
 
     %% Run a single backend for each label.
