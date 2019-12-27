@@ -80,6 +80,7 @@
 -type ttl() :: non_neg_integer().
 -type channel() :: atom().
 
+%% TODO: add type annotations
 -record(orchestration_strategy_state, 
                {orchestration_strategy,
                 is_connected,
