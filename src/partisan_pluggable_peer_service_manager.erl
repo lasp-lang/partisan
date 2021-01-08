@@ -476,7 +476,14 @@ handle_call({update_members, Nodes},
 
     %% Issue leaves.
     State1 = lists:foldl(fun(N, S) ->
-                                 internal_leave(N, S)
+                             case N of
+                                 Map when is_map(Map) ->
+                                     internal_leave(Map, S);
+                                 N when is_atom(N) ->
+                                     %% find map based on name
+                                     [Map] = lists:filter(fun(M) -> maps:get(name, M) == N end, Membership),
+                                     internal_leave(Map, S)
+                             end
                          end, State, LeavingNodes),
 
     %% Compute joining list.
