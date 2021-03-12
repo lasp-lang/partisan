@@ -215,7 +215,7 @@ broadcast_members(Timeout) ->
 %% @doc return a list of exchanges, started by broadcast on thisnode, that are running
 -spec exchanges() -> exchanges().
 exchanges() ->
-    exchanges(myself()).
+    exchanges(mynode()).
 
 %% @doc returns a list of exchanges, started by broadcast on `Node', that are running
 %% -spec exchanges(node()) -> exchanges().
@@ -565,18 +565,18 @@ random_peer(Root, State=#state{all_members=All}) ->
         %% Normal; randomly select a peer from the known membership at
         %% this node.
         normal ->
-            ordsets:del_element(myself(), All);
+            ordsets:del_element(mynode(), All);
         %% Optimized; attempt to find a peer that's not in the broadcast
         %% tree, to increase probability of selecting a lagging node.
         optimized ->
             Eagers = all_eager_peers(Root, State),
             Lazys  = all_lazy_peers(Root, State),
             Union  = ordsets:union([Eagers, Lazys]),
-            ordsets:del_element(myself(), ordsets:subtract(All, Union))
+            ordsets:del_element(mynode(), ordsets:subtract(All, Union))
     end,
     Selected = case ordsets:size(Other) of
         0 ->
-            random_other_node(ordsets:del_element(myself(), All));
+            random_other_node(ordsets:del_element(mynode(), All));
         _ ->
             random_other_node(Other)
     end,
@@ -684,8 +684,8 @@ schedule_tick(Message, Timer, Default) ->
 
 reset_peers(AllMembers, EagerPeers, LazyPeers, State) ->
     State#state{
-      common_eagers = ordsets:del_element(myself(), ordsets:from_list(EagerPeers)),
-      common_lazys  = ordsets:del_element(myself(), ordsets:from_list(LazyPeers)),
+      common_eagers = ordsets:del_element(mynode(), ordsets:from_list(EagerPeers)),
+      common_lazys  = ordsets:del_element(mynode(), ordsets:from_list(LazyPeers)),
       eager_sets    = orddict:new(),
       lazy_sets     = orddict:new(),
       all_members   = ordsets:from_list(AllMembers)
@@ -694,6 +694,10 @@ reset_peers(AllMembers, EagerPeers, LazyPeers, State) ->
 %% @private
 myself() ->
     partisan_peer_service_manager:myself().
+
+%% @private
+mynode() ->
+    partisan_peer_service_manager:mynode().
 
 %% @private
 instrument_transmission(Message, Mod) ->
