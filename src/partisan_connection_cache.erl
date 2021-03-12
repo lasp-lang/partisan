@@ -43,7 +43,7 @@ dispatch({forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Messa
     }),
 
     %% Find a connection for the remote node, if we have one.
-    case ets:lookup(?CACHE, Name) of
+    case ets:lookup(?CACHE, nodename(Name)) of
         [] ->
             %% Trap back to gen_server.
             ?LOG_INFO(#{
@@ -94,7 +94,7 @@ dispatch({forward_message, Name, ServerRef, Message, _Options}) ->
     }),
 
     %% Find a connection for the remote node, if we have one.
-    case ets:lookup(?CACHE, Name) of
+    case ets:lookup(?CACHE, nodename(Name)) of
         [] ->
             %% Trap back to gen_server.
             ?LOG_INFO(#{
@@ -135,3 +135,11 @@ dispatch({forward_message, Name, ServerRef, Message, _Options}) ->
 
             gen_server:cast(Pid, {send_message, {forward_message, ServerRef, Message}})
     end.
+
+
+%% @private
+nodename(Name) when is_atom(Name) ->
+    Name;
+
+nodename(#{name := Name}) ->
+    Name.
