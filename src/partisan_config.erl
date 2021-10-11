@@ -194,17 +194,17 @@ env_or_default(Key, Default) ->
     end.
 
 get(Key) ->
-    partisan_mochiglobal:get(Key).
+    persistent_term:get(Key).
 
 get(Key, Default) ->
-    partisan_mochiglobal:get(Key, Default).
+    persistent_term:get(Key, Default).
 
 set(peer_ip, Value) when is_list(Value) ->
     {ok, ParsedIP} = inet_parse:address(Value),
     set(peer_ip, ParsedIP);
 set(Key, Value) ->
     application:set_env(?APP, Key, Value),
-    partisan_mochiglobal:put(Key, Value).
+    persistent_term:put(Key, Value).
 
 listen_addrs() ->
     partisan_config:get(listen_addrs).
