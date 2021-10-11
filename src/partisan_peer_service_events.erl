@@ -71,14 +71,6 @@ update(LocalState) ->
 %% ===================================================================
 
 init([Fn]) ->
-    Manager = partisan_peer_service:manager(),
-    {ok, LocalState} = Manager:get_local_state(),
-    try
-        Fn(LocalState)
-    catch
-        _:Error ->
-            lager:error("Error with callback: ~p", [Error])
-    end,
     {ok, #state{callback=Fn}}.
 
 handle_event({update, LocalState}, State) ->
@@ -92,8 +84,8 @@ handle_call(Request, State) ->
     lager:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Request]),
     {ok, ok, State}.
 
-handle_info(Info, State) ->
-    lager:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Info]),
+handle_info(_Info, State) ->
+    %% lager:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Info]),
     {ok, State}.
 
 terminate(_Reason, _State) ->

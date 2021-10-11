@@ -1,0 +1,8 @@
+[{{receive_message,commit_ack},[]},
+ {{receive_message,abort_ack},[]},
+ {{receive_message,decision},[{forward_message,decision}]},
+ {{receive_message,prepared},[{forward_message,commit},{forward_message,ok}]},
+ {{receive_message,commit},[{forward_message,commit_ack}]},
+ {{receive_message,abort},[{forward_message,abort_ack}]},
+ {{receive_message,decision_request},[{forward_message,decision}]},
+ {{receive_message,prepare},[{forward_message,prepared}]}].

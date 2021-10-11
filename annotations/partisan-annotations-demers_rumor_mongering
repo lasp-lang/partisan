@@ -1,0 +1,6 @@
+[
+    {causality, [
+        {{forward_message, broadcast}, [true]}
+    ]},
+    {background, []}
+].

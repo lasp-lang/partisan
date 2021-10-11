@@ -1,17 +1,21 @@
 language: erlang
 otp_release:
-  - 21.2.5
+  - 23.0
+  - 22.0
+  - 21.3
   - 20.3
+  - 19.3
 install:
   - wget https://s3.amazonaws.com/rebar3/rebar3 && chmod u+x rebar3
-  - REBAR=./rebar3 make
   - ./rebar3 update
+  - make
 before_script:
   - epmd -daemon
 script:
-  - REBAR=./rebar3 make test
-  - REBAR=./rebar3 make xref
-  - REBAR=./rebar3 make dialyzer
+  - make verify-lampson-2pc
+  - make verify-bernstein-ctp
+  - make verify-skeen-3pc
+  - ./rebar3 ct --suite=partisan_SUITE
 notifications:
   email: christopher.meiklejohn@gmail.com
   slack: lasp-lang:hiPRNnbUa3zdGrrXZfGRAF7D

@@ -17,8 +17,7 @@ Partisan features:
 
 Partisan has many available peer service managers:
 
-* Full membership with TCP-based failure detection: `partisan_default_peer_service_manager.`
+* Full membership with TCP-based failure detection: `partisan_pluggable_peer_service_manager.`
 * Client/server topology: `partisan_client_server_peer_service_manager.`
 * HyParView, hybrid partial view membership protocol, with TCP-based failure detection: `partisan_hyparview_peer_service_manager.`
 * Static topology: `partisan_static_peer_service_manager`.
-

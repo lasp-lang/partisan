@@ -180,7 +180,6 @@ broadcast(Broadcast, Mod) ->
 %% @doc Notifies broadcast server of membership update
 update(LocalState0) ->
     LocalState = partisan_peer_service:decode(LocalState0),
-    % lager:info("Update triggered with: ~p", [LocalState]),
     gen_server:cast(?SERVER, {update, LocalState}).
 
 %% @doc Returns the broadcast servers view of full cluster membership.
@@ -559,7 +558,7 @@ random_other_node(OrdSet) ->
     case Size of
         0 -> undefined;
         _ ->
-            lists:nth(rand_compat:uniform(Size),
+            lists:nth(rand:uniform(Size),
                      ordsets:to_list(OrdSet))
     end.
 

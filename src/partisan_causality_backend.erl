@@ -26,6 +26,7 @@
 %% API
 -export([start_link/1,
          emit/4,
+         reemit/2,
          receive_message/2,
          set_delivery_fun/2,
          is_causal_message/1]).
@@ -48,6 +49,10 @@
 start_link(Label) ->
     Name = generate_name(Label),
     gen_server:start_link({local, Name}, ?MODULE, [Label], []).
+
+reemit(Label, {_CausalLabel, LocalClock}) ->
+    Name = generate_name(Label),
+    gen_server:call(Name, {reemit, LocalClock}, infinity).
 
 emit(Label, Node, ServerRef, Message) ->
     Name = generate_name(Label),
@@ -98,9 +103,22 @@ init([Label]) ->
                 storage=Storage}}.
 
 %% Generate a message identifier and a payload to be transmitted on the wire.
+handle_call({reemit, LocalClock}, 
+            _From, 
+            #state{storage=Storage}=State) ->
+    %% Lookup previously emitted message and return it's clock and message.
+    [{LocalClock, CausalMessage}] = ets:lookup(Storage, LocalClock),
+
+    {reply, {ok, LocalClock, CausalMessage}, State};
+
+%% Generate a message identifier and a payload to be transmitted on the wire.
 handle_call({emit, Node, ServerRef, Message}, 
             _From, 
-            #state{my_node=MyNode, label=Label, local_clock=LocalClock0, order_buffer=OrderBuffer0}=State) ->
+            #state{storage=Storage,
+                   my_node=MyNode, 
+                   label=Label, 
+                   local_clock=LocalClock0, 
+                   order_buffer=OrderBuffer0}=State) ->
     %% Bump our local clock.
     LocalClock = partisan_vclock:increment(MyNode, LocalClock0),
 
@@ -112,6 +130,9 @@ handle_call({emit, Node, ServerRef, Message},
 
     %% Update the order buffer with node and mesage clock.
     OrderBuffer = orddict:store(Node, LocalClock, OrderBuffer0),
+
+    %% Everytime we omit a message, store the clock and message so we can regenerate the message.
+    true = ets:insert(Storage, {LocalClock, CausalMessage}),
 
     lager:info("Emitting message with clock: ~p", [LocalClock]),
 

@@ -1,0 +1,2 @@
+[{{receive_message,pull},[]},
+ {{receive_message,push},[{forward_message,pull}]}].

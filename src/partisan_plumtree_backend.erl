@@ -130,10 +130,8 @@ exchange(_Peer) ->
 %% @private
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
-    %% Seed the process at initialization.
-    rand_compat:seed(erlang:phash2([partisan_peer_service_manager:mynode()]),
-                     erlang:monotonic_time(),
-                     erlang:unique_integer()),
+    %% Seed the random number generator.
+    partisan_config:seed(),
 
     schedule_heartbeat(),
 
@@ -180,7 +178,7 @@ handle_cast(Msg, State) ->
 %% @private
 handle_info(heartbeat, State) ->
     %% Generate message with monotonically increasing integer.
-    Counter = time_compat:unique_integer([monotonic, positive]),
+    Counter = erlang:unique_integer([monotonic, positive]),
 
     %% Make sure the node prefixes the timestamp with it's own
     %% identifier: this means that we can have this tree
