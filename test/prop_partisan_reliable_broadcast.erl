@@ -23,7 +23,7 @@
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -include("partisan.hrl").
-
+-include("partisan_logger.hrl").
 -include_lib("proper/include/proper.hrl").
 
 -compile([export_all]).
@@ -37,7 +37,7 @@
 %%%===================================================================
 
 message() ->
-    ?LET(Id, erlang:unique_integer([positive, monotonic]), 
+    ?LET(Id, erlang:unique_integer([positive, monotonic]),
         ?LET(Random, integer(),
             {Id, Random})).
 
@@ -45,8 +45,8 @@ node_name() ->
     oneof(names()).
 
 names() ->
-    NameFun = fun(N) -> 
-        list_to_atom("node_" ++ integer_to_list(N)) 
+    NameFun = fun(N) ->
+        list_to_atom("node_" ++ integer_to_list(N))
     end,
     lists:map(NameFun, lists:seq(1, node_num_nodes())).
 
@@ -93,18 +93,18 @@ node_precondition(_NodeState, _Command) ->
 %% Next state.
 
 %% If the broadcast returned 'ok', we have to assume it was sent (asynchronous / synchronous.)
-node_next_state(#property_state{joined_nodes=JoinedNodes}, 
-                #node_state{sent=Sent0}=NodeState, 
-                ok, 
+node_next_state(#property_state{joined_nodes=JoinedNodes},
+                #node_state{sent=Sent0}=NodeState,
+                ok,
                 {call, ?MODULE, broadcast, [Node, {Id, Value}]}) ->
     Recipients = JoinedNodes,
     Message = {Id, Node, Value},
     Sent = Sent0 ++ [{Message, Recipients}],
     NodeState#node_state{sent=Sent};
 
-node_next_state(#property_state{joined_nodes=JoinedNodes}, 
-                #node_state{failed_to_send=FailedToSend0}=NodeState, 
-                error, 
+node_next_state(#property_state{joined_nodes=JoinedNodes},
+                #node_state{failed_to_send=FailedToSend0}=NodeState,
+                error,
                 {call, ?MODULE, broadcast, [Node, {Id, Value}]}) ->
     Recipients = JoinedNodes,
     Message = {Id, Node, Value},
@@ -117,10 +117,10 @@ node_next_state(_State, NodeState, _Response, _Command) ->
 
 %% Postconditions for node commands.
 node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, {badrpc, timeout}) ->
-    lager:info("Broadcast error with timeout, must have been synchronous!"),
+    ?LOG_INFO(#{description => "Broadcast error with timeout, must have been synchronous!"}),
     false;
 node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, error) ->
-    lager:info("Broadcast error, must have been synchronous!"),
+    ?LOG_INFO(#{description => "Broadcast error, must have been synchronous!"}),
     true;
 node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, ok) ->
     true;
@@ -135,7 +135,7 @@ node_postcondition(#node_state{failed_to_send=FailedToSend, sent=Sent}, {call, ?
             Messages = dict:fetch(Recipient, Results),
 
             %% Carry forward.
-            case lists:member(Message, Messages) of 
+            case lists:member(Message, Messages) of
                 true ->
                     NodeAcc andalso true;
                 false ->
@@ -157,7 +157,7 @@ node_postcondition(#node_state{failed_to_send=FailedToSend, sent=Sent}, {call, ?
             Messages = dict:fetch(Recipient, Results),
 
             %% Carry forward.
-            case lists:member(Message, Messages) of 
+            case lists:member(Message, Messages) of
                 true ->
                     node_debug("=> => message received at node ~p: ~p", [Message, Recipient]),
                     NodeAcc andalso false;
@@ -171,7 +171,7 @@ node_postcondition(#node_state{failed_to_send=FailedToSend, sent=Sent}, {call, ?
 
     AllSentAndReceived andalso FailedToSendNotReceived;
 node_postcondition(_NodeState, Command, Response) ->
-    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
+    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p",
                [Command, Response]),
     false.
 
@@ -224,9 +224,9 @@ check_mailbox() ->
         receive
             Messages ->
                 dict:store(Node, Messages, Dict)
-        after 
+        after
             10000 ->
-                case rpc:call(?NAME(Node), erlang, is_process_alive, []) of 
+                case rpc:call(?NAME(Node), erlang, is_process_alive, []) of
                     {badrpc, nodedown} ->
                         dict:store(Node, nodedown, Dict);
                     Other ->
@@ -250,7 +250,7 @@ check_mailbox() ->
 node_debug(Line, Args) ->
     case ?NODE_DEBUG of
         true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            ?LOG_INFO("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
@@ -329,7 +329,7 @@ node_begin_case() ->
             %% Block indefinitely so the table doesn't close.
             loop()
         end,
-        
+
         Pid = rpc:call(?NAME(ShortName), erlang, spawn, [RemoteFun]),
 
         receive
@@ -338,7 +338,7 @@ node_begin_case() ->
             Other ->
                 node_debug("received other message: ~p", [Other]),
                 error
-        after 
+        after
             10000 ->
                 node_debug("timer fired, never received the message!", []),
                 error
@@ -379,7 +379,7 @@ node_end_case() ->
 
 %% @private
 broadcast_module() ->
-    Module = case os:getenv("IMPLEMENTATION_MODULE") of 
+    Module = case os:getenv("IMPLEMENTATION_MODULE") of
         false ->
             lampson_2pc;
         Other ->

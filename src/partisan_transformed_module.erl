@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 %% @author Christopher Meiklejohn <christopher.meiklejohn@gmail.com>
 %% @copyright 2013 Christopher Meiklejohn.
-%% @doc 
+%% @doc
 %%
 %% Ringleader parse transformation.
 %%
@@ -30,6 +30,8 @@
 -module(partisan_transformed_module).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+-include("partisan_logger.hrl").
+
 -export([local_send/1,
          get_pid/0,
          send_to_pid/2]).
@@ -38,7 +40,7 @@
 
 local_send(Message) ->
     Pid = self(),
-    lager:info("Local pid is: ~p", [Pid]),
+    ?LOG_DEBUG("Local pid is: ~p", [Pid]),
     Pid ! Message,
     receive
         Message ->

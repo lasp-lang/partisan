@@ -21,6 +21,9 @@
 
 -module(partisan_peer_service).
 
+-include("partisan_logger.hrl").
+-include("partisan.hrl").
+
 -export([join/1,
          join/2,
          join/3,
@@ -41,7 +44,7 @@
          cast_message/3,
          forward_message/3]).
 
--include("partisan.hrl").
+
 
 %% @doc Return current peer service manager.
 manager() ->
@@ -145,5 +148,8 @@ stop() ->
 
 %% @doc Stop for a given reason.
 stop(Reason) ->
-    lager:notice("~p", [Reason]),
+    ?LOG_NOTICE(#{
+        description => "Peer service stopping",
+        reason => Reason
+    }),
     init:stop().

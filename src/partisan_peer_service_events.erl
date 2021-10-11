@@ -23,6 +23,9 @@
 
 -behaviour(gen_event).
 
+-include("partisan_logger.hrl").
+-include("partisan.hrl").
+
 %% API
 -export([start_link/0,
          add_handler/2,
@@ -31,7 +34,7 @@
          add_sup_callback/1,
          update/1]).
 
--include("partisan.hrl").
+
 
 %% gen_event callbacks
 -export([init/1,
@@ -77,15 +80,15 @@ handle_event({update, LocalState}, State) ->
     (State#state.callback)(LocalState),
     {ok, State};
 handle_event(Event, State) ->
-    lager:info("Unhandled event at module ~p: ~p", [?MODULE, Event]),
+    ?LOG_INFO(#{description => "Unhandled event", event => Event}),
     {ok, State}.
 
-handle_call(Request, State) ->
-    lager:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Request]),
+handle_call(Event, State) ->
+    ?LOG_WARNING(#{description => "Unhandled call event", event => Event}),
     {ok, ok, State}.
 
-handle_info(_Info, State) ->
-    %% lager:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Info]),
+handle_info(Event, State) ->
+    ?LOG_WARNING(#{description => "Unhandled info event", event => Event}),
     {ok, State}.
 
 terminate(_Reason, _State) ->

@@ -23,6 +23,7 @@
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -include("partisan.hrl").
+-include("partisan_logger.hrl").
 
 -include_lib("proper/include/proper.hrl").
 
@@ -42,8 +43,8 @@ node_name() ->
     oneof(names()).
 
 names() ->
-    NameFun = fun(N) -> 
-        list_to_atom("node_" ++ integer_to_list(N)) 
+    NameFun = fun(N) ->
+        list_to_atom("node_" ++ integer_to_list(N))
     end,
     lists:map(NameFun, lists:seq(1, node_num_nodes())).
 
@@ -169,7 +170,7 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
     BufferEmpty = case wait_until(fun() ->
                           StillInBuf = sets:intersection([ sets:from_list(B) || B <- buffers(Workers)]),
                           length(sets:to_list(StillInBuf)) =:= 0
-                  end, ?RETRY_SECONDS*2, 500) of 
+                  end, ?RETRY_SECONDS*2, 500) of
         ok ->
             true;
         _ ->
@@ -192,7 +193,7 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
 
     node_debug("Crashed: ~p", [Crashed]),
 
-    Tolerance = case os:getenv("FAULT_TOLERANCE") of 
+    Tolerance = case os:getenv("FAULT_TOLERANCE") of
         false ->
             1;
         ToleranceString ->
@@ -203,7 +204,7 @@ node_postcondition(#node_state{messages=Messages}=_NodeState, {call, ?MODULE, ch
     node_debug("postcondition: ~p", [Result]),
     Result;
 node_postcondition(_NodeState, Command, Response) ->
-    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
+    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p",
                [Command, Response]),
     false.
 
@@ -225,7 +226,7 @@ check() ->
     [{workers, Workers}] = ets:lookup(prop_partisan, workers),
 
     %% Get at_least_one_transaction.
-    case ets:lookup(prop_partisan, at_least_one_transaction) of 
+    case ets:lookup(prop_partisan, at_least_one_transaction) of
         [{at_least_one_transaction, true}] ->
             %% Wait for all the worker's mailboxes to settle and wait for the chains to converge.
             wait_until(fun() ->
@@ -339,7 +340,7 @@ node_num_nodes() ->
 node_debug(Line, Args) ->
     case ?NODE_DEBUG of
         true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            ?LOG_INFO("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
@@ -380,7 +381,7 @@ node_begin_case() ->
     %% Load, configure, and start hbbft.
     lists:foreach(fun({ShortName, _}) ->
         % node_debug("loading hbbft at node ~p", [ShortName]),
-        case rpc:call(?NAME(ShortName), application, load, [hbbft]) of 
+        case rpc:call(?NAME(ShortName), application, load, [hbbft]) of
             ok ->
                 ok;
             {error, {already_loaded, hbbft}} ->
@@ -395,7 +396,7 @@ node_begin_case() ->
 
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %% Start hbbft test
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
     node_debug("warming up hbbft...", []),
     node_debug("nodes: ~p", [Nodes]),
@@ -428,12 +429,12 @@ node_begin_case() ->
     %% store workers in the ets table
     true = ets:insert(prop_partisan, {workers, Workers}),
 
-    case os:getenv("BOOTSTRAP") of 
+    case os:getenv("BOOTSTRAP") of
         "true" ->
             node_debug("beginning bootstrap...", []),
 
             %% Configure the number of bootstrap transactions.
-            NumMsgs = case os:getenv("BOOTSTRAP_MESSAGES") of 
+            NumMsgs = case os:getenv("BOOTSTRAP_MESSAGES") of
                 false ->
                     N * BatchSize;
                 Other ->
@@ -485,7 +486,7 @@ node_begin_case() ->
                                                 BlockTxns = lists:flatten([partisan_hbbft_worker:block_transactions(B) || B <- Chain]),
                                                 node_debug("=> number of transactions: ~p", [length(BlockTxns)])
                                             end, lists:seq(1, length(sets:to_list(Chains)))),
-                                            
+
                                             ok;
                                         false ->
                                             ok
@@ -533,7 +534,7 @@ node_begin_case() ->
             true = ets:insert(prop_partisan, {initial_messages, Msgs}),
 
             %% TEMP: force a failure here.
-            case os:getenv("BOOTSTRAP_FAILURE") of 
+            case os:getenv("BOOTSTRAP_FAILURE") of
                 "true" ->
                     exit({error, forced_failure});
                 _ ->
@@ -569,8 +570,8 @@ node_crash(Node) ->
     %% Get workers and terminate them if they are on that node.
     [{workers, Workers}] = ets:lookup(prop_partisan, workers),
 
-    lists:foreach(fun({_, {ok, W}}) -> 
-        case node(W) of 
+    lists:foreach(fun({_, {ok, W}}) ->
+        case node(W) of
             NodeToCrash ->
                 node_debug("terminating process: ~p", [W]),
                 catch partisan_hbbft_worker:stop(W);
@@ -601,7 +602,7 @@ node_end_case() ->
     %% Stop hbbft.
     lists:foreach(fun({ShortName, _}) ->
         % node_debug("stopping hbbft on node ~p", [ShortName]),
-        case rpc:call(?NAME(ShortName), application, stop, [hbbft]) of 
+        case rpc:call(?NAME(ShortName), application, stop, [hbbft]) of
             ok ->
                 ok;
             {badrpc, nodedown} ->

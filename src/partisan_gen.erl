@@ -19,6 +19,8 @@
 %%
 -module(partisan_gen).
 
+-include("partisan_logger.hrl").
+
 % -compile({inline,[get_node/1]}).
 
 %%%-----------------------------------------------------------------
@@ -66,7 +68,7 @@
 %%          (debug == log && statistics)
 %% Returns: {ok, Pid} | ignore |{error, Reason} |
 %%          {error, {already_started, Pid}} |
-%%    The 'already_started' is returned only if Name is given 
+%%    The 'already_started' is returned only if Name is given
 %%-----------------------------------------------------------------
 
 -spec start(module(), linkage(), emgr_name(), module(), term(), options()) ->
@@ -92,13 +94,13 @@ start(GenMod, LinkP, Mod, Args, Options) ->
 do_spawn(GenMod, link, Mod, Args, Options) ->
     Time = timeout(Options),
     proc_lib:start_link(?MODULE, init_it,
-			[GenMod, self(), self(), Mod, Args, Options], 
+			[GenMod, self(), self(), Mod, Args, Options],
 			Time,
 			spawn_opts(Options));
 do_spawn(GenMod, _, Mod, Args, Options) ->
     Time = timeout(Options),
     proc_lib:start(?MODULE, init_it,
-		   [GenMod, self(), self, Mod, Args, Options], 
+		   [GenMod, self(), self, Mod, Args, Options],
 		   Time,
 		   spawn_opts(Options)).
 
@@ -111,7 +113,7 @@ do_spawn(GenMod, link, Name, Mod, Args, Options) ->
 do_spawn(GenMod, _, Name, Mod, Args, Options) ->
     Time = timeout(Options),
     proc_lib:start(?MODULE, init_it,
-		   [GenMod, self(), self, Name, Mod, Args, Options], 
+		   [GenMod, self(), self, Name, Mod, Args, Options],
 		   Time,
 		   spawn_opts(Options)).
 
@@ -145,7 +147,7 @@ init_it2(GenMod, Starter, Parent, Name, Mod, Args, Options) ->
 %%% New call function which uses the new monitor BIF
 %%% call(ServerId, Label, Request)
 
-call(Process, Label, Request) -> 
+call(Process, Label, Request) ->
     call(Process, Label, Request, ?default_timeout).
 
 call(Process, Label, Request, Timeout)
@@ -158,7 +160,7 @@ do_call(Process, Label, Request, Timeout) ->
 	Ref = partisan_util:ref(make_ref()),
 
 	%% Figure out remote node.
-	{Node, ServerRef} = case Process of 
+	{Node, ServerRef} = case Process of
 		{RemoteProcess, RemoteNode} ->
 			{RemoteNode, RemoteProcess};
 		_ ->
@@ -169,19 +171,31 @@ do_call(Process, Label, Request, Timeout) ->
 	Message = {Label, {partisan_util:pid(), Ref}, Request},
 
 	%% Send message via Partisan.
-	lager:info("Sending message from ~p to ~p ~p: ~p~n", [node(), Node, ServerRef, Message]),
+	?LOG_DEBUG(#{
+		description => "Sending message",
+		node => node(),
+		peer_node => Node,
+		process => ServerRef,
+		message => Message
+	}),
 	partisan_pluggable_peer_service_manager:forward_message(Node, undefined, ServerRef, Message, []),
-	% lager:info("=> Message sent!~n", []),
 
 	%% Wait for reply.
 	receive
 		{Ref, Reply} ->
 			{ok, Reply};
 		Other ->
-			lager:warning("Received unexpected response: ~p~n", [Other]),
+			?LOG_WARNING(#{
+				description => "Received unexpected response",
+				response => Other
+			}),
 			exit(timeout)
 	after Timeout ->
-		lager:warning("Timed out at node: ~p waiting for response to message: ~p~n", [node(), Message]),
+		?LOG_WARNING(#{
+			description => "Timed out at while waiting for response to message",
+			node => node(),
+			message => Message
+		}),
 		exit(timeout)
 	end.
 
@@ -195,7 +209,7 @@ do_call(Process, Label, Request, Timeout) ->
 	%     %% use erlang:send/3 with the 'noconnect' option so that it
 	%     %% will fail immediately if there is no connection to the
 	%     %% remote node.
-	% 	error_logger:format("sending message ~p to process: ~p~n", 
+	% 	error_logger:format("sending message ~p to process: ~p~n",
 	% 		[{Label, {self(), Mref}, Request}, Process]),
 
 	%     catch erlang:send(Process, {Label, {self(), Mref}, Request},
@@ -219,15 +233,15 @@ do_call(Process, Label, Request, Timeout) ->
 	%     %% The other possible case -- this node is not distributed
 	%     %% -- should have been handled earlier.
 	%     %% Do the best possible with monitor_node/2.
-	%     %% This code may hang indefinitely if the Process 
+	%     %% This code may hang indefinitely if the Process
 	%     %% does not exist. It is only used for featureweak remote nodes.
 	%     Node = get_node(Process),
 	%     monitor_node(Node, true),
 	%     receive
-	% 	{nodedown, Node} -> 
+	% 	{nodedown, Node} ->
 	% 	    monitor_node(Node, false),
 	% 	    exit({nodedown, Node})
-	%     after 0 -> 
+	%     after 0 ->
 	% 	    Tag = make_ref(),
 	% 	    Process ! {Label, {self(), Tag}, Request},
 	% 	    wait_resp(Node, Tag, Timeout)

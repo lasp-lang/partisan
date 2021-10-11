@@ -23,6 +23,7 @@
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -include("partisan.hrl").
+-include("partisan_logger.hrl").
 
 -include_lib("proper/include/proper.hrl").
 
@@ -47,8 +48,8 @@ node_name() ->
     oneof(names()).
 
 names() ->
-    NameFun = fun(N) -> 
-        list_to_atom("node_" ++ integer_to_list(N)) 
+    NameFun = fun(N) ->
+        list_to_atom("node_" ++ integer_to_list(N))
     end,
     lists:map(NameFun, lists:seq(1, node_num_nodes())).
 
@@ -108,7 +109,7 @@ node_postcondition(_State, {call, ?MODULE, write, [Node, Key, Value]}, {timeout,
     node_debug("node ~p: gen_server timeout while writing key ~p with value ~p", [Node, Key, Value]),
     true;
 node_postcondition(#state{store=Store}=_State, {call, ?MODULE, read, [Node, Key]}, {ok, Value}) ->
-    case dict:find(Key, Store) of 
+    case dict:find(Key, Store) of
         {ok, Value} ->
             node_debug("node ~p: read key ~p with value ~p", [Node, Key, Value]),
             true;
@@ -116,7 +117,7 @@ node_postcondition(#state{store=Store}=_State, {call, ?MODULE, read, [Node, Key]
             node_debug("node ~p: read key ~p with value ~p when it should be ~p", [Node, Key, Value, Other]),
             false;
         error ->
-            case Value of 
+            case Value of
                 not_found ->
                     node_debug("node ~p: read key ~p with value not_found", [Node, Key]),
                     true;
@@ -138,7 +139,7 @@ node_postcondition(_State, Command, Response) ->
 
 %% @private
 write(Node, Key, Value) ->
-    case rpc:call(?NAME(Node), ?PB_MODULE, write, [Key, Value]) of 
+    case rpc:call(?NAME(Node), ?PB_MODULE, write, [Key, Value]) of
         {badrpc, {'EXIT', Error}} ->
             Error;
         Other ->
@@ -153,7 +154,7 @@ read(Node, Key) ->
 node_debug(Line, Args) ->
     case ?NODE_DEBUG of
         true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            ?LOG_INFO("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.

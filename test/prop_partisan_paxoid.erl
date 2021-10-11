@@ -23,7 +23,7 @@
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -include("partisan.hrl").
-
+-include("partisan_logger.hrl").
 -include_lib("proper/include/proper.hrl").
 
 -compile([export_all]).
@@ -40,8 +40,8 @@ node_name() ->
     oneof(names()).
 
 names() ->
-    NameFun = fun(N) -> 
-        list_to_atom("node_" ++ integer_to_list(N)) 
+    NameFun = fun(N) ->
+        list_to_atom("node_" ++ integer_to_list(N))
     end,
     lists:map(NameFun, lists:seq(1, node_num_nodes())).
 
@@ -106,8 +106,8 @@ node_postcondition(#node_state{node_writes=NodeWrites, counter=Counter}, {call, 
     node_debug("postcondition received ~p from max_id", [Results]),
 
     %% Find the crashed nodes.
-    CrashedNodes = lists:filter(fun({_Node, Result}) -> 
-        case Result of 
+    CrashedNodes = lists:filter(fun({_Node, Result}) ->
+        case Result of
             undefined ->
                 true;
             _ ->
@@ -117,7 +117,7 @@ node_postcondition(#node_state{node_writes=NodeWrites, counter=Counter}, {call, 
 
     %% Find the number of writes done by crashed nodes.
     ConditionalWrites = lists:foldl(fun({Node, _Results}, Writes) ->
-        case dict:find(Node, NodeWrites) of 
+        case dict:find(Node, NodeWrites) of
             {ok, Value} ->
                 node_debug("=> node ~p found writes ~p", [Node, Value]),
                 Writes + Value;
@@ -135,12 +135,12 @@ node_postcondition(#node_state{node_writes=NodeWrites, counter=Counter}, {call, 
     node_debug("LowerBound: ~p", [LowerBound]),
 
     %% Ensure that a majority of nodes account for all the writes.
-    CorrectNodes = lists:filter(fun({Node, Result}) -> 
-        case Result of 
+    CorrectNodes = lists:filter(fun({Node, Result}) ->
+        case Result of
             undefined ->
                 false;
             _ ->
-                case Result >= LowerBound of 
+                case Result >= LowerBound of
                     true ->
                         true;
                     false ->
@@ -166,7 +166,7 @@ node_postcondition(#node_state{node_writes=NodeWrites, counter=Counter}, {call, 
 
     MajorityNodes = (length(names()) / 2) + 1,
 
-    case length(CorrectNodes) >= MajorityNodes andalso Agreement of 
+    case length(CorrectNodes) >= MajorityNodes andalso Agreement of
         true ->
             node_debug("=> majority present!", []),
             true;
@@ -179,7 +179,7 @@ node_postcondition(_NodeState, {call, ?MODULE, wait, [_Node]}, _Result) ->
 node_postcondition(_NodeState, {call, ?MODULE, sleep, []}, _Result) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, next_id, [_Node]}, {badrpc,timeout}) ->
-    case os:getenv("MODEL_CHECKING") of 
+    case os:getenv("MODEL_CHECKING") of
         "true" ->
             true;
         _ ->
@@ -188,7 +188,7 @@ node_postcondition(_NodeState, {call, ?MODULE, next_id, [_Node]}, {badrpc,timeou
 node_postcondition(#node_state{counter=Counter}, {call, ?MODULE, next_id, [_Node]}, Value) ->
     node_debug("postcondition received ~p from next_id when value should be: ~p", [Value, Counter + 1]),
 
-    case Counter + 1 =:= Value of 
+    case Counter + 1 =:= Value of
         false ->
             node_debug("postcondition: sequence has been duplicated: value is ~p should be ~p", [Value, Counter + 1]),
             ok;
@@ -198,7 +198,7 @@ node_postcondition(#node_state{counter=Counter}, {call, ?MODULE, next_id, [_Node
 
     true;
 node_postcondition(_NodeState, Command, Response) ->
-    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
+    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p",
                [Command, Response]),
     false.
 
@@ -259,7 +259,7 @@ max_id() ->
     ?PROPERTY_MODULE:command_preamble(RunnerNode, [max_id]),
 
     Results = lists:map(fun(Node) ->
-        case rpc:call(?NAME(Node), paxoid, max_id, [?GROUP], ?TIMEOUT) of 
+        case rpc:call(?NAME(Node), paxoid, max_id, [?GROUP], ?TIMEOUT) of
             {ok, Result} ->
                 node_debug("node: ~p result of max_id: ~p~n", [Node, Result]),
                 {Node, Result};
@@ -283,7 +283,7 @@ max_id() ->
 node_debug(Line, Args) ->
     case ?NODE_DEBUG of
         true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            ?LOG_INFO("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
@@ -320,7 +320,7 @@ node_begin_case() ->
     %% Load, configure, and start paxoid.
     lists:foreach(fun({ShortName, _}) ->
         % node_debug("starting paxoid at node ~p", [ShortName]),
-        case rpc:call(?NAME(ShortName), application, load, [paxoid]) of 
+        case rpc:call(?NAME(ShortName), application, load, [paxoid]) of
             ok ->
                 ok;
             {error, {already_loaded, paxoid}} ->
@@ -373,7 +373,7 @@ node_end_case() ->
     node_debug("stopping paxoid", []),
     lists:foreach(fun({ShortName, _}) ->
         node_debug("stopping paxoid on node ~p", [ShortName]),
-        case rpc:call(?NAME(ShortName), application, stop, [paxoid]) of 
+        case rpc:call(?NAME(ShortName), application, stop, [paxoid]) of
             ok ->
                 ok;
             {error, {not_started, paxoid}} ->

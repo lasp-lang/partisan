@@ -23,6 +23,8 @@
 
 -behaviour(partisan_gen_server).
 
+-include("partisan_logger.hrl").
+
 %% API
 -export([start_link/0,
          call/0,
@@ -66,18 +68,18 @@ init([]) ->
 
 %% @private
 handle_call(delayed_reply_call, From, State) ->
-    lager:info("Received delayed_reply_call message from ~p in the handle_call handler.", [From]),
+    ?LOG_INFO("Received delayed_reply_call message from ~p in the handle_call handler.", [From]),
     partisan_gen_server:reply(From, ok),
     {noreply, State};
 handle_call(call, From, State) ->
-    lager:info("Received call message from ~p in the handle_call handler.", [From]),
+    ?LOG_INFO("Received call message from ~p in the handle_call handler.", [From]),
     {reply, ok, State};
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 %% @private
 handle_cast({cast, ServerRef}, State) ->
-    lager:info("Received cast message with server_ref: ~p in the handle_call handler.", [ServerRef]),
+    ?LOG_INFO("Received cast message with server_ref: ~p in the handle_call handler.", [ServerRef]),
     ServerRef ! ok,
     {noreply, State};
 handle_cast(_Msg, State) ->

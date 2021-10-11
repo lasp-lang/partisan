@@ -21,7 +21,9 @@
 -module(partisan_config).
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+-include("partisan_logger.hrl").
 -include("partisan.hrl").
+
 
 -export([init/0,
          channels/0,
@@ -49,16 +51,19 @@ init() ->
     %% Configure the partisan node name.
     Name = case node() of
         nonode@nohost ->
-            lager:info("Distributed Erlang is not enabled, generating UUID."),
-            UUIDState = uuid:new(self()),
-            {UUID, _UUIDState1} = uuid:get_v1(UUIDState),
-            lager:info("Generated UUID: ~p, converting to string.", [UUID]),
-            StringUUID = uuid:uuid_to_string(UUID),
-            NodeName = list_to_atom(StringUUID ++ "@127.0.0.1"),
-            lager:info("Generated name for node: ~p", [NodeName]),
+            NodeName = gen_node_name(),
+            ?LOG_INFO(#{
+                description => "Partisan node name configured",
+                name => NodeName,
+                disterl_enabled => false
+            }),
             NodeName;
         Other ->
-            lager:info("Using node name: ~p", [Other]),
+            ?LOG_INFO(#{
+                description => "Partisan node name configured",
+                name => Other,
+                disterl_enabled => true
+            }),
             Other
     end,
 
@@ -75,7 +80,7 @@ init() ->
                 end,
 
     %% Determine if we are replaying.
-    case os:getenv("REPLAY", "false") of 
+    case os:getenv("REPLAY", "false") of
         "false" ->
             false;
         _ ->
@@ -84,7 +89,7 @@ init() ->
     end,
 
     %% Determine if we are shrinking.
-    case os:getenv("SHRINKING", "false") of 
+    case os:getenv("SHRINKING", "false") of
         "false" ->
             false;
         _ ->
@@ -97,7 +102,7 @@ init() ->
     DefaultPeerPort = random_port(),
 
     %% Configure X-BOT interval.
-    XbotInterval = rand:uniform(?XBOT_RANGE_INTERVAL) + ?XBOT_MIN_INTERVAL, 
+    XbotInterval = rand:uniform(?XBOT_RANGE_INTERVAL) + ?XBOT_MIN_INTERVAL,
 
     [env_or_default(Key, Default) ||
         {Key, Default} <- [{arwl, 5},
@@ -157,7 +162,11 @@ seed(Seed) ->
 %% Seed the process.
 seed() ->
     RandomSeed = random_seed(),
-    lager:info("node ~p choosing random seed: ~p", [node(), RandomSeed]),
+    ?LOG_INFO(#{
+        description => "Chossing random seed",
+        node => node(),
+        seed => RandomSeed
+    }),
     rand:seed(exsplus, RandomSeed).
 
 %% Return a random seed, either from the environment or one that's generated for the run.
@@ -170,12 +179,11 @@ random_seed() ->
     end.
 
 trace(Message, Args) ->
-    case partisan_config:get(tracing, ?TRACING) of
-        true ->
-            lager:info(Message, Args);
-        false ->
-            ok
-    end.
+    ?LOG_TRACE(#{
+        description => "Trace",
+        message => Message,
+        args => Args
+    }).
 
 env_or_default(Key, Default) ->
     case application:get_env(partisan, Key) of
@@ -232,13 +240,24 @@ get_node_address() ->
     Me = self(),
 
     ResolverFun = fun() ->
-        lager:info("Resolving ~p...", [FQDN]),
+        ?LOG_INFO(#{
+            description => "Resolving FQDN",
+            fqdn => FQDN
+        }),
         case inet:getaddr(FQDN, inet) of
             {ok, Address} ->
-                lager:info("Resolved ~p to ~p", [Name, Address]),
+                ?LOG_INFO(#{
+                    description => "Resolved domain name",
+                    name => Name,
+                    address => Address
+                }),
                 Me ! {ok, Address};
-            {error, Error} ->
-                lager:error("Cannot resolve local name ~p, resulting to 127.0.0.1: ~p", [FQDN, Error]),
+            {error, Reason} ->
+                ?LOG_INFO(#{
+                    description => "Cannot resolve local name, resulting to 127.0.0.1",
+                    fqdn => FQDN,
+                    reason => Reason
+                }),
                 Me ! {ok, ?PEER_IP}
         end
     end,
@@ -252,9 +271,25 @@ get_node_address() ->
     %% Wait for response, either answer or exit.
     receive
         {ok, Address} ->
-            lager:info("Resolved ~p to ~p", [FQDN, Address]),
+            ?LOG_INFO(#{
+                description => "Resolving FQDN",
+                fqdn => FQDN,
+                address => Address
+            }),
             Address;
         Error ->
-            lager:error("Error resolving name ~p: ~p", [Error, FQDN]),
+            ?LOG_INFO(#{
+                description => "Error resolving FQDN",
+                fqdn => FQDN,
+                error => Error
+            }),
             ?PEER_IP
     end.
+
+
+%% @private
+gen_node_name() ->
+    UUIDState = uuid:new(self()),
+    {UUID, _UUIDState1} = uuid:get_v1(UUIDState),
+    StringUUID = uuid:uuid_to_string(UUID),
+    list_to_atom(StringUUID ++ "@127.0.0.1").

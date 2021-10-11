@@ -21,7 +21,9 @@
 -module(partisan_connection_cache).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+
 -include("partisan.hrl").
+-include("partisan_logger.hrl").
 
 -export([update/1,
          dispatch/1]).
@@ -35,34 +37,46 @@ update(Connections) ->
               end, [], Connections).
 
 dispatch({forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Message, _Options}) ->
-    case partisan_config:get(tracing, ?TRACING) of
-        true ->
-            lager:info("Dispatching message: ~p", [Message]);
-        false ->
-            ok
-    end,
+    ?LOG_TRACE(#{
+        description => "Dispatching message",
+        message => Message
+    }),
 
     %% Find a connection for the remote node, if we have one.
     case ets:lookup(?CACHE, Name) of
         [] ->
             %% Trap back to gen_server.
-            lager:info("Connection cache miss for node: ~p", [Name]),
+            ?LOG_INFO(#{
+                description => "Connection cache miss for node",
+                node => Name
+            }),
             {error, trap};
         [{Name, []}] ->
-            lager:info("Connection cache miss for node: ~p", [Name]),
+            ?LOG_INFO(#{
+                description => "Connection cache miss for node",
+                node => Name
+            }),
             {error, trap};
         [{Name, Pids}] ->
             Pid = partisan_util:dispatch_pid(PartitionKey, Channel, Pids),
 
             case partisan_config:get(tracing, ?TRACING) of
                 true ->
-                    lager:info("Dispatching to message: ~p pid: ~p", [Message, Pid]),
+                    ?LOG_TRACE(#{
+                        description => "Dispatching message",
+                        message => Message,
+                        to => Pid
+                    }),
 
                     case is_process_alive(Pid) of
                         true ->
                             ok;
                         false ->
-                            lager:info("Dispatching to message: ~p, pid: ~p, process is NOT ALIVE.", [Message, Pid])
+                            ?LOG_TRACE(#{
+                                description => "Dispatching message, process is NOT ALIVE",
+                                message => Message,
+                                to => Pid
+                            })
                     end;
                 false ->
                     ok
@@ -72,34 +86,46 @@ dispatch({forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Messa
     end;
 
 dispatch({forward_message, Name, ServerRef, Message, _Options}) ->
-    case partisan_config:get(tracing, ?TRACING) of
-        true ->
-            lager:info("Dispatching message: ~p", [Message]);
-        false ->
-            ok
-    end,
+    ?LOG_TRACE(#{
+        description => "Dispatching message",
+        message => Message
+    }),
 
     %% Find a connection for the remote node, if we have one.
     case ets:lookup(?CACHE, Name) of
         [] ->
             %% Trap back to gen_server.
-            lager:info("Connection cache miss for node: ~p", [Name]),
+            ?LOG_INFO(#{
+                description => "Connection cache miss for node",
+                node => Name
+            }),
             {error, trap};
         [{Name, []}] ->
-            lager:info("Connection cache miss for node: ~p", [Name]),
+            ?LOG_INFO(#{
+                description => "Connection cache miss for node",
+                node => Name
+            }),
             {error, trap};
         [{Name, Pids}] ->
             Pid = partisan_util:dispatch_pid(Pids),
 
             case partisan_config:get(tracing, ?TRACING) of
                 true ->
-                    lager:info("Dispatching to message: ~p pid: ~p", [Message, Pid]),
+                    ?LOG_TRACE(#{
+                        description => "Dispatching message",
+                        message => Message,
+                        to => Pid
+                    }),
 
                     case is_process_alive(Pid) of
                         true ->
                             ok;
                         false ->
-                            lager:info("Dispatching to message: ~p, pid: ~p, process is NOT ALIVE.", [Message, Pid])
+                            ?LOG_TRACE(#{
+                                description => "Dispatching message, process is NOT ALIVE",
+                                message => Message,
+                                to => Pid
+                            })
                     end;
                 false ->
                     ok

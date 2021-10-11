@@ -21,6 +21,11 @@
 
 -behaviour(gen_server).
 
+
+
+-include("partisan.hrl").
+-include("partisan_logger.hrl").
+
 %% API
 -export([start_link/0,
          start_link/5,
@@ -44,8 +49,6 @@
          handle_info/2,
          terminate/2,
          code_change/3]).
-
--include("partisan.hrl").
 
 -define(SERVER, ?MODULE).
 
@@ -398,7 +401,11 @@ handle_graft({ok, Message}, MessageId, Mod, Round, Root, From, State) ->
     _ = send({broadcast, MessageId, Message, Mod, Round, Root, myself()}, Mod, From),
     State1;
 handle_graft({error, Reason}, _MessageId, Mod, _Round, _Root, _From, State) ->
-    lager:error("unable to graft message from ~p. reason: ~p", [Mod, Reason]),
+    ?LOG_ERROR(#{
+        description => "Unable to graft message",
+        callback_mod => Mod,
+        reason => Reason
+    }),
     State.
 
 neighbors_down(Removed, State=#state{common_eagers=CommonEagers, eager_sets=EagerSets,
@@ -675,7 +682,10 @@ instrument_transmission(Message, Mod) ->
                 Mod:extract_log_type_and_payload(Message)
             catch
                 _:Error ->
-                    lager:info("Couldn't extract log type and payload. Reason ~p", [Error]),
+                    ?LOG_INFO(
+                        "Couldn't extract log type and payload. Reason ~p",
+                        [Error]
+                    ),
                     []
             end,
 

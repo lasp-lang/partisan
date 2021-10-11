@@ -21,6 +21,7 @@
 
 -module(partisan_util).
 
+-include("partisan_logger.hrl").
 -include("partisan.hrl").
 
 -export([build_tree/3,
@@ -99,13 +100,13 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
     Connections = case partisan_peer_service_connections:find(Node, Connections0) of
         %% Found disconnected.
         {ok, []} ->
-            lager:debug("Node ~p is not connected; initiating.", [Node]),
+            ?LOG_DEBUG("Node ~p is not connected; initiating.", [Node]),
             case connect(Node, ListenAddr, ?DEFAULT_CHANNEL) of
                 {ok, Pid} ->
-                    lager:debug("Node ~p connected, pid: ~p", [Node, Pid]),
+                    ?LOG_DEBUG("Node ~p connected, pid: ~p", [Node, Pid]),
                     partisan_peer_service_connections:store(Node, {ListenAddr, ?DEFAULT_CHANNEL, Pid}, Connections0);
                 Error ->
-                    lager:debug("Node ~p failed connection: ~p.", [Node, Error]),
+                    ?LOG_DEBUG("Node ~p failed connection: ~p.", [Node, Error]),
                     Connections0
             end;
         %% Found and connected.
@@ -117,13 +118,13 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
         {error, not_found} ->
             case connect(Node, ListenAddr, ?DEFAULT_CHANNEL) of
                 {ok, Pid} ->
-                    lager:debug("Node ~p connected, pid: ~p", [Node, Pid]),
+                    ?LOG_DEBUG("Node ~p connected, pid: ~p", [Node, Pid]),
                     partisan_peer_service_connections:store(Node, {ListenAddr, ?DEFAULT_CHANNEL, Pid}, Connections0);
                 {error, normal} ->
-                    lager:debug("Node ~p isn't online just yet.", [Node]),
+                    ?LOG_DEBUG("Node ~p isn't online just yet.", [Node]),
                     Connections0;
                 Error ->
-                    lager:debug("Node ~p failed connection: ~p.", [Node, Error]),
+                    ?LOG_DEBUG("Node ~p failed connection: ~p.", [Node, Error]),
                     Connections0
             end
     end,
@@ -215,18 +216,30 @@ maybe_initiate_parallel_connections(Connections0, Channel, Node, ListenAddr, Par
                                     false
                             end
                     end, Entries),
-    case length(FilteredEntries) < Parallelism andalso Parallelism =/= undefined of
+
+    Len = length(FilteredEntries),
+
+    case Len < Parallelism andalso Parallelism =/= undefined of
         true ->
-            lager:debug("(~p of ~p connected for channel ~p) Connecting node ~p.",
-                        [length(FilteredEntries), Parallelism, Channel, Node]),
+            ?LOG_DEBUG(
+                "~p of ~p connected for channel ~p) Connecting node ~p.",
+                [Len, Parallelism, Channel, Node]
+            ),
 
             case connect(Node, ListenAddr, Channel) of
                 {ok, Pid} ->
-                    lager:debug("Node ~p connected, pid: ~p", [Node, Pid]),
-                    partisan_peer_service_connections:store(Node, {ListenAddr, Channel, Pid}, Connections0);
+                    ?LOG_DEBUG(
+                        "Node ~p connected, pid: ~p", [Node, Pid]
+                    ),
+                    partisan_peer_service_connections:store(
+                        Node, {ListenAddr, Channel, Pid}, Connections0
+                    );
                 Error ->
-                    lager:error("Node failed connect with ~p", [Error]),
-                    Connections0
+                    ?LOG_ERROR(#{
+                        description => "Node failed connect",
+                        error => Error,
+                        connections => Connections0
+                    })
             end;
         false ->
             Connections0
@@ -318,13 +331,13 @@ pid(Pid) ->
     case partisan_peer_service_manager:mynode() of
         Node ->
             %% This is super dangerous.
-            case partisan_config:get(register_pid_for_encoding, false) of 
+            case partisan_config:get(register_pid_for_encoding, false) of
                 true ->
                     Unique = erlang:unique_integer([monotonic, positive]),
 
-                    Name = case process_info(Pid, registered_name) of 
+                    Name = case process_info(Pid, registered_name) of
                         {registered_name, OldName} ->
-                            lager:info("unregistering pid: ~p with name: ~p", [Pid, OldName]),
+                            ?LOG_DEBUG("unregistering pid: ~p with name: ~p", [Pid, OldName]),
 
                             %% TODO: Race condition on unregister/register.
                             unregister(OldName),
@@ -333,7 +346,7 @@ pid(Pid) ->
                             "partisan_registered_name_" ++ integer_to_list(Unique)
                     end,
 
-                    lager:info("registering pid: ~p as name: ~p at node: ~p", [Pid, Name, Node]),
+                    ?LOG_DEBUG("registering pid: ~p as name: ~p at node: ~p", [Pid, Name, Node]),
                     true = erlang:register(list_to_atom(Name), Pid),
                     {partisan_remote_reference, Node, {partisan_registered_name_reference, Name}};
                 false ->
@@ -341,7 +354,7 @@ pid(Pid) ->
             end;
         _ ->
             %% This is even mmore super dangerous.
-            case partisan_config:get(register_pid_for_encoding, false) of 
+            case partisan_config:get(register_pid_for_encoding, false) of
                 true ->
                     Unique = erlang:unique_integer([monotonic, positive]),
 
@@ -352,9 +365,9 @@ pid(Pid) ->
                     RegisterFun = fun() ->
                         RewrittenPid = list_to_pid(RewrittenProcessIdentifier),
 
-                        NewName = case process_info(RewrittenPid, registered_name) of 
+                        NewName = case process_info(RewrittenPid, registered_name) of
                             {registered_name, OldName} ->
-                                lager:info("unregistering pid: ~p with name: ~p", [Pid, OldName]),
+                                ?LOG_DEBUG("unregistering pid: ~p with name: ~p", [Pid, OldName]),
 
                                 %% TODO: Race condition on unregister/register.
                                 unregister(OldName),
@@ -365,14 +378,13 @@ pid(Pid) ->
 
                         erlang:register(list_to_atom(NewName), RewrittenPid)
                     end,
-                    lager:info("registering pid: ~p as name: ~p at node: ~p", [Pid, Name, Node]),
+                    ?LOG_DEBUG("registering pid: ~p as name: ~p at node: ~p", [Pid, Name, Node]),
                     %% TODO: Race here unless we wait.
                     _ = rpc:call(Node, erlang, spawn, [RegisterFun]),
                     {partisan_remote_reference, Node, {partisan_registered_name_reference, Name}};
                 false ->
                     [_, B, C] = split(pid_to_list(Pid), "."),
                     RewrittenProcessIdentifier = "<0." ++ B ++ "." ++ C,
-                    % lager:info("rewriting remote reference id: ~p", [RewrittenProcessIdentifier]),
                     {partisan_remote_reference, Node, {partisan_process_reference, RewrittenProcessIdentifier}}
             end
     end.
@@ -383,12 +395,9 @@ registered_name(Name) ->
     {partisan_remote_reference, Node, GenSym}.
 
 process_forward(ServerRef, Message) ->
-    case partisan_config:get(tracing, ?TRACING) of
-        true ->
-            lager:info("node ~p recieved message ~p for ~p", [node(), Message, ServerRef]);
-        false ->
-            ok
-    end,
+    ?LOG_DEBUG(
+        "node ~p recieved message ~p for ~p", [node(), Message, ServerRef]
+    ),
 
     Node = partisan_peer_service_manager:mynode(),
 
@@ -398,42 +407,38 @@ process_forward(ServerRef, Message) ->
                 Name = list_to_atom(RegisteredName),
                 Name ! Message;
             {partisan_remote_reference, OtherNode, {partisan_process_reference, ProcessIdentifier}} ->
-                % lager:info("process reference is: ~p", [ProcessIdentifier]),
 
-                case split(ProcessIdentifier, ".") of 
+                case split(ProcessIdentifier, ".") of
                     ["<0",_B,_C] ->
                         Pid = list_to_pid(ProcessIdentifier),
 
-                        case partisan_config:get(tracing, ?TRACING) of
-                            true ->
-                                lager:info("pid reference is: ~p", [Pid]),
-
-                                case is_process_alive(Pid) of
-                                    true ->
-                                        ok;
-                                    false ->
-                                        lager:info("Process ~p is NOT ALIVE for message: ~p", [ServerRef, Message])
-                                end;
-                            false ->
-                                ok
-                        end,
+                        ?LOG_TRACE("pid reference is: ~p", [Pid]),
+                        ?LOG_TRACE_IF(
+                            is_process_alive(Pid),
+                            "Process ~p is NOT ALIVE for message: ~p", [ServerRef, Message]
+                        ),
 
                         Pid ! Message;
                     [_,B,C] ->
                         %% Remote written pid from Distributed Erlang.
-                        case OtherNode =:= Node of 
+                        case OtherNode =:= Node of
                             true ->
                                 RewrittenProcessIdentifier = "<0." ++ B ++ "." ++ C,
-                                lager:info("rewritten process reference is: ~p", [RewrittenProcessIdentifier]),
+                                ?LOG_DEBUG(
+                                    "rewritten process reference is: ~p", [RewrittenProcessIdentifier]
+                                ),
                                 Pid = list_to_pid(RewrittenProcessIdentifier),
-                                lager:info("pid reference is: ~p", [Pid]),
+                                ?LOG_DEBUG("pid reference is: ~p", [Pid]),
                                 Pid ! Message;
                             false ->
-                                lager:info("unknown destination, dropping message for process reference: ~p, other_node: ~p, node: ~p, message: ~p", [ProcessIdentifier, OtherNode, Node, Message]),
+                                ?LOG_DEBUG(
+                                    "unknown destination, dropping message for process reference: ~p, other_node: ~p, node: ~p, message: ~p",
+                                    [ProcessIdentifier, OtherNode, Node, Message]
+                                ),
                                 ok
                         end;
                     _ ->
-                        lager:info("couldn't deserialize unknown process reference: ~p", [ProcessIdentifier]),
+                        ?LOG_DEBUG("couldn't deserialize unknown process reference: ~p", [ProcessIdentifier]),
                         ok
                 end;
             {partisan_registered_name_reference, RegisteredName} ->
@@ -451,36 +456,20 @@ process_forward(ServerRef, Message) ->
             _ ->
                 ServerRef ! Message,
 
-                case partisan_config:get(tracing, ?TRACING) of
-                    true ->
-                        case is_pid(ServerRef) of
-                            true ->
-                                case is_process_alive(ServerRef) of
-                                    true ->
-                                        ok;
-                                    false ->
-                                        lager:info("Process ~p is NOT ALIVE.", [ServerRef])
-                                end;
-                            false ->
-                                case whereis(ServerRef) of
-                                    undefined ->
-                                        lager:info("Process ~p is NOT ALIVE.", [ServerRef]);
-                                    Pid ->
-                                        case is_process_alive(Pid) of
-                                            true ->
-                                                ok;
-                                            false ->
-                                                lager:info("Process ~p is NOT ALIVE.", [ServerRef])
-                                        end
-                                end
-                        end;
-                    false ->
-                        ok
-                end
+                Trace =
+                    (is_pid(ServerRef) andalso not is_process_alive(ServerRef))
+                        orelse whereis(ServerRef) == undefined
+                        orelse not is_process_alive(whereis(ServerRef)),
+
+                ?LOG_TRACE_IF(
+                    Trace, "Process ~p is NOT ALIVE.", [ServerRef]
+                ),
+
+                ok
         end
     catch
         _:Error ->
-            lager:info("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
+            ?LOG_DEBUG("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
     end.
 
 split(Subject0, Pattern0) ->

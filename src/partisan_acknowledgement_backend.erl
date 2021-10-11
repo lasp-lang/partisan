@@ -23,6 +23,9 @@
 
 -behaviour(gen_server).
 
+-include("partisan_logger.hrl").
+
+
 %% API
 -export([start_link/0,
          store/2,
@@ -62,15 +65,23 @@ outstanding() ->
 %% @private
 init([]) ->
     Storage = ets:new(?MODULE, [named_table]),
+    logger:set_process_metadata(#{node => node()}),
     {ok, #state{storage=Storage}}.
 
 %% @private
 handle_call({ack, MessageClock}, _From, #state{storage=Storage}=State) ->
-    lager:info("~p acknowledgement received for clock: ~p", [node(), MessageClock]),
+    ?LOG_INFO(#{
+        description => "Acknowledgement received",
+        clock => MessageClock
+    }),
     true = ets:delete(Storage, MessageClock),
     {reply, ok, State};
 handle_call({store, MessageClock, Message}, _From, #state{storage=Storage}=State) ->
-    lager:info("~p storing message in acknowledgement backend: ~p ~p", [node(), MessageClock, Message]),
+    ?LOG_INFO(#{
+        description => "storing message in acknowledgement backend",
+        clock => MessageClock,
+        message => Message
+    }),
     true = ets:insert(Storage, {MessageClock, Message}),
     {reply, ok, State};
 handle_call(outstanding, _From, #state{storage=Storage}=State) ->

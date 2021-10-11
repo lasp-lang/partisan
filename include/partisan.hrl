@@ -5,7 +5,6 @@
 -define(FANOUT, 5).
 -define(CACHE, partisan_connection_cache).
 -define(CONNECTION_JITTER, 1000).
--define(TRACING, false).
 -define(RELAY_TTL, 5).
 -define(MEMBERSHIP_PROTOCOL_CHANNEL, membership).
 
@@ -15,7 +14,7 @@
 -define(DEFAULT_PARTITION_KEY, undefined).
 -define(PARALLELISM, 1).                            %% How many connections should exist between nodes?
 % -define(CHANNELS,                                 %% What channels should be established?
-%         [undefined, broadcast, vnode, {monotonic, gossip}]).   
+%         [undefined, broadcast, vnode, {monotonic, gossip}]).
 -define(CHANNELS, [?DEFAULT_CHANNEL]).
 -define(CAUSAL_LABELS, []).                         %% What causal channels should be established?
 
@@ -43,10 +42,10 @@
 %% Test variables.
 -define(MEMBERSHIP_STRATEGY_TRACING, false).
 
--record(property_state, 
+-record(property_state,
         {joined_nodes :: [node()],
          nodes :: [node()],
-         node_state :: {dict:dict(), dict:dict()}, 
+         node_state :: {dict:dict(), dict:dict()},
          fault_model_state :: term(),
          counter :: non_neg_integer()}).
 
@@ -81,7 +80,7 @@
 -type channel() :: atom().
 
 %% TODO: add type annotations
--record(orchestration_strategy_state, 
+-record(orchestration_strategy_state,
                {orchestration_strategy,
                 is_connected,
                 was_connected,

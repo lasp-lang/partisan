@@ -24,6 +24,7 @@
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -include("partisan.hrl").
+-include("partisan_logger.hrl").
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -35,7 +36,7 @@
 start(Case, Config, Options) ->
     debug("Beginning test case: ~p", [Case]),
 
-    {ok, Hostname} = inet:gethostname(), 
+    {ok, Hostname} = inet:gethostname(),
     os:cmd(os:find_executable("epmd") ++ " -daemon"),
     case net_kernel:start([list_to_atom("runner@" ++ Hostname), shortnames]) of
         {ok, _} ->
@@ -51,16 +52,13 @@ start(Case, Config, Options) ->
                              false),
     application:start(sasl),
 
-    %% Load lager.
-    {ok, _} = application:ensure_all_started(lager),
-
     Servers = proplists:get_value(servers, Options, []),
     Clients = proplists:get_value(clients, Options, []),
 
     NodeNames = case proplists:get_value(num_nodes, Options, undefined) of
         undefined ->
             lists:flatten(Servers ++ Clients);
-        NumNodes -> 
+        NumNodes ->
             node_list(NumNodes, "node", Config)
     end,
 
@@ -82,26 +80,30 @@ start(Case, Config, Options) ->
 
     %% Load applications on all of the nodes.
     LoaderFun = fun({_Name, Node}) ->
-                            debug("Loading applications on node: ~p", [Node]),
+        debug("Loading applications on node: ~p", [Node]),
 
-                            PrivDir = code:priv_dir(?APP),
-                            NodeDir = filename:join([PrivDir, "lager", Node]),
+        PrivDir = code:priv_dir(?APP),
+        NodeDir = filename:join([PrivDir, "lager", Node]),
 
-                            %% Manually force sasl loading, and disable the logger.
-                            ok = rpc:call(Node, application, load, [sasl]),
-                            ok = rpc:call(Node, application, set_env,
-                                          [sasl, sasl_error_logger, false]),
-                            ok = rpc:call(Node, application, start, [sasl]),
-
-                            ok = rpc:call(Node, application, load, [partisan]),
-                            ok = rpc:call(Node, application, load, [lager]),
-                            ok = rpc:call(Node, application, set_env, [sasl,
-                                                                       sasl_error_logger,
-                                                                       false]),
-                            ok = rpc:call(Node, application, set_env, [lager,
-                                                                       log_root,
-                                                                       NodeDir])
-                     end,
+        %% Manually force sasl loading, and disable the logger.
+        ok = rpc:call(Node, application, load, [sasl]),
+        ok = rpc:call(Node, application, set_env,
+                        [sasl, sasl_error_logger, false]),
+        ok = rpc:call(Node, application, start, [sasl]),
+        ok = rpc:call(Node, application, load, [partisan]),
+        LoggerConf = [
+            {handler, default, logger_disk_log_h,
+            #{config => #{
+                file => filename:join(NodeDir, "log/partisan.log"),
+                max_no_files => 4,
+                filesync_repeat_interval => 60000,
+                max_no_bytes => 1048576
+            }}}
+        ],
+        ok = rpc:call(Node, application, set_env,
+            [kernel, logger, LoggerConf]
+        )
+    end,
     lists:map(LoaderFun, Nodes),
 
     %% Configure settings.
@@ -115,7 +117,7 @@ start(Case, Config, Options) ->
             MaxActiveSize = proplists:get_value(max_active_size, Options, 5),
             ok = rpc:call(Node, partisan_config, set,
                           [max_active_size, MaxActiveSize]),
-                          
+
             ok = rpc:call(Node, partisan_config, set,
                           [periodic_interval, ?OVERRIDE_PERIODIC_INTERVAL]),
 
@@ -492,7 +494,7 @@ omit(OmitNameList, Nodes0) ->
     lists:foldl(FoldFun, [], Nodes0).
 
 %% @private
-node_list(0, _Name, _Config) -> 
+node_list(0, _Name, _Config) ->
     [];
 node_list(N, Name, Config) ->
     case ?config(hash, Config) of

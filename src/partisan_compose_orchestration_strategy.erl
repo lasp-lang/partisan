@@ -19,12 +19,12 @@
 %% -------------------------------------------------------------------
 
 -module(partisan_compose_orchestration_strategy).
+-behavior(partisan_orchestration_strategy).
 
--author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
-
+-include("partisan_logger.hrl").
 -include("partisan.hrl").
 
--behavior(partisan_orchestration_strategy).
+-author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -export([clients/1,
          servers/1,
@@ -35,12 +35,11 @@
 upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Payload) ->
     {ok, <<"OK">>} = eredis:q(Eredis, ["SET", Node, Payload]),
 
-    case partisan_config:get(tracing, ?TRACING) of 
-        true ->
-            lager:info("Pushed artifact to Redis: ~p => ~p", [Node, Payload]);
-        false ->
-            ok
-    end,
+    ?LOG_TRACE(#{
+        description => "Pushed artifact to Redis",
+        node => Node,
+        payload => Payload
+    }),
 
     %% Store membership with node tag.
     Myself = partisan_peer_service_manager:myself(),
@@ -49,36 +48,34 @@ upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Payload) ->
     TaggedNode = prefix(atom_to_list(Tag) ++ "/" ++ atom_to_list(node())),
     {ok, <<"OK">>} = eredis:q(Eredis, ["SET", TaggedNode, MyselfPayload]),
 
-    case partisan_config:get(tracing, ?TRACING) of 
-        true ->
-            lager:info("Pushed additional artifact to Redis: ~p.", [Node]);
-        false ->
-            ok
-    end,
+    ?LOG_TRACE(#{
+        description => "Pushed additional artifact to Redis",
+        node => Node
+    }),
 
     ok.
 
 %% @private
 download_artifact(#orchestration_strategy_state{eredis=Eredis}, Node) ->
-    %% lager:info("Retrieving object ~p from redis.", [Node]),
-
     try
         case eredis:q(Eredis, ["GET", Node]) of
             {ok, Payload} ->
-                case partisan_config:get(tracing, ?TRACING) of 
-                    true ->
-                        lager:info("Received artifact from Redis: ~p", [Node]);
-                    false ->
-                        ok
-                end,
-
+                ?LOG_TRACE(#{
+                    description => "Received artifact from Redis",
+                    node => Node
+                }),
                 Payload;
             {error,no_connection} ->
                 undefined
         end
     catch
-        _:Error ->
-            lager:info("Exception caught: ~p", [Error]),
+        Class:Reason:Stacktrace ->
+            ?LOG_INFO(#{
+                description => "Exception caught",
+                class => Class,
+                reason => Reason,
+                stacktrace => Stacktrace
+            }),
             undefined
     end.
 
@@ -105,12 +102,11 @@ retrieve_keys(#orchestration_strategy_state{eredis=Eredis}, Tag) ->
                     end
                 end, Nodes1),
 
-            case partisan_config:get(tracing, ?TRACING) of 
-                true ->
-                    lager:info("Received ~p keys from Redis: ~p", [Tag, Nodes2]);
-                false ->
-                    ok
-            end,
+            ?LOG_TRACE(#{
+                description => "Received keys from Redis",
+                tag => Tag,
+                nodes => Nodes2
+            }),
 
             sets:from_list(Nodes2);
         {error, no_connection} ->

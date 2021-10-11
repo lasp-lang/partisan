@@ -36,11 +36,6 @@ read(TraceFile) ->
         Acc ++ [Entry]
     end, [], lists:seq(1, NumKeys)),
 
-    %% Print output.
-    % lists:foreach(fun(Line) ->
-    %     lager:info("~p~n", [Line])
-    % end, TraceLines),
-
     %% Close table.
     dets:close(TraceRef),
 
@@ -48,8 +43,8 @@ read(TraceFile) ->
 
 write(TraceFile, TraceLines) ->
     %% Number trace.
-    {NumEntries, NumberedTrace0} = lists:foldl(fun(Line, {N, Lines}) -> 
-        {N + 1, Lines ++ [{N, Line}]} end, 
+    {NumEntries, NumberedTrace0} = lists:foldl(fun(Line, {N, Lines}) ->
+        {N + 1, Lines ++ [{N, Line}]} end,
     {1, []}, TraceLines),
 
     %% Add row containing number of keys.

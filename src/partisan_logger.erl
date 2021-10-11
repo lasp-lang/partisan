@@ -21,13 +21,15 @@
 
 -module(partisan_logger).
 
+-include("partisan_logger.hrl").
+
 -export([info/2, warning/2, error/2]).
 
 info(Format, Args) ->
-    lager:info(Format, Args).
+    ?LOG_INFO(Format, Args).
 
 warning(Format, Args) ->
-    lager:warning(Format, Args).
+    ?LOG_WARNING(Format, Args).
 
 error(Format, Args) ->
-    lager:error(Format, Args).
+    ?LOG_ERROR(Format, Args).

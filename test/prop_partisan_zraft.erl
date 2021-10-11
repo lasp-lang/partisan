@@ -23,7 +23,7 @@
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -include("partisan.hrl").
-
+-include("partisan_logger.hrl").
 -include_lib("proper/include/proper.hrl").
 
 -compile([export_all]).
@@ -38,8 +38,8 @@ node_name() ->
     oneof(names()).
 
 names() ->
-    NameFun = fun(N) -> 
-        list_to_atom("node_" ++ integer_to_list(N)) 
+    NameFun = fun(N) ->
+        list_to_atom("node_" ++ integer_to_list(N))
     end,
     lists:map(NameFun, lists:seq(1, node_num_nodes())).
 
@@ -102,7 +102,7 @@ node_precondition(_NodeState, {call, ?MODULE, sleep, []}) ->
 node_precondition(#node_state{values=Values}, {call, ?MODULE, session_read, [_Node, Key]}) ->
     % node_debug("checking precondition for session_read operation on key: ~p with values: ~p", [Key, dict:to_list(Values)]),
 
-    case dict:find(Key, Values) of 
+    case dict:find(Key, Values) of
         {ok, _} ->
             true;
         Other ->
@@ -112,7 +112,7 @@ node_precondition(#node_state{values=Values}, {call, ?MODULE, session_read, [_No
 node_precondition(#node_state{values=Values}, {call, ?MODULE, read, [_Node, Key]}) ->
     % node_debug("checking precondition for read operation on key: ~p with values: ~p", [Key, dict:to_list(Values)]),
 
-    case dict:find(Key, Values) of 
+    case dict:find(Key, Values) of
         {ok, _} ->
             true;
         Other ->
@@ -151,7 +151,7 @@ node_postcondition(#node_state{values=Values}, {call, ?MODULE, check_delivery, [
     node_debug("verifying all written results are found: ~p", [Results]),
 
     PostconditionResult = lists:foldl(fun({Key, Value}, All) ->
-        case dict:find(Key, Values) of 
+        case dict:find(Key, Values) of
             {ok, Value} ->
                 node_debug("=> found key ~p with value ~p", [Key, Value]),
                 true andalso All;
@@ -159,7 +159,7 @@ node_postcondition(#node_state{values=Values}, {call, ?MODULE, check_delivery, [
                 node_debug("=> didn't find key ~p with correct value: ~p, found ~p", [Key, Value, Other]),
                 false andalso All;
             error ->
-                case Value of 
+                case Value of
                     not_found ->
                         node_debug("=> key ~p not_found, wasn't written.", [Key]),
                         true andalso All;
@@ -186,14 +186,14 @@ node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {e
     node_debug("=> write failed, leader unavailable...", []),
     true;
 node_postcondition(#node_state{values=Values}, {call, ?MODULE, session_read, [_Node, Key]}, {{ok, Value}, _}) ->
-    case dict:find(Key, Values) of 
+    case dict:find(Key, Values) of
         {ok, Value} ->
             true;
         _ ->
             false
     end;
 node_postcondition(#node_state{values=Values}, {call, ?MODULE, read, [_Node, Key]}, {{ok, Value}, _}) ->
-    case dict:find(Key, Values) of 
+    case dict:find(Key, Values) of
         {ok, Value} ->
             true;
         _ ->
@@ -207,7 +207,7 @@ node_postcondition(_NodeState, {call, ?MODULE, session_write, [_Node, _Key, _Val
 node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {ok, _}) ->
     true;
 node_postcondition(_NodeState, Command, Response) ->
-    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
+    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p",
                [Command, Response]),
     false.
 
@@ -252,7 +252,7 @@ check_delivery() ->
     Result = lists:map(fun(Key) ->
         node_debug("=> retrieving value for key: ~p at node: ~p", [Key, SecondName]),
 
-        case rpc:call(?NAME(SecondName), zraft_client, query, [ZraftSession, Key, 1000]) of 
+        case rpc:call(?NAME(SecondName), zraft_client, query, [ZraftSession, Key, 1000]) of
             {{ok, Value}, _} ->
                 node_debug("=> found value: ~p", [Value]),
                 {Key, Value};
@@ -325,7 +325,7 @@ read(Node, Key) ->
 node_debug(Line, Args) ->
     case ?NODE_DEBUG of
         true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            ?LOG_INFO("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
@@ -358,7 +358,7 @@ node_begin_case() ->
     %% Load, configure, and start zraft.
     lists:foreach(fun({ShortName, _}) ->
         % node_debug("starting zraft_lib at node ~p", [ShortName]),
-        case rpc:call(?NAME(ShortName), application, load, [zraft_lib]) of 
+        case rpc:call(?NAME(ShortName), application, load, [zraft_lib]) of
             ok ->
                 ok;
             {error, {already_loaded, zraft_lib}} ->
@@ -432,7 +432,7 @@ node_end_case() ->
     %% Stop zraft_lib.
     lists:foreach(fun({ShortName, _}) ->
         % node_debug("stopping zraft_lib on node ~p", [ShortName]),
-        case rpc:call(?NAME(ShortName), application, stop, [zraft_lib]) of 
+        case rpc:call(?NAME(ShortName), application, stop, [zraft_lib]) of
             ok ->
                 ok;
             {badrpc, nodedown} ->

@@ -23,6 +23,7 @@
 
 -behaviour(supervisor).
 
+-include("partisan_logger.hrl").
 -include("partisan.hrl").
 
 -export([start_link/0]).
@@ -56,18 +57,21 @@ init([]) ->
     CausalLabels = partisan_config:get(causal_labels, []),
 
     CausalBackendFun = fun(Label) ->
-        {partisan_causality_backend, 
-         {partisan_causality_backend, start_link, [Label]}, 
+        {partisan_causality_backend,
+         {partisan_causality_backend, start_link, [Label]},
           permanent, 5000, worker, [partisan_causality_backend]}
     end,
 
     CausalBackends = lists:map(CausalBackendFun, CausalLabels),
-
-    lager:info("Partisan listening on ~p:~p listen_addrs: ~p", 
-               [partisan_config:get(peer_ip), partisan_config:get(peer_port), partisan_config:get(listen_addrs)]),
+    ?LOG_INFO(#{
+        description => "Partisan listening",
+        ip_address => partisan_config:get(peer_ip),
+        port_number => partisan_config:get(peer_port),
+        listen_addr => partisan_config:get(listen_addrs)
+    }),
 
     %% Open connection pool.
-    PoolSup = {partisan_pool_sup, 
+    PoolSup = {partisan_pool_sup,
                {partisan_pool_sup, start_link, []},
                 permanent, 20000, supervisor, [partisan_pool_sup]},
 

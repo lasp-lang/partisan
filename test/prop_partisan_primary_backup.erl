@@ -23,6 +23,7 @@
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -include("partisan.hrl").
+-include("partisan_logger.hrl").
 
 -include_lib("proper/include/proper.hrl").
 
@@ -45,8 +46,8 @@ node_name() ->
     oneof(names()).
 
 names() ->
-    NameFun = fun(N) -> 
-        list_to_atom("node_" ++ integer_to_list(N)) 
+    NameFun = fun(N) ->
+        list_to_atom("node_" ++ integer_to_list(N))
     end,
     lists:map(NameFun, lists:seq(1, node_num_nodes())).
 
@@ -118,7 +119,7 @@ node_postcondition(#node_state{store=Store}, {call, ?MODULE, read, [Node, Key]},
             %% Didn't find the value in the dict, fine, if we never wrote it.
             Result = Value =:= not_found,
 
-            case Result of 
+            case Result of
                 false ->
                     node_debug("read at node ~p for key ~p returned other value: ~p when expecting: not_found",
                             [Node, Key, Value]);
@@ -144,12 +145,12 @@ node_postcondition(#node_state{store=Store}=_NodeState, {call, ?MODULE, verify, 
         All = dict:fold(fun(Node, Results, Acc1) ->
             % node_debug("looking at reuslts: ~p", [Results]),
 
-            case Results of 
+            case Results of
                 badrpc ->
                     node_debug("=> node crashed, considering valid.", []),
                     Acc1 andalso true;
                 _ ->
-                    case dict:find(Key, Results) of 
+                    case dict:find(Key, Results) of
                         {ok, Value} ->
                             Acc1 andalso true;
                         Other ->
@@ -168,12 +169,12 @@ node_postcondition(#node_state{store=Store}=_NodeState, {call, ?MODULE, verify, 
         NodesAcc = dict:fold(fun(Node, Results, Acc1) ->
             % node_debug("looking at reuslts: ~p", [Results]),
 
-            case Results of 
+            case Results of
                 badrpc ->
                     node_debug("=> node crashed, considering valid.", []),
                     Acc1 ++ [Node];
                 _ ->
-                    case dict:find(Key, Results) of 
+                    case dict:find(Key, Results) of
                         {ok, Value} ->
                             Acc1;
                         Other ->
@@ -189,13 +190,13 @@ node_postcondition(#node_state{store=Store}=_NodeState, {call, ?MODULE, verify, 
 
     %% Everything there is something we wrote.
     NodeToStoreResult = dict:fold(fun(Node, Results, Acc) ->
-        case Results of 
+        case Results of
             badrpc ->
                 node_debug("=> node crashed, considering valid.", []),
                 Acc andalso true;
             _ ->
                 All = dict:fold(fun(Key, Value, Acc1) ->
-                    case dict:find(Key, Store) of 
+                    case dict:find(Key, Store) of
                         {ok, Value} ->
                             Acc1 andalso true;
                         Other ->
@@ -219,7 +220,7 @@ node_postcondition(#node_state{store=Store}=_NodeState, {call, ?MODULE, verify, 
     (StoreToNodeResult andalso NodeToStoreResult) orelse
     (not StoreToNodeResult andalso NodeToStoreResult andalso length(NodesMissingValues) =< Tolerance);
 node_postcondition(_NodeState, Command, Response) ->
-    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
+    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p",
                [Command, Response]),
     false.
 
@@ -278,7 +279,7 @@ verify() ->
 node_debug(Line, Args) ->
     case ?NODE_DEBUG of
         true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            ?LOG_INFO("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
@@ -334,7 +335,7 @@ node_end_case() ->
 
 %% @private
 implementation_module() ->
-    case os:getenv("IMPLEMENTATION_MODULE") of 
+    case os:getenv("IMPLEMENTATION_MODULE") of
         false ->
             error({error, no_implementation_module});
         Other ->
@@ -345,17 +346,17 @@ implementation_module() ->
 rpc_with_timeout(Node, Function, Args) ->
     ImplementationModule = implementation_module(),
     Timeout = ImplementationModule:timeout(),
-    
-    Result = case scheduler() of 
+
+    Result = case scheduler() of
         finite_fault ->
             Self = self(),
 
-            spawn_link(fun() -> 
+            spawn_link(fun() ->
                 RpcResult = rpc:call(?NAME(Node), ImplementationModule, Function, Args, Timeout),
                 Self ! {result, RpcResult}
             end),
 
-            receive 
+            receive
                 {result, RpcResult} ->
                     RpcResult
             after
@@ -380,7 +381,7 @@ scheduler() ->
 
 %% @private
 fault_tolerance() ->
-    case os:getenv("FAULT_TOLERANCE") of 
+    case os:getenv("FAULT_TOLERANCE") of
         false ->
             0;
         ToleranceString ->

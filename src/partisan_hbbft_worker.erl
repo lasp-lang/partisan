@@ -2,6 +2,8 @@
 
 -behaviour(gen_server).
 
+-include("partisan_logger.hrl").
+
 -export([start_link/6, submit_transaction/2, start_on_demand/1, get_blocks/1, get_status/1, get_buf/1, stop/1, terminate/2]).
 -export([verify_chain/2, block_transactions/1]).
 
@@ -57,7 +59,7 @@ get_buf(Pid) ->
 verify_chain([], _) ->
     true;
 verify_chain([G], PubKey) ->
-    lager:info("verifying genesis block~n"),
+    ?LOG_INFO(#{description => "verifying genesis block~n"}),
     %% genesis block has no prev hash
     case G#block.prev_hash == <<>> of
         true ->
@@ -66,15 +68,15 @@ verify_chain([G], PubKey) ->
             Signature = tpke_pubkey:deserialize_element(PubKey, G#block.signature),
             tpke_pubkey:verify_signature(PubKey, Signature, HM);
         false ->
-            lager:info("no genesis block~n"),
+            ?LOG_INFO(#{description => "no genesis block~n"}),
             false
     end;
 verify_chain(Chain, PubKey) ->
-    lager:info("Chain verification depth ~p~n", [length(Chain)]),
+    ?LOG_INFO("Chain verification depth ~p~n", [length(Chain)]),
     case verify_block_fit(Chain, PubKey) of
         true -> verify_chain(tl(Chain), PubKey);
         false ->
-            lager:info("bad signature~n"),
+            ?LOG_INFO(#{description => "bad signature~n"}),
             false
     end.
 
@@ -90,11 +92,11 @@ verify_block_fit([A, B | _], PubKey) ->
                 true ->
                     true;
                 false ->
-                    lager:info("bad signature~n"),
+                    ?LOG_INFO(#{description => "bad signature~n"}),
                     false
             end;
         false ->
-            lager:info("parent hash mismatch ~p ~p~n", [A#block.prev_hash, hash_block(B)]),
+            ?LOG_INFO("parent hash mismatch ~p ~p~n", [A#block.prev_hash, hash_block(B)]),
             false
     end.
 
@@ -144,7 +146,7 @@ handle_call(get_status, _From, State) ->
 handle_call(get_buf, _From, State) ->
     {reply, {ok, hbbft:buf(State#state.hbbft)}, State};
 handle_call(Msg, _From, State) ->
-    lager:info("unhandled msg ~p~n", [Msg]),
+    ?LOG_INFO("unhandled msg ~p~n", [Msg]),
     {reply, ok, State}.
 
 handle_cast({hbbft, PeerID, Msg}, State = #state{hbbft=HBBFT, sk=SK}) ->
@@ -153,29 +155,29 @@ handle_cast({hbbft, PeerID, Msg}, State = #state{hbbft=HBBFT, sk=SK}) ->
 handle_cast({block, NewBlock}, State=#state{sk=SK, hbbft=HBBFT}) ->
     case lists:member(NewBlock, State#state.blocks) of
         false ->
-            lager:info("XXXXXXXX~n"),
+            ?LOG_INFO(#{description => "XXXXXXXX~n"}),
             %% a new block, check if it fits on our chain
             case verify_block_fit([NewBlock|State#state.blocks], tpke_privkey:public_key(SK)) of
                 true ->
                     %% advance to the next round
-                    lager:info("~p skipping to next round~n", [self()]),
+                    ?LOG_INFO("~p skipping to next round~n", [self()]),
                     %% remove any transactions we have from our queue (drop the signature messages, they're not needed)
                     {NewHBBFT, _} = hbbft:finalize_round(maybe_deserialize_hbbft(HBBFT, SK), NewBlock#block.transactions, term_to_binary(NewBlock)),
                     NewState = dispatch(hbbft:next_round(maybe_deserialize_hbbft(NewHBBFT, SK)), undefined, State#state{blocks=[NewBlock | State#state.blocks]}),
                     {noreply, NewState#state{tempblock=undefined}};
                 false ->
-                    lager:info("invalid block proposed~n"),
+                    ?LOG_INFO(#{description => "invalid block proposed~n"}),
                     {noreply, State}
             end;
         true ->
             {noreply, State}
     end;
 handle_cast(Msg, State) ->
-    lager:info("unhandled msg ~p~n", [Msg]),
+    ?LOG_INFO("unhandled msg ~p~n", [Msg]),
     {noreply, State}.
 
 handle_info(Msg, State) ->
-    lager:info("unhandled msg ~p~n", [Msg]),
+    ?LOG_INFO("unhandled msg ~p~n", [Msg]),
     {noreply, State}.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -183,7 +185,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private
 terminate(_Reason, _State) ->
-    lager:info("Terminating hbbft worker.", []),
+    ?LOG_INFO("Terminating hbbft worker.", []),
     ok.
 
 dispatch({NewHBBFT, {send, ToSend}}, _Msg, State) ->
@@ -201,7 +203,7 @@ dispatch({NewHBBFT, {result, {transactions, _, Txns}}}, _Msg, State) ->
     dispatch(hbbft:finalize_round(maybe_deserialize_hbbft(NewHBBFT, State#state.sk), Txns, term_to_binary(NewBlock)), undefined, State#state{tempblock=NewBlock});
 dispatch({NewHBBFT, {result, {signature, Sig}}}, _Msg, State = #state{tempblock=NewBlock0}) ->
     NewBlock = NewBlock0#block{signature=Sig},
-    case os:getenv("PARTISAN") of 
+    case os:getenv("PARTISAN") of
         "true" ->
             lists:foreach(fun(Dest) ->
                 try
@@ -228,23 +230,22 @@ dispatch({_NewHBBFT, defer}, Msg, State) ->
 dispatch({_NewHBBFT, already_started}, _Msg, State) ->
     State;
 dispatch({NewHBBFT, Other}, Msg, State) ->
-    lager:info("UNHANDLED ~p ~p~n", [Other, Msg]),
+    ?LOG_INFO("UNHANDLED ~p ~p~n", [Other, Msg]),
     State#state{hbbft=maybe_serialize_HBBFT(NewHBBFT, State#state.to_serialize)};
 dispatch(Other, Msg, State) ->
-    lager:info("UNHANDLED2 ~p ~p~n", [Other, Msg]),
+    ?LOG_INFO("UNHANDLED2 ~p ~p~n", [Other, Msg]),
     State.
 
 do_send([], _) ->
     ok;
 do_send([{unicast, Dest, Msg}|T], State) ->
-    % lager:info("~p unicasting ~p to ~p~n", [State#state.id, Msg, global:whereis_name(name(Dest))]),
-    case os:getenv("PARTISAN") of 
+    case os:getenv("PARTISAN") of
         "true" ->
             try
                 Process = global:whereis_name(name(Dest)),
                 Node = node(Process),
                 Message = {hbbft, State#state.id, Msg},
-                lager:info("Sending partisan message to node ~p process ~p: ~p", [Node, Process, Message]),
+                ?LOG_INFO("Sending partisan message to node ~p process ~p: ~p", [Node, Process, Message]),
                 ok = partisan_pluggable_peer_service_manager:cast_message(Node, undefined, Process, Message, [])
             catch
                 _:_ ->
@@ -257,15 +258,14 @@ do_send([{unicast, Dest, Msg}|T], State) ->
 
     do_send(T, State);
 do_send([{multicast, Msg}|T], State) ->
-    % lager:info("~p multicasting ~p to ~p~n", [State#state.id, Msg, [global:whereis_name(name(Dest)) || Dest <- lists:seq(0, State#state.n - 1)]]),
-    case os:getenv("PARTISAN") of 
+    case os:getenv("PARTISAN") of
         "true" ->
             lists:foreach(fun(Dest) ->
                 try
                     Process = global:whereis_name(name(Dest)),
                     Node = node(Process),
                     Message = {hbbft, State#state.id, Msg},
-                    lager:info("Sending partisan message to node ~p process ~p: ~p", [Node, Process, Message]),
+                    ?LOG_INFO("Sending partisan message to node ~p process ~p: ~p", [Node, Process, Message]),
                     ok = partisan_pluggable_peer_service_manager:cast_message(Node, undefined, Process, Message, [])
                 catch
                     _:_ ->

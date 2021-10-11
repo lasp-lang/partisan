@@ -24,6 +24,9 @@
 -behaviour(gen_server).
 -behaviour(partisan_peer_service_manager).
 
+-include("partisan_logger.hrl").
+-include("partisan.hrl").
+
 %% partisan_peer_service_manager callbacks
 -export([start_link/0,
          members/0,
@@ -60,7 +63,6 @@
          terminate/2,
          code_change/3]).
 
--include("partisan.hrl").
 
 -type pending() :: [node_spec()].
 -type membership() :: sets:set(node_spec()).
@@ -258,15 +260,14 @@ handle_call(members_for_orchestration, _From, #state{membership=Membership}=Stat
 handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
     {reply, {ok, Membership}, State};
 
-handle_call(Msg, _From, State) ->
-    lager:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
+handle_call(Event, _From, State) ->
+    ?LOG_WARNING(#{description => "Unhandled call event", event => Event}),
     {reply, ok, State}.
 
 %% @private
 -spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
-handle_cast(Msg, State) ->
-    lager:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
-    {noreply, State}.
+handle_cast(Event, State) ->
+    ?LOG_WARNING(#{description => "Unhandled cast event", event => Event}),    {noreply, State}.
 
 handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
     {_, Connections} = partisan_peer_service_connections:prune(From, Connections0),
@@ -294,9 +295,11 @@ handle_info({connected, Node, _Tag, _RemoteState},
 
             %% Compute count.
             Count = sets:size(Membership),
-
-            lager:info("Join ACCEPTED with ~p; we have ~p members in our view.",
-                       [Node, Count]),
+            ?LOG_INFO(#{
+                description => "Join ACCEPTED",
+                peer_node => Node,
+                member_view_count => Count
+            }),
 
             %% Return.
             {noreply, State#state{pending=Pending,
@@ -306,8 +309,8 @@ handle_info({connected, Node, _Tag, _RemoteState},
             {noreply, State}
     end;
 
-handle_info(Msg, State) ->
-    lager:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Msg]),
+handle_info(Event, State) ->
+    ?LOG_WARNING(#{description => "Unhandled info event", event => Event}),
     {noreply, State}.
 
 %% @private

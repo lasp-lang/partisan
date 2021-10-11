@@ -23,6 +23,12 @@
 
 -behaviour(gen_server).
 
+
+-include("partisan.hrl").
+-include("partisan_logger.hrl").
+-include("partisan_peer_connection.hrl").
+
+
 -export([start_link/4]).
 
 %% gen_server callbacks
@@ -39,9 +45,6 @@
 
 %% Macros.
 -define(TIMEOUT, 1000).
-
--include("partisan.hrl").
--include("partisan_peer_connection.hrl").
 
 %%%===================================================================
 %%% API
@@ -70,12 +73,10 @@ init([Peer, ListenAddr, Channel, From]) ->
 
             {ok, #state{from=From, listen_addr=ListenAddr, channel=Channel, socket=Socket, peer=Peer}};
         Error ->
-            case partisan_config:get(tracing, ?TRACING) of
-                true ->
-                    lager:warning("Pid ~p is unable to connect to ~p due to ~p", [self(), Peer, Error]);
-                false ->
-                    ok
-            end,
+            ?LOG_TRACE(
+                "Pid ~p is unable to connect to ~p due to ~p",
+                [self(), Peer, Error]
+            ),
             {stop, normal}
     end.
 
@@ -94,31 +95,21 @@ handle_call({send_message, Message}, _From, #state{channel=_Channel, socket=Sock
 
     case partisan_peer_connection:send(Socket, encode(Message)) of
         ok ->
-            case partisan_config:get(tracing, ?TRACING) of
-                true ->
-                    lager:info("Dispatched message: ~p", [Message]);
-                false ->
-                    ok
-            end,
-            
+            ?LOG_TRACE("Dispatched message: ~p", [Message]),
+
             {reply, ok, State};
         Error ->
-            lager:info("Message ~p failed to send: ~p", [Message, Error]),
+            ?LOG_DEBUG("Message ~p failed to send: ~p", [Message, Error]),
             {reply, Error, State}
     end;
-handle_call(Msg, _From, State) ->
-    lager:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
+handle_call(Event, _From, State) ->
+    ?LOG_WARNING(#{description => "Unhandled call event", event => Event}),
     {reply, ok, State}.
 
 -spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
 %% @private
 handle_cast({send_message, Message}, #state{channel=_Channel, socket=Socket}=State) ->
-    case partisan_config:get(tracing, ?TRACING) of
-        true ->
-            lager:info("Received cast: ~p", [Message]);
-        false ->
-            ok
-    end,
+    ?LOG_TRACE("Received cast: ~p", [Message]),
 
     case get({?MODULE, egress_delay}) of
         0 ->
@@ -129,53 +120,33 @@ handle_cast({send_message, Message}, #state{channel=_Channel, socket=Socket}=Sta
 
     case partisan_peer_connection:send(Socket, encode(Message)) of
         ok ->
-            case partisan_config:get(tracing, ?TRACING) of
-                true ->
-                    lager:info("Dispatched message: ~p", [Message]);
-                false ->
-                    ok
-            end,
+            ?LOG_TRACE("Dispatched message: ~p", [Message]),
             ok;
         Error ->
-            lager:info("Message ~p failed to send: ~p", [Message, Error])
+            ?LOG_INFO("Message ~p failed to send: ~p", [Message, Error])
     end,
     {noreply, State};
-handle_cast(Msg, State) ->
-    lager:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
+handle_cast(Event, State) ->
+    ?LOG_WARNING(#{description => "Unhandled cast event", event => Event}),
     {noreply, State}.
 
 %% @private
 -spec handle_info(term(), state_t()) -> {noreply, state_t()}.
 handle_info({Tag, _Socket, Data}, State0) when ?DATA_MSG(Tag) ->
-    case partisan_config:get(tracing, ?TRACING) of
-        true ->
-            lager:info("Received info message at ~p: ~p", [self(), decode(Data)]);
-        false ->
-            ok
-    end,
+    ?LOG_TRACE("Received info message at ~p: ~p", [self(), decode(Data)]),
     handle_message(decode(Data), State0);
 handle_info({Tag, _Socket}, #state{peer = Peer} = State) when ?CLOSED_MSG(Tag) ->
-    case partisan_config:get(tracing, ?TRACING) of 
-        true ->
-            lager:info("Connection to ~p has been closed for pid ~p", [Peer, self()]);
-        false ->
-            ok
-    end,
+    ?LOG_TRACE("Connection to ~p has been closed for pid ~p", [Peer, self()]),
 
     {stop, normal, State};
-handle_info(Msg, State) ->
-    lager:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Msg]),
+handle_info(Event, State) ->
+    ?LOG_WARNING(#{description => "Unhandled info event", event => Event}),
     {noreply, State}.
 
 %% @private
 -spec terminate(term(), state_t()) -> term().
 terminate(Reason, #state{socket=Socket}) ->
-    case partisan_config:get(tracing, ?TRACING) of
-        true ->
-            lager:info("Process ~p terminating for reason ~p...", [self(), Reason]);
-        false ->
-            ok
-    end,
+    ?LOG_TRACE("Process ~p terminating for reason ~p...", [self(), Reason]),
     ok = partisan_peer_connection:close(Socket),
     ok.
 
@@ -244,8 +215,6 @@ handle_message({state, Tag, LocalState},
 
     {noreply, State};
 handle_message({hello, Node}, #state{peer=Peer, socket=Socket}=State) ->
-    % lager:info("sending hello to ~p", [Node]),
-
     #{name := PeerName} = Peer,
 
     case Node of
@@ -256,19 +225,29 @@ handle_message({hello, Node}, #state{peer=Peer, socket=Socket}=State) ->
                 ok ->
                     ok;
                 Error ->
-                    lager:info("failed to send hello message to node ~p due to ~p",
-                               [Node, Error])
+                    ?LOG_INFO(#{
+                        description => "Failed to send hello message to node",
+                        node => Node,
+                        error => Error
+                    })
             end,
 
             {noreply, State};
         _ ->
             %% If the peer isn't who it should be, abort.
-            lager:error("Pid: ~p peer ~p isn't ~p.", [self(), Node, Peer]),
+            ?LOG_ERROR(#{
+                description => "Unexpected peer, aborting",
+                got => Node,
+                expected => Peer
+            }),
             {stop, {unexpected_peer, Node, Peer}, State}
     end;
 
 handle_message(Message, State) ->
-    lager:info("Pid received invalid message: ~p", [self(), Message]),
+    ?LOG_WARNING(#{
+        description => "Received invalid message",
+        message => Message
+    }),
     {stop, normal, State}.
 
 %% @private
