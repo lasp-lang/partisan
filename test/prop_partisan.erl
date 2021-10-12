@@ -634,7 +634,7 @@ sync_leave_cluster(Node) ->
 
 start_or_reload_nodes() ->
     Self = node(),
-    lager:info("~p: ~p starting nodes!", [?MODULE, Self]),
+    logger:info("~p: ~p starting nodes!", [?MODULE, Self]),
 
     %% Special configuration for the cluster.
     Config = [{partisan_dispatch, true},
@@ -779,7 +779,7 @@ start_or_reload_nodes() ->
 
     %% Identify trace.
     TraceRandomNumber = rand:uniform(100000),
-    %% lager:info("~p: trace random generated: ~p", [?MODULE, TraceRandomNumber]),
+    %% logger:info("~p: trace random generated: ~p", [?MODULE, TraceRandomNumber]),
     TraceIdentifier = atom_to_list(system_model()) ++ "_" ++ integer_to_list(TraceRandomNumber),
     ok = partisan_trace_orchestrator:identify(TraceIdentifier),
 
@@ -887,7 +887,7 @@ enough_nodes_connected_to_issue_remove(Nodes) ->
 initial_state_debug(Line, Args) ->
     case ?INITIAL_STATE_DEBUG of
         true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            logger:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
@@ -896,7 +896,7 @@ initial_state_debug(Line, Args) ->
 precondition_debug(Line, Args) ->
     case os:getenv("PRECONDITION_DEBUG") of 
         "true" ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            logger:info("~p: " ++ Line, [?MODULE] ++ Args);
         _ ->
             ok
     end.
@@ -905,7 +905,7 @@ precondition_debug(Line, Args) ->
 postcondition_debug(Line, Args) ->
     case os:getenv("POSTCONDITION_DEBUG") of
         "true" ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            logger:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
@@ -914,7 +914,7 @@ postcondition_debug(Line, Args) ->
 debug(Line, Args) ->
     case ?DEBUG of
         true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            logger:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
@@ -963,7 +963,7 @@ wait_until_nodes_agree_on_membership(Nodes) ->
         end
     end,
     [ok = wait_until(Node, AgreementFun) || Node <- Nodes],
-    lager:info("All nodes agree on membership!"),
+    logger:info("All nodes agree on membership!"),
     ok.
 
 %% @private

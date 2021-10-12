@@ -37,7 +37,7 @@ upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Payload) ->
 
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
-            lager:info("Pushed artifact to Redis: ~p => ~p", [Node, Payload]);
+            logger:info("Pushed artifact to Redis: ~p => ~p", [Node, Payload]);
         false ->
             ok
     end,
@@ -51,7 +51,7 @@ upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Payload) ->
 
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
-            lager:info("Pushed additional artifact to Redis: ~p.", [Node]);
+            logger:info("Pushed additional artifact to Redis: ~p.", [Node]);
         false ->
             ok
     end,
@@ -60,14 +60,14 @@ upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Payload) ->
 
 %% @private
 download_artifact(#orchestration_strategy_state{eredis=Eredis}, Node) ->
-    %% lager:info("Retrieving object ~p from redis.", [Node]),
+    %% logger:info("Retrieving object ~p from redis.", [Node]),
 
     try
         case eredis:q(Eredis, ["GET", Node]) of
             {ok, Payload} ->
                 case partisan_config:get(tracing, ?TRACING) of 
                     true ->
-                        lager:info("Received artifact from Redis: ~p", [Node]);
+                        logger:info("Received artifact from Redis: ~p", [Node]);
                     false ->
                         ok
                 end,
@@ -78,7 +78,7 @@ download_artifact(#orchestration_strategy_state{eredis=Eredis}, Node) ->
         end
     catch
         _:Error ->
-            lager:info("Exception caught: ~p", [Error]),
+            logger:info("Exception caught: ~p", [Error]),
             undefined
     end.
 
@@ -107,7 +107,7 @@ retrieve_keys(#orchestration_strategy_state{eredis=Eredis}, Tag) ->
 
             case partisan_config:get(tracing, ?TRACING) of 
                 true ->
-                    lager:info("Received ~p keys from Redis: ~p", [Tag, Nodes2]);
+                    logger:info("Received ~p keys from Redis: ~p", [Tag, Nodes2]);
                 false ->
                     ok
             end,

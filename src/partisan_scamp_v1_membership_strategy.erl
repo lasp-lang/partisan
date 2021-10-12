@@ -55,7 +55,7 @@ join(#scamp_v1{membership=Membership0}=State0, Node, _NodeState) ->
     %% 1. Add node to our state.
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
-            lager:info("~p: Adding node ~p to our membership.", [node(), Node]);
+            logger:info("~p: Adding node ~p to our membership.", [node(), Node]);
         false ->
             ok
     end,
@@ -70,7 +70,7 @@ join(#scamp_v1{membership=Membership0}=State0, Node, _NodeState) ->
     OutgoingMessages2 = sets:fold(fun(N, OM) ->
         case partisan_config:get(tracing, ?TRACING) of 
             true ->
-                lager:info("~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N]);
+                logger:info("~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N]);
             false ->
                 ok
         end,
@@ -84,7 +84,7 @@ join(#scamp_v1{membership=Membership0}=State0, Node, _NodeState) ->
     ForwardMessages = lists:map(fun(N) ->
         case partisan_config:get(tracing, ?TRACING) of 
             true ->
-                lager:info("~p: Forwarding additional subscription for ~p to node: ~p", [node(), Node, N]);
+                logger:info("~p: Forwarding additional subscription for ~p to node: ~p", [node(), Node, N]);
             false ->
                 ok
         end,
@@ -102,7 +102,7 @@ join(#scamp_v1{membership=Membership0}=State0, Node, _NodeState) ->
 leave(#scamp_v1{membership=Membership0}=State0, Node) ->
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
-            lager:info("~p: Issuing remove_subscription for node ~p.", [node(), Node]);
+            logger:info("~p: Issuing remove_subscription for node ~p.", [node(), Node]);
         false ->
             ok
     end,
@@ -149,7 +149,7 @@ periodic(#scamp_v1{last_message_time=LastMessageTime} = State) ->
             %% Node is isolated.
             case partisan_config:get(tracing, ?TRACING) of 
                 true ->
-                    lager:info("~p: Node is possibily isolated.", [node()]);
+                    logger:info("~p: Node is possibily isolated.", [node()]);
                 false ->
                     ok
             end,
@@ -159,7 +159,7 @@ periodic(#scamp_v1{last_message_time=LastMessageTime} = State) ->
             lists:map(fun(N) ->
                 case partisan_config:get(tracing, ?TRACING) of 
                     true ->
-                        lager:info("~p: Forwarding additional subscription for ~p to node: ~p", [node(), Myself, N]);
+                        logger:info("~p: Forwarding additional subscription for ~p to node: ~p", [node(), Myself, N]);
                     false ->
                         ok
                 end,
@@ -177,7 +177,7 @@ periodic(#scamp_v1{last_message_time=LastMessageTime} = State) ->
 handle_message(State, {ping, SourceNode}) ->
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
-            lager:info("~p: Received ping from node ~p.", [node(), SourceNode]);
+            logger:info("~p: Received ping from node ~p.", [node(), SourceNode]);
         false ->
             ok
     end,
@@ -188,7 +188,7 @@ handle_message(State, {ping, SourceNode}) ->
     {ok, MembershipList, OutgoingMessages, State#scamp_v1{last_message_time=LastMessageTime}};
 %% @doc Handling incoming protocol message.
 handle_message(#scamp_v1{membership=Membership0}=State0, {remove_subscription, Node}) ->
-    lager:info("~p: Received remove_subscription for node ~p.", [node(), Node]),
+    logger:info("~p: Received remove_subscription for node ~p.", [node(), Node]),
     MembershipList0 = membership_list(State0),
 
     case sets:is_element(Node, Membership0) of 
@@ -212,7 +212,7 @@ handle_message(#scamp_v1{membership=Membership0}=State0, {remove_subscription, N
 handle_message(#scamp_v1{membership=Membership0}=State0, {forward_subscription, Node}) ->
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
-            lager:info("~p: Received subscription for node ~p.", [node(), Node]);
+            logger:info("~p: Received subscription for node ~p.", [node(), Node]);
         false ->
             ok
     end,
@@ -227,7 +227,7 @@ handle_message(#scamp_v1{membership=Membership0}=State0, {forward_subscription, 
         true ->
             case partisan_config:get(tracing, ?TRACING) of 
                 true ->
-                    lager:info("~p: Adding subscription for node: ~p", [node(), Node]);
+                    logger:info("~p: Adding subscription for node: ~p", [node(), Node]);
                 false ->
                     ok
             end,
@@ -241,7 +241,7 @@ handle_message(#scamp_v1{membership=Membership0}=State0, {forward_subscription, 
             OutgoingMessages = lists:map(fun(N) ->
                 case partisan_config:get(tracing, ?TRACING) of 
                     true ->
-                        lager:info("~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N]);
+                        logger:info("~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N]);
                     false ->
                         ok
                 end,

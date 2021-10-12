@@ -145,5 +145,5 @@ stop() ->
 
 %% @doc Stop for a given reason.
 stop(Reason) ->
-    lager:notice("~p", [Reason]),
+    logger:notice("~p", [Reason]),
     init:stop().

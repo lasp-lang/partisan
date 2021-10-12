@@ -19,6 +19,7 @@
 %%
 -module(partisan_gen_server).
 
+
 %%% ---------------------------------------------------
 %%%
 %%% The idea behind THIS server is that the user module
@@ -209,24 +210,24 @@ stop(Name, Reason, Timeout) ->
 %% is handled here (? Shall we do that here (or rely on timeouts) ?).
 %% -----------------------------------------------------------------
 call(Name, Request) ->
-	lager:info("Making call to ~p~n", [Name]),
+	logger:info("Making call to ~p~n", [Name]),
 
     case catch partisan_gen:call(Name, '$gen_call', Request) of
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
-		lager:warning("Exit: ~p", [Reason]),
+		logger:warning("Exit: ~p", [Reason]),
 	    exit({Reason, {?MODULE, call, [Name, Request]}})
     end.
 
 call(Name, Request, Timeout) ->
-	lager:info("Making call to ~p~n", [Name]),
+	logger:info("Making call to ~p~n", [Name]),
 
     case catch partisan_gen:call(Name, '$gen_call', Request, Timeout) of
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
-		lager:warning("Exit: ~p", [Reason]),
+		logger:warning("Exit: ~p", [Reason]),
 	    exit({Reason, {?MODULE, call, [Name, Request, Timeout]}})
     end.
 
@@ -258,7 +259,7 @@ cast_msg(Request) -> {'$gen_cast',Request}.
 %% Send a reply to the client.
 %% -----------------------------------------------------------------
 reply({To, Tag}, Reply) ->
-	lager:info("reply called with to: ~p tag ~p reply: ~p", [To, Tag, Reply]),
+	logger:info("reply called with to: ~p tag ~p reply: ~p", [To, Tag, Reply]),
 	partisan_pluggable_peer_service_manager:forward_message(To, {Tag, Reply}).
     % catch To ! {Tag, Reply}.
 

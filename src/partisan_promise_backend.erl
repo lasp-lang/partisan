@@ -50,7 +50,7 @@ start_link() ->
 
 %% @private
 init([]) ->
-    lager:info("Initializing promise backend..."),
+    logger:info("Initializing promise backend..."),
     ?MODULE = ets:new(?MODULE, [named_table]),
     {ok, #state{t=?MODULE}}.
 

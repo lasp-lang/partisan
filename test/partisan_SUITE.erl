@@ -788,7 +788,7 @@ pid_test(Config) ->
         {message, Pid} when is_pid(Pid) ->
             ct:fail("Received incorrect message!");
         {message, GenSym} = Message ->
-            lager:info("Received correct message: ~p", [Message]),
+            logger:info("Received correct message: ~p", [Message]),
             ok = rpc:call(Node4, Manager, forward_message, [GenSym, Message]),
             ok
     after 
@@ -1185,7 +1185,7 @@ gossip_test(Config) ->
     ReceiverFun = fun() ->
         receive
             hello ->
-                lager:info("received value from gossip receiver", []),
+                logger:info("received value from gossip receiver", []),
                 Self ! hello
         end
     end,
@@ -2216,7 +2216,7 @@ receiver(Manager, BenchPid, Count) ->
         {_Message, _SourceNode, _SourcePid} ->
             receiver(Manager, BenchPid, Count - 1);
         Other ->
-            lager:warning("Got incorrect message: ~p", [Other])
+            logger:warning("Got incorrect message: ~p", [Other])
     end.
 
 sender(_EchoBinary, _Manager, _DestinationNode, _DestinationPid, _PartitionKey, 0) ->

@@ -86,7 +86,7 @@ terminate(_, {Socket, _MRef}) ->
 maybe_update_port_config(PeerIP, 0, Socket) ->
     case inet:sockname(Socket) of
         {ok, {_IPAddress, Port}} ->
-            lager:info("partisan listening on peer ~p, system allocated port ~p",
+            logger:info("partisan listening on peer ~p, system allocated port ~p",
                        [PeerIP, Port]),
             partisan_config:set(peer_port, Port),
             % search the listen addrs map for the provided ip Address

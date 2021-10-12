@@ -49,16 +49,16 @@ init() ->
     %% Configure the partisan node name.
     Name = case node() of
         nonode@nohost ->
-            lager:info("Distributed Erlang is not enabled, generating UUID."),
+            logger:info("Distributed Erlang is not enabled, generating UUID."),
             UUIDState = uuid:new(self()),
             {UUID, _UUIDState1} = uuid:get_v1(UUIDState),
-            lager:info("Generated UUID: ~p, converting to string.", [UUID]),
+            logger:info("Generated UUID: ~p, converting to string.", [UUID]),
             StringUUID = uuid:uuid_to_string(UUID),
             NodeName = list_to_atom(StringUUID ++ "@127.0.0.1"),
-            lager:info("Generated name for node: ~p", [NodeName]),
+            logger:info("Generated name for node: ~p", [NodeName]),
             NodeName;
         Other ->
-            lager:info("Using node name: ~p", [Other]),
+            logger:info("Using node name: ~p", [Other]),
             Other
     end,
 
@@ -157,7 +157,7 @@ seed(Seed) ->
 %% Seed the process.
 seed() ->
     RandomSeed = random_seed(),
-    lager:info("node ~p choosing random seed: ~p", [node(), RandomSeed]),
+    logger:info("node ~p choosing random seed: ~p", [node(), RandomSeed]),
     rand:seed(exsplus, RandomSeed).
 
 %% Return a random seed, either from the environment or one that's generated for the run.
@@ -172,7 +172,7 @@ random_seed() ->
 trace(Message, Args) ->
     case partisan_config:get(tracing, ?TRACING) of
         true ->
-            lager:info(Message, Args);
+            logger:info(Message, Args);
         false ->
             ok
     end.
@@ -232,13 +232,13 @@ get_node_address() ->
     Me = self(),
 
     ResolverFun = fun() ->
-        lager:info("Resolving ~p...", [FQDN]),
+        logger:info("Resolving ~p...", [FQDN]),
         case inet:getaddr(FQDN, inet) of
             {ok, Address} ->
-                lager:info("Resolved ~p to ~p", [Name, Address]),
+                logger:info("Resolved ~p to ~p", [Name, Address]),
                 Me ! {ok, Address};
             {error, Error} ->
-                lager:error("Cannot resolve local name ~p, resulting to 127.0.0.1: ~p", [FQDN, Error]),
+                logger:error("Cannot resolve local name ~p, resulting to 127.0.0.1: ~p", [FQDN, Error]),
                 Me ! {ok, ?PEER_IP}
         end
     end,
@@ -252,9 +252,9 @@ get_node_address() ->
     %% Wait for response, either answer or exit.
     receive
         {ok, Address} ->
-            lager:info("Resolved ~p to ~p", [FQDN, Address]),
+            logger:info("Resolved ~p to ~p", [FQDN, Address]),
             Address;
         Error ->
-            lager:error("Error resolving name ~p: ~p", [Error, FQDN]),
+            logger:error("Error resolving name ~p: ~p", [Error, FQDN]),
             ?PEER_IP
     end.

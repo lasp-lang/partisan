@@ -38,7 +38,7 @@ read(TraceFile) ->
 
     %% Print output.
     % lists:foreach(fun(Line) ->
-    %     lager:info("~p~n", [Line])
+    %     logger:info("~p~n", [Line])
     % end, TraceLines),
 
     %% Close table.

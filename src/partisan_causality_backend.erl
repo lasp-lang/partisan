@@ -134,7 +134,7 @@ handle_call({emit, Node, ServerRef, Message},
     %% Everytime we omit a message, store the clock and message so we can regenerate the message.
     true = ets:insert(Storage, {LocalClock, CausalMessage}),
 
-    lager:info("Emitting message with clock: ~p", [LocalClock]),
+    logger:info("Emitting message with clock: ~p", [LocalClock]),
 
     {reply, {ok, LocalClock, CausalMessage}, State#state{local_clock=LocalClock, order_buffer=OrderBuffer}};
 
@@ -144,7 +144,7 @@ handle_call({receive_message, {causal, Label, _Node, _ServerRef, _IncomingOrderB
             _From, 
             #state{label=Label, buffered_messages=BufferedMessages0}=State0) ->
     %% Add to the buffer and try to deliver.
-    lager:info("Received message ~p and inserting into buffer.", [MessageClock]),
+    logger:info("Received message ~p and inserting into buffer.", [MessageClock]),
     BufferedMessages = BufferedMessages0 ++ [FullMessage],
     State = lists:foldl(fun(M, S) -> internal_receive_message(M, S) end, State0#state{buffered_messages=BufferedMessages}, BufferedMessages),
 
@@ -211,7 +211,7 @@ deliver(#state{my_node=MyNode, local_clock=LocalClock, order_buffer=OrderBuffer,
                 partisan_util:process_forward(ServerRef, Message)
             catch
                 _:Error ->
-                    lager:debug("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
+                    logger:debug("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
             end;
         DeliveryFun ->
             DeliveryFun(ServerRef, Message)
@@ -231,24 +231,24 @@ schedule_delivery(Label) ->
 %% @private
 internal_receive_message({causal, _Label, _Node, ServerRef, IncomingOrderBuffer, MessageClock, Message}=FullMessage, 
                          #state{my_node=MyNode, local_clock=LocalClock, buffered_messages=BufferedMessages}=State0) ->
-    lager:info("Attempting delivery of messages: ~p", [MessageClock]),
+    logger:info("Attempting delivery of messages: ~p", [MessageClock]),
 
     case orddict:find(MyNode, IncomingOrderBuffer) of
         %% No dependencies.
         error ->
-            lager:info("Message ~p has no dependencies, delivering.", [MessageClock]),
+            logger:info("Message ~p has no dependencies, delivering.", [MessageClock]),
             deliver(State0#state{buffered_messages=BufferedMessages -- [FullMessage]}, IncomingOrderBuffer, MessageClock, ServerRef, Message);
         %% Dependencies.
         {ok, DependencyClock} ->
             case partisan_vclock:dominates(LocalClock, DependencyClock) of
                 %% Dependencies met.
                 true ->
-                    lager:info("Message ~p dependencies met, delivering.", [MessageClock]),
+                    logger:info("Message ~p dependencies met, delivering.", [MessageClock]),
                     deliver(State0#state{buffered_messages=BufferedMessages -- [FullMessage]}, IncomingOrderBuffer, MessageClock, ServerRef, Message);
                 %% Dependencies NOT met.
                 false ->
                     %% Buffer, for later delivery.
-                    lager:info("Message ~p dependencies ~p NOT met.", [MessageClock, DependencyClock]),
+                    logger:info("Message ~p dependencies ~p NOT met.", [MessageClock, DependencyClock]),
                     State0#state{buffered_messages=BufferedMessages}
             end
     end.

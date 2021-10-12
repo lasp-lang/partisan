@@ -63,7 +63,7 @@ init([]) ->
 
     CausalBackends = lists:map(CausalBackendFun, CausalLabels),
 
-    lager:info("Partisan listening on ~p:~p listen_addrs: ~p", 
+    logger:info("Partisan listening on ~p:~p listen_addrs: ~p", 
                [partisan_config:get(peer_ip), partisan_config:get(peer_port), partisan_config:get(listen_addrs)]),
 
     %% Open connection pool.

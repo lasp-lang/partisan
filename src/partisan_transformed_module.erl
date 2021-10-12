@@ -34,11 +34,13 @@
          get_pid/0,
          send_to_pid/2]).
 
+
+
 -compile([{parse_transform, partisan_transform}]).
 
 local_send(Message) ->
     Pid = self(),
-    lager:info("Local pid is: ~p", [Pid]),
+    logger:info("Local pid is: ~p", [Pid]),
     Pid ! Message,
     receive
         Message ->

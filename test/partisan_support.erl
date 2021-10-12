@@ -51,8 +51,6 @@ start(Case, Config, Options) ->
                              false),
     application:start(sasl),
 
-    %% Load lager.
-    {ok, _} = application:ensure_all_started(lager),
 
     Servers = proplists:get_value(servers, Options, []),
     Clients = proplists:get_value(clients, Options, []),
@@ -85,7 +83,7 @@ start(Case, Config, Options) ->
                             debug("Loading applications on node: ~p", [Node]),
 
                             PrivDir = code:priv_dir(?APP),
-                            NodeDir = filename:join([PrivDir, "lager", Node]),
+                            _NodeDir = filename:join([PrivDir, Node]),
 
                             %% Manually force sasl loading, and disable the logger.
                             ok = rpc:call(Node, application, load, [sasl]),
@@ -94,13 +92,9 @@ start(Case, Config, Options) ->
                             ok = rpc:call(Node, application, start, [sasl]),
 
                             ok = rpc:call(Node, application, load, [partisan]),
-                            ok = rpc:call(Node, application, load, [lager]),
                             ok = rpc:call(Node, application, set_env, [sasl,
                                                                        sasl_error_logger,
-                                                                       false]),
-                            ok = rpc:call(Node, application, set_env, [lager,
-                                                                       log_root,
-                                                                       NodeDir])
+                                                                       false])
                      end,
     lists:map(LoaderFun, Nodes),
 

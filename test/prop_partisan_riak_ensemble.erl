@@ -108,22 +108,22 @@ node_next_state(_State, NodeState, _Response, _Command) ->
 node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {ok, _}) ->
     true;
 node_postcondition(#node_state{values=Values}=_NodeState, {call, ?MODULE, read, []}, Results) ->
-    lager:info("results: ~p", [Results]),
-    lager:info("values: ~p", [dict:to_list(Values)]),
+    logger:info("results: ~p", [Results]),
+    logger:info("values: ~p", [dict:to_list(Values)]),
 
     Result = lists:foldl(fun({Key, {obj, _, _, Key, Value}}, Acc) ->
-        lager:info("looking for ~p with value ~p", [Key, Value]),
+        logger:info("looking for ~p with value ~p", [Key, Value]),
 
         case dict:find(Key, Values) of 
             {ok, Value} ->
-                lager:info("found!", []),
+                logger:info("found!", []),
                 true andalso Acc;
             error ->
                 case Value of 
                     notfound ->
                         true andalso Acc;
                     _ ->
-                        lager:info("not found when it should be!", []),
+                        logger:info("not found when it should be!", []),
                         false andalso Acc
                 end
         end
@@ -185,7 +185,7 @@ read() ->
 node_debug(Line, Args) ->
     case ?NODE_DEBUG of
         true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            logger:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
@@ -262,7 +262,7 @@ node_begin_case() ->
         wait_stable(?NAME(ShortName), root),
 
         % Result = rpc:call(?NAME(FirstName), riak_ensemble_manager, cluster, []),
-        % lager:info("Result from cluster: ~p", [Result]),
+        % logger:info("Result from cluster: ~p", [Result]),
 
         %% Wait for stabilization.
         wait_stable(?NAME(FirstName), root),

@@ -104,7 +104,7 @@ groups() ->
 %% ===================================================================
 
 annotations_test(_Config) ->
-    lager:info("~p: starting nodes!", [?MODULE]),
+    logger:info("~p: starting nodes!", [?MODULE]),
 
     %% Get self.
     Self = self(),
@@ -242,7 +242,7 @@ annotations_test(_Config) ->
     end.
 
 model_checker_test(_Config) ->
-    lager:info("~p: starting nodes!", [?MODULE]),
+    logger:info("~p: starting nodes!", [?MODULE]),
 
     %% Get self.
     Self = self(),
@@ -399,7 +399,7 @@ execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
     ok = partisan_trace_orchestrator:reset(),
 
     %% Start tracing.
-    lager:info("enabling tracing for nodes: ~p", [Nodes]),
+    logger:info("enabling tracing for nodes: ~p", [Nodes]),
     ok = partisan_trace_orchestrator:enable(Nodes),
 
     %% Set replay.
@@ -418,7 +418,7 @@ execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
 
     %% Identify trace.
     TraceRandomNumber = rand:uniform(100000),
-    %% lager:info("~p: trace random generated: ~p", [?MODULE, TraceRandomNumber]),
+    %% logger:info("~p: trace random generated: ~p", [?MODULE, TraceRandomNumber]),
     TraceIdentifier = atom_to_list(system_model()) ++ "_" ++ integer_to_list(TraceRandomNumber),
     ok = partisan_trace_orchestrator:identify(TraceIdentifier),
 
@@ -449,7 +449,7 @@ execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
 debug(Line, Args) ->
     case ?DEBUG of
         true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            logger:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.

@@ -22,7 +22,9 @@
 -module(partisan_client_server_peer_service_manager).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+
 -behaviour(gen_server).
+
 -behaviour(partisan_peer_service_manager).
 
 %% partisan_peer_service_manager callbacks
@@ -306,13 +308,13 @@ handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
     {reply, {ok, Membership}, State};
 
 handle_call(Msg, _From, State) ->
-    lager:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
+    logger:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
     {reply, ok, State}.
 
 %% @private
 -spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
 handle_cast(Msg, State) ->
-    lager:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
+    logger:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
 
 handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
@@ -345,7 +347,7 @@ handle_info({connected, Node, TheirTag, _RemoteState},
                     %% Compute count.
                     Count = sets:size(Membership),
 
-                    lager:info("Join ACCEPTED with ~p; node is ~p and we are ~p: we have ~p members in our view.",
+                    logger:info("Join ACCEPTED with ~p; node is ~p and we are ~p: we have ~p members in our view.",
                                [Node, TheirTag, OurTag, Count]),
 
                     %% Return.
@@ -353,9 +355,9 @@ handle_info({connected, Node, TheirTag, _RemoteState},
                                           connections=Connections,
                                           membership=Membership}};
                 false ->
-                    lager:info("Join REFUSED with ~p; node is ~p and we are ~p",
+                    logger:info("Join REFUSED with ~p; node is ~p and we are ~p",
                                [Node, TheirTag, OurTag]),
-                    lager:info("Keeping membership: ~p", [Membership0]),
+                    logger:info("Keeping membership: ~p", [Membership0]),
 
                     {noreply, State}
             end;
@@ -364,7 +366,7 @@ handle_info({connected, Node, TheirTag, _RemoteState},
     end;
 
 handle_info(Msg, State) ->
-    lager:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Msg]),
+    logger:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
 
 %% @private
@@ -430,9 +432,9 @@ delete_state_from_disk() ->
             ok = filelib:ensure_dir(File),
             case file:delete(File) of
                 ok ->
-                    lager:info("Leaving cluster, removed cluster_state");
+                    logger:info("Leaving cluster, removed cluster_state");
                 {error, Reason} ->
-                    lager:info("Unable to remove cluster_state for reason ~p", [Reason])
+                    logger:info("Unable to remove cluster_state for reason ~p", [Reason])
             end
     end.
 

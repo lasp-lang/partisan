@@ -67,7 +67,7 @@ join(#scamp_v2{partial_view=PartialView0}=State0, Node, _NodeState) ->
     %% 1. Add node to our state.
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
-            lager:info("~p: Adding node ~p to our partial_view.", [node(), Node]);
+            logger:info("~p: Adding node ~p to our partial_view.", [node(), Node]);
         false ->
             ok
     end,
@@ -82,7 +82,7 @@ join(#scamp_v2{partial_view=PartialView0}=State0, Node, _NodeState) ->
     OutgoingMessages2 = lists:foldl(fun(N, OM) ->
         case partisan_config:get(tracing, ?TRACING) of 
             true ->
-                lager:info("~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N]);
+                logger:info("~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N]);
             false ->
                 ok
         end,
@@ -101,7 +101,7 @@ join(#scamp_v2{partial_view=PartialView0}=State0, Node, _NodeState) ->
     ForwardMessages = lists:map(fun(N) ->
         case partisan_config:get(tracing, ?TRACING) of 
             true ->
-                lager:info("~p: Forwarding additional subscription for ~p to node: ~p", [node(), Node, N]);
+                logger:info("~p: Forwarding additional subscription for ~p to node: ~p", [node(), Node, N]);
             false ->
                 ok
         end,
@@ -116,7 +116,7 @@ join(#scamp_v2{partial_view=PartialView0}=State0, Node, _NodeState) ->
 leave(#scamp_v2{partial_view=PartialView}=State0, Node) ->
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
-            lager:info("~p: Issuing remove_subscription for node ~p.", [node(), Node]);
+            logger:info("~p: Issuing remove_subscription for node ~p.", [node(), Node]);
         false ->
             ok
     end,
@@ -153,7 +153,7 @@ periodic(#scamp_v2{partial_view=PartialView, last_message_time=LastMessageTime}=
             %% Node is isolated.
             case partisan_config:get(tracing, ?TRACING) of 
                 true ->
-                    lager:info("~p: Node is possibily isolated.", [node()]);
+                    logger:info("~p: Node is possibily isolated.", [node()]);
                 false ->
                     ok
             end,
@@ -163,7 +163,7 @@ periodic(#scamp_v2{partial_view=PartialView, last_message_time=LastMessageTime}=
             lists:map(fun(N) ->
                 case partisan_config:get(tracing, ?TRACING) of 
                     true ->
-                        lager:info("~p: Forwarding additional subscription for ~p to node: ~p", [node(), Myself, N]);
+                        logger:info("~p: Forwarding additional subscription for ~p to node: ~p", [node(), Myself, N]);
                     false ->
                         ok
                 end,
@@ -181,7 +181,7 @@ periodic(#scamp_v2{partial_view=PartialView, last_message_time=LastMessageTime}=
 handle_message(#scamp_v2{partial_view=PartialView0}=State, {ping, SourceNode}) ->
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
-            lager:info("~p: Received ping from node ~p.", [node(), SourceNode]);
+            logger:info("~p: Received ping from node ~p.", [node(), SourceNode]);
         false ->
             ok
     end,
@@ -192,7 +192,7 @@ handle_message(#scamp_v2{partial_view=PartialView0}=State, {ping, SourceNode}) -
 handle_message(#scamp_v2{partial_view=PartialView0, in_view=InView0}=State0, {bootstrap_remove_subscription, Node}) ->
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
-            lager:info("~p: Received bootstrap_remove_subscription from node ~p.", [node(), Node]);
+            logger:info("~p: Received bootstrap_remove_subscription from node ~p.", [node(), Node]);
         false ->
             ok
     end,
@@ -239,7 +239,7 @@ handle_message(#scamp_v2{partial_view=PartialView0, in_view=InView0}=State0, {bo
 handle_message(#scamp_v2{partial_view=PartialView0}=State0, {replace_subscription, Node, Replacement}) ->
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
-            lager:info("~p: Received replace_subscription for node ~p => ~p.", [node(), Node, Replacement]);
+            logger:info("~p: Received replace_subscription for node ~p => ~p.", [node(), Node, Replacement]);
         false ->
             ok
     end,
@@ -261,7 +261,7 @@ handle_message(#scamp_v2{partial_view=PartialView0}=State0, {replace_subscriptio
 handle_message(#scamp_v2{partial_view=PartialView0}=State0, {remove_subscription, Node}) ->
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
-            lager:info("~p: Received remove_subscription for node ~p.", [node(), Node]);
+            logger:info("~p: Received remove_subscription for node ~p.", [node(), Node]);
         false ->
             ok
     end,
@@ -284,7 +284,7 @@ handle_message(#scamp_v2{partial_view=PartialView0}=State0, {remove_subscription
 handle_message(#scamp_v2{partial_view=PartialView0}=State0, {forward_subscription, Node}) ->
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
-            lager:info("~p: Received subscription for node ~p.", [node(), Node]);
+            logger:info("~p: Received subscription for node ~p.", [node(), Node]);
         false ->
             ok
     end,
@@ -297,7 +297,7 @@ handle_message(#scamp_v2{partial_view=PartialView0}=State0, {forward_subscriptio
         true ->
             case partisan_config:get(tracing, ?TRACING) of 
                 true ->
-                    lager:info("~p: Adding subscription for node: ~p", [node(), Node]);
+                    logger:info("~p: Adding subscription for node: ~p", [node(), Node]);
                 false ->
                     ok
             end,
@@ -306,7 +306,7 @@ handle_message(#scamp_v2{partial_view=PartialView0}=State0, {forward_subscriptio
             %% Respond to the node that's joining and tell them to keep us.
             case partisan_config:get(tracing, ?TRACING) of 
                 true ->
-                    lager:info("~p: Notifying ~p to keep us: ~p", [node(), Node, node()]);
+                    logger:info("~p: Notifying ~p to keep us: ~p", [node(), Node, node()]);
                 false ->
                     ok
             end,
@@ -317,7 +317,7 @@ handle_message(#scamp_v2{partial_view=PartialView0}=State0, {forward_subscriptio
             OutgoingMessages = lists:map(fun(N) ->
                 case partisan_config:get(tracing, ?TRACING) of 
                     true ->
-                        lager:info("~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N]);
+                        logger:info("~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N]);
                     false ->
                         ok
                 end,
@@ -328,7 +328,7 @@ handle_message(#scamp_v2{partial_view=PartialView0}=State0, {forward_subscriptio
 handle_message(#scamp_v2{partial_view=PartialView0, in_view=InView0}=State, {keep_subscription, Node}) ->
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
-            lager:info("~p: Received keep_subscription for node ~p.", [node(), Node]);
+            logger:info("~p: Received keep_subscription for node ~p.", [node(), Node]);
         false ->
             ok
     end,

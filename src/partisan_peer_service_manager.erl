@@ -23,6 +23,8 @@
 
 -include("partisan.hrl").
 
+
+
 -export([myself/0, 
          mynode/0, 
          forward_message/2]).
@@ -81,7 +83,7 @@ mynode() ->
 forward_message({partisan_remote_reference, Name, ServerRef} = RemotePid, Message) ->
     case mynode() of
         Name ->
-            lager:info("Local pid ~p, routing message accordingly: ~p", [ServerRef, Message]),
+            logger:info("Local pid ~p, routing message accordingly: ~p", [ServerRef, Message]),
             case ServerRef of
                 {partisan_process_reference, Pid} ->
                     DeserializedPid = list_to_pid(Pid),

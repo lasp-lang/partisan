@@ -119,7 +119,7 @@ init([]) ->
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
 handle_call({enable, Nodes}, _From, #state{enabled=false}=State) ->
-    lager:info("enabling tracing for nodes: ~p", [Nodes]),
+    logger:info("enabling tracing for nodes: ~p", [Nodes]),
 
     %% Add send and receive pre-interposition functions to enforce message ordering.
     PreInterpositionFun = fun({Type, OriginNode, OriginalMessage}) ->
@@ -128,7 +128,7 @@ handle_call({enable, Nodes}, _From, #state{enabled=false}=State) ->
         %% they are unblocked from retry: this means that under replay the trace
         %% file might generate small permutations of messages which means it's
         %% technically not the same trace.
-        lager:info("pre interposition fired for message type: ~p", [Type]),
+        logger:info("pre interposition fired for message type: ~p", [Type]),
 
         %% Under replay ensure they match the trace order (but only for pre-interposition messages).
         ok = partisan_trace_orchestrator:replay(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
@@ -139,14 +139,14 @@ handle_call({enable, Nodes}, _From, #state{enabled=false}=State) ->
         ok
     end, 
     lists:foreach(fun({_Name, Node}) ->
-        lager:info("Installing $tracing pre-interposition function on node: ~p", [Node]),
+        logger:info("Installing $tracing pre-interposition function on node: ~p", [Node]),
         ok = rpc:call(Node, ?MANAGER, add_pre_interposition_fun, ['$tracing', PreInterpositionFun])
     end, Nodes),
 
     %% Add send and receive post-interposition functions to perform tracing.
     PostInterpositionFun = fun({Type, OriginNode, OriginalMessage}, {Type, OriginNode, RewrittenMessage}) ->
         %% Record outgoing message after transformation.
-    lager:info("post interposition fired for message type: ~p", [Type]),
+    logger:info("post interposition fired for message type: ~p", [Type]),
         ok = partisan_trace_orchestrator:trace(post_interposition_fun, {node(), OriginNode, Type, OriginalMessage, RewrittenMessage})
     end, 
     lists:foreach(fun({_Name, Node}) ->
@@ -541,13 +541,13 @@ write_trace(Trace) ->
 replay_debug(Line, Args) ->
     case partisan_config:get(replay_debug) of 
         true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            logger:info("~p: " ++ Line, [?MODULE] ++ Args);
         _ ->
             ok
     end.
 
 debug(Line, Args) ->
-    lager:info("~p: " ++ Line, [?MODULE] ++ Args).
+    logger:info("~p: " ++ Line, [?MODULE] ++ Args).
 
 %% @private
 membership_strategy_tracing() ->
@@ -578,25 +578,25 @@ preload_omissions(Nodes) ->
                                     OriginNode ->
                                         case M of 
                                             MessagePayload ->
-                                                lager:info("~p: dropping packet from ~p to ~p due to preload interposition.", [node(), TracingNode, OriginNode]),
+                                                logger:info("~p: dropping packet from ~p to ~p due to preload interposition.", [node(), TracingNode, OriginNode]),
 
                                                 case partisan_config:get(fauled_for_background) of 
                                                     true ->
                                                         ok;
                                                     _ ->
-                                                        lager:info("~p: setting node ~p to faulted due to preload interposition hit on message: ~p", [node(), TracingNode, Message]),
+                                                        logger:info("~p: setting node ~p to faulted due to preload interposition hit on message: ~p", [node(), TracingNode, Message]),
                                                         partisan_config:set(fauled_for_background, true)
                                                 end,
 
                                                 undefined;
                                             Other ->
-                                                lager:info("~p: allowing message, doesn't match interposition payload while node matches", [node()]),
-                                                lager:info("~p: => expecting: ~p", [node(), MessagePayload]),
-                                                lager:info("~p: => got: ~p", [node(), Other]),
+                                                logger:info("~p: allowing message, doesn't match interposition payload while node matches", [node()]),
+                                                logger:info("~p: => expecting: ~p", [node(), MessagePayload]),
+                                                logger:info("~p: => got: ~p", [node(), Other]),
                                                 M
                                         end;
                                     OtherNode ->
-                                        lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), TracingNode, OtherNode]),
+                                        logger:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), TracingNode, OtherNode]),
                                         M
                                 end;
                             ({receive_message, _N, M}) -> 
@@ -621,7 +621,7 @@ preload_omissions(Nodes) ->
     %% Install faulted tracing interposition function.
     lists:foreach(fun({_, Node}) ->
         InterpositionFun = fun({forward_message, _N, M}) ->
-            % lager:info("~p: interposition called for message to ~p message: ~p", [node(), N, M]),
+            % logger:info("~p: interposition called for message to ~p message: ~p", [node(), N, M]),
 
             case partisan_config:get(faulted) of 
                 true ->
@@ -670,10 +670,10 @@ preload_omissions(Nodes) ->
 
                             case lists:member(element(2, MessageType), BackgroundAnnotations) of 
                                 true ->
-                                    lager:info("~p: faulted_for_background during forward_message of background message, message ~p should be dropped.", [node(), M]),
+                                    logger:info("~p: faulted_for_background during forward_message of background message, message ~p should be dropped.", [node(), M]),
                                     undefined;
                                 false ->
-                                    lager:info("~p: faulted_for_background, but forward_message payload is not background message: ~p, message_type: ~p", [node(), M, MessageType]),
+                                    logger:info("~p: faulted_for_background, but forward_message payload is not background message: ~p, message_type: ~p", [node(), M, MessageType]),
                                     M
                             end
                     end;
@@ -691,10 +691,10 @@ preload_omissions(Nodes) ->
 
                                 case lists:member(element(2, MessageType), BackgroundAnnotations) of 
                                     true ->
-                                        lager:info("~p: faulted_for_background during receive_message of background message, message ~p should be dropped.", [node(), M]),
+                                        logger:info("~p: faulted_for_background during receive_message of background message, message ~p should be dropped.", [node(), M]),
                                         undefined;
                                     false ->
-                                        lager:info("~p: faulted_for_background, but receive_message payload is not background message: ~p, message_type: ~p", [node(), M, MessageType]),
+                                        logger:info("~p: faulted_for_background, but receive_message payload is not background message: ~p, message_type: ~p", [node(), M, MessageType]),
                                         M
                                 end
                         end;
@@ -712,7 +712,7 @@ preload_omissions(Nodes) ->
 
 %% @private
 message_type(InterpositionType, MessagePayload) ->
-    lager:info("interposition_type: ~p, payload: ~p", [InterpositionType, MessagePayload]),
+    logger:info("interposition_type: ~p, payload: ~p", [InterpositionType, MessagePayload]),
 
     case InterpositionType of 
         forward_message ->

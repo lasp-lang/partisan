@@ -283,7 +283,7 @@ max_id() ->
 node_debug(Line, Args) ->
     case ?NODE_DEBUG of
         true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            logger:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.

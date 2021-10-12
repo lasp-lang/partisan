@@ -24,10 +24,10 @@
 -export([info/2, warning/2, error/2]).
 
 info(Format, Args) ->
-    lager:info(Format, Args).
+    logger:info(Format, Args).
 
 warning(Format, Args) ->
-    lager:warning(Format, Args).
+    logger:warning(Format, Args).
 
 error(Format, Args) ->
-    lager:error(Format, Args).
+    logger:error(Format, Args).

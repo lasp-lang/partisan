@@ -125,10 +125,10 @@ begin_receive_omission(SourceNode0, DestinationNode) ->
     InterpositionFun = fun({receive_message, N, Message}) ->
         case N of
             SourceNode ->
-                lager:info("~p: dropping packet from ~p to ~p due to interposition.", [node(), SourceNode, DestinationNode]),
+                logger:info("~p: dropping packet from ~p to ~p due to interposition.", [node(), SourceNode, DestinationNode]),
                 undefined;
             OtherNode ->
-                lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
+                logger:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
                 Message
         end;
         ({forward_message, _N, Message}) -> Message
@@ -166,10 +166,10 @@ begin_send_omission(SourceNode, DestinationNode0) ->
     InterpositionFun = fun({forward_message, N, Message}) ->
         case N of
             DestinationNode ->
-                lager:info("~p: dropping packet from ~p to ~p due to interposition.", [node(), SourceNode, DestinationNode]),
+                logger:info("~p: dropping packet from ~p to ~p due to interposition.", [node(), SourceNode, DestinationNode]),
                 undefined;
             OtherNode ->
-                lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
+                logger:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
                 Message
         end;
         ({receive_message, _N, Message}) -> Message
@@ -612,7 +612,7 @@ fault_allowed({call, _Mod, begin_receive_omission, [_SourceNode, DestinationNode
 fault_debug(Line, Args) ->
     case ?FAULT_DEBUG of
         true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            logger:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
@@ -640,7 +640,7 @@ wait_until_nodes_agree_on_membership(Nodes) ->
         end
     end,
     [ok = wait_until(Node, AgreementFun) || Node <- Nodes],
-    lager:info("All nodes agree on membership!"),
+    logger:info("All nodes agree on membership!"),
     ok.
 
 %% @private

@@ -59,11 +59,11 @@ log(Level, String) ->
     log(Level, String, []).
 
 log(debug, String, Args) ->
-    lager:debug(String, Args);
+    logger:debug(String, Args);
 log(info, String, Args) ->
-    lager:info(String, Args);
+    logger:info(String, Args);
 log(error, String, Args) ->
-    lager:error(String, Args).
+    logger:error(String, Args).
 
 -else.
 

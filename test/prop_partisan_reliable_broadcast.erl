@@ -117,10 +117,10 @@ node_next_state(_State, NodeState, _Response, _Command) ->
 
 %% Postconditions for node commands.
 node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, {badrpc, timeout}) ->
-    lager:info("Broadcast error with timeout, must have been synchronous!"),
+    logger:info("Broadcast error with timeout, must have been synchronous!"),
     false;
 node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, error) ->
-    lager:info("Broadcast error, must have been synchronous!"),
+    logger:info("Broadcast error, must have been synchronous!"),
     true;
 node_postcondition(_NodeState, {call, ?MODULE, broadcast, [_Node, _Message]}, ok) ->
     true;
@@ -250,7 +250,7 @@ check_mailbox() ->
 node_debug(Line, Args) ->
     case ?NODE_DEBUG of
         true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            logger:info("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.

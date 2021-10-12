@@ -33,24 +33,24 @@
 %% @private
 upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Payload) ->
     {ok, <<"OK">>} = eredis:q(Eredis, ["SET", Node, Payload]),
-    % lager:info("Pushed artifact to Redis: ~p", [Node]),
+    % logger:info("Pushed artifact to Redis: ~p", [Node]),
     ok.
 
 %% @private
 download_artifact(#orchestration_strategy_state{eredis=Eredis}, Node) ->
-    % lager:info("Retrieving object ~p from redis.", [Node]),
+    % logger:info("Retrieving object ~p from redis.", [Node]),
 
     try
         case eredis:q(Eredis, ["GET", Node]) of
             {ok, Payload} ->
-                % lager:info("Received artifact from Redis: ~p", [Node]),
+                % logger:info("Received artifact from Redis: ~p", [Node]),
                 Payload;
             {error,no_connection} ->
                 undefined
         end
     catch
         _:Error ->
-            lager:info("Exception caught: ~p", [Error]),
+            logger:info("Exception caught: ~p", [Error]),
             undefined
     end.
 
@@ -74,7 +74,7 @@ pods_from_kubernetes(LabelSelector) ->
         {ok, PodList} ->
             generate_pod_nodes(PodList);
         Error ->
-            _ = lager:info("Invalid response: ~p", [Error]),
+            _ = logger:info("Invalid response: ~p", [Error]),
             sets:new()
     end.
 
@@ -137,7 +137,7 @@ get_request(Url, DecodeFun) ->
         {ok, {{_, 200, _}, _, Body}} ->
             {ok, DecodeFun(Body)};
         Other ->
-            _ = lager:info("Request failed; ~p", [Other]),
+            _ = logger:info("Request failed; ~p", [Other]),
             {error, invalid}
     end.
 

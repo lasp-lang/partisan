@@ -181,7 +181,7 @@ forward_message(Name, Channel, ServerRef, Message) ->
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, Channel, ServerRef, Message, Options) ->
-    % lager:info("Entering forward_message at ~p for message: ~p ~p", [node(), Name, Message]),
+    % logger:info("Entering forward_message at ~p for message: ~p ~p", [node(), Name, Message]),
 
     %% Attempt to get the partition key, if possible.
     PartitionKey = proplists:get_value(partition_key, Options, ?DEFAULT_PARTITION_KEY),
@@ -197,7 +197,7 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
 
     %% Get forwarding options and combine with message specific options.
     ForwardOptions = lists:usort(partisan_config:get(forward_options, []) ++ Options),
-    % lager:info("Forwarding options for message ~p are ~p", [Message, ForwardOptions]),
+    % logger:info("Forwarding options for message ~p are ~p", [Message, ForwardOptions]),
 
     %% Use configuration to disable fast forwarding.
     DisableFastForward = partisan_config:get(disable_fast_forward, false),
@@ -256,14 +256,14 @@ receive_message(Peer, {forward_message, ServerRef, {'$partisan_padded', _Padding
 receive_message(_Peer, {forward_message, _ServerRef, {causal, Label, _, _, _, _, _} = Message}) ->
     partisan_causality_backend:receive_message(Label, Message);
 receive_message(Peer, {forward_message, ServerRef, Message} = FullMessage) ->
-    % lager:info("in mesage receive at node ~p for peer ~p: ~p", [node(), Peer, FullMessage]),
+    % logger:info("in mesage receive at node ~p for peer ~p: ~p", [node(), Peer, FullMessage]),
 
     case partisan_config:get(disable_fast_receive, false) of
         true ->
-            % lager:info("in mesage receive at node ~p for peer ~p FAST RECEIVE DISABLE: ~p", [node(), Peer, Message]),
+            % logger:info("in mesage receive at node ~p for peer ~p FAST RECEIVE DISABLE: ~p", [node(), Peer, Message]),
             gen_server:call(?MODULE, {receive_message, Peer, FullMessage}, infinity);
         false ->
-            % lager:info("in mesage receive at node ~p for peer ~p FAST RECEIVE NOT DISABLE", [node(), Peer]),
+            % logger:info("in mesage receive at node ~p for peer ~p FAST RECEIVE NOT DISABLE", [node(), Peer]),
             partisan_util:process_forward(ServerRef, Message)
     end;
 receive_message(Peer, Message) ->
@@ -454,11 +454,11 @@ handle_call({remove_post_interposition_fun, Name}, _From, #state{post_interposit
 handle_call({update_members, Nodes}, 
             _From, 
             #state{membership=Membership}=State) ->
-    % lager:debug("Updating membership with: ~p", [Nodes]),
+    % logger:debug("Updating membership with: ~p", [Nodes]),
 
     %% Get the current membership.
     CurrentMembership = [N || #{name := N} <- Membership],
-    % lager:debug("CurrentMembership: ~p", [CurrentMembership]),
+    % logger:debug("CurrentMembership: ~p", [CurrentMembership]),
 
     %% need to support Nodes as a list of maps or atoms
     %% TODO: require each node to be a map
@@ -472,18 +472,11 @@ handle_call({update_members, Nodes},
     LeavingNodes = lists:filter(fun(N) ->
                                         not lists:member(N, NodesNames)
                                 end, CurrentMembership),
-    % lager:debug("LeavingNodes: ~p", [LeavingNodes]),
+    % logger:debug("LeavingNodes: ~p", [LeavingNodes]),
 
     %% Issue leaves.
     State1 = lists:foldl(fun(N, S) ->
-                             case N of
-                                 Map when is_map(Map) ->
-                                     internal_leave(Map, S);
-                                 N when is_atom(N) ->
-                                     %% find map based on name
-                                     [Map] = lists:filter(fun(M) -> maps:get(name, M) == N end, Membership),
-                                     internal_leave(Map, S)
-                             end
+                                 internal_leave(N, S)
                          end, State, LeavingNodes),
 
     %% Compute joining list.
@@ -492,7 +485,7 @@ handle_call({update_members, Nodes},
                                    (N) when is_atom(N) ->
                                         not lists:member(N, CurrentMembership)
                                 end, Nodes),
-    % lager:debug("JoiningNodes: ~p", [JoiningNodes]),
+    % logger:debug("JoiningNodes: ~p", [JoiningNodes]),
 
     %% Issue joins.
     State2=#state{pending=Pending} = lists:foldl(fun(N, S) ->
@@ -539,7 +532,7 @@ handle_call({join, #{name := Name} = Node},
 handle_call({sync_join, #{name := Name} = Node},
             From,
             State0) ->
-    lager:debug("Starting synchronous join to ~p from ~p", [Node, partisan_peer_service_manager:mynode()]),
+    logger:debug("Starting synchronous join to ~p from ~p", [Node, partisan_peer_service_manager:mynode()]),
 
     case partisan_peer_service_manager:mynode() of
         Name ->
@@ -561,14 +554,14 @@ handle_call({send_message, Name, Channel, Message}, _From,
 handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options}=_FullMessage, 
             From, 
             #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
-    %% lager:info("number of forward_message pre_interposition_funs ~p", [length(dict:to_list(PreInterpositionFuns))]),
-    % lager:info("called: ~p", [FullMessage]),
+    %% logger:info("number of forward_message pre_interposition_funs ~p", [length(dict:to_list(PreInterpositionFuns))]),
+    % logger:info("called: ~p", [FullMessage]),
 
     %% Run all interposition functions.
     DeliveryFun = fun() ->
         %% Fire pre-interposition functions.
         PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
-            %% lager:info("firing forward_message preinterposition fun for original message: ~p", [OriginalMessage]),
+            %% logger:info("firing forward_message preinterposition fun for original message: ~p", [OriginalMessage]),
             PreInterpositionFun({forward_message, Name, OriginalMessage}),
             ok
         end,
@@ -592,8 +585,8 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Ori
 handle_call({receive_message, Peer, OriginalMessage}, 
             From, 
             #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
-    %% lager:info("~p: receive message invoked for message from peer ~p: ~p", [node(), Peer, OriginalMessage]),
-    %% lager:info("number of receive_message pre_interposition_funs ~p", [length(dict:to_list(PreInterpositionFuns))]),
+    %% logger:info("~p: receive message invoked for message from peer ~p: ~p", [node(), Peer, OriginalMessage]),
+    %% logger:info("number of receive_message pre_interposition_funs ~p", [length(dict:to_list(PreInterpositionFuns))]),
 
     %% Run all interposition functions.
     DeliveryFun = fun() ->
@@ -633,7 +626,7 @@ handle_call(get_local_state, _From, #state{membership_strategy_state=MembershipS
     {reply, {ok, MembershipStrategyState}, State};
 
 handle_call(Msg, _From, State) ->
-    lager:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
+    logger:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
     {reply, ok, State}.
 
 %% @private
@@ -641,13 +634,13 @@ handle_call(Msg, _From, State) ->
 handle_cast({receive_message, From, Peer, OriginalMessage}, 
             #state{interposition_funs=InterpositionFuns,
                    post_interposition_funs=PostInterpositionFuns} = State) ->
-    %% lager:info("~p: Inside the receive interposition, message from ~p at node ~p", [node(), Peer, node()]),
-    %% lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
+    %% logger:info("~p: Inside the receive interposition, message from ~p at node ~p", [node(), Peer, node()]),
+    %% logger:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
 
     %% Filter messages using interposition functions.
     FoldFun = fun(_InterpositionName, InterpositionFun, M) ->
         InterpositionResult = InterpositionFun({receive_message, Peer, M}),
-        % lager:info("result from interposition ~p is ~p", [InterpositionName, InterpositionResult]),
+        % logger:info("result from interposition ~p is ~p", [InterpositionName, InterpositionResult]),
         InterpositionResult
     end,
     Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
@@ -659,14 +652,14 @@ handle_cast({receive_message, From, Peer, OriginalMessage},
     end,
     dict:fold(PostFoldFun, ok, PostInterpositionFuns),
 
-    %% lager:info("~p: Message after receive interposition is: ~p", [node(), Message]),
+    %% logger:info("~p: Message after receive interposition is: ~p", [node(), Message]),
 
     case Message of
         undefined ->
             gen_server:reply(From, ok),
             {noreply, State};
         {'$delay', NewMessage} ->
-            lager:info("Delaying receive_message due to interposition result: ~p", [NewMessage]),
+            logger:info("Delaying receive_message due to interposition result: ~p", [NewMessage]),
             gen_server:cast(?MODULE, {receive_message, From, Peer, NewMessage}),
             {noreply, State};
         _ ->
@@ -679,13 +672,13 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                    post_interposition_funs=PostInterpositionFuns, 
                    connections=Connections, 
                    vclock=VClock0}=State) ->
-    %% lager:info("~p: Inside the send interposition, message ~p from ~p at node ~p", [node(), OriginalMessage, Name, node()]),
-    %% lager:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
+    %% logger:info("~p: Inside the send interposition, message ~p from ~p at node ~p", [node(), OriginalMessage, Name, node()]),
+    %% logger:info("~p: Count of interposition funs: ~p", [node(), dict:size(InterpositionFuns)]),
 
     %% Filter messages using interposition functions.
     FoldFun = fun(_InterpositionName, InterpositionFun, M) ->
         InterpositionResult = InterpositionFun({forward_message, Name, M}),
-        % lager:info("result from interposition ~p is ~p", [InterpositionName, InterpositionResult]),
+        % logger:info("result from interposition ~p is ~p", [InterpositionName, InterpositionResult]),
         InterpositionResult
     end,
     Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
@@ -755,7 +748,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
             end,
             dict:fold(PostFoldFun, ok, PostInterpositionFuns),
 
-            lager:info("~p: Message ~p after send interposition is: ~p", [node(), OriginalMessage, FullMessage]),
+            logger:info("~p: Message ~p after send interposition is: ~p", [node(), OriginalMessage, FullMessage]),
 
             case From of 
                 undefined ->
@@ -766,7 +759,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
 
             {noreply, State#state{vclock=VClock}};
         {'$delay', NewMessage} ->
-            lager:info("Delaying receive_message due to interposition result: ~p", [NewMessage]),
+            logger:info("Delaying receive_message due to interposition result: ~p", [NewMessage]),
             gen_server:cast(?MODULE, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, NewMessage, Options}),
             {noreply, State};
         _ ->
@@ -777,7 +770,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                     WrappedMessage =  {forward_message, ServerRef, FullMessage},
                     WrappedOriginalMessage =  {forward_message, ServerRef, OriginalMessage},
 
-                    % lager:info("NO acknowledge message: ~p, options: ~p", [WrappedMessage, Options]),
+                    % logger:info("NO acknowledge message: ~p, options: ~p", [WrappedMessage, Options]),
 
                     %% Fire post-interposition functions -- trace after wrapping!
                     PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
@@ -786,7 +779,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                     end,
                     dict:fold(PostFoldFun, ok, PostInterpositionFuns),
 
-                    %% lager:info("~p: Message after send interposition is: ~p", [node(), FullMessage]),
+                    %% logger:info("~p: Message after send interposition is: ~p", [node(), FullMessage]),
 
                     %% Send message along.
                     do_send_message(Name,
@@ -801,7 +794,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                     WrappedOriginalMessage = {forward_message, mynode(), MessageClock, ServerRef, OriginalMessage},
                     WrappedMessage = {forward_message, mynode(), MessageClock, ServerRef, FullMessage},
 
-                    lager:info("should acknowledge message: ~p", [WrappedMessage]),
+                    logger:info("should acknowledge message: ~p", [WrappedMessage]),
 
                     %% Fire post-interposition functions -- trace after wrapping!
                     PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
@@ -810,8 +803,8 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                     end,
                     dict:fold(PostFoldFun, ok, PostInterpositionFuns),
 
-                    lager:info("~p: Sending message ~p with clock: ~p", [node(), Message, MessageClock]),
-                    lager:info("~p: Message after send interposition is: ~p", [node(), Message]),
+                    logger:info("~p: Sending message ~p with clock: ~p", [node(), Message, MessageClock]),
+                    logger:info("~p: Message after send interposition is: ~p", [node(), Message]),
 
                     %% Acknowledgements.
                     case proplists:get_value(retransmission, Options, false) of 
@@ -842,7 +835,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
             {noreply, State#state{vclock=VClock}}
     end;
 handle_cast(Msg, State) ->
-    lager:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
+    logger:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
 
 %% @private
@@ -881,7 +874,7 @@ handle_info(distance, #state{pending=Pending,
 
 handle_info(instrumentation, State) ->
     MessageQueueLen = process_info(self(), message_queue_len),
-    lager:info("message_queue_len: ~p", [MessageQueueLen]),
+    logger:info("message_queue_len: ~p", [MessageQueueLen]),
     schedule_instrumentation(),
     {noreply, State};
 
@@ -891,7 +884,7 @@ handle_info(periodic, #state{pending=Pending,
                              pre_interposition_funs=PreInterpositionFuns,
                              connections=Connections0}=State) ->
     {ok, Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:periodic(MembershipStrategyState0),
-    % lager:info("Periodic fired! Generated ~p messages to send.", [length(OutgoingMessages)]),
+    % logger:info("Periodic fired! Generated ~p messages to send.", [length(OutgoingMessages)]),
 
     %% Establish any new connections.
     Connections = establish_connections(Pending,
@@ -912,11 +905,11 @@ handle_info(periodic, #state{pending=Pending,
 handle_info(retransmit, #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
     RetransmitFun = fun({_, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options}}) ->
         Mynode = partisan_peer_service_manager:mynode(),
-        lager:info("~p no acknowledgement yet, restranmitting message ~p with clock ~p to ~p", [Mynode, Message, Clock, Name]),
+        logger:info("~p no acknowledgement yet, restranmitting message ~p with clock ~p to ~p", [Mynode, Message, Clock, Name]),
 
         %% Fire pre-interposition functions.
         PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
-            lager:info("firing preinterposition fun for original message: ~p", [Message]),
+            logger:info("firing preinterposition fun for original message: ~p", [Message]),
             PreInterpositionFun({forward_message, Name, Message}),
             ok
         end,
@@ -928,7 +921,7 @@ handle_info(retransmit, #state{pre_interposition_funs=PreInterpositionFuns}=Stat
     end,
 
     {ok, Outstanding} = partisan_acknowledgement_backend:outstanding(),
-    %% lager:info("~p outstanding messages are: ~p", [node(), Outstanding]),
+    %% logger:info("~p outstanding messages are: ~p", [node(), Outstanding]),
 
     case partisan_config:get(replaying, false) of 
         false ->
@@ -961,7 +954,7 @@ handle_info(connections, #state{pending=Pending,
     SyncJoins = lists:foldl(fun({Node, FromPid}, Joins) ->
             case fully_connected(Node, Connections) of
                 true ->
-                    lager:debug("Node ~p is now fully connected.", [Node]),
+                    logger:debug("Node ~p is now fully connected.", [Node]),
                     gen_server:reply(FromPid, ok),
                     Joins;
                 _ ->
@@ -997,7 +990,7 @@ handle_info({connected, Node, _Tag, RemoteState},
                       membership_strategy=MembershipStrategy,
                       membership_strategy_state=MembershipStrategyState0,
                       pre_interposition_funs=PreInterpositionFuns}=State0) ->
-    lager:debug("Node ~p connected!", [Node]),
+    logger:debug("Node ~p connected!", [Node]),
 
     State = case lists:member(Node, Pending0) of
         true ->
@@ -1142,7 +1135,7 @@ handle_message({pong, SourceNode, DestinationNode, SourceTime},
     
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
-            lager:info("Updating distance metric for node ~p => ~p communication: ~p", [SourceNode, DestinationNode, Difference]);
+            logger:info("Updating distance metric for node ~p => ~p communication: ~p", [SourceNode, DestinationNode, Difference]);
         false ->
             ok
     end,
@@ -1188,7 +1181,7 @@ handle_message({membership_strategy, ProtocolMessage},
 
     case lists:member(partisan_peer_service_manager:myself(), Membership) of
         false ->
-            lager:info("Shutting down: membership doesn't contain us. ~p not in ~p", [partisan_peer_service_manager:myself(), Membership]),
+            logger:info("Shutting down: membership doesn't contain us. ~p not in ~p", [partisan_peer_service_manager:myself(), Membership]),
             %% Shutdown if we've been removed from the cluster.
             {stop, normal, State#state{membership=Membership,
                                        connections=Connections,
@@ -1262,7 +1255,7 @@ handle_message({ack, MessageClock},
                From,
                State) ->
     % Mynode = partisan_peer_service_manager:mynode(),
-    % lager:warning("~p acknowledgement received for message ~p", [Mynode, MessageClock]),
+    % logger:warning("~p acknowledgement received for message ~p", [Mynode, MessageClock]),
     partisan_acknowledgement_backend:ack(MessageClock),
     optional_gen_server_reply(From, ok),
     {noreply, State};
@@ -1270,7 +1263,7 @@ handle_message({ack, MessageClock},
 handle_message(Message,
                _From,
                State) ->
-    lager:warning("Unhandled message at module ~p: ~p", [?MODULE, Message]),
+    logger:warning("Unhandled message at module ~p: ~p", [?MODULE, Message]),
     {noreply, State}.
 
 %% @private
@@ -1320,7 +1313,7 @@ do_send_message(Node, Channel, PartitionKey, Message, Connections, Options, PreI
             %% Tracing.
             case partisan_config:get(tracing, ?TRACING) of 
                 true ->
-                    lager:info("Node ~p was connected, but is now disconnected!", [Node]);
+                    logger:info("Node ~p was connected, but is now disconnected!", [Node]);
                 false ->
                     ok
             end,
@@ -1330,7 +1323,7 @@ do_send_message(Node, Channel, PartitionKey, Message, Connections, Options, PreI
                 true ->
                     case proplists:get_value(transitive, Options, false) of
                         true ->
-                            lager:info("Performing tree forward from node ~p to node ~p and message: ~p", [node(), Node, Message]),
+                            logger:info("Performing tree forward from node ~p to node ~p and message: ~p", [node(), Node, Message]),
                             TTL = partisan_config:get(relay_ttl, ?RELAY_TTL),
                             do_tree_forward(Node, Channel, PartitionKey, Message, Connections, Options, TTL, PreInterpositionFuns);
                         false ->
@@ -1347,7 +1340,7 @@ do_send_message(Node, Channel, PartitionKey, Message, Connections, Options, PreI
             %% Tracing.
             case partisan_config:get(tracing, ?TRACING) of 
                 true ->
-                    lager:info("Node ~p is not directly connected.", [Node]);
+                    logger:info("Node ~p is not directly connected.", [Node]);
                 false ->
                     ok
             end,
@@ -1357,7 +1350,7 @@ do_send_message(Node, Channel, PartitionKey, Message, Connections, Options, PreI
                 true ->
                     case proplists:get_value(transitive, Options, false) of
                         true ->
-                            lager:info("Performing tree forward from node ~p to node ~p and message: ~p", [node(), Node, Message]),
+                            logger:info("Performing tree forward from node ~p to node ~p and message: ~p", [node(), Node, Message]),
                             TTL = partisan_config:get(relay_ttl, ?RELAY_TTL),
                             do_tree_forward(Node, Channel, PartitionKey, Message, Connections, Options, TTL, PreInterpositionFuns);
                         false ->
@@ -1400,7 +1393,7 @@ internal_leave(#{name := Name} = Node,
                       membership_strategy=MembershipStrategy,
                       membership_strategy_state=MembershipStrategyState0,
                       pre_interposition_funs=PreInterpositionFuns}=State) ->
-    lager:info("Leaving node ~p at node ~p", [Node, partisan_peer_service_manager:mynode()]),
+    logger:info("Leaving node ~p at node ~p", [Node, partisan_peer_service_manager:mynode()]),
 
     {ok, Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:leave(MembershipStrategyState0, Node),
 
@@ -1507,7 +1500,7 @@ avoid_rush() ->
 do_tree_forward(Node, Channel, PartitionKey, Message, _Connections, Options, TTL, PreInterpositionFuns) ->
     case partisan_config:get(tracing, ?TRACING) of
         true ->
-            lager:info("Attempting to forward message ~p from ~p to ~p.", 
+            logger:info("Attempting to forward message ~p from ~p to ~p.", 
                     [Message, partisan_peer_service_manager:mynode(), Node]);
         false ->
             ok
@@ -1523,7 +1516,7 @@ do_tree_forward(Node, Channel, PartitionKey, Message, _Connections, Options, TTL
                     Value
             catch
                 _:Reason ->
-                    lager:error("Outlinks retrieval failed, reason: ~p", [Reason]),
+                    logger:error("Outlinks retrieval failed, reason: ~p", [Reason]),
                     []
             end;
         OL ->
@@ -1534,7 +1527,7 @@ do_tree_forward(Node, Channel, PartitionKey, Message, _Connections, Options, TTL
     lists:foreach(fun(N) ->
         case partisan_config:get(tracing, ?TRACING) of
             true ->
-                lager:info("Forwarding relay message ~p to node ~p for node ~p from node ~p", 
+                logger:info("Forwarding relay message ~p to node ~p for node ~p from node ~p", 
                         [Message, N, Node, partisan_peer_service_manager:mynode()]);
             false ->
                 ok
@@ -1549,7 +1542,7 @@ do_tree_forward(Node, Channel, PartitionKey, Message, _Connections, Options, TTL
 retrieve_outlinks() ->
     case partisan_config:get(tracing, ?TRACING) of
         true ->
-            lager:info("About to retrieve outlinks...");
+            logger:info("About to retrieve outlinks...");
         false ->
             ok
     end,
@@ -1561,13 +1554,13 @@ retrieve_outlinks() ->
             ordsets:to_list(EagerPeers)
     catch
         _:_ ->
-            lager:info("Request to get outlinks timed out..."),
+            logger:info("Request to get outlinks timed out..."),
             []
     end,
 
     case partisan_config:get(tracing, ?TRACING) of
         true ->
-            lager:info("Finished getting outlinks: ~p", [OutLinks]);
+            logger:info("Finished getting outlinks: ~p", [OutLinks]);
         false ->
             ok
     end,
@@ -1594,7 +1587,7 @@ schedule_self_message_delivery(Name, Message, Channel, PartitionKey, Options, Pr
     DeliveryFun = fun() ->
         %% Fire pre-interposition functions.
         PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
-            lager:info("firing forward_message preinterposition fun for message: ~p", [Message]),
+            logger:info("firing forward_message preinterposition fun for message: ~p", [Message]),
             PreInterpositionFun({forward_message, Name, Message}),
             ok
         end,

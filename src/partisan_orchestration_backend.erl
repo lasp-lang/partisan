@@ -112,22 +112,22 @@ init([]) ->
 
     case OrchestrationStrategy of
         undefined ->
-            lager:info("Not using container orchestration; disabling."),
+            logger:info("Not using container orchestration; disabling."),
             ok;
         OrchestrationStrategy ->
-            lager:info("OrchestrationStrategy: ~p", [OrchestrationStrategy]),
+            logger:info("OrchestrationStrategy: ~p", [OrchestrationStrategy]),
 
             %% Only construct the graph and attempt to repair the graph
             %% from the designated server node.
             case partisan_config:get(tag, client) of
                 server ->
-                    lager:info("Tag is server."),
+                    logger:info("Tag is server."),
                     schedule_build_graph();
                 client ->
-                    lager:info("Tag is client."),
+                    logger:info("Tag is client."),
                     ok;
                 undefined ->
-                    lager:info("Tag is undefined."),
+                    logger:info("Tag is undefined."),
                     ok
             end,
 
@@ -226,13 +226,13 @@ handle_call(tree, _From, #orchestration_strategy_state{tree=Tree}=State) ->
     {reply, {ok, {Vertices, Edges}}, State};
 
 handle_call(Msg, _From, State) ->
-    lager:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
+    logger:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
     {reply, ok, State}.
 
 %% @private
 -spec handle_cast(term(), #orchestration_strategy_state{}) -> {noreply, #orchestration_strategy_state{}}.
 handle_cast(Msg, State) ->
-    lager:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
+    logger:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
 
 %% @private
@@ -244,10 +244,10 @@ handle_info(?REFRESH_MESSAGE, #orchestration_strategy_state{orchestration_strate
     PeerServiceManager = partisan_config:get(peer_service_manager, ?DEFAULT_PEER_SERVICE_MANAGER),
 
     Servers = OrchestrationStrategy:servers(State),
-    %% lager:info("Refresh found servers: ~p", [sets:to_list(Servers)]),
+    %% logger:info("Refresh found servers: ~p", [sets:to_list(Servers)]),
 
     Clients = OrchestrationStrategy:clients(State),
-    %% lager:info("Refresh found clients: ~p", [sets:to_list(Clients)]),
+    %% logger:info("Refresh found clients: ~p", [sets:to_list(Clients)]),
 
     %% Get list of nodes to connect to: this specialized logic isn't
     %% required when the node count is small, but is required with a
@@ -290,8 +290,8 @@ handle_info(?REFRESH_MESSAGE, #orchestration_strategy_state{orchestration_strate
             sets:new();
         {Tag, PeerServiceManager} ->
             %% Catch all.
-            lager:info("Invalid mode: not connecting to any nodes."),
-            lager:info("Tag: ~p; PeerServiceManager: ~p",
+            logger:info("Invalid mode: not connecting to any nodes."),
+            logger:info("Tag: ~p; PeerServiceManager: ~p",
                        [Tag, PeerServiceManager]),
             sets:new()
     end,
@@ -320,7 +320,7 @@ handle_info(?ARTIFACT_MESSAGE, State) ->
 
     case partisan_config:get(tracing, ?TRACING) of 
         true ->
-            lager:info("Uploading membership for node ~p: ~p", [Node, Nodes]);
+            logger:info("Uploading membership for node ~p: ~p", [Node, Nodes]);
         false ->
             ok
     end,
@@ -335,7 +335,7 @@ handle_info(?BUILD_GRAPH_MESSAGE, #orchestration_strategy_state{
                                          graph=Graph0,
                                          tree=Tree0,
                                          was_connected=WasConnected0}=State) ->
-    % _ = lager:info("Beginning graph analysis."),
+    % _ = logger:info("Beginning graph analysis."),
     
     %% Delete existing graphs to prevent ets table leak.
     digraph:delete(Tree0),
@@ -344,10 +344,10 @@ handle_info(?BUILD_GRAPH_MESSAGE, #orchestration_strategy_state{
     %% Get all running nodes, because we need the list of *everything*
     %% to analyze the graph for connectedness.
     Servers = OrchestrationStrategy:servers(State),
-    %% lager:info("Build graph found servers: ~p", [sets:to_list(Servers)]),
+    %% logger:info("Build graph found servers: ~p", [sets:to_list(Servers)]),
 
     Clients = OrchestrationStrategy:clients(State),
-    %% lager:info("Build graph found clients: ~p", [sets:to_list(Clients)]),
+    %% logger:info("Build graph found clients: ~p", [sets:to_list(Clients)]),
 
     ServerNames = node_names(sets:to_list(Servers)),
     ClientNames = node_names(sets:to_list(Clients)),
@@ -382,16 +382,16 @@ handle_info(?BUILD_GRAPH_MESSAGE, #orchestration_strategy_state{
         true ->
             case partisan_config:get(tracing, ?TRACING) of 
                 true ->
-                    lager:info("Graph is connected!");
+                    logger:info("Graph is connected!");
                 false ->
                     ok
             end,
             ok;
         false ->
-            lager:info("Visited ~p from ~p: ~p", [length(VisitedNames), node(), VisitedNames]),
+            logger:info("Visited ~p from ~p: ~p", [length(VisitedNames), node(), VisitedNames]),
             ServerMembership = members_for_orchestration(),
-            lager:info("Membership (~p) ~p", [length(ServerMembership), ServerMembership]),
-            lager:info("Graph is not connected!"),
+            logger:info("Membership (~p) ~p", [length(ServerMembership), ServerMembership]),
+            logger:info("Graph is not connected!"),
             ok
     end,
 
@@ -401,7 +401,7 @@ handle_info(?BUILD_GRAPH_MESSAGE, #orchestration_strategy_state{
         0 ->
             ok;
         Length ->
-            lager:info("~p isolated nodes: ~p", [Length, Orphaned])
+            logger:info("~p isolated nodes: ~p", [Length, Orphaned])
     end,
 
     schedule_build_graph(),
@@ -413,7 +413,7 @@ handle_info(?BUILD_GRAPH_MESSAGE, #orchestration_strategy_state{
                           tree=Tree}};
 
 handle_info(Msg, State) ->
-    lager:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Msg]),
+    logger:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
 
 %% @private
@@ -451,7 +451,7 @@ maybe_connect(PeerService, Nodes, SeenNodes) ->
         [] ->
             ok;
         _ ->
-            lager:info("Attempting to connect: ~p", [sets:to_list(ToConnect)])
+            logger:info("Attempting to connect: ~p", [sets:to_list(ToConnect)])
     end,
 
     %% Attempt connection to any new nodes.
@@ -484,7 +484,7 @@ breadth_first(Root, Graph, Visited0) ->
             ),
             {SymmetricViews, ordsets:union(VisitedNodes, Out)};
         false ->
-            lager:info("Non symmetric views for node ~p. In ~p; Out ~p", [Root, In, Out]),
+            logger:info("Non symmetric views for node ~p. In ~p; Out ~p", [Root, In, Out]),
             {false, ordsets:new()}
     end.
 
@@ -557,7 +557,7 @@ populate_graph(State, Nodes, Graph) ->
                 _:{aws_error, Error} ->
                     %% TODO: Move me inside download artifact.
                     add_edges(Node, [], Graph),
-                    lager:info("Could not get graph object; ~p", [Error]),
+                    logger:info("Could not get graph object; ~p", [Error]),
                     OrphanedNodes
             end
         end,
@@ -603,7 +603,7 @@ debug_get_tree(Root, Nodes) ->
     [begin
          Peers = try partisan_plumtree_broadcast:debug_get_peers(Node, Root, 5000)
                  catch _:Error ->
-                           lager:info("Call to node ~p to get root tree ~p failed: ~p", [Node, Root, Error]),
+                           logger:info("Call to node ~p to get root tree ~p failed: ~p", [Node, Root, Error]),
                            down
                  end,
          {Node, Peers}
