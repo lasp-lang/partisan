@@ -1,18 +1,18 @@
 {"1.2.0",
 [{<<"acceptor_pool">>,{pkg,<<"acceptor_pool">>,<<"1.0.0">>},0},
- {<<"quickrand">>,{pkg,<<"quickrand">>,<<"2.0.1">>},1},
+ {<<"quickrand">>,{pkg,<<"quickrand">>,<<"2.0.2">>},1},
  {<<"types">>,
   {git,"https://github.com/Inkwell-Data/types.git",
        {ref,"8cfaeb1bd7a0983db62d1ed3129e7cab91239ff6"}},
   0},
- {<<"uuid">>,{pkg,<<"uuid_erl">>,<<"2.0.1">>},0}]}.
+ {<<"uuid">>,{pkg,<<"uuid_erl">>,<<"2.0.2">>},0}]}.
 [
 {pkg_hash,[
  {<<"acceptor_pool">>, <<"43C20D2ACAE35F0C2BCD64F9D2BDE267E459F0F3FD23DAB26485BF518C281B21">>},
- {<<"quickrand">>, <<"6D861FA11E6EB51BB2343A2616EFF704C2681A9997F41ABC78E58FA76DA33981">>},
- {<<"uuid">>, <<"1FD9079C544D521063897887A1C5B3302DCA98F9BB06AADCDC6FB0663F256797">>}]},
+ {<<"quickrand">>, <<"1D73FAA52E0C149FCBC72A63C26135FF68BE8FA7870675C73645896788A7540C">>},
+ {<<"uuid">>, <<"0D1CA9D94CA3B058467BCE20B7706CC816A2BDBBE0574DD008936AE97EA4EBE7">>}]},
 {pkg_hash_ext,[
  {<<"acceptor_pool">>, <<"0CBCD83FDC8B9AD2EEE2067EF8B91A14858A5883CB7CD800E6FCD5803E158788">>},
- {<<"quickrand">>, <<"14DB67D4AEF6B8815810EC9F3CCEF5E324B73B56CAE3687F99D752B85BDD4C96">>},
- {<<"uuid">>, <<"AB57CACCD51F170011E5F444CE865F84B41605E483A9EFCC468C1AFAEC87553B">>}]}
+ {<<"quickrand">>, <<"E21C6C7F29CA995468662085CA54D7D09E861C180A9DFEC2CF4A2E75364A16D6">>},
+ {<<"uuid">>, <<"4866CA7B3BD0265BC371590DCD0FE2832FC08588A071B72D07E09E23F163D0D6">>}]}
 ].
