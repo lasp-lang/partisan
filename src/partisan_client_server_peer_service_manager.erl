@@ -228,6 +228,9 @@ init([]) ->
 handle_call({reserve, _Tag}, _From, State) ->
     {reply, {error, no_available_slots}, State};
 
+handle_call({leave, #{name := NodeName}}, From, State) ->
+    handle_call({leave, NodeName}, From, State);
+
 handle_call({leave, NodeName}, _From,
             #state{membership=Membership0,
                    pending = Pending,
