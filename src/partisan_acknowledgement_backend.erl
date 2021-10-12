@@ -70,14 +70,14 @@ init([]) ->
 
 %% @private
 handle_call({ack, MessageClock}, _From, #state{storage=Storage}=State) ->
-    ?LOG_INFO(#{
+    ?LOG_DEBUG(#{
         description => "Acknowledgement received",
         clock => MessageClock
     }),
     true = ets:delete(Storage, MessageClock),
     {reply, ok, State};
 handle_call({store, MessageClock, Message}, _From, #state{storage=Storage}=State) ->
-    ?LOG_INFO(#{
+    ?LOG_DEBUG(#{
         description => "storing message in acknowledgement backend",
         clock => MessageClock,
         message => Message

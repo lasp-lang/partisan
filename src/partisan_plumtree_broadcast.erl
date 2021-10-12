@@ -128,23 +128,32 @@
 %% to generate membership updates as the ring changes.
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
-    LazyTickPeriod = partisan_config:get(lazy_tick_period, ?DEFAULT_LAZY_TICK_PERIOD),
-    ExchangeTickPeriod = partisan_config:get(exchange_tick_period, ?DEFAULT_EXCHANGE_TICK_PERIOD),
+    LazyTickPeriod = partisan_config:get(
+        lazy_tick_period, ?DEFAULT_LAZY_TICK_PERIOD),
+    ExchangeTickPeriod = partisan_config:get(
+        exchange_tick_period, ?DEFAULT_EXCHANGE_TICK_PERIOD),
+    Opts = #{
+        lazy_tick_period => LazyTickPeriod,
+        exchange_tick_period => ExchangeTickPeriod
+    },
+
     {ok, Members} = partisan_peer_service:members(),
-    ?UTIL:log(info, "peer sampling service members: ~p", [Members]),
+    ?LOG_INFO("Peer sampling service members: ~p", [Members]),
+
     %% the peer service has already sampled the members, we start off
     %% with pure gossip (ie. all members are in the eager push list and lazy
     %% list is empty)
     InitEagers = Members,
     InitLazys = [],
-    ?UTIL:log(debug, "init peers, eager: ~p, lazy: ~p",
-                      [InitEagers, InitLazys]),
+
+    ?LOG_DEBUG("init peers, eager: ~p, lazy: ~p", [InitEagers, InitLazys]),
+
     Mods = partisan_config:get(broadcast_mods, []),
-    Res = start_link(Members, InitEagers, InitLazys, Mods,
-                     [{lazy_tick_period, LazyTickPeriod},
-                      {exchange_tick_period, ExchangeTickPeriod}]),
+
+    Res = start_link(Members, InitEagers, InitLazys, Mods, Opts),
     partisan_peer_service:add_sup_callback(fun ?MODULE:update/1),
     Res.
+
 
 %% @doc Starts the broadcast server on this node. `InitMembers' must be a list
 %% of all members known to this node when starting the broadcast server.
@@ -164,11 +173,17 @@ start_link() ->
 %% NOTE: When starting the server using start_link/2 no automatic membership update from
 %% ring_events is registered. Use start_link/0.
 -spec start_link([nodename()], [nodename()], [nodename()], [module()],
-                 proplists:proplist()) ->
+                 proplists:proplist() | map()) ->
     {ok, pid()} | ignore | {error, term()}.
-start_link(InitMembers, InitEagers, InitLazys, Mods, Opts) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE,
-                          [InitMembers, InitEagers, InitLazys, Mods, Opts], []).
+start_link(InitMembers, InitEagers, InitLazys, Mods, Opts) when is_list(Opts) ->
+    start_link(InitMembers, InitEagers, InitLazys, Mods, maps:from_list(Opts));
+
+start_link(InitMembers, InitEagers, InitLazys, Mods, Opts) when is_map(Opts) ->
+    gen_server:start_link(
+        {local, ?SERVER}, ?MODULE,
+        [InitMembers, InitEagers, InitLazys, Mods, Opts],
+        []
+    ).
 
 %% @doc Broadcasts a message originating from this node. The message will be delivered to
 %% each node at least once. The `Mod' passed is responsible for handling the message on remote
@@ -216,6 +231,8 @@ exchanges(Node) ->
 cancel_exchanges(WhichExchanges) ->
     gen_server:call(?SERVER, {cancel_exchanges, WhichExchanges}, infinity).
 
+
+
 %%%===================================================================
 %%% Debug API
 %%%===================================================================
@@ -252,8 +269,8 @@ debug_get_tree(Root, Nodes) ->
 %% @private
 -spec init([[any()], ...]) -> {ok, state()}.
 init([AllMembers, InitEagers, InitLazys, Mods, Opts]) ->
-    LazyTickPeriod = proplists:get_value(lazy_tick_period, Opts),
-    ExchangeTickPeriod = proplists:get_value(exchange_tick_period, Opts),
+    LazyTickPeriod = maps:get(lazy_tick_period, Opts),
+    ExchangeTickPeriod = maps:get(exchange_tick_period, Opts),
     schedule_lazy_tick(LazyTickPeriod),
     schedule_exchange_tick(ExchangeTickPeriod),
     State1 =  #state{
@@ -283,58 +300,63 @@ handle_call({cancel_exchanges, WhichExchanges}, _From, State) ->
 %% @private
 -spec handle_cast(term(), state()) -> {noreply, state()}.
 handle_cast({broadcast, MessageId, Message, Mod}, State) ->
-    ?UTIL:log(debug, "received {broadcast, ~p, Msg, ~p}",
+    ?LOG_DEBUG("received {broadcast, ~p, Msg, ~p}",
                       [MessageId, Mod]),
     State1 = eager_push(MessageId, Message, Mod, State),
     State2 = schedule_lazy_push(MessageId, Mod, State1),
     {noreply, State2};
 handle_cast({broadcast, MessageId, Message, Mod, Round, Root, From}, State) ->
-    ?UTIL:log(debug, "received {broadcast, ~p, Msg, ~p, ~p, ~p, ~p}",
+    ?LOG_DEBUG("received {broadcast, ~p, Msg, ~p, ~p, ~p, ~p}",
                       [MessageId, Mod, Round, Root, From]),
     Valid = Mod:merge(MessageId, Message),
     State1 = handle_broadcast(Valid, MessageId, Message, Mod, Round, Root, From, State),
     {noreply, State1};
 handle_cast({prune, Root, From}, State) ->
-    ?UTIL:log(debug, "received ~p", [{prune, Root, From}]),
-    ?UTIL:log(debug, "moving peer ~p from eager to lazy", [From]),
+    ?LOG_DEBUG("received ~p", [{prune, Root, From}]),
+    ?LOG_DEBUG("moving peer ~p from eager to lazy", [From]),
     State1 = add_lazy(From, Root, State),
     {noreply, State1};
 handle_cast({i_have, MessageId, Mod, Round, Root, From}, State) ->
-    ?UTIL:log(debug, "received ~p", [{i_have, MessageId, Mod, Round, Root, From}]),
+    ?LOG_DEBUG("received ~p", [{i_have, MessageId, Mod, Round, Root, From}]),
     Stale = Mod:is_stale(MessageId),
     State1 = handle_ihave(Stale, MessageId, Mod, Round, Root, From, State),
     {noreply, State1};
 handle_cast({ignored_i_have, MessageId, Mod, Round, Root, From}, State) ->
-    ?UTIL:log(debug, "received ~p", [{ignored_i_have, MessageId, Mod, Round, Root, From}]),
+    ?LOG_DEBUG("received ~p", [{ignored_i_have, MessageId, Mod, Round, Root, From}]),
     State1 = ack_outstanding(MessageId, Mod, Round, Root, From, State),
     {noreply, State1};
 handle_cast({graft, MessageId, Mod, Round, Root, From}, State) ->
-    ?UTIL:log(debug, "received ~p", [{graft, MessageId, Mod, Round, Root, From}]),
+    ?LOG_DEBUG("received ~p", [{graft, MessageId, Mod, Round, Root, From}]),
     Result = Mod:graft(MessageId),
-    ?UTIL:log(debug, "graft(~p): ~p", [MessageId, Result]),
+    ?LOG_DEBUG("graft(~p): ~p", [MessageId, Result]),
     State1 = handle_graft(Result, MessageId, Mod, Round, Root, From, State),
     {noreply, State1};
 handle_cast({update, Members}, State=#state{all_members=BroadcastMembers,
                                             common_eagers=EagerPeers0,
                                             common_lazys=LazyPeers}) ->
-    ?UTIL:log(debug, "received ~p", [{update, Members}]),
+    ?LOG_DEBUG("received ~p", [{update, Members}]),
     CurrentMembers = ordsets:from_list(Members),
     New = ordsets:subtract(CurrentMembers, BroadcastMembers),
     Removed = ordsets:subtract(BroadcastMembers, CurrentMembers),
-    ?UTIL:log(debug, "    new members: ~p", [ordsets:to_list(New)]),
-    ?UTIL:log(debug, "    removed members: ~p", [ordsets:to_list(Removed)]),
+
+    ?LOG_DEBUG("new members: ~p", [ordsets:to_list(New)]),
+    ?LOG_DEBUG("removed members: ~p", [ordsets:to_list(Removed)]),
+
     State1 = case ordsets:size(New) > 0 of
-                 false ->
-                     State;
-                 true ->
-                     %% as per the paper (page 9):
-                     %% "When a new member is detected, it is simply added to the set
-                     %%  of eagerPushPeers"
-                     EagerPeers = ordsets:union(EagerPeers0, New),
-                     ?UTIL:log(debug, "    new peers, eager: ~p, lazy: ~p",
-                                       [EagerPeers, LazyPeers]),
-                     reset_peers(CurrentMembers, EagerPeers, LazyPeers, State)
-             end,
+        false ->
+            State;
+        true ->
+            %% as per the paper (page 9):
+            %% "When a new member is detected, it is simply added to the set
+            %%  of eagerPushPeers"
+            EagerPeers = ordsets:union(EagerPeers0, New),
+
+            ?LOG_DEBUG(
+                "new peers, eager: ~p, lazy: ~p", [EagerPeers, LazyPeers]
+            ),
+
+            reset_peers(CurrentMembers, EagerPeers, LazyPeers, State)
+    end,
     State2 = neighbors_down(Removed, State1),
     {noreply, State2}.
 
@@ -370,7 +392,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 handle_broadcast(false, _MessageId, _Message, Mod, _Round, Root, From, State) -> %% stale msg
     %% remove sender from eager and set as lazy
-    ?UTIL:log(debug, "moving peer ~p from eager to lazy", [From]),
+    ?LOG_DEBUG("moving peer ~p from eager to lazy", [From]),
     State1 = add_lazy(From, Root, State),
     _ = send({prune, Root, myself()}, Mod, From),
     State1;
@@ -437,7 +459,7 @@ eager_push(MessageId, Message, Mod, State) ->
 
 eager_push(MessageId, Message, Mod, Round, Root, From, State) ->
     Peers = eager_peers(Root, From, State),
-    ?UTIL:log(debug, "eager push to peers: ~p", [Peers]),
+    ?LOG_DEBUG("eager push to peers: ~p", [Peers]),
     _ = send({broadcast, MessageId, Message, Mod, Round, Root, myself()}, Mod, Peers),
     State.
 
@@ -446,7 +468,7 @@ schedule_lazy_push(MessageId, Mod, State) ->
 
 schedule_lazy_push(MessageId, Mod, Round, Root, From, State) ->
     Peers = lazy_peers(Root, From, State),
-    ?UTIL:log(debug, "scheduling lazy push to peers ~p: ~p",
+    ?LOG_DEBUG("scheduling lazy push to peers ~p: ~p",
                [Peers, {MessageId, Mod, Round, Root, From}]),
     add_all_outstanding(MessageId, Mod, Round, Root, Peers, State).
 
@@ -458,7 +480,7 @@ send_lazy(Peer, Messages) ->
         {MessageId, Mod, Round, Root} <- ordsets:to_list(Messages)].
 
 send_lazy(MessageId, Mod, Round, Root, Peer) ->
-    ?UTIL:log(debug, "sending lazy push ~p",
+    ?LOG_DEBUG("sending lazy push ~p",
                [{i_have, MessageId, Mod, Round, Root, myself()}]),
     send({i_have, MessageId, Mod, Round, Root, myself()}, Mod, Peer).
 
@@ -485,13 +507,13 @@ maybe_exchange(_Peer, State=#state{mods=[]}) ->
 
 exchange(Peer, State=#state{mods=[Mod | Mods], exchanges=Exchanges}) ->
     State1 = case Mod:exchange(Peer) of
-                 {ok, Pid} ->
-                     ?UTIL:log(debug, "started ~p exchange with ~p (~p)", [Mod, Peer, Pid]),
-                     Ref = monitor(process, Pid),
-                     State#state{exchanges=[{Mod, Peer, Ref, Pid} | Exchanges]};
-                 {error, _Reason} ->
-                     State
-             end,
+        {ok, Pid} ->
+            ?LOG_DEBUG("started ~p exchange with ~p (~p)", [Mod, Peer, Pid]),
+            Ref = monitor(process, Pid),
+            State#state{exchanges=[{Mod, Peer, Ref, Pid} | Exchanges]};
+        {error, _Reason} ->
+            State
+    end,
     State1#state{mods=Mods ++ [Mod]}.
 
 cancel_exchanges(all, Exchanges) ->

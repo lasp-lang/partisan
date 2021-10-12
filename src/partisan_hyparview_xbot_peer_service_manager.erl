@@ -170,10 +170,15 @@ forward_message(Name, ServerRef, Message) ->
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, Channel, ServerRef, Message) ->
-    forward_message(Name, Channel, ServerRef, Message, []).
+    forward_message(Name, Channel, ServerRef, Message, #{}).
 
 %% @doc Forward message to registered process on the remote side.
-forward_message(Name, _Channel, ServerRef, Message, Options) ->
+forward_message(Name, Channel, ServerRef, Message, Options)
+when is_list(Options) ->
+    forward_message(Name, Channel, ServerRef, Message, maps:from_list(Options));
+
+forward_message(Name, _Channel, ServerRef, Message, Options)
+when is_map(Options) ->
     FullMessage = {forward_message, Name, ServerRef, Message, Options},
 
     %% Attempt to fast-path through the memoized connection cache.
@@ -1481,25 +1486,29 @@ do_send_message(Node, Message, Connections) ->
 -spec do_send_message(Node :: atom() | node_spec(),
                       Message :: term(),
                       Connections :: partisan_peer_service_connections:t(),
-                      Options :: list()) ->
+                      Options :: list() | map()) ->
             {error, disconnected} | {error, not_yet_connected} | {error, term()} | ok.
 do_send_message(Node, Message, Connections, Options) ->
+    Broadcast = partisan_config:get(broadcast, false),
+    Transitive = maps:get(transitive, Options, false),
+
     %% Find a connection for the remote node, if we have one.
     case partisan_peer_service_connections:find(Node, Connections) of
         {ok, []} ->
-            ?LOG_DEBUG("Node disconnected when sending ~p to ~p!", [Message, Node]),
-            ?LOG_DEBUG("Broadcast mode: ~p, transitive: ~p", [partisan_config:get(broadcast, false), proplists:get_value(transitive, Options, false)]),
+            ?LOG_DEBUG(#{
+                description => "Node disconnected when sending message to peer node.",
+                message => Message,
+                peer_node => Node,
+                options => #{broadcast => Broadcast, transitive => Transitive}
+            }),
 
             %% We were connected, but we're not anymore.
-            case partisan_config:get(broadcast, false) of
-                true ->
-                    case proplists:get_value(transitive, Options, false) of
-                        true ->
-                            do_tree_forward(Node, Message, Connections, Options);
-                        false ->
-                            ok
-                    end;
-                false ->
+            case {Broadcast, Transitive} of
+                {true, true} ->
+                    do_tree_forward(Node, Message, Connections, Options);
+                {true, false} ->
+                    ok;
+                {false, _} ->
                     %% Node was connected but is now disconnected.
                     {error, disconnected}
             end;
@@ -1513,21 +1522,22 @@ do_send_message(Node, Message, Connections, Options) ->
                     {error, Error}
             end;
         {error, not_found} ->
-            ?LOG_DEBUG("Node not yet connected when sending ~p to ~p!", [Message, Node]),
-            ?LOG_DEBUG("Broadcast mode: ~p, transitive: ~p", [partisan_config:get(broadcast, false), proplists:get_value(transitive, Options, false)]),
+            ?LOG_DEBUG(#{
+                description => "Node not yet connected when sending message to peer node.",
+                message => Message,
+                peer_node => Node,
+                options => #{broadcast => Broadcast, transitive => Transitive}
+            }),
 
             %% We aren't connected, and it's not sure we will ever be.  Take the list of gossip peers and forward the message down the tree.
-            case partisan_config:get(broadcast, false) of
-                true ->
-                    case proplists:get_value(transitive, Options, false) of
-                        true ->
-                            do_tree_forward(Node, Message, Connections, Options);
-                        false ->
-                            ok
-                    end;
-                false ->
+            case {Broadcast, Transitive} of
+                {true, true} ->
+                    do_tree_forward(Node, Message, Connections, Options);
+                {true, false} ->
+                    ok;
+                {false, _} ->
                     %% Node has not been connected yet.
-                    {error, not_yet_connected}
+                    {error, disconnected}
             end
     end.
 
@@ -1577,8 +1587,10 @@ add_to_active_view(#{name := Name}=Peer, Tag,
                     State0#state{passive=Passive}
             end,
 
-            ?LOG_DEBUG("Node ~p adds ~p to active view with tag ~p",
-                       [Myself, Peer, Tag]),
+            ?LOG_DEBUG(
+                "Node ~p adds ~p to active view with tag ~p",
+                [Myself, Peer, Tag]
+            ),
 
             %% Add to the active view.
             Active = sets:add_element(Peer, Active1),
@@ -1586,11 +1598,15 @@ add_to_active_view(#{name := Name}=Peer, Tag,
             %% Fill reserved slot if necessary.
             Reserved = case dict:find(Tag, Reserved0) of
                 {ok, undefined} ->
-                    ?LOG_DEBUG(#{description => "Node added to reserved slot!"}),
+                    ?LOG_DEBUG(#{
+                        description => "Node added to reserved slot!"
+                    }),
                     dict:store(Tag, Peer, Reserved0);
                 {ok, _} ->
                     %% Slot already filled, treat this as a normal peer.
-                    ?LOG_DEBUG(#{description => "Node added to active view, but reserved slot already full!"}),
+                    ?LOG_DEBUG(#{
+                        description => "Node added to active view, but reserved slot already full!"
+                    }),
                     Reserved0;
                 error ->
                     ?LOG_DEBUG("Tag is not reserved: ~p ~p", [Tag, Reserved0]),
@@ -1988,10 +2004,13 @@ handle_partition_resolution(Reference,
 
 %% @private
 do_tree_forward(Node, Message, Connections, Options) ->
-    ?LOG_DEBUG("Attempting to forward message from ~p to ~p.", [partisan_peer_service_manager:mynode(), Node]),
+    ?LOG_DEBUG(
+        "Attempting to forward message from ~p to ~p.",
+        [partisan_peer_service_manager:mynode(), Node]
+    ),
 
     %% Preempt with user-supplied outlinks.
-    UserOutLinks = proplists:get_value(out_links, Options, undefined),
+    UserOutLinks = maps:get(out_links, Options, undefined),
 
     OutLinks = case UserOutLinks of
         undefined ->
@@ -2008,12 +2027,19 @@ do_tree_forward(Node, Message, Connections, Options) ->
     end,
 
     %% Send messages, but don't attempt to forward again, if we aren't connected.
-    lists:foreach(fun(N) ->
-        ?LOG_DEBUG("Forwarding relay message to node ~p for node ~p from node ~p", [N, Node, partisan_peer_service_manager:mynode()]),
+    lists:foreach(
+        fun(N) ->
+            ?LOG_DEBUG(
+                "Forwarding relay message to node ~p for node ~p from node ~p",
+                [N, Node, partisan_peer_service_manager:mynode()]
+            ),
 
-        RelayMessage = {relay_message, Node, Message},
-        do_send_message(N, RelayMessage, Connections, proplists:delete(transitive, Options))
-        end, OutLinks),
+            RelayMessage = {relay_message, Node, Message},
+            RelayOptions = maps:without([transitive], Options),
+            do_send_message(N, RelayMessage, Connections, RelayOptions)
+        end,
+        OutLinks
+    ),
     ok.
 
 %% @private

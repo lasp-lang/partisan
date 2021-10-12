@@ -65,7 +65,7 @@
 % - true (always returns true when checking better)
 -define(XPARAM, latency).
 
--type options() :: [{atom(), term()}].
+-type options() :: [{atom(), term()}] | #{atom() => term()}.
 
 -type actor() :: binary().
 -type listen_addr() :: #{ip => inet:ip_address(), port => non_neg_integer()}.

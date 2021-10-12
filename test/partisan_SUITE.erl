@@ -789,7 +789,7 @@ pid_test(Config) ->
         {message, Pid} when is_pid(Pid) ->
             ct:fail("Received incorrect message!");
         {message, GenSym} = Message ->
-            ?LOG_INFO("Received correct message: ~p", [Message]),
+            ?LOG_DEBUG("Received correct message: ~p", [Message]),
             ok = rpc:call(Node4, Manager, forward_message, [GenSym, Message]),
             ok
     after
@@ -1186,7 +1186,7 @@ gossip_test(Config) ->
     ReceiverFun = fun() ->
         receive
             hello ->
-                ?LOG_INFO("received value from gossip receiver", []),
+                ?LOG_DEBUG("received value from gossip receiver", []),
                 Self ! hello
         end
     end,

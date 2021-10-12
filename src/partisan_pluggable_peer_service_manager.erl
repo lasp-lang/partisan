@@ -179,25 +179,30 @@ forward_message(Name, ServerRef, Message) ->
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, Channel, ServerRef, Message) ->
-    forward_message(Name, Channel, ServerRef, Message, []).
+    forward_message(Name, Channel, ServerRef, Message, #{}).
 
 %% @doc Forward message to registered process on the remote side.
-forward_message(Name, Channel, ServerRef, Message, Options) ->
+forward_message(Name, Channel, ServerRef, Message, Options)
+when is_list(Options) ->
+    forward_message(Name, Channel, ServerRef, Message, maps:from_list(Options));
+
+forward_message(Name, Channel, ServerRef, Message, Options)
+when is_map(Options) ->
 
     %% Attempt to get the partition key, if possible.
-    PartitionKey = proplists:get_value(partition_key, Options, ?DEFAULT_PARTITION_KEY),
+    PartitionKey = maps:get(partition_key, Options, ?DEFAULT_PARTITION_KEY),
 
     %% Use a clock provided by the sender, otherwise, use a generated one.
-    Clock = proplists:get_value(clock, Options, undefined),
+    Clock = maps:get(clock, Options, undefined),
 
     %% Should ack?
-    ShouldAck = proplists:get_value(ack, Options, false),
+    ShouldAck = maps:get(ack, Options, false),
 
     %% Use causality?
-    CausalLabel = proplists:get_value(causal_label, Options, undefined),
+    CausalLabel = maps:get(causal_label, Options, undefined),
 
     %% Get forwarding options and combine with message specific options.
-    ForwardOptions = lists:usort(partisan_config:get(forward_options, []) ++ Options),
+    ForwardOptions = maps:merge(Options, forward_options()),
 
     %% Use configuration to disable fast forwarding.
     DisableFastForward = partisan_config:get(disable_fast_forward, false),
@@ -227,9 +232,25 @@ forward_message(Name, Channel, ServerRef, Message, Options) ->
                     FullMessage = case partisan_config:get(binary_padding, false) of
                         true ->
                             BinaryPadding = partisan_config:get(binary_padding_term, undefined),
-                            {forward_message, Name, Channel, Clock, PartitionKey, ServerRef, {'$partisan_padded', BinaryPadding, Message}, ForwardOptions};
+                            {forward_message,
+                                Name,
+                                Channel,
+                                Clock,
+                                PartitionKey,
+                                ServerRef,
+                                {'$partisan_padded', BinaryPadding, Message},
+                                ForwardOptions
+                            };
                         false ->
-                            {forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Message, ForwardOptions}
+                            {forward_message,
+                                Name,
+                                Channel,
+                                Clock,
+                                PartitionKey,
+                                ServerRef,
+                                Message,
+                                ForwardOptions
+                            }
                     end,
 
                     case FastForward of
@@ -644,7 +665,10 @@ handle_cast({receive_message, From, Peer, OriginalMessage},
             gen_server:reply(From, ok),
             {noreply, State};
         {'$delay', NewMessage} ->
-            ?LOG_INFO("Delaying receive_message due to interposition result: ~p", [NewMessage]),
+            ?LOG_DEBUG(
+                "Delaying receive_message due to interposition result: ~p",
+                [NewMessage]
+            ),
             gen_server:cast(?MODULE, {receive_message, From, Peer, NewMessage}),
             {noreply, State};
         _ ->
@@ -668,7 +692,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
     VClock = partisan_vclock:increment(mynode(), VClock0),
 
     %% Are we using causality?
-    CausalLabel = proplists:get_value(causal_label, Options, undefined),
+    CausalLabel = maps:get(causal_label, Options, undefined),
 
     %% Use local information for message unless it's a causal message.
     {MessageClock, FullMessage} = case CausalLabel of
@@ -708,12 +732,12 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
     case Message of
         undefined ->
             %% Store for reliability, if necessary.
-            case proplists:get_value(ack, Options, false) of
+            case maps:get(ack, Options, false) of
                 false ->
                     ok;
                 true ->
                     %% Acknowledgements.
-                    case proplists:get_value(retransmission, Options, false) of
+                    case maps:get(retransmission, Options, false) of
                         false ->
                             RescheduleableMessage = {forward_message, From, Name, Channel, MessageClock, PartitionKey, ServerRef, OriginalMessage, Options},
                             partisan_acknowledgement_backend:store(MessageClock, RescheduleableMessage);
@@ -729,7 +753,10 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
             end,
             dict:fold(PostFoldFun, ok, PostInterpositionFuns),
 
-            ?LOG_INFO("~p: Message ~p after send interposition is: ~p", [node(), OriginalMessage, FullMessage]),
+            ?LOG_DEBUG(
+                "~p: Message ~p after send interposition is: ~p",
+                [node(), OriginalMessage, FullMessage]
+            ),
 
             case From of
                 undefined ->
@@ -740,16 +767,19 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
 
             {noreply, State#state{vclock=VClock}};
         {'$delay', NewMessage} ->
-            ?LOG_INFO("Delaying receive_message due to interposition result: ~p", [NewMessage]),
+            ?LOG_DEBUG(
+                "Delaying receive_message due to interposition result: ~p",
+                [NewMessage]
+            ),
             gen_server:cast(?MODULE, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, NewMessage, Options}),
             {noreply, State};
         _ ->
             %% Store for reliability, if necessary.
-            Result = case proplists:get_value(ack, Options, false) of
+            Result = case maps:get(ack, Options, false) of
                 false ->
                     %% Tracing.
-                    WrappedMessage =  {forward_message, ServerRef, FullMessage},
-                    WrappedOriginalMessage =  {forward_message, ServerRef, OriginalMessage},
+                    WrappedMessage = {forward_message, ServerRef, FullMessage},
+                    WrappedOriginalMessage = {forward_message, ServerRef, OriginalMessage},
 
                     %% Fire post-interposition functions -- trace after wrapping!
                     PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
@@ -771,7 +801,9 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                     WrappedOriginalMessage = {forward_message, mynode(), MessageClock, ServerRef, OriginalMessage},
                     WrappedMessage = {forward_message, mynode(), MessageClock, ServerRef, FullMessage},
 
-                    ?LOG_INFO("should acknowledge message: ~p", [WrappedMessage]),
+                    ?LOG_DEBUG(
+                        "should acknowledge message: ~p", [WrappedMessage]
+                    ),
 
                     %% Fire post-interposition functions -- trace after wrapping!
                     PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
@@ -780,11 +812,17 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                     end,
                     dict:fold(PostFoldFun, ok, PostInterpositionFuns),
 
-                    ?LOG_INFO("~p: Sending message ~p with clock: ~p", [node(), Message, MessageClock]),
-                    ?LOG_INFO("~p: Message after send interposition is: ~p", [node(), Message]),
+                    ?LOG_DEBUG(
+                        "~p: Sending message ~p with clock: ~p",
+                        [node(), Message, MessageClock]
+                    ),
+                    ?LOG_DEBUG(
+                        "~p: Message after send interposition is: ~p",
+                        [node(), Message]
+                    ),
 
                     %% Acknowledgements.
-                    case proplists:get_value(retransmission, Options, false) of
+                    case maps:get(retransmission, Options, false) of
                         false ->
                             RescheduleableMessage = {forward_message, From, Name, Channel, MessageClock, PartitionKey, ServerRef, OriginalMessage, Options},
                             partisan_acknowledgement_backend:store(MessageClock, RescheduleableMessage);
@@ -851,7 +889,7 @@ handle_info(distance, #state{pending=Pending,
 
 handle_info(instrumentation, State) ->
     MessageQueueLen = process_info(self(), message_queue_len),
-    ?LOG_INFO("message_queue_len: ~p", [MessageQueueLen]),
+    ?LOG_DEBUG("message_queue_len: ~p", [MessageQueueLen]),
     schedule_instrumentation(),
     {noreply, State};
 
@@ -881,18 +919,25 @@ handle_info(periodic, #state{pending=Pending,
 handle_info(retransmit, #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
     RetransmitFun = fun({_, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options}}) ->
         Mynode = partisan_peer_service_manager:mynode(),
-        ?LOG_INFO("~p no acknowledgement yet, restranmitting message ~p with clock ~p to ~p", [Mynode, Message, Clock, Name]),
+        ?LOG_DEBUG(
+            "~p no acknowledgement yet, restranmitting message ~p with clock ~p to ~p",
+            [Mynode, Message, Clock, Name]
+        ),
 
         %% Fire pre-interposition functions.
         PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
-            ?LOG_INFO("firing preinterposition fun for original message: ~p", [Message]),
+            ?LOG_DEBUG(
+                "firing preinterposition fun for original message: ~p",
+                [Message]
+            ),
             PreInterpositionFun({forward_message, Name, Message}),
             ok
         end,
         dict:fold(PreFoldFun, ok, PreInterpositionFuns),
 
         %% Schedule message for redelivery.
-        RetryOptions = Options ++ [{retransmission, true}],
+        RetryOptions = Options#{retransmission => true},
+
         gen_server:cast(?MODULE, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, Message, RetryOptions})
     end,
 
@@ -930,6 +975,7 @@ handle_info(connections, #state{pending=Pending,
             case fully_connected(Node, Connections) of
                 true ->
                     ?LOG_DEBUG("Node ~p is now fully connected.", [Node]),
+
                     gen_server:reply(FromPid, ok),
                     Joins;
                 _ ->
@@ -1154,7 +1200,10 @@ handle_message({membership_strategy, ProtocolMessage},
 
     case lists:member(partisan_peer_service_manager:myself(), Membership) of
         false ->
-            ?LOG_INFO("Shutting down: membership doesn't contain us. ~p not in ~p", [partisan_peer_service_manager:myself(), Membership]),
+            ?LOG_INFO(
+                "Shutting down: membership doesn't contain us. ~p not in ~p",
+                [partisan_peer_service_manager:myself(), Membership]
+            ),
             %% Shutdown if we've been removed from the cluster.
             {stop, normal, State#state{membership=Membership,
                                        connections=Connections,
@@ -1289,9 +1338,12 @@ do_send_message(Node, Channel, PartitionKey, Message, Connections, Options, PreI
             %% We were connected, but we're not anymore.
             case partisan_config:get(broadcast, false) of
                 true ->
-                    case proplists:get_value(transitive, Options, false) of
+                    case maps:get(transitive, Options, false) of
                         true ->
-                            ?LOG_INFO("Performing tree forward from node ~p to node ~p and message: ~p", [node(), Node, Message]),
+                            ?LOG_DEBUG(
+                                "Performing tree forward from node ~p to node ~p and message: ~p",
+                                [node(), Node, Message]
+                            ),
                             TTL = partisan_config:get(relay_ttl, ?RELAY_TTL),
                             do_tree_forward(Node, Channel, PartitionKey, Message, Connections, Options, TTL, PreInterpositionFuns);
                         false ->
@@ -1311,9 +1363,13 @@ do_send_message(Node, Channel, PartitionKey, Message, Connections, Options, PreI
             %% We were connected, but we're not anymore.
             case partisan_config:get(broadcast, false) of
                 true ->
-                    case proplists:get_value(transitive, Options, false) of
+                    case maps:get(transitive, Options, false) of
                         true ->
-                            ?LOG_INFO("Performing tree forward from node ~p to node ~p and message: ~p", [node(), Node, Message]),
+                            ?LOG_DEBUG(
+                                "Performing tree forward from node ~p to node ~p and message: ~p",
+                                [node(), Node, Message]
+                            ),
+
                             TTL = partisan_config:get(relay_ttl, ?RELAY_TTL),
                             do_tree_forward(Node, Channel, PartitionKey, Message, Connections, Options, TTL, PreInterpositionFuns);
                         false ->
@@ -1467,7 +1523,7 @@ do_tree_forward(Node, Channel, PartitionKey, Message, _Connections, Options, TTL
     ),
 
     %% Preempt with user-supplied outlinks.
-    UserOutLinks = proplists:get_value(out_links, Options, undefined),
+    UserOutLinks = maps:get(out_links, Options, undefined),
 
     OutLinks = case UserOutLinks of
         undefined ->
@@ -1494,7 +1550,7 @@ do_tree_forward(Node, Channel, PartitionKey, Message, _Connections, Options, TTL
         ),
 
         RelayMessage = {relay_message, Node, Message, TTL - 1},
-        schedule_self_message_delivery(N, RelayMessage, Channel, PartitionKey, proplists:delete(transitive, Options), PreInterpositionFuns)
+        schedule_self_message_delivery(N, RelayMessage, Channel, PartitionKey, maps:without([transitive], Options), PreInterpositionFuns)
     end, OutLinks),
     ok.
 
@@ -1529,7 +1585,9 @@ schedule_tree_refresh() ->
 
 %% @private
 schedule_self_message_delivery(Name, Message, Channel, PartitionKey, PreInterpositionFuns) ->
-    schedule_self_message_delivery(Name, Message, Channel, PartitionKey, [], PreInterpositionFuns).
+    schedule_self_message_delivery(
+        Name, Message, Channel, PartitionKey, #{}, PreInterpositionFuns
+    ).
 
 %% @private
 schedule_self_message_delivery(Name, Message, Channel, PartitionKey, Options, PreInterpositionFuns) ->
@@ -1537,7 +1595,10 @@ schedule_self_message_delivery(Name, Message, Channel, PartitionKey, Options, Pr
     DeliveryFun = fun() ->
         %% Fire pre-interposition functions.
         PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
-            ?LOG_INFO("firing forward_message preinterposition fun for message: ~p", [Message]),
+            ?LOG_DEBUG(
+                "firing forward_message preinterposition fun for message: ~p",
+                [Message]
+            ),
             PreInterpositionFun({forward_message, Name, Message}),
             ok
         end,
@@ -1573,4 +1634,13 @@ optional_gen_server_reply(From, Response) ->
             ok;
         _ ->
             gen_server:reply(From, Response)
+    end.
+
+
+forward_options() ->
+    case partisan_config:get(forward_options, #{}) of
+        List when is_list(List) ->
+            maps:from_list(List);
+        Map when is_map(Map) ->
+            Map
     end.

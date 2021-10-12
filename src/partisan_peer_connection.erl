@@ -36,7 +36,7 @@
         ]).
 
 -type reason() :: closed | inet:posix().
--type options() :: [ssl:option()].
+-type options() :: [ssl:option()] | map().
 -record(connection, {
           socket :: gen_tcp:socket() | ssl:sslsocket(),
           transport :: gen_tcp | ssl,
@@ -71,9 +71,19 @@ accept(TCPSocket) ->
             {ok, TLSSocket} = ?ssl_accept(TCPSocket, TLSOpts),
             %% restore the expected active once setting
             ssl:setopts(TLSSocket, [{active, once}]),
-            #connection{socket = TLSSocket, transport = ssl, control = ssl, monotonic = false};
+            #connection{
+                socket = TLSSocket,
+                transport = ssl,
+                control = ssl,
+                monotonic = false
+            };
         _ ->
-            #connection{socket = TCPSocket, transport = gen_tcp, control = inet, monotonic = false}
+            #connection{
+                socket = TCPSocket,
+                transport = gen_tcp,
+                control = inet,
+                monotonic = false
+            }
     end.
 
 %% @see gen_tcp:send/2
@@ -114,6 +124,10 @@ recv(#connection{socket = Socket, transport = Transport}, Length, Timeout) ->
 %% @see inet:setopts/2
 %% @see ssl:setopts/2
 -spec setopts(connection(), options()) -> ok | {error, inet:posix()}.
+
+setopts(#connection{} = Connection, Options) when is_map(Options) ->
+    setopts(Connection, maps:to_list(Options));
+
 setopts(#connection{socket = Socket, control = Control}, Options) ->
     Control:setopts(Socket, Options).
 
@@ -131,14 +145,23 @@ connect(Address, Port, Options) ->
 
 -spec connect(inet:socket_address() | inet:hostname(), inet:port_number(),  options(), timeout()) -> {ok, connection()} | {error, inet:posix()}.
 connect(Address, Port, Options, Timeout) ->
-    connect(Address, Port, Options, Timeout, []).
+    connect(Address, Port, Options, Timeout, #{}).
 
--spec connect(inet:socket_address() | inet:hostname(), inet:port_number(),  options(), timeout(), list()) -> {ok, connection()} | {error, inet:posix()}.
-connect(Address, Port, Options, Timeout, PartisanOptions) ->
+
+-spec connect(inet:socket_address() | inet:hostname(), inet:port_number(),  options(), timeout(), map() | list()) ->
+    {ok, connection()} | {error, inet:posix()}.
+
+connect(Address, Port, Options, Timeout, PartisanOptions)
+when is_list(PartisanOptions) ->
+    connect(Address, Port, Options, Timeout, maps:from_list(PartisanOptions));
+
+connect(Address, Port, Options0, Timeout, PartisanOptions)
+when is_map(PartisanOptions) ->
+    Options = connection_options(Options0),
+
     case tls_enabled() of
         true ->
-            TLSOptions = tls_options(),
-            do_connect(Address, Port, Options ++ TLSOptions, Timeout, ssl, ssl, PartisanOptions);
+            do_connect(Address, Port, Options ++ tls_options(), Timeout, ssl, ssl, PartisanOptions);
         _ ->
             do_connect(Address, Port, Options, Timeout, gen_tcp, inet, PartisanOptions)
     end.
@@ -148,16 +171,33 @@ connect(Address, Port, Options, Timeout, PartisanOptions) ->
 socket(Conn) ->
     Conn#connection.socket.
 
+
+
 %% @private
 do_connect(Address, Port, Options, Timeout, Transport, Control, PartisanOptions) ->
-   Monotonic = proplists:get_value(monotonic, PartisanOptions, false),
+   Monotonic = maps:get(monotonic, PartisanOptions, false),
 
-   case Transport:connect(Address, Port, Options ++ [{nodelay, true}], Timeout) of
+   case Transport:connect(Address, Port, Options, Timeout) of
        {ok, Socket} ->
-           {ok, #connection{socket = Socket, transport = Transport, control = Control, monotonic = Monotonic}};
+            Connection = #connection{
+                socket = Socket,
+                transport = Transport,
+                control = Control,
+                monotonic = Monotonic
+            },
+           {ok, Connection};
        Error ->
            Error
    end.
+
+
+%% @private
+connection_options(Options) when is_map(Options) ->
+    connection_options(maps:to_list(Options));
+
+connection_options(Options) when is_list(Options) ->
+    Options ++ [{nodelay, true}].
+
 
 %% @private
 tls_enabled() ->
@@ -178,10 +218,10 @@ send(Transport, Socket, Data) ->
 
 %% Determine if we should transmit:
 %%
-%% If there's another message in the queue, we can skip 
-%% sending this message.  However, if the arrival rate of 
+%% If there's another message in the queue, we can skip
+%% sending this message.  However, if the arrival rate of
 %% messages is too high, we risk starvation where
-%% we may never send.  Therefore, we must force a transmission 
+%% we may never send.  Therefore, we must force a transmission
 %% after a given period with no transmissions.
 %%
 %% @private

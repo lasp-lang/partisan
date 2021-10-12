@@ -70,7 +70,7 @@ download_artifact(#orchestration_strategy_state{eredis=Eredis}, Node) ->
         end
     catch
         Class:Reason:Stacktrace ->
-            ?LOG_INFO(#{
+            ?LOG_WARNING(#{
                 description => "Exception caught",
                 class => Class,
                 reason => Reason,

@@ -83,7 +83,10 @@ mynode() ->
 forward_message({partisan_remote_reference, Name, ServerRef} = RemotePid, Message) ->
     case mynode() of
         Name ->
-            ?LOG_INFO("Local pid ~p, routing message accordingly: ~p", [ServerRef, Message]),
+            ?LOG_DEBUG(
+                "Local pid ~p, routing message accordingly: ~p",
+                [ServerRef, Message]
+            ),
             case ServerRef of
                 {partisan_process_reference, Pid} ->
                     DeserializedPid = list_to_pid(Pid),

@@ -166,10 +166,16 @@ begin_receive_omission(SourceNode0, DestinationNode) ->
     InterpositionFun = fun({receive_message, N, Message}) ->
         case N of
             SourceNode ->
-                ?LOG_INFO("~p: dropping packet from ~p to ~p due to interposition.", [node(), SourceNode, DestinationNode]),
+                ?LOG_DEBUG(
+                    "~p: dropping packet from ~p to ~p due to interposition.",
+                    [node(), SourceNode, DestinationNode]
+                ),
                 undefined;
             OtherNode ->
-                ?LOG_INFO("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
+                ?LOG_DEBUG(
+                    "~p: allowing message, doesn't match interposition as destination is ~p and not ~p",
+                    [node(), OtherNode, DestinationNode]
+                ),
                 Message
         end;
         ({forward_message, _N, Message}) -> Message
@@ -207,10 +213,16 @@ begin_send_omission(SourceNode, DestinationNode0) ->
     InterpositionFun = fun({forward_message, N, Message}) ->
         case N of
             DestinationNode ->
-                ?LOG_INFO("~p: dropping packet from ~p to ~p due to interposition.", [node(), SourceNode, DestinationNode]),
+                ?LOG_DEBUG(
+                    "~p: dropping packet from ~p to ~p due to interposition.",
+                    [node(), SourceNode, DestinationNode]
+                ),
                 undefined;
             OtherNode ->
-                ?LOG_INFO("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
+                ?LOG_DEBUG(
+                    "~p: allowing message, doesn't match interposition as destination is ~p and not ~p",
+                    [node(), OtherNode, DestinationNode]
+                ),
                 Message
         end;
         ({receive_message, _N, Message}) -> Message
@@ -732,7 +744,9 @@ wait_until_nodes_agree_on_membership(Nodes) ->
         end
     end,
     [ok = wait_until(Node, AgreementFun) || Node <- Nodes],
+
     ?LOG_INFO(#{description => "All nodes agree on membership!"}),
+
     ok.
 
 %% @private

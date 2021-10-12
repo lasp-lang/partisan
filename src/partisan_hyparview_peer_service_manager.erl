@@ -155,7 +155,11 @@ cast_message(Name, Channel, ServerRef, Message) ->
     ok.
 
 %% @doc Cast a message to a remote gen_server.
-cast_message(Name, Channel, ServerRef, Message, Options) ->
+cast_message(Name, Channel, ServerRef, Message, Options)
+when is_list(Options) ->
+    cast_message(Name, Channel, ServerRef, Message, maps:from_list(Options));
+
+cast_message(Name, Channel, ServerRef, Message, Options) when is_map(Options) ->
     FullMessage = {'$gen_cast', Message},
     forward_message(Name, Channel, ServerRef, FullMessage, Options),
     ok.
@@ -170,10 +174,17 @@ forward_message(Name, ServerRef, Message) ->
 
 %% @doc Forward message to registered process on the remote side.
 forward_message(Name, Channel, ServerRef, Message) ->
-    forward_message(Name, Channel, ServerRef, Message, []).
+    forward_message(Name, Channel, ServerRef, Message, #{}).
 
 %% @doc Forward message to registered process on the remote side.
-forward_message(Name, _Channel, ServerRef, Message, Options) ->
+forward_message(Name, _Channel, ServerRef, Message, Options)
+when is_list(Options) ->
+    forward_message(
+        Name, _Channel, ServerRef, Message, maps:from_list(Options)
+    );
+
+forward_message(Name, _Channel, ServerRef, Message, Options)
+when is_map(Options) ->
     ?LOG_TRACE(#{
         description => "About to send message",
         node => node(),
@@ -190,6 +201,7 @@ forward_message(Name, _Channel, ServerRef, Message, Options) ->
         {error, trap} ->
             gen_server:call(?MODULE, FullMessage, infinity)
     end.
+
 
 %% @doc Receive message from a remote manager.
 receive_message(Peer, {forward_message, ServerRef, Message} = FullMessage) ->
@@ -1204,10 +1216,11 @@ handle_message({relay_message, Node, Message, TTL} = _RelayMessage, #state{out_l
             case TTL of
                 0 ->
                     %% No longer forward.
-                    ?LOG_INFO("TTL expired, dropping message for node ~p: ~p", [Node, Message]),
+                    ?LOG_DEBUG("TTL expired, dropping message for node ~p: ~p", [Node, Message]),
                     ok;
                 _ ->
-                    do_tree_forward(Node, Message, Connections, [{out_links, OutLinks}], TTL),
+                    Opts = #{out_links => OutLinks},
+                    do_tree_forward(Node, Message, Connections, Opts, TTL),
                     ok
             end
     end,
@@ -1315,35 +1328,42 @@ disconnect(Node, Connections0) ->
                       Connections :: partisan_peer_service_connections:t()) ->
             {error, disconnected} | {error, not_yet_connected} | {error, term()} | ok.
 do_send_message(Node, Message, Connections) ->
-    do_send_message(Node, Message, Connections, []).
+    do_send_message(Node, Message, Connections, #{}).
 
 %% @private
 -spec do_send_message(Node :: atom() | node_spec(),
                       Message :: term(),
                       Connections :: partisan_peer_service_connections:t(),
-                      Options :: list()) ->
+                      Options :: map()) ->
             {error, disconnected} | {error, not_yet_connected} | {error, term()} | ok.
 do_send_message(Node, Message, Connections, Options) ->
     ?LOG_TRACE("Sending message ~p to ~p", [Message, Node]),
 
+    Transitive = maps:get(transitive, Options, false),
+    Broadcast = partisan_config:get(broadcast, false),
+
     %% Find a connection for the remote node, if we have one.
     case partisan_peer_service_connections:find(Node, Connections) of
         {ok, []} ->
-            ?LOG_INFO("Node disconnected when sending ~p to ~p!", [Message, Node]),
-            ?LOG_INFO("Broadcast mode: ~p, transitive: ~p", [partisan_config:get(broadcast, false), proplists:get_value(transitive, Options, false)]),
+            ?LOG_DEBUG(#{
+                description => "Node disconnected when sending message to peer node.",
+                message => Message,
+                peer_node => Node,
+                options => #{broadcast => Broadcast, transitive => Transitive}
+            }),
 
             %% We were connected, but we're not anymore.
-            case partisan_config:get(broadcast, false) of
-                true ->
-                    case proplists:get_value(transitive, Options, false) of
-                        true ->
-                            ?LOG_INFO("Performing tree forward from node ~p to node ~p and message: ~p", [node(), Node, Message]),
-                            TTL = partisan_config:get(relay_ttl, ?RELAY_TTL),
-                            do_tree_forward(Node, Message, Connections, Options, TTL);
-                        false ->
-                            ok
-                    end;
-                false ->
+            case {Broadcast, Transitive} of
+                {true, true} ->
+                    ?LOG_DEBUG(
+                        "Performing tree forward from node ~p to node ~p and message: ~p",
+                        [node(), Node, Message]
+                    ),
+                    TTL = partisan_config:get(relay_ttl, ?RELAY_TTL),
+                    do_tree_forward(Node, Message, Connections, Options, TTL);
+                {true, false} ->
+                    ok;
+                {false, _} ->
                     %% Node was connected but is now disconnected.
                     {error, disconnected}
             end;
@@ -1357,28 +1377,37 @@ do_send_message(Node, Message, Connections, Options) ->
                 Pid = partisan_util:dispatch_pid(Entries),
                 gen_server:call(Pid, {send_message, Message})
             catch
-                Reason:Error ->
-                    ?LOG_INFO("Failed to send message: ~p to ~p due to ~p:~p", [Message, Node, Reason, Error]),
-                    {error, Error}
+                Class:Reason:Stacktrace ->
+                    ?LOG_ERROR(#{
+                        description => "Failed to send message to peer node",
+                        message => Message,
+                        peer_node => Node,
+                        class => Class,
+                        reason => Reason,
+                        stacktrace => Stacktrace
+                    }),
+                    {error, Reason}
             end;
         {error, not_found} ->
-            ?LOG_INFO("Node not yet connected when sending ~p to ~p from ~p!", [Message, Node, node()]),
+            ?LOG_DEBUG(#{
+                description => "Node not yet connected when sending message to peer node.",
+                message => Message,
+                peer_node => Node,
+                options => #{broadcast => Broadcast, transitive => Transitive}
+            }),
 
             %% We aren't connected, and it's not sure we will ever be.  Take the list of gossip peers and forward the message down the tree.
-            case partisan_config:get(broadcast, false) of
-                true ->
-                    case proplists:get_value(transitive, Options, false) of
-                        true ->
-                            ?LOG_TRACE(
-                                "Performing tree forward from node ~p to node ~p and message: ~p",
-                                [node(), Node, Message]
-                            ),
-                            TTL = partisan_config:get(relay_ttl, ?RELAY_TTL),
-                            do_tree_forward(Node, Message, Connections, Options, TTL);
-                        false ->
-                            ok
-                    end;
-                false ->
+            case {Broadcast, Transitive} of
+                {true, true} ->
+                    ?LOG_TRACE(
+                        "Performing tree forward from node ~p to node ~p and message: ~p",
+                        [node(), Node, Message]
+                    ),
+                    TTL = partisan_config:get(relay_ttl, ?RELAY_TTL),
+                    do_tree_forward(Node, Message, Connections, Options, TTL);
+                {true, false}->
+                    ok;
+                {false, _} ->
                     %% Node has not been connected yet.
                     {error, not_yet_connected}
             end
@@ -1843,13 +1872,14 @@ handle_partition_resolution(Reference,
 
 %% @private
 do_tree_forward(Node, Message, Connections, Options, TTL) ->
+    MyNode = partisan_peer_service_manager:mynode(),
     ?LOG_TRACE(
         "Attempting to forward message ~p from ~p to ~p.",
-        [Message, partisan_peer_service_manager:mynode(), Node]
+        [Message, MyNode, Node]
     ),
 
     %% Preempt with user-supplied outlinks.
-    UserOutLinks = proplists:get_value(out_links, Options, undefined),
+    UserOutLinks = maps:get(out_links, Options, undefined),
 
     OutLinks = case UserOutLinks of
         undefined ->
@@ -1869,15 +1899,24 @@ do_tree_forward(Node, Message, Connections, Options, TTL) ->
     end,
 
     %% Send messages, but don't attempt to forward again, if we aren't connected.
-    lists:foreach(fun(N) ->
-        ?LOG_TRACE(
-            "Forwarding relay message ~p to node ~p for node ~p from node ~p",
-            [Message, N, Node, partisan_peer_service_manager:mynode()]
-        ),
+    _ = lists:foreach(
+        fun(N) ->
+            ?LOG_TRACE(
+                "Forwarding relay message ~p to node ~p for node ~p from node ~p",
+                [Message, N, Node, MyNode]
+            ),
 
-        RelayMessage = {relay_message, Node, Message, TTL - 1},
-        do_send_message(N, RelayMessage, Connections, proplists:delete(transitive, Options))
-        end, OutLinks),
+            RelayMessage = {relay_message, Node, Message, TTL - 1},
+
+            do_send_message(
+                N,
+                RelayMessage,
+                Connections,
+                maps:without([transitive], Options)
+            )
+        end,
+        OutLinks
+    ),
     ok.
 
 %% @private

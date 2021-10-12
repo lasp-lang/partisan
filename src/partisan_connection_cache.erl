@@ -82,7 +82,9 @@ dispatch({forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Messa
                     ok
             end,
 
-            gen_server:cast(Pid, {send_message, {forward_message, ServerRef, Message}})
+            gen_server:cast(
+                Pid, {send_message, {forward_message, ServerRef, Message}}
+            )
     end;
 
 dispatch({forward_message, Name, ServerRef, Message, _Options}) ->

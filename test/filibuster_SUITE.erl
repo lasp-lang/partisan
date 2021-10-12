@@ -121,7 +121,7 @@ annotations_test(_Config) ->
               {causal_labels, ?CAUSAL_LABELS},
               {pid_encoding, false},
               {sync_join, false},
-              {forward_options, []},
+              {forward_options, #{}},
               {broadcast, false},
               {disterl, false},
               {hash, undefined},
@@ -259,7 +259,7 @@ model_checker_test(_Config) ->
               {causal_labels, ?CAUSAL_LABELS},
               {pid_encoding, false},
               {sync_join, false},
-              {forward_options, []},
+              {forward_options, #{}},
               {broadcast, false},
               {disterl, false},
               {hash, undefined},
@@ -401,7 +401,7 @@ execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
     ok = partisan_trace_orchestrator:reset(),
 
     %% Start tracing.
-    ?LOG_INFO("enabling tracing for nodes: ~p", [Nodes]),
+    ?LOG_INFO("Enabling tracing for nodes: ~p", [Nodes]),
     ok = partisan_trace_orchestrator:enable(Nodes),
 
     %% Set replay.

@@ -137,7 +137,7 @@ handle_call({emit, Node, ServerRef, Message},
     %% Everytime we omit a message, store the clock and message so we can regenerate the message.
     true = ets:insert(Storage, {LocalClock, CausalMessage}),
 
-    ?LOG_INFO(#{
+    ?LOG_DEBUG(#{
         description => "Emitting message",
         clock => LocalClock
     }),
@@ -150,7 +150,7 @@ handle_call({receive_message, {causal, Label, _Node, _ServerRef, _IncomingOrderB
             _From,
             #state{label=Label, buffered_messages=BufferedMessages0}=State0) ->
     %% Add to the buffer and try to deliver.
-    ?LOG_INFO(#{
+    ?LOG_DEBUG(#{
         description => "Received message, inserting into buffer.",
         message => MessageClock
     }),
@@ -246,7 +246,7 @@ schedule_delivery(Label) ->
 %% @private
 internal_receive_message({causal, _Label, _Node, ServerRef, IncomingOrderBuffer, MessageClock, Message}=FullMessage,
                          #state{my_node=MyNode, local_clock=LocalClock, buffered_messages=BufferedMessages}=State0) ->
-    ?LOG_INFO(#{
+    ?LOG_DEBUG(#{
         description => "Attempting delivery of messages",
         messages => MessageClock
     }),
@@ -254,7 +254,7 @@ internal_receive_message({causal, _Label, _Node, ServerRef, IncomingOrderBuffer,
     case orddict:find(MyNode, IncomingOrderBuffer) of
         %% No dependencies.
         error ->
-            ?LOG_INFO(#{
+            ?LOG_DEBUG(#{
                 description => "Message has no dependencies, delivering",
                 messages => MessageClock
             }),
@@ -264,7 +264,7 @@ internal_receive_message({causal, _Label, _Node, ServerRef, IncomingOrderBuffer,
             case partisan_vclock:dominates(LocalClock, DependencyClock) of
                 %% Dependencies met.
                 true ->
-                    ?LOG_INFO(#{
+                    ?LOG_DEBUG(#{
                         description => "Message dependencies met, delivering",
                         messages => MessageClock
                     }),
@@ -272,7 +272,7 @@ internal_receive_message({causal, _Label, _Node, ServerRef, IncomingOrderBuffer,
                 %% Dependencies NOT met.
                 false ->
                     %% Buffer, for later delivery.
-                    ?LOG_INFO(#{
+                    ?LOG_DEBUG(#{
                         description => "Message dependencies NOT met, delivering",
                         messages => MessageClock,
                         dependencies => DependencyClock

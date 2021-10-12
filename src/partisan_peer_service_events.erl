@@ -76,23 +76,29 @@ update(LocalState) ->
 init([Fn]) ->
     {ok, #state{callback=Fn}}.
 
+
 handle_event({update, LocalState}, State) ->
     (State#state.callback)(LocalState),
     {ok, State};
+
 handle_event(Event, State) ->
-    ?LOG_INFO(#{description => "Unhandled event", event => Event}),
+    ?LOG_WARNING(#{description => "Unhandled event", event => Event}),
     {ok, State}.
+
 
 handle_call(Event, State) ->
     ?LOG_WARNING(#{description => "Unhandled call event", event => Event}),
     {ok, ok, State}.
 
+
 handle_info(Event, State) ->
     ?LOG_WARNING(#{description => "Unhandled info event", event => Event}),
     {ok, State}.
 
+
 terminate(_Reason, _State) ->
     ok.
+
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.

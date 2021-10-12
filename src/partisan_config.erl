@@ -150,7 +150,10 @@ init() ->
                            {xbot_interval, XbotInterval}]],
 
     %% Setup default listen addr.
-    DefaultListenAddrs = [#{ip => ?MODULE:get(peer_ip), port => ?MODULE:get(peer_port)}],
+    DefaultListenAddrs = [#{
+        ip => ?MODULE:get(peer_ip),
+        port => ?MODULE:get(peer_port)
+    }],
     env_or_default(listen_addrs, DefaultListenAddrs),
 
     ok.
