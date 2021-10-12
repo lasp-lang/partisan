@@ -20,8 +20,8 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc A simple Erlang implementation of vector clocks as inspired by Lamport logical clocks.
-%%      Taken from Riak.
+%% @doc A simple Erlang implementation of vector clocks as inspired by Lamport
+%% logical clocks. Taken from Riak.
 %%
 %% @reference Leslie Lamport (1978). "Time, clocks, and the ordering of events
 %% in a distributed system". Communications of the ACM 21 (7): 558-565.
