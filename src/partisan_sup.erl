@@ -78,5 +78,15 @@ init([]) ->
     %% Initialize the connection cache supervised by the supervisor.
     ?CACHE = ets:new(?CACHE, [public, named_table, set, {read_concurrency, true}]),
 
+    %% Initialize the plumtree outstanding messages table
+    %% supervised by the supervisor.
+    %% The table is used by partisan_plumtree_broadcast and maps a nodename()
+    %% to set of outstanding messages. It uses a duplicate_bag to quickly
+    %% delete all messages for a nodename.
+    ?PLUMTREE_OUTSTANDING = ets:new(
+        ?PLUMTREE_OUTSTANDING,
+        [public, named_table, duplicate_bag, {read_concurrency, true}]
+    ),
+
     RestartStrategy = {one_for_one, 10, 10},
     {ok, {RestartStrategy, Children ++ CausalBackends ++ [PoolSup]}}.

@@ -55,9 +55,17 @@
 -type nodename()        :: any().
 -type message_id()      :: any().
 -type message_round()   :: non_neg_integer().
+%% Lazy messages that have not been acked. Messages are added to
+%% this set when a node is sent a lazy message (or when it should be
+%% sent one sometime in the future). Messages are removed when the lazy
+%% pushes are acknowleged via graft or ignores. Entries are keyed by their
+%% destination
+%% These are stored in the ?PLUMTREE_OUTSTANDING ets table under using nodename
+%% as key.
 -type outstanding()     :: {message_id(), module(), message_round(), nodename()}.
 -type exchange()        :: {module(), node(), reference(), pid()}.
 -type exchanges()       :: [exchange()].
+
 
 -record(state, {
           %% Initially trees rooted at each node are the same.
@@ -85,13 +93,6 @@
           %% propogate to this node. Nodes that are never the root
           %% of a message will never have a key added to `lazy_sets'
           lazy_sets     :: [{nodename(), ordsets:ordset(nodename())}] | undefined,
-
-          %% Lazy messages that have not been acked. Messages are added to
-          %% this set when a node is sent a lazy message (or when it should be
-          %% sent one sometime in the future). Messages are removed when the lazy
-          %% pushes are acknowleged via graft or ignores. Entries are keyed by their
-          %% destination
-          outstanding   :: [{nodename(), outstanding()}],
 
           %% Set of registered modules that may handle messages that
           %% have been broadcast
@@ -274,7 +275,6 @@ init([AllMembers, InitEagers, InitLazys, Mods, Opts]) ->
     schedule_lazy_tick(LazyTickPeriod),
     schedule_exchange_tick(ExchangeTickPeriod),
     State1 =  #state{
-                 outstanding = orddict:new(),
                  mods = lists:usort(Mods),
                  exchanges=[],
                  lazy_tick_period = LazyTickPeriod,
@@ -365,7 +365,7 @@ handle_cast({update, Members}, State=#state{all_members=BroadcastMembers,
     {noreply, state()}.
 handle_info(lazy_tick,
             #state{lazy_tick_period = Period} = State) ->
-    _ = send_lazy(State),
+    _ = send_lazy(),
     schedule_lazy_tick(Period),
     {noreply, State};
 handle_info(exchange_tick,
@@ -414,7 +414,9 @@ handle_graft(stale, MessageId, Mod, Round, Root, From, State) ->
     %% There has been a subsequent broadcast that is causally newer than this message
     %% according to Mod. We ack the outstanding message since the outstanding entry
     %% for the newer message exists
-    ack_outstanding(MessageId, Mod, Round, Root, From, State);
+    ok = ack_outstanding(MessageId, Mod, Round, Root, From),
+    State;
+
 handle_graft({ok, Message}, MessageId, Mod, Round, Root, From, State) ->
     %% we don't ack outstanding here because the broadcast may fail to be delivered
     %% instead we will allow the i_have to be sent once more and let the subsequent
@@ -432,8 +434,7 @@ handle_graft({error, Reason}, _MessageId, Mod, _Round, _Root, _From, State) ->
 
 neighbors_down(Removed, State=#state{all_members=AllMembers,
                                      common_eagers=CommonEagers, eager_sets=EagerSets,
-                                     common_lazys=CommonLazys, lazy_sets=LazySets,
-                                     outstanding=Outstanding}) ->
+                                     common_lazys=CommonLazys, lazy_sets=LazySets}) ->
     NewAllMembers = ordsets:subtract(AllMembers, Removed),
     NewCommonEagers = ordsets:subtract(CommonEagers, Removed),
     NewCommonLazys  = ordsets:subtract(CommonLazys, Removed),
@@ -443,17 +444,17 @@ neighbors_down(Removed, State=#state{all_members=AllMembers,
     NewLazySets  = ordsets:from_list([{Root, ordsets:subtract(Existing, Removed)} ||
                                          {Root, Existing} <- ordsets:to_list(LazySets)]),
     %% delete outstanding messages to removed peers
-    NewOutstanding = ordsets:fold(fun(RPeer, OutstandingAcc) ->
-                                          orddict:erase(RPeer, OutstandingAcc)
-                                  end,
-                                  Outstanding, Removed),
+    ok = ordsets:fold(
+        fun(RPeer, _) -> true = ets:delete(?PLUMTREE_OUTSTANDING, RPeer) end,
+        ok,
+        Removed
+    ),
 
     State#state{all_members = NewAllMembers,
                 common_eagers=NewCommonEagers,
                 common_lazys=NewCommonLazys,
                 eager_sets=NewEagerSets,
-                lazy_sets=NewLazySets,
-                outstanding=NewOutstanding}.
+                lazy_sets=NewLazySets}.
 
 eager_push(MessageId, Message, Mod, State) ->
     eager_push(MessageId, Message, Mod, 0, myself(), myself(), State).
@@ -471,18 +472,24 @@ schedule_lazy_push(MessageId, Mod, Round, Root, From, State) ->
     Peers = lazy_peers(Root, From, State),
     ?LOG_DEBUG("scheduling lazy push to peers ~p: ~p",
                [Peers, {MessageId, Mod, Round, Root, From}]),
-    add_all_outstanding(MessageId, Mod, Round, Root, Peers, State).
+    ok = add_all_outstanding(MessageId, Mod, Round, Root, Peers),
+    State.
 
-send_lazy(#state{outstanding=Outstanding}) ->
-    [send_lazy(Peer, Messages) || {Peer, Messages} <- orddict:to_list(Outstanding)].
 
-send_lazy(Peer, Messages) ->
-    [send_lazy(MessageId, Mod, Round, Root, Peer) ||
-        {MessageId, Mod, Round, Root} <- ordsets:to_list(Messages)].
+send_lazy() ->
+    ok = ets:foldl(
+        fun({Peer, Message}, Acc) -> _ = send_lazy(Message, Peer), Acc end,
+        ok,
+        ?PLUMTREE_OUTSTANDING
+    ).
 
-send_lazy(MessageId, Mod, Round, Root, Peer) ->
+
+-spec send_lazy(outstanding(), any()) -> ok.
+
+send_lazy({MessageId, Mod, Round, Root}, Peer) ->
     ?LOG_DEBUG("sending lazy push ~p",
                [{i_have, MessageId, Mod, Round, Root, myself()}]),
+    ),
     send({i_have, MessageId, Mod, Round, Root, myself()}, Mod, Peer).
 
 maybe_exchange(State) ->
@@ -592,36 +599,17 @@ random_other_node(OrdSet) ->
                      ordsets:to_list(OrdSet))
     end.
 
-ack_outstanding(MessageId, Mod, Round, Root, From, State=#state{outstanding=All}) ->
-    Existing = existing_outstanding(From, All),
-    Updated = set_outstanding(From,
-                              ordsets:del_element({MessageId, Mod, Round, Root}, Existing),
-                              All),
-    State#state{outstanding=Updated}.
+ack_outstanding(MessageId, Mod, Round, Root, From) ->
+    true = ets:delete_object(
+        ?PLUMTREE_OUTSTANDING, {From, {MessageId, Mod, Round, Root}}
+    ),
+    ok.
 
-add_all_outstanding(MessageId, Mod, Round, Root, Peers, State) ->
-    lists:foldl(fun(Peer, SAcc) -> add_outstanding(MessageId, Mod, Round, Root, Peer, SAcc) end,
-                State,
-                ordsets:to_list(Peers)).
-
-add_outstanding(MessageId, Mod, Round, Root, Peer, State=#state{outstanding=All}) ->
-    Existing = existing_outstanding(Peer, All),
-    Updated = set_outstanding(Peer,
-                              ordsets:add_element({MessageId, Mod, Round, Root}, Existing),
-                              All),
-    State#state{outstanding=Updated}.
-
-set_outstanding(Peer, Outstanding, All) ->
-    case ordsets:size(Outstanding) of
-        0 -> orddict:erase(Peer, All);
-        _ -> orddict:store(Peer, Outstanding, All)
-    end.
-
-existing_outstanding(Peer, All) ->
-    case orddict:find(Peer, All) of
-        error -> ordsets:new();
-        {ok, Outstanding} -> Outstanding
-    end.
+add_all_outstanding(MessageId, Mod, Round, Root, Peers) ->
+    Message = {MessageId, Mod, Round, Root},
+    Objects = [{Peer, Message} || Peer <- ordsets:to_list(Peers)],
+    true = ets:insert(?PLUMTREE_OUTSTANDING, Objects),
+    ok.
 
 add_eager(From, Root, State) ->
     update_peers(From, Root, fun ordsets:add_element/2, fun ordsets:del_element/2, State).
