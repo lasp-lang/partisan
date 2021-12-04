@@ -83,7 +83,7 @@ handle_cast(_Msg, State) ->
 %% @private
 handle_info({call, Module, Function, Arguments, _Timeout, {origin, Name, Self}}, State) ->
     %% Execute function.
-    Response = try 
+    Response = try
         erlang:apply(Module, Function, Arguments)
     catch
          Error ->
@@ -119,7 +119,7 @@ options() ->
 
 rpc_channel() ->
     Channels = partisan_config:get(channels),
-    case lists:member(rpc, Channels) of
+    case lists:member(?RPC_CHANNEL, Channels) of
         true ->
             ?RPC_CHANNEL;
         false ->
