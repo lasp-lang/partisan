@@ -322,9 +322,12 @@ handle_cast({i_have, MessageId, Mod, Round, Root, From}, State) ->
     State1 = handle_ihave(Stale, MessageId, Mod, Round, Root, From, State),
     {noreply, State1};
 handle_cast({ignored_i_have, MessageId, Mod, Round, Root, From}, State) ->
-    ?LOG_DEBUG("received ~p", [{ignored_i_have, MessageId, Mod, Round, Root, From}]),
-    State1 = ack_outstanding(MessageId, Mod, Round, Root, From, State),
-    {noreply, State1};
+    ?LOG_DEBUG(#{
+        description => "received ~p",
+        message => {ignored_i_have, MessageId, Mod, Round, Root, From}
+    }),
+    ok = ack_outstanding(MessageId, Mod, Round, Root, From),
+    {noreply, State};
 handle_cast({graft, MessageId, Mod, Round, Root, From}, State) ->
     ?LOG_DEBUG("received ~p", [{graft, MessageId, Mod, Round, Root, From}]),
     Result = Mod:graft(MessageId),
@@ -487,9 +490,10 @@ send_lazy() ->
 -spec send_lazy(outstanding(), any()) -> ok.
 
 send_lazy({MessageId, Mod, Round, Root}, Peer) ->
-    ?LOG_DEBUG("sending lazy push ~p",
-               [{i_have, MessageId, Mod, Round, Root, myself()}]),
-    ),
+    ?LOG_DEBUG(#{
+        description => "sending lazy push ~p",
+        message => {i_have, MessageId, Mod, Round, Root, myself()}
+    }),
     send({i_have, MessageId, Mod, Round, Root, myself()}, Mod, Peer).
 
 maybe_exchange(State) ->

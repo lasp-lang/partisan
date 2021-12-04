@@ -43,7 +43,7 @@ dispatch({forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Messa
     }),
 
     %% Find a connection for the remote node, if we have one.
-    Nodename = nodename(Node),
+    Nodename = nodename(Name),
     case ets:lookup(?CACHE, Nodename) of
         [] ->
             %% Trap back to gen_server.
@@ -95,7 +95,7 @@ dispatch({forward_message, Name, ServerRef, Message, _Options}) ->
     }),
 
     %% Find a connection for the remote node, if we have one.
-    Nodename = nodename(Node),
+    Nodename = nodename(Name),
     case ets:lookup(?CACHE, Nodename) of
         [] ->
             %% Trap back to gen_server.
