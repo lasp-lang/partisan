@@ -43,7 +43,8 @@ dispatch({forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Messa
     }),
 
     %% Find a connection for the remote node, if we have one.
-    case ets:lookup(?CACHE, nodename(Name)) of
+    Nodename = nodename(Node),
+    case ets:lookup(?CACHE, Nodename) of
         [] ->
             %% Trap back to gen_server.
             ?LOG_INFO(#{
@@ -51,13 +52,13 @@ dispatch({forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Messa
                 node => Name
             }),
             {error, trap};
-        [{Name, []}] ->
+        [{Nodename, []}] ->
             ?LOG_INFO(#{
                 description => "Connection cache miss for node",
                 node => Name
             }),
             {error, trap};
-        [{Name, Pids}] ->
+        [{Nodename, Pids}] ->
             Pid = partisan_util:dispatch_pid(PartitionKey, Channel, Pids),
 
             case partisan_config:get(tracing, ?TRACING) of
@@ -94,7 +95,8 @@ dispatch({forward_message, Name, ServerRef, Message, _Options}) ->
     }),
 
     %% Find a connection for the remote node, if we have one.
-    case ets:lookup(?CACHE, nodename(Name)) of
+    Nodename = nodename(Node),
+    case ets:lookup(?CACHE, Nodename) of
         [] ->
             %% Trap back to gen_server.
             ?LOG_INFO(#{
@@ -102,13 +104,13 @@ dispatch({forward_message, Name, ServerRef, Message, _Options}) ->
                 node => Name
             }),
             {error, trap};
-        [{Name, []}] ->
+        [{Nodename, []}] ->
             ?LOG_INFO(#{
                 description => "Connection cache miss for node",
                 node => Name
             }),
             {error, trap};
-        [{Name, Pids}] ->
+        [{Nodename, Pids}] ->
             Pid = partisan_util:dispatch_pid(Pids),
 
             case partisan_config:get(tracing, ?TRACING) of
@@ -135,6 +137,8 @@ dispatch({forward_message, Name, ServerRef, Message, _Options}) ->
 
             gen_server:cast(Pid, {send_message, {forward_message, ServerRef, Message}})
     end.
+
+
 
 
 %% @private
