@@ -473,7 +473,6 @@ handle_call({update_members, Nodes},
             #state{membership=Membership}=State) ->
     %% Get the current membership.
     CurrentMembership = [N || #{name := N} <- Membership],
-
     %% need to support Nodes as a list of maps or atoms
     %% TODO: require each node to be a map
     NodesNames = lists:map(fun(#{name := N}) ->
