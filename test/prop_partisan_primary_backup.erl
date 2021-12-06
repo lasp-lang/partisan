@@ -133,7 +133,7 @@ node_postcondition(#node_state{store=Store}, {call, ?MODULE, read, [Node, Key]},
                        [Node, Key, Other, Value]),
             false
     end;
-node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {ok, _Value}) ->
+node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, Value]}, {ok, Value}) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {badrpc, timeout}) ->
     true;
