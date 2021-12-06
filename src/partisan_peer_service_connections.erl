@@ -30,98 +30,114 @@
 
 -include("partisan.hrl").
 
--type t() :: dict:dict(node_spec(), list(pid())).
--export_type([t/0]).
-
+-type t() :: #{node() := node_connections()}.
+-type node_connections() :: {node_spec(), entries()}.
 -type entries() :: [entry()].
 -type entry() :: {listen_addr(), channel(), pid()}.
+
+-export_type([t/0]).
 
 %% @doc Creates a new dictionary of connections.
 -spec new() -> t().
 new() ->
-    dict:new().
+    maps:new().
+
 
 %% @doc Finds connection pids in dictionary either by name or node spec.
--spec find(Node :: atom() | node_spec(),
-           Connections :: t()) -> {ok, entries()} | {error, not_found}.
+-spec find(Node :: atom() | node_spec(), Connections :: t()) ->
+    {ok, entries()} | {error, not_found}.
+
 find(Name, Connections) when is_atom(Name) ->
-    find_first_name(Name, dict:to_list(Connections));
-find(Node, Connections) ->
-    case dict:find(Node, Connections) of
+    case maps:find(Name, Connections) of
+        {ok, {_, Entries}} ->
+            {ok, Entries};
         error ->
-            {error, not_found};
-        {ok, Entries} ->
-            {ok, Entries}
-    end.
+            {error, not_found}
+    end;
+
+find(#{name := Name}, Connections) ->
+    find(Name, Connections).
 
 %% @doc Store a connection pid
 -spec store(Node :: node_spec(),
             Entry :: entry(),
             Connections :: t()) -> t().
 store(Node, {_ListenAddr, _Channel, _Pids} = Entry, Connections) ->
+    #{name := Name} = Node,
     case find(Node, Connections) of
         {error, not_found} ->
-            dict:store(Node, [Entry], Connections);
+            maps:put(Name, {Node, [Entry]}, Connections);
         _ ->
-            dict:fold(fun(Node0, Entries, ConnectionsIn) when Node0 =:= Node ->
-                              dict:store(Node, Entries ++ [Entry], ConnectionsIn);
-                         (_Node, _Entries, ConnectionsIn) ->
-                              ConnectionsIn
-                      end, Connections, Connections)
+            Fun = fun({Node0, Entries}) ->
+                {Node0, Entries ++ [Entry]}
+            end,
+            maps:update_with(Name, Fun, Connections)
     end.
+
 
 %% @doc Prune all occurrences of a connection pid
 %%      returns the node where the pruned pid was found
--spec prune(pid() | node_spec(),
-            Connections :: t()) -> {node_spec(), t()}.
-prune(#{name := _Name} = Node, Connections) ->
-    {Node, dict:erase(Node, Connections)};
+-spec prune(pid() | node_spec(), Connections :: t()) -> {node_spec(), t()}.
+
+prune(#{name := Name} = Node, Connections) ->
+    {Node, maps:remove(Name, Connections)};
+
 prune(Pid, Connections) when is_pid(Pid) ->
-    dict:fold(fun(Node, Entries, {AccNode, ConnectionsIn}) ->
-                    case lists:keymember(Pid, 3, Entries) of
-                        true ->
-                            case lists:keydelete(Pid, 3, Entries) of
-                                [] ->
-                                    {Node, dict:erase(Node, ConnectionsIn)};
-                                LeftEntries ->
-                                    {Node,
-                                     dict:store(Node, LeftEntries, ConnectionsIn)}
-                            end;
-                        false ->
-                            {AccNode, ConnectionsIn}
-                    end
-              end, {undefined, Connections}, Connections).
+    Next = maps:next(maps:iterator(Connections)),
+    prune(Pid, Connections, Next).
 
-erase(NodeName, Connections) ->
-    dict:fold(fun(#{name := Name} = Node, {_ListenAddr, _Channel, Pid} = Entry, ConnectionsAcc) ->
-                      case Name of
-                          NodeName ->
-                              try
-                                  gen_server:stop(Pid, normal, infinity)
-                              catch
-                                  _:_ ->
-                                      ok
-                              end,
-                              ConnectionsAcc;
-                          _ ->
-                              dict:store(Node, Entry, ConnectionsAcc)
-                      end
-              end, dict:new(), Connections).
-
-%% @doc Apply a function to all connection entries
--spec foreach(Fun :: fun((node_spec(), list(pid())) -> ok),
-              Connections :: t()) -> ok.
-foreach(Fun, Connections) ->
-    _ = dict:map(Fun, Connections),
-    ok.
 
 %% @private
--spec find_first_name(Name :: atom(),
-                      ConnectionsList :: [{node_spec(), entries()}]) ->
-            {ok, entries()} | {error, not_found}.
-find_first_name(_Name, []) -> {error, not_found};
-find_first_name(Name, [{#{name := Name}, Entries}|_]) -> {ok, Entries};
-find_first_name(Name, [_|Rest]) -> find_first_name(Name, Rest).
+prune(_, Connections, none) ->
+    {undefined, Connections};
+
+prune(Pid, Connections0, {K, {Node, Entries}, Iter}) ->
+    case lists:keymember(Pid, 3, Entries) of
+        true ->
+            case lists:keydelete(Pid, 3, Entries) of
+                [] ->
+                    {Node, maps:remove(K, Connections0)};
+                LeftEntries ->
+                    Connections = maps:put(
+                        K, {Node, LeftEntries}, Connections0
+                    ),
+                    {Node, Connections}
+            end;
+        false ->
+            prune(Pid, Connections0, maps:next(Iter))
+    end.
+
+
+
+erase(Name, Connections) ->
+    case maps:find(Name, Connections) of
+        {ok, {_Node, Entries}} ->
+            _ = lists:foreach(
+                fun({_ListenAddr, _Channel, Pid}) ->
+                    catch gen_server:stop(Pid, normal, infinity)
+                end,
+                Entries
+            ),
+            maps:remove(Name, Connections);
+        error ->
+            Connections
+    end.
+
+
+%% @doc Apply a function to all connection entries
+-spec foreach(
+    Fun :: fun((node_spec(), entries()) -> ok), Connections :: t()) -> ok.
+
+foreach(Fun, Connections) ->
+    % OTP24 has maps:foreach
+    _ = lists:foreach(
+        fun({_Name, {Node, Entries}}) ->
+            Fun(Node, Entries)
+        end,
+        maps:to_list(Connections)
+    ),
+    ok.
+
 
 %%
 %% Tests

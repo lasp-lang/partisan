@@ -32,9 +32,13 @@
 update(Connections) ->
     ets:delete_all_objects(?CACHE),
 
-    dict:fold(fun(#{name := Name}, V, _AccIn) ->
-                      true = ets:insert(?CACHE, [{Name, V}])
-              end, [], Connections).
+    _ = partisan_peer_service_connections:foreach(
+        fun(#{name := Name}, V) ->
+            true = ets:insert(?CACHE, [{Name, V}])
+        end,
+        Connections
+    ),
+    Connections.
 
 dispatch({forward_message, Name, Channel, _Clock, PartitionKey, ServerRef, Message, _Options}) ->
     ?LOG_TRACE(#{
