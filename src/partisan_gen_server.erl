@@ -1009,6 +1009,8 @@ client_stacktrace(From) when is_pid(From), node(From) =:= node() ->
             {From,{Name,Stacktrace}}
     end;
 client_stacktrace(From) when is_pid(From) ->
+    {From,remote};
+client_stacktrace({partisan_remote_reference, _, _} = From) ->
     {From,remote}.
 
 
