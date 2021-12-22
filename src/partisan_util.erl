@@ -33,10 +33,13 @@
          process_forward/2,
          term_to_iolist/1,
          gensym/1,
+         make_ref/0,
          pid/0,
          pid/1,
          ref/1,
          registered_name/1]).
+
+-compile({no_auto_import, [make_ref/0]}).
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
 %%      works by treating the list as an array-based tree where, for
@@ -314,13 +317,29 @@ gensym(Name) when is_atom(Name) ->
 gensym(Pid) when is_pid(Pid) ->
     {partisan_process_reference, pid_to_list(Pid)};
 gensym(Ref) when is_reference(Ref) ->
-    % {partisan_encoded_reference, binary_to_list(term_to_binary(Ref))}.
-    {partisan_encoded_reference, 1}.
+    {partisan_encoded_reference, erlang:ref_to_list(Ref)}.
+
 
 ref(Ref) ->
     GenSym = gensym(Ref),
     Node = partisan_peer_service_manager:mynode(),
     {partisan_remote_reference, Node, GenSym}.
+
+make_ref() ->
+    ref(erlang:make_ref()).
+
+% make_ref() ->
+%     ARef =
+%         case persistent_term:get({?MODULE, atomic_ref}, undefined) of
+%             undefined ->
+%                 Ref = atomics:new(1, []),
+%                 persistent_term:put({?MODULE, atomic_ref}, Ref),
+%                 Ref;
+%             Ref ->
+%                 Ref
+%         end,
+%     {partisan_encoded_reference, atomics:add_get(ARef, 1, 1)}.
+
 
 pid() ->
     pid(self()).

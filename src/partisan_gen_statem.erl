@@ -720,7 +720,7 @@ call_clean(ServerRef, Request, Timeout, T) ->
     %% communicate with a node that does not understand aliases.
     %% This can be removed when alias support is mandatory.
     %% Probably in OTP 26.
-    Ref = partisan_util:ref(make_ref()),
+    Ref = partisan_util:make_ref(),
     Self = self(),
     _Pid = spawn(
             fun () ->

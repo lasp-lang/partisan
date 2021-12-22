@@ -276,7 +276,7 @@ send_request(Process, Label, Request) ->
     try do_for_proc(Process, Fun)
     catch exit:Reason ->
             %% Make send_request async and fake a down message
-            Ref = partisan_util:ref(make_ref()),
+            Ref = partisan_util:make_ref(),
             self() ! {'DOWN', Ref, process, Process, Reason},
             Ref
     end.
@@ -366,8 +366,9 @@ end.
 % reply({_To, [[alias|Alias] | _] = Tag}, Reply) when is_reference(Alias) ->
 %     Alias ! {Tag, Reply}, ok;
 reply({To, Tag}, Reply) ->
-    partisan_pluggable_peer_service_manager:forward_message(To, {Tag, Reply}).
     % try To ! {Tag, Reply}, ok catch _:_ -> ok end.
+    partisan_pluggable_peer_service_manager:forward_message(To, {Tag, Reply}).
+
 
 %%-----------------------------------------------------------------
 %% Syncronously stop a generic process
@@ -605,7 +606,7 @@ do_call(Process, Label, Request, Timeout) ->
 
 do_send_request(Process, Label, Request) ->
     %% Generate unique reference.
-    Ref = partisan_util:ref(make_ref()),
+    Ref = partisan_util:make_ref(),
 
     %% Figure out remote node.
     {Node, ServerRef} = case Process of

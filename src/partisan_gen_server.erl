@@ -541,11 +541,11 @@ do_multi_call([Node], Name, Req, infinity) when Node =:= node() ->
         {[], [Node]}
     end;
 do_multi_call(Nodes, Name, Req, infinity) ->
-    Tag = partisan_util:ref(make_ref()),
+    Tag = partisan_util:make_ref(),
     Monitors = send_nodes(Nodes, Name, Tag, Req),
     rec_nodes(Tag, Monitors, Name, undefined);
 do_multi_call(Nodes, Name, Req, Timeout) ->
-    Tag = partisan_util:ref(make_ref()),
+    Tag = partisan_util:make_ref(),
     Caller = self(),
     Receiver =
     spawn(
@@ -569,7 +569,7 @@ do_multi_call(Nodes, Name, Req, Timeout) ->
           end
       end),
     Mref = erlang:monitor(process, Receiver),
-    Receiver ! {self(),Tag},
+    Receiver ! {self(), Tag},
     receive
     {'DOWN',Mref,_,_,{Receiver,Tag,Result}} ->
         Result;
