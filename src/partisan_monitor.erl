@@ -25,7 +25,7 @@ start_link() ->
 %% receiving the message are message loss, tree reconfiguration and the node
 %% is no longer reachable.
 monitor(Pid) when is_pid(Pid) ->
-    erlang:monitor(pid);
+    erlang:monitor(process, Pid);
 monitor({partisan_remote_reference, Node,
          {partisan_process_reference, PidAsList}}) ->
     partisan_gen_server:call({?MODULE, Node}, {monitor, PidAsList}).
