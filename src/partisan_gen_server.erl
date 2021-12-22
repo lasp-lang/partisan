@@ -188,7 +188,7 @@
 %%%    Name ::= {local, atom()} | {global, term()} | {via, atom(), term()}
 %%%    Mod  ::= atom(), callback module implementing the 'real' server
 %%%    Args ::= term(), init arguments (to Mod:init/1)
-%%%    Options ::= [{timeout, Timeout} | {debug, [Flag]}]
+%%%    Options ::= [{timeout, Timeout} | {debug, [Flag]} |{channel, Channel}]
 %%%      Flag ::= trace | log | {logfile, File} | statistics | debug
 %%%          (debug == log && statistics)
 %%% Returns: {ok, Pid} |
@@ -528,7 +528,7 @@ do_send(Dest, Msg) ->
             {node(), Dest}
     end,
     partisan_pluggable_peer_service_manager:forward_message(
-        Node, undefined, Process, Msg, []
+        Node, gen:get_channel(), Process, Msg, []
     ).
 
 do_multi_call([Node], Name, Req, infinity) when Node =:= node() ->
@@ -586,7 +586,13 @@ send_nodes([Node|Tail], Name, Tag, Req, _Monitors)
   when is_atom(Node) ->
     % Monitor = start_monitor(Node, Name),
     %% Handle non-existing names in rec_nodes.
-    partisan_pluggable_peer_service_manager:forward_message(Node, undefined, Name, {'$gen_call', {self(), {Tag, Node}}, Req}, []),
+    partisan_pluggable_peer_service_manager:forward_message(
+        Node,
+        gen:get_channel(),
+        Name,
+        {'$gen_call', {self(), {Tag, Node}}, Req},
+        []
+    ),
     % catch {Name, Node} ! {'$gen_call', {self(), {Tag, Node}}, Req},
     % send_nodes(Tail, Name, Tag, Req, [Monitor | Monitors]);
     send_nodes(Tail, Name, Tag, Req, []);

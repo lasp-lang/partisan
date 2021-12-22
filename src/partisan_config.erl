@@ -30,6 +30,7 @@
          parallelism/0,
          trace/2,
          listen_addrs/0,
+         default_channel/0,
          set/2,
          seed/0,
          seed/1,
@@ -214,6 +215,9 @@ listen_addrs() ->
 
 channels() ->
     partisan_config:get(channels).
+
+default_channel() ->
+    ?DEFAULT_CHANNEL.
 
 parallelism() ->
     partisan_config:get(parallelism).

@@ -40,6 +40,8 @@
 
 -export([format_status_header/2]).
 
+-export([get_channel/0]).
+
 -define(default_timeout, 5000).
 
 %%-----------------------------------------------------------------
@@ -181,6 +183,7 @@ init_it(GenMod, Starter, Parent, Name, Mod, Args, Options) ->
     end.
 
 init_it2(GenMod, Starter, Parent, Name, Mod, Args, Options) ->
+    set_channel(Options),
     GenMod:init_it(Starter, Parent, Name, Mod, Args, Options).
 
 %%-----------------------------------------------------------------
@@ -629,8 +632,24 @@ do_send_request(Process, Label, Request) ->
     }),
 
     partisan_pluggable_peer_service_manager:forward_message(
-        Node, undefined, ServerRef, Message, []
+        Node, get_channel(), ServerRef, Message, []
     ),
 
     Ref.
 
+
+get_channel() ->
+    %% We get channel from the process dictionary
+    erlang:get(partisan_channel).
+
+
+set_channel(Options) ->
+    case lists:keyfind(channel, 1, Options) of
+        {_,Channel} ->
+            erlang:put(partisan_channel, Channel),
+            ok;
+        false ->
+            Default = partisan_config:default_channel(),
+            erlang:put(partisan_channel, Default),
+            ok
+    end.
