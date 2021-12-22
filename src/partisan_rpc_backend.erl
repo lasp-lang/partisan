@@ -114,7 +114,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 options() ->
-    ForwardOptions = partisan_config:get(forward_options),
+    ForwardOptions = partisan_config:get(forward_options, #{}),
     ForwardOptions.
 
 rpc_channel() ->
