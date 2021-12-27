@@ -207,26 +207,26 @@ call(Process, Label, Request, Timeout)
     Fun = fun(Pid) -> do_call(Pid, Label, Request, Timeout) end,
     do_for_proc(Process, Fun).
 
-% -dialyzer({no_improper_lists, do_call/4}).
+-dialyzer({no_improper_lists, do_call/4}).
 
-% do_call(Process, Label, Request, infinity)
-%   when (is_pid(Process)
-%         andalso (node(Process) == node()))
-%        orelse (element(2, Process) == node()
-%                andalso is_atom(element(1, Process))
-%                andalso (tuple_size(Process) =:= 2)) ->
-%     Mref = erlang:monitor(process, Process),
-%     %% Local without timeout; no need to use alias since we unconditionally
-%     %% will wait for either a reply or a down message which corresponds to
-%     %% the process being terminated (as opposed to 'noconnection')...
-%     Process ! {Label, {self(), Mref}, Request},
-%     receive
-%         {Mref, Reply} ->
-%             erlang:demonitor(Mref, [flush]),
-%             {ok, Reply};
-%         {'DOWN', Mref, _, _, Reason} ->
-%             exit(Reason)
-%     end;
+do_call(Process, Label, Request, infinity)
+  when (is_pid(Process)
+        andalso (node(Process) == node()))
+       orelse (element(2, Process) == node()
+               andalso is_atom(element(1, Process))
+               andalso (tuple_size(Process) =:= 2)) ->
+    Mref = erlang:monitor(process, Process),
+    %% Local without timeout; no need to use alias since we unconditionally
+    %% will wait for either a reply or a down message which corresponds to
+    %% the process being terminated (as opposed to 'noconnection')...
+    Process ! {Label, {self(), Mref}, Request},
+    receive
+        {Mref, Reply} ->
+            erlang:demonitor(Mref, [flush]),
+            {ok, Reply};
+        {'DOWN', Mref, _, _, Reason} ->
+            exit(Reason)
+    end;
 % do_call(Process, Label, Request, Timeout) when is_atom(Process) =:= false ->
 %     Mref = erlang:monitor(process, Process, [{alias,demonitor}]),
 
@@ -258,6 +258,32 @@ call(Process, Label, Request, Timeout)
 %                     exit(timeout)
 %             end
 %     end.
+do_call(Process, Label, Request, Timeout) ->
+    Ref = do_send_request(Process, Label, Request),
+
+    %% Wait for reply.
+    receive
+        {Ref, Reply} ->
+            {ok, Reply};
+        Other ->
+            ?LOG_WARNING(#{
+                description => "Received unexpected response",
+                request => Request,
+                label => Label,
+                response => Other,
+                from => Process,
+                me => self(),
+                from_status => sys:get_status(Process)
+            }),
+            exit(timeout)
+    after Timeout ->
+        ?LOG_WARNING(#{
+            description => "Timed out at while waiting for response to message",
+            node => node(),
+            message => Request
+        }),
+        exit(timeout)
+    end.
 
 % get_node(Process) ->
 %     %% We trust the arguments to be correct, i.e
@@ -583,28 +609,6 @@ format_status_header(TagLine, Name) ->
 %% PARTISAN
 %% =============================================================================
 
-
-do_call(Process, Label, Request, Timeout) ->
-    Ref = do_send_request(Process, Label, Request),
-
-    %% Wait for reply.
-    receive
-        {Ref, Reply} ->
-            {ok, Reply};
-        Other ->
-            ?LOG_WARNING(#{
-                description => "Received unexpected response",
-                response => Other
-            }),
-            exit(timeout)
-    after Timeout ->
-        ?LOG_WARNING(#{
-            description => "Timed out at while waiting for response to message",
-            node => node(),
-            message => Request
-        }),
-        exit(timeout)
-    end.
 
 
 do_send_request(Process, Label, Request) ->
