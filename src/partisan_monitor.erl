@@ -117,8 +117,10 @@ monitor_node(Node, Flag) when is_atom(Node), is_boolean(Flag) ->
 
 %% @private
 init([]) ->
+    Me = self(),
+
     %% Every time a node goes down we will get a {nodedown, Node} message
-    Fun = fun(Node) -> self() ! {nodedown, Node} end,
+    Fun = fun(Node) -> Me ! {nodedown, Node} end,
     Mod = partisan_peer_service:manager(),
     ok = Mod:on_down('_', Fun),
     {ok, #{}}.
