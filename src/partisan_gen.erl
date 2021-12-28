@@ -209,24 +209,6 @@ call(Process, Label, Request, Timeout)
 
 -dialyzer({no_improper_lists, do_call/4}).
 
-do_call(Process, Label, Request, infinity)
-  when (is_pid(Process)
-        andalso (node(Process) == node()))
-       orelse (element(2, Process) == node()
-               andalso is_atom(element(1, Process))
-               andalso (tuple_size(Process) =:= 2)) ->
-    Mref = erlang:monitor(process, Process),
-    %% Local without timeout; no need to use alias since we unconditionally
-    %% will wait for either a reply or a down message which corresponds to
-    %% the process being terminated (as opposed to 'noconnection')...
-    Process ! {Label, {self(), Mref}, Request},
-    receive
-        {Mref, Reply} ->
-            erlang:demonitor(Mref, [flush]),
-            {ok, Reply};
-        {'DOWN', Mref, _, _, Reason} ->
-            exit(Reason)
-    end;
 % do_call(Process, Label, Request, Timeout) when is_atom(Process) =:= false ->
 %     Mref = erlang:monitor(process, Process, [{alias,demonitor}]),
 
@@ -259,23 +241,13 @@ do_call(Process, Label, Request, infinity)
 %             end
 %     end.
 do_call(Process, Label, Request, Timeout) ->
+    %% For remote calls we use Partisan
     Ref = do_send_request(Process, Label, Request),
 
     %% Wait for reply.
     receive
         {Ref, Reply} ->
-            {ok, Reply};
-        Other ->
-            ?LOG_WARNING(#{
-                description => "Received unexpected response",
-                request => Request,
-                label => Label,
-                response => Other,
-                from => Process,
-                me => self(),
-                from_status => sys:get_status(Process)
-            }),
-            exit(timeout)
+            {ok, Reply}
     after Timeout ->
         ?LOG_WARNING(#{
             description => "Timed out at while waiting for response to message",
