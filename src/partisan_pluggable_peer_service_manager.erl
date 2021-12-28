@@ -200,34 +200,6 @@ when is_list(Options) ->
 forward_message(Name, Channel, ServerRef, Message, Options)
 when is_map(Options) ->
 
-    %% Attempt to get the partition key, if possible.
-    PartitionKey = maps:get(partition_key, Options, ?DEFAULT_PARTITION_KEY),
-
-    %% Use a clock provided by the sender, otherwise, use a generated one.
-    Clock = maps:get(clock, Options, undefined),
-
-    %% Should ack?
-    ShouldAck = maps:get(ack, Options, false),
-
-    %% Use causality?
-    CausalLabel = maps:get(causal_label, Options, undefined),
-
-    %% Get forwarding options and combine with message specific options.
-    ForwardOptions = maps:merge(Options, forward_options()),
-
-    %% Use configuration to disable fast forwarding.
-    DisableFastForward = partisan_config:get(disable_fast_forward, false),
-
-    %% Should use fast forwarding?
-    %%
-    %% Conditions:
-    %% - not labeled for causal delivery
-    %% - message does not need acknowledgements
-    %%
-    FastForward = not (CausalLabel =/= undefined) andalso
-                  not ShouldAck andalso
-                  not DisableFastForward,
-
     %% If attempting to forward to the local node, bypass.
     case partisan_peer_service_manager:mynode() of
         Name ->
@@ -240,6 +212,38 @@ when is_map(Options) ->
                     partisan_util:process_forward(ServerRef, Message),
                     ok;
                 false ->
+                    %% Attempt to get the partition key, if possible.
+                    PartitionKey = maps:get(
+                        partition_key, Options, ?DEFAULT_PARTITION_KEY
+                    ),
+
+                    %% Use a clock provided by the sender, otherwise, use a generated one.
+                    Clock = maps:get(clock, Options, undefined),
+
+                    %% Should ack?
+                    ShouldAck = maps:get(ack, Options, false),
+
+                    %% Use causality?
+                    CausalLabel =
+                        maps:get(causal_label, Options, undefined),
+
+                    %% Get forwarding options and combine with message specific options.
+                    ForwardOptions = maps:merge(Options, forward_options()),
+
+                    %% Use configuration to disable fast forwarding.
+                    DisableFastForward =
+                        partisan_config:get(disable_fast_forward, false),
+
+                    %% Should use fast forwarding?
+                    %%
+                    %% Conditions:
+                    %% - not labeled for causal delivery
+                    %% - message does not need acknowledgements
+                    %%
+                    FastForward = not (CausalLabel =/= undefined) andalso
+                                not ShouldAck andalso
+                                not DisableFastForward,
+
                     FullMessage = case partisan_config:get(binary_padding, false) of
                         true ->
                             BinaryPadding = partisan_config:get(binary_padding_term, undefined),
