@@ -105,7 +105,8 @@ handle_info({'DOWN', MRef, port, _, _}, State=#state{ref=MRef}) ->
 handle_info(_, State) ->
     {noreply, State}.
 
-terminate(_, _) ->
+terminate(_, #state{socket=Socket}) ->
+    ok = partisan_peer_connection:close(Socket),
     ok.
 
 %% @private
