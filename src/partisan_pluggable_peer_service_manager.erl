@@ -28,6 +28,7 @@
 %% partisan_peer_service_manager callbacks
 -export([start_link/0,
          members/0,
+         member/1,
          members_for_orchestration/0,
          myself/0,
          get_local_state/0,
@@ -105,6 +106,16 @@
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+%% @doc Returns true if node `Node' is a member in the membership list.
+%% Otherwise returns `false'.
+%% @end
+member(#{name := Node}) ->
+    member(Node);
+
+member(Node) when is_atom(Node) ->
+    gen_server:call(?MODULE, {member, Node}, infinity).
+
 
 %% @doc Return membership list.
 members() ->
@@ -628,6 +639,10 @@ handle_call(members_for_orchestration, _From, #state{membership=Membership}=Stat
 handle_call(members, _From, #state{membership=Membership}=State) ->
     Members = [P || #{name := P} <- Membership],
     {reply, {ok, Members}, State};
+
+handle_call({member, Node}, _From, #state{membership=Membership}=State) ->
+    IsMember = lists:any(fun(#{name := Name}) -> Name =:= Node end, Membership),
+    {reply, IsMember, State};
 
 handle_call(connections, _From, #state{connections=Connections}=State) ->
     {reply, {ok, Connections}, State};
@@ -1383,24 +1398,44 @@ do_send_message(Node, Channel, PartitionKey, Message, Connections, Options, PreI
 %% @private
 up(#{name := Name}, State) ->
     up(Name, State);
-up(Name, #state{up_functions=UpFunctions}) ->
+up(Name, #state{up_functions = UpFunctions} = State) ->
+    %% Notify functions matching the wildcard 'any'
+    ok = up(any, State),
+
     case dict:find(Name, UpFunctions) of
         error ->
             ok;
         {ok, Functions} ->
-            [Function() || Function <- Functions],
+            [
+                begin
+                    case erlang:fun_info(F, arity) of
+                        {arity, 0} -> F();
+                        {arity, 1} -> F(Name)
+                    end
+                end || F <- Functions
+            ],
             ok
     end.
 
 %% @private
 down(#{name := Name}, State) ->
     down(Name, State);
-down(Name, #state{down_functions=DownFunctions}) ->
+down(Name, #state{down_functions = DownFunctions} = State) ->
+    %% Notify functions matching the wildcard 'any'
+    ok = down(any, State),
+
     case dict:find(Name, DownFunctions) of
         error ->
             ok;
         {ok, Functions} ->
-            [Function() || Function <- Functions],
+            [
+                begin
+                    case erlang:fun_info(F, arity) of
+                        {arity, 0} -> F();
+                        {arity, 1} -> F(Name)
+                    end
+                end || F <- Functions
+            ],
             ok
     end.
 
