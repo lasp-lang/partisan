@@ -1404,7 +1404,12 @@ up(#{name := Name}, State) ->
     up(Name, State);
 up(Name, #state{up_functions = UpFunctions} = State) ->
     %% Notify functions matching the wildcard 'any'
-    ok = up(any, State),
+    case Name =/= any of
+        true ->
+            up(any, State);
+        false ->
+            ok
+    end,
 
     case dict:find(Name, UpFunctions) of
         error ->
@@ -1426,7 +1431,12 @@ down(#{name := Name}, State) ->
     down(Name, State);
 down(Name, #state{down_functions = DownFunctions} = State) ->
     %% Notify functions matching the wildcard 'any'
-    ok = down(any, State),
+    case Name =/= any of
+        true ->
+            down(any, State);
+        false ->
+            ok
+    end,
 
     case dict:find(Name, DownFunctions) of
         error ->
