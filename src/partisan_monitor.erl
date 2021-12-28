@@ -96,9 +96,11 @@ demonitor_node(Node) when is_atom(Node) ->
 %% `nodedown' message is delivered. As a result when using a membership
 %% strategy that uses a partial view, you can not monitor nodes that are not
 %% members of the view.
+%%
+%% If `Node' is the caller's node, the function returns `false'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec monitor_node(node() | node_spec(), boolean()) -> true.
+-spec monitor_node(node() | node_spec(), boolean()) -> boolean().
 
 monitor_node(#{name := Node}, Flag) ->
     monitor_node(Node, Flag);
@@ -144,20 +146,25 @@ handle_call({demonitor, PartisanRef}, _From, State) ->
 
 handle_call({monitor_node, Node, true}, {PartisanRemote, _} = From, State0) ->
     %% The caller is always a local process
-    {partisan_remote_reference, _MyNode,
+    {partisan_remote_reference, MyNode,
          {partisan_process_reference, PidAsList}} = PartisanRemote,
 
-    Pid = list_to_pid(PidAsList),
-    Mod = partisan_peer_service:manager(),
-
-    case Mod:member(Node) of
+    case MyNode == Node of
         true ->
-            StateFinal = append_pid_by_node(Node, Pid, State0),
-            {reply, true, StateFinal};
+            {reply, false, State0};
         false ->
-            ok = partisan_gen_server:reply(From, true),
-            Pid ! {nodedown, Node},
-            {noreply, State0}
+            Pid = list_to_pid(PidAsList),
+            Mod = partisan_peer_service:manager(),
+
+            case Mod:member(Node) of
+                true ->
+                    StateFinal = append_pid_by_node(Node, Pid, State0),
+                    {reply, true, StateFinal};
+                false ->
+                    ok = partisan_gen_server:reply(From, true),
+                    Pid ! {nodedown, Node},
+                    {noreply, State0}
+            end
     end;
 
 handle_call({monitor_node, Node, false}, From, State) ->
