@@ -118,7 +118,7 @@ init([]) ->
     %% Every time a node goes down we will get a {nodedown, Node} message
     Fun = fun(Node) -> self() ! {nodedown, Node} end,
     Mod = partisan_peer_service:manager(),
-    ok = Mod:on_down(any, Fun),
+    ok = Mod:on_down('_', Fun),
     {ok, #{}}.
 
 %% @private

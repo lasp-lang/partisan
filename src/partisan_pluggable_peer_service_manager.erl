@@ -148,12 +148,20 @@ get_local_state() ->
 %% @doc Trigger function on connection close for a given node.
 on_down(#{name := Name}, Function) ->
     on_down(Name, Function);
+
+on_down(any, Function) ->
+    on_down('_', Function);
+
 on_down(Name, Function) when is_atom(Name) ->
     gen_server:call(?MODULE, {on_down, Name, Function}, infinity).
 
 %% @doc Trigger function on connection open for a given node.
 on_up(#{name := Name}, Function) ->
     on_up(Name, Function);
+
+on_up(any, Function) ->
+    on_up('_', Function);
+
 on_up(Name, Function) when is_atom(Name) ->
     gen_server:call(?MODULE, {on_up, Name, Function}, infinity).
 
@@ -1402,13 +1410,14 @@ do_send_message(Node, Channel, PartitionKey, Message, Connections, Options, PreI
 %% @private
 up(#{name := Name}, State) ->
     up(Name, State);
-up(Name, #state{up_functions = UpFunctions} = State) ->
-    %% Notify functions matching the wildcard 'any'
-    case Name =/= any of
-        true ->
-            up(any, State);
-        false ->
-            ok
+
+up(Name, #state{up_functions = UpFunctions}) ->
+    %% Notify functions matching the wildcard '_'
+    Any = case dict:find('_', UpFunctions) of
+        {ok, Val} ->
+            Val;
+        error ->
+            []
     end,
 
     case dict:find(Name, UpFunctions) of
@@ -1421,7 +1430,7 @@ up(Name, #state{up_functions = UpFunctions} = State) ->
                         {arity, 0} -> F();
                         {arity, 1} -> F(Name)
                     end
-                end || F <- Functions
+                end || F <- lists:append(Functions, Any)
             ],
             ok
     end.
@@ -1429,13 +1438,14 @@ up(Name, #state{up_functions = UpFunctions} = State) ->
 %% @private
 down(#{name := Name}, State) ->
     down(Name, State);
-down(Name, #state{down_functions = DownFunctions} = State) ->
+
+down(Name, #state{down_functions = DownFunctions}) ->
     %% Notify functions matching the wildcard 'any'
-    case Name =/= any of
-        true ->
-            down(any, State);
-        false ->
-            ok
+    Any = case dict:find('_', DownFunctions) of
+        {ok, Val} ->
+            Val;
+        error ->
+            []
     end,
 
     case dict:find(Name, DownFunctions) of
@@ -1448,7 +1458,7 @@ down(Name, #state{down_functions = DownFunctions} = State) ->
                         {arity, 0} -> F();
                         {arity, 1} -> F(Name)
                     end
-                end || F <- Functions
+                end || F <- lists:append(Functions, Any)
             ],
             ok
     end.
