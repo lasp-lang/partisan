@@ -34,12 +34,13 @@
          term_to_iolist/1,
          gensym/1,
          make_ref/0,
+         node/1,
          pid/0,
          pid/1,
          ref/1,
          registered_name/1]).
 
--compile({no_auto_import, [make_ref/0]}).
+-compile({no_auto_import, [make_ref/0, node/1]}).
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
 %%      works by treating the list as an array-based tree where, for
@@ -248,6 +249,7 @@ maybe_initiate_parallel_connections(Connections0, Channel, Node, ListenAddr, Par
             Connections0
     end.
 
+
 term_to_iolist(Term) ->
     [131, term_to_iolist_(Term)].
 
@@ -258,6 +260,8 @@ term_to_iolist_({}) ->
 term_to_iolist_(T) when is_atom(T) ->
     L = atom_to_list(T),
     Len = length(L),
+    %% TODO this function uses a DEPRECATED FORMAT!
+    %% https://www.erlang.org/doc/apps/erts/erl_ext_dist.html#map_ext
     %% TODO utf-8 atoms
     case Len > 256 of
         false ->
@@ -289,6 +293,9 @@ term_to_iolist_(T) when is_list(T) ->
         false ->
             [108, <<Len:32/integer-big>>, [[term_to_iolist_(E) || E <- T]], 106]
     end;
+term_to_iolist_(T) when is_map(T) ->
+    Len = maps:size(T),
+    [116, <<Len:32/integer-big>>, [[term_to_iolist_(K), term_to_iolist_(V)] || {K, V} <- maps:to_list(T)]];
 term_to_iolist_(T) when is_reference(T) ->
     case partisan_config:get(ref_encoding, true) of
         false ->
@@ -341,11 +348,15 @@ make_ref() ->
 %     {partisan_encoded_reference, atomics:add_get(ARef, 1, 1)}.
 
 
+-spec pid() -> remote_ref().
+
 pid() ->
     pid(self()).
 
+-spec pid(pid()) -> remote_ref().
+
 pid(Pid) ->
-    Node = node(Pid),
+    Node = erlang:node(Pid),
 
     case partisan_peer_service_manager:mynode() of
         Node ->
@@ -408,6 +419,14 @@ pid(Pid) ->
             end
     end.
 
+
+node(Pid) when is_pid(Pid) ->
+    erlang:node(Pid);
+
+node({partisan_remote_reference, Node, _}) ->
+    Node.
+
+
 registered_name(Name) ->
     GenSym = gensym(Name),
     Node = partisan_peer_service_manager:mynode(),
@@ -415,7 +434,8 @@ registered_name(Name) ->
 
 process_forward(ServerRef, Message) ->
     ?LOG_DEBUG(
-        "node ~p recieved message ~p for ~p", [node(), Message, ServerRef]
+        "node ~p recieved message ~p for ~p",
+        [erlang:node(), Message, ServerRef]
     ),
 
     Node = partisan_peer_service_manager:mynode(),
