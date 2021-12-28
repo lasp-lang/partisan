@@ -80,21 +80,23 @@
 -type pending() :: [node_spec()].
 -type from() :: {pid(), atom()}.
 
--record(state, {actor :: actor(),
-                distance_metrics :: dict:dict(),
-                vclock :: term(),
-                pending :: pending(),
-                membership :: list(),
-                down_functions :: dict:dict(),
-                up_functions :: dict:dict(),
-                out_links :: [term()],
-                pre_interposition_funs :: dict:dict(),
-                interposition_funs :: dict:dict(),
-                post_interposition_funs :: dict:dict(),
-                sync_joins :: [{node_spec(), from()}],
-                connections :: partisan_peer_service_connections:t(),
-                membership_strategy :: atom(),
-                membership_strategy_state :: term()}).
+-record(state, {
+    actor                       ::  actor(),
+    distance_metrics            ::  dict:dict(),
+    vclock                      ::  term(),
+    pending                     ::  pending(),
+    membership                  ::  list(),
+    down_functions              ::  dict:dict(),
+    up_functions                ::  dict:dict(),
+    out_links                   ::  [term()],
+    pre_interposition_funs      ::  dict:dict(),
+    interposition_funs          ::  dict:dict(),
+    post_interposition_funs     ::  dict:dict(),
+    sync_joins                  ::  [{node_spec(), from()}],
+    connections                 ::  partisan_peer_service_connections:t(),
+    membership_strategy         ::  atom(),
+    membership_strategy_state   ::  term()
+}).
 
 -type state_t() :: #state{}.
 
@@ -214,8 +216,7 @@ when is_map(Options) ->
             partisan_util:process_forward(ServerRef, Message),
             ok;
         _ ->
-            Disterl = partisan_config:get(disterl, false),
-            case Disterl of
+            case partisan_config:get(disterl, false) of
                 true ->
                     partisan_util:process_forward(ServerRef, Message),
                     ok;
@@ -248,33 +249,36 @@ when is_map(Options) ->
                     %% - not labeled for causal delivery
                     %% - message does not need acknowledgements
                     %%
-                    FastForward = not (CausalLabel =/= undefined) andalso
-                                not ShouldAck andalso
-                                not DisableFastForward,
+                    FastForward = not (CausalLabel =/= undefined)
+                                andalso not ShouldAck
+                                andalso not DisableFastForward,
 
-                    FullMessage = case partisan_config:get(binary_padding, false) of
+                    %% TODO Unless we need this properties to change in runtime,
+                    %% we should store most of these options in the gen_server
+                    %% state on init
+                    BinaryPadding = partisan_config:get(binary_padding, false),
+
+                    PaddedMessage = case BinaryPadding of
                         true ->
-                            BinaryPadding = partisan_config:get(binary_padding_term, undefined),
-                            {forward_message,
-                                Name,
-                                Channel,
-                                Clock,
-                                PartitionKey,
-                                ServerRef,
-                                {'$partisan_padded', BinaryPadding, Message},
-                                ForwardOptions
-                            };
+                            Term = partisan_config:get(
+                                binary_padding_term, undefined
+                            ),
+                            {'$partisan_padded', Term, Message};
                         false ->
-                            {forward_message,
-                                Name,
-                                Channel,
-                                Clock,
-                                PartitionKey,
-                                ServerRef,
-                                Message,
-                                ForwardOptions
-                            }
+                            Message
+
                     end,
+
+                    FullMessage = {
+                        forward_message,
+                        Name,
+                        Channel,
+                        Clock,
+                        PartitionKey,
+                        ServerRef,
+                        PaddedMessage,
+                        ForwardOptions
+                    },
 
                     case FastForward of
                         true ->
@@ -1702,3 +1706,4 @@ forward_options() ->
         Map when is_map(Map) ->
             Map
     end.
+

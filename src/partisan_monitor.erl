@@ -123,6 +123,7 @@ init([]) ->
     Fun = fun(Node) -> Me ! {nodedown, Node} end,
     Mod = partisan_peer_service:manager(),
     ok = Mod:on_down('_', Fun),
+
     {ok, #{}}.
 
 %% @private
