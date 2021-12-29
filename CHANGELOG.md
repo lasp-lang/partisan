@@ -19,8 +19,10 @@
 * Replaced API options data structure from proplists to maps for extra performance
 * Use `ets` table for plumtree broadcast outstanding messages keep the gen_server stack lean
 * Upgraded partisan_gen_ to their OTP24 counterparts
+* Re-arrange getting options in `partisan_pluggable_peer_servie_manager:forward_message` until (and if) they are needed for extra performance.
 
 ## Added
 * `partisan_monitor:monitor_node/2`
 * `partisan_gen_statem`
 * More utils in `partisan_util`
+* `partisan_peer_service_manager:member/1`
