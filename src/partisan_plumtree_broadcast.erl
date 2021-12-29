@@ -665,10 +665,10 @@ send(Msg, Mod, P) ->
     %% gen_server:cast({?SERVER, P}, Msg).
 
 schedule_lazy_tick(Period) ->
-    schedule_tick(lazy_tick, broadcast_lazy_timer, Period).
+    schedule_tick(lazy_tick, lazy_tick_period, Period).
 
 schedule_exchange_tick(Period) ->
-    schedule_tick(exchange_tick, broadcast_exchange_timer, Period).
+    schedule_tick(exchange_tick, exchange_tick_period, Period).
 
 schedule_tick(Message, Timer, Default) ->
     TickMs = partisan_config:get(Timer, Default),
