@@ -148,6 +148,9 @@ get_local_state() ->
     gen_server:call(?MODULE, get_local_state, infinity).
 
 %% @doc Trigger function on connection close for a given node.
+%% `Function' is a function object taking zero or a single argument, where the
+%% argument is the Node name.
+%% @end
 on_down(#{name := Name}, Function) ->
     on_down(Name, Function);
 
@@ -158,6 +161,9 @@ on_down(Name, Function) when is_atom(Name) ->
     gen_server:call(?MODULE, {on_down, Name, Function}, infinity).
 
 %% @doc Trigger function on connection open for a given node.
+%% `Function' is a function object taking zero or a single argument, where the
+%% argument is the Node name.
+%% @end
 on_up(#{name := Name}, Function) ->
     on_up(Name, Function);
 
