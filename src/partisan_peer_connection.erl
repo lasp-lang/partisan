@@ -62,7 +62,7 @@
 accept(TCPSocket) ->
     case tls_enabled() of
         true ->
-            TLSOpts = tls_options(),
+            TLSOpts = partisan_config:get(tls_server_options),
             %% as per http://erlang.org/doc/man/ssl.html#ssl_accept-1
             %% The listen socket is to be in mode {active, false} before telling the client
             %% that the server is ready to upgrade by calling this function, else the upgrade
@@ -161,7 +161,8 @@ when is_map(PartisanOptions) ->
 
     case tls_enabled() of
         true ->
-            do_connect(Address, Port, Options ++ tls_options(), Timeout, ssl, ssl, PartisanOptions);
+            TLSOptions = partisan_config:get(tls_client_options),
+            do_connect(Address, Port, Options ++ TLSOptions, Timeout, ssl, ssl, PartisanOptions);
         _ ->
             do_connect(Address, Port, Options, Timeout, gen_tcp, inet, PartisanOptions)
     end.
@@ -203,9 +204,6 @@ connection_options(Options) when is_list(Options) ->
 tls_enabled() ->
     partisan_config:get(tls).
 
-%% @private
-tls_options() ->
-    partisan_config:get(tls_options).
 
 %% @private
 monotonic_now() ->

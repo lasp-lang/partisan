@@ -150,7 +150,8 @@ init() ->
                            {shrinking, false},
                            {tracing, false},
                            {tls, false},
-                           {tls_options, []},
+                           {tls_server_options, []},
+                           {tls_client_options, []},
                            {tag, DefaultTag},
                            {xbot_interval, XbotInterval}]],
 
