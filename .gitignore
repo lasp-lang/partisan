@@ -36,3 +36,4 @@ data-root*/
 Mnesia*
 node*/
 _checkouts.old/
+/.vscode
