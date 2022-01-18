@@ -79,8 +79,8 @@ build_tree(N, Nodes, Opts) ->
             partisan_peer_service_connections:t().
 maybe_connect(#{name := _Name, listen_addrs := ListenAddrs} = Node, Connections0) ->
     FoldFun = fun(ListenAddr, Connections) ->
-                      maybe_connect_listen_addr(Node, ListenAddr, Connections)
-              end,
+        maybe_connect_listen_addr(Node, ListenAddr, Connections)
+    end,
     lists:foldl(FoldFun, Connections0, ListenAddrs).
 
 may_disconnect(NodeName, Connections) ->
@@ -243,7 +243,8 @@ maybe_initiate_parallel_connections(Connections0, Channel, Node, ListenAddr, Par
                         description => "Node failed connect",
                         error => Error,
                         connections => Connections0
-                    })
+                    }),
+                    Connections0
             end;
         false ->
             Connections0
