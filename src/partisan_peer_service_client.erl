@@ -193,6 +193,7 @@ connect(#{ip := Address, port := Port}, Channel) ->
         {ok, Socket} ->
             {ok, Socket};
         {error, Error} ->
+            %% TODO LOG HERE
             {error, Error}
     end.
 
