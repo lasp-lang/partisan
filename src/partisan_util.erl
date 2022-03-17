@@ -115,9 +115,15 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
             end;
         %% Found and connected.
         {ok, Entries} ->
-            lists:foldl(fun(Channel, ChannelConnections) ->
-                maybe_initiate_parallel_connections(ChannelConnections, Channel, Node, ListenAddr, Parallelism, Entries)
-            end, Connections0, Channels);
+            lists:foldl(
+                fun(Channel, Acc) ->
+                    maybe_initiate_parallel_connections(
+                        Acc, Channel, Node, ListenAddr, Parallelism, Entries
+                    )
+                end,
+                Connections0,
+                Channels
+            );
         %% Not present; disconnected.
         {error, not_found} ->
             case connect(Node, ListenAddr, ?DEFAULT_CHANNEL) of
@@ -207,23 +213,14 @@ dispatch_pid(PartitionKey, Channel, Entries) ->
 
 %% @private
 maybe_initiate_parallel_connections(Connections0, Channel, Node, ListenAddr, Parallelism, Entries) ->
-    FilteredEntries = lists:filter(fun({A, C, _}) ->
-                            case A of
-                                ListenAddr ->
-                                    case C of
-                                        Channel ->
-                                            true;
-                                        _ ->
-                                            false
-                                    end;
-                                _ ->
-                                    false
-                            end
-                    end, Entries),
+    ChannelConnections = lists:filter(
+        fun({A, C, _})  -> A =:= ListenAddr andalso C =:= Channel end,
+        Entries
+    ),
 
-    Len = length(FilteredEntries),
+    Len = length(ChannelConnections),
 
-    case Len < Parallelism andalso Parallelism =/= undefined of
+    case Parallelism =/= undefined andalso Len < Parallelism of
         true ->
             ?LOG_DEBUG(
                 "~p of ~p connected for channel ~p) Connecting node ~p.",
