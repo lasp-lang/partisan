@@ -337,6 +337,8 @@ transform_test(Config) ->
     %% Generate message.
     Message = message,
 
+    ?assert(partisan_config:get(pid_encoding)),
+
     %% Verify local send transformation.
     case rpc:call(Node3, partisan_transformed_module, local_send, [Message]) of
         Message ->
@@ -383,7 +385,7 @@ transform_test(Config) ->
         {partisan_remote_reference, _, _} = Node3Pid2 ->
             rpc:call(Node4, partisan_transformed_module, send_to_pid, [Node3Pid2, Message])
     after
-        1000 ->
+        3000 ->
             ct:fail("Received no proper response!")
     end,
 
@@ -391,7 +393,7 @@ transform_test(Config) ->
         finished ->
             ok
     after
-        1000 ->
+        3000 ->
             ct:fail("Never received a response.")
     end,
 
@@ -934,7 +936,7 @@ rejoin_test(Config) ->
                         true ->
                             true;
                         false ->
-                            ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
+                            ct:pal("Membership incorrect; node ~p should have ~p ~nbut has ~p",
                                 [Node, SortedNodes, SortedMembers]),
                             {false, {Node, SortedNodes, SortedMembers}}
                     end
@@ -948,7 +950,7 @@ rejoin_test(Config) ->
                                     ok ->
                                         ok;
                                     {fail, {false, {IncorrectNode, Expected, Contains}}} ->
-                                        ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
+                                        ct:fail("Membership incorrect; node ~p should have ~p ~nbut has ~p",
                                                 [IncorrectNode, Expected, Contains])
                                 end
                         end, Nodes),
@@ -1428,7 +1430,7 @@ basic_test(Config) ->
                 true ->
                     true;
                 false ->
-                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
+                    ct:pal("Membership incorrect; node ~p should have ~p ~nbut has ~p",
                            [Node, SortedNodes, SortedMembers]),
                     {false, {Node, SortedNodes, SortedMembers}}
             end
@@ -1442,7 +1444,7 @@ basic_test(Config) ->
                               ok ->
                                   ok;
                               {fail, {false, {Node, Expected, Contains}}} ->
-                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
+                                 ct:fail("Membership incorrect; node ~p should have ~p ~nbut has ~p",
                                          [Node, Expected, Contains])
                           end
                   end, Nodes),
@@ -1540,7 +1542,7 @@ client_server_manager_test(Config) ->
                    {clients, Clients}]),
 
     %% Pause for clustering.
-    timer:sleep(1000),
+    timer:sleep(10000),
 
     %% Verify membership.
     %%
@@ -1567,7 +1569,7 @@ client_server_manager_test(Config) ->
                 true ->
                     ok;
                 false ->
-                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Nodes, Members])
+                    ct:fail("Membership incorrect; node ~p should have ~p ~nbut has ~p", [Node, Nodes, Members])
             end
     end,
 
@@ -2125,7 +2127,7 @@ verify_leave({_, NodeToLeave}, Nodes, Manager) ->
                 true ->
                     true;
                 false ->
-                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
+                    ct:pal("Membership incorrect; node ~p should have ~p ~nbut has ~p",
                            [Node, SortedNodes, SortedMembers]),
                     {false, {Node, SortedNodes, SortedMembers}}
             end
@@ -2139,7 +2141,7 @@ verify_leave({_, NodeToLeave}, Nodes, Manager) ->
                               ok ->
                                   ok;
                               {fail, {false, {IncorrenectNode, Expected, Contains}}} ->
-                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
+                                 ct:fail("Initial membership incorrect; node ~p should have ~p ~nbut has ~p",
                                          [IncorrenectNode, Expected, Contains])
                           end
                   end, Nodes),
@@ -2171,7 +2173,7 @@ verify_leave({_, NodeToLeave}, Nodes, Manager) ->
                 true ->
                     true;
                 false ->
-                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
+                    ct:pal("Membership incorrect; node ~p should have ~p ~nbut has ~p",
                            [Node, SortedNodes, SortedMembers]),
                     {false, {Node, SortedNodes, SortedMembers}}
             end
@@ -2195,7 +2197,7 @@ verify_leave({_, NodeToLeave}, Nodes, Manager) ->
                               ok ->
                                   ok;
                               {fail, {false, {IncorrectNode, Expected, Contains}}} ->
-                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
+                                 ct:fail("Membership incorrect; node ~p should have ~p ~nbut has ~p",
                                          [IncorrectNode, Expected, Contains])
                           end
                   end, Nodes),
