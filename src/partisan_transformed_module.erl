@@ -53,5 +53,14 @@ local_send(Message) ->
 get_pid() ->
     self().
 
+
+send_to_pid({partisan_remote_reference, Node, RemotePid}, Message)
+when Node == node() ->
+    {partisan_process_reference, List} = RemotePid,
+    send_to_pid(list_to_pid(List), Message);
+
+send_to_pid({partisan_remote_reference, Node, _}, _) ->
+    error({not_my_node, Node});
+
 send_to_pid(Pid, Message) ->
     Pid ! Message.
