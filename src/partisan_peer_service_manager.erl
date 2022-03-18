@@ -25,11 +25,19 @@
 -include("partisan.hrl").
 
 
--export([myself/0,
-         mynode/0,
-         forward_message/2]).
+-export([myself/0]).
+-export([mynode/0]).
+-export([forward_message/2]).
+
+
+%% =============================================================================
+%% BEHAVIOUR CALLBACKS
+%% =============================================================================
+
+
 
 -callback start_link() -> {ok, pid()} | ignore | {error, term()}.
+
 -callback members() -> [name()]. %% TODO: Deprecate me.
 -callback members_for_orchestration() -> [node_spec()].
 -callback myself() -> node_spec().
@@ -68,6 +76,14 @@
 -callback inject_partition(node_spec(), ttl()) -> {ok, reference()} | {error, not_implemented}.
 -callback resolve_partition(reference()) -> ok | {error, not_implemented}.
 
+
+
+%% =============================================================================
+%% API
+%% =============================================================================
+
+
+
 -spec myself() -> node_spec().
 
 myself() ->
@@ -75,10 +91,20 @@ myself() ->
     Channels = partisan_config:get(channels, ?CHANNELS),
     Name = partisan_config:get(name),
     ListenAddrs = partisan_config:get(listen_addrs),
-    #{name => Name, listen_addrs => ListenAddrs, channels => Channels, parallelism => Parallelism}.
+
+    #{
+        name => Name,
+        listen_addrs => ListenAddrs,
+        channels => Channels,
+        parallelism => Parallelism
+    }.
+
+
+-spec mynode() -> atom().
 
 mynode() ->
     partisan_config:get(name, node()).
+
 
 forward_message({partisan_remote_reference, Name, ServerRef} = RemotePid, Message) ->
     case mynode() of
