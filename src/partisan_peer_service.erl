@@ -229,7 +229,7 @@ leave() ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Remove another node from the cluster. Subsequently calling `join
+%% @doc Remove a node from the cluster. Subsequently calling `join
 %% (NodeSpec)' will not work for the removed node. The removed node must be
 %% restarted first.
 %% @end
@@ -237,7 +237,12 @@ leave() ->
 -spec leave(node_spec()) -> ok.
 
 leave(#{name := _} = NodeSpec) ->
-    (?MANAGER):leave(NodeSpec).
+    case partisan_peer_service_manager:mynode() of
+        Node ->
+            (?MANAGER):leave();
+        _ ->
+            (?MANAGER):leave(NodeSpec)
+    end.
 
 
 %% -----------------------------------------------------------------------------
