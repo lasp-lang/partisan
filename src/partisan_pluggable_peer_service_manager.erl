@@ -1502,6 +1502,8 @@ internal_leave(#{name := Name} = Node,
             ok
     end,
 
+    partisan_peer_service_events:update(Membership),
+
     State#state{membership=Membership,
                 connections=Connections,
                 membership_strategy_state=MembershipStrategyState}.
