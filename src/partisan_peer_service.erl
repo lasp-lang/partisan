@@ -51,6 +51,7 @@
 -export([mynode/0]).
 -export([myself/0]).
 -export([node_spec/1]).
+-export([node_spec/2]).
 -export([on_down/2]).
 -export([on_up/2]).
 -export([partitions/0]).
@@ -122,14 +123,25 @@ mynode() ->
 
 %% -----------------------------------------------------------------------------
 %% @doc Return the partisan node_spec() for node named `Node'.
+%%
+%% If configuration option `connect_disterl' is `true', this function retrieves
+%% the node_spec from the remote node using RPC and returns `{error, Reason}'
+%% if the RPC fails. Otherwise, asumes the node is running on the same host and
+%% return a `node_spec()' with with nodename `Name' and host 'Host' and same
+%% metadata as `myself/0'.
+%%
+%% You should only use this function when distributed erlang is enabled
+%% (configuration option `connect_disterl' is `true') or if the node is running
+%% on the same host and you are using this for testing purposes as there is no
+%% much sense in running a partisan cluster on a single host.
 %% @end
 %% -----------------------------------------------------------------------------
--spec node_spec(atom()) -> node_spec() | {error, Reason :: any()}.
+-spec node_spec(atom()) -> {ok, node_spec()} | {error, Reason :: any()}.
 
 node_spec(Node) when is_atom(Node) ->
     case partisan_peer_service_manager:mynode() of
         Node ->
-            partisan_peer_service_manager:myself();
+            {ok, partisan_peer_service_manager:myself()};
 
         _ ->
             case partisan_config:get(connect_disterl, false) of
@@ -144,7 +156,7 @@ node_spec(Node) when is_atom(Node) ->
                     ),
                     case Result of
                         #{name := Node} = NodeSpec ->
-                            NodeSpec;
+                            {ok, NodeSpec};
                         {badrpc, Reason} ->
                             {error, Reason}
                     end;
@@ -156,57 +168,53 @@ node_spec(Node) when is_atom(Node) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc
+%% @doc Returns a peer with nodename `Name' and host 'Host' and same metadata
+%% as `myself/0'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec join(list() | atom() | node_spec()) ->
-    ok | {error, self_join | any()}.
+-spec node_spec(Nodename :: list() | atom(), listen_addr() | [listen_addr()]) ->
+    {ok, node_spec()} | {error, Reason :: any()}.
 
-join(NodeStr) when is_list(NodeStr) ->
-    join(erlang:list_to_atom(lists:flatten(NodeStr)));
+node_spec(Nodename, Endpoints) when is_list(Nodename) ->
+    node_spec(list_to_node(Nodename), Endpoints);
 
-join(Node) when is_atom(Node) ->
-    case partisan_peer_service_manager:mynode() of
-        Node ->
-            {error, self_join};
-        _ ->
-            case node_spec(Node) of
-                {error, _} = Error ->
-                    Error;
-                NodeSpec ->
-                    join(NodeSpec)
-            end
-    end;
-
-join(#{name := _} = NodeSpec) ->
-    (?MANAGER):join(NodeSpec).
+node_spec(Nodename, Endpoints) when is_atom(Nodename) ->
+    Addresses = coerce_listen_addr(Endpoints),
+    %% We assume all nodes have the same parallelism and channel config
+    Map = partisan_peer_service_manager:myself(),
+    NodeSpec = Map#{name => Nodename, listen_addrs => Addresses},
+    {ok, NodeSpec}.
 
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec sync_join(list() | atom() | node_spec()) ->
-    ok | {error, not_implemented | self_join | any()}.
+-spec join(node_spec()) -> ok | {error, self_join | any()}.
 
-sync_join(NodeStr) when is_list(NodeStr) ->
-    sync_join(erlang:list_to_atom(lists:flatten(NodeStr)));
-
-sync_join(Node) when is_atom(Node) ->
+join(#{name := Node} = NodeSpec) ->
     case partisan_peer_service_manager:mynode() of
         Node ->
             {error, self_join};
         _ ->
-            case node_spec(Node) of
-                {error, _} = Error ->
-                    Error;
-                NodeSpec ->
-                    sync_join(NodeSpec)
-            end
-    end;
+            (?MANAGER):join(NodeSpec)
+    end.
 
-sync_join(#{name := _} = NodeSpec) ->
-    (?MANAGER):sync_join(NodeSpec).
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec sync_join(node_spec()) ->
+    ok | {error, self_join | not_implemented | any()}.
+
+sync_join(#{name := Node} = NodeSpec) ->
+    case partisan_peer_service_manager:mynode() of
+        Node ->
+            {error, self_join};
+        _ ->
+            (?MANAGER):sync_join(NodeSpec)
+    end.
 
 
 %% -----------------------------------------------------------------------------
@@ -225,7 +233,7 @@ leave() ->
 %% -----------------------------------------------------------------------------
 -spec leave(node_spec()) -> ok.
 
-leave(NodeSpec) ->
+leave(#{name := _} = NodeSpec) ->
     (?MANAGER):leave(NodeSpec).
 
 
@@ -359,7 +367,7 @@ get_local_state() ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Add callback.
+%% @doc Adds a supervised callback to receive peer service membership updates.
 %% @end
 %% -----------------------------------------------------------------------------
 add_sup_callback(Function) ->
@@ -435,4 +443,30 @@ forward_message(Name, Channel, ServerRef, Message) ->
 
 forward_message(Name, Channel, ServerRef, Message, Options) ->
     (?MANAGER):forward_message(Name, Channel, ServerRef, Message, Options).
+
+
+
+%% =============================================================================
+%% PRIVATE
+%% =============================================================================
+
+
+
+%% @private
+list_to_node(NodeStr) ->
+    erlang:list_to_atom(lists:flatten(NodeStr)).
+
+
+%% @private
+coerce_listen_addr({IP, Port})  ->
+    [#{ip => IP, port => Port}];
+
+coerce_listen_addr([{_, _} | _] = L) ->
+    [#{ip => IP, port => Port} || {IP, Port} <- L];
+
+coerce_listen_addr(#{ip := _, port := _} = L)  ->
+    [L];
+
+coerce_listen_addr([#{ip := _, port := _} | _] = L) ->
+    L.
 
