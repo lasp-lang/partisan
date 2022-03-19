@@ -329,7 +329,9 @@ join(Node) ->
 
 %% @doc Leave the cluster.
 leave() ->
-    gen_server:call(?MODULE, {leave, partisan_peer_service_manager:myself()}, infinity).
+    gen_server:call(
+        ?MODULE, {leave, partisan_peer_service_manager:myself()}, infinity
+    ).
 
 %% @doc Remove another node from the cluster.
 leave(Node) ->
@@ -519,16 +521,23 @@ handle_call({update_members, Nodes},
                                         not lists:member(N, NodesNames)
                                 end, CurrentMembership),
     %% Issue leaves.
-    State1 = lists:foldl(fun(N, S) ->
-                             case N of
-                                 Map when is_map(Map) ->
-                                     internal_leave(Map, S);
-                                 N when is_atom(N) ->
-                                     %% find map based on name
-                                     [Map] = lists:filter(fun(M) -> maps:get(name, M) == N end, Membership),
-                                     internal_leave(Map, S)
-                             end
-                         end, State, LeavingNodes),
+    State1 = lists:foldl(
+        fun(N, S) ->
+            case N of
+                Map when is_map(Map) ->
+                    internal_leave(Map, S);
+                N when is_atom(N) ->
+                    %% find map based on name
+                    [Map] = lists:filter(
+                        fun(M) -> maps:get(name, M) == N end,
+                        Membership
+                    ),
+                    internal_leave(Map, S)
+            end
+        end,
+        State,
+        LeavingNodes
+    ),
 
     %% Compute joining list.
     JoiningNodes = lists:filter(fun(#{name := N}) ->
@@ -548,9 +557,7 @@ handle_call({update_members, Nodes},
 
     {reply, ok, State2#state{pending=Pending1}};
 
-handle_call({leave, #{name := Name} = Node},
-            From,
-            State0) ->
+handle_call({leave, #{name := Name} = Node}, From, State0) ->
     %% Perform leave.
     State = internal_leave(Node, State0),
 
@@ -1236,10 +1243,13 @@ handle_message({membership_strategy, ProtocolMessage},
 
     case lists:member(partisan_peer_service_manager:myself(), Membership) of
         false ->
-            ?LOG_INFO(
-                "Shutting down: membership doesn't contain us. ~p not in ~p",
-                [partisan_peer_service_manager:myself(), Membership]
-            ),
+            ?LOG_INFO(#{
+                description => "Shutting down: membership doesn't contain us",
+                reason => "We've been removed from the cluster."
+            }),
+            ?LOG_DEBUG(#{
+                membership => Membership
+            }),
             %% Shutdown if we've been removed from the cluster.
             {stop, normal, State#state{membership=Membership,
                                        connections=Connections,
@@ -1480,9 +1490,14 @@ internal_leave(#{name := Name} = Node,
                       membership_strategy=MembershipStrategy,
                       membership_strategy_state=MembershipStrategyState0,
                       pre_interposition_funs=PreInterpositionFuns}=State) ->
-    ?LOG_INFO("Leaving node ~p at node ~p", [Node, partisan_peer_service_manager:mynode()]),
 
-    {ok, Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:leave(MembershipStrategyState0, Node),
+    ?LOG_INFO(#{
+        description => "Processing leave",
+        leaving_node => Name
+    }),
+
+    {ok, Membership, OutgoingMessages, MembershipStrategyState} =
+        MembershipStrategy:leave(MembershipStrategyState0, Node),
 
     %% Establish any new connections.
     Connections = establish_connections(Pending,
@@ -1490,9 +1505,18 @@ internal_leave(#{name := Name} = Node,
                                         Connections0),
 
     %% Transmit outgoing messages.
-    lists:foreach(fun({Peer, Message}) ->
-        schedule_self_message_delivery(Peer, Message, ?MEMBERSHIP_PROTOCOL_CHANNEL, ?DEFAULT_PARTITION_KEY, PreInterpositionFuns)
-    end, OutgoingMessages),
+    lists:foreach(
+        fun({Peer, Message}) ->
+            schedule_self_message_delivery(
+                Peer,
+                Message,
+                ?MEMBERSHIP_PROTOCOL_CHANNEL,
+                ?DEFAULT_PARTITION_KEY,
+                PreInterpositionFuns
+            )
+        end,
+        OutgoingMessages
+    ),
 
     case partisan_config:get(connect_disterl) of
         true ->

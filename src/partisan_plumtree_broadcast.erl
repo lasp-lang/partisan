@@ -139,15 +139,16 @@ start_link() ->
     },
 
     {ok, Members} = partisan_peer_service:members(),
-    ?LOG_INFO("Peer sampling service members: ~p", [Members]),
 
-    %% the peer service has already sampled the members, we start off
+    ?LOG_DEBUG("Peer sampling service members: ~p", [Members]),
+
+    %% The peer service has already sampled the members, we start off
     %% with pure gossip (ie. all members are in the eager push list and lazy
     %% list is empty)
     InitEagers = Members,
     InitLazys = [],
 
-    ?LOG_DEBUG("init peers, eager: ~p, lazy: ~p", [InitEagers, InitLazys]),
+    ?LOG_DEBUG("Init peers, eager: ~p, lazy: ~p", [InitEagers, InitLazys]),
 
     Mods = partisan_config:get(broadcast_mods, []),
 
