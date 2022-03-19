@@ -218,7 +218,8 @@ sync_join(#{name := Node} = NodeSpec) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Leave the cluster.
+%% @doc Leave the cluster. We will not be able to re-join the cluster, we must
+%% be restarted first.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec leave() -> ok.
@@ -228,7 +229,9 @@ leave() ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Remove another node from the cluster.
+%% @doc Remove another node from the cluster. Subsequently calling `join
+%% (NodeSpec)' will not work for the removed node. The removed node must be
+%% restarted first.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec leave(node_spec()) -> ok.
