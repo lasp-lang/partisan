@@ -149,7 +149,7 @@ periodic(#scamp_v1{last_message_time=LastMessageTime} = State) ->
             %% Node is isolated.
             case partisan_config:get(tracing, ?TRACING) of 
                 true ->
-                    lager:info("~p: Node is possibily isolated.", [node()]);
+                    lager:info("~p: Node is possibly isolated.", [node()]);
                 false ->
                     ok
             end,

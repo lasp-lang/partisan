@@ -267,7 +267,7 @@ reply({To, Tag}, Reply) ->
     try To ! Msg catch _:_ -> Msg end.
 
 %%-----------------------------------------------------------------
-%% Syncronously stop a generic process
+%% Synchronously stop a generic process
 %%-----------------------------------------------------------------
 stop(Process) ->
     stop(Process, normal, infinity).

@@ -122,7 +122,7 @@ handle_call({sync, Target}, _From, #state{blocks = Blocks} = State) ->
             {reply, ok, State};
         _ ->
             %% todo check for disjoint chain if there is ever a
-            %% possiblity of bad sync (I don't think there is right now)
+            %% possibility of bad sync (I don't think there is right now)
             {ok, FetchedBlocks} = fetch_from(Target, hd(Blocks)),
             Blocks1 = lists:append(FetchedBlocks, Blocks),
             {reply, ok, State#state{blocks = Blocks1}}

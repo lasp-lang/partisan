@@ -128,17 +128,17 @@ handle_call({emit, Node, ServerRef, Message},
     %% Return the message to be transmitted.
     CausalMessage = {causal, Label, Node, ServerRef, FilteredOrderBuffer, LocalClock, Message},
 
-    %% Update the order buffer with node and mesage clock.
+    %% Update the order buffer with node and message clock.
     OrderBuffer = orddict:store(Node, LocalClock, OrderBuffer0),
 
-    %% Everytime we omit a message, store the clock and message so we can regenerate the message.
+    %% Every time we omit a message, store the clock and message so we can regenerate the message.
     true = ets:insert(Storage, {LocalClock, CausalMessage}),
 
     lager:info("Emitting message with clock: ~p", [LocalClock]),
 
     {reply, {ok, LocalClock, CausalMessage}, State#state{local_clock=LocalClock, order_buffer=OrderBuffer}};
 
-%% Receive a causal messag off the wire; deliver or not depending on whether or not
+%% Receive a causal message off the wire; deliver or not depending on whether or not
 %% the causal dependencies have been satisfied.
 handle_call({receive_message, {causal, Label, _Node, _ServerRef, _IncomingOrderBuffer, MessageClock, _Message}=FullMessage}, 
             _From, 

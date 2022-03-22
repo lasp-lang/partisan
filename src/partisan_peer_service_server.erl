@@ -77,7 +77,7 @@ handle_cast(Req, State) ->
 handle_info({Tag, _RawSocket, Data}, State=#state{socket=Socket}) when ?DATA_MSG(Tag) ->
     case partisan_config:get(tracing, ?TRACING) of
         true ->
-            lager:info("Recevied data from socket: ~p", [decode(Data)]);
+            lager:info("Received data from socket: ~p", [decode(Data)]);
         false ->
             ok
     end,
@@ -134,7 +134,7 @@ handle_message({hello, Node},
     %% control messaging in the test suite execution.
     case maybe_connect_disterl(Node) of
         ok ->
-            %% Send our state to the remote service, incase they want
+            %% Send our state to the remote service, in case they want
             %% it to bootstrap.
             Manager = partisan_peer_service:manager(),
             {ok, LocalState} = Manager:get_local_state(),

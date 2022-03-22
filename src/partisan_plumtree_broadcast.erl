@@ -71,7 +71,7 @@
           %% A mapping of sender node (root of each broadcast tree)
           %% to this node's portion of the tree. Elements are
           %% added to this structure as messages rooted at a node
-          %% propogate to this node. Nodes that are never the
+          %% propagate to this node. Nodes that are never the
           %% root of a message will never have a key added to
           %% `eager_sets'
           eager_sets    :: [{nodename(), ordsets:ordset(nodename())}] | undefined,
@@ -79,14 +79,14 @@
           %% A Mapping of sender node (root of each spanning tree)
           %% to this node's set of lazy peers. Elements are added
           %% to this structure as messages rooted at a node
-          %% propogate to this node. Nodes that are never the root
+          %% propagate to this node. Nodes that are never the root
           %% of a message will never have a key added to `lazy_sets'
           lazy_sets     :: [{nodename(), ordsets:ordset(nodename())}] | undefined,
 
           %% Lazy messages that have not been acked. Messages are added to
           %% this set when a node is sent a lazy message (or when it should be
           %% sent one sometime in the future). Messages are removed when the lazy
-          %% pushes are acknowleged via graft or ignores. Entries are keyed by their
+          %% pushes are acknowledged via graft or ignores. Entries are keyed by their
           %% destination
           outstanding   :: [{nodename(), outstanding()}],
 
@@ -120,7 +120,7 @@
 %% sets are empty. If there are two nodes, each will be in the others eager set and the
 %% lazy sets will be empty. When number of members is less than 5, each node will initially
 %% have one other node in its eager set and lazy set. If there are more than five nodes
-%% each node will have at most two other nodes in its eager set and one in its lazy set, initally.
+%% each node will have at most two other nodes in its eager set and one in its lazy set, initially.
 %% In addition, after the broadcast server is started, a callback is registered with ring_events
 %% to generate membership updates as the ring changes.
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
