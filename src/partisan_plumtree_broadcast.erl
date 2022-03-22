@@ -449,7 +449,10 @@ neighbors_down(Removed, State=#state{all_members=AllMembers,
                                          {Root, Existing} <- ordsets:to_list(LazySets)]),
     %% delete outstanding messages to removed peers
     ok = ordsets:fold(
-        fun(RPeer, _) -> true = ets:delete(?PLUMTREE_OUTSTANDING, RPeer) end,
+        fun(RPeer, Acc) ->
+            _ = ets:delete(?PLUMTREE_OUTSTANDING, RPeer),
+            Acc
+        end,
         ok,
         Removed
     ),
