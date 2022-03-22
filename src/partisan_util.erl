@@ -237,9 +237,11 @@ maybe_initiate_parallel_connections(Connections0, Channel, Node, ListenAddr, Par
                     );
                 Error ->
                     ?LOG_ERROR(#{
-                        description => "Node failed connect",
+                        description => "Node failed to connect",
                         error => Error,
-                        connections => Connections0
+                        node => Node
+                        listen_address => ListenAddr,
+                        channel => Channel
                     }),
                     Connections0
             end;
