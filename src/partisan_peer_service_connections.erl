@@ -36,6 +36,7 @@
 -export([foreach/2]).
 -export([new/0]).
 -export([prune/2]).
+-export([nodes/1]).
 -export([store/3]).
 
 
@@ -112,6 +113,13 @@ prune(Pid, Connections0, {K, {Node, Entries}, Iter}) ->
 fold(Fun, Acc, Connections) ->
     maps:fold(Fun, Acc, Connections).
 
+% @doc Returns the list of nodes which have at least one connection
+nodes(Connections) ->
+    maps:keys(Connections).
+
+
+erase(#{name := Name}, Connections) ->
+    erase(Name, Connections);
 
 erase(Name, Connections) ->
     case maps:find(Name, Connections) of

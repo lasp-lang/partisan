@@ -136,7 +136,7 @@ mynode() ->
 %% much sense in running a partisan cluster on a single host.
 %% @end
 %% -----------------------------------------------------------------------------
--spec node_spec(atom()) -> {ok, node_spec()} | {error, Reason :: any()}.
+-spec node_spec(node()) -> {ok, node_spec()} | {error, Reason :: any()}.
 
 node_spec(Node) when is_atom(Node) ->
     case partisan_peer_service_manager:mynode() of
@@ -144,25 +144,19 @@ node_spec(Node) when is_atom(Node) ->
             {ok, partisan_peer_service_manager:myself()};
 
         _ ->
-            case partisan_config:get(connect_disterl, false) of
-                true ->
-                    Timeout = 15000,
-                    Result = rpc:call(
-                        Node,
-                        partisan_peer_service_manager,
-                        myself,
-                        [],
-                        Timeout
-                    ),
-                    case Result of
-                        #{name := Node} = NodeSpec ->
-                            {ok, NodeSpec};
-                        {badrpc, Reason} ->
-                            {error, Reason}
-                    end;
-
-                false ->
-                    {error, nodisterl}
+            Timeout = 15000,
+            Result = rpc:call(
+                Node,
+                partisan_peer_service_manager,
+                myself,
+                [],
+                Timeout
+            ),
+            case Result of
+                #{name := Node} = NodeSpec ->
+                    {ok, NodeSpec};
+                {badrpc, Reason} ->
+                    {error, Reason}
             end
     end.
 
@@ -172,17 +166,17 @@ node_spec(Node) when is_atom(Node) ->
 %% as `myself/0'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec node_spec(Nodename :: list() | atom(), listen_addr() | [listen_addr()]) ->
+-spec node_spec(Node :: list() | node(), listen_addr() | [listen_addr()]) ->
     {ok, node_spec()} | {error, Reason :: any()}.
 
-node_spec(Nodename, Endpoints) when is_list(Nodename) ->
-    node_spec(list_to_node(Nodename), Endpoints);
+node_spec(Node, Endpoints) when is_list(Node) ->
+    node_spec(list_to_node(Node), Endpoints);
 
-node_spec(Nodename, Endpoints) when is_atom(Nodename) ->
+node_spec(Node, Endpoints) when is_atom(Node) ->
     Addresses = coerce_listen_addr(Endpoints),
     %% We assume all nodes have the same parallelism and channel config
     Map = partisan_peer_service_manager:myself(),
-    NodeSpec = Map#{name => Nodename, listen_addrs => Addresses},
+    NodeSpec = Map#{name => Node, listen_addrs => Addresses},
     {ok, NodeSpec}.
 
 
@@ -190,7 +184,7 @@ node_spec(Nodename, Endpoints) when is_atom(Nodename) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec join(node_spec()) -> ok | {error, self_join | any()}.
+-spec join(node_spec() | node() | list) -> ok | {error, self_join | any()}.
 
 join(#{name := Node} = NodeSpec) ->
     case partisan_peer_service_manager:mynode() of
@@ -198,6 +192,14 @@ join(#{name := Node} = NodeSpec) ->
             {error, self_join};
         _ ->
             (?MANAGER):join(NodeSpec)
+    end;
+
+join(Node) ->
+    case node_spec(Node) of
+        {ok, NodeSpec} ->
+            join(NodeSpec);
+        {error, _} = Error ->
+            Error
     end.
 
 
@@ -236,7 +238,7 @@ leave() ->
 %% -----------------------------------------------------------------------------
 -spec leave(node_spec()) -> ok.
 
-leave(#{name := _} = NodeSpec) ->
+leave(#{name := Node} = NodeSpec) ->
     case partisan_peer_service_manager:mynode() of
         Node ->
             (?MANAGER):leave();

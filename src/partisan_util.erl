@@ -38,7 +38,8 @@
          pid/0,
          pid/1,
          ref/1,
-         registered_name/1]).
+         registered_name/1,
+         maps_append/3]).
 
 -compile({no_auto_import, [make_ref/0, node/1]}).
 
@@ -516,3 +517,19 @@ split(Subject0, Pattern0) ->
     Pattern = list_to_binary(Pattern0),
     Results0 = binary:split(Subject, Pattern, [global]),
     lists:map(fun(X) -> binary_to_list(X) end, Results0).
+
+
+maps_append(Key, Value, Map) ->
+    maps:update_with(
+        Key,
+        fun
+            ([]) ->
+                [Value];
+            (L) when is_list(L) ->
+                [Value | L];
+            (X) ->
+                [Value, X]
+        end,
+        [Value],
+        Map
+    ).

@@ -67,7 +67,7 @@ end_per_testcase(Case, _Config) ->
     _Config.
 
 init_per_group(with_disterl, Config) ->
-    [{disterl, true}] ++ Config;
+    [{connect_disterl, true}] ++ Config;
 init_per_group(with_scamp_v1_membership_strategy, Config) ->
     [{membership_strategy, partisan_scamp_v1_membership_strategy}] ++ Config;
 init_per_group(with_scamp_v2_membership_strategy, Config) ->
@@ -1122,7 +1122,7 @@ performance_test(Config) ->
     ResultsFile = RootDir ++ "results.csv",
     ct:pal("Writing results to: ~p", [ResultsFile]),
     {ok, FileHandle} = file:open(ResultsFile, [append]),
-    Backend = case rpc:call(Node1, partisan_config, get, [disterl]) of
+    Backend = case rpc:call(Node1, partisan_config, get, [connect_disterl]) of
         true ->
             disterl;
         _ ->

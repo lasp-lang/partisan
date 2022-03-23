@@ -47,9 +47,7 @@ start(Case, Config, Options) ->
 
     %% Load sasl.
     application:load(sasl),
-    ok = application:set_env(sasl,
-                             sasl_error_logger,
-                             false),
+    ok = application:set_env(sasl, sasl_error_logger, false),
     application:start(sasl),
 
     Servers = proplists:get_value(servers, Options, []),
@@ -196,7 +194,7 @@ start(Case, Config, Options) ->
             debug("Enabling tracing since we are in test mode....", []),
             ok = rpc:call(Node, partisan_config, set, [tracing, false]),
 
-            Disterl = case ?config(disterl, Config) of
+            Disterl = case ?config(connect_disterl, Config) of
                               undefined ->
                                   false;
                               false ->
@@ -205,7 +203,9 @@ start(Case, Config, Options) ->
                                   true
                           end,
             debug("Setting disterl to: ~p", [Disterl]),
-            ok = rpc:call(Node, partisan_config, set, [disterl, Disterl]),
+            ok = rpc:call(
+                Node, partisan_config, set, [connect_disterl, Disterl]
+            ),
 
             DisableFastReceive = case ?config(disable_fast_receive, Config) of
                               undefined ->
@@ -403,6 +403,8 @@ cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
                         end
                  end,
     lists:map(fun(OtherNode) -> cluster(Myself, OtherNode, Config) end, OtherNodes).
+
+
 cluster({_, Node}, {_, OtherNode}, Config) ->
     PeerPort = rpc:call(OtherNode,
                         partisan_config,

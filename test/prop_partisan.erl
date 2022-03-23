@@ -650,7 +650,7 @@ start_or_reload_nodes() ->
               {sync_join, false},
               {forward_options, []},
               {broadcast, false},
-              {disterl, false},
+              {connect_disterl, false},
               {hash, undefined},
               {shrinking, false},
               {replaying, false},

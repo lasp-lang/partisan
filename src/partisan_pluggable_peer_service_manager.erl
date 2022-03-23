@@ -82,16 +82,16 @@
 
 -record(state, {
     actor                       ::  actor(),
-    distance_metrics            ::  dict:dict(),
+    distance_metrics            ::  map(),
     vclock                      ::  term(),
     pending                     ::  pending(),
     membership                  ::  list(),
-    down_functions              ::  dict:dict(),
-    up_functions                ::  dict:dict(),
+    down_functions              ::  map(),
+    up_functions                ::  map(),
     out_links                   ::  [term()],
-    pre_interposition_funs      ::  dict:dict(),
-    interposition_funs          ::  dict:dict(),
-    post_interposition_funs     ::  dict:dict(),
+    pre_interposition_funs      ::  map(),
+    interposition_funs          ::  map(),
+    post_interposition_funs     ::  map(),
     sync_joins                  ::  [{node_spec(), from()}],
     connections                 ::  partisan_peer_service_connections:t(),
     membership_strategy         ::  atom(),
@@ -222,7 +222,7 @@ when is_map(Options) ->
             partisan_util:process_forward(ServerRef, Message),
             ok;
         _ ->
-            case partisan_config:get(disterl, false) of
+            case partisan_config:get(connect_disterl, false) of
                 true ->
                     partisan_util:process_forward(ServerRef, Message),
                     ok;
@@ -435,23 +435,25 @@ init([]) ->
     MembershipStrategy = partisan_config:get(membership_strategy),
     {ok, Membership, MembershipStrategyState} = MembershipStrategy:init(Actor),
 
-    DistanceMetrics = dict:new(),
 
-    {ok, #state{actor=Actor,
-                pending=[],
-                vclock=VClock,
-                pre_interposition_funs=dict:new(),
-                interposition_funs=dict:new(),
-                post_interposition_funs=dict:new(),
-                connections=Connections,
-                distance_metrics=DistanceMetrics,
-                sync_joins=[],
-                up_functions=dict:new(),
-                down_functions=dict:new(),
-                out_links=[],
-                membership=Membership,
-                membership_strategy=MembershipStrategy,
-                membership_strategy_state=MembershipStrategyState}}.
+    {ok, #state{
+        actor = Actor,
+        pending = [],
+        vclock = VClock,
+        pre_interposition_funs =  #{},
+        interposition_funs =  #{},
+        post_interposition_funs =  #{},
+        connections = Connections,
+        distance_metrics = #{},
+        sync_joins = [],
+        up_functions = #{},
+        down_functions = #{},
+        out_links = [],
+        membership = Membership,
+        membership_strategy = MembershipStrategy,
+        membership_strategy_state = MembershipStrategyState
+    }}.
+
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, state_t()) ->
@@ -463,29 +465,29 @@ handle_call({reserve, _Tag}, _From, State) ->
 handle_call({on_up, Name, Function},
             _From,
             #state{up_functions=UpFunctions0}=State) ->
-    UpFunctions = dict:append(Name, Function, UpFunctions0),
+    UpFunctions = partisan_util:maps_append(Name, Function, UpFunctions0),
     {reply, ok, State#state{up_functions=UpFunctions}};
 
 handle_call({on_down, Name, Function},
             _From,
             #state{down_functions=DownFunctions0}=State) ->
-    DownFunctions = dict:append(Name, Function, DownFunctions0),
+    DownFunctions = partisan_util:maps_append(Name, Function, DownFunctions0),
     {reply, ok, State#state{down_functions=DownFunctions}};
 
 handle_call({add_pre_interposition_fun, Name, PreInterpositionFun}, _From, #state{pre_interposition_funs=PreInterpositionFuns0}=State) ->
-    PreInterpositionFuns = dict:store(Name, PreInterpositionFun, PreInterpositionFuns0),
+    PreInterpositionFuns = maps:put(Name, PreInterpositionFun, PreInterpositionFuns0),
     {reply, ok, State#state{pre_interposition_funs=PreInterpositionFuns}};
 
 handle_call({remove_pre_interposition_fun, Name}, _From, #state{pre_interposition_funs=PreInterpositionFuns0}=State) ->
-    PreInterpositionFuns = dict:erase(Name, PreInterpositionFuns0),
+    PreInterpositionFuns = maps:remove(Name, PreInterpositionFuns0),
     {reply, ok, State#state{pre_interposition_funs=PreInterpositionFuns}};
 
 handle_call({add_interposition_fun, Name, InterpositionFun}, _From, #state{interposition_funs=InterpositionFuns0}=State) ->
-    InterpositionFuns = dict:store(Name, InterpositionFun, InterpositionFuns0),
+    InterpositionFuns = maps:put(Name, InterpositionFun, InterpositionFuns0),
     {reply, ok, State#state{interposition_funs=InterpositionFuns}};
 
 handle_call({remove_interposition_fun, Name}, _From, #state{interposition_funs=InterpositionFuns0}=State) ->
-    InterpositionFuns = dict:erase(Name, InterpositionFuns0),
+    InterpositionFuns = maps:remove(Name, InterpositionFuns0),
     {reply, ok, State#state{interposition_funs=InterpositionFuns}};
 
 handle_call(get_interposition_funs, _From, #state{interposition_funs=InterpositionFuns}=State) ->
@@ -495,31 +497,38 @@ handle_call(get_pre_interposition_funs, _From, #state{pre_interposition_funs=Pre
     {reply, {ok, PreInterpositionFuns}, State};
 
 handle_call({add_post_interposition_fun, Name, PostInterpositionFun}, _From, #state{post_interposition_funs=PostInterpositionFuns0}=State) ->
-    PostInterpositionFuns = dict:store(Name, PostInterpositionFun, PostInterpositionFuns0),
+    PostInterpositionFuns = maps:put(Name, PostInterpositionFun, PostInterpositionFuns0),
     {reply, ok, State#state{post_interposition_funs=PostInterpositionFuns}};
 
 handle_call({remove_post_interposition_fun, Name}, _From, #state{post_interposition_funs=PostInterpositionFuns0}=State) ->
-    PostInterpositionFuns = dict:erase(Name, PostInterpositionFuns0),
+    PostInterpositionFuns = maps:remove(Name, PostInterpositionFuns0),
     {reply, ok, State#state{post_interposition_funs=PostInterpositionFuns}};
 
 %% For compatibility with external membership services.
-handle_call({update_members, Nodes},
-            _From,
-            #state{membership=Membership}=State) ->
+handle_call({update_members, Nodes}, _From, #state{} = State) ->
+    Membership = State#state.membership,
+
     %% Get the current membership.
     CurrentMembership = [N || #{name := N} <- Membership],
+
     %% need to support Nodes as a list of maps or atoms
     %% TODO: require each node to be a map
-    NodesNames = lists:map(fun(#{name := N}) ->
-                                   N;
-                              (N) when is_atom(N) ->
-                                   N
-                           end, Nodes),
+    NodesNames = lists:map(
+        fun
+            (#{name := N}) ->
+                N;
+            (N) when is_atom(N) ->
+                N
+        end,
+        Nodes
+    ),
 
     %% Compute leaving list.
-    LeavingNodes = lists:filter(fun(N) ->
-                                        not lists:member(N, NodesNames)
-                                end, CurrentMembership),
+    LeavingNodes = lists:filter(
+        fun(N) -> not lists:member(N, NodesNames) end,
+        CurrentMembership
+    ),
+
     %% Issue leaves.
     State1 = lists:foldl(
         fun(N, S) ->
@@ -555,6 +564,11 @@ handle_call({update_members, Nodes},
                                     lists:member(N, NodesNames)
                             end, Pending),
 
+    %% Finally schedule the removal of connections
+    %% We do this async because internal_leave will schedule the sending of
+    %% membership update messages
+    gen_server:cast(?MODULE, {kill_connections, LeavingNodes}),
+
     {reply, ok, State2#state{pending=Pending1}};
 
 handle_call({leave, #{name := Name} = Node}, From, State0) ->
@@ -565,14 +579,18 @@ handle_call({leave, #{name := Name} = Node}, From, State0) ->
         Name ->
             gen_server:reply(From, ok),
 
-            {stop, normal, State};
+            %% We need to stop (to cleanup all connections and state) or do it
+            %% manually. However, we cannot do it straight away as
+            %% internal_leave/2 has send some async messages we need to process
+            %% (casts to ourself) so we cast ourselves a shutdown message.
+            gen_server:cast(?MODULE, stop),
+            {noreply, State};
         _ ->
+            gen_server:cast(?MODULE, {kill_connections, [Node]}),
             {reply, ok, State}
     end;
 
-handle_call({join, #{name := Name} = Node},
-            _From,
-            State0) ->
+handle_call({join, #{name := Name} = Node}, _From, State0) ->
     case partisan_peer_service_manager:mynode() of
         Name ->
             %% Ignoring self join.
@@ -585,9 +603,7 @@ handle_call({join, #{name := Name} = Node},
             {reply, ok, State}
     end;
 
-handle_call({sync_join, #{name := Name} = Node},
-            From,
-            State0) ->
+handle_call({sync_join, #{name := Name} = Node}, From, State0) ->
     ?LOG_DEBUG("Starting synchronous join to ~p from ~p", [Node, partisan_peer_service_manager:mynode()]),
 
     case partisan_peer_service_manager:mynode() of
@@ -604,7 +620,13 @@ handle_call({sync_join, #{name := Name} = Node},
 
 handle_call({send_message, Name, Channel, Message}, _From,
             #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
-    schedule_self_message_delivery(Name, Message, Channel, ?DEFAULT_PARTITION_KEY, PreInterpositionFuns),
+    schedule_self_message_delivery(
+        Name,
+        Message,
+        Channel,
+        ?DEFAULT_PARTITION_KEY,
+        PreInterpositionFuns
+    ),
     {reply, ok, State};
 
 handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options}=_FullMessage,
@@ -617,7 +639,7 @@ handle_call({forward_message, Name, Channel, Clock, PartitionKey, ServerRef, Ori
             PreInterpositionFun({forward_message, Name, OriginalMessage}),
             ok
         end,
-        dict:fold(PreFoldFun, ok, PreInterpositionFuns),
+        maps:fold(PreFoldFun, ok, PreInterpositionFuns),
 
         %% Once pre-interposition returns, then schedule for delivery.
         gen_server:cast(?MODULE, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options})
@@ -645,7 +667,7 @@ handle_call({receive_message, Peer, OriginalMessage},
             PreInterpositionFun({receive_message, Peer, OriginalMessage}),
             ok
         end,
-        dict:fold(PreFoldFun, ok, PreInterpositionFuns),
+        maps:fold(PreFoldFun, ok, PreInterpositionFuns),
 
         %% Once pre-interposition returns, then schedule for delivery.
         gen_server:cast(?MODULE, {receive_message, From, Peer, OriginalMessage})
@@ -685,6 +707,21 @@ handle_call(Event, _From, State) ->
 
 %% @private
 -spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
+
+handle_cast(stop, State) ->
+    %% We send ourselves this message when we left the cluster
+    %% We stop to cleanup, supervisor will start us again, this will kill all
+    %% connections.
+    {stop, normal, State};
+    % {noreply, State};
+
+handle_cast({kill_connections, Nodes}, State0) ->
+    Connections = State0#state.connections,
+    State = State0#state{
+        connections = kill_connections(Nodes, Connections)
+    },
+    {noreply, State};
+
 handle_cast({receive_message, From, Peer, OriginalMessage},
             #state{interposition_funs=InterpositionFuns,
                    post_interposition_funs=PostInterpositionFuns} = State) ->
@@ -694,14 +731,14 @@ handle_cast({receive_message, From, Peer, OriginalMessage},
         InterpositionResult = InterpositionFun({receive_message, Peer, M}),
         InterpositionResult
     end,
-    Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
+    Message = maps:fold(FoldFun, OriginalMessage, InterpositionFuns),
 
     %% Fire post-interposition functions.
     PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
         PostInterpositionFun({receive_message, Peer, OriginalMessage}, {receive_message, Peer, Message}),
         ok
     end,
-    dict:fold(PostFoldFun, ok, PostInterpositionFuns),
+    maps:fold(PostFoldFun, ok, PostInterpositionFuns),
 
     case Message of
         undefined ->
@@ -729,7 +766,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
         InterpositionResult = InterpositionFun({forward_message, Name, M}),
         InterpositionResult
     end,
-    Message = dict:fold(FoldFun, OriginalMessage, InterpositionFuns),
+    Message = maps:fold(FoldFun, OriginalMessage, InterpositionFuns),
 
     %% Increment the clock.
     VClock = partisan_vclock:increment(mynode(), VClock0),
@@ -794,7 +831,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                 PostInterpositionFun({forward_message, Name, OriginalMessage}, {forward_message, Name, FullMessage}),
                 ok
             end,
-            dict:fold(PostFoldFun, ok, PostInterpositionFuns),
+            maps:fold(PostFoldFun, ok, PostInterpositionFuns),
 
             ?LOG_DEBUG(
                 "~p: Message ~p after send interposition is: ~p",
@@ -829,7 +866,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                         PostInterpositionFun({forward_message, Name, WrappedOriginalMessage}, {forward_message, Name, WrappedMessage}),
                         ok
                     end,
-                    dict:fold(PostFoldFun, ok, PostInterpositionFuns),
+                    maps:fold(PostFoldFun, ok, PostInterpositionFuns),
 
                     %% Send message along.
                     do_send_message(Name,
@@ -853,7 +890,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                         PostInterpositionFun({forward_message, Name, WrappedOriginalMessage}, {forward_message, Name, WrappedMessage}),
                         ok
                     end,
-                    dict:fold(PostFoldFun, ok, PostInterpositionFuns),
+                    maps:fold(PostFoldFun, ok, PostInterpositionFuns),
 
                     ?LOG_DEBUG(
                         "~p: Sending message ~p with clock: ~p",
@@ -912,9 +949,7 @@ handle_info(distance, #state{pending=Pending,
                              connections=Connections0,
                              pre_interposition_funs=PreInterpositionFuns}=State) ->
     %% Establish any new connections.
-    Connections = establish_connections(Pending,
-                                        Membership,
-                                        Connections0),
+    Connections = establish_connections(Pending, Membership, Connections0),
 
     %% Record time.
     SourceTime = erlang:timestamp(),
@@ -923,7 +958,13 @@ handle_info(distance, #state{pending=Pending,
     SourceNode = partisan_peer_service_manager:myself(),
 
     lists:foreach(fun(Peer) ->
-        schedule_self_message_delivery(Peer, {ping, SourceNode, Peer, SourceTime}, ?MEMBERSHIP_PROTOCOL_CHANNEL, ?DEFAULT_PARTITION_KEY, PreInterpositionFuns)
+        schedule_self_message_delivery(
+            Peer,
+            {ping, SourceNode, Peer, SourceTime},
+            ?MEMBERSHIP_PROTOCOL_CHANNEL,
+            ?DEFAULT_PARTITION_KEY,
+            PreInterpositionFuns
+        )
     end, Membership),
 
     schedule_distance(),
@@ -944,13 +985,17 @@ handle_info(periodic, #state{pending=Pending,
     {ok, Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:periodic(MembershipStrategyState0),
 
     %% Establish any new connections.
-    Connections = establish_connections(Pending,
-                                        Membership,
-                                        Connections0),
+    Connections = establish_connections(Pending, Membership, Connections0),
 
     %% Send outgoing messages.
     lists:foreach(fun({Peer, Message}) ->
-        schedule_self_message_delivery(Peer, Message, ?MEMBERSHIP_PROTOCOL_CHANNEL, ?DEFAULT_PARTITION_KEY, PreInterpositionFuns)
+        schedule_self_message_delivery(
+            Peer,
+            Message,
+            ?MEMBERSHIP_PROTOCOL_CHANNEL,
+            ?DEFAULT_PARTITION_KEY,
+            PreInterpositionFuns
+        )
     end, OutgoingMessages),
 
     schedule_periodic(),
@@ -976,7 +1021,7 @@ handle_info(retransmit, #state{pre_interposition_funs=PreInterpositionFuns}=Stat
             PreInterpositionFun({forward_message, Name, Message}),
             ok
         end,
-        dict:fold(PreFoldFun, ok, PreInterpositionFuns),
+        maps:fold(PreFoldFun, ok, PreInterpositionFuns),
 
         %% Schedule message for redelivery.
         RetryOptions = Options#{retransmission => true},
@@ -1009,9 +1054,7 @@ handle_info(connections, #state{pending=Pending,
                                 sync_joins=SyncJoins0,
                                 connections=Connections0}=State) ->
     %% Trigger connection.
-    Connections = establish_connections(Pending,
-                                        Membership,
-                                        Connections0),
+    Connections = establish_connections(Pending, Membership, Connections0),
 
     %% Advance sync_join's if we have enough open connections to remote host.
     SyncJoins = lists:foldl(fun({Node, FromPid}, Joins) ->
@@ -1066,7 +1109,13 @@ handle_info({connected, Node, _Tag, RemoteState},
 
             %% Gossip the new membership.
             lists:foreach(fun({Peer, Message}) ->
-                schedule_self_message_delivery(Peer, Message, ?MEMBERSHIP_PROTOCOL_CHANNEL, ?DEFAULT_PARTITION_KEY, PreInterpositionFuns)
+                schedule_self_message_delivery(
+                    Peer,
+                    Message,
+                    ?MEMBERSHIP_PROTOCOL_CHANNEL,
+                    ?DEFAULT_PARTITION_KEY,
+                    PreInterpositionFuns
+                )
             end, OutgoingMessages),
 
             %% Announce to the peer service.
@@ -1147,29 +1196,41 @@ gen_actor() ->
 
 %% @private
 without_me(Members) ->
-    lists:filter(fun(#{name := Name}) ->
-                         case partisan_peer_service_manager:mynode() of
-                             Name ->
-                                 false;
-                             _ ->
-                                 true
-                         end
-                 end, Members).
+    MyNode = partisan_peer_service_manager:mynode(),
+    lists:filter(fun(#{name := Name}) -> Name =/= MyNode end, Members).
+
 
 %% @private
-establish_connections(Pending,
-                      Membership,
-                      Connections0) ->
+establish_connections(Pending, Membership, Connections0) ->
+
     %% Compute list of nodes that should be connected.
     Peers = without_me(Membership ++ Pending),
 
     %% Reconnect disconnected members and members waiting to join.
-    Connections = lists:foldl(fun(Peer, Cs) ->
-                                partisan_util:maybe_connect(Peer, Cs)
-                              end, Connections0, without_me(Peers)),
+    lists:foldl(
+        fun(Peer, Acc) ->
+            partisan_util:maybe_connect(Peer, Acc)
+        end,
+        Connections0,
+        without_me(Peers)
+    ).
 
-    %% Return the updated list of connections.
-    Connections.
+
+%% @private
+kill_connections(Nodenames0, Connections0) ->
+    MyNode = partisan_peer_service_manager:mynode(),
+    Nodenames = lists:filter(
+        fun(Node) -> Node =/= MyNode end, Nodenames0
+    ),
+
+    lists:foldl(
+        fun(Nodename, Acc) ->
+            partisan_peer_service_connections:erase(Nodename, Acc)
+        end,
+        Connections0,
+        Nodenames
+    ).
+
 
 %% @private
 handle_message({ping, SourceNode, DestinationNode, SourceTime},
@@ -1179,12 +1240,16 @@ handle_message({ping, SourceNode, DestinationNode, SourceTime},
                       membership=Membership,
                       pre_interposition_funs=PreInterpositionFuns}=State) ->
     %% Establish any new connections.
-    Connections = establish_connections(Pending,
-                                        Membership,
-                                        Connections0),
+    Connections = establish_connections(Pending, Membership, Connections0),
 
     %% Send ping response.
-    schedule_self_message_delivery(SourceNode, {pong, SourceNode, DestinationNode, SourceTime}, ?MEMBERSHIP_PROTOCOL_CHANNEL, ?DEFAULT_PARTITION_KEY, PreInterpositionFuns),
+    schedule_self_message_delivery(
+        SourceNode,
+        {pong, SourceNode, DestinationNode, SourceTime},
+        ?MEMBERSHIP_PROTOCOL_CHANNEL,
+        ?DEFAULT_PARTITION_KEY,
+        PreInterpositionFuns
+    ),
 
     optional_gen_server_reply(From, ok),
 
@@ -1203,7 +1268,7 @@ handle_message({pong, SourceNode, DestinationNode, SourceTime},
     ),
 
     %% Update differences.
-    DistanceMetrics = dict:store(DestinationNode, Difference, DistanceMetrics0),
+    DistanceMetrics = maps:put(DestinationNode, Difference, DistanceMetrics0),
 
     %% Store in pdict.
     put(distance_metrics, DistanceMetrics),
@@ -1221,12 +1286,13 @@ handle_message({membership_strategy, ProtocolMessage},
                       membership_strategy_state=MembershipStrategyState0,
                       pre_interposition_funs=PreInterpositionFuns}=State) ->
     %% Process the protocol message.
-    {ok, Membership, OutgoingMessages, MembershipStrategyState} = MembershipStrategy:handle_message(MembershipStrategyState0, ProtocolMessage),
+    {ok, Membership, OutgoingMessages, MembershipStrategyState} =
+        MembershipStrategy:handle_message(
+            MembershipStrategyState0, ProtocolMessage
+        ),
 
     %% Establish any new connections.
-    Connections = establish_connections(Pending,
-                                        Membership,
-                                        Connections0),
+    Connections = establish_connections(Pending, Membership, Connections0),
 
     %% Update users of the peer service.
     case Membership of
@@ -1237,9 +1303,24 @@ handle_message({membership_strategy, ProtocolMessage},
     end,
 
     %% Send outgoing messages.
-    lists:foreach(fun({Peer, Message}) ->
-        schedule_self_message_delivery(Peer, Message, ?MEMBERSHIP_PROTOCOL_CHANNEL, ?DEFAULT_PARTITION_KEY, PreInterpositionFuns)
-    end, OutgoingMessages),
+    lists:foreach(
+        fun({Peer, Message}) ->
+            schedule_self_message_delivery(
+                Peer,
+                Message,
+                ?MEMBERSHIP_PROTOCOL_CHANNEL,
+                ?DEFAULT_PARTITION_KEY,
+                PreInterpositionFuns
+            )
+        end,
+        OutgoingMessages
+    ),
+
+    NewState = State#state{
+        membership = Membership,
+        connections = Connections,
+        membership_strategy_state = MembershipStrategyState
+    },
 
     case lists:member(partisan_peer_service_manager:myself(), Membership) of
         false ->
@@ -1247,19 +1328,17 @@ handle_message({membership_strategy, ProtocolMessage},
                 description => "Shutting down: membership doesn't contain us",
                 reason => "We've been removed from the cluster."
             }),
+
             ?LOG_DEBUG(#{
                 membership => Membership
             }),
+
             %% Shutdown if we've been removed from the cluster.
-            {stop, normal, State#state{membership=Membership,
-                                       connections=Connections,
-                                       membership_strategy_state=MembershipStrategyState}};
+            {stop, normal, NewState};
+
         true ->
             optional_gen_server_reply(From, ok),
-
-            {noreply, State#state{membership=Membership,
-                                  connections=Connections,
-                                  membership_strategy_state=MembershipStrategyState}}
+            {noreply, NewState}
     end;
 
 %% Causal and acknowledged messages.
@@ -1433,14 +1512,14 @@ up(#{name := Name}, State) ->
 
 up(Name, #state{up_functions = UpFunctions}) ->
     %% Notify functions matching the wildcard '_'
-    Any = case dict:find('_', UpFunctions) of
+    Any = case maps:find('_', UpFunctions) of
         {ok, Val} ->
             Val;
         error ->
             []
     end,
 
-    case dict:find(Name, UpFunctions) of
+    case maps:find(Name, UpFunctions) of
         error ->
             ok;
         {ok, Functions} ->
@@ -1461,14 +1540,14 @@ down(#{name := Name}, State) ->
 
 down(Name, #state{down_functions = DownFunctions}) ->
     %% Notify functions matching the wildcard 'any'
-    Any = case dict:find('_', DownFunctions) of
+    Any = case maps:find('_', DownFunctions) of
         {ok, Val} ->
             Val;
         error ->
             []
     end,
 
-    case dict:find(Name, DownFunctions) of
+    case maps:find(Name, DownFunctions) of
         error ->
             ok;
         {ok, Functions} ->
@@ -1499,26 +1578,35 @@ internal_leave(#{name := Name} = Node,
     {ok, Membership, OutgoingMessages, MembershipStrategyState} =
         MembershipStrategy:leave(MembershipStrategyState0, Node),
 
+
+    ?LOG_INFO(#{
+        description => "Processing leave",
+        leaving_node => Name,
+        outgoing_messages => OutgoingMessages,
+        new_membership => Membership
+    }),
+
     %% Establish any new connections.
-    Connections = establish_connections(Pending,
-                                        Membership,
-                                        Connections0),
+    Connections = establish_connections(Pending, Membership, Connections0),
 
     %% Transmit outgoing messages.
     lists:foreach(
-        fun({Peer, Message}) ->
-            schedule_self_message_delivery(
-                Peer,
-                Message,
-                ?MEMBERSHIP_PROTOCOL_CHANNEL,
-                ?DEFAULT_PARTITION_KEY,
-                PreInterpositionFuns
-            )
+        fun
+            ({#{name := Peername}, Message}) ->
+                schedule_self_message_delivery(
+                    Peername,
+                    Message,
+                    ?MEMBERSHIP_PROTOCOL_CHANNEL,
+                    ?DEFAULT_PARTITION_KEY,
+                    PreInterpositionFuns
+                )
         end,
         OutgoingMessages
     ),
 
-    case partisan_config:get(connect_disterl) of
+    partisan_peer_service_events:update(Membership),
+
+    case partisan_config:get(connect_disterl, false) of
         true ->
             %% call the net_kernel:disconnect(Node) function to leave erlang network explicitly
             net_kernel:disconnect(Name);
@@ -1526,11 +1614,12 @@ internal_leave(#{name := Name} = Node,
             ok
     end,
 
-    partisan_peer_service_events:update(Membership),
+    State#state{
+        membership = Membership,
+        connections = Connections,
+        membership_strategy_state = MembershipStrategyState
+    }.
 
-    State#state{membership=Membership,
-                connections=Connections,
-                membership_strategy_state=MembershipStrategyState}.
 
 %% @private
 internal_join(#{name := Name} = Node,
@@ -1539,7 +1628,7 @@ internal_join(#{name := Name} = Node,
                      membership=Membership,
                      sync_joins=SyncJoins0,
                      connections=Connections0}=State) ->
-    case partisan_config:get(connect_disterl) of
+    case partisan_config:get(connect_disterl, false) of
         true ->
             %% Maintain disterl connection for control messages.
             _ = net_kernel:connect_node(Name);
@@ -1562,13 +1651,13 @@ internal_join(#{name := Name} = Node,
     end,
 
     %% Trigger connection.
-    Connections = establish_connections(Pending,
-                                        Membership,
-                                        Connections0),
+    Connections = establish_connections(Pending, Membership, Connections0),
 
-    State#state{pending=Pending,
-                sync_joins=SyncJoins,
-                connections=Connections}.
+    State#state{
+        pending = Pending,
+        sync_joins = SyncJoins,
+        connections = Connections
+    }.
 
 %% @private
 fully_connected(Node, Connections) ->
@@ -1644,7 +1733,14 @@ do_tree_forward(Node, Channel, PartitionKey, Message, _Connections, Options, TTL
         ),
 
         RelayMessage = {relay_message, Node, Message, TTL - 1},
-        schedule_self_message_delivery(N, RelayMessage, Channel, PartitionKey, maps:without([transitive], Options), PreInterpositionFuns)
+        schedule_self_message_delivery(
+            N,
+            RelayMessage,
+            Channel,
+            PartitionKey,
+            maps:without([transitive], Options),
+            PreInterpositionFuns
+        )
     end, OutLinks),
     ok.
 
@@ -1678,13 +1774,15 @@ schedule_tree_refresh() ->
     end.
 
 %% @private
-schedule_self_message_delivery(Name, Message, Channel, PartitionKey, PreInterpositionFuns) ->
+schedule_self_message_delivery(
+    Name, Message, Channel, PartitionKey, PreInterpositionFuns) ->
     schedule_self_message_delivery(
         Name, Message, Channel, PartitionKey, #{}, PreInterpositionFuns
     ).
 
 %% @private
-schedule_self_message_delivery(Name, Message, Channel, PartitionKey, Options, PreInterpositionFuns) ->
+schedule_self_message_delivery(
+    Name, Message, Channel, PartitionKey, Options, PreInterpositionFuns) ->
     %% Run all interposition functions.
     DeliveryFun = fun() ->
         %% Fire pre-interposition functions.
@@ -1696,10 +1794,21 @@ schedule_self_message_delivery(Name, Message, Channel, PartitionKey, Options, Pr
             PreInterpositionFun({forward_message, Name, Message}),
             ok
         end,
-        dict:fold(PreFoldFun, ok, PreInterpositionFuns),
+
+        maps:fold(PreFoldFun, ok, PreInterpositionFuns),
 
         %% Once pre-interposition returns, then schedule for delivery.
-        gen_server:cast(?MODULE, {forward_message, undefined, Name, Channel, undefined, PartitionKey, ?MODULE, Message, Options})
+        gen_server:cast(?MODULE, {
+            forward_message,
+            undefined,
+            Name,
+            Channel,
+            undefined,
+            PartitionKey,
+            ?MODULE,
+            Message,
+            Options
+        })
     end,
 
     case partisan_config:get(replaying, false) of
@@ -1719,7 +1828,13 @@ send_acknowledgement(Name, MessageClock, PreInterpositionFuns) ->
     Message = {ack, MessageClock},
 
     %% Send on the default channel.
-    schedule_self_message_delivery(Name, Message, ?DEFAULT_CHANNEL, ?DEFAULT_PARTITION_KEY, PreInterpositionFuns).
+    schedule_self_message_delivery(
+        Name,
+        Message,
+        ?DEFAULT_CHANNEL,
+        ?DEFAULT_PARTITION_KEY,
+        PreInterpositionFuns
+    ).
 
 %% @private
 optional_gen_server_reply(From, Response) ->
