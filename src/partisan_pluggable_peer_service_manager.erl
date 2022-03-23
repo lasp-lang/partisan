@@ -1322,6 +1322,10 @@ handle_message({membership_strategy, ProtocolMessage},
         membership_strategy_state = MembershipStrategyState
     },
 
+    LeavingNodes = leaving_nodes(NewState),
+
+    gen_server:cast(?MODULE, {kill_connections, LeavingNodes}),
+
     case lists:member(partisan_peer_service_manager:myself(), Membership) of
         false ->
             ?LOG_INFO(#{
@@ -1561,6 +1565,22 @@ down(Name, #state{down_functions = DownFunctions}) ->
             ],
             ok
     end.
+
+
+
+leaving_nodes(State) ->
+    Membership = State#state.membership,
+    Connections = State#state.connections,
+
+    Connected = sets:from_list(
+        partisan_peer_service_connections:nodes(Connections)
+    ),
+
+    Members = sets:from_list([Node || #{name := Node} <- Membership]),
+
+    sets:to_list(sets:subtract(Connected, Members)).
+
+
 
 %% @private
 internal_leave(#{name := Name} = Node,
@@ -1853,4 +1873,6 @@ forward_options() ->
         Map when is_map(Map) ->
             Map
     end.
+
+
 
