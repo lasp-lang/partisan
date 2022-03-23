@@ -271,7 +271,7 @@ handle_info(?REFRESH_MESSAGE, #orchestration_strategy_state{orchestration_strate
         {client, partisan_hyparview_peer_service_manager} ->
             %% If we're the server, and we're in HyParView, clients will
             %% ask the server to join the overlay and force outbound
-            %% conenctions to the clients.
+            %% connections to the clients.
             Servers;
         {server, partisan_hyparview_peer_service_manager} ->
             %% If we're in HyParView, and we're a client, only ever
@@ -281,7 +281,7 @@ handle_info(?REFRESH_MESSAGE, #orchestration_strategy_state{orchestration_strate
         {client, partisan_hyparview_xbot_peer_service_manager} ->
             %% If we're the server, and we're in HyParView, clients will
             %% ask the server to join the overlay and force outbound
-            %% conenctions to the clients.
+            %% connections to the clients.
             Servers;
         {server, partisan_hyparview_xbot_peer_service_manager} ->
             %% If we're in HyParView, and we're a client, only ever

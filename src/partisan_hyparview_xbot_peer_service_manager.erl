@@ -707,7 +707,7 @@ process_candidate([OldNode | RestActiveNodes], CandidateNode, #state{myself=Init
 	IsBetter = is_better(?XPARAM, CandidateNode, OldNode),
 	if IsBetter ->
 		NodeConnections = partisan_util:maybe_connect(CandidateNode, Connections),
-		% if cadidate is better that first node in active view, send optimization message
+		% if candidate is better that first node in active view, send optimization message
 		do_send_message(CandidateNode,{optimization, undefined, OldNode, InitiatorNode, CandidateNode, undefined},NodeConnections),
 		lager:debug("XBOT: Optimization message sent to Node ~p from ~p", [CandidateName, InitiatorName]);
 	   true ->
@@ -1172,7 +1172,7 @@ handle_message({optimization_reply, true, _, InitiatorNode, CandidateNode, undef
 	#{name := InitiatorName} = InitiatorNode,
 	#{name := CandidateName} = CandidateNode,
 	lager:debug("XBOT: Received optimization reply message at Node ~p from ~p", [InitiatorName, CandidateName]),
-	%% Revise this behaviour, when candidate accepts inmediatly because it has availability in his active view
+	%% Revise this behaviour, when candidate accepts immediately because it has availability in his active view
 	%% what to do with old node?? we cannot disconnect from it because maybe it will be isolated
 	%Check = is_in_active_view(OldNode, Active),
 	%if Check ->

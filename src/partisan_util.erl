@@ -385,7 +385,7 @@ registered_name(Name) ->
 process_forward(ServerRef, Message) ->
     case partisan_config:get(tracing, ?TRACING) of
         true ->
-            lager:info("node ~p recieved message ~p for ~p", [node(), Message, ServerRef]);
+            lager:info("node ~p received message ~p for ~p", [node(), Message, ServerRef]);
         false ->
             ok
     end,

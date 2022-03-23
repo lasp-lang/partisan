@@ -256,14 +256,14 @@ receive_message(Peer, {forward_message, ServerRef, {'$partisan_padded', _Padding
 receive_message(_Peer, {forward_message, _ServerRef, {causal, Label, _, _, _, _, _} = Message}) ->
     partisan_causality_backend:receive_message(Label, Message);
 receive_message(Peer, {forward_message, ServerRef, Message} = FullMessage) ->
-    % lager:info("in mesage receive at node ~p for peer ~p: ~p", [node(), Peer, FullMessage]),
+    % lager:info("in message receive at node ~p for peer ~p: ~p", [node(), Peer, FullMessage]),
 
     case partisan_config:get(disable_fast_receive, false) of
         true ->
-            % lager:info("in mesage receive at node ~p for peer ~p FAST RECEIVE DISABLE: ~p", [node(), Peer, Message]),
+            % lager:info("in message receive at node ~p for peer ~p FAST RECEIVE DISABLE: ~p", [node(), Peer, Message]),
             gen_server:call(?MODULE, {receive_message, Peer, FullMessage}, infinity);
         false ->
-            % lager:info("in mesage receive at node ~p for peer ~p FAST RECEIVE NOT DISABLE", [node(), Peer]),
+            % lager:info("in message receive at node ~p for peer ~p FAST RECEIVE NOT DISABLE", [node(), Peer]),
             partisan_util:process_forward(ServerRef, Message)
     end;
 receive_message(Peer, Message) ->
@@ -715,7 +715,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                     %% We don't have a clock yet, get one using the causality backend.
                     {ok, LocalClock0, CausalMessage} = partisan_causality_backend:emit(CausalLabel, Name, ServerRef, Message),
 
-                    %% Wrap the clock wih a scope.
+                    %% Wrap the clock with a scope.
                     %% TODO: Maybe do this wrapping inside of the causality backend.
                     LocalClock = {CausalLabel, LocalClock0},
 
