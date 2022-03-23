@@ -1472,28 +1472,32 @@ basic_test(Config) ->
                      end,
 
     VerifyConnectionsFun = fun(Node, Channel, Parallelism) ->
-                                %% Get list of connections.
-                                {ok, Connections} = ConnectionsFun(Node),
+        %% Get list of connections.
+        {ok, Connections} = ConnectionsFun(Node),
 
-                                %% Verify we have enough connections.
-                                dict:fold(fun(_N, Active, Acc) ->
-                                    Filtered = lists:filter(fun({_, C, _}) ->
-                                        case C of
-                                            Channel ->
-                                                true;
-                                            _ ->
-                                                false
-                                        end
-                                    end, Active),
+        %% Verify we have enough connections.
+        peer_service_connections:fold(
+            fun(_N, Active, Acc) ->
+                Filtered = lists:filter(fun({_, C, _}) ->
+                    case C of
+                        Channel ->
+                            true;
+                        _ ->
+                            false
+                    end
+                end, Active),
 
-                                    case length(Filtered) == Parallelism of
-                                        true ->
-                                            Acc andalso true;
-                                        false ->
-                                            Acc andalso false
-                                    end
-                                end, true, Connections)
-                          end,
+                case length(Filtered) == Parallelism of
+                    true ->
+                        Acc andalso true;
+                    false ->
+                        Acc andalso false
+                end
+            end,
+            true,
+            Connections
+        )
+    end,
 
     lists:foreach(fun({_Name, Node}) ->
                         %% Get enabled parallelism.

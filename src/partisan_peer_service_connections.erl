@@ -21,13 +21,6 @@
 %% @doc API for managing peer service connections
 -module(partisan_peer_service_connections).
 
--export([new/0,
-         find/2,
-         store/3,
-         prune/2,
-         erase/2,
-         foreach/2]).
-
 -include("partisan.hrl").
 
 -type t() :: #{node() := node_connections()}.
@@ -36,6 +29,15 @@
 -type entry() :: {listen_addr(), channel(), pid()}.
 
 -export_type([t/0]).
+
+-export([erase/2]).
+-export([find/2]).
+-export([fold/3]).
+-export([foreach/2]).
+-export([new/0]).
+-export([prune/2]).
+-export([store/3]).
+
 
 %% @doc Creates a new dictionary of connections.
 -spec new() -> t().
@@ -59,9 +61,8 @@ find(#{name := Name}, Connections) ->
     find(Name, Connections).
 
 %% @doc Store a connection pid
--spec store(Node :: node_spec(),
-            Entry :: entry(),
-            Connections :: t()) -> t().
+-spec store(Node :: node_spec(), Entry :: entry(), Connections :: t()) -> t().
+
 store(Node, {_ListenAddr, _Channel, _Pids} = Entry, Connections) ->
     #{name := Name} = Node,
     case find(Node, Connections) of
@@ -107,6 +108,9 @@ prune(Pid, Connections0, {K, {Node, Entries}, Iter}) ->
             prune(Pid, Connections0, maps:next(Iter))
     end.
 
+
+fold(Fun, Acc, Connections) ->
+    maps:fold(Fun, Acc, Connections).
 
 
 erase(Name, Connections) ->
