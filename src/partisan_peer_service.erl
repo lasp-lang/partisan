@@ -514,7 +514,6 @@ exchanges() ->
 %% running.
 %% @end
 %% -----------------------------------------------------------------------------
-
 -spec exchanges(node()) -> partisan_plumtree_broadcast:exchanges().
 
 exchanges(Node) ->

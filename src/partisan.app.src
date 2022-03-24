@@ -1,17 +1,25 @@
-{application,partisan,
- [{description,"Scalable peer service for Lasp"},
-  {vsn,"4.2.6"},
-  {registered,[]},
-  {applications,[kernel,
-                 stdlib,
-                 crypto,
-                 types,
-                 acceptor_pool,
-                 ssl,
-                 uuid]},
-  {mod,{partisan_app,[]}},
-  {modules,[]},
-  {included_applications,[]},
-  {env,[{partisan,"data"}]},
-  {licenses,["Apache 2.0"]},
-  {links,[{"Github","https://github.com/lasp-lang/partisan"}]}]}.
+{application, partisan, [
+    {description,
+        "Scalable and flexible TCP-based membership system for Erlang/Elixir."
+    },
+    {vsn, "4.2.6"},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib,
+        crypto,
+        types,
+        acceptor_pool,
+        ssl,
+        uuid
+    ]},
+    {mod, {partisan_app,[]}},
+    {modules, []},
+    {included_applications, []},
+    {env, []},
+    {licenses, ["Apache 2.0"]},
+    {links, [
+        {"Github","https://github.com/aramallo/partisan"},
+        {"Github","https://github.com/lasp-lang/partisan"}
+    ]}
+]}.
