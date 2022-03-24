@@ -110,7 +110,7 @@ handle_message(
     #full_v1{membership = Membership0} = State0,
     {#{name := From}, #full_v1{membership = Membership1}}) ->
 
-    ?LOG_WARNING(#{
+    ?LOG_DEBUG(#{
         description => "Received membership_strategy",
         from => From,
         membership => ?SET:to_list(Membership1)
