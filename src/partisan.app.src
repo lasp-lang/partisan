@@ -8,9 +8,9 @@
         kernel,
         stdlib,
         crypto,
+        ssl,
         types,
         acceptor_pool,
-        ssl,
         uuid
     ]},
     {mod, {partisan_app,[]}},
