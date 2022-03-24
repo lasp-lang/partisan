@@ -52,7 +52,6 @@
 
 -define(SERVER, ?MODULE).
 
--type nodename()        :: any().
 -type message_id()      :: any().
 -type message_round()   :: non_neg_integer().
 %% Lazy messages that have not been acked. Messages are added to
@@ -62,22 +61,27 @@
 %% destination
 %% These are stored in the ?PLUMTREE_OUTSTANDING ets table under using nodename
 %% as key.
--type outstanding()     :: {message_id(), module(), message_round(), nodename()}.
+-type outstanding()     :: {message_id(), module(), message_round(), node()}.
 -type exchange()        :: {module(), node(), reference(), pid()}.
 -type exchanges()       :: [exchange()].
+-type selector()        ::  all
+                            | {peer, node()}
+                            | {mod, module()}
+                            | reference()
+                            | pid().
 
 
 -record(state, {
           %% Initially trees rooted at each node are the same.
           %% Portions of that tree belonging to this node are
           %% shared in this set.
-          common_eagers :: ordsets:ordset(nodename()) | undefined,
+          common_eagers :: ordsets:ordset(node()) | undefined,
 
           %% Initially trees rooted at each node share the same lazy links.
           %% Typically this set will contain a single element. However, it may
           %% contain more in large clusters and may be empty for clusters with
           %% less than three nodes.
-          common_lazys  :: ordsets:ordset(nodename()) | undefined,
+          common_lazys  :: ordsets:ordset(node()) | undefined,
 
           %% A mapping of sender node (root of each broadcast tree)
           %% to this node's portion of the tree. Elements are
@@ -85,14 +89,14 @@
           %% propogate to this node. Nodes that are never the
           %% root of a message will never have a key added to
           %% `eager_sets'
-          eager_sets    :: [{nodename(), ordsets:ordset(nodename())}] | undefined,
+          eager_sets    :: [{node(), ordsets:ordset(node())}] | undefined,
 
           %% A Mapping of sender node (root of each spanning tree)
           %% to this node's set of lazy peers. Elements are added
           %% to this structure as messages rooted at a node
           %% propogate to this node. Nodes that are never the root
           %% of a message will never have a key added to `lazy_sets'
-          lazy_sets     :: [{nodename(), ordsets:ordset(nodename())}] | undefined,
+          lazy_sets     :: [{node(), ordsets:ordset(node())}] | undefined,
 
           %% Set of registered modules that may handle messages that
           %% have been broadcast
@@ -103,7 +107,7 @@
 
           %% Set of all known members. Used to determine
           %% which members have joined and left during a membership update
-          all_members   :: ordsets:ordset(nodename()) | undefined,
+          all_members   :: ordsets:ordset(node()) | undefined,
 
           %% Lazy tick period in milliseconds. On every tick all outstanding
           %% lazy pushes are sent out
@@ -128,6 +132,7 @@
 %% In addition, after the broadcast server is started, a callback is registered with ring_events
 %% to generate membership updates as the ring changes.
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
+
 start_link() ->
     LazyTickPeriod = partisan_config:get(
         lazy_tick_period, ?DEFAULT_LAZY_TICK_PERIOD),
@@ -174,7 +179,7 @@ start_link() ->
 %%
 %% NOTE: When starting the server using start_link/2 no automatic membership update from
 %% ring_events is registered. Use start_link/0.
--spec start_link([nodename()], [nodename()], [nodename()], [module()],
+-spec start_link([node()], [node()], [node()], [module()],
                  proplists:proplist() | map()) ->
     {ok, pid()} | ignore | {error, term()}.
 start_link(InitMembers, InitEagers, InitLazys, Mods, Opts) when is_list(Opts) ->
@@ -187,49 +192,77 @@ start_link(InitMembers, InitEagers, InitLazys, Mods, Opts) when is_map(Opts) ->
         []
     ).
 
-%% @doc Broadcasts a message originating from this node. The message will be delivered to
-%% each node at least once. The `Mod' passed is responsible for handling the message on remote
-%% nodes as well as providing some other information both locally and and on other nodes.
+
+%% -----------------------------------------------------------------------------
+%% @doc Broadcasts a message originating from this node. The message will be
+%% delivered to each node at least once. The `Mod' passed is responsible for
+%% handling the message on remote nodes as well as providing some other
+%% information both locally and and on other nodes.
 %% `Mod' must be loaded on all members of the clusters and implement the
-%% `riak_core_broadcast_handler' behaviour.
+%% `partisan_plumtree_broadcast_handler' behaviour.
+%% @end
+%% -----------------------------------------------------------------------------
 -spec broadcast(any(), module()) -> ok.
+
 broadcast(Broadcast, Mod) ->
     {MessageId, Payload} = Mod:broadcast_data(Broadcast),
     gen_server:cast(?SERVER, {broadcast, MessageId, Payload, Mod}).
+
 
 %% @doc Notifies broadcast server of membership update
 update(LocalState0) ->
     LocalState = partisan_peer_service:decode(LocalState0),
     gen_server:cast(?SERVER, {update, LocalState}).
 
+%% -----------------------------------------------------------------------------
 %% @doc Returns the broadcast servers view of full cluster membership.
-%% Wait indefinitely for a response is returned from the process
--spec broadcast_members() -> ordsets:ordset(nodename()).
+%% Wait indefinitely for a response is returned from the process.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec broadcast_members() -> ordsets:ordset(node()).
+
 broadcast_members() ->
     broadcast_members(infinity).
 
+%% -----------------------------------------------------------------------------
 %% @doc Returns the broadcast servers view of full cluster membership.
-%% Waits `Timeout' ms for a response from the server
--spec broadcast_members(infinity | pos_integer()) -> ordsets:ordset(nodename()).
+%% Waits `Timeout' ms for a response from the server.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec broadcast_members(infinity | pos_integer()) -> ordsets:ordset(node()).
+
 broadcast_members(Timeout) ->
     gen_server:call(?SERVER, broadcast_members, Timeout).
 
-%% @doc return a list of exchanges, started by broadcast on thisnode, that are running
+
+%% -----------------------------------------------------------------------------
+%% @doc return a list of exchanges, started by broadcast on thisnode, that are
+%% running.
+%% @end
+%% -----------------------------------------------------------------------------
 -spec exchanges() -> exchanges().
+
 exchanges() ->
     exchanges(mynode()).
 
-%% @doc returns a list of exchanges, started by broadcast on `Node', that are running
-%% -spec exchanges(node()) -> exchanges().
+
+%% -----------------------------------------------------------------------------
+%% @doc returns a list of exchanges, started by broadcast on `Node', that are
+%% running.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec exchanges(node()) -> partisan_plumtree_broadcast:exchanges().
+
 exchanges(Node) ->
     gen_server:call({?SERVER, Node}, exchanges, infinity).
 
+
+%% -----------------------------------------------------------------------------
 %% @doc cancel exchanges started by this node.
--spec cancel_exchanges(all              |
-                       {peer, node()}   |
-                       {mod, module()}  |
-                       reference()      |
-                       pid()) -> exchanges().
+%% @end
+%% -----------------------------------------------------------------------------
+-spec cancel_exchanges(selector()) -> exchanges().
+
 cancel_exchanges(WhichExchanges) ->
     gen_server:call(?SERVER, {cancel_exchanges, WhichExchanges}, infinity).
 

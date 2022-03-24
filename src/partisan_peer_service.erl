@@ -32,11 +32,17 @@
 ).
 
 -export([add_sup_callback/1]).
+-export([broadcast/2]).
+-export([broadcast_members/0]).
+-export([broadcast_members/1]).
+-export([cancel_exchanges/1]).
 -export([cast_message/3]).
 -export([cast_message/4]).
 -export([cast_message/5]).
 -export([connections/0]).
 -export([decode/1]).
+-export([exchanges/0]).
+-export([exchanges/1]).
 -export([forward_message/3]).
 -export([forward_message/4]).
 -export([forward_message/5]).
@@ -453,6 +459,78 @@ forward_message(Name, Channel, ServerRef, Message) ->
 
 forward_message(Name, Channel, ServerRef, Message, Options) ->
     (?MANAGER):forward_message(Name, Channel, ServerRef, Message, Options).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Broadcasts a message originating from this node. The message will be
+%% delivered to each node at least once. The `Mod' passed is responsible for
+%% handling the message on remote nodes as well as providing some other
+%% information both locally and and on other nodes.
+%% `Mod' must be loaded on all members of the clusters and implement the
+%% `partisan_plumtree_broadcast_handler' behaviour.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec broadcast(any(), module()) -> ok.
+
+broadcast(Broadcast, Mod) ->
+    partisan_plumtree_broadcast:broadcast(Broadcast, Mod).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns the broadcast servers view of full cluster membership.
+%% Wait indefinitely for a response is returned from the process.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec broadcast_members() -> ordsets:ordset(node()).
+
+broadcast_members() ->
+    partisan_plumtree_broadcast:broadcast_members().
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns the broadcast servers view of full cluster membership.
+%% Waits `Timeout' ms for a response from the server.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec broadcast_members(infinity | pos_integer()) -> ordsets:ordset(node()).
+
+broadcast_members(Timeout) ->
+    partisan_plumtree_broadcast:broadcast_members(Timeout).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc return a list of exchanges, started by broadcast on thisnode, that are
+%% running.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec exchanges() -> partisan_plumtree_broadcas:exchanges().
+
+exchanges() ->
+    partisan_plumtree_broadcast:exchanges().
+
+
+%% -----------------------------------------------------------------------------
+%% @doc returns a list of exchanges, started by broadcast on `Node', that are
+%% running.
+%% @end
+%% -----------------------------------------------------------------------------
+
+-spec exchanges(node()) -> partisan_plumtree_broadcast:exchanges().
+
+exchanges(Node) ->
+    partisan_plumtree_broadcast:exchanges(Node).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc cancel exchanges started by this node.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec cancel_exchanges(partisan_plumtree_broadcast:selector()) ->
+    partisan_plumtree_broadcast:exchanges().
+
+cancel_exchanges(WhichExchanges) ->
+    partisan_plumtree_broadcast:cancel_exchanges(WhichExchanges).
+
 
 
 
