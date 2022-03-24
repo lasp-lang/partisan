@@ -824,7 +824,7 @@ init_it(Starter, Parent, ServerRef, Module, Args, Opts) ->
               Starter, Parent, ServerRef, Module, Result,
               Name, Debug, HibernateAfterTimeout);
 	Class:Reason:Stacktrace ->
-	    partisan_partisan_gen:unregister_name(ServerRef),
+	    partisan_gen:unregister_name(ServerRef),
 	    proc_lib:init_ack(Starter, {error,Reason}),
 	    error_info(
 	      Class, Reason, Stacktrace, Debug,
