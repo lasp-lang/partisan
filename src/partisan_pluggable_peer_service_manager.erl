@@ -1590,7 +1590,7 @@ internal_leave(#{name := Name} = Node,
                       membership_strategy_state=MembershipStrategyState0,
                       pre_interposition_funs=PreInterpositionFuns}=State) ->
 
-    ?LOG_INFO(#{
+    ?LOG_DEBUG(#{
         description => "Processing leave",
         leaving_node => Name
     }),
@@ -1599,7 +1599,7 @@ internal_leave(#{name := Name} = Node,
         MembershipStrategy:leave(MembershipStrategyState0, Node),
 
 
-    ?LOG_INFO(#{
+    ?LOG_DEBUG(#{
         description => "Processing leave",
         leaving_node => Name,
         outgoing_messages => OutgoingMessages,
