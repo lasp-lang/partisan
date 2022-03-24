@@ -1,6 +1,6 @@
 {application,partisan,
  [{description,"Scalable peer service for Lasp"},
-  {vsn,"git"},
+  {vsn,"4.2.6"},
   {registered,[]},
   {applications,[kernel,
                  stdlib,
