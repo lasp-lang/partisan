@@ -421,12 +421,6 @@ pid(Pid) ->
     end.
 
 
-node(Pid) when is_pid(Pid) ->
-    erlang:node(Pid);
-
-node({partisan_remote_reference, Node, _}) ->
-    Node.
-
 
 registered_name(Name) ->
     GenSym = gensym(Name),
