@@ -11,7 +11,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--type t()   ::  state_mvmap:state_mvmap().
+-type t()   ::  state_orset:state_orset().
 
 %% API
 -export([add/3]).
@@ -21,7 +21,6 @@
 -export([merge/2]).
 -export([new/0]).
 -export([remove/3]).
--export([nodes/1]).
 -export([to_list/1]).
 
 
@@ -32,49 +31,19 @@
 
 
 new() ->
-    state_mvmap:new().
+    state_orset:new().
 
 
-add(#{name := Nodename} = NodeSpec, Actor, T) ->
-    state_mvmap:mutate({set, Nodename, NodeSpec}, Actor, T).
+add(#{name := _} = NodeSpec, Actor, T) ->
+    state_orset:mutate({add, NodeSpec}, Actor, T).
 
 
-remove(#{name := Nodename}, Actor, T) ->
-    remove(Nodename, Actor, T);
-
-remove(Nodename, Actor, T) ->
-    state_mvmap:mutate({set, Nodename, undefined}, Actor, T).
-
-
-%% Returns the list of nodenames
-nodes(T) ->
-    L = orddict:fold(
-        fun(Nodename, SpecSet, Acc) ->
-            SpecList = sets:to_list(SpecSet),
-            [
-                [Nodename || NodeSpec <- SpecList, NodeSpec =/= undefined]
-                | Acc
-            ]
-        end,
-        [],
-        state_mvmap:query(T)
-    ),
-    lists:append(L).
+remove(#{name := _} = NodeSpec, Actor, T) ->
+    state_orset:mutate({rmv, NodeSpec}, Actor, T).
 
 
 to_list(T) ->
-    L = orddict:fold(
-        fun(_Nodename, SpecSet, Acc) ->
-            SpecList = sets:to_list(SpecSet),
-            [
-                [NodeSpec || NodeSpec <- SpecList, NodeSpec =/= undefined]
-                | Acc
-            ]
-        end,
-        [],
-        state_mvmap:query(T)
-    ),
-    lists:append(L).
+    sets:to_list(state_orset:query(T)).
 
 
 %% -----------------------------------------------------------------------------
@@ -107,12 +76,11 @@ decode(Binary) ->
 
 
 merge(T1, T2) ->
-    state_mvmap:merge(T1, T2).
+    state_orset:merge(T1, T2).
 
 
 equal(T1, T2) ->
-    state_mvmap:equal(T1, T2).
-
+    state_orset:equal(T1, T2).
 
 
 
@@ -172,7 +140,7 @@ concurrent_remove_update_test() ->
         to_list(A1)
     ),
     ?assertEqual(
-        [Node2],
+        [Node1, Node2],
         to_list(B1)
     ),
     %% Replicate to A
@@ -325,7 +293,7 @@ tombstone_remove_test() ->
     %% replicate to A
     A4 = merge(A3, B3),
 
-    ?assertEqual([Node3], to_list(A4)),
+    ?assertEqual([Node3, Node2], to_list(A4)),
 
     %% final values
     Final = merge(A4, B3),
@@ -339,7 +307,7 @@ tombstone_remove_test() ->
     %% information is preserved, even though the {b, 1} value is
     %% dropped. Pro-tip, don't alter the CRDTs' values in the merge!
     ?assertEqual(
-        [Node3],
+        [Node3, Node2],
         to_list(Final)
     ).
 
@@ -380,7 +348,5 @@ equals_test() ->
     ?assert(equal(A, A)).
 
 -endif.
-
-
 
 

@@ -160,7 +160,7 @@ monitor_node(Node, Flag, Opts) ->
 -spec node() -> node().
 
 node() ->
-    partisan_config:get(name, node()).
+    partisan_config:get(name, erlang:node()).
 
 
 %% -----------------------------------------------------------------------------

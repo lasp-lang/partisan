@@ -1,6 +1,5 @@
 %% -------------------------------------------------------------------
-%%
-%% riak_dt_map: OR-Set schema based multi CRDT container
+%% Bases on riak_dt_map: OR-Set schema based multi CRDT container
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
@@ -34,6 +33,7 @@
 
 
 -record(partisan_membership_set, {
+    version = 1         ::  integer(),
     entries = #{}       ::  entries(),
     deferred = #{}      ::  deferred(),
     context             ::  context()
@@ -64,7 +64,6 @@
 -export_type([op/0]).
 
 
-
 %% API
 -export([add/3]).
 -export([decode/1]).
@@ -72,14 +71,13 @@
 -export([equal/2]).
 -export([merge/2]).
 -export([new/0]).
--export([parent_clock/2]).
--export([precondition_context/1]).
 -export([remove/3]).
+-export([to_list/1]).
+
+
+-export([precondition_context/1]).
 -export([stat/2]).
 -export([stats/1]).
--export([to_list/1]).
--export([update/3]).
--export([update/4]).
 
 
 
@@ -127,16 +125,6 @@ encode(#partisan_membership_set{} = T) ->
 
 decode(Binary) ->
     erlang:binary_to_term(Binary).
-
-
-%% -----------------------------------------------------------------------------
-%% @doc sets the clock in the map to that `Clock'.
-%% @end
-%% -----------------------------------------------------------------------------
--spec parent_clock(vclock(), T :: t()) -> t().
-
-parent_clock(Clock, #partisan_membership_set{} = T) ->
-    T#partisan_membership_set{context = Clock}.
 
 
 %% -----------------------------------------------------------------------------
@@ -194,57 +182,6 @@ remove(#{name := Nodename}, ActorOrDot, T) ->
 remove(Nodename, ActorOrDot, T) ->
     update([{remove, Nodename}], ActorOrDot, T, undefined).
 
-
-%% -----------------------------------------------------------------------------
-%% @doc update the `t()' or a field in the `t()' by
-%% executing the `map_op()'. `Ops' is a list of one or more of the
-%% following ops:
-%%
-%% `{update, nodename(), Op} where `Op' is a valid update operation for a
-%% CRDT of type `Mod' from the `Key' pair `{Name, Mod}' If there is no
-%% local value for `Key' a new CRDT is created, the operation applied
-%% and the result inserted otherwise, the operation is applied to the
-%% local value.
-%%
-%%  `{remove, `nodename()'}' where field is `{name, type}', results in
-%%  the crdt at `field' and the key and value being removed. A
-%%  concurrent `update' will "win" over a remove so that the field is
-%%  still present, and it's value will contain the concurrent update.
-%%
-%% Atomic, all of `Ops' are performed successfully, or none are.
-%% @end
-%% -----------------------------------------------------------------------------
--spec update(Ops :: [op()], nodename() | dot(), t()) ->
-    {ok, t()} | {error, not_member()}.
-
-update(Ops, ActorOrDot, Map) ->
-    update(Ops, ActorOrDot, Map, undefined).
-
-
-%% -----------------------------------------------------------------------------
-%% @doc the same as `update/3' except that the context ensures no
-%% unseen field updates are removed, and removal of unseen updates is
-%% deferred. The Context is passed down as the context for any nested
-%% types. hence the common clock.
-%%
-%% @see parent_clock/2
-%% @end
-%% -----------------------------------------------------------------------------
--spec update(Ops :: [op()], nodename() | dot(), t(), context()) ->
-    {ok, t()} | {error, not_member()}.
-
-update(Ops, ActorOrDot, #partisan_membership_set{} = T0, Ctx) ->
-    Clock0 = T0#partisan_membership_set.context,
-    {Dot, Clock} = update_clock(ActorOrDot, Clock0),
-    T1 = T0#partisan_membership_set{context = Clock},
-
-    try
-        T = apply_ops(Ops, Dot, T1, Ctx),
-        {ok, T}
-    catch
-        throw:Reason ->
-            {error, Reason}
-    end.
 
 
 %% -----------------------------------------------------------------------------
@@ -367,6 +304,49 @@ stat(_,_) ->
 %% PRIVATE
 %% =============================================================================
 
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc update the `t()' or a field in the `t()' by
+%% executing the `map_op()'. `Ops' is a list of one or more of the
+%% following ops:
+%%
+%% `{update, nodename(), Op} where `Op' is a valid update operation for a
+%% CRDT of type `Mod' from the `Key' pair `{Name, Mod}' If there is no
+%% local value for `Key' a new CRDT is created, the operation applied
+%% and the result inserted otherwise, the operation is applied to the
+%% local value.
+%%
+%%  `{remove, `nodename()'}' where field is `{name, type}', results in
+%%  the crdt at `field' and the key and value being removed. A
+%%  concurrent `update' will "win" over a remove so that the field is
+%%  still present, and it's value will contain the concurrent update.
+%%
+%% Atomic, all of `Ops' are performed successfully, or none are.
+%%
+%% If context is =/= undefined works the context ensures no
+%% unseen field updates are removed, and removal of unseen updates is
+%% deferred. The Context is passed down as the context for any nested
+%% types. hence the common clock.
+%%
+%% @end
+%% -----------------------------------------------------------------------------
+-spec update(Ops :: [op()], nodename() | dot(), t(), context()) ->
+    {ok, t()} | {error, not_member()}.
+
+update(Ops, ActorOrDot, #partisan_membership_set{} = T0, Ctx) ->
+    Clock0 = T0#partisan_membership_set.context,
+    {Dot, Clock} = update_clock(ActorOrDot, Clock0),
+    T1 = T0#partisan_membership_set{context = Clock},
+
+    try
+        T = apply_ops(Ops, Dot, T1, Ctx),
+        {ok, T}
+    catch
+        throw:Reason ->
+            {error, Reason}
+    end.
 
 
 %% -----------------------------------------------------------------------------
@@ -864,6 +844,10 @@ is_dot_unseen(Dot, Clock) ->
 
 -ifdef(TEST).
 
+update(Actions, ActorOrDot, T) ->
+    update(Actions, ActorOrDot, T, undefined).
+
+
 node_spec(Nodename) ->
     node_spec(Nodename, {127,0,0,1}).
 
@@ -876,6 +860,26 @@ node_spec(Nodename, IP) ->
         parallelism => 1
     }.
 
+update_test() ->
+    Nodename = 'node1@127.0.0.1',
+    Node1 = node_spec(Nodename),
+    Node2 = node_spec(Nodename, {192, 168, 0, 1}),
+
+    {ok, A1} = add(Node1, a, new()),
+    {ok, A2} = add(Node2, a, A1),
+    ?assertEqual(
+        [Node2],
+        to_list(A2)
+    ),
+
+    B1 = A1,
+    B2 = merge(B1, A2),
+    {ok, B3} = add(Node1, b, B2),
+
+    ?assertEqual(
+        [Node1],
+        to_list(B3)
+    ).
 
 add_remove_test() ->
     Nodename = 'node1@127.0.0.1',
@@ -919,6 +923,21 @@ concurrent_remove_update_test() ->
     ?assertEqual(
         [Node2],
         to_list(merge(A1, B1))
+    ).
+
+
+concurrent_updates_test() ->
+    Nodename = 'node1@127.0.0.1',
+    Node1 = node_spec(Nodename),
+    Node2 = node_spec(Nodename, {192, 168, 0, 1}),
+
+    {ok, A} = add(Node1, a, new()),
+    {ok, B} = add(Node2, b, new()),
+
+    %% Replicate to A
+    ?assertEqual(
+        [Node2],
+        to_list(merge(A, B))
     ).
 
 

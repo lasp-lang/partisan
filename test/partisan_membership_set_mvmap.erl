@@ -2,7 +2,7 @@
 %% @doc
 %% @end
 
--module(partisan_membership_set_orset).
+-module(partisan_membership_set_mvmap).
 
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
@@ -11,7 +11,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--type t()   ::  state_orset:state_orset().
+-type t()   ::  state_mvmap:state_mvmap().
 
 %% API
 -export([add/3]).
@@ -21,6 +21,7 @@
 -export([merge/2]).
 -export([new/0]).
 -export([remove/3]).
+-export([nodes/1]).
 -export([to_list/1]).
 
 
@@ -31,19 +32,49 @@
 
 
 new() ->
-    state_orset:new().
+    state_mvmap:new().
 
 
-add(#{name := _} = NodeSpec, Actor, T) ->
-    state_orset:mutate({add, NodeSpec}, Actor, T).
+add(#{name := Nodename} = NodeSpec, Actor, T) ->
+    state_mvmap:mutate({set, Nodename, NodeSpec}, Actor, T).
 
 
-remove(#{name := _} = NodeSpec, Actor, T) ->
-    state_orset:mutate({rmv, NodeSpec}, Actor, T).
+remove(#{name := Nodename}, Actor, T) ->
+    remove(Nodename, Actor, T);
+
+remove(Nodename, Actor, T) ->
+    state_mvmap:mutate({set, Nodename, undefined}, Actor, T).
+
+
+%% Returns the list of nodenames
+nodes(T) ->
+    L = orddict:fold(
+        fun(Nodename, SpecSet, Acc) ->
+            SpecList = sets:to_list(SpecSet),
+            [
+                [Nodename || NodeSpec <- SpecList, NodeSpec =/= undefined]
+                | Acc
+            ]
+        end,
+        [],
+        state_mvmap:query(T)
+    ),
+    lists:append(L).
 
 
 to_list(T) ->
-    sets:to_list(state_orset:query(T)).
+    L = orddict:fold(
+        fun(_Nodename, SpecSet, Acc) ->
+            SpecList = sets:to_list(SpecSet),
+            [
+                [NodeSpec || NodeSpec <- SpecList, NodeSpec =/= undefined]
+                | Acc
+            ]
+        end,
+        [],
+        state_mvmap:query(T)
+    ),
+    lists:append(L).
 
 
 %% -----------------------------------------------------------------------------
@@ -76,11 +107,12 @@ decode(Binary) ->
 
 
 merge(T1, T2) ->
-    state_orset:merge(T1, T2).
+    state_mvmap:merge(T1, T2).
 
 
 equal(T1, T2) ->
-    state_orset:equal(T1, T2).
+    state_mvmap:equal(T1, T2).
+
 
 
 
@@ -103,6 +135,27 @@ node_spec(Nodename, IP) ->
         name => Nodename,
         parallelism => 1
     }.
+
+update_test() ->
+    Nodename = 'node1@127.0.0.1',
+    Node1 = node_spec(Nodename),
+    Node2 = node_spec(Nodename, {192, 168, 0, 1}),
+
+    {ok, A1} = add(Node1, a, new()),
+    {ok, A2} = add(Node2, a, A1),
+    ?assertEqual(
+        [Node2],
+        to_list(A2)
+    ),
+
+    B1 = A1,
+    B2 = merge(B1, A2),
+    {ok, B3} = add(Node1, b, B2),
+
+    ?assertEqual(
+        [Node1],
+        to_list(B3)
+    ).
 
 
 add_remove_test() ->
@@ -140,13 +193,27 @@ concurrent_remove_update_test() ->
         to_list(A1)
     ),
     ?assertEqual(
-        [Node1, Node2],
+        [Node2],
         to_list(B1)
     ),
     %% Replicate to A
     ?assertEqual(
         [Node2],
         to_list(merge(A1, B1))
+    ).
+
+concurrent_updates_test() ->
+    Nodename = 'node1@127.0.0.1',
+    Node1 = node_spec(Nodename),
+    Node2 = node_spec(Nodename, {192, 168, 0, 1}),
+
+    {ok, A} = add(Node1, a, new()),
+    {ok, B} = add(Node2, b, new()),
+
+    %% Replicate to A
+    ?assertEqual(
+        [Node1, Node2],
+        to_list(merge(A, B))
     ).
 
 
@@ -293,7 +360,7 @@ tombstone_remove_test() ->
     %% replicate to A
     A4 = merge(A3, B3),
 
-    ?assertEqual([Node3, Node2], to_list(A4)),
+    ?assertEqual([Node3], to_list(A4)),
 
     %% final values
     Final = merge(A4, B3),
@@ -307,7 +374,7 @@ tombstone_remove_test() ->
     %% information is preserved, even though the {b, 1} value is
     %% dropped. Pro-tip, don't alter the CRDTs' values in the merge!
     ?assertEqual(
-        [Node3, Node2],
+        [Node3],
         to_list(Final)
     ).
 
@@ -347,6 +414,10 @@ equals_test() ->
     ?assert(equal(C, D)),
     ?assert(equal(A, A)).
 
+
+
 -endif.
+
+
 
 
