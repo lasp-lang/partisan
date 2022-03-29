@@ -1476,7 +1476,7 @@ basic_test(Config) ->
         {ok, Connections} = ConnectionsFun(Node),
 
         %% Verify we have enough connections.
-        peer_service_connections:fold(
+        partisan_peer_service_connections:fold(
             fun(_N, Active, Acc) ->
                 Filtered = lists:filter(fun({_, C, _}) ->
                     case C of
