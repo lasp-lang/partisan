@@ -44,15 +44,15 @@
 -record(transaction, {id,
                       coordinator,
                       from,
-                      participants, 
-                      coordinator_status, 
+                      participants,
+                      coordinator_status,
                       participant_status,
-                      prepared, 
+                      prepared,
                       precommitted,
-                      committed, 
+                      committed,
                       aborted,
                       uncertain,
-                      server_ref, 
+                      server_ref,
                       message}).
 
 -define(COORDINATING_TRANSACTIONS, coordinating_transactions_table).
@@ -120,7 +120,7 @@ handle_call(Msg, _From, State) ->
 %% @private
 handle_cast({broadcast, From, ServerRef, Message}, #state{next_id=NextId, membership=Membership}=State) ->
     %% Generate unique transaction id.
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
     Id = {MyNode, NextId},
 
     %% Set transaction timer.
@@ -131,15 +131,15 @@ handle_cast({broadcast, From, ServerRef, Message}, #state{next_id=NextId, member
         id=Id,
         coordinator=MyNode,
         from=From,
-        participants=Membership, 
-        coordinator_status=preparing, 
+        participants=Membership,
+        coordinator_status=preparing,
         participant_status=unknown,
-        prepared=[], 
+        prepared=[],
         precommitted=[],
-        committed=[], 
+        committed=[],
         aborted=[],
         uncertain=[],
-        server_ref=ServerRef, 
+        server_ref=ServerRef,
         message=Message
     },
 
@@ -164,11 +164,11 @@ handle_cast(Msg, State) ->
 %% Incoming messages.
 handle_info({participant_timeout, Id}, State) ->
     %% Find transaction record.
-    case ets:lookup(?PARTICIPATING_TRANSACTIONS, Id) of 
+    case ets:lookup(?PARTICIPATING_TRANSACTIONS, Id) of
         [{_Id, #transaction{participants=_Participants, participant_status=ParticipantStatus, server_ref=ServerRef, message=Message} = Transaction}] ->
             partisan_logger:info("Participant timeout when participant ~p was in the ~p state.", [node(), ParticipantStatus]),
 
-            case ParticipantStatus of 
+            case ParticipantStatus of
                 prepared ->
                     partisan_logger:info("Participant: ~p moving from ~p to abort state.", [node(), ParticipantStatus]),
 
@@ -184,7 +184,7 @@ handle_info({participant_timeout, Id}, State) ->
 
                     %% Forward to process.
                     partisan_util:process_forward(ServerRef, Message);
-                commit -> 
+                commit ->
                     partisan_logger:info("Participant: ~p already committed.", [node()]),
                     ok
             end;
@@ -195,11 +195,11 @@ handle_info({participant_timeout, Id}, State) ->
     {noreply, State};
 handle_info({coordinator_timeout, Id}, State) ->
     %% Find transaction record.
-    case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
+    case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of
         [{_Id, #transaction{coordinator_status=CoordinatorStatus, participants=Participants, precommitted=Precommitted, from=From} = Transaction0}] ->
             partisan_logger:info("Coordinator timeout when participant ~p was in the ~p state.", [node(), CoordinatorStatus]),
 
-            case CoordinatorStatus of 
+            case CoordinatorStatus of
                 commit_authorized ->
                     partisan_logger:info("Coordinator ~p in commit_authorized state, moving to abort.", [node()]),
 
@@ -222,7 +222,7 @@ handle_info({coordinator_timeout, Id}, State) ->
                     partisan_logger:info("Coordinator ~p in commit_finalizing state, moving to abort.", [node()]),
 
                     %% Have we made a decision?
-                    case lists:usort(Participants) =:= lists:usort(Precommitted) of 
+                    case lists:usort(Participants) =:= lists:usort(Precommitted) of
                         true ->
                             %% Decision has already been made, participants have been told to commit.
                             ok;
@@ -275,7 +275,7 @@ handle_info({coordinator_timeout, Id}, State) ->
     {noreply, State};
 handle_info({abort_ack, FromNode, Id}, State) ->
     %% Find transaction record.
-    case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
+    case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of
         [{_Id, #transaction{participants=Participants, aborted=Aborted0} = Transaction}] ->
             partisan_logger:info("Received abort_ack from node ~p", [FromNode]),
 
@@ -283,7 +283,7 @@ handle_info({abort_ack, FromNode, Id}, State) ->
             Aborted = lists:usort(Aborted0 ++ [FromNode]),
 
             %% Are we all committed?
-            case lists:usort(Participants) =:= lists:usort(Aborted) of 
+            case lists:usort(Participants) =:= lists:usort(Aborted) of
                 true ->
                     %% Remove record from storage.
                     true = ets:delete(?COORDINATING_TRANSACTIONS, Id),
@@ -304,7 +304,7 @@ handle_info({abort_ack, FromNode, Id}, State) ->
     {noreply, State};
 handle_info({commit_ack, FromNode, Id}, State) ->
     %% Find transaction record.
-    case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
+    case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of
         [{_Id, #transaction{participants=Participants, committed=Committed0} = Transaction}] ->
             partisan_logger:info("Received commit_ack from node ~p at node: ~p", [FromNode, node()]),
 
@@ -312,7 +312,7 @@ handle_info({commit_ack, FromNode, Id}, State) ->
             Committed = lists:usort(Committed0 ++ [FromNode]),
 
             %% Are we all committed?
-            case lists:usort(Participants) =:= lists:usort(Committed) of 
+            case lists:usort(Participants) =:= lists:usort(Committed) of
                 true ->
                     %% Remove record from storage.
                     true = ets:delete(?COORDINATING_TRANSACTIONS, Id),
@@ -334,7 +334,7 @@ handle_info({commit_ack, FromNode, Id}, State) ->
 handle_info({abort, #transaction{id=Id, coordinator=Coordinator}}, State) ->
     true = ets:delete(?PARTICIPATING_TRANSACTIONS, Id),
 
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
     partisan_logger:info("~p: sending abort ack message to node ~p: ~p", [node(), Coordinator, Id]),
     partisan_pluggable_peer_service_manager:forward_message(Coordinator, undefined, ?MODULE, {abort_ack, MyNode, Id}, []),
 
@@ -349,20 +349,20 @@ handle_info({commit, #transaction{id=Id, coordinator=Coordinator, server_ref=Ser
     partisan_util:process_forward(ServerRef, Message),
 
     %% Repond to coordinator that we are now committed.
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
     partisan_logger:info("~p: sending commit ack message to node ~p: ~p", [node(), Coordinator, Id]),
     partisan_pluggable_peer_service_manager:forward_message(Coordinator, undefined, ?MODULE, {commit_ack, MyNode, Id}, []),
 
     {noreply, State};
 handle_info({precommit_ack, FromNode, Id}, State) ->
     %% Find transaction record.
-    case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
+    case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of
         [{_Id, #transaction{from=From, participants=Participants, precommitted=Precommitted0} = Transaction0}] ->
             %% Update prepared.
             Precommitted = lists:usort(Precommitted0 ++ [FromNode]),
 
             %% Are we all prepared?
-            case lists:usort(Participants) =:= lists:usort(Precommitted) of 
+            case lists:usort(Participants) =:= lists:usort(Precommitted) of
                 true ->
                     %% Change state to committing.
                     CoordinatorStatus = commit_finalizing,
@@ -395,19 +395,19 @@ handle_info({precommit, #transaction{id=Id, coordinator=Coordinator} = Transacti
 
     %% Repond to coordinator that we are now committed.
     partisan_logger:info("~p: sending precommit_ack message to node ~p: ~p", [node(), Coordinator, Id]),
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
     partisan_pluggable_peer_service_manager:forward_message(Coordinator, undefined, ?MODULE, {precommit_ack, MyNode, Id}, []),
 
     {noreply, State};
 handle_info({prepared, FromNode, Id}, State) ->
     %% Find transaction record.
-    case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of 
+    case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of
         [{_Id, #transaction{participants=Participants, prepared=Prepared0} = Transaction0}] ->
             %% Update prepared.
             Prepared = lists:usort(Prepared0 ++ [FromNode]),
 
             %% Are we all prepared?
-            case lists:usort(Participants) =:= lists:usort(Prepared) of 
+            case lists:usort(Participants) =:= lists:usort(Prepared) of
                 true ->
                     %% Change state to committing.
                     CoordinatorStatus = commit_authorized,
@@ -438,7 +438,7 @@ handle_info({prepare, #transaction{coordinator=Coordinator, id=Id}=Transaction},
     erlang:send_after(2000, self(), {participant_timeout, Id}),
 
     %% Repond to coordinator that we are now prepared.
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
     partisan_logger:info("~p: sending prepared message to node ~p: ~p", [node(), Coordinator, Id]),
     partisan_pluggable_peer_service_manager:forward_message(Coordinator, undefined, ?MODULE, {prepared, MyNode, Id}, []),
 

@@ -76,7 +76,7 @@ set_delivery_fun(Label, DeliveryFun) ->
 %% @private
 init([Label]) ->
     %% Figure out who we are.
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
 
     %% Generate a local clock that's used to track local dependencies.
     LocalClock = partisan_vclock:fresh(),

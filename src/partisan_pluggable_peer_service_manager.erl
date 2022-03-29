@@ -133,11 +133,11 @@ connections() ->
 
 %% @doc Return myself.
 mynode() ->
-    partisan_peer_service_manager:mynode().
+    partisan:node().
 
 %% @doc Return myself.
 myself() ->
-    partisan_peer_service_manager:myself().
+    partisan:node_spec().
 
 %% @doc Update membership.
 update_members(Nodes) ->
@@ -217,7 +217,7 @@ forward_message(Name, Channel, ServerRef, Message, Options)
 when is_map(Options) ->
 
     %% If attempting to forward to the local node, bypass.
-    case partisan_peer_service_manager:mynode() of
+    case partisan:node() of
         Name ->
             partisan_util:process_forward(ServerRef, Message),
             ok;
@@ -330,7 +330,7 @@ join(Node) ->
 %% @doc Leave the cluster.
 leave() ->
     gen_server:call(
-        ?MODULE, {leave, partisan_peer_service_manager:myself()}, infinity
+        ?MODULE, {leave, partisan:node_spec()}, infinity
     ).
 
 %% @doc Remove another node from the cluster.
@@ -575,7 +575,7 @@ handle_call({leave, #{name := Name} = Node}, From, State0) ->
     %% Perform leave.
     State = internal_leave(Node, State0),
 
-    case partisan_peer_service_manager:mynode() of
+    case partisan:node() of
         Name ->
             gen_server:reply(From, ok),
 
@@ -591,7 +591,7 @@ handle_call({leave, #{name := Name} = Node}, From, State0) ->
     end;
 
 handle_call({join, #{name := Name} = Node}, _From, State0) ->
-    case partisan_peer_service_manager:mynode() of
+    case partisan:node() of
         Name ->
             %% Ignoring self join.
             {reply, ok, State0};
@@ -604,9 +604,9 @@ handle_call({join, #{name := Name} = Node}, _From, State0) ->
     end;
 
 handle_call({sync_join, #{name := Name} = Node}, From, State0) ->
-    ?LOG_DEBUG("Starting synchronous join to ~p from ~p", [Node, partisan_peer_service_manager:mynode()]),
+    ?LOG_DEBUG("Starting synchronous join to ~p from ~p", [Node, partisan:node()]),
 
-    case partisan_peer_service_manager:mynode() of
+    case partisan:node() of
         Name ->
             %% Ignoring self join.
             {reply, ok, State0};
@@ -955,7 +955,7 @@ handle_info(distance, #state{pending=Pending,
     SourceTime = erlang:timestamp(),
 
     %% Send distance requests.
-    SourceNode = partisan_peer_service_manager:myself(),
+    SourceNode = partisan:node_spec(),
 
     lists:foreach(fun(Peer) ->
         schedule_self_message_delivery(
@@ -1006,7 +1006,7 @@ handle_info(periodic, #state{pending=Pending,
 
 handle_info(retransmit, #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
     RetransmitFun = fun({_, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options}}) ->
-        Mynode = partisan_peer_service_manager:mynode(),
+        Mynode = partisan:node(),
         ?LOG_DEBUG(
             "~p no acknowledgement yet, restranmitting message ~p with clock ~p to ~p",
             [Mynode, Message, Clock, Name]
@@ -1188,7 +1188,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private
 gen_actor() ->
-    Node = atom_to_list(partisan_peer_service_manager:mynode()),
+    Node = atom_to_list(partisan:node()),
     Unique = erlang:unique_integer([positive]),
     TS = integer_to_list(Unique),
     Term = Node ++ TS,
@@ -1196,7 +1196,7 @@ gen_actor() ->
 
 %% @private
 without_me(Members) ->
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
     lists:filter(fun(#{name := Name}) -> Name =/= MyNode end, Members).
 
 
@@ -1218,7 +1218,7 @@ establish_connections(Pending, Membership, Connections0) ->
 
 %% @private
 kill_connections(Nodenames0, Connections0) ->
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
     Nodenames = lists:filter(
         fun(Node) -> Node =/= MyNode end, Nodenames0
     ),
@@ -1326,7 +1326,7 @@ handle_message({membership_strategy, ProtocolMessage},
 
     gen_server:cast(?MODULE, {kill_connections, LeavingNodes}),
 
-    case lists:member(partisan_peer_service_manager:myself(), Membership) of
+    case lists:member(partisan:node_spec(), Membership) of
         false ->
             ?LOG_INFO(#{
                 description => "Shutting down: membership doesn't contain us",
@@ -1722,7 +1722,7 @@ avoid_rush() ->
 do_tree_forward(Node, Channel, PartitionKey, Message, _Connections, Options, TTL, PreInterpositionFuns) ->
     ?LOG_TRACE(
         "Attempting to forward message ~p from ~p to ~p.",
-        [Message, partisan_peer_service_manager:mynode(), Node]
+        [Message, partisan:node(), Node]
     ),
 
     %% Preempt with user-supplied outlinks.
@@ -1749,7 +1749,7 @@ do_tree_forward(Node, Channel, PartitionKey, Message, _Connections, Options, TTL
     lists:foreach(fun(N) ->
         ?LOG_TRACE(
             "Forwarding relay message ~p to node ~p for node ~p from node ~p",
-            [Message, N, Node, partisan_peer_service_manager:mynode()]
+            [Message, N, Node, partisan:node()]
         ),
 
         RelayMessage = {relay_message, Node, Message, TTL - 1},
@@ -1768,9 +1768,9 @@ do_tree_forward(Node, Channel, PartitionKey, Message, _Connections, Options, TTL
 retrieve_outlinks() ->
     ?LOG_TRACE(#{description => "About to retrieve outlinks..."}),
 
-    Root = partisan_peer_service_manager:mynode(),
+    Root = partisan:node(),
 
-    OutLinks = try partisan_plumtree_broadcast:debug_get_peers(partisan_peer_service_manager:mynode(), Root, 1000) of
+    OutLinks = try partisan_plumtree_broadcast:debug_get_peers(partisan:node(), Root, 1000) of
         {EagerPeers, _LazyPeers} ->
             ordsets:to_list(EagerPeers)
     catch

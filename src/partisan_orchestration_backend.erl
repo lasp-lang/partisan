@@ -614,7 +614,7 @@ download_artifact(#orchestration_strategy_state{orchestration_strategy=Orchestra
 
 %% @private
 myself() ->
-    partisan_peer_service_manager:myself().
+    partisan:node_spec().
 
 %% @private
 members_for_orchestration() ->

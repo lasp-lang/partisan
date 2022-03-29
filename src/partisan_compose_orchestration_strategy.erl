@@ -42,7 +42,7 @@ upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Payload) ->
     }),
 
     %% Store membership with node tag.
-    Myself = partisan_peer_service_manager:myself(),
+    Myself = partisan:node_spec(),
     MyselfPayload = term_to_binary(Myself),
     Tag = partisan_config:get(tag, client),
     TaggedNode = prefix(atom_to_list(Tag) ++ "/" ++ atom_to_list(node())),

@@ -86,7 +86,7 @@ handle_call(Msg, _From, State) ->
 %% @private
 handle_cast({broadcast, ServerRef, Message}, #state{next_id=NextId, membership=Membership}=State) ->
     %% Generate message id.
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
     Id = {MyNode, NextId},
 
     %% Forward to process.

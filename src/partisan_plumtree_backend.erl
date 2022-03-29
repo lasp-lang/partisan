@@ -185,7 +185,7 @@ handle_info(heartbeat, State) ->
     %% identifier: this means that we can have this tree
     %% participate in multiple trees, each rooted at a different
     %% node.
-    Timestamp = {partisan_peer_service_manager:mynode(), Counter},
+    Timestamp = {partisan:node(), Counter},
 
     %% Insert a new message into the table.
     true = ets:insert(?MODULE, [{Timestamp, true}]),

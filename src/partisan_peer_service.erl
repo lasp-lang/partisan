@@ -116,7 +116,7 @@ manager() ->
 -spec myself() -> node_spec().
 
 myself() ->
-    partisan_peer_service_manager:myself().
+    partisan:node_spec().
 
 
 %% -----------------------------------------------------------------------------
@@ -126,7 +126,7 @@ myself() ->
 -spec mynode() -> atom().
 
 mynode() ->
-    partisan_peer_service_manager:mynode().
+    partisan:node().
 
 
 %% -----------------------------------------------------------------------------
@@ -147,9 +147,9 @@ mynode() ->
 -spec node_spec(node()) -> {ok, node_spec()} | {error, Reason :: any()}.
 
 node_spec(Node) when is_atom(Node) ->
-    case partisan_peer_service_manager:mynode() of
+    case partisan:node() of
         Node ->
-            {ok, partisan_peer_service_manager:myself()};
+            {ok, partisan:node_spec()};
 
         _ ->
             Timeout = 15000,
@@ -183,7 +183,7 @@ node_spec(Node, Endpoints) when is_list(Node) ->
 node_spec(Node, Endpoints) when is_atom(Node) ->
     Addresses = coerce_listen_addr(Endpoints),
     %% We assume all nodes have the same parallelism and channel config
-    Map = partisan_peer_service_manager:myself(),
+    Map = partisan:node_spec(),
     NodeSpec = Map#{name => Node, listen_addrs => Addresses},
     {ok, NodeSpec}.
 
@@ -195,7 +195,7 @@ node_spec(Node, Endpoints) when is_atom(Node) ->
 -spec join(node_spec() | node() | list) -> ok | {error, self_join | any()}.
 
 join(#{name := Node} = NodeSpec) ->
-    case partisan_peer_service_manager:mynode() of
+    case partisan:node() of
         Node ->
             {error, self_join};
         _ ->
@@ -219,7 +219,7 @@ join(Node) ->
     ok | {error, self_join | not_implemented | any()}.
 
 sync_join(#{name := Node} = NodeSpec) ->
-    case partisan_peer_service_manager:mynode() of
+    case partisan:node() of
         Node ->
             {error, self_join};
         _ ->
@@ -247,7 +247,7 @@ leave() ->
 -spec leave(node_spec()) -> ok.
 
 leave(#{name := Node} = NodeSpec) ->
-    case partisan_peer_service_manager:mynode() of
+    case partisan:node() of
         Node ->
             (?MANAGER):leave();
         _ ->

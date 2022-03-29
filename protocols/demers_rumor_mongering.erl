@@ -88,7 +88,7 @@ handle_call(Msg, _From, State) ->
 %% @private
 handle_cast({broadcast, ServerRef, Message}, #state{next_id=NextId, membership=Membership}=State) ->
     %% Generate message id.
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
     Id = {MyNode, NextId},
 
     %% Forward to process.
@@ -128,7 +128,7 @@ handle_info({broadcast, Id, ServerRef, Message, FromNode}, #state{membership=Mem
             true = ets:insert(?MODULE, {Id, Message}),
 
             %% Forward to our peers.
-            MyNode = partisan_peer_service_manager:mynode(),
+            MyNode = partisan:node(),
 
             %% Forward to random subset of peers: except ourselves and where we got it from.
             AntiEntropyMembers = select_random_sublist(membership(Membership), ?FANOUT),

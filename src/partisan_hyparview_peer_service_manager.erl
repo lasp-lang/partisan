@@ -122,7 +122,7 @@ members_for_orchestration() ->
 
 %% @doc Return myself.
 myself() ->
-    partisan_peer_service_manager:myself().
+    partisan:node_spec().
 
 %% @doc Return local node's view of cluster membership.
 get_local_state() ->
@@ -239,7 +239,7 @@ sync_join(_Node) ->
 
 %% @doc Leave the cluster.
 leave() ->
-    gen_server:call(?MODULE, {leave, partisan_peer_service_manager:mynode()}, infinity).
+    gen_server:call(?MODULE, {leave, partisan:node()}, infinity).
 
 %% @doc Remove another node from the cluster.
 leave(Node) ->
@@ -1204,7 +1204,7 @@ handle_message({shuffle, Exchange, TTL, Sender},
 
 handle_message({relay_message, Node, Message, TTL} = _RelayMessage, #state{out_links=OutLinks, connections=Connections, active=Active}=State) ->
     ?LOG_TRACE(
-        "Node ~p received tree relay to ~p", [partisan_peer_service_manager:mynode(), Node]
+        "Node ~p received tree relay to ~p", [partisan:node(), Node]
     ),
 
     ActiveMembers = [P || #{name := P} <- members(Active)],
@@ -1445,7 +1445,7 @@ add_to_active_view(#{name := Name}=Peer, Tag,
                           passive=Passive0,
                           reserved=Reserved0,
                           max_active_size=MaxActiveSize}=State0) ->
-    IsNotMyself = not (Name =:= partisan_peer_service_manager:mynode()),
+    IsNotMyself = not (Name =:= partisan:node()),
     NotInActiveView = not sets:is_element(Peer, Active0),
     case IsNotMyself andalso NotInActiveView of
         true ->
@@ -1497,7 +1497,7 @@ add_to_passive_view(#{name := Name}=Peer,
                            passive=Passive0,
                            max_passive_size=MaxPassiveSize}=State0) ->
 
-    IsNotMyself = not (Name =:= partisan_peer_service_manager:mynode()),
+    IsNotMyself = not (Name =:= partisan:node()),
     NotInActiveView = not sets:is_element(Peer, Active0),
     NotInPassiveView = not sets:is_element(Peer, Passive0),
     Passive = case IsNotMyself andalso NotInActiveView andalso NotInPassiveView of
@@ -1872,7 +1872,7 @@ handle_partition_resolution(Reference,
 
 %% @private
 do_tree_forward(Node, Message, Connections, Options, TTL) ->
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
     ?LOG_TRACE(
         "Attempting to forward message ~p from ~p to ~p.",
         [Message, MyNode, Node]
@@ -1923,9 +1923,9 @@ do_tree_forward(Node, Message, Connections, Options, TTL) ->
 retrieve_outlinks() ->
     ?LOG_TRACE(#{description => "About to retrieve outlinks..."}),
 
-    Root = partisan_peer_service_manager:mynode(),
+    Root = partisan:node(),
 
-    OutLinks = try partisan_plumtree_broadcast:debug_get_peers(partisan_peer_service_manager:mynode(), Root, 1000) of
+    OutLinks = try partisan_plumtree_broadcast:debug_get_peers(partisan:node(), Root, 1000) of
         {EagerPeers, _LazyPeers} ->
             ordsets:to_list(EagerPeers)
     catch

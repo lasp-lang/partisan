@@ -93,7 +93,7 @@ members_for_orchestration() ->
 
 %% @doc Return myself.
 myself() ->
-    partisan_peer_service_manager:myself().
+    partisan:node_spec().
 
 %% @doc Return local node's view of cluster membership.
 get_local_state() ->
@@ -161,7 +161,7 @@ sync_join(_Node) ->
 
 %% @doc Leave the cluster.
 leave() ->
-    gen_server:call(?MODULE, {leave, partisan_peer_service_manager:mynode()}, infinity).
+    gen_server:call(?MODULE, {leave, partisan:node()}, infinity).
 
 %% @doc Remove another node from the cluster.
 leave(Node) ->
@@ -394,7 +394,7 @@ establish_connections(Pending, Membership, Connections) ->
     %% Reconnect disconnected members and members waiting to join.
     Members = members(Membership),
     AllPeers = lists:filter(fun(#{name := N}) ->
-                      case partisan_peer_service_manager:mynode() of
+                      case partisan:node() of
                           N ->
                               false;
                           _ ->

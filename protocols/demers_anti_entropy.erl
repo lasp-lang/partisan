@@ -91,7 +91,7 @@ handle_call(Msg, _From, State) ->
 %% @private
 handle_cast({broadcast, ServerRef, Message}, #state{next_id=NextId}=State) ->
     %% Generate message id.
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
     Id = {MyNode, NextId},
 
     %% Forward to process.
@@ -113,11 +113,11 @@ handle_cast(Msg, State) ->
 %% @private
 %% Incoming messages.
 handle_info(antientropy, #state{membership=Membership}=State) ->
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
 
     %% Get all of our messages.
     OurMessages = ets:foldl(fun({Id, {ServerRef, Message}}, Acc) ->
-        Acc ++ [{Id, {ServerRef, Message}}] 
+        Acc ++ [{Id, {ServerRef, Message}}]
     end, [], ?MODULE),
 
     %% Forward to random subset of peers.
@@ -133,7 +133,7 @@ handle_info(antientropy, #state{membership=Membership}=State) ->
     {noreply, State};
 
 handle_info({push, FromNode, TheirMessages}, State) ->
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
 
     %% Encorporate their messages and process them if we didn't see them.
     lists:foreach(fun({Id, {ServerRef, Message}}) ->
@@ -153,7 +153,7 @@ handle_info({push, FromNode, TheirMessages}, State) ->
 
     %% Get all of our messages.
     OurMessages = ets:foldl(fun({Id, {ServerRef, Message}}, Acc) ->
-        Acc ++ [{Id, {ServerRef, Message}}] 
+        Acc ++ [{Id, {ServerRef, Message}}]
     end, [], ?MODULE),
 
     %% Forward message back to sender.

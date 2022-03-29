@@ -52,7 +52,7 @@ call(Name, Module, Function, Arguments, Timeout) ->
     Self = self(),
     Options = options(),
     RpcChannel = rpc_channel(),
-    OurName = partisan_peer_service_manager:mynode(),
+    OurName = partisan:node(),
     Manager:forward_message(Name, RpcChannel, ?MODULE, {call, Module, Function, Arguments, Timeout, {origin, OurName, Self}}, Options),
 
     %% Wait for response.

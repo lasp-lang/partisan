@@ -18,12 +18,9 @@
 
 
 % API
--export([demonitor/1]).
 -export([demonitor/2]).
--export([demonitor_node/1]).
 -export([monitor/1]).
--export([monitor_node/1]).
--export([monitor_node/2]).
+-export([monitor_node/3]).
 -export([start_link/0]).
 
 %% gen_server callbacks
@@ -35,6 +32,7 @@
 -export([terminate/2]).
 
 -compile({no_auto_import, [monitor_node/2]}).
+-compile({no_auto_import, [demonitor/2]}).
 
 
 
@@ -55,9 +53,6 @@ start_link() ->
 %% is no longer reachable.
 %% @end
 %% -----------------------------------------------------------------------------
-monitor(Pid) when is_pid(Pid) ->
-    erlang:monitor(process, Pid);
-
 monitor({partisan_remote_reference, Node,
          {partisan_process_reference, PidAsList}}) ->
     partisan_gen_server:call({?MODULE, Node}, {monitor, PidAsList}).
@@ -67,53 +62,30 @@ monitor({partisan_remote_reference, Node,
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
-demonitor(Ref) when is_reference(Ref) ->
-    erlang:demonitor(Ref);
+-spec demonitor(
+    MonitorRef :: remote_ref(encoded_ref()),
+    OptionList :: [flush | info]) -> boolean().
+
+demonitor(MRef, Opts) when is_reference(MRef) ->
+    erlang:demonitor(MRef, Opts);
 
 demonitor({partisan_remote_reference, Node,
-           {partisan_encoded_reference, _}} = RemoteRef) ->
-    partisan_gen_server:call({?MODULE, Node}, {demonitor, RemoteRef}).
-
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
-demonitor(Ref, Opts) when is_reference(Ref) ->
-    erlang:demonitor(Ref, Opts);
-
-demonitor({partisan_remote_reference, Node,
-           {partisan_encoded_reference, _}} = RemoteRef, _Opts) ->
-    partisan_gen_server:call({?MODULE, Node}, {demonitor, RemoteRef}).
-
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
--spec monitor_node(node() | node_spec()) -> true.
-
-monitor_node(Node) when is_atom(Node) ->
-    case Node == partisan_peer_service:mynode() of
+           {partisan_encoded_reference, _}} = RemoteRef, Opts) ->
+    Res = partisan_gen_server:call(
+        {?MODULE, Node}, {demonitor, RemoteRef, Opts}
+    ),
+    case lists:member(flush, Opts) of
         true ->
-            true;
+            MRef = to_ref(RemoteRef),
+            receive
+                {_, MRef, _, _, _} ->
+                    Res
+            after
+                0 ->
+                    Res
+            end;
         false ->
-            partisan_gen_server:call(?MODULE, {monitor_node, Node})
-    end.
-
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
--spec demonitor_node(node() | node_spec()) -> true.
-
-demonitor_node(Node) when is_atom(Node) ->
-    case Node == partisan_peer_service:mynode() of
-        true ->
-            true;
-        false ->
-            partisan_gen_server:call(?MODULE, {demonitor_node, Node})
+            Res
     end.
 
 
@@ -137,16 +109,26 @@ demonitor_node(Node) when is_atom(Node) ->
 %% If `Node' is the caller's node, the function returns `false'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec monitor_node(node() | node_spec(), boolean()) -> boolean().
+-spec monitor_node(node() | node_spec(), boolean(), [flush | info]) -> boolean().
 
-monitor_node(#{name := Node}, Flag) ->
-    monitor_node(Node, Flag);
+monitor_node(#{name := Node}, Flag, Opts) ->
+    monitor_node(Node, Flag, Opts);
 
-monitor_node(Node, true) ->
-    monitor_node(Node);
+monitor_node(Node, Flag, Opts) ->
+    case partisan_config:get(connect_disterl) of
+        true ->
+            erlang:monitor_node(Node, Flag, Opts);
+        false ->
+            case Node == partisan_peer_service:mynode() of
+                true ->
+                    true;
+                false when Flag == true ->
+                    partisan_gen_server:call(?MODULE, {monitor_node, Node});
+                false when Flag == false ->
+                    partisan_gen_server:call(?MODULE, {demonitor_node, Node})
+            end
+    end.
 
-monitor_node(Node, false) ->
-    demonitor_node(Node).
 
 
 
@@ -181,9 +163,9 @@ handle_call({monitor, PidAsList}, {RemotePid, _RemoteRef}, State0) ->
 
     {reply, Reply, State};
 
-handle_call({demonitor, PartisanRef}, _From, State0) ->
-    State = do_demonitor(PartisanRef, State0),
-    {reply, true, State};
+handle_call({demonitor, PartisanRef, Opts}, _From, State0) ->
+    {Res, State} = do_demonitor(PartisanRef, Opts, State0),
+    {reply, Res, State};
 
 handle_call({monitor_node, Node}, {Pid, _}, State0) ->
     %% Monitor node
@@ -232,7 +214,7 @@ handle_info({nodedown, Node} = Msg, State0) ->
     Refs = refs_by_node(Node, State1),
 
     State = lists:foldl(
-        fun(Ref, Acc) -> do_demonitor(Ref, Acc) end,
+        fun(Ref, Acc0) -> {true, Acc} = do_demonitor(Ref, Acc0), Acc end,
         State1,
         Refs
     ),
@@ -274,16 +256,23 @@ send_process_down(RemotePid, MRef, Pid, Reason) ->
 
 %% @private
 do_demonitor(Term, State0) ->
-    MRef = to_ref(Term),
-    true = erlang:demonitor(MRef, [flush]),
+    do_demonitor(Term, [], State0).
 
-    case take_process_monitor(MRef, State0) of
-        {{_, RemotePid}, State} ->
-            Node = node_from_ref(RemotePid),
-            remove_ref_by_node(Node, MRef, State);
+
+%% @private
+do_demonitor(Term, Opts, State0) ->
+    MRef = to_ref(Term),
+    Res = erlang:demonitor(MRef, Opts),
+
+    State = case take_process_monitor(MRef, State0) of
+        {{_, RemotePid}, State1} ->
+            Node = partisan_util:node(RemotePid),
+            remove_ref_by_node(Node, MRef, State1);
         error ->
             State0
-    end.
+    end,
+
+    {Res, State}.
 
 
 %% @private
@@ -361,11 +350,6 @@ to_ref(
 
 to_ref(Ref) when is_reference(Ref) ->
     Ref.
-
-
-
-node_from_ref({partisan_remote_reference, Node, _}) ->
-    Node.
 
 
 

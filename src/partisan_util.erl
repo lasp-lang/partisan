@@ -330,7 +330,7 @@ gensym(Ref) when is_reference(Ref) ->
 
 ref(Ref) ->
     GenSym = gensym(Ref),
-    Node = partisan_peer_service_manager:mynode(),
+    Node = partisan:node(),
     {partisan_remote_reference, Node, GenSym}.
 
 make_ref() ->
@@ -359,7 +359,7 @@ pid() ->
 pid(Pid) ->
     Node = erlang:node(Pid),
 
-    case partisan_peer_service_manager:mynode() of
+    case partisan:node() of
         Node ->
             %% This is super dangerous.
             case partisan_config:get(register_pid_for_encoding, false) of
@@ -430,7 +430,7 @@ node({partisan_remote_reference, Node, _}) ->
 
 registered_name(Name) ->
     GenSym = gensym(Name),
-    Node = partisan_peer_service_manager:mynode(),
+    Node = partisan:node(),
     {partisan_remote_reference, Node, GenSym}.
 
 process_forward(ServerRef, Message) ->
@@ -439,7 +439,7 @@ process_forward(ServerRef, Message) ->
         [erlang:node(), Message, ServerRef]
     ),
 
-    Node = partisan_peer_service_manager:mynode(),
+    Node = partisan:node(),
 
     try
         case ServerRef of

@@ -73,7 +73,7 @@ join(#scamp_v2{partial_view=PartialView0}=State0, Node, _NodeState) ->
 
     %% 2. Notify node to add us to its state.
     %%    This is lazily done to ensure we can setup the TCP connection both ways, first.
-    Myself = partisan_peer_service_manager:myself(),
+    Myself = partisan:node_spec(),
     OutgoingMessages1 = OutgoingMessages0 ++ [{Node, {membership_strategy, {forward_subscription, Myself}}}],
 
     %% 3. Notify all members we know about to add node to their partial_view.
@@ -308,4 +308,4 @@ random_0_or_1() ->
 
 %% @private
 myself() ->
-    partisan_peer_service_manager:myself().
+    partisan:node_spec().

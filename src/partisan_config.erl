@@ -182,7 +182,7 @@ seed() ->
 random_seed() ->
     case partisan_config:get(random_seed, undefined) of
         undefined ->
-            {erlang:phash2([partisan_peer_service_manager:mynode()]), erlang:monotonic_time(), erlang:unique_integer()};
+            {erlang:phash2([partisan:node()]), erlang:monotonic_time(), erlang:unique_integer()};
         Other ->
             Other
     end.
@@ -245,7 +245,7 @@ try_get_node_address() ->
 
 %% @private
 get_node_address() ->
-    Name = atom_to_list(partisan_peer_service_manager:mynode()),
+    Name = atom_to_list(partisan:node()),
     [_Hostname, FQDN] = string:tokens(Name, "@"),
 
     %% Spawn a process to perform resolution.

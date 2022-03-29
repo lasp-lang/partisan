@@ -78,7 +78,7 @@ leave(#full_v1{}=State0, #{name := NameToRemove}) ->
     %% Self-leave removes our own state and resets it.
     StateToGossip = State0#full_v1{membership = Membership},
 
-    State = case partisan_peer_service_manager:mynode() of
+    State = case partisan:node() of
         NameToRemove ->
             %% Reset our state, store this, but gossip the state with us
             %% removed to the remainder of the members.
@@ -200,7 +200,7 @@ new_state(Actor) ->
 
 %% @private
 myself() ->
-    partisan_peer_service_manager:myself().
+    partisan:node_spec().
 
 %% @private
 persist_state(State) ->
@@ -225,5 +225,5 @@ write_state_to_disk(State) ->
 
 %% @private
 without_me(MembershipList) ->
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
     lists:filter(fun(#{name := Name}) -> Name =/= MyNode end, MembershipList).

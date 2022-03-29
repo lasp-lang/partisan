@@ -27,7 +27,6 @@
 
 -export([myself/0]).
 -export([mynode/0]).
--export([forward_message/2]).
 
 
 %% =============================================================================
@@ -83,7 +82,7 @@
 %% =============================================================================
 
 
-
+%% @deprecated
 -spec myself() -> node_spec().
 
 myself() ->
@@ -100,27 +99,9 @@ myself() ->
     }.
 
 
+%% @deprecated
 -spec mynode() -> atom().
 
 mynode() ->
     partisan_config:get(name, node()).
 
-
-forward_message({partisan_remote_reference, Name, ServerRef} = RemotePid, Message) ->
-    case mynode() of
-        Name ->
-            ?LOG_DEBUG(
-                "Local pid ~p, routing message accordingly: ~p",
-                [ServerRef, Message]
-            ),
-            case ServerRef of
-                {partisan_process_reference, Pid} ->
-                    DeserializedPid = list_to_pid(Pid),
-                    DeserializedPid ! Message;
-                _ ->
-                    ServerRef ! Message
-            end;
-        _ ->
-            Manager = partisan_config:get(partisan_peer_service_manager),
-            Manager:forward_message(RemotePid, Message)
-    end.
