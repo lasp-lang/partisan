@@ -249,9 +249,8 @@ do_call(Process, Label, Request, Timeout) ->
         {Ref, Reply} ->
             {ok, Reply}
     after Timeout ->
-        ?LOG_WARNING(#{
+        ?LOG_DEBUG(#{
             description => "Timed out at while waiting for response to message",
-            node => node(),
             message => Request
         }),
         exit(timeout)
@@ -417,16 +416,18 @@ do_for_proc(Process, Fun)
     undefined ->
         exit(noproc)
     end;
-%% Local by name in disguise
-do_for_proc({Name, Node}, Fun) when Node =:= node() ->
-    do_for_proc(Name, Fun);
+
 %% Remote by name
-do_for_proc({_Name, Node} = Process, Fun) when is_atom(Node) ->
-    if
-    node() =:= nonode@nohost ->
-        exit({nodedown, Node});
-    true ->
-        Fun(Process)
+do_for_proc({Name, Node} = Process, Fun) when is_atom(Node) ->
+
+    case partisan_peer_service:mynode() of
+        Node ->
+            %% Local by name in disguise
+            do_for_proc(Name, Fun);
+        nonode@nohost ->
+            exit({nodedown, Node});
+        _ ->
+            Fun(Process)
     end.
 
 
@@ -592,7 +593,7 @@ do_send_request(Process, Label, Request) ->
         {RemoteProcess, RemoteNode} ->
             {RemoteNode, RemoteProcess};
         _ ->
-            {node(), Process}
+            {partisan_peer_service:mynode(), Process}
     end,
 
     %% Generate message.
@@ -601,7 +602,6 @@ do_send_request(Process, Label, Request) ->
     %% Send message via Partisan.
     ?LOG_DEBUG(#{
         description => "Sending message",
-        node => node(),
         peer_node => Node,
         process => ServerRef,
         message => Message
