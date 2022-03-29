@@ -43,6 +43,7 @@
 -export([decode/1]).
 -export([exchanges/0]).
 -export([exchanges/1]).
+-export([forward_message/2]).
 -export([forward_message/3]).
 -export([forward_message/4]).
 -export([forward_message/5]).
@@ -52,6 +53,7 @@
 -export([leave/0]).
 -export([leave/1]).
 -export([manager/0]).
+-export([member/1]).
 -export([members/0]).
 -export([members_for_orchestration/0]).
 -export([mynode/0]).
@@ -259,7 +261,7 @@ leave(#{name := Node} = NodeSpec) ->
 %% argument is the Node name.
 %% @end
 %% -----------------------------------------------------------------------------
--spec on_up(atom() | node_spec() | any | '_', function()) ->
+-spec on_up(node() | node_spec() | any | '_', function()) ->
     ok | {error, not_implemented}.
 
 on_up(Node, Function) ->
@@ -272,11 +274,22 @@ on_up(Node, Function) ->
 %% argument is the Node name.
 %% @end
 %% -----------------------------------------------------------------------------
--spec on_down(atom() | node_spec() | any | '_', function()) ->
+-spec on_down(node() | node_spec() | any | '_', function()) ->
     ok | {error, not_implemented}.
 
 on_down(Node, Function) ->
     (?MANAGER):on_down(Node, Function).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Return cluster members
+%% @end
+%% -----------------------------------------------------------------------------
+-spec member(Node :: node() | node_spec()) -> boolean().
+
+member(Node) ->
+    (?MANAGER):member(Node).
+
 
 
 %% -----------------------------------------------------------------------------
@@ -428,6 +441,16 @@ cast_message(Name, Channel, ServerRef, Message) ->
 
 cast_message(Name, Channel, ServerRef, Message, Options) ->
     (?MANAGER):cast_message(Name, Channel, ServerRef, Message, Options).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Forward message to registered process on the remote side.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec forward_message(remote_ref() | pid(), message()) -> ok.
+
+forward_message(PidOrRef, Message) ->
+    (?MANAGER):forward_message(PidOrRef, Message).
 
 
 %% -----------------------------------------------------------------------------
