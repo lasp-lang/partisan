@@ -196,9 +196,10 @@ handle_cast(_Msg, State) ->
 handle_info({'DOWN', MRef, process, Pid, Reason}, State0) ->
     State = case take_process_monitor(MRef, State0) of
         {{Pid, RemotePid}, State1} ->
+            Node = partisan_util:node(RemotePid),
+            State2 = remove_ref_by_node(Node, MRef, State1),
             ok = send_process_down(RemotePid, MRef, Pid, Reason),
-            State1;
-
+            State2;
         error ->
             State0
     end,
