@@ -34,7 +34,6 @@
          term_to_iolist/1,
          gensym/1,
          make_ref/0,
-         node/1,
          pid/0,
          pid/1,
          ref/1,
