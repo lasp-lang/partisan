@@ -82,26 +82,16 @@
 %% =============================================================================
 
 
-%% @deprecated
+%% @deprecated use partisan:node_spec/0 instead.
 -spec myself() -> node_spec().
 
 myself() ->
-    Parallelism = partisan_config:get(parallelism, ?PARALLELISM),
-    Channels = partisan_config:get(channels, ?CHANNELS),
-    Name = partisan_config:get(name),
-    ListenAddrs = partisan_config:get(listen_addrs),
-
-    #{
-        name => Name,
-        listen_addrs => ListenAddrs,
-        channels => Channels,
-        parallelism => Parallelism
-    }.
+    partisan:myself().
 
 
-%% @deprecated
+%% @deprecated use partisan:node/0 instead.
 -spec mynode() -> atom().
 
 mynode() ->
-    partisan_config:get(name, node()).
+    partisan:node().
 
