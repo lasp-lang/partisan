@@ -41,7 +41,10 @@
 %% =============================================================================
 
 
-
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 start_link() ->
     partisan_gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
@@ -76,7 +79,7 @@ demonitor({partisan_remote_reference, Node,
     ),
     case lists:member(flush, Opts) of
         true ->
-            MRef = to_ref(RemoteRef),
+            MRef = decode_ref(RemoteRef),
             receive
                 {_, MRef, _, _, _} ->
                     Res
@@ -109,7 +112,8 @@ demonitor({partisan_remote_reference, Node,
 %% If `Node' is the caller's node, the function returns `false'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec monitor_node(node() | node_spec(), boolean(), [flush | info]) -> boolean().
+-spec monitor_node(node() | node_spec(), boolean(), [flush | info]) ->
+    boolean().
 
 monitor_node(#{name := Node}, Flag, Opts) ->
     monitor_node(Node, Flag, Opts);
@@ -131,14 +135,12 @@ monitor_node(Node, Flag, Opts) ->
 
 
 
-
 %% =============================================================================
 %% GEN_SERVER CALLBACKS
 %% =============================================================================
 
 
 
-%% @private
 init([]) ->
     Me = self(),
 
@@ -148,7 +150,7 @@ init([]) ->
 
     {ok, #state{}}.
 
-%% @private
+
 handle_call({monitor, PidAsList}, {RemotePid, _RemoteRef}, State0) ->
     {partisan_remote_reference, Nodename, _} = RemotePid,
     Pid = list_to_pid(PidAsList),
@@ -188,15 +190,17 @@ handle_call({demonitor_node, Node}, {Pid, _}, State0) ->
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
-%% @private
+
+
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-%% @private
+
+
 handle_info({'DOWN', MRef, process, Pid, Reason}, State0) ->
     State = case take_process_monitor(MRef, State0) of
         {{Pid, RemotePid}, State1} ->
-            Node = partisan_util:node(RemotePid),
+            Node = partisan:node(RemotePid),
             State2 = remove_ref_by_node(Node, MRef, State1),
             ok = send_process_down(RemotePid, MRef, Pid, Reason),
             State2;
@@ -226,12 +230,12 @@ handle_info(_Msg, State) ->
     {noreply, State}.
 
 
-%% @private
+
 terminate(_Reason, _State) ->
     ok.
 
 
-%% @private
+
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
@@ -262,12 +266,12 @@ do_demonitor(Term, State0) ->
 
 %% @private
 do_demonitor(Term, Opts, State0) ->
-    MRef = to_ref(Term),
+    MRef = decode_ref(Term),
     Res = erlang:demonitor(MRef, Opts),
 
     State = case take_process_monitor(MRef, State0) of
         {{_, RemotePid}, State1} ->
-            Node = partisan_util:node(RemotePid),
+            Node = partisan:node(RemotePid),
             remove_ref_by_node(Node, MRef, State1);
         error ->
             State0
@@ -289,6 +293,7 @@ add_process_monitor(Nodename, MRef, {_, _} = Pids, State) ->
     State#state{refs = Refs, refs_by_node = Index}.
 
 
+%% @private
 take_process_monitor(MRef, State) ->
     case maps:take(MRef, State#state.refs) of
         {Existing, Map} ->
@@ -298,6 +303,7 @@ take_process_monitor(MRef, State) ->
     end.
 
 
+%% @private
 remove_ref_by_node(Node, MRef, State) ->
     case maps:find(Node, State#state.refs_by_node) of
         {ok, Refs0} ->
@@ -313,6 +319,7 @@ remove_ref_by_node(Node, MRef, State) ->
     end.
 
 
+%% @private
 refs_by_node(Node, State) ->
     case maps:find(Node, State#state.refs_by_node) of
         {ok, Refs} ->
@@ -322,12 +329,13 @@ refs_by_node(Node, State) ->
     end.
 
 
-
+%% @private
 add_node_monitor(Node, Pid, State) ->
     Map = partisan_util:maps_append(Node, Pid, State#state.pids_by_node),
     State#state{pids_by_node = Map}.
 
 
+%% @private
 remove_node_monitor(Node, Pid, State) ->
     case maps:find(Node, State#state.pids_by_node) of
         {ok, Existing} ->
@@ -336,6 +344,8 @@ remove_node_monitor(Node, Pid, State) ->
             State
     end.
 
+
+%% @private
 take_node_monitors(Node, State) ->
     case maps:take(Node, State#state.pids_by_node) of
         {Existing, Map} ->
@@ -345,11 +355,12 @@ take_node_monitors(Node, State) ->
     end.
 
 
-to_ref(
+%% @private
+decode_ref(
     {partisan_remote_reference, _, {partisan_encoded_reference, RefAsList}}) ->
     erlang:list_to_ref(RefAsList);
 
-to_ref(Ref) when is_reference(Ref) ->
+decode_ref(Ref) when is_reference(Ref) ->
     Ref.
 
 
