@@ -86,7 +86,7 @@
 -spec myself() -> node_spec().
 
 myself() ->
-    partisan:myself().
+    partisan:node_spec().
 
 
 %% @deprecated use partisan:node/0 instead.
