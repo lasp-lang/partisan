@@ -173,7 +173,8 @@ handle_call({monitor_node, Node}, {Pid, _}, State0) ->
     %% Monitor node
     case partisan_peer_service:member(Node) of
         true ->
-            State = add_node_monitor(Node, Pid, State0),
+            %% Pid is always local
+            State = add_node_monitor(Node, decode_pid(Pid), State0),
             {reply, true, State};
         false ->
             %% We reply true but we do not record the request as we are
@@ -184,7 +185,7 @@ handle_call({monitor_node, Node}, {Pid, _}, State0) ->
     end;
 
 handle_call({demonitor_node, Node}, {Pid, _}, State0) ->
-    State = remove_node_monitor(Node, Pid, State0),
+    State = remove_node_monitor(Node, decode_pid(Pid), State0),
     {reply, true, State};
 
 handle_call(_Msg, _From, State) ->
@@ -337,9 +338,11 @@ add_node_monitor(Node, Pid, State) ->
 
 %% @private
 remove_node_monitor(Node, Pid, State) ->
-    case maps:find(Node, State#state.pids_by_node) of
-        {ok, Existing} ->
-            State#state{pids_by_node = lists:delete(Pid, Existing)};
+    Map0 = State#state.pids_by_node,
+    case maps:find(Node, Map0) of
+        {ok, Pids} when is_list(Pids) ->
+            Map1 = maps:put(Node, lists:delete(Pid, Pids), Map0),
+            State#state{pids_by_node = Map1};
         error ->
             State
     end.
@@ -364,4 +367,9 @@ decode_ref(Ref) when is_reference(Ref) ->
     Ref.
 
 
+decode_pid(
+    {partisan_remote_reference, _, {partisan_process_reference, PidAsList}}) ->
+    erlang:list_to_pid(PidAsList);
 
+decode_pid(Pid) when is_pid(Pid) ->
+    Pid.
