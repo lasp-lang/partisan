@@ -123,7 +123,7 @@ monitor_node(Node, Flag, Opts) ->
         true ->
             erlang:monitor_node(Node, Flag, Opts);
         false ->
-            case Node == partisan_peer_service:mynode() of
+            case Node == partisan:node() of
                 true ->
                     true;
                 false when Flag == true ->

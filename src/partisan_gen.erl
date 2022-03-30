@@ -420,7 +420,7 @@ do_for_proc(Process, Fun)
 %% Remote by name
 do_for_proc({Name, Node} = Process, Fun) when is_atom(Node) ->
 
-    case partisan_peer_service:mynode() of
+    case partisan:node() of
         Node ->
             %% Local by name in disguise
             do_for_proc(Name, Fun);
@@ -593,7 +593,7 @@ do_send_request(Process, Label, Request) ->
         {RemoteProcess, RemoteNode} ->
             {RemoteNode, RemoteProcess};
         _ ->
-            {partisan_peer_service:mynode(), Process}
+            {partisan:node(), Process}
     end,
 
     %% Generate message.
