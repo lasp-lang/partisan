@@ -33,6 +33,7 @@
 -export([node/0]).
 -export([node/1]).
 -export([node_spec/0]).
+-export([default_channel/0]).
 
 -compile({no_auto_import, [monitor_node/2]}).
 -compile({no_auto_import, [demonitor/2]}).
@@ -200,3 +201,7 @@ node_spec() ->
         channels => Channels,
         parallelism => Parallelism
     }.
+
+
+default_channel() ->
+    ?DEFAULT_CHANNEL.

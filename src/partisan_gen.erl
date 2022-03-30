@@ -624,7 +624,7 @@ set_channel(Options) ->
         {_, Channel} ->
             erlang:put(partisan_channel, Channel);
         false ->
-            erlang:put(partisan_channel, ?DEFAULT_CHANNEL)
+            erlang:put(partisan_channel, partisan:default_channel())
     end,
 
     ok.
