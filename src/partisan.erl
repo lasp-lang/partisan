@@ -111,7 +111,7 @@ demonitor(MRef, Opts) when is_reference(MRef) ->
     erlang:demonitor(MRef, Opts);
 
 demonitor(
-    {partisan_remote_reference, _, {partisan_process_reference, _}} = R,
+    {partisan_remote_reference, _, {partisan_encoded_reference, _}} = R,
     Opts) ->
     partisan_monitor:demonitor(R, Opts).
 
