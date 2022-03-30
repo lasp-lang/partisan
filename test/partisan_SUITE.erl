@@ -1463,13 +1463,8 @@ basic_test(Config) ->
     ct:pal("Configured channels: ~p", [ConfigChannels]),
 
     ConnectionsFun = fun(Node) ->
-                             Connections = rpc:call(Node,
-                                      ?DEFAULT_PEER_SERVICE_MANAGER,
-                                      connections,
-                                      []),
-                             %% ct:pal("Connections: ~p~n", [Connections]),
-                             Connections
-                     end,
+        rpc:call(Node, ?DEFAULT_PEER_SERVICE_MANAGER, connections, [])
+    end,
 
     VerifyConnectionsFun = fun(Node, Channel, Parallelism) ->
         %% Get list of connections.
@@ -1477,17 +1472,13 @@ basic_test(Config) ->
 
         %% Verify we have enough connections.
         partisan_peer_service_connections:fold(
-            fun(_N, Active, Acc) ->
-                Filtered = lists:filter(fun({_, C, _}) ->
-                    case C of
-                        Channel ->
-                            true;
-                        _ ->
-                            false
-                    end
-                end, Active),
+            fun(_Nodename, {_NodeSpec, Active}, Acc) ->
+                ChannelConnections = lists:filter(
+                    fun({_, C, _}) -> C == Channel end,
+                    Active
+                ),
 
-                case length(Filtered) == Parallelism of
+                case length(ChannelConnections) == Parallelism of
                     true ->
                         Acc andalso true;
                     false ->
@@ -1499,30 +1490,37 @@ basic_test(Config) ->
         )
     end,
 
-    lists:foreach(fun({_Name, Node}) ->
-                        %% Get enabled parallelism.
-                        Parallelism = rpc:call(Node, partisan_config, get, [parallelism, ?PARALLELISM]),
-                        ct:pal("Parallelism is: ~p", [Parallelism]),
+    lists:foreach(
+        fun({_Name, Node}) ->
+            %% Get enabled parallelism.
+            Parallelism = rpc:call(
+                Node, partisan_config, get, [parallelism, ?PARALLELISM]
+            ),
+            ct:pal("Parallelism is: ~p", [Parallelism]),
 
-                        %% Get enabled channels.
-                        Channels = rpc:call(Node, partisan_config, get, [channels, ?CHANNELS]),
-                        ct:pal("Channels are: ~p", [Channels]),
+            %% Get enabled channels.
+            Channels = rpc:call(
+                Node, partisan_config, get, [channels, ?CHANNELS]
+            ),
+            ct:pal("Channels are: ~p", [Channels]),
 
-                        lists:foreach(fun(Channel) ->
-                            %% Generate fun.
-                            VerifyConnectionsNodeFun = fun() ->
-                                                            VerifyConnectionsFun(Node, Channel, Parallelism)
-                                                    end,
+            lists:foreach(fun(Channel) ->
+                %% Generate fun.
+                VerifyConnectionsNodeFun = fun() ->
+                    VerifyConnectionsFun(Node, Channel, Parallelism)
+                end,
 
-                            %% Wait until connections established.
-                            case wait_until(VerifyConnectionsNodeFun, 60 * 2, 100) of
-                                ok ->
-                                    ok;
-                                _ ->
-                                    ct:fail("Not enough connections have been opened; need: ~p", [Parallelism])
-                            end
-                        end, Channels)
-                  end, Nodes),
+                %% Wait until connections established.
+                case wait_until(VerifyConnectionsNodeFun, 60 * 2, 100) of
+                    ok ->
+                        ok;
+                    _ ->
+                        ct:fail("Not enough connections have been opened; need: ~p", [Parallelism])
+                end
+            end, Channels)
+        end,
+        Nodes
+    ),
 
     %% Stop nodes.
     ?SUPPORT:stop(Nodes),
