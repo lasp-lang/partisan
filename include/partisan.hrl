@@ -36,6 +36,13 @@
 -define(DEFAULT_MEMBERSHIP_STRATEGY, partisan_full_membership_strategy).
 -define(DEFAULT_ORCHESTRATION_STRATEGY, undefined).
 
+-define(PEER_SERVICE_MANAGER,
+    partisan_config:get(
+        partisan_peer_service_manager,
+        ?DEFAULT_PEER_SERVICE_MANAGER
+    )
+).
+
 %% Pluggable manager options.
 -define(DISTANCE_ENABLED, true).
 -define(PERIODIC_ENABLED, true).

@@ -24,29 +24,14 @@
 -include("partisan_logger.hrl").
 -include("partisan.hrl").
 
--define(MANAGER,
-    partisan_config:get(
-        partisan_peer_service_manager,
-        ?DEFAULT_PEER_SERVICE_MANAGER
-    )
-).
-
 -export([add_sup_callback/1]).
--export([broadcast/2]).
 -export([broadcast_members/0]).
 -export([broadcast_members/1]).
 -export([cancel_exchanges/1]).
--export([cast_message/3]).
--export([cast_message/4]).
--export([cast_message/5]).
 -export([connections/0]).
 -export([decode/1]).
 -export([exchanges/0]).
 -export([exchanges/1]).
--export([forward_message/2]).
--export([forward_message/3]).
--export([forward_message/4]).
--export([forward_message/5]).
 -export([get_local_state/0]).
 -export([inject_partition/2]).
 -export([join/1]).
@@ -56,16 +41,11 @@
 -export([member/1]).
 -export([members/0]).
 -export([members_for_orchestration/0]).
--export([mynode/0]).
--export([myself/0]).
--export([node_spec/1]).
--export([node_spec/2]).
 -export([on_down/2]).
 -export([on_up/2]).
 -export([partitions/0]).
 -export([reserve/1]).
 -export([resolve_partition/1]).
--export([send_message/2]).
 -export([stop/0]).
 -export([stop/1]).
 -export([sync_join/1]).
@@ -106,86 +86,7 @@ stop(Reason) ->
 -spec manager() -> module().
 
 manager() ->
-    ?MANAGER.
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Return the partisan node_spec() for this node.
-%% @end
-%% -----------------------------------------------------------------------------
--spec myself() -> node_spec().
-
-myself() ->
-    partisan:node_spec().
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Return the partisan node_spec() for this node.
-%% @end
-%% -----------------------------------------------------------------------------
--spec mynode() -> atom().
-
-mynode() ->
-    partisan:node().
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Return the partisan node_spec() for node named `Node'.
-%%
-%% If configuration option `connect_disterl' is `true', this function retrieves
-%% the node_spec from the remote node using RPC and returns `{error, Reason}'
-%% if the RPC fails. Otherwise, asumes the node is running on the same host and
-%% return a `node_spec()' with with nodename `Name' and host 'Host' and same
-%% metadata as `myself/0'.
-%%
-%% You should only use this function when distributed erlang is enabled
-%% (configuration option `connect_disterl' is `true') or if the node is running
-%% on the same host and you are using this for testing purposes as there is no
-%% much sense in running a partisan cluster on a single host.
-%% @end
-%% -----------------------------------------------------------------------------
--spec node_spec(node()) -> {ok, node_spec()} | {error, Reason :: any()}.
-
-node_spec(Node) when is_atom(Node) ->
-    case partisan:node() of
-        Node ->
-            {ok, partisan:node_spec()};
-
-        _ ->
-            Timeout = 15000,
-            Result = rpc:call(
-                Node,
-                partisan_peer_service_manager,
-                myself,
-                [],
-                Timeout
-            ),
-            case Result of
-                #{name := Node} = NodeSpec ->
-                    {ok, NodeSpec};
-                {badrpc, Reason} ->
-                    {error, Reason}
-            end
-    end.
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Returns a peer with nodename `Name' and host 'Host' and same metadata
-%% as `myself/0'.
-%% @end
-%% -----------------------------------------------------------------------------
--spec node_spec(Node :: list() | node(), listen_addr() | [listen_addr()]) ->
-    {ok, node_spec()} | {error, Reason :: any()}.
-
-node_spec(Node, Endpoints) when is_list(Node) ->
-    node_spec(list_to_node(Node), Endpoints);
-
-node_spec(Node, Endpoints) when is_atom(Node) ->
-    Addresses = coerce_listen_addr(Endpoints),
-    %% We assume all nodes have the same parallelism and channel config
-    Map = partisan:node_spec(),
-    NodeSpec = Map#{name => Node, listen_addrs => Addresses},
-    {ok, NodeSpec}.
+    ?PEER_SERVICE_MANAGER.
 
 
 %% -----------------------------------------------------------------------------
@@ -199,11 +100,11 @@ join(#{name := Node} = NodeSpec) ->
         Node ->
             {error, self_join};
         _ ->
-            (?MANAGER):join(NodeSpec)
+            (?PEER_SERVICE_MANAGER):join(NodeSpec)
     end;
 
 join(Node) ->
-    case node_spec(Node) of
+    case partisan:node_spec(Node) of
         {ok, NodeSpec} ->
             join(NodeSpec);
         {error, _} = Error ->
@@ -223,7 +124,7 @@ sync_join(#{name := Node} = NodeSpec) ->
         Node ->
             {error, self_join};
         _ ->
-            (?MANAGER):sync_join(NodeSpec)
+            (?PEER_SERVICE_MANAGER):sync_join(NodeSpec)
     end.
 
 
@@ -235,7 +136,7 @@ sync_join(#{name := Node} = NodeSpec) ->
 -spec leave() -> ok.
 
 leave() ->
-    (?MANAGER):leave().
+    (?PEER_SERVICE_MANAGER):leave().
 
 
 %% -----------------------------------------------------------------------------
@@ -249,9 +150,9 @@ leave() ->
 leave(#{name := Node} = NodeSpec) ->
     case partisan:node() of
         Node ->
-            (?MANAGER):leave();
+            (?PEER_SERVICE_MANAGER):leave();
         _ ->
-            (?MANAGER):leave(NodeSpec)
+            (?PEER_SERVICE_MANAGER):leave(NodeSpec)
     end.
 
 
@@ -265,7 +166,7 @@ leave(#{name := Node} = NodeSpec) ->
     ok | {error, not_implemented}.
 
 on_up(Node, Function) ->
-    (?MANAGER):on_up(Node, Function).
+    (?PEER_SERVICE_MANAGER):on_up(Node, Function).
 
 
 %% -----------------------------------------------------------------------------
@@ -278,7 +179,7 @@ on_up(Node, Function) ->
     ok | {error, not_implemented}.
 
 on_down(Node, Function) ->
-    (?MANAGER):on_down(Node, Function).
+    (?PEER_SERVICE_MANAGER):on_down(Node, Function).
 
 
 %% -----------------------------------------------------------------------------
@@ -288,7 +189,7 @@ on_down(Node, Function) ->
 -spec member(Node :: node() | node_spec()) -> boolean().
 
 member(Node) ->
-    (?MANAGER):member(Node).
+    (?PEER_SERVICE_MANAGER):member(Node).
 
 
 
@@ -299,7 +200,7 @@ member(Node) ->
 -spec members() -> [name()].
 
 members() ->
-    (?MANAGER):members().
+    (?PEER_SERVICE_MANAGER):members().
 
 
 %% -----------------------------------------------------------------------------
@@ -309,7 +210,7 @@ members() ->
 -spec members_for_orchestration() -> [node_spec()].
 
 members_for_orchestration() ->
-    (?MANAGER):members_for_orchestration().
+    (?PEER_SERVICE_MANAGER):members_for_orchestration().
 
 
 %% -----------------------------------------------------------------------------
@@ -317,7 +218,7 @@ members_for_orchestration() ->
 %% @end
 %% -----------------------------------------------------------------------------
 connections() ->
-    (?MANAGER):connections().
+    (?PEER_SERVICE_MANAGER):connections().
 
 
 %% -----------------------------------------------------------------------------
@@ -327,7 +228,7 @@ connections() ->
 -spec update_members([node()]) -> ok | {error, not_implemented}.
 
 update_members(Nodes) ->
-    (?MANAGER):update_members(Nodes).
+    (?PEER_SERVICE_MANAGER):update_members(Nodes).
 
 
 %% -----------------------------------------------------------------------------
@@ -337,7 +238,7 @@ update_members(Nodes) ->
 -spec decode(term()) -> term().
 
 decode(State) ->
-    Manager = ?MANAGER,
+    Manager = ?PEER_SERVICE_MANAGER,
     [P || #{name := P} <- Manager:decode(State)].
 
 
@@ -348,7 +249,7 @@ decode(State) ->
 -spec reserve(atom()) -> ok | {error, no_available_slots}.
 
 reserve(Tag) ->
-    (?MANAGER):reserve(Tag).
+    (?PEER_SERVICE_MANAGER):reserve(Tag).
 
 
 %% -----------------------------------------------------------------------------
@@ -358,7 +259,7 @@ reserve(Tag) ->
 -spec partitions() -> {ok, partitions()} | {error, not_implemented}.
 
 partitions() ->
-    (?MANAGER):partitions().
+    (?PEER_SERVICE_MANAGER):partitions().
 
 
 
@@ -370,7 +271,7 @@ partitions() ->
     {ok, reference()} | {error, not_implemented}.
 
 inject_partition(Origin, TTL) ->
-    (?MANAGER):inject_partition(Origin, TTL).
+    (?PEER_SERVICE_MANAGER):inject_partition(Origin, TTL).
 
 
 %% -----------------------------------------------------------------------------
@@ -381,7 +282,7 @@ inject_partition(Origin, TTL) ->
     ok | {error, not_implemented}.
 
 resolve_partition(Reference) ->
-    (?MANAGER):resolve_partition(Reference).
+    (?PEER_SERVICE_MANAGER):resolve_partition(Reference).
 
 
 %% -----------------------------------------------------------------------------
@@ -391,7 +292,7 @@ resolve_partition(Reference) ->
 -spec get_local_state() -> term().
 
 get_local_state() ->
-    (?MANAGER):get_local_state().
+    (?PEER_SERVICE_MANAGER):get_local_state().
 
 
 
@@ -403,100 +304,6 @@ add_sup_callback(Function) ->
     partisan_peer_service_events:add_sup_callback(Function).
 
 
-%% -----------------------------------------------------------------------------
-%% @doc Cast message to registered process on the remote side.
-%% @end
-%% -----------------------------------------------------------------------------
--spec send_message(name(), message()) -> ok.
-
-send_message(Name, Message) ->
-    (?MANAGER):send_message(Name, Message).
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Cast message to registered process on the remote side.
-%% @end
-%% -----------------------------------------------------------------------------
--spec cast_message(name(), pid(), message()) -> ok.
-
-cast_message(Name, ServerRef, Message) ->
-    (?MANAGER):cast_message(Name, ServerRef, Message).
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Cast message to registered process on the remote side.
-%% @end
-%% -----------------------------------------------------------------------------
--spec cast_message(name(), channel(), pid(), message()) -> ok.
-
-cast_message(Name, Channel, ServerRef, Message) ->
-    (?MANAGER):cast_message(Name, Channel, ServerRef, Message).
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Cast message to registered process on the remote side.
-%% @end
-%% -----------------------------------------------------------------------------
--spec cast_message(name(), channel(), pid(), message(), options()) -> ok.
-
-cast_message(Name, Channel, ServerRef, Message, Options) ->
-    (?MANAGER):cast_message(Name, Channel, ServerRef, Message, Options).
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Forward message to registered process on the remote side.
-%% @end
-%% -----------------------------------------------------------------------------
--spec forward_message(remote_ref() | pid(), message()) -> ok.
-
-forward_message(PidOrRef, Message) ->
-    (?MANAGER):forward_message(PidOrRef, Message).
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Forward message to registered process on the remote side.
-%% @end
-%% -----------------------------------------------------------------------------
--spec forward_message(name(), pid(), message()) -> ok.
-
-forward_message(Name, ServerRef, Message) ->
-    (?MANAGER):forward_message(Name, ServerRef, Message).
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Forward message to registered process on the remote side.
-%% @end
-%% -----------------------------------------------------------------------------
--spec forward_message(name(), channel(), pid(), message()) -> ok.
-
-forward_message(Name, Channel, ServerRef, Message) ->
-    (?MANAGER):forward_message(Name, Channel, ServerRef, Message).
-
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Forward message to registered process on the remote side.
-%% @end
-%% -----------------------------------------------------------------------------
--spec forward_message(name(), channel(), pid(), message(), options()) -> ok.
-
-forward_message(Name, Channel, ServerRef, Message, Options) ->
-    (?MANAGER):forward_message(Name, Channel, ServerRef, Message, Options).
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Broadcasts a message originating from this node. The message will be
-%% delivered to each node at least once. The `Mod' passed is responsible for
-%% handling the message on remote nodes as well as providing some other
-%% information both locally and and on other nodes.
-%% `Mod' must be loaded on all members of the clusters and implement the
-%% `partisan_plumtree_broadcast_handler' behaviour.
-%% @end
-%% -----------------------------------------------------------------------------
--spec broadcast(any(), module()) -> ok.
-
-broadcast(Broadcast, Mod) ->
-    partisan_plumtree_broadcast:broadcast(Broadcast, Mod).
 
 
 %% -----------------------------------------------------------------------------
@@ -556,27 +363,5 @@ cancel_exchanges(WhichExchanges) ->
 
 
 
-%% =============================================================================
-%% PRIVATE
-%% =============================================================================
 
-
-
-%% @private
-list_to_node(NodeStr) ->
-    erlang:list_to_atom(lists:flatten(NodeStr)).
-
-
-%% @private
-coerce_listen_addr({IP, Port})  ->
-    [#{ip => IP, port => Port}];
-
-coerce_listen_addr([{_, _} | _] = L) ->
-    [#{ip => IP, port => Port} || {IP, Port} <- L];
-
-coerce_listen_addr(#{ip := _, port := _} = L)  ->
-    [L];
-
-coerce_listen_addr([#{ip := _, port := _} | _] = L) ->
-    L.
 

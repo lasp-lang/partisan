@@ -179,7 +179,7 @@ handle_call({monitor_node, Node}, {Pid, _}, State0) ->
             %% We reply true but we do not record the request as we are
             %% immediatly sending a nodedown signal
             ok = partisan_gen_server:reply(Pid, true),
-            ok = partisan_peer_service:forward_message(Pid, {nodedown, Node}),
+            ok = partisan:forward_message(Pid, {nodedown, Node}),
             {noreply, State0}
     end;
 
@@ -213,7 +213,7 @@ handle_info({'DOWN', MRef, process, Pid, Reason}, State0) ->
 handle_info({nodedown, Node} = Msg, State0) ->
     %% We need to notify all local processes monitoring Node
     {Pids, State1} = take_node_monitors(Node, State0),
-    [partisan_peer_service:forward_message(Pid, Msg) || Pid <- Pids],
+    [partisan:forward_message(Pid, Msg) || Pid <- Pids],
 
     %% We need to demonitor all monitors associated with Node
     Refs = refs_by_node(Node, State1),
@@ -256,7 +256,7 @@ send_process_down(RemotePid, MRef, Pid, Reason) ->
         partisan_util:pid(Pid),
         Reason
     },
-    partisan_peer_service:forward_message(RemotePid, Down).
+    partisan:forward_message(RemotePid, Down).
 
 
 %% @private
