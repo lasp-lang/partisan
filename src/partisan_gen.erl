@@ -614,18 +614,17 @@ do_send_request(Process, Label, Request) ->
     Ref.
 
 
+%% @doc Returns channel from the process dictionary
 get_channel() ->
-    %% We get channel from the process dictionary
     erlang:get(partisan_channel).
 
 
 set_channel(Options) ->
-    case lists:keyfind(channel, 1, Options) of
-        {_,Channel} ->
-            erlang:put(partisan_channel, Channel),
-            ok;
+    _ = case lists:keyfind(channel, 1, Options) of
+        {_, Channel} ->
+            erlang:put(partisan_channel, Channel);
         false ->
-            Default = partisan_config:default_channel(),
-            erlang:put(partisan_channel, Default),
-            ok
-    end.
+            erlang:put(partisan_channel, ?DEFAULT_CHANNEL)
+    end,
+
+    ok.

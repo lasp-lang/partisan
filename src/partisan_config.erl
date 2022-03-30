@@ -202,30 +202,38 @@ env_or_default(Key, Default) ->
             set(Key, Default)
     end.
 
+
 get(Key) ->
     persistent_term:get(Key).
 
 get(Key, Default) ->
     persistent_term:get(Key, Default).
 
+
 set(peer_ip, Value) when is_list(Value) ->
     {ok, ParsedIP} = inet_parse:address(Value),
     set(peer_ip, ParsedIP);
+
 set(Key, Value) ->
     application:set_env(?APP, Key, Value),
     persistent_term:put(Key, Value).
 
+
 listen_addrs() ->
     partisan_config:get(listen_addrs).
 
+
 channels() ->
-    partisan_config:get(channels).
+    partisan_config:get(channels, ?CHANNELS).
+
 
 default_channel() ->
     ?DEFAULT_CHANNEL.
 
+
 parallelism() ->
-    partisan_config:get(parallelism).
+    partisan_config:get(parallelism, ?PARALLELISM).
+
 
 %% @private
 random_port() ->
@@ -233,6 +241,7 @@ random_port() ->
     {ok, {_, Port}} = inet:sockname(Socket),
     ok = gen_tcp:close(Socket),
     Port.
+
 
 %% @private
 try_get_node_address() ->
