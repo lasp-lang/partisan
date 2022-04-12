@@ -490,9 +490,15 @@ process_forward(ServerRef, Message) ->
                 ServerRef ! Message,
 
                 Trace =
-                    (is_pid(ServerRef) andalso not is_process_alive(ServerRef))
-                        orelse whereis(ServerRef) == undefined
-                        orelse not is_process_alive(whereis(ServerRef)),
+                    (
+                        is_pid(ServerRef) andalso
+                        not is_process_alive(ServerRef)
+                    ) orelse (
+                        not is_pid(ServerRef) andalso (
+                            whereis(ServerRef) == undefined orelse
+                            not is_process_alive(whereis(ServerRef))
+                        )
+                    ),
 
                 ?LOG_TRACE_IF(
                     Trace, "Process ~p is NOT ALIVE.", [ServerRef]
@@ -501,8 +507,15 @@ process_forward(ServerRef, Message) ->
                 ok
         end
     catch
-        _:Error ->
-            ?LOG_DEBUG("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
+        Class:Reason:Stacktrace ->
+            ?LOG_DEBUG(#{
+                description => "Error forwarding message",
+                message => Message,
+                destination => ServerRef,
+                class => Class,
+                reason => Reason,
+                stacktrace => Stacktrace
+            })
     end.
 
 split(Subject0, Pattern0) ->
