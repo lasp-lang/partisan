@@ -169,17 +169,16 @@ handle_call({demonitor, PartisanRef, Opts}, _From, State0) ->
     {Res, State} = do_demonitor(PartisanRef, Opts, State0),
     {reply, Res, State};
 
-handle_call({monitor_node, Node}, {Pid, _}, State0) ->
-    %% Monitor node
-    case partisan_peer_service:member(Node) of
+handle_call({monitor_node, Node}, {Pid, _} = From, State0) ->
+    case is_connected(Node) of
         true ->
-            %% Pid is always local
+            %% Pid is always local but encoded by partisan_gen
             State = add_node_monitor(Node, decode_pid(Pid), State0),
             {reply, true, State};
         false ->
             %% We reply true but we do not record the request as we are
             %% immediatly sending a nodedown signal
-            ok = partisan_gen_server:reply(Pid, true),
+            ok = partisan_gen_server:reply(From, true),
             ok = partisan:forward_message(Pid, {nodedown, Node}),
             {noreply, State0}
     end;
