@@ -41,7 +41,7 @@ call(Name, Module, Function, Arguments, Timeout) ->
     Options = partisan_config:get(forward_options, #{}),
     RpcChannel = rpc_channel(),
     OurName = partisan:node(),
-    Manager:forward_message(Name, RpcChannel, ?MODULE, {call, Module, Function, Arguments, Timeout, {origin, OurName, Self}}, Options),
+    Manager:forward_message(Name, RpcChannel, partisan_rpc_backend, {call, Module, Function, Arguments, Timeout, {origin, OurName, Self}}, Options),
 
     %% Wait for response.
     receive
