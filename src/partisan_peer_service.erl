@@ -218,7 +218,7 @@ members_for_orchestration() ->
 %% @end
 %% -----------------------------------------------------------------------------
 connections() ->
-    partisan_peer_connections:connections().
+    {ok, partisan_peer_connections:connections()}.
 
 
 %% -----------------------------------------------------------------------------
