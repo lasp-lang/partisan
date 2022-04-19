@@ -1312,14 +1312,18 @@ disconnect(Node) ->
     case catch partisan_peer_connections:prune(Node) of
         {'EXIT', _} ->
             ok;
-        {_Info, Connection} ->
-            Pid = partisan_peer_connections:pid(Connection),
-            ?LOG_DEBUG(
-                "disconnecting node ~p by stopping connection pid ~p",
-                [Node, Pid]
-            ),
-            unlink(Pid),
-            _ = catch gen_server:stop(Pid),
+        {_Info, [Connections]} ->
+            [
+                begin
+                    Pid = partisan_peer_connections:pid(Connection),
+                    ?LOG_DEBUG(
+                        "disconnecting node ~p by stopping connection pid ~p",
+                        [Node, Pid]
+                    ),
+                    unlink(Pid),
+                    _ = catch gen_server:stop(Pid)
+                end || Connection <- Connections
+            ],
             ok
     end.
 
