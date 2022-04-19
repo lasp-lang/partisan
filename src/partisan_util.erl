@@ -25,11 +25,8 @@
 -include("partisan.hrl").
 
 -export([build_tree/3,
-         dispatch_pid/1,
-         dispatch_pid/2,
-         dispatch_pid/3,
-         maybe_connect/2,
-         may_disconnect/2,
+         maybe_connect/1,
+         may_disconnect/1,
          process_forward/2,
          term_to_iolist/1,
          gensym/1,
@@ -37,6 +34,7 @@
          pid/0,
          pid/1,
          ref/1,
+         ref/2,
          registered_name/1,
          maps_append/3]).
 
@@ -74,20 +72,20 @@ build_tree(N, Nodes, Opts) ->
 %%      keys in the dict pointing to empty list if they are disconnected or a
 %%      socket pid if they are connected.
 %%
--spec maybe_connect(Node :: node_spec(),
-                    Connections :: partisan_peer_service_connections:t()) ->
-            partisan_peer_service_connections:t().
-maybe_connect(#{name := _Name, listen_addrs := ListenAddrs} = Node, Connections0) ->
-    FoldFun = fun(ListenAddr, Connections) ->
-        maybe_connect_listen_addr(Node, ListenAddr, Connections)
-    end,
-    lists:foldl(FoldFun, Connections0, ListenAddrs).
+-spec maybe_connect(Node :: node_spec()) -> ok.
 
-may_disconnect(NodeName, Connections) ->
-    partisan_peer_service_connections:erase(NodeName, Connections).
+maybe_connect(#{name := _, listen_addrs := ListenAddrs} = NodeSpec) ->
+    FoldFun = fun(ListenAddr, ok) ->
+        maybe_connect_listen_addr(NodeSpec, ListenAddr)
+    end,
+    lists:foldl(FoldFun, ok, ListenAddrs).
+
+
+may_disconnect(NodeName) ->
+    partisan_peer_connections:erase(NodeName).
 
 %% @private
-maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
+maybe_connect_listen_addr(Node, ListenAddr) ->
     Parallelism = maps:get(parallelism, Node, ?PARALLELISM),
 
     %% Always have a default, unlabeled channel.
@@ -101,48 +99,30 @@ maybe_connect_listen_addr(Node, ListenAddr, Connections0) ->
     end,
 
     %% Initiate connections.
-    Connections = case partisan_peer_service_connections:find(Node, Connections0) of
-        %% Found disconnected.
-        {ok, []} ->
+    case partisan_peer_connections:connection_count(Node) of
+        0 ->
+            %% Found disconnected or not found
             ?LOG_DEBUG("Node ~p is not connected; initiating.", [Node]),
             case connect(Node, ListenAddr, ?DEFAULT_CHANNEL) of
                 {ok, Pid} ->
                     ?LOG_DEBUG("Node ~p connected, pid: ~p", [Node, Pid]),
-                    partisan_peer_service_connections:store(Node, {ListenAddr, ?DEFAULT_CHANNEL, Pid}, Connections0);
-                Error ->
-                    ?LOG_DEBUG("Node ~p failed connection: ~p.", [Node, Error]),
-                    Connections0
-            end;
-        %% Found and connected.
-        {ok, Entries} ->
-            lists:foldl(
-                fun(Channel, Acc) ->
-                    maybe_initiate_parallel_connections(
-                        Acc, Channel, Node, ListenAddr, Parallelism, Entries
-                    )
-                end,
-                Connections0,
-                Channels
-            );
-        %% Not present; disconnected.
-        {error, not_found} ->
-            case connect(Node, ListenAddr, ?DEFAULT_CHANNEL) of
-                {ok, Pid} ->
-                    ?LOG_DEBUG("Node ~p connected, pid: ~p", [Node, Pid]),
-                    partisan_peer_service_connections:store(Node, {ListenAddr, ?DEFAULT_CHANNEL, Pid}, Connections0);
+                    ok = partisan_peer_connections:store(
+                        Node, Pid, ?DEFAULT_CHANNEL, ListenAddr
+                    );
                 {error, normal} ->
                     ?LOG_DEBUG("Node ~p isn't online just yet.", [Node]),
-                    Connections0;
+                    ok;
                 Error ->
                     ?LOG_DEBUG("Node ~p failed connection: ~p.", [Node, Error]),
-                    Connections0
-            end
-    end,
+                    ok
+            end;
+        %% Found and connected.
+        _ ->
+            maybe_init_parallel_connections(
+                Channels, Node, ListenAddr, Parallelism
+            )
+    end.
 
-    %% Memoize connections.
-    partisan_connection_cache:update(Connections),
-
-    Connections.
 
 %% @private
 -spec connect(Node :: node_spec(), listen_addr(), channel()) -> {ok, pid()} | ignore | {error, term()}.
@@ -150,81 +130,19 @@ connect(Node, ListenAddr, Channel) ->
     Self = self(),
     partisan_peer_service_client:start_link(Node, ListenAddr, Channel, Self).
 
-%% @doc Return a pid to use for message dispatch.
-dispatch_pid(Entries) ->
-    dispatch_pid(undefined, Entries).
-
-%% @doc Return a pid to use for message dispatch.
-dispatch_pid(Channel, Entries) ->
-    dispatch_pid(undefined, Channel, Entries).
-
-%% @doc Return a pid to use for message dispatch for a given channel.
-dispatch_pid(PartitionKey, Channel, Entries) ->
-    UndefinedEntries = lists:filter(fun({_, C, _}) ->
-        case C of
-            undefined ->
-                true;
-            _ ->
-                false
-        end
-    end, Entries),
-
-    DispatchEntries = case Channel of
-        undefined ->
-            UndefinedEntries;
-        _ ->
-            %% Entries for channel.
-            ChannelEntries = lists:filter(fun({_, C, _}) ->
-                case C of
-                    {monotonic, Channel} ->
-                        true;
-                    Channel ->
-                        true;
-                    _ ->
-                        false
-                end
-            end, Entries),
-
-            %% Fall back to unlabeled channels.
-            case ChannelEntries of
-                [] ->
-                    UndefinedEntries;
-                _ ->
-                    ChannelEntries
-            end
-    end,
-
-    %% Get the number of elements in the list.
-    NumEntries = length(DispatchEntries),
-
-    %% Depending on whether or not a hash key has been provided, use it for routing.
-    EntriesIndex = case PartitionKey of
-        undefined ->
-            rand:uniform(NumEntries);
-        PartitionKey when is_integer(PartitionKey) ->
-            PartitionKey rem NumEntries + 1
-    end,
-
-    %% Select that entry from the list.
-    {_ListenAddr, _Channel, Pid} = lists:nth(EntriesIndex, DispatchEntries),
-
-    %% Return pid of connection process.
-    Pid.
 
 %% @private
-maybe_initiate_parallel_connections(Connections0, Channel, Node, ListenAddr, Parallelism, Entries) ->
-    ChannelConnections = lists:filter(
-        fun({A, C, _})  -> A =:= ListenAddr andalso C =:= Channel end,
-        Entries
-    ),
+maybe_init_parallel_connections(_, _, _, undefined) ->
+    ok;
 
-    Len = length(ChannelConnections),
+maybe_init_parallel_connections([Channel|T], Node, ListenAddr, Parallelism) ->
+    Count = partisan_peer_connections:connection_count(Node, Channel),
 
-    case Parallelism =/= undefined andalso Len < Parallelism of
+    case Count < Parallelism of
         true ->
             ?LOG_DEBUG(
                 "~p of ~p connected for channel ~p) Connecting node ~p.",
-                [Len, Parallelism, Channel, Node]
+                [Count, Parallelism, Channel, Node]
             ),
 
             case connect(Node, ListenAddr, Channel) of
@@ -232,8 +150,8 @@ maybe_initiate_parallel_connections(Connections0, Channel, Node, ListenAddr, Par
                     ?LOG_DEBUG(
                         "Node ~p connected, pid: ~p", [Node, Pid]
                     ),
-                    partisan_peer_service_connections:store(
-                        Node, {ListenAddr, Channel, Pid}, Connections0
+                    ok = partisan_peer_connections:store(
+                        Node, Pid, Channel, ListenAddr
                     );
                 Error ->
                     ?LOG_ERROR(#{
@@ -243,11 +161,16 @@ maybe_initiate_parallel_connections(Connections0, Channel, Node, ListenAddr, Par
                         listen_address => ListenAddr,
                         channel => Channel
                     }),
-                    Connections0
+                    ok
             end;
         false ->
-            Connections0
-    end.
+            ok
+    end,
+    maybe_init_parallel_connections(T, Node, ListenAddr, Parallelism);
+
+maybe_init_parallel_connections([], _, _, _) ->
+    ok.
+
 
 
 term_to_iolist(Term) ->
@@ -331,6 +254,12 @@ ref(Ref) ->
     GenSym = gensym(Ref),
     Node = partisan:node(),
     {partisan_remote_reference, Node, GenSym}.
+
+
+ref(Ref, Node) ->
+    GenSym = gensym(Ref),
+    {partisan_remote_reference, Node, GenSym}.
+
 
 make_ref() ->
     ref(erlang:make_ref()).

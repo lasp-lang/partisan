@@ -336,11 +336,10 @@ wait_response(Ref, Timeout)  ->
 receive_response(Ref, Timeout) ->
     receive
         {Ref, Reply} ->
-            {ok, Reply};
-        _Other ->
+            {reply, Reply}
+    after
+        Timeout ->
             timeout
-    after Timeout ->
-        timeout
     end.
 
 -spec check_response(RequestId::term(), Key::request_id()) ->

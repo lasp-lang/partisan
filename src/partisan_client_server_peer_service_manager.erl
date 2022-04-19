@@ -66,17 +66,21 @@
 
 -include("partisan.hrl").
 
--type pending() :: [node_spec()].
--type membership() :: sets:set(node_spec()).
--type tag() :: atom().
+-record(state, {
+    myself              ::  node_spec(),
+    tag                 ::  tag(),
+    pending             ::  pending(),
+    membership          ::  membership()
+}).
 
--record(state, {myself :: node_spec(),
-                tag :: tag(),
-                pending :: pending(),
-                membership :: membership(),
-                connections :: partisan_peer_service_connections:t()}).
 
--type state_t() :: #state{}.
+-type pending()         ::  sets:set(node_spec()).
+-type membership()      ::  sets:set(node_spec()).
+-type tag()             ::  atom().
+-type state_t()         ::  #state{}.
+
+
+
 
 %%%===================================================================
 %%% partisan_peer_service_manager callbacks
@@ -204,22 +208,27 @@ init([]) ->
     %% Process connection exits.
     process_flag(trap_exit, true),
 
+    ok = partisan_peer_connections:init(),
 
     Membership = maybe_load_state_from_disk(),
-    Connections = partisan_peer_service_connections:new(),
+
     Myself = myself(),
 
-    logger:set_process_metadata(#{node => myself()}),
-
+    logger:set_process_metadata(#{
+        node => myself()
+    }),
 
     %% Get tag, if set.
     Tag = partisan_config:get(tag, undefined),
 
-    {ok, #state{tag=Tag,
-                myself=Myself,
-                pending=[],
-                membership=Membership,
-                connections=Connections}}.
+    State = #state{
+        tag = Tag,
+        myself = Myself,
+        pending = sets:new(),
+        membership = Membership
+    },
+    {ok, State}.
+
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, state_t()) ->
@@ -231,89 +240,88 @@ handle_call({reserve, _Tag}, _From, State) ->
 handle_call({leave, #{name := NodeName}}, From, State) ->
     handle_call({leave, NodeName}, From, State);
 
-handle_call({leave, NodeName}, _From,
-            #state{membership=Membership0,
-                   pending = Pending,
-                   connections = Connections
-                  }=State) ->
+handle_call({leave, LeavingNode}, _From, #state{} = State0) ->
+
+    Membership0 = State0#state.membership,
+    Pending = State0#state.pending,
+
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
-    Membership = lists:foldl(fun(#{name := Name} = N, L0) ->
-                        case NodeName of
-                            Name ->
-                                sets:del_element(N, L0);
-                            _ ->
-                                %% call the net_kernel:disconnect(Node) function to leave erlang network explicitly
-                                rpc:call(NodeName, net_kernel, disconnect, [Name]),
-                                L0
-                        end
-                end, Membership0, decode(Membership0)),
+    Membership = lists:foldl(
+        fun(#{name := Node} = NodeSpec, L0) ->
+            case LeavingNode of
+                Node ->
+                    sets:del_element(NodeSpec, L0);
+                _ ->
+                    %% call the net_kernel:disconnect(Node) function to leave erlang network explicitly
+                    rpc:call(LeavingNode, net_kernel, disconnect, [Node]),
+                    L0
+            end
+        end,
+        Membership0,
+        decode(Membership0)
+    ),
 
     %% Remove state and shutdown if we are removing ourselves.
     case partisan:node() of
-        NodeName ->
+        LeavingNode ->
             delete_state_from_disk(),
 
             %% Shutdown; connections terminated on shutdown.
-            {stop, normal, State#state{membership=Membership}};
+            State = State0#state{membership = Membership},
+            {stop, normal, State};
         _ ->
-           NewPending = lists:filter(fun(#{name := Name}) ->
-                                             case Name of
-                                                 NodeName ->
-                                                     %% delete the same name node
-                                                     false;
-                                                 _ ->
-                                                     true
-                                             end
-                                     end, Pending),
-            NewConnections = partisan_util:may_disconnect(NodeName, Connections),
-            {reply, ok, State#state{
-                          membership = Membership,
-                          pending = NewPending,
-                          connections = NewConnections
-                         }}
+            ok = partisan_util:may_disconnect(LeavingNode),
+
+            NewPending = sets:filter(
+                fun(#{name := Node}) ->
+                    Node =/= LeavingNode
+                end,
+                Pending
+            ),
+
+            State = State0#state{
+                membership = Membership,
+                pending = NewPending
+            },
+            {reply, ok, State}
     end;
 
-handle_call({join, #{name := Name}=Node},
-            _From,
-            #state{pending=Pending0, connections=Connections0}=State) ->
+handle_call({join, #{name := Node} = Spec}, _From, #state{} = State) ->
     %% Attempt to join via disterl for control messages during testing.
-    _ = net_kernel:connect_node(Name),
+    _ = net_kernel:connect_node(Node),
 
     %% Add to list of pending connections.
-    Pending = [Node|Pending0],
+    Pending = sets:add_element(Spec, State#state.pending),
 
     %% Trigger connection.
-    Connections = partisan_util:maybe_connect(Node, Connections0),
+    ok = partisan_util:maybe_connect(Spec),
 
-    %% Return.
-    {reply, ok, State#state{pending=Pending,
-                            connections=Connections}};
+    {reply, ok, State#state{pending = Pending}};
 
-handle_call({send_message, Name, Message}, _From,
-            #state{connections=Connections}=State) ->
-    Result = do_send_message(Name, Message, Connections),
+handle_call({send_message, Name, Message}, _From, #state{}=State) ->
+    Result = do_send_message(Name, Message),
     {reply, Result, State};
 
-handle_call({forward_message, Name, ServerRef, Message, _Options}, _From,
-            #state{connections=Connections}=State) ->
-    Result = do_send_message(Name,
-                             {forward_message, ServerRef, Message},
-                             Connections),
+handle_call(
+    {forward_message, Name, ServerRef, Message, _Opts},
+    _From,
+    #state{} = State) ->
+    Result = do_send_message(Name,{forward_message, ServerRef, Message}),
     {reply, Result, State};
 
 handle_call({receive_message, Message}, _From, State) ->
     handle_message(Message, State);
 
-handle_call(members, _From, #state{membership=Membership}=State) ->
-    Members = [P || #{name := P} <- members(Membership)],
+handle_call(members, _From, #state{} = State) ->
+    Members = [Node || #{name := Node} <- members(State#state.membership)],
     {reply, {ok, Members}, State};
 
-handle_call(members_for_orchestration, _From, #state{membership=Membership}=State) ->
-    {reply, {ok, members(Membership)}, State};
+handle_call(members_for_orchestration, _From, #state{}=State) ->
+    {reply, {ok, members(State#state.membership)}, State};
 
-handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
-    {reply, {ok, Membership}, State};
+handle_call(get_local_state, _From, #state{} = State) ->
+    {reply, {ok, State#state.membership}, State};
 
 handle_call(Msg, _From, State) ->
     ?LOG_WARNING(#{
@@ -333,61 +341,66 @@ handle_cast(Msg, State) ->
     }),
     {noreply, State}.
 
-handle_info({'EXIT', From, _Reason}, #state{connections=Connections0}=State) ->
-    {_, Connections} = partisan_peer_service_connections:prune(From, Connections0),
-    {noreply, State#state{connections=Connections}};
+handle_info({'EXIT', From, _Reason}, #state{}=State) ->
+    _ = partisan_peer_connections:prune(From),
+    {noreply, State};
 
-handle_info({connected, Node, TheirTag, _RemoteState},
-               #state{pending=Pending0,
-                      tag=OurTag,
-                      membership=Membership0,
-                      connections=Connections0}=State) ->
-    case lists:member(Node, Pending0) of
+handle_info(
+    {connected, NodeSpec, _Channel, TheirTag, _RemoteState},
+    #state{} = State0) ->
+
+    Pending0 = State0#state.pending,
+    Membership0 = State0#state.membership,
+    OurTag = State0#state.tag,
+
+    case sets:is_element(NodeSpec, Pending0) of
         true ->
             case accept_join_with_tag(OurTag, TheirTag) of
                 true ->
                     %% Move out of pending.
-                    Pending = Pending0 -- [Node],
+                    Pending = sets:del_element(NodeSpec, Pending0),
 
                     %% Add to our membership.
-                    Membership = sets:add_element(Node, Membership0),
+                    Membership = sets:add_element(NodeSpec, Membership0),
 
                     %% Announce to the peer service.
                     partisan_peer_service_events:update(Membership),
 
                     %% Establish any new connections.
-                    Connections = establish_connections(Pending,
-                                                        Membership,
-                                                        Connections0),
+                    ok = establish_connections(Pending, Membership),
 
                     %% Compute count.
                     Count = sets:size(Membership),
 
                     ?LOG_INFO(#{
                         description => "Join ACCEPTED.",
-                        peer => Node,
+                        peer => NodeSpec,
                         our_tag => OurTag,
                         their_tag => TheirTag,
                         view_member_count => Count
                     }),
 
-                    %% Return.
-                    {noreply, State#state{pending=Pending,
-                                          connections=Connections,
-                                          membership=Membership}};
+                    State = State0#state{
+                        pending = Pending,
+                        membership = Membership
+                    },
+
+                    {noreply, State};
+
                 false ->
                     ?LOG_INFO(#{
                         description => "Join REFUSED, keeping membership.",
-                        peer => Node,
+                        peer => NodeSpec,
                         our_tag => OurTag,
                         their_tag => TheirTag,
                         view_membership => Membership0
                     }),
 
-                    {noreply, State}
+                    {noreply, State0}
             end;
+
         false ->
-            {noreply, State}
+            {noreply, State0}
     end;
 
 handle_info(Event, State) ->
@@ -396,20 +409,19 @@ handle_info(Event, State) ->
 
 %% @private
 -spec terminate(term(), state_t()) -> term().
-terminate(_Reason, #state{connections=Connections}=_State) ->
-    Fun =
-        fun(_K, Pids) ->
-            lists:foreach(
-              fun({_ListenAddr, _Channel, Pid}) ->
-                 try
-                     gen_server:stop(Pid, normal, infinity)
-                 catch
-                     _:_ ->
-                         ok
-                 end
-              end, Pids)
-         end,
-    partisan_peer_service_connections:foreach(Fun, Connections),
+
+terminate(_Reason, #state{}) ->
+    Fun = fun(_NodeInfo, Connections) ->
+        lists:foreach(
+            fun(C) ->
+                Pid = partisan_peer_connections:pid(C),
+                catch gen_server:stop(Pid, normal, infinity),
+                ok
+            end,
+            Connections
+        )
+    end,
+    ok = partisan_peer_connections:foreach(Fun),
     ok.
 
 %% @private
@@ -484,49 +496,56 @@ maybe_load_state_from_disk() ->
             end
     end.
 
+
 %% @private
 persist_state(State) ->
     write_state_to_disk(State).
+
 
 %% @private
 members(Membership) ->
     sets:to_list(Membership).
 
+
 %% @private
-establish_connections(Pending, Membership, Connections) ->
+-spec peers(sets:set(node_spec())) -> [node_spec()].
+
+peers(Set) ->
+    sets:to_list(without_myself(Set)).
+
+
+%% @private
+-spec without_myself(sets:set(node_spec())) -> sets:set(node_spec()).
+
+without_myself(Set) ->
+    Exclude = sets:from_list([partisan:node()]),
+    sets:subtract(Set, Exclude).
+
+
+%% @private
+establish_connections(Pending, Membership) ->
     %% Reconnect disconnected members and members waiting to join.
-    Members = members(Membership),
-    AllPeers = lists:filter(fun(#{name := Name}) ->
-                         case partisan:node() of
-                             Name ->
-                                 false;
-                             _ ->
-                                 true
-                         end
-                 end, Members ++ Pending),
-    lists:foldl(fun partisan_util:maybe_connect/2, Connections, AllPeers).
+    Peers = peers(sets:union(Membership, Pending)),
+    lists:foreach(fun partisan_util:maybe_connect/1, Peers).
+
+
 
 handle_message({forward_message, ServerRef, Message}, State) ->
     partisan_util:process_forward(ServerRef, Message),
     {reply, ok, State}.
 
+
 %% @private
--spec do_send_message(Node :: atom() | node_spec(),
-                      Message :: term(),
-                      Connections :: partisan_peer_service_connections:t()) ->
-            {error, disconnected} | {error, not_yet_connected} | {error, term()} | ok.
-do_send_message(Node, Message, Connections) ->
+-spec do_send_message(Node :: atom() | node_spec(), Message :: term())->
+    ok | {error, disconnected | not_yet_connected}.
+
+do_send_message(Node, Message) ->
     %% Find a connection for the remote node, if we have one.
-    case partisan_peer_service_connections:find(Node, Connections) of
-        {ok, []} ->
-            %% Node was connected but is now disconnected.
-            {error, disconnected};
-        {ok, Entries} ->
-            Pid = partisan_util:dispatch_pid(Entries),
+    case partisan_peer_connections:dispatch_pid(Node) of
+        {ok, Pid} ->
             gen_server:cast(Pid, {send_message, Message});
-        {error, not_found} ->
-            %% Node has not been connected yet.
-            {error, not_yet_connected}
+        {error, _} = Error ->
+            Error
     end.
 
 %% @private

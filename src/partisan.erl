@@ -1,7 +1,8 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2015 Helium Systems, Inc.  All Rights Reserved.
-%% Copyright (c) 2016 Christopher Meiklejohn.  All Rights Reserved.
+%% Copyright (c) 2015 Helium Systems, Inc. All Rights Reserved.
+%% Copyright (c) 2016 Christopher Meiklejohn. All Rights Reserved.
+%% Copyright (c) 2022 Alejandro M. Ramallo. All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -23,6 +24,14 @@
 
 -include("partisan.hrl").
 
+-type monitor_nodes_opt()           ::  nodedown_reason
+                                        | {node_type, visible | hidden | all}.
+-type monitor_process_identifier()  ::  erlang:monitor_process_identifier()
+                                        | remote_ref(process_ref())
+                                        | remote_ref(registered_name_ref()).
+
+-export_type([monitor_nodes_opt/0]).
+
 -export([start/0]).
 -export([stop/0]).
 
@@ -37,19 +46,31 @@
 -export([forward_message/3]).
 -export([forward_message/4]).
 -export([forward_message/5]).
+-export([is_connected/1]).
+-export([is_connected/2]).
+-export([make_ref/0]).
 -export([monitor/1]).
+-export([monitor/2]).
+-export([monitor/3]).
 -export([monitor_node/2]).
+-export([monitor_nodes/1]).
+-export([monitor_nodes/2]).
 -export([node/0]).
 -export([node/1]).
 -export([node_spec/0]).
 -export([node_spec/1]).
 -export([node_spec/2]).
+-export([nodes/0]).
+-export([nodes/1]).
 -export([send_message/2]).
 
--compile({no_auto_import, [monitor_node/2]}).
 -compile({no_auto_import, [demonitor/2]}).
+-compile({no_auto_import, [make_ref/0]}).
+-compile({no_auto_import, [monitor/2]}).
+-compile({no_auto_import, [monitor_node/2]}).
 -compile({no_auto_import, [node/0]}).
 -compile({no_auto_import, [node/1]}).
+-compile({no_auto_import, [nodes/1]}).
 
 
 
@@ -75,6 +96,24 @@ stop() ->
     application:stop(partisan).
 
 
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+make_ref() ->
+    partisan_util:ref(erlang:make_ref()).
+
+
+%% -----------------------------------------------------------------------------
+%% @deprecated
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+monitor(Term) ->
+    monitor(process, Term).
+
+
 %% -----------------------------------------------------------------------------
 %% @doc when you attempt to monitor a partisan_remote_reference, it is not
 %% guaranteed that you will receive the DOWN message. A few reasons for not
@@ -82,11 +121,38 @@ stop() ->
 %% is no longer reachable.
 %% @end
 %% -----------------------------------------------------------------------------
-monitor(Pid) when is_pid(Pid) ->
-    erlang:monitor(process, Pid);
+-spec monitor
+    (process, monitor_process_identifier()) ->
+        reference() | remote_ref(encoded_ref()) | no_return();
+    (port, erlang:monitor_port_identifier()) ->
+        reference() |  no_return();
+    (time_offset, clock_service) ->
+        reference() | no_return().
 
-monitor({partisan_remote_reference, _, {partisan_process_reference, _}} = R) ->
-    partisan_monitor:monitor(R).
+monitor(process, {partisan_remote_reference, _, _} = R) ->
+    partisan_monitor:monitor(R, []);
+
+monitor(Type, Term) ->
+    erlang:monitor(Type, Term).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec monitor
+    (process, monitor_process_identifier(), [erlang:monitor_option()]) ->
+        reference() | remote_ref(encoded_ref()) | no_return();
+    (port, erlang:monitor_port_identifier(), [erlang:monitor_option()]) ->
+        reference() |  no_return();
+    (time_offset, clock_service, [erlang:monitor_option()]) ->
+        reference() | no_return().
+
+monitor(process, {partisan_remote_reference, _, _} = R, Opts) ->
+    partisan_monitor:monitor(R, Opts);
+
+monitor(Type, Term, Opts) ->
+    erlang:monitor(Type, Term, Opts).
 
 
 %% -----------------------------------------------------------------------------
@@ -105,7 +171,7 @@ demonitor(Ref) ->
 %% -----------------------------------------------------------------------------
 -spec demonitor(
     MonitorRef :: reference() | remote_ref(encoded_ref()),
-    OptionList :: [flush | info]) -> boolean().
+    OptionList :: [erlang:monitor_option()]) -> boolean().
 
 demonitor(MRef, Opts) when is_reference(MRef) ->
     erlang:demonitor(MRef, Opts);
@@ -165,11 +231,49 @@ monitor_node(Node, Flag) ->
 %% If `Node' is the caller's node, the function returns `false'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec monitor_node(node() | node_spec(), boolean(), [flush | info]) ->
-    boolean().
+-spec monitor_node(
+    Node :: node() | node_spec(),
+    Flag :: boolean(),
+    Options :: [allow_passive_connect]) -> true.
 
 monitor_node(Node, Flag, Opts) ->
-    partisan_monitor:monitor_node(Node, Flag, Opts).
+    case partisan_config:get(connect_disterl, false) of
+        true ->
+            erlang:monitor_node(Node, Flag, Opts);
+        false ->
+            %% No opts for partisan_monitor
+            partisan_monitor:monitor_node(Node, Flag)
+    end.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec monitor_nodes(Flag :: boolean()) -> ok | error | {error, term()}.
+
+monitor_nodes(Flag) ->
+    monitor_nodes(Flag, []).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc The calling process subscribes or unsubscribes to node status change
+%% messages. A nodeup message is delivered to all subscribing processes when a
+%% new node is connected, and a nodedown message is delivered when a node is
+%% disconnected.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec monitor_nodes(Flag :: boolean(), [monitor_nodes_opt()]) ->
+    ok | error | {error, term()}.
+
+monitor_nodes(Flag, Opts) ->
+    case partisan_config:get(connect_disterl, false) of
+        true ->
+            %% Returns ok | error | {error, term()}.
+            net_kernel:monitor_nodes(Flag, Opts);
+        false ->
+            partisan_monitor:monitor_nodes(Flag, Opts)
+    end.
 
 
 %% -----------------------------------------------------------------------------
@@ -192,6 +296,48 @@ node(Arg) when is_pid(Arg) orelse is_reference(Arg) orelse is_port(Arg) ->
 
 node({partisan_remote_reference, Node, _}) ->
     Node.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns a list of all nodes connected to this node through normal
+%% connections (that is, hidden nodes are not listed). Same as nodes(visible).
+%% @end
+%% -----------------------------------------------------------------------------
+-spec nodes() -> [node()].
+
+nodes() ->
+    nodes(visible).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns a list of all nodes connected to this node through normal
+%% connections (that is, hidden nodes are not listed). Same as nodes(visible).
+%% @end
+%% -----------------------------------------------------------------------------
+-spec nodes(Arg :: erlang:node_type()) -> [node()].
+
+nodes(Arg) ->
+    partisan_peer_connections:nodes(Arg).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns the name of the local node.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_connected(NodeOrSpec :: node_spec() | node()) -> boolean().
+
+is_connected(NodeOrSpec) ->
+    partisan_peer_connections:is_connected(NodeOrSpec).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns the name of the local node.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_connected(node_spec() | node(), channel()) -> boolean().
+
+is_connected(NodeOrSpec, Channel) ->
+    partisan_peer_connections:is_connected(NodeOrSpec, Channel).
 
 
 %% -----------------------------------------------------------------------------

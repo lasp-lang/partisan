@@ -24,6 +24,7 @@
 
 -behaviour(partisan_membership_strategy).
 
+-include("partisan.hrl").
 -include("partisan_logger.hrl").
 
 -export([init/1,
@@ -34,7 +35,10 @@
 
 -define(SET, partisan_membership_set).
 
--record(full_v1, {actor, membership}).
+-record(full_v1, {
+    actor           ::  actor(),
+    membership      ::  partisan_membership_set:t()
+}).
 
 %%%===================================================================
 %%% API

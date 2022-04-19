@@ -61,8 +61,7 @@
 %% debug.
 -export([active/0,
          active/1,
-         passive/0,
-         connections/0]).
+         passive/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -92,7 +91,6 @@
                 reserved :: reserved(),
                 out_links :: list(),
                 tag :: tag(),
-                connections :: partisan_peer_service_connections:t(),
                 max_active_size :: non_neg_integer(),
                 min_active_size :: non_neg_integer(),
                 max_passive_size :: non_neg_integer(),
@@ -182,10 +180,10 @@ when is_map(Options) ->
     FullMessage = {forward_message, Name, ServerRef, Message, Options},
 
     %% Attempt to fast-path through the memoized connection cache.
-    case partisan_connection_cache:dispatch(FullMessage) of
+    case partisan_peer_connections:dispatch(FullMessage) of
         ok ->
             ok;
-        {error, trap} ->
+        {error, _} ->
             gen_server:call(?MODULE, FullMessage, infinity)
     end.
 
@@ -247,10 +245,7 @@ decode({state, Active, _Epoch}) ->
 decode(Active) ->
     sets:to_list(Active).
 
-%% @doc Debugging.
--spec connections() -> {ok, list({node_spec(), pid()})}.
-connections() ->
-    gen_server:call(?MODULE, connections, infinity).
+
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -262,13 +257,15 @@ init([]) ->
     %% Seed the random number generator.
     partisan_config:seed(),
 
+    ok = partisan_peer_connections:init(),
+
     %% Process connection exits.
     process_flag(trap_exit, true),
 
     Epoch = maybe_load_epoch_from_disk(),
     Active = sets:add_element(myself(), sets:new()),
     Passive = sets:new(),
-    Connections = partisan_peer_service_connections:new(),
+
     Myself = myself(),
 
     SentMessageMap = dict:new(),
@@ -317,7 +314,6 @@ init([]) ->
                         reserved=Reserved,
                         tag=Tag,
                         out_links=[],
-                        connections=Connections,
                         max_active_size=MaxActiveSize,
                         min_active_size=MinActiveSize,
                         max_passive_size=MaxPassiveSize,
@@ -346,7 +342,7 @@ handle_call({resolve_partition, Reference}, _From, State) ->
     {reply, ok, State#state{partitions=Partitions}};
 
 handle_call({inject_partition, Origin, TTL}, _From,
-            #state{myself=Myself, connections=Connections}=State) ->
+            #state{myself=Myself}=State) ->
     Reference = make_ref(),
 
     ?LOG_DEBUG("Injecting partition; Origin: ~p Myself: ~p TTL: ~p",
@@ -357,9 +353,10 @@ handle_call({inject_partition, Origin, TTL}, _From,
             Partitions = handle_partition_injection(Reference, Origin, TTL, State),
             {reply, {ok, Reference}, State#state{partitions=Partitions}};
         _ ->
-            Result = do_send_message(Origin,
-                                     {inject_partition, Reference, Origin, TTL},
-                                     Connections),
+            Result = do_send_message(
+                Origin,
+                {inject_partition, Reference, Origin, TTL}
+            ),
 
             case Result of
                 {error, Error} ->
@@ -406,14 +403,13 @@ handle_call({active, Tag},
 handle_call(passive, _From, #state{passive=Passive}=State) ->
     {reply, {ok, Passive}, State};
 
-handle_call({send_message, Name, Message}, _From,
-            #state{connections=Connections0}=State) ->
-    Result = do_send_message(Name, Message, Connections0),
+handle_call({send_message, Name, Message}, _From, #state{}=State) ->
+    Result = do_send_message(Name, Message),
 
     {reply, Result, State};
 
 handle_call({forward_message, Name, ServerRef, Message, Options}, _From,
-            #state{connections=Connections0, partitions=Partitions}=State) ->
+            #state{partitions=Partitions}=State) ->
     IsPartitioned = lists:any(fun(#{name := N}) ->
                                       case N of
                                           Name ->
@@ -426,10 +422,11 @@ handle_call({forward_message, Name, ServerRef, Message, Options}, _From,
         true ->
             {reply, {error, partitioned}, State};
         false ->
-            Result = do_send_message(Name,
-                                     {forward_message, ServerRef, Message},
-                                     Connections0,
-                                     Options),
+            Result = do_send_message(
+                Name,
+                {forward_message, ServerRef, Message},
+                Options
+            ),
             {reply, Result, State}
     end;
 
@@ -450,18 +447,16 @@ handle_call(get_local_state, _From, #state{active=Active,
                                            epoch=Epoch}=State) ->
     {reply, {ok, {state, Active, Epoch}}, State};
 
-handle_call(connections, _From,
-            #state{myself=Myself,
-                   connections=Connections,
-                   active=Active}=State) ->
+handle_call(connections, _From, #state{myself=Myself, active=Active}=State) ->
     %% get a list of all the client connections to the various peers of the active view
-    Cs = lists:map(fun(Peer) ->
-                    {ok, Pids} = partisan_peer_service_connections:find(Peer, Connections),
-                    MappedPids = [Pid || {_ListenAddr, _Channel, Pid} <- Pids],
-                    ?LOG_DEBUG("peer ~p connection pids: ~p",
-                               [Peer, MappedPids]),
-                    {Peer, MappedPids}
-                   end, members(Active) -- [Myself]),
+    Cs = lists:map(
+        fun(Peer) ->
+            Pids = partisan_peer_connections:processes(Peer),
+            ?LOG_DEBUG("peer ~p connection pids: ~p", [Peer, Pids]),
+            {Peer, Pids}
+        end,
+        members(Active) -- [Myself]
+    ),
     {reply, {ok, Cs}, State};
 
 handle_call(Event, _From, State) ->
@@ -471,37 +466,31 @@ handle_call(Event, _From, State) ->
 %% @private
 -spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
 
-handle_cast({join, Peer},
-            #state{myself=Myself0,
-                   tag=Tag0,
-                   connections=Connections0,
-                   epoch=Epoch0}=State0) ->
+handle_cast(
+    {join, Peer}, #state{myself=Myself0, tag=Tag0, epoch=Epoch0}=State0) ->
     %% Trigger connection.
-    Connections = partisan_util:maybe_connect(Peer, Connections0),
+    ok = partisan_util:maybe_connect(Peer),
 
     ?LOG_DEBUG("Node ~p sends the JOIN message to ~p", [Myself0, Peer]),
     %% Send the JOIN message to the peer.
-    do_send_message(Peer,
-                    {join, Myself0, Tag0, Epoch0},
-                    Connections),
+    _ = do_send_message(Peer, {join, Myself0, Tag0, Epoch0}),
 
     %% Return.
-    {noreply, State0#state{connections=Connections}};
+    {noreply, State0};
 
 handle_cast({receive_message, Message}, State0) ->
     handle_message(Message, State0);
 
 %% @doc Handle disconnect messages.
-handle_cast({disconnect, Peer}, #state{active=Active0,
-                                       connections=Connections0}=State0) ->
+handle_cast({disconnect, Peer}, #state{active=Active0}=State0) ->
     case sets:is_element(Peer, Active0) of
         true ->
             %% If a member of the active view, remove it.
             Active = sets:del_element(Peer, Active0),
             State = add_to_passive_view(Peer,
                                         State0#state{active=Active}),
-            Connections = disconnect(Peer, Connections0),
-            {noreply, State#state{connections=Connections}};
+            ok = disconnect(Peer),
+            {noreply, State};
         false ->
             {noreply, State0}
     end;
@@ -551,37 +540,35 @@ handle_info(tree_refresh, #state{}=State) ->
 
     {noreply, State#state{out_links=OutLinks}};
 
-handle_info(passive_view_maintenance,
-            #state{myself=Myself,
-                   active=Active,
-                   passive=Passive,
-                   connections=Connections0}=State0) ->
+handle_info(
+    passive_view_maintenance,
+    #state{myself=Myself, active=Active, passive=Passive}=State0) ->
     Exchange0 = %% Myself.
-                [Myself] ++
+        [Myself] ++
 
-                % Random members of the active list.
-                select_random_sublist(Active, k_active()) ++
+        % Random members of the active list.
+        select_random_sublist(Active, k_active()) ++
 
-                %% Random members of the passive list.
-                select_random_sublist(Passive, k_passive()),
+        %% Random members of the passive list.
+        select_random_sublist(Passive, k_passive()),
 
     Exchange = lists:usort(Exchange0),
 
     %% Select random member of the active list.
     State = case select_random(Active, [Myself]) of
-                undefined ->
-                    State0;
-                Random ->
-                    %% Trigger connection.
-                    Connections = partisan_util:maybe_connect(Random, Connections0),
+        undefined ->
+            State0;
+        Random ->
+            %% Trigger connection.
+            ok = partisan_util:maybe_connect(Random),
 
-                    %% Forward shuffle request.
-                    do_send_message(Random,
-                                    {shuffle, Exchange, arwl(), Myself},
-                                    Connections),
+            %% Forward shuffle request.
+            _ = do_send_message(
+                Random, {shuffle, Exchange, arwl(), Myself}
+            ),
 
-                    State0#state{connections=Connections}
-            end,
+            State0
+    end,
 
     %% Schedule periodic maintenance of the passive view.
     schedule_passive_view_maintenance(),
@@ -610,15 +597,12 @@ handle_info(xbot_execution,
 	schedule_xbot_execution(),
 	{noreply, InitiatorState};
 
-handle_info({'EXIT', From, Reason},
-            #state{myself=Myself,
-                   active=Active0,
-                   passive=Passive0,
-                   connections=Connections0}=State0) ->
-    ?LOG_DEBUG("connection pid ~p died due to ~p",
-               [From, Reason]),
+handle_info(
+    {'EXIT', From, Reason},
+    #state{myself=Myself, active=Active0, passive=Passive0}=State0) ->
+    ?LOG_DEBUG("connection pid ~p died due to ~p", [From, Reason]),
     %% Prune active connections from dictionary.
-    {Peer, Connections} = partisan_peer_service_connections:prune(From, Connections0),
+    {Peer, _Connections} = partisan_peer_connections:prune(From),
 
     %% If it was in the passive view and our connection attempt failed,
     %% remove from the passive view altogether.
@@ -643,21 +627,20 @@ handle_info({'EXIT', From, Reason},
                 true ->
                     RandomPeer = select_random(Passive, [Myself]),
                     move_peer_from_passive_to_active(RandomPeer,
-                        State0#state{active=Active,
-                                     passive=Passive,
-                                     connections=Connections});
+                        State0#state{active=Active, passive=Passive});
                 false ->
-                    State0#state{active=Active,
-                                 passive=Passive,
-                                 connections=Connections}
+                    State0#state{active=Active, passive=Passive}
             end,
 
-    ?LOG_DEBUG("Node ~p active view: ~p",
-               [Myself, members(State#state.active)]),
+    ?LOG_DEBUG(
+        "Node ~p active view: ~p",
+        [Myself, members(State#state.active)]
+    ),
 
     {noreply, State};
 
-handle_info({connected, Peer, _Tag, _PeerEpoch, _RemoteState}, State) ->
+handle_info(
+    {connected, Peer, _Channel, _Tag, _PeerEpoch, _RemoteState}, State) ->
     ?LOG_DEBUG("Node ~p is now connected",
                [Peer]),
     {noreply, State};
@@ -668,24 +651,25 @@ handle_info(Event, State) ->
 
 %% @private
 -spec terminate(term(), state_t()) -> term().
-terminate(_Reason, #state{connections=Connections}=_State) ->
-    Fun =
-        fun(_K, Pids) ->
-            lists:foreach(
-              fun({_ListenAddr, _Channel, Pid}) ->
-                 try
-                     gen_server:stop(Pid, normal, infinity)
-                 catch
-                     _:_ ->
-                         ok
-                 end
-              end, Pids)
-         end,
-    partisan_peer_service_connections:foreach(Fun, Connections),
-    ok.
+
+terminate(_Reason, #state{}) ->
+    Fun = fun(_NodeInfo, Connections) ->
+        lists:foreach(
+            fun(C) ->
+                Pid = partisan_peer_connections:pid(C),
+                catch gen_server:stop(Pid, normal, infinity),
+                ok
+            end,
+            Connections
+        )
+    end,
+    ok = partisan_peer_connections:foreach(Fun).
+
 
 %% @private
--spec code_change(term() | {down, term()}, state_t(), term()) -> {ok, state_t()}.
+-spec code_change(term() | {down, term()}, state_t(), term()) ->
+    {ok, state_t()}.
+
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
@@ -706,14 +690,17 @@ send_optimization_messages(Active, [Candidate | RestCandidates], InitiatorState)
 % we only send an optimization messages for one node in active view, once we have sent it we stop searching possibilities
 %% @private
 process_candidate([], _, _) -> ok;
-process_candidate([OldNode | RestActiveNodes], CandidateNode, #state{myself=InitiatorNode, connections=Connections}=InitiatorState) ->
+process_candidate([OldNode | RestActiveNodes], CandidateNode, #state{myself=InitiatorNode}=InitiatorState) ->
 	#{name := InitiatorName} = InitiatorNode,
 	#{name := CandidateName} = CandidateNode,
 	IsBetter = is_better(?XPARAM, CandidateNode, OldNode),
 	if IsBetter ->
-		NodeConnections = partisan_util:maybe_connect(CandidateNode, Connections),
+		ok = partisan_util:maybe_connect(CandidateNode),
 		% if cadidate is better that first node in active view, send optimization message
-		do_send_message(CandidateNode,{optimization, undefined, OldNode, InitiatorNode, CandidateNode, undefined},NodeConnections),
+		_ = do_send_message(
+            CandidateNode,
+            {optimization, undefined, OldNode, InitiatorNode, CandidateNode, undefined}
+        ),
 		?LOG_DEBUG("XBOT: Optimization message sent to Node ~p from ~p", [CandidateName, InitiatorName]);
 	   true ->
 	    % if not, continue checking against the remaining nodes in active view
@@ -735,7 +722,6 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
                #state{myself=Myself0,
                       active=Active0,
                       tag=Tag0,
-                      connections=Connections0,
                       sent_message_map=SentMessageMap0,
                       recv_message_map=RecvMessageMap0}=State0) ->
     ?LOG_DEBUG("Node ~p received the JOIN message from ~p, epoch ~p",
@@ -746,89 +732,110 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
     State = case IsAddable andalso NotInActiveView of
         true ->
             %% Establish connections.
-            Connections1 = partisan_util:maybe_connect(Peer, Connections0),
-            case partisan_peer_service_connections:find(Peer, Connections1) of
-                {ok, _Entries} ->
-                    ?LOG_DEBUG("Adding peer node ~p to the active view",
-                                [Peer]),
+            ok = partisan_util:maybe_connect(Peer),
+            Connected = partisan_peer_connections:is_connected(Peer),
+
+            case Connected of
+                true ->
+                    ?LOG_DEBUG(
+                        "Adding peer node ~p to the active view",
+                        [Peer]
+                    ),
                     %% Add to active view.
-                    State1 = add_to_active_view(Peer, PeerTag, State0#state{connections=Connections1}),
+                    State1 = add_to_active_view(Peer, PeerTag, State0),
 
                     LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
+
                     %% Send the NEIGHBOR message to origin, that will update it's view.
-                    do_send_message(Peer,
-                                    {neighbor, Myself0, Tag0, LastDisconnectId, Peer},
-                                    Connections1),
+                    _ = do_send_message(
+                        Peer,
+                        {neighbor, Myself0, Tag0, LastDisconnectId, Peer}
+                    ),
 
                     %% Random walk for forward join.
                     %% Since we might have dropped peers from the active view when
                     %% adding this one we need to use the most up to date active view,
                     %% and that's the one that's currently in the state
                     %% also disregard the the new joiner node
-                    Peers = (members(State1#state.active) -- [Myself0]) -- [Peer],
+                    Peers =
+                        (members(State1#state.active) -- [Myself0]) -- [Peer],
 
-                    Connections = lists:foldl(
-                                    fun(P, AccConnections0) ->
-                                            %% Establish connections.
-                                            AccConnections = partisan_util:maybe_connect(P, AccConnections0),
+                    ok = lists:foreach(
+                        fun(P) ->
+                            %% Establish connections.
+                            ok = partisan_util:maybe_connect(P),
 
-                                            ?LOG_DEBUG("Forwarding join of ~p to active view peer ~p",
-                                                        [Peer, P]),
-                                            do_send_message(
-                                              P,
-                                              {forward_join, Peer, PeerTag, PeerEpoch, arwl(), Myself0},
-                                              AccConnections),
+                            ?LOG_DEBUG(#{
+                                description => "Forwarding join of to active view peer",
+                                from => Peer,
+                                to => P
+                            }),
 
-                                            AccConnections
-                                    end, Connections1, Peers),
+                            Message = {
+                                forward_join,
+                                Peer, PeerTag, PeerEpoch, arwl(), Myself0
+                            },
 
-                    ?LOG_DEBUG("Node ~p active view: ~p", [Myself0, members(State1#state.active)]),
+                            _ = do_send_message(P, Message),
+
+                            ok
+                        end,
+                        Peers
+                    ),
+
+                    ?LOG_DEBUG(
+                        "Node ~p active view: ~p",
+                        [Myself0, members(State1#state.active)]
+                    ),
 
                     %% Notify with event.
-                    notify(State1#state{connections=Connections}),
+                    notify(State1),
 
                     %% Return.
                     State1;
-                {error, not_found} ->
+
+                false ->
                     State0
             end;
         false ->
-            ?LOG_DEBUG("Peer node ~p will not be added to the active view",
-                       [Peer]),
+            ?LOG_DEBUG(
+                "Peer node ~p will not be added to the active view",
+                [Peer]
+            ),
             State0
     end,
 
     {noreply, State};
 
 %% @private
-handle_message({neighbor, Peer, PeerTag, DisconnectId, _Sender},
-               #state{myself=Myself0,
-                      connections=Connections0,
-                      sent_message_map=SentMessageMap0}=State0) ->
-    ?LOG_DEBUG("Node ~p received the NEIGHBOR message from ~p with ~p",
-               [Myself0, Peer, PeerTag]),
+handle_message(
+    {neighbor, Peer, PeerTag, DisconnectId, _Sender},
+    #state{myself=Myself0, sent_message_map=SentMessageMap0}=State0) ->
+    ?LOG_DEBUG(
+        "Node ~p received the NEIGHBOR message from ~p with ~p",
+        [Myself0, Peer, PeerTag]
+    ),
 
     State = case is_addable(DisconnectId, Peer, SentMessageMap0) of
-                true ->
-                    %% Establish connections.
-                    Connections = partisan_util:maybe_connect(Peer, Connections0),
+        true ->
+            %% Establish connections.
+            ok = partisan_util:maybe_connect(Peer),
 
-                    case partisan_peer_service_connections:find(Peer, Connections) of
-                        {ok, _Entries} ->
-                            %% Add node into the active view.
-                            State1 = add_to_active_view(
-                                       Peer,
-                                       PeerTag,
-                                       State0#state{connections=Connections}),
-                            ?LOG_DEBUG("Node ~p active view: ~p",
-                                        [Myself0, members(State1#state.active)]),
-                            State1;
-                        {error, not_found} ->
-                            State0
-                    end;
+            case partisan_peer_connections:is_connected(Peer) of
+                true ->
+                    %% Add node into the active view.
+                    State1 = add_to_active_view(Peer, PeerTag, State0),
+                    ?LOG_DEBUG(
+                        "Node ~p active view: ~p",
+                        [Myself0, members(State1#state.active)]
+                    ),
+                    State1;
                 false ->
                     State0
-            end,
+            end;
+        false ->
+            State0
+    end,
 
     %% Notify with event.
     notify(State),
@@ -840,7 +847,6 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
                #state{myself=Myself0,
                       active=Active0,
                       tag=Tag0,
-                      connections=Connections0,
                       sent_message_map=SentMessageMap0,
                       recv_message_map=RecvMessageMap0}=State0) ->
     ?LOG_DEBUG("Node ~p received the FORWARD_JOIN message from ~p about ~p",
@@ -858,23 +864,30 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
             case IsAddable0 andalso NotInActiveView0 of
                 true ->
                     %% Establish connections.
-                    Connections1 = partisan_util:maybe_connect(Peer, Connections0),
-                    case partisan_peer_service_connections:find(Peer, Connections1) of
-                        {ok, _Entries} ->
+                    ok = partisan_util:maybe_connect(Peer),
+                    Connected = partisan_peer_connections:is_connected(Peer),
+
+                    case Connected of
+                        true ->
                             %% Add to our active view.
-                            State1 = add_to_active_view(Peer, PeerTag, State0#state{connections=Connections1}),
+                            State1 = add_to_active_view(Peer, PeerTag, State0),
 
-                            LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
+                            LastDisconnectId = get_current_id(
+                                Peer, RecvMessageMap0
+                            ),
                             %% Send neighbor message to origin, that will update it's view.
-                            do_send_message(Peer,
-                                            {neighbor, Myself0, Tag0, LastDisconnectId, Peer},
-                                            Connections1),
+                            _ = do_send_message(
+                                Peer,
+                                {neighbor, Myself0, Tag0, LastDisconnectId, Peer}
+                            ),
 
-                            ?LOG_DEBUG("Node ~p active view: ~p",
-                                        [Myself0, members(State1#state.active)]),
+                            ?LOG_DEBUG(
+                                "Node ~p active view: ~p",
+                                [Myself0, members(State1#state.active)]
+                            ),
 
                             State1;
-                        {error, not_found} ->
+                        false ->
                             State0
                     end;
                 false ->
@@ -903,27 +916,31 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
                     case IsAddable1 andalso NotInActiveView1 of
                         true ->
                             %% Establish connections.
-                            Connections3 = partisan_util:maybe_connect(Peer, State2#state.connections),
+                            ok = partisan_util:maybe_connect(Peer),
+                            Connected = partisan_peer_connections:is_connected(
+                                Peer
+                            ),
 
-                            case partisan_peer_service_connections:find(Peer, Connections3) of
-                                {ok, _Entries} ->
-                                    ?LOG_DEBUG("FORWARD_JOIN: No node for forward, adding ~p to active view",
-                                                [Peer]),
+                            case Connected of
+                                true ->
+                                    ?LOG_DEBUG(
+                                        "FORWARD_JOIN: No node for forward, adding ~p to active view",
+                                        [Peer]
+                                    ),
                                     %% Add to our active view.
-                                    State3 = add_to_active_view(Peer, PeerTag, State2#state{connections = Connections3}),
+                                    State3 = add_to_active_view(Peer, PeerTag, State2),
                                     LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
                                     %% Send neighbor message to origin, that will
                                     %% update it's view.
-                                    do_send_message(
+                                    _ = do_send_message(
                                       Peer,
-                                      {neighbor, Myself0, Tag0, LastDisconnectId, Peer},
-                                      Connections3),
+                                      {neighbor, Myself0, Tag0, LastDisconnectId, Peer}),
 
                                     ?LOG_DEBUG("Node ~p active view: ~p",
                                                 [Myself0, members(State3#state.active)]),
 
                                     State3;
-                                {error, not_found} ->
+                                false ->
                                     State2
                             end;
                         false ->
@@ -933,17 +950,16 @@ handle_message({forward_join, Peer, PeerTag, PeerEpoch, TTL, Sender},
                     end;
                 Random ->
                     %% Establish any new connections.
-                    Connections2 = partisan_util:maybe_connect(Random, Connections0),
+                    ok = partisan_util:maybe_connect(Random),
 
                     ?LOG_DEBUG("FORWARD_JOIN: forwarding to ~p",
                                [Random]),
                     %% Forward join.
-                    do_send_message(
+                    _ = do_send_message(
                         Random,
-                        {forward_join, Peer, PeerTag, PeerEpoch, TTL - 1, Myself0},
-                        Connections2),
+                        {forward_join, Peer, PeerTag, PeerEpoch, TTL - 1, Myself0}),
 
-                    State2#state{connections=Connections2}
+                    State2
             end
     end,
 
@@ -957,7 +973,6 @@ handle_message({disconnect, Peer, DisconnectId},
                #state{myself=Myself0,
                       active=Active0,
                       passive=Passive,
-                      connections=Connections0,
                       recv_message_map=RecvMessageMap0}=State0) ->
     ?LOG_DEBUG("Node ~p received the DISCONNECT message from ~p with ~p",
                [Myself0, Peer, DisconnectId]),
@@ -979,7 +994,7 @@ handle_message({disconnect, Peer, DisconnectId},
             RecvMessageMap = dict:store(Peer, DisconnectId, RecvMessageMap0),
 
             %% Trigger disconnection.
-            Connections = disconnect(Peer, Connections0),
+            ok = disconnect(Peer),
 
             State = case sets:size(Active) == 1 of
                         true ->
@@ -990,12 +1005,12 @@ handle_message({disconnect, Peer, DisconnectId},
                             ?LOG_DEBUG("Node ~p is isolated, moving random peer ~p from passive "
                                        "to active view",
                                        [RandomPeer, Myself0]),
-                            move_peer_from_passive_to_active(RandomPeer,
-                                State1#state{connections=Connections,
-                                             recv_message_map=RecvMessageMap});
+                            move_peer_from_passive_to_active(
+                                RandomPeer,
+                                State1#state{recv_message_map=RecvMessageMap}
+                            );
                         false ->
-                            State1#state{connections=Connections,
-                                         recv_message_map=RecvMessageMap}
+                            State1#state{recv_message_map=RecvMessageMap}
                     end,
 
             {noreply, State}
@@ -1007,23 +1022,22 @@ handle_message({neighbor_request, Peer, Priority, PeerTag, DisconnectId, Exchang
                       active=Active0,
                       passive=Passive0,
                       tag=Tag0,
-                      connections=Connections0,
                       sent_message_map=SentMessageMap0,
                       recv_message_map=RecvMessageMap0}=State0) ->
     ?LOG_DEBUG("Node ~p received the NEIGHBOR_REQUEST message from ~p with ~p",
                [Myself0, Peer, DisconnectId]),
 
     %% Establish connections.
-    Connections = partisan_util:maybe_connect(Peer, Connections0),
+    ok = partisan_util:maybe_connect(Peer),
 
     Exchange_Ack0 = %% Myself.
-                    [Myself0] ++
+        [Myself0] ++
 
-                    % Random members of the active list.
-                    select_random_sublist(Active0, k_active()) ++
+        % Random members of the active list.
+        select_random_sublist(Active0, k_active()) ++
 
-                    %% Random members of the passive list.
-                    select_random_sublist(Passive0, k_passive()),
+        %% Random members of the passive list.
+        select_random_sublist(Passive0, k_passive()),
 
     Exchange_Ack = lists:usort(Exchange_Ack0),
 
@@ -1036,37 +1050,34 @@ handle_message({neighbor_request, Peer, Priority, PeerTag, DisconnectId, Exchang
                                    [Myself0, Peer]),
                         LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
                         %% Reply to acknowledge the neighbor was accepted.
-                        do_send_message(
+                        _ = do_send_message(
                             Peer,
-                            {neighbor_accepted, Myself0, Tag0, LastDisconnectId, Exchange_Ack},
-                            Connections),
+                            {neighbor_accepted, Myself0, Tag0, LastDisconnectId, Exchange_Ack}),
 
-                        State1 = add_to_active_view(Peer, PeerTag,
-                                                    State0#state{connections = Connections}),
+                        State1 = add_to_active_view(Peer, PeerTag, State0),
 
-                        ?LOG_DEBUG("Node ~p active view: ~p",
-                                   [Myself0, members(State1#state.active)]),
+                        ?LOG_DEBUG(
+                            "Node ~p active view: ~p",
+                            [Myself0, members(State1#state.active)]
+                        ),
 
                         State1;
                     false ->
                         ?LOG_DEBUG("Node ~p rejected neighbor peer ~p",
                                    [Myself0, Peer]),
                         %% Reply to acknowledge the neighbor was rejected.
-                        do_send_message(Peer,
-                                        {neighbor_rejected, Myself0, Exchange_Ack},
-                                        Connections),
+                        _ = do_send_message(Peer,
+                                        {neighbor_rejected, Myself0, Exchange_Ack}),
 
-                        State0#state{connections=Connections}
+                        State0
                 end;
             false ->
                 ?LOG_DEBUG("Node ~p rejected neighbor peer ~p",
                            [Myself0, Peer]),
                 %% Reply to acknowledge the neighbor was rejected.
-                do_send_message(Peer,
-                                {neighbor_rejected, Myself0},
-                                Connections),
+                _ = do_send_message(Peer, {neighbor_rejected, Myself0}),
 
-                State0#state{connections=Connections}
+                State0
         end,
 
     State = merge_exchange(Exchange, State2),
@@ -1077,16 +1088,14 @@ handle_message({neighbor_request, Peer, Priority, PeerTag, DisconnectId, Exchang
     {noreply, State};
 
 %% @private
-handle_message({neighbor_rejected, Peer, Exchange},
-               #state{myself=Myself0,
-                      connections=Connections0} = State0) ->
+handle_message({neighbor_rejected, Peer, Exchange}, #state{myself=Myself0} = State0) ->
     ?LOG_DEBUG("Node ~p received the NEIGHBOR_REJECTED message from ~p",
                [Myself0, Peer]),
 
     %% Trigger disconnection.
-    Connections = disconnect(Peer, Connections0),
+    ok = disconnect(Peer),
 
-    State = merge_exchange(Exchange, State0#state{connections=Connections}),
+    State = merge_exchange(Exchange, State0),
 
     {noreply, State};
 
@@ -1098,12 +1107,12 @@ handle_message({neighbor_accepted, Peer, PeerTag, DisconnectId, Exchange},
                [Myself0, Peer, DisconnectId]),
 
     State1 = case is_addable(DisconnectId, Peer, SentMessageMap0) of
-                 true ->
-                     %% Add node into the active view.
-                     add_to_active_view(Peer, PeerTag, State0);
-                 false ->
-                     State0
-             end,
+        true ->
+            %% Add node into the active view.
+            add_to_active_view(Peer, PeerTag, State0);
+        false ->
+            State0
+    end,
 
     State = merge_exchange(Exchange, State1),
 
@@ -1119,8 +1128,7 @@ handle_message({shuffle_reply, Exchange, _Sender}, State0) ->
 handle_message({shuffle, Exchange, TTL, Sender},
                #state{myself=Myself,
                       active=Active0,
-                      passive=Passive0,
-                      connections=Connections0}=State0) ->
+                      passive=Passive0}=State0) ->
     ?LOG_DEBUG("Node ~p received the SHUFFLE message from ~p",
                [Myself, Sender]),
     %% Forward to random member of the active view.
@@ -1131,39 +1139,43 @@ handle_message({shuffle, Exchange, TTL, Sender},
                              State0;
                          Random ->
                              %% Trigger connection.
-                             Connections1 = partisan_util:maybe_connect(Random, Connections0),
+                             ok = partisan_util:maybe_connect(Random),
 
                              %% Forward shuffle until random walk complete.
-                             do_send_message(Random,
-                                             {shuffle, Exchange, TTL - 1, Myself},
-                                             Connections1),
+                             _ = do_send_message(
+                                Random,
+                                {shuffle, Exchange, TTL - 1, Myself}
+                            ),
 
-                             State0#state{connections=Connections1}
+                            State0
                      end,
 
             State1;
         false ->
             %% Randomly select nodes from the passive view and respond.
-            ResponseExchange = select_random_sublist(Passive0,
-                                                     length(Exchange)),
+            ResponseExchange = select_random_sublist(
+                Passive0, length(Exchange)
+            ),
 
             %% Trigger connection.
-            Connections2 = partisan_util:maybe_connect(Sender, Connections0),
+            ok = partisan_util:maybe_connect(Sender),
 
-            do_send_message(Sender,
-                            {shuffle_reply, ResponseExchange, Myself},
-                            Connections2),
+            _ = do_send_message(
+                Sender, {shuffle_reply, ResponseExchange, Myself}
+            ),
 
-            State2 = merge_exchange(Exchange, State0#state{connections=Connections2}),
+            State2 = merge_exchange(Exchange, State0),
             State2
     end,
     {noreply, State};
 
-handle_message({relay_message, Node, Message}, #state{out_links=OutLinks, connections=Connections}=State) ->
+handle_message({relay_message, Node, Message}, #state{out_links=OutLinks}=State) ->
     ?LOG_DEBUG("Node ~p received tree relay to ~p", [partisan:node(), Node]),
 
     %% Attempt to deliver, or recurse and forward on through a relay.
-    ok = do_send_message(Node, Message, Connections, [{out_links, OutLinks}, {transitive, true}]),
+    _ = do_send_message(
+        Node, Message, #{out_links => OutLinks, transitive => true}
+    ),
 
     {noreply, State};
 handle_message({forward_message, ServerRef, Message}, State) ->
@@ -1186,7 +1198,7 @@ handle_message({optimization_reply, true, _, InitiatorNode, CandidateNode, undef
 	%	do_disconnect(OldNode, State)
 	%end,
 	%move_peer_from_passive_to_active(CandidateNode, State),
-	send_join(CandidateNode, State),
+	_ = send_join(CandidateNode, State),
 	?LOG_DEBUG("XBOT: Finished optimization round started by Node ~p ", [InitiatorName]),
 	{noreply, State};
 handle_message({optimization_reply, true, OldNode, InitiatorNode, CandidateNode, _}, #state{active=Active}=State) ->
@@ -1200,7 +1212,7 @@ handle_message({optimization_reply, true, OldNode, InitiatorNode, CandidateNode,
 		true -> ok
 	end,
 	%move_peer_from_passive_to_active(CandidateNode, State),
-	send_join(CandidateNode, State),
+	_ = send_join(CandidateNode, State),
 	?LOG_DEBUG("XBOT: Finished optimization round started by Node ~p ", [InitiatorName]),
 	{noreply, State};
 handle_message({optimization_reply, false, _, _, _, _}, State) ->
@@ -1208,29 +1220,55 @@ handle_message({optimization_reply, false, _, _, _, _}, State) ->
 
 %% Optimization
 handle_message({optimization, _, OldNode, InitiatorNode, CandidateNode, undefined},
-					#state{ active=Active, max_active_size=MaxActiveSize, reserved=Reserved, connections=Connections}=State) ->
+					#state{ active=Active, max_active_size=MaxActiveSize, reserved=Reserved}=State) ->
 	#{name := CandidateName} = CandidateNode,
 	#{name := InitiatorName} = InitiatorNode,
 	?LOG_DEBUG("XBOT: Received optimization message at Node ~p from ~p", [CandidateName, InitiatorName]),
 	Check = is_full({active, Active, Reserved},MaxActiveSize),
 	if not Check ->
 			%add_to_active_view(CandidateNode, MyTag, State),
-			send_join(InitiatorNode,State),
-			NodeConnections = partisan_util:maybe_connect(InitiatorNode, Connections),
-			do_send_message(InitiatorNode, {optimization_reply, true, OldNode, InitiatorNode, CandidateNode, undefined}, NodeConnections),
-			?LOG_DEBUG("XBOT: Sending optimization reply message to Node ~p from ~p", [InitiatorName, CandidateName]);
+			_ = send_join(InitiatorNode, State),
+
+			ok = partisan_util:maybe_connect(InitiatorNode),
+
+            Message = {
+                optimization_reply,
+                true,
+                OldNode,
+                InitiatorNode,
+                CandidateNode,
+                undefined
+            },
+
+			_ = do_send_message(InitiatorNode, Message),
+
+			?LOG_DEBUG(
+                "XBOT: Sending optimization reply message to Node ~p from ~p", [InitiatorName, CandidateName]
+            );
+
 		true ->
 			DisconnectNode = select_disconnect_node(sets:to_list(Active)),
 			#{name := DisconnectName} = DisconnectNode,
-			NodeConnections = partisan_util:maybe_connect(DisconnectNode, Connections),
-			do_send_message(DisconnectNode,{replace, undefined, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, NodeConnections),
-			?LOG_DEBUG("XBOT: Sending replace message to Node ~p from ~p", [DisconnectName, CandidateName])
+
+			ok = partisan_util:maybe_connect(DisconnectNode),
+
+            Message = {
+                replace,
+                undefined,
+                OldNode,
+                InitiatorNode,
+                CandidateNode,
+                DisconnectNode
+            },
+			_ = do_send_message(DisconnectNode, Message),
+			?LOG_DEBUG(
+                "XBOT: Sending replace message to Node ~p from ~p", [DisconnectName, CandidateName]
+            )
 	end,
 	{noreply, State};
 
 %% Replace Reply
-handle_message({replace_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode},
-			#state{ connections=Connections}=State) ->
+handle_message({replace_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, #state{}=State) ->
 	#{name := InitiatorName} = InitiatorNode,
 	#{name := DisconnectName} = DisconnectNode,
 	#{name := CandidateName} = CandidateNode,
@@ -1238,42 +1276,41 @@ handle_message({replace_reply, true, OldNode, InitiatorNode, CandidateNode, Disc
 	%remove_from_active_view(DisconnectNode, Active),
 	do_disconnect(DisconnectNode, State),
 	%add_to_active_view(InitiatorNode, MyTag, State),
-	send_join(InitiatorNode, State),
-	NodeConnections = partisan_util:maybe_connect(InitiatorNode, Connections),
-	do_send_message(InitiatorNode,{optimization_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode},NodeConnections),
+	_ = send_join(InitiatorNode, State),
+	ok = partisan_util:maybe_connect(InitiatorNode),
+	_ = do_send_message(InitiatorNode,{optimization_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode}),
 	?LOG_DEBUG("XBOT: Sending optimization reply to Node ~p from ~p", [InitiatorName, CandidateName]),
 	{noreply, State};
-handle_message({replace_reply, false, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, #state{connections=Connections}=State) ->
+handle_message({replace_reply, false, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, #state{}=State) ->
 	#{name := InitiatorName} = InitiatorNode,
 	#{name := DisconnectName} = DisconnectNode,
 	#{name := CandidateName} = CandidateNode,
 	?LOG_DEBUG("XBOT: Received replace reply message at Node ~p from ~p", [CandidateName, DisconnectName]),
-	NodeConnections = partisan_util:maybe_connect(InitiatorNode, Connections),
-	do_send_message(InitiatorNode,{optimization_reply, false, OldNode, InitiatorNode, CandidateNode, DisconnectNode},NodeConnections),
+	ok = partisan_util:maybe_connect(InitiatorNode),
+	_ = do_send_message(InitiatorNode,{optimization_reply, false, OldNode, InitiatorNode, CandidateNode, DisconnectNode}),
 	?LOG_DEBUG("XBOT: Sending optimization reply to Node ~p from ~p", [InitiatorName, CandidateName]),
 	{noreply, State};
 
 %% Replace
-handle_message({replace, _, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, #state{connections=Connections}=State) ->
+handle_message({replace, _, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, #state{}=State) ->
 	#{name := DisconnectName} = DisconnectNode,
 	#{name := CandidateName} = CandidateNode,
 	#{name := OldName} = OldNode,
 	?LOG_DEBUG("XBOT: Received replace message at Node ~p from ~p", [DisconnectName, CandidateName]),
 	Check = is_better(?XPARAM, OldNode, CandidateNode),
 	if not Check ->
-			NodeConnections = partisan_util:maybe_connect(CandidateNode, Connections),
-			do_send_message(CandidateNode,{replace_reply, false, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, NodeConnections),
+			ok = partisan_util:maybe_connect(CandidateNode),
+			_ = do_send_message(CandidateNode,{replace_reply, false, OldNode, InitiatorNode, CandidateNode, DisconnectNode}),
 			?LOG_DEBUG("XBOT: Sending replace reply to Node ~p from ~p", [CandidateName, DisconnectName]);
 		true ->
-			NodeConnections = partisan_util:maybe_connect(OldNode, Connections),
-			do_send_message(OldNode,{switch, undefined, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, NodeConnections),
+			ok = partisan_util:maybe_connect(OldNode),
+			_ = do_send_message(OldNode,{switch, undefined, OldNode, InitiatorNode, CandidateNode, DisconnectNode}),
 			?LOG_DEBUG("XBOT: Sending switch to Node ~p from ~p", [OldName, DisconnectName])
 	end,
 	{noreply, State};
 
 %% Switch Reply
-handle_message({switch_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode},
-			#state{ connections=Connections}=State) ->
+handle_message({switch_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, #state{}=State) ->
 	#{name := DisconnectName} = DisconnectNode,
 	#{name := CandidateName} = CandidateNode,
 	#{name := OldName} = OldNode,
@@ -1281,24 +1318,24 @@ handle_message({switch_reply, true, OldNode, InitiatorNode, CandidateNode, Disco
 	%remove_from_active_view(CandidateNode, Active),
 	do_disconnect(CandidateNode, State),
 	%add_to_active_view(OldNode, MyTag, State),
-	send_join(OldNode, State),
-	NodeConnections = partisan_util:maybe_connect(CandidateNode, Connections),
-	do_send_message(CandidateNode,{replace_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, NodeConnections),
+	_ = send_join(OldNode, State),
+	ok = partisan_util:maybe_connect(CandidateNode),
+	_ = do_send_message(CandidateNode,{replace_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode}),
 	?LOG_DEBUG("XBOT: Sending replace reply to Node ~p from ~p", [CandidateName, DisconnectName]),
 	{noreply, State};
-handle_message({switch_reply, false, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, #state{connections=Connections}=State) ->
+handle_message({switch_reply, false, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, #state{}=State) ->
 	#{name := DisconnectName} = DisconnectNode,
 	#{name := CandidateName} = CandidateNode,
 	#{name := OldName} = OldNode,
 	?LOG_DEBUG("XBOT: Received switch reply message at Node ~p from ~p", [DisconnectName, OldName]),
-	NodeConnections = partisan_util:maybe_connect(CandidateNode, Connections),
-	do_send_message(CandidateNode, {replace_reply, false, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, NodeConnections),
+	ok = partisan_util:maybe_connect(CandidateNode),
+	_ = do_send_message(CandidateNode, {replace_reply, false, OldNode, InitiatorNode, CandidateNode, DisconnectNode}),
 	?LOG_DEBUG("XBOT: Sending replace reply to Node ~p from ~p", [CandidateName, DisconnectName]),
 	{noreply, State};
 
 %% Switch
 handle_message({switch, _, OldNode, InitiatorNode, CandidateNode, DisconnectNode},
-			#state{active=Active, connections=Connections}=State) ->
+			#state{active=Active}=State) ->
 	#{name := DisconnectName} = DisconnectNode,
 	#{name := OldName} = OldNode,
 	?LOG_DEBUG("XBOT: Received switch message at Node ~p from ~p", [OldName, DisconnectName]),
@@ -1307,13 +1344,13 @@ handle_message({switch, _, OldNode, InitiatorNode, CandidateNode, DisconnectNode
 			%remove_from_active_view(InitiatorNode, Active),
 			do_disconnect(InitiatorNode, State),
 			%add_to_active_view(DisconnectNode, MyTag, State),
-			send_join(DisconnectNode, State),
-			NodeConnections = partisan_util:maybe_connect(DisconnectNode, Connections),
-			do_send_message(DisconnectNode, {switch_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, NodeConnections),
+			_ = send_join(DisconnectNode, State),
+			ok = partisan_util:maybe_connect(DisconnectNode),
+			_ = do_send_message(DisconnectNode, {switch_reply, true, OldNode, InitiatorNode, CandidateNode, DisconnectNode}),
 			?LOG_DEBUG("XBOT: Sending switch reply to Node ~p from ~p", [DisconnectName, OldName]);
 		true ->
-			NodeConnections = partisan_util:maybe_connect(DisconnectNode, Connections),
-			do_send_message(DisconnectNode, {switch_reply, false, OldNode, InitiatorNode, CandidateNode, DisconnectNode}, NodeConnections),
+			ok = partisan_util:maybe_connect(DisconnectNode),
+			_ = do_send_message(DisconnectNode, {switch_reply, false, OldNode, InitiatorNode, CandidateNode, DisconnectNode}),
 			?LOG_DEBUG("XBOT: Sending switch reply to Node ~p from ~p", [DisconnectName, OldName])
 	end,
 	{noreply, State}.
@@ -1351,34 +1388,26 @@ select_worst_in_active_view([H | T], Worst) ->
 	end.
 
 %% @private
-send_join(Peer,
-            #state{myself=Myself0,
-                   tag=Tag0,
-                   connections=Connections0,
-                   epoch=Epoch0}=State0) ->
+send_join(Peer, #state{myself=Myself0, tag=Tag0, epoch=Epoch0}) ->
     %% Trigger connection.
-    Connections = partisan_util:maybe_connect(Peer, Connections0),
+    ok = partisan_util:maybe_connect(Peer),
 
     ?LOG_DEBUG("Node ~p sends the JOIN message to ~p", [Myself0, Peer]),
+
     %% Send the JOIN message to the peer.
-    do_send_message(Peer,
-                    {join, Myself0, Tag0, Epoch0},
-                    Connections),
-    %% Return.
-    {noreply, State0#state{connections=Connections}}.
+    do_send_message(Peer, {join, Myself0, Tag0, Epoch0}).
+
 
 %% Send a disconnect message to a peer
 %% @private
-do_disconnect(Peer, #state{active=Active0,
-                                       connections=Connections0}=State0) ->
+do_disconnect(Peer, #state{active=Active0}=State0) ->
     case sets:is_element(Peer, Active0) of
         true ->
             %% If a member of the active view, remove it.
             Active = sets:del_element(Peer, Active0),
-            State = add_to_passive_view(Peer,
-                                        State0#state{active=Active}),
-            Connections = disconnect(Peer, Connections0),
-            {noreply, State#state{connections=Connections}};
+            State = add_to_passive_view(Peer, State0#state{active=Active}),
+            ok = disconnect(Peer),
+            {noreply, State};
         false ->
             {noreply, State0}
     end.
@@ -1448,98 +1477,86 @@ persist_epoch(Epoch) ->
 members(Set) ->
     sets:to_list(Set).
 
-%% @private
--spec disconnect(Node :: node_spec(),
-                 Connections :: partisan_peer_service_connections:t()) ->
-            partisan_peer_service_connections:t().
-disconnect(Node, Connections0) ->
-    %% Find a connection for the remote node, if we have one.
-    Connections =
-        case partisan_peer_service_connections:find(Node, Connections0) of
-            {ok, []} ->
-                %% Return original set.
-                Connections0;
-            {ok, [{_ListenAddr, _Channel, Pid}|_]} ->
-                %% Stop;
-                ?LOG_DEBUG("disconnecting node ~p by stopping connection pid ~p",
-                           [Node, Pid]),
-                gen_server:stop(Pid),
-
-                %% Null out in the dictionary.
-                {_, Connections1} =  partisan_peer_service_connections:prune(Node, Connections0),
-                Connections1;
-            {error, not_found} ->
-                %% Return original set.
-                Connections0
-        end,
-    Connections.
 
 %% @private
--spec do_send_message(Node :: atom() | node_spec(),
-                      Message :: term(),
-                      Connections :: partisan_peer_service_connections:t()) ->
-            {error, disconnected} | {error, not_yet_connected} | {error, term()} | ok.
-do_send_message(Node, Message, Connections) ->
-    do_send_message(Node, Message, Connections, []).
+-spec disconnect(Node :: node_spec()) -> ok.
+
+disconnect(Node) ->
+    case catch partisan_peer_connections:prune(Node) of
+        {'EXIT', _} ->
+            ok;
+        {_Info, Connection} ->
+            Pid = partisan_peer_connections:pid(Connection),
+            ?LOG_DEBUG(
+                "disconnecting node ~p by stopping connection pid ~p",
+                [Node, Pid]
+            ),
+            catch gen_server:stop(Pid),
+            ok
+    end.
+
 
 %% @private
--spec do_send_message(Node :: atom() | node_spec(),
-                      Message :: term(),
-                      Connections :: partisan_peer_service_connections:t(),
-                      Options :: list() | map()) ->
-            {error, disconnected} | {error, not_yet_connected} | {error, term()} | ok.
-do_send_message(Node, Message, Connections, Options) ->
+-spec do_send_message(Node :: atom() | node_spec(), Message :: term()) ->
+    ok | {error, disconnected} | {error, not_yet_connected} | {error, term()}.
+
+do_send_message(Node, Message) ->
+    do_send_message(Node, Message, #{}).
+
+%% @private
+-spec do_send_message(
+    Node :: atom() | node_spec(),
+    Message :: term(),
+    Options :: map()) ->
+    ok | {error, disconnected} | {error, not_yet_connected} | {error, term()}.
+
+do_send_message(Node, Message, Options) ->
     Broadcast = partisan_config:get(broadcast, false),
     Transitive = maps:get(transitive, Options, false),
 
-    %% Find a connection for the remote node, if we have one.
-    case partisan_peer_service_connections:find(Node, Connections) of
-        {ok, []} ->
-            ?LOG_DEBUG(#{
-                description => "Node disconnected when sending message to peer node.",
-                message => Message,
-                peer_node => Node,
-                options => #{broadcast => Broadcast, transitive => Transitive}
-            }),
-
-            %% We were connected, but we're not anymore.
-            case {Broadcast, Transitive} of
-                {true, true} ->
-                    do_tree_forward(Node, Message, Connections, Options);
-                {true, false} ->
-                    ok;
-                {false, _} ->
-                    %% Node was connected but is now disconnected.
-                    {error, disconnected}
-            end;
-        {ok, Entries} ->
+    case partisan_peer_connections:dispatch_pid(Node) of
+        {ok, Pid} ->
             try
-                Pid = partisan_util:dispatch_pid(Entries),
                 gen_server:call(Pid, {send_message, Message})
             catch
-                Reason:Error ->
-                    ?LOG_DEBUG("failed to send a message to ~p due to ~p:~p", [Node, Reason, Error]),
-                    {error, Error}
+                Class:EReason ->
+                    ?LOG_DEBUG(
+                        "failed to send a message to ~p due to ~p:~p",
+                        [Node, Class, EReason]
+                    ),
+                    {error, EReason}
             end;
-        {error, not_found} ->
-            ?LOG_DEBUG(#{
-                description => "Node not yet connected when sending message to peer node.",
-                message => Message,
-                peer_node => Node,
-                options => #{broadcast => Broadcast, transitive => Transitive}
-            }),
 
-            %% We aren't connected, and it's not sure we will ever be.  Take the list of gossip peers and forward the message down the tree.
+        {error, Reason} ->
+            case Reason of
+                not_yet_connected ->
+                    ?LOG_DEBUG(#{
+                        description => "Node not yet connected when sending message to peer node.",
+                        message => Message,
+                        peer_node => Node,
+                        options => #{broadcast => Broadcast, transitive => Transitive}
+                    });
+                disconnected ->
+                    ?LOG_DEBUG(#{
+                        description => "Node disconnected when sending message to peer node.",
+                        message => Message,
+                        peer_node => Node,
+                        options => #{broadcast => Broadcast, transitive => Transitive}
+                    })
+            end,
+
             case {Broadcast, Transitive} of
                 {true, true} ->
-                    do_tree_forward(Node, Message, Connections, Options);
+                    do_tree_forward(Node, Message, Options);
+
                 {true, false} ->
                     ok;
+
                 {false, _} ->
-                    %% Node has not been connected yet.
-                    {error, disconnected}
+                    {error, Reason}
             end
     end.
+
 
 %% @private
 select_random(View, Omit) ->
@@ -1567,25 +1584,30 @@ select_random_sublist(View, K) ->
 %% network delay; if so, we have to remove this element from the passive
 %% view, otherwise it will exist in both places.
 %%
-add_to_active_view(#{name := Name}=Peer, Tag,
-                   #state{active=Active0,
-                          myself=Myself,
-                          passive=Passive0,
-                          reserved=Reserved0,
-                          max_active_size=MaxActiveSize}=State0) ->
-    IsNotMyself = not (Name =:= partisan:node()),
+add_to_active_view(#{name := Node} = Peer, Tag, #state{} = State0) ->
+
+    #state{
+        active = Active0,
+        myself = Myself,
+        passive = Passive0,
+        reserved = Reserved0,
+        max_active_size = MaxActiveSize
+    } = State0,
+
+    IsNotMyself = not (Node =:= partisan:node()),
     NotInActiveView = not sets:is_element(Peer, Active0),
     case IsNotMyself andalso NotInActiveView of
         true ->
             %% See above for more information.
             Passive = remove_from_passive_view(Peer, Passive0),
 
-            #state{active=Active1} = State1 = case is_full({active, Active0, Reserved0}, MaxActiveSize) of
-                true ->
-                    drop_random_element_from_active_view(State0#state{passive=Passive});
-                false ->
-                    State0#state{passive=Passive}
-            end,
+            State1 =
+                case is_full({active, Active0, Reserved0}, MaxActiveSize) of
+                    true ->
+                        drop_random_element_from_active_view(State0#state{passive=Passive});
+                    false ->
+                        State0#state{passive=Passive}
+                end,
 
             ?LOG_DEBUG(
                 "Node ~p adds ~p to active view with tag ~p",
@@ -1593,7 +1615,7 @@ add_to_active_view(#{name := Name}=Peer, Tag,
             ),
 
             %% Add to the active view.
-            Active = sets:add_element(Peer, Active1),
+            Active = sets:add_element(Peer, State1#state.active),
 
             %% Fill reserved slot if necessary.
             Reserved = case dict:find(Tag, Reserved0) of
@@ -1613,9 +1635,11 @@ add_to_active_view(#{name := Name}=Peer, Tag,
                     Reserved0
             end,
 
-            State2 = State1#state{active=Active,
-                                  passive=Passive,
-                                  reserved=Reserved},
+            State2 = State1#state{
+                active = Active,
+                passive = Passive,
+                reserved = Reserved
+            },
 
             persist_epoch(State2#state.epoch),
 
@@ -1624,14 +1648,18 @@ add_to_active_view(#{name := Name}=Peer, Tag,
             State0
     end.
 
-%% @doc Add to the passive view.
-add_to_passive_view(#{name := Name}=Peer,
-                    #state{myself=Myself,
-                           active=Active0,
-                           passive=Passive0,
-                           max_passive_size=MaxPassiveSize}=State0) ->
 
-    IsNotMyself = not (Name =:= partisan:node()),
+%% @doc Add to the passive view.
+add_to_passive_view(#{name := Node} = Peer, #state{} = State0) ->
+
+    #state{
+        myself = Myself,
+        active = Active0,
+        passive = Passive0,
+        max_passive_size = MaxPassiveSize
+    } = State0,
+
+    IsNotMyself = not (Node =:= partisan:node()),
     NotInActiveView = not sets:is_element(Peer, Active0),
     NotInPassiveView = not sets:is_element(Peer, Passive0),
     Passive = case IsNotMyself andalso NotInActiveView andalso NotInPassiveView of
@@ -1672,7 +1700,6 @@ drop_random_element_from_active_view(
         #state{myself=Myself0,
                active=Active0,
                reserved=Reserved0,
-               connections=Connections0,
                epoch=Epoch0,
                sent_message_map=SentMessageMap0}=State0) ->
     ReservedPeers = dict:fold(fun(_K, V, Acc) -> [V | Acc] end,
@@ -1694,7 +1721,7 @@ drop_random_element_from_active_view(
                                         State0#state{active=Active}),
 
             %% Trigger connection.
-            Connections1 = partisan_util:maybe_connect(Peer, Connections0),
+            ok = partisan_util:maybe_connect(Peer),
 
             %% Get next disconnect id for the peer.
             NextId = get_next_id(Peer, Epoch0, SentMessageMap0),
@@ -1702,17 +1729,14 @@ drop_random_element_from_active_view(
             SentMessageMap = dict:store(Peer, NextId, SentMessageMap0),
 
             %% Let peer know we are disconnecting them.
-            do_send_message(Peer,
-                            {disconnect, Myself0, NextId},
-                            Connections1),
+            do_send_message(Peer, {disconnect, Myself0, NextId}),
 
             %% Trigger disconnection.
-            Connections = disconnect(Peer, Connections1),
+            ok = disconnect(Peer),
 
             ?LOG_DEBUG("Node ~p active view: ~p", [Myself0, members(Active)]),
 
-            State#state{connections=Connections,
-                        sent_message_map=SentMessageMap}
+            State#state{sent_message_map=SentMessageMap}
     end.
 
 %% @private
@@ -1889,7 +1913,6 @@ move_peer_from_passive_to_active(Peer,
                active=Active0,
                passive=Passive0,
                tag=Tag0,
-               connections=Connections0,
                recv_message_map=RecvMessageMap0}=State0) ->
     ?LOG_DEBUG("Node ~p sends the NEIGHBOR_REQUEST to ~p", [Myself0, Peer]),
 
@@ -1905,15 +1928,15 @@ move_peer_from_passive_to_active(Peer,
     Exchange = lists:usort(Exchange0),
 
     %% Trigger connection.
-    Connections = partisan_util:maybe_connect(Peer, Connections0),
+    ok = partisan_util:maybe_connect(Peer),
 
     LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
     do_send_message(
         Peer,
-        {neighbor_request, Myself0, high, Tag0, LastDisconnectId, Exchange},
-        Connections),
+        {neighbor_request, Myself0, high, Tag0, LastDisconnectId, Exchange}
+    ),
 
-    State0#state{connections=Connections}.
+    State0.
 
 %% @private
 schedule_random_promotion() ->
@@ -1935,37 +1958,30 @@ has_reached_the_limit({active, Active, Reserved}, LimitActiveSize) ->
     sets:size(Active) + length(Open) >= LimitActiveSize.
 
 %% @private
-propagate_partition_injection(Ref, Origin, TTL, Peer, Connections) ->
+propagate_partition_injection(Ref, Origin, TTL, Peer) ->
     ?LOG_DEBUG("Forwarding partition request to: ~p", [Peer]),
 
-    do_send_message(Peer,
-                    {inject_partition, Ref, Origin, TTL},
-                    Connections).
+    do_send_message(Peer, {inject_partition, Ref, Origin, TTL}).
 
 %% @private
-propagate_partition_resolution(Reference, Peer, Connections) ->
+propagate_partition_resolution(Reference, Peer) ->
     ?LOG_DEBUG("Forwarding partition request to: ~p", [Peer]),
 
-    do_send_message(Peer,
-                    {resolve_partition, Reference},
-                    Connections).
+    do_send_message(Peer, {resolve_partition, Reference}).
 
 %% @private
 handle_partition_injection(Reference, _Origin, TTL,
                            #state{active=Active,
                                   myself=Myself,
-                                  partitions=Partitions0,
-                                  connections=Connections}) ->
+                                  partitions=Partitions0}) ->
     %% If the TTL hasn't expired, re-forward the partition injection
     %% request.
     case TTL > 0 of
         true ->
-            [propagate_partition_injection(Reference,
-                                           Myself,
-                                           TTL - 1,
-                                           Peer,
-                                           Connections)
-             || Peer <- members(Active)];
+            [
+                propagate_partition_injection(Reference, Myself, TTL - 1, Peer)
+                || Peer <- members(Active)
+            ];
         false ->
             ok
     end,
@@ -1979,8 +1995,7 @@ handle_partition_injection(Reference, _Origin, TTL,
 %% @private
 handle_partition_resolution(Reference,
                             #state{active=Active,
-                                   partitions=Partitions0,
-                                   connections=Connections}) ->
+                                   partitions=Partitions0}) ->
     %% Remove partitions.
     Partitions = lists:foldl(fun({Ref, Peer}, Acc) ->
                         case Reference of
@@ -1997,13 +2012,15 @@ handle_partition_resolution(Reference,
         Partitions0 ->
             ok;
         _ ->
-            [propagate_partition_resolution(Reference, Peer, Connections)
-             || Peer <- members(Active)]
+            [
+                propagate_partition_resolution(Reference, Peer)
+                || Peer <- members(Active)
+            ]
     end,
     Partitions.
 
 %% @private
-do_tree_forward(Node, Message, Connections, Options) ->
+do_tree_forward(Node, Message, Options) ->
     ?LOG_DEBUG(
         "Attempting to forward message from ~p to ~p.",
         [partisan:node(), Node]
@@ -2027,7 +2044,7 @@ do_tree_forward(Node, Message, Connections, Options) ->
     end,
 
     %% Send messages, but don't attempt to forward again, if we aren't connected.
-    lists:foreach(
+    ok = lists:foreach(
         fun(N) ->
             ?LOG_DEBUG(
                 "Forwarding relay message to node ~p for node ~p from node ~p",
@@ -2036,11 +2053,10 @@ do_tree_forward(Node, Message, Connections, Options) ->
 
             RelayMessage = {relay_message, Node, Message},
             RelayOptions = maps:without([transitive], Options),
-            do_send_message(N, RelayMessage, Connections, RelayOptions)
+            do_send_message(N, RelayMessage, RelayOptions)
         end,
         OutLinks
-    ),
-    ok.
+    ).
 
 %% @private
 retrieve_outlinks() ->

@@ -197,7 +197,7 @@ member(Node) ->
 %% @doc Return cluster members
 %% @end
 %% -----------------------------------------------------------------------------
--spec members() -> [name()].
+-spec members() -> {ok, [name()]}.
 
 members() ->
     (?PEER_SERVICE_MANAGER):members().
@@ -218,7 +218,7 @@ members_for_orchestration() ->
 %% @end
 %% -----------------------------------------------------------------------------
 connections() ->
-    (?PEER_SERVICE_MANAGER):connections().
+    partisan_peer_connections:connections().
 
 
 %% -----------------------------------------------------------------------------

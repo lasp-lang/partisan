@@ -214,9 +214,11 @@ set(peer_ip, Value) when is_list(Value) ->
     {ok, ParsedIP} = inet_parse:address(Value),
     set(peer_ip, ParsedIP);
 
+set(channels, Value) ->
+    do_set(channels, lists:usort(Value ++ ?CHANNELS));
+
 set(Key, Value) ->
-    application:set_env(?APP, Key, Value),
-    persistent_term:put(Key, Value).
+    do_set(Key, Value).
 
 
 listen_addrs() ->
@@ -233,6 +235,11 @@ default_channel() ->
 
 parallelism() ->
     partisan_config:get(parallelism, ?PARALLELISM).
+
+
+do_set(Key, Value) ->
+    application:set_env(?APP, Key, Value),
+    persistent_term:put(Key, Value).
 
 
 %% @private

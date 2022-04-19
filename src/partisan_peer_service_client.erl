@@ -202,19 +202,26 @@ decode(Message) ->
     binary_to_term(Message).
 
 %% @private
-handle_message({state, Tag, LocalState},
-               #state{peer=Peer, from=From, socket=_Socket}=State) ->
+handle_message({state, Tag, LocalState}, #state{}=State) ->
+
+    #state{
+        peer = Peer,
+        channel = Channel,
+        from = From
+    } = State,
+
     %% Notify peer service manager we are done.
     case LocalState of
         %% TODO: Anything using a three tuple will be caught here.
         %% TODO: This format is specific to the HyParView manager.
         {state, _Active, Epoch} ->
-            From ! {connected, Peer, Tag, Epoch, LocalState};
+            From ! {connected, Peer, Channel, Tag, Epoch, LocalState};
         _Other ->
-            From ! {connected, Peer, Tag, LocalState}
+            From ! {connected, Peer, Channel, Tag, LocalState}
     end,
 
     {noreply, State};
+
 handle_message({hello, Node}, #state{peer=Peer, socket=Socket}=State) ->
     #{name := PeerName} = Peer,
 

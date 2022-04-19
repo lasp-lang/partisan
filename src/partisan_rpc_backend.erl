@@ -46,23 +46,11 @@
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
-call(Name, Module, Function, Arguments, Timeout) ->
-    %% Make call.
-    Manager = partisan_config:get(partisan_peer_service_manager),
-    Self = self(),
-    Options = options(),
-    RpcChannel = rpc_channel(),
-    OurName = partisan:node(),
-    Manager:forward_message(Name, RpcChannel, ?MODULE, {call, Module, Function, Arguments, Timeout, {origin, OurName, Self}}, Options),
 
-    %% Wait for response.
-    receive
-        {response, Response} ->
-            Response
-    after
-        Timeout ->
-            {badrpc, timeout}
-    end.
+%% to be removed from here.
+call(Name, Module, Function, Arguments, Timeout) ->
+    partisan_rpc:call(Name, Module, Function, Arguments, Timeout).
+
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -92,7 +80,7 @@ handle_info({call, Module, Function, Arguments, _Timeout, {origin, Name, Self}},
 
     %% Send the response to execution.
     Manager = partisan_config:get(partisan_peer_service_manager),
-    Options = options(),
+    Options = partisan_config:get(forward_options, #{}),
     RpcChannel = rpc_channel(),
     ok = Manager:forward_message(Name, RpcChannel, Self, {response, Response}, Options),
 
@@ -109,13 +97,13 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-%%%===================================================================
-%%% Internal functions
-%%%===================================================================
 
-options() ->
-    ForwardOptions = partisan_config:get(forward_options, #{}),
-    ForwardOptions.
+
+%% =============================================================================
+%% PRIVATE
+%% =============================================================================
+
+
 
 rpc_channel() ->
     Channels = partisan_config:get(channels),

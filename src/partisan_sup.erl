@@ -30,6 +30,15 @@
 
 -export([init/1]).
 
+-define(SUPERVISOR(Id, Args, Restart, Timeout), #{
+    id => Id,
+    start => {Id, start_link, Args},
+    restart => Restart,
+    shutdown => Timeout,
+    type => supervisor,
+    modules => [Id]
+}).
+
 -define(CHILD(I, Type, Timeout),
         {I, {I, start_link, []}, permanent, Timeout, Type, [I]}).
 -define(CHILD(I, Type), ?CHILD(I, Type, 5000)).
@@ -39,19 +48,16 @@ start_link() ->
 
 init([]) ->
     partisan_config:init(),
-    Manager = partisan_peer_service:manager(),
 
-    Children = lists:flatten(
-                 [
-                 ?CHILD(partisan_rpc_backend, worker),
-                 ?CHILD(partisan_acknowledgement_backend, worker),
-                 ?CHILD(partisan_orchestration_backend, worker),
-                 ?CHILD(Manager, worker),
-                 ?CHILD(partisan_peer_service_events, worker),
-                 ?CHILD(partisan_plumtree_backend, worker),
-                 ?CHILD(partisan_plumtree_broadcast, worker),
-                 ?CHILD(partisan_monitor, worker)
-                 ]),
+    Children = lists:flatten([
+        ?CHILD(partisan_rpc_backend, worker),
+        ?CHILD(partisan_acknowledgement_backend, worker),
+        ?CHILD(partisan_orchestration_backend, worker),
+        ?SUPERVISOR(partisan_peer_service_sup, [], permanent, infinity),
+        ?CHILD(partisan_peer_service_events, worker),
+        ?CHILD(partisan_plumtree_backend, worker),
+        ?CHILD(partisan_plumtree_broadcast, worker)
+    ]),
 
     %% Run a single backend for each label.
     CausalLabels = partisan_config:get(causal_labels, []),
@@ -74,9 +80,6 @@ init([]) ->
     PoolSup = {partisan_pool_sup,
                {partisan_pool_sup, start_link, []},
                 permanent, 20000, supervisor, [partisan_pool_sup]},
-
-    %% Initialize the connection cache supervised by the supervisor.
-    ?CACHE = ets:new(?CACHE, [public, named_table, set, {read_concurrency, true}]),
 
     %% Initialize the plumtree outstanding messages table
     %% supervised by the supervisor.

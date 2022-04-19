@@ -337,7 +337,9 @@ transform_test(Config) ->
     %% Generate message.
     Message = message,
 
-    ?assert(partisan_config:get(pid_encoding)),
+    % @TODO REVIEW why do we need this check here, pid_encoding is configured
+    % in the nodes, not here.
+    % ?assert(partisan_config:get(pid_encoding)),
 
     %% Verify local send transformation.
     case rpc:call(Node3, partisan_transformed_module, local_send, [Message]) of
@@ -1463,7 +1465,7 @@ basic_test(Config) ->
     ct:pal("Configured channels: ~p", [ConfigChannels]),
 
     ConnectionsFun = fun(Node) ->
-        rpc:call(Node, ?DEFAULT_PEER_SERVICE_MANAGER, connections, [])
+        rpc:call(Node, partisan_peer_service, connections, [])
     end,
 
     VerifyConnectionsFun = fun(Node, Channel, Parallelism) ->
@@ -1471,11 +1473,14 @@ basic_test(Config) ->
         {ok, Connections} = ConnectionsFun(Node),
 
         %% Verify we have enough connections.
-        partisan_peer_service_connections:fold(
-            fun(_Nodename, {_NodeSpec, Active}, Acc) ->
+        partisan_peer_connections:fold(
+            fun(_NodeSpec, NodeConns, Acc) ->
                 ChannelConnections = lists:filter(
-                    fun({_, C, _}) -> C == Channel end,
-                    Active
+                    fun(C) ->
+                        partisan_peer_connections:channel(C)
+                        == Channel
+                    end,
+                    NodeConns
                 ),
 
                 case length(ChannelConnections) == Parallelism of
