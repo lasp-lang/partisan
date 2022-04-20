@@ -243,7 +243,7 @@ broadcast_members(Timeout) ->
 -spec exchanges() -> exchanges().
 
 exchanges() ->
-    exchanges(mynode()).
+    exchanges(partisan:node()).
 
 
 %% -----------------------------------------------------------------------------
@@ -431,7 +431,7 @@ handle_broadcast(false, _MessageId, _Message, Mod, _Round, Root, From, State) ->
     %% remove sender from eager and set as lazy
     ?LOG_DEBUG("moving peer ~p from eager to lazy", [From]),
     State1 = add_lazy(From, Root, State),
-    _ = send({prune, Root, myself()}, Mod, From),
+    _ = send({prune, Root, partisan:node_spec()}, Mod, From),
     State1;
 handle_broadcast(true, MessageId, Message, Mod, Round, Root, From, State) -> %% valid msg
     %% remove sender from lazy and set as eager
@@ -440,11 +440,11 @@ handle_broadcast(true, MessageId, Message, Mod, Round, Root, From, State) -> %% 
     schedule_lazy_push(MessageId, Mod, Round+1, Root, From, State2).
 
 handle_ihave(true, MessageId, Mod, Round, Root, From, State) -> %% stale i_have
-    _ = send({ignored_i_have, MessageId, Mod, Round, Root, myself()}, Mod, From),
+    _ = send({ignored_i_have, MessageId, Mod, Round, Root, partisan:node_spec()}, Mod, From),
     State;
 handle_ihave(false, MessageId, Mod, Round, Root, From, State) -> %% valid i_have
     %% TODO: don't graft immediately
-    _ = send({graft, MessageId, Mod, Round, Root, myself()}, Mod, From),
+    _ = send({graft, MessageId, Mod, Round, Root, partisan:node_spec()}, Mod, From),
     add_eager(From, Root, State).
 
 handle_graft(stale, MessageId, Mod, Round, Root, From, State) ->
@@ -459,7 +459,7 @@ handle_graft({ok, Message}, MessageId, Mod, Round, Root, From, State) ->
     %% instead we will allow the i_have to be sent once more and let the subsequent
     %% ignore serve as the ack.
     State1 = add_eager(From, Root, State),
-    _ = send({broadcast, MessageId, Message, Mod, Round, Root, myself()}, Mod, From),
+    _ = send({broadcast, MessageId, Message, Mod, Round, Root, partisan:node_spec()}, Mod, From),
     State1;
 handle_graft({error, Reason}, _MessageId, Mod, _Round, _Root, _From, State) ->
     ?LOG_ERROR(#{
@@ -497,16 +497,16 @@ neighbors_down(Removed, State=#state{all_members=AllMembers,
                 lazy_sets=NewLazySets}.
 
 eager_push(MessageId, Message, Mod, State) ->
-    eager_push(MessageId, Message, Mod, 0, myself(), myself(), State).
+    eager_push(MessageId, Message, Mod, 0, partisan:node_spec(), partisan:node_spec(), State).
 
 eager_push(MessageId, Message, Mod, Round, Root, From, State) ->
     Peers = eager_peers(Root, From, State),
     ?LOG_DEBUG("eager push to peers: ~p", [Peers]),
-    _ = send({broadcast, MessageId, Message, Mod, Round, Root, myself()}, Mod, Peers),
+    _ = send({broadcast, MessageId, Message, Mod, Round, Root, partisan:node_spec()}, Mod, Peers),
     State.
 
 schedule_lazy_push(MessageId, Mod, State) ->
-    schedule_lazy_push(MessageId, Mod, 0, myself(), myself(), State).
+    schedule_lazy_push(MessageId, Mod, 0, partisan:node_spec(), partisan:node_spec(), State).
 
 schedule_lazy_push(MessageId, Mod, Round, Root, From, State) ->
     Peers = lazy_peers(Root, From, State),
@@ -529,9 +529,9 @@ send_lazy() ->
 send_lazy({MessageId, Mod, Round, Root}, Peer) ->
     ?LOG_DEBUG(#{
         description => "sending lazy push ~p",
-        message => {i_have, MessageId, Mod, Round, Root, myself()}
+        message => {i_have, MessageId, Mod, Round, Root, partisan:node_spec()}
     }),
-    send({i_have, MessageId, Mod, Round, Root, myself()}, Mod, Peer).
+    send({i_have, MessageId, Mod, Round, Root, partisan:node_spec()}, Mod, Peer).
 
 maybe_exchange(State) ->
     Root = random_root(State),
@@ -613,18 +613,18 @@ random_peer(Root, State=#state{all_members=All}) ->
         %% Normal; randomly select a peer from the known membership at
         %% this node.
         normal ->
-            ordsets:del_element(mynode(), All);
+            ordsets:del_element(partisan:node(), All);
         %% Optimized; attempt to find a peer that's not in the broadcast
         %% tree, to increase probability of selecting a lagging node.
         optimized ->
             Eagers = all_eager_peers(Root, State),
             Lazys  = all_lazy_peers(Root, State),
             Union  = ordsets:union([Eagers, Lazys]),
-            ordsets:del_element(mynode(), ordsets:subtract(All, Union))
+            ordsets:del_element(partisan:node(), ordsets:subtract(All, Union))
     end,
     Selected = case ordsets:size(Other) of
         0 ->
-            random_other_node(ordsets:del_element(mynode(), All));
+            random_other_node(ordsets:del_element(partisan:node(), All));
         _ ->
             random_other_node(Other)
     end,
@@ -713,20 +713,12 @@ schedule_tick(Message, Timer, Default) ->
 
 reset_peers(AllMembers, EagerPeers, LazyPeers, State) ->
     State#state{
-      common_eagers = ordsets:del_element(mynode(), ordsets:from_list(EagerPeers)),
-      common_lazys  = ordsets:del_element(mynode(), ordsets:from_list(LazyPeers)),
+      common_eagers = ordsets:del_element(partisan:node(), ordsets:from_list(EagerPeers)),
+      common_lazys  = ordsets:del_element(partisan:node(), ordsets:from_list(LazyPeers)),
       eager_sets    = orddict:new(),
       lazy_sets     = orddict:new(),
       all_members   = ordsets:from_list(AllMembers)
      }.
-
-%% @private
-myself() ->
-    partisan:node_spec().
-
-%% @private
-mynode() ->
-    partisan:node().
 
 %% @private
 instrument_transmission(Message, Mod) ->
