@@ -1097,7 +1097,7 @@ handle_info(connections, #state{} = State) ->
     %% Advance sync_join's if we have enough open connections to remote host.
     SyncJoins = lists:foldl(
         fun({NodeSpec, FromPid}, Joins) ->
-            case fully_connected(NodeSpec) of
+            case partisan:is_fully_connected(NodeSpec) of
                 true ->
                     ?LOG_DEBUG("Node ~p is now fully connected.", [NodeSpec]),
 
@@ -1207,7 +1207,7 @@ handle_info(
     %% Notify for sync join.
     SyncJoins = case lists:keyfind(NodeSpec, 1, SyncJoins0) of
         {NodeSpec, FromPid} ->
-            case fully_connected(NodeSpec) of
+            case partisan:is_fully_connected(NodeSpec) of
                 true ->
                     gen_server:reply(FromPid, ok),
                     lists:keydelete(FromPid, 2, SyncJoins0);
@@ -1735,30 +1735,6 @@ internal_join(#{name := Node} = NodeSpec, From, #state{} = State) ->
         pending = Pending,
         sync_joins = SyncJoins
     }.
-
-
-%% @private
--spec fully_connected(NodeSpec :: node_spec()) -> boolean().
-
-fully_connected(NodeSpec) when is_map(NodeSpec) ->
-    Connected = partisan_peer_connections:connection_count(NodeSpec),
-
-    Parallelism = maps:get(parallelism, NodeSpec, ?PARALLELISM),
-
-    Channels = case maps:get(channels, NodeSpec, [?DEFAULT_CHANNEL]) of
-        [] ->
-            %% DEFAULT_CHANNEL
-            1;
-        undefined ->
-            %% DEFAULT_CHANNEL
-            1;
-        L ->
-            length(lists:usort(L ++ [?DEFAULT_CHANNEL]))
-    end,
-
-    Required = Channels * Parallelism,
-
-    Connected =:= Required.
 
 
 %% @private

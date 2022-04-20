@@ -48,6 +48,7 @@
 -export([forward_message/5]).
 -export([is_connected/1]).
 -export([is_connected/2]).
+-export([is_fully_connected/1]).
 -export([make_ref/0]).
 -export([monitor/1]).
 -export([monitor/2]).
@@ -62,6 +63,7 @@
 -export([node_spec/2]).
 -export([nodes/0]).
 -export([nodes/1]).
+-export([self/0]).
 -export([send_message/2]).
 
 -compile({no_auto_import, [demonitor/2]}).
@@ -71,6 +73,7 @@
 -compile({no_auto_import, [node/0]}).
 -compile({no_auto_import, [node/1]}).
 -compile({no_auto_import, [nodes/1]}).
+-compile({no_auto_import, [self/0]}).
 
 
 
@@ -101,8 +104,20 @@ stop() ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
+-spec make_ref() -> remote_ref(encoded_ref()).
+
 make_ref() ->
     partisan_util:ref(erlang:make_ref()).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns the partisan encoded pid for the calling process.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec self() -> remote_ref(process_ref()).
+
+self() ->
+    partisan_util:ref(erlang:self()).
 
 
 %% -----------------------------------------------------------------------------
@@ -338,6 +353,17 @@ is_connected(NodeOrSpec) ->
 
 is_connected(NodeOrSpec, Channel) ->
     partisan_peer_connections:is_connected(NodeOrSpec, Channel).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns the name of the local node.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_fully_connected(NodeOrSpec :: node_spec() | node()) -> boolean().
+
+is_fully_connected(NodeOrSpec) ->
+    partisan_peer_connections:is_fully_connected(NodeOrSpec).
+
 
 
 %% -----------------------------------------------------------------------------

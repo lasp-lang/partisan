@@ -78,6 +78,7 @@
 -export([init/0]).
 -export([is_connected/1]).
 -export([is_connected/2]).
+-export([is_fully_connected/1]).
 -export([listen_addr/1]).
 -export([node/1]).
 -export([node_spec/1]).
@@ -221,6 +222,43 @@ is_connected(Node, Channel) when is_atom(Node) ->
 
 is_connected(#{name := Node}, Channel) ->
     is_connected(Node, Channel).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns true is this node has all the requested connections
+%% (`parallelism' configuration parameter) for all the configured channels with
+%% node `NodeOrSpec'.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_fully_connected(Peer :: node_spec() | node()) ->
+    boolean().
+
+is_fully_connected(Node) when is_atom(Node) ->
+    case partisan:node() of
+        Node ->
+            true;
+        _ ->
+            case info(Node) of
+                {ok, #partisan_peer_info{} = Info} ->
+                    Spec = Info#partisan_peer_info.node_spec,
+                    ConnectionCount = Info#partisan_peer_info.connection_count,
+                    Parallelism = maps:get(parallelism, Spec, 1),
+                    ChannelCount = length(
+                        lists:usort(maps:get(channels, Spec))
+                    ),
+                    ConnectionCount =:= Parallelism * ChannelCount;
+                error ->
+                    false
+            end
+
+    end;
+
+is_fully_connected(#{name := Node, parallelism := P, channels := Channels})
+when is_integer(P) andalso is_list(Channels) ->
+    connection_count(Node) =:= P * length(lists:usort(Channels));
+
+is_fully_connected(#{name := Node}) ->
+    is_fully_connected(Node).
 
 
 %% -----------------------------------------------------------------------------
