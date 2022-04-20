@@ -839,7 +839,7 @@ rpc_test(Config) ->
 
     %% Issue RPC.
     ct:pal("Issuing RPC to remote node: ~p", [Node4]),
-    {_, _, _} = rpc:call(Node3, partisan_rpc_backend, call, [Node4, erlang, now, [], infinity]),
+    {_, _, _} = rpc:call(Node3, partisan_rpc, call, [Node4, erlang, now, [], infinity]),
 
     %% Stop nodes.
     ?SUPPORT:stop(Nodes),
@@ -1636,7 +1636,7 @@ hyparview_manager_partition_test(Config) ->
 
     %% Inject a partition.
     {_, PNode} = hd(Nodes),
-    PFullNode = rpc:call(PNode, Manager, myself, []),
+    PFullNode = rpc:call(PNode, partisan, node_spec, []),
 
     {ok, Reference} = rpc:call(PNode, Manager, inject_partition, [PFullNode, 1]),
     ct:pal("Partition generated: ~p", [Reference]),
@@ -1961,38 +1961,51 @@ check_forward_message(Node, Manager, Nodes) ->
     ForwardOptions = rpc:call(Node, partisan_config, get, [forward_options, []]),
     ct:pal("Using forward options: ~p", [ForwardOptions]),
 
-    lists:foreach(fun(Member) ->
-        Rand = rand:uniform(),
+    lists:foreach(
+        fun(Member) ->
+            Rand = rand:uniform(),
 
-        %% {ok, DirectMembers} = rpc:call(Node, Manager, members, []),
-        %% IsDirect = lists:member(Member, DirectMembers),
-        %% ct:pal("Node ~p is directly connected: ~p; ~p", [Member, IsDirect, DirectMembers]),
+            %% {ok, DirectMembers} = rpc:call(Node, Manager, members, []),
+            %% IsDirect = lists:member(Member, DirectMembers),
+            %% ct:pal("Node ~p is directly connected: ~p; ~p", [Member, IsDirect, DirectMembers]),
 
-        %% now fetch the value from the random destination node
-        case wait_until(fun() ->
-                        ct:pal("Requesting node ~p to forward message ~p to store_proc on node ~p", [Node, Rand, Member]),
-                        ok = rpc:call(Node, Manager, forward_message, [Member, undefined, store_proc, {store, Rand}, ForwardOptions]),
-                        ct:pal("Message dispatched..."),
+            %% now fetch the value from the random destination node
 
-                        ct:pal("Checking ~p for value...", [Member]),
+            Fun = fun() ->
+                ct:pal("Requesting node ~p to forward message ~p to store_proc on node ~p", [Node, Rand, Member]),
+                ok = rpc:call(Node, Manager, forward_message, [Member, undefined, store_proc, {store, Rand}, ForwardOptions]),
+                ct:pal("Message dispatched..."),
 
-                        %% it must match with what we asked the node to forward
-                        case rpc:call(Member, application, get_env, [partisan, forward_message_test]) of
-                            {ok, R} ->
-                                Test = R =:= Rand,
-                                ct:pal("Received from ~p ~p, should be ~p: ~p", [Member, R, Rand, Test]),
-                                Test;
-                            Other ->
-                                ct:pal("Received other, failing: ~p", [Other]),
-                                false
-                        end
-                end, 60 * 2, 500) of
-            ok ->
-                ok;
-            {fail, false} ->
-                ct:fail("Message delivery failed, Node:~p, Manager:~p, Nodes:~p~n ", [Node, Manager, Nodes])
-        end
-    end, Members -- [Node]),
+                ct:pal("Checking ~p for value...", [Member]),
+
+                %% it must match with what we asked the node to forward
+                Response = rpc:call(
+                    Member,
+                    application,
+                    get_env,
+                    [partisan, forward_message_test]
+                ),
+
+                case Response of
+                    {ok, R} ->
+                        Test = R =:= Rand,
+                        ct:pal("Received from ~p ~p, should be ~p: ~p", [Member, R, Rand, Test]),
+                        Test;
+                    Other ->
+                        ct:pal("Received other, failing: ~p", [Other]),
+                        false
+                end
+            end,
+
+            case wait_until(Fun, 60 * 2, 500) of
+                ok ->
+                    ok;
+                {fail, false} ->
+                    ct:fail("Message delivery failed, Node:~p, Manager:~p, Nodes:~p~n ", [Node, Manager, Nodes])
+            end
+        end,
+        Members -- [Node]
+    ),
 
     ok.
 
@@ -2148,7 +2161,7 @@ verify_leave({_, NodeToLeave}, Nodes, Manager) ->
 
     %% Remove a node from the cluster.
     [{_, _}, {_, Node2}, {_, _}, {_, _}] = Nodes,
-    NodeToLeaveMap = rpc:call(NodeToLeave, partisan_peer_service_manager, myself, []),
+    NodeToLeaveMap = rpc:call(NodeToLeave, partisan, node_spec, []),
     ct:pal("Removing node ~p from the cluster with node map: ~p", [NodeToLeave, NodeToLeaveMap]),
     ok = rpc:call(Node2, partisan_peer_service, leave, [NodeToLeaveMap]),
 
