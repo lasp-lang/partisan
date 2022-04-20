@@ -171,7 +171,7 @@ seed(Seed) ->
 %% Seed the process.
 seed() ->
     RandomSeed = random_seed(),
-    ?LOG_INFO(#{
+    ?LOG_DEBUG(#{
         description => "Chossing random seed",
         node => node(),
         seed => RandomSeed
