@@ -602,42 +602,47 @@ handle_info(
     #state{myself=Myself, active=Active0, passive=Passive0}=State0) ->
     ?LOG_DEBUG("connection pid ~p died due to ~p", [From, Reason]),
     %% Prune active connections from dictionary.
-    {Peer, _Connections} = partisan_peer_connections:prune(From),
+    try partisan_peer_connections:prune(From) of
+        {Peer, _Connections} ->
 
-    %% If it was in the passive view and our connection attempt failed,
-    %% remove from the passive view altogether.
-    Passive = case is_in_passive_view(Peer, Passive0) of
-        true ->
-            remove_from_passive_view(Peer, Passive0);
-        false ->
-            Passive0
-    end,
-
-    %% If it was in the active view and our connection attempt failed,
-    %% remove from the active view altogether.
-    {Active, RemovedFromActive} =
-        case is_in_active_view(Peer, Active0) of
-            true ->
-                {remove_from_active_view(Peer, Active0), true};
-            false ->
-                {Active0, false}
-        end,
-
-    State = case RemovedFromActive of
+            %% If it was in the passive view and our connection attempt failed,
+            %% remove from the passive view altogether.
+            Passive = case is_in_passive_view(Peer, Passive0) of
                 true ->
-                    RandomPeer = select_random(Passive, [Myself]),
-                    move_peer_from_passive_to_active(RandomPeer,
-                        State0#state{active=Active, passive=Passive});
+                    remove_from_passive_view(Peer, Passive0);
                 false ->
-                    State0#state{active=Active, passive=Passive}
+                    Passive0
             end,
 
-    ?LOG_DEBUG(
-        "Node ~p active view: ~p",
-        [Myself, members(State#state.active)]
-    ),
+            %% If it was in the active view and our connection attempt failed,
+            %% remove from the active view altogether.
+            {Active, RemovedFromActive} =
+                case is_in_active_view(Peer, Active0) of
+                    true ->
+                        {remove_from_active_view(Peer, Active0), true};
+                    false ->
+                        {Active0, false}
+                end,
 
-    {noreply, State};
+            State = case RemovedFromActive of
+                        true ->
+                            RandomPeer = select_random(Passive, [Myself]),
+                            move_peer_from_passive_to_active(RandomPeer,
+                                State0#state{active=Active, passive=Passive});
+                        false ->
+                            State0#state{active=Active, passive=Passive}
+                    end,
+
+            ?LOG_DEBUG(
+                "Node ~p active view: ~p",
+                [Myself, members(State#state.active)]
+            ),
+
+            {noreply, State}
+    catch
+        error:badarg ->
+            {noreply, State0}
+    end;
 
 handle_info(
     {connected, Peer, _Channel, _Tag, _PeerEpoch, _RemoteState}, State) ->
@@ -1482,9 +1487,7 @@ members(Set) ->
 -spec disconnect(Node :: node_spec()) -> ok.
 
 disconnect(Node) ->
-    case catch partisan_peer_connections:prune(Node) of
-        {'EXIT', _} ->
-            ok;
+    try partisan_peer_connections:prune(Node) of
         {_Info, Connections} ->
             [
                 begin
@@ -1498,6 +1501,9 @@ disconnect(Node) ->
                 end
                 || Connection <- Connections
             ],
+            ok
+    catch
+        error:badarg ->
             ok
     end.
 

@@ -342,7 +342,7 @@ handle_cast(Msg, State) ->
     {noreply, State}.
 
 handle_info({'EXIT', From, _Reason}, #state{}=State) ->
-    _ = partisan_peer_connections:prune(From),
+    _ = catch partisan_peer_connections:prune(From),
     {noreply, State};
 
 handle_info(
