@@ -134,6 +134,7 @@ init() ->
                            {parallelism, ?PARALLELISM},
                            {membership_strategy, ?DEFAULT_MEMBERSHIP_STRATEGY},
                            {partisan_peer_service_manager, PeerService},
+                           {peer_host, undefined},
                            {peer_ip, DefaultPeerIP},
                            {peer_port, DefaultPeerPort},
                            {periodic_enabled, ?PERIODIC_ENABLED},
@@ -156,11 +157,18 @@ init() ->
                            {xbot_interval, XbotInterval}]],
 
     %% Setup default listen addr.
-    DefaultListenAddrs = [#{
-        ip => ?MODULE:get(peer_ip),
-        port => ?MODULE:get(peer_port)
-    }],
-    env_or_default(listen_addrs, DefaultListenAddrs),
+    %% This will be part of the partisan:node_spec() which is the map
+    DefaultAddr0 = #{port => ?MODULE:get(peer_port)},
+
+    DefaultAddr =
+        case ?MODULE:get(peer_host) of
+            undefined ->
+                DefaultAddr0#{ip => ?MODULE:get(peer_ip)};
+            Host ->
+                DefaultAddr0#{host => Host}
+        end,
+
+    env_or_default(listen_addrs, [DefaultAddr]),
 
     ok.
 
