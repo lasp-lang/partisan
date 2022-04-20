@@ -126,11 +126,11 @@ members_for_orchestration() ->
     gen_server:call(?MODULE, members_for_orchestration, infinity).
 
 
-%% @doc Return myself.
+%% @doc Return partisan:node().
 mynode() ->
     partisan:node().
 
-%% @doc Return myself.
+%% @doc Return partisan:node_spec().
 myself() ->
     partisan:node_spec().
 
@@ -811,7 +811,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
     Message = maps:fold(FoldFun, OriginalMessage, InterpositionFuns),
 
     %% Increment the clock.
-    VClock = partisan_vclock:increment(mynode(), VClock0),
+    VClock = partisan_vclock:increment(partisan:node(), VClock0),
 
     %% Are we using causality?
     CausalLabel = maps:get(causal_label, Options, undefined),
@@ -919,8 +919,8 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                                     PreInterpositionFuns);
                 true ->
                     %% Tracing.
-                    WrappedOriginalMessage = {forward_message, mynode(), MessageClock, ServerRef, OriginalMessage},
-                    WrappedMessage = {forward_message, mynode(), MessageClock, ServerRef, FullMessage},
+                    WrappedOriginalMessage = {forward_message, partisan:node(), MessageClock, ServerRef, OriginalMessage},
+                    WrappedMessage = {forward_message, partisan:node(), MessageClock, ServerRef, FullMessage},
 
                     ?LOG_DEBUG(
                         "should acknowledge message: ~p", [WrappedMessage]
