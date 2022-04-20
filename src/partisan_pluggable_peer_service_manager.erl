@@ -126,10 +126,6 @@ members_for_orchestration() ->
     gen_server:call(?MODULE, members_for_orchestration, infinity).
 
 
-%% @doc Return partisan:node().
-mynode() ->
-    partisan:node().
-
 %% @doc Return partisan:node_spec().
 myself() ->
     partisan:node_spec().
