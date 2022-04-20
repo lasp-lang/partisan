@@ -464,9 +464,6 @@ node_spec(#partisan_peer_connection{node = Node}) ->
     Channel :: channel_spec(),
     LitenAddr :: listen_addr()) -> ok | no_return().
 
-store(Spec, Pid, {monotonic, Channel}, ListenAddr) ->
-    store(Spec, Pid, Channel, ListenAddr);
-
 store(#{name := Node} = Spec, Pid, Channel, ListenAddr)
 when is_pid(Pid), is_map(ListenAddr) ->
 
