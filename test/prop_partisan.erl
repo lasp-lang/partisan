@@ -582,7 +582,7 @@ sync_join_cluster(Node, JoinNode) ->
           [?NAME(Node), ?NAME(JoinNode), Members]),
 
     %% Get my information.
-    Myself = rpc:call(?NAME(Node), partisan_peer_service_manager, myself, []),
+    Myself = rpc:call(?NAME(Node), partisan, node_spec, []),
 
     %% Issue remove.
     ok = rpc:call(?NAME(JoinNode), ?MANAGER, join, [Myself]),
@@ -612,7 +612,7 @@ sync_leave_cluster(Node) ->
     FirstMember = hd(lists:filter(fun(N) -> N =/= ?NAME(Node) end, Members)),
 
     %% Get my information.
-    Myself = rpc:call(?NAME(Node), partisan_peer_service_manager, myself, []),
+    Myself = rpc:call(?NAME(Node), partisan, node_spec, []),
 
     %% Issue remove.
     ok = rpc:call(FirstMember, ?MANAGER, leave, [Myself]),
