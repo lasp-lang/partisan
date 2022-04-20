@@ -1464,35 +1464,28 @@ basic_test(Config) ->
     ConfigChannels = proplists:get_value(channels, Config, ?CHANNELS),
     ct:pal("Configured channels: ~p", [ConfigChannels]),
 
-    ConnectionsFun = fun(Node) ->
-        rpc:call(Node, partisan_peer_service, connections, [])
-    end,
-
+    %% Verify we have enough connections.
     VerifyConnectionsFun = fun(Node, Channel, Parallelism) ->
-        %% Get list of connections.
-        {ok, Connections} = ConnectionsFun(Node),
 
-        %% Verify we have enough connections.
-        partisan_peer_connections:fold(
-            fun(_NodeSpec, NodeConns, Acc) ->
-                ChannelConnections = lists:filter(
-                    fun(C) ->
-                        partisan_peer_connections:channel(C)
-                        == Channel
-                    end,
-                    NodeConns
-                ),
+        FoldFun = fun(_NodeSpec, NodeConnections, Acc) ->
+            ChannelConnections = lists:filter(
+                fun(C) ->
+                    partisan_peer_connections:channel(C)
+                    == Channel
+                end,
+                NodeConnections
+            ),
 
-                case length(ChannelConnections) == Parallelism of
-                    true ->
-                        Acc andalso true;
-                    false ->
-                        Acc andalso false
-                end
-            end,
-            true,
-            Connections
-        )
+            case length(ChannelConnections) == Parallelism of
+                true ->
+                    Acc andalso true;
+                false ->
+                    Acc andalso false
+            end
+        end,
+
+        rpc:call(Node, partisan_peer_connections, fold, [FoldFun, true])
+
     end,
 
     lists:foreach(
