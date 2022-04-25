@@ -65,8 +65,8 @@ new() ->
 %% @end
 %% -----------------------------------------------------------------------------
 add(#{name := Node} = NodeSpec, Actor, T) ->
-    Ts = 0,
-    state_awmap:mutate({apply, Node, {set, Ts, NodeSpec}}, Actor, T).
+    {ok, T1} = state_awmap:mutate({apply, Node, {set, 0, NodeSpec}}, Actor, T),
+    T1.
 
 
 %% -----------------------------------------------------------------------------
@@ -74,7 +74,8 @@ add(#{name := Node} = NodeSpec, Actor, T) ->
 %% @end
 %% -----------------------------------------------------------------------------
 remove(#{name := Node}, Actor, T) ->
-    state_awmap:mutate({rmv, Node}, Actor, T).
+    {ok, T1} = state_awmap:mutate({rmv, Node}, Actor, T),
+    T1.
 
 
 %% -----------------------------------------------------------------------------
@@ -156,14 +157,14 @@ add_remove_test() ->
     Nodename = 'node1@127.0.0.1',
     Node = node_spec(Nodename),
 
-    {ok, A} = add(Node, a, new()),
+    A = add(Node, a, new()),
 
     ?assertEqual(
         [Node],
         to_list(A)
     ),
 
-    {ok, A1} = remove(Node, a, A),
+    A1 = remove(Node, a, A),
 
     ?assertEqual(
         [],
@@ -177,9 +178,9 @@ concurrent_updates_test() ->
 
     A = B = new(),
 
-    {ok, A1} = add(Node1, a, A),
+    A1 = add(Node1, a, A),
 
-    {ok, B1} = add(Node2, b, B),
+    B1 = add(Node2, b, B),
 
 
     ?assertEqual(
@@ -204,11 +205,11 @@ concurrent_remove_update_test() ->
     Node1 = node_spec(Nodename, {127, 0, 0, 1}),
     Node2 = node_spec(Nodename, {192, 168, 0, 1}),
 
-    {ok, A} = add(Node1, a, new()),
-    {ok, A1} = remove(Node1, a, A),
+    A = add(Node1, a, new()),
+    A1 = remove(Node1, a, A),
 
     B = A, %% not A1
-    {ok, B1} = add(Node2, b, B),
+    B1 = add(Node2, b, B),
 
 
     ?assertEqual(
@@ -237,13 +238,13 @@ assoc_test() ->
     Nodename = 'node1@127.0.0.1',
     Node = node_spec(Nodename),
 
-    {ok, A} = add(Node, a, new()),
-    {ok, B} = add(Node, b, new()),
-    {ok, B2} = remove(Node, b, B),
+    A = add(Node, a, new()),
+    B = add(Node, b, new()),
+    B2 = remove(Node, b, B),
 
     C = A,
 
-    {ok, C3} = remove(Node, c, C),
+    C3 = remove(Node, c, C),
 
     ?assertEqual(
         merge(A, merge(B2, C3)),
@@ -265,12 +266,12 @@ clock_test() ->
     Node1 = node_spec(Nodename),
     Node2 = node_spec(Nodename, {192, 168, 0, 1}),
 
-    {ok, A} = add(Node1, a, new()),
+    A = add(Node1, a, new()),
     B = A,
-    {ok, B2} = add(Node2, b, B),
+    B2 = add(Node2, b, B),
 
-    {ok, A2} = remove(Node1, a, A),
-    {ok, A4} = add(Node2, a, A2),
+    A2 = remove(Node1, a, A),
+    A4 = add(Node2, a, A2),
     AB = merge(A4, B2),
 
     %% LWW
@@ -281,10 +282,10 @@ remfield_test() ->
     Node1 = node_spec(Name),
     Node2 = node_spec(Name, {192, 168, 0, 1}),
 
-    {ok, A} = add(Node1, a, new()),
+    A = add(Node1, a, new()),
     B = A,
-    {ok, A2} = remove(Node1, a, A),
-    {ok, A4} = add(Node2, a, A2),
+    A2 = remove(Node1, a, A),
+    A4 = add(Node2, a, A2),
     AB = merge(A4, B),
     ?assertEqual([Node2], to_list(AB)).
 
@@ -295,18 +296,18 @@ present_but_removed_test() ->
     Node1 = node_spec(Name),
     Node2 = node_spec(Name, {192, 168, 0, 1}),
     %% Add Z to A
-    {ok, A} = add(Node1, a, new()),
+    A = add(Node1, a, new()),
     %% Replicate it to C so A has 'Z'->{a, 1}
     C = A,
     %% Remove Z from A
-    {ok, A2} = remove(Node1, a, A),
+    A2 = remove(Node1, a, A),
     %% Add Z to B, a new replica
-    {ok, B} = add(Node2, b, new()),
+    B = add(Node2, b, new()),
     %%  Replicate B to A, so now A has a Z, the one with a Dot of
     %%  {b,1} and clock of [{a, 1}, {b, 1}]
     A3 = merge(B, A2),
     %% Remove the 'Z' from B replica
-    {ok, B2} = remove(Node2, b, B),
+    B2 = remove(Node2, b, B),
     %% Both C and A have a 'Z', but when they merge, there should be
     %% no 'Z' as C's has been removed by A and A's has been removed by
     %% C.
@@ -327,14 +328,14 @@ no_dots_left_test() ->
     Name = 'node1@127.0.0.1',
     Node1 = node_spec(Name),
     Node2 = node_spec(Name, {192, 168, 0, 1}),
-    {ok, A} =  add(Node1, a, new()),
-    {ok, B} =  add(Node2, b, new()),
+    A =  add(Node1, a, new()),
+    B =  add(Node2, b, new()),
     C = A, %% replicate A to empty C
-    {ok, A2} = remove(Node1, a, A),
+    A2 = remove(Node1, a, A),
     %% replicate B to A, now A has B's 'Z'
     A3 = merge(A2, B),
     %% Remove B's 'Z'
-    {ok, B2} = remove(Node2, b, B),
+    B2 = remove(Node2, b, B),
     %% Replicate C to B, now B has A's old 'Z'
     B3 = merge(B2, C),
     %% Merge everytyhing, without the fix You end up with 'Z' present,
@@ -349,8 +350,8 @@ no_dots_left_test() ->
 equals_test() ->
     Name1 = 'node1@127.0.0.1',
     Node1 = node_spec(Name1),
-    {ok, A} = add(Node1, a, new()),
-    {ok, B} = add(Node1, b, new()),
+    A = add(Node1, a, new()),
+    B = add(Node1, b, new()),
     ?assert(not equal(A, B)),
     C = merge(A, B),
     D = merge(B, A),
