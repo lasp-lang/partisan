@@ -440,8 +440,8 @@ node_spec(Node, Endpoints) when is_list(Node) ->
 node_spec(Node, Endpoints) when is_atom(Node) ->
     Addresses = coerce_listen_addr(Endpoints),
     %% We assume all nodes have the same parallelism and channel config
-    Map = partisan:node_spec(),
-    NodeSpec = Map#{name => Node, listen_addrs => Addresses},
+    NodeSpec0 = partisan:node_spec(),
+    NodeSpec = NodeSpec0#{name => Node, listen_addrs => Addresses},
     {ok, NodeSpec}.
 
 
