@@ -33,8 +33,6 @@
          periodic/1,
          handle_message/2]).
 
--define(SET, partisan_membership_set).
-
 -record(full_v1, {
     actor           ::  actor(),
     membership      ::  partisan_membership_set:t()
@@ -53,7 +51,7 @@ init(Identity) ->
 
 %% @doc When a node is connected, return the state, membership and outgoing message queue to be transmitted.
 join(#full_v1{membership=Membership0} = State0, _Node, #full_v1{membership=NodeMembership}) ->
-    Membership = ?SET:merge(Membership0, NodeMembership),
+    Membership = partisan_membership_set:merge(Membership0, NodeMembership),
     State = State0#full_v1{membership=Membership},
     MembershipList = membership_list(State),
     OutgoingMessages = gossip_messages(State),
@@ -70,8 +68,7 @@ leave(#full_v1{}=State0, #{name := NameToRemove}) ->
     Membership = lists:foldl(
         fun
             (#{name := Name} = N, Acc0) when Name == NameToRemove ->
-                {ok, Acc} = ?SET:remove(N, Actor, Acc0),
-                Acc;
+                partisan_membership_set:remove(N, Actor, Acc0);
             (_, Acc0) ->
                 Acc0
         end,
@@ -117,10 +114,10 @@ handle_message(
     ?LOG_DEBUG(#{
         description => "Received membership_strategy",
         from => From,
-        membership => ?SET:to_list(Membership1)
+        membership => partisan_membership_set:to_list(Membership1)
     }),
 
-    case ?SET:equal(Membership0, Membership1) of
+    case partisan_membership_set:equal(Membership0, Membership1) of
         true ->
             %% Convergence of gossip at this node.
             MembershipList = membership_list(State0),
@@ -128,7 +125,7 @@ handle_message(
             {ok, MembershipList, OutgoingMessages, State0};
         false ->
             %% Merge, persist, reforward to peers.
-            Membership = ?SET:merge(Membership0, Membership1),
+            Membership = partisan_membership_set:merge(Membership0, Membership1),
             State = State0#full_v1{membership = Membership},
             MembershipList = membership_list(State),
             OutgoingMessages = gossip_messages(State),
@@ -143,7 +140,7 @@ handle_message(
 
 %% @private
 membership_list(#full_v1{membership=Membership}) ->
-    ?SET:to_list(Membership).
+    partisan_membership_set:to_list(Membership).
 
 %% @private
 gossip_messages(State) ->
@@ -197,7 +194,7 @@ data_root() ->
 
 %% @private
 new_state(Actor) ->
-    {ok, Membership} = ?SET:add(myself(), Actor, ?SET:new()),
+    {ok, Membership} = partisan_membership_set:add(myself(), Actor, partisan_membership_set:new()),
     LocalState = #full_v1{membership=Membership, actor=Actor},
     persist_state(LocalState),
     LocalState.
