@@ -34,14 +34,14 @@
 
 
 
-call(Name, Module, Function, Arguments, Timeout) ->
+call(Node, Module, Function, Arguments, Timeout) ->
     %% Make call.
     Manager = partisan_config:get(partisan_peer_service_manager),
     Self = self(),
     Options = partisan_config:get(forward_options, #{}),
     RpcChannel = rpc_channel(),
-    OurName = partisan:node(),
-    Manager:forward_message(Name, RpcChannel, partisan_rpc_backend, {call, Module, Function, Arguments, Timeout, {origin, OurName, Self}}, Options),
+    OurNode = partisan:node(),
+    Manager:forward_message(Node, RpcChannel, partisan_rpc_backend, {call, Module, Function, Arguments, Timeout, {origin, OurNode, Self}}, Options),
 
     %% Wait for response.
     receive
