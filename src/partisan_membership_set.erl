@@ -99,7 +99,11 @@ equal(T1, T2) ->
 %% @end
 %% -----------------------------------------------------------------------------
 to_list(T) ->
-    lists:append([sets:to_list(Values) || {_, Values} <- state_awmap:query(T)]).
+    lists:usort(
+        lists:append(
+            [sets:to_list(Values) || {_, Values} <- state_awmap:query(T)]
+        )
+    ).
 
 
 %% -----------------------------------------------------------------------------
