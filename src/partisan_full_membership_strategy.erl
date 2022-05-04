@@ -194,10 +194,13 @@ data_root() ->
 
 %% @private
 new_state(Actor) ->
-    {ok, Membership} = partisan_membership_set:add(myself(), Actor, partisan_membership_set:new()),
+    Membership = partisan_membership_set:add(
+        myself(), Actor, partisan_membership_set:new()
+    ),
     LocalState = #full_v1{membership=Membership, actor=Actor},
     persist_state(LocalState),
     LocalState.
+
 
 %% @private
 myself() ->
