@@ -1162,6 +1162,7 @@ handle_info(
     #state{
         pending = Pending0,
         sync_joins = SyncJoins0,
+        membership = Membership0,
         membership_strategy = MStrategy,
         membership_strategy_state = MStrategyState0,
         pre_interposition_funs = PreInterpositionFuns
@@ -1201,6 +1202,13 @@ handle_info(
 
             %% notify subscribers
             up(NodeSpec, State0),
+
+            ok = case Membership of
+                Membership0 ->
+                    ok;
+                _ ->
+                    partisan_peer_service_events:update(Membership)
+            end,
 
             State0#state{
                 pending = Pending,
