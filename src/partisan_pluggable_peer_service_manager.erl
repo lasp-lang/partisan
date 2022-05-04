@@ -77,6 +77,14 @@
 
 -type from()                    ::  {pid(), atom()}.
 -type on_change_function()      ::  fun(() -> ok) | fun((node()) -> ok).
+-type interposition_arg()       ::  {receive_message, node(), any()}.
+-type interposition_fun()       ::  fun(
+                                        (interposition_arg()) ->
+                                            interposition_arg()
+                                    ).
+-type pre_post_interposition_fun()       ::  fun(
+                                        (interposition_arg()) -> ok
+                                    ).
 
 -record(state, {
     actor                       ::  actor(),
@@ -87,9 +95,9 @@
     down_functions              ::  #{'_' | node() => on_change_function()},
     up_functions                ::  #{'_' | node() => on_change_function()},
     out_links                   ::  [term()],
-    pre_interposition_funs      ::  #{any() => function()},
-    interposition_funs          ::  #{any() => function()},
-    post_interposition_funs     ::  #{any() => function()},
+    pre_interposition_funs      ::  #{any() => pre_post_interposition_fun()},
+    interposition_funs          ::  #{any() => interposition_fun()},
+    post_interposition_funs     ::  #{any() => pre_post_interposition_fun()},
     sync_joins                  ::  [{node_spec(), from()}],
     membership_strategy         ::  atom(),
     membership_strategy_state   ::  term()

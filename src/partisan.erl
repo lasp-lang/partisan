@@ -454,7 +454,7 @@ default_channel() ->
 %% @doc Cast message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
--spec send_message(name(), message()) -> ok.
+-spec send_message(node(), message()) -> ok.
 
 send_message(Name, Message) ->
     (?PEER_SERVICE_MANAGER):send_message(Name, Message).
@@ -464,7 +464,7 @@ send_message(Name, Message) ->
 %% @doc Cast message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
--spec cast_message(name(), pid(), message()) -> ok.
+-spec cast_message(node(), pid() | atom(), message()) -> ok.
 
 cast_message(Name, ServerRef, Message) ->
     (?PEER_SERVICE_MANAGER):cast_message(Name, ServerRef, Message).
@@ -474,7 +474,7 @@ cast_message(Name, ServerRef, Message) ->
 %% @doc Cast message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
--spec cast_message(name(), channel(), pid(), message()) -> ok.
+-spec cast_message(node(), channel(), pid() | atom(), message()) -> ok.
 
 cast_message(Name, Channel, ServerRef, Message) ->
     (?PEER_SERVICE_MANAGER):cast_message(Name, Channel, ServerRef, Message).
@@ -484,7 +484,8 @@ cast_message(Name, Channel, ServerRef, Message) ->
 %% @doc Cast message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
--spec cast_message(name(), channel(), pid(), message(), options()) -> ok.
+-spec cast_message(node(), channel(), pid() | atom(), message(), options()) ->
+    ok.
 
 cast_message(Name, Channel, ServerRef, Message, Options) ->
     (?PEER_SERVICE_MANAGER):cast_message(Name, Channel, ServerRef, Message, Options).
@@ -504,7 +505,7 @@ forward_message(PidOrRef, Message) ->
 %% @doc Forward message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
--spec forward_message(name(), pid(), message()) -> ok.
+-spec forward_message(node(), pid(), message()) -> ok.
 
 forward_message(Name, ServerRef, Message) ->
     (?PEER_SERVICE_MANAGER):forward_message(Name, ServerRef, Message).
@@ -514,7 +515,7 @@ forward_message(Name, ServerRef, Message) ->
 %% @doc Forward message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
--spec forward_message(name(), channel(), pid(), message()) -> ok.
+-spec forward_message(node(), channel(), pid(), message()) -> ok.
 
 forward_message(Name, Channel, ServerRef, Message) ->
     (?PEER_SERVICE_MANAGER):forward_message(Name, Channel, ServerRef, Message).
@@ -525,7 +526,7 @@ forward_message(Name, Channel, ServerRef, Message) ->
 %% @doc Forward message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
--spec forward_message(name(), channel(), pid(), message(), options()) -> ok.
+-spec forward_message(node(), channel(), pid(), message(), options()) -> ok.
 
 forward_message(Name, Channel, ServerRef, Message, Options) ->
     (?PEER_SERVICE_MANAGER):forward_message(Name, Channel, ServerRef, Message, Options).
