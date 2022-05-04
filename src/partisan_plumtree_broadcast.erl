@@ -75,13 +75,13 @@
     %% Initially trees rooted at each node are the same.
     %% Portions of that tree belonging to this node are
     %% shared in this set.
-    common_eagers :: ordsets:ordset(node()) | undefined,
+    common_eagers :: nodeset() | undefined,
 
     %% Initially trees rooted at each node share the same lazy links.
     %% Typically this set will contain a single element. However, it may
     %% contain more in large clusters and may be empty for clusters with
     %% less than three nodes.
-    common_lazys  :: ordsets:ordset(node()) | undefined,
+    common_lazys  :: nodeset() | undefined,
 
     %% A mapping of sender node (root of each broadcast tree)
     %% to this node's portion of the tree. Elements are
@@ -89,14 +89,14 @@
     %% propogate to this node. Nodes that are never the
     %% root of a message will never have a key added to
     %% `eager_sets'
-    eager_sets    :: #{node() := ordsets:ordset(node())} | undefined,
+    eager_sets    :: #{node() := nodeset()} | undefined,
 
     %% A Mapping of sender node (root of each spanning tree)
     %% to this node's set of lazy peers. Elements are added
     %% to this structure as messages rooted at a node
     %% propogate to this node. Nodes that are never the root
     %% of a message will never have a key added to `lazy_sets'
-    lazy_sets     :: #{node() := ordsets:ordset(node())} | undefined,
+    lazy_sets     :: #{node() := nodeset()} | undefined,
 
     %% Set of registered modules that may handle messages that
     %% have been broadcast
@@ -107,7 +107,7 @@
 
     %% Set of all known members. Used to determine
     %% which members have joined and left during a membership update
-    all_members   :: ordsets:ordset(node()) | undefined,
+    all_members   :: nodeset() | undefined,
 
     %% Lazy tick period in milliseconds. On every tick all outstanding
     %% lazy pushes are sent out
@@ -117,6 +117,8 @@
     exchange_tick_period :: non_neg_integer()
 
 }).
+
+-type nodeset()         :: ordsets:ordset(node()).
 
 -type state()           :: #state{}.
 
@@ -246,7 +248,7 @@ update(LocalState0) ->
 %% Wait indefinitely for a response is returned from the process.
 %% @end
 %% -----------------------------------------------------------------------------
--spec broadcast_members() -> ordsets:ordset(node()).
+-spec broadcast_members() -> nodeset().
 
 broadcast_members() ->
     broadcast_members(infinity).
@@ -257,7 +259,7 @@ broadcast_members() ->
 %% Waits `Timeout' ms for a response from the server.
 %% @end
 %% -----------------------------------------------------------------------------
--spec broadcast_members(infinity | pos_integer()) -> ordsets:ordset(node()).
+-spec broadcast_members(infinity | pos_integer()) -> nodeset().
 
 broadcast_members(Timeout) ->
     gen_server:call(?SERVER, broadcast_members, Timeout).
@@ -305,7 +307,7 @@ cancel_exchanges(WhichExchanges) ->
 %% @doc return the peers for `Node' for the tree rooted at `Root'.
 %% Wait indefinitely for a response is returned from the process
 -spec debug_get_peers(node(), node()) ->
-    {ordsets:ordset(node()), ordsets:ordset(node())}.
+    {nodeset(), nodeset()}.
 
 debug_get_peers(Node, Root) ->
     debug_get_peers(Node, Root, infinity).
@@ -314,7 +316,7 @@ debug_get_peers(Node, Root) ->
 %% @doc return the peers for `Node' for the tree rooted at `Root'.
 %% Waits `Timeout' ms for a response from the server
 -spec debug_get_peers(node(), node(), infinity | pos_integer()) ->
-    {ordsets:ordset(node()), ordsets:ordset(node())}.
+    {nodeset(), nodeset()}.
 
 debug_get_peers(Node, Root, Timeout) ->
     gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
@@ -323,7 +325,7 @@ debug_get_peers(Node, Root, Timeout) ->
 %% @doc return peers for all `Nodes' for tree rooted at `Root'
 %% Wait indefinitely for a response is returned from the process
 -spec debug_get_tree(node(), [node()]) ->
-    [{node(), {ordsets:ordset(node()), ordsets:ordset(node())}}].
+    [{node(), {nodeset(), nodeset()}}].
 
 debug_get_tree(Root, Nodes) ->
     [begin
@@ -343,7 +345,7 @@ debug_get_tree(Root, Nodes) ->
 
 -spec init([[any()], ...]) -> {ok, state()}.
 
-init([AllMembers, InitEagers, InitLazys, Mods, Opts]) ->
+init([Members, InitEagers0, InitLazys0, Mods, Opts]) ->
     LazyTickPeriod = maps:get(lazy_tick_period, Opts),
     ExchangeTickPeriod = maps:get(exchange_tick_period, Opts),
     schedule_lazy_tick(LazyTickPeriod),
@@ -354,6 +356,11 @@ init([AllMembers, InitEagers, InitLazys, Mods, Opts]) ->
         lazy_tick_period = LazyTickPeriod,
         exchange_tick_period = ExchangeTickPeriod
     },
+
+    AllMembers = ordsets:from_list(Members),
+    InitEagers = ordsets:from_list(InitEagers0),
+    InitLazys = ordsets:from_list(InitLazys0),
+
     State2 = reset_peers(AllMembers, InitEagers, InitLazys, State1),
     {ok, State2}.
 
@@ -424,8 +431,8 @@ handle_cast({graft, MessageId, Mod, Round, Root, From}, State) ->
     State1 = handle_graft(Result, MessageId, Mod, Round, Root, From, State),
     {noreply, State1};
 
-handle_cast({update, Members}, #state{} = State) ->
-    ?LOG_DEBUG("received ~p", [{update, Members}]),
+handle_cast({update, MemberList}, #state{} = State) ->
+    ?LOG_DEBUG("received ~p", [{update, MemberList}]),
 
     #state{
         all_members = BroadcastMembers,
@@ -433,9 +440,9 @@ handle_cast({update, Members}, #state{} = State) ->
         common_lazys = LazyPeers
     } = State,
 
-    CurrentMembers = ordsets:from_list(Members),
-    New = ordsets:subtract(CurrentMembers, BroadcastMembers),
-    Removed = ordsets:subtract(BroadcastMembers, CurrentMembers),
+    Members = ordsets:from_list(MemberList),
+    New = ordsets:subtract(Members, BroadcastMembers),
+    Removed = ordsets:subtract(BroadcastMembers, Members),
 
     ?LOG_DEBUG("new members: ~p", [ordsets:to_list(New)]),
     ?LOG_DEBUG("removed members: ~p", [ordsets:to_list(Removed)]),
@@ -453,7 +460,7 @@ handle_cast({update, Members}, #state{} = State) ->
                 "new peers, eager: ~p, lazy: ~p", [EagerPeers, LazyPeers]
             ),
 
-            reset_peers(CurrentMembers, EagerPeers, LazyPeers, State)
+            reset_peers(Members, EagerPeers, LazyPeers, State)
     end,
     State2 = neighbors_down(Removed, State1),
     {noreply, State2}.
@@ -565,6 +572,7 @@ neighbors_down(Removed, #state{} = State) ->
         common_lazys = CommonLazys,
         lazy_sets = LazySets
     } = State,
+
     NewAllMembers = ordsets:subtract(AllMembers, Removed),
     NewCommonEagers = ordsets:subtract(CommonEagers, Removed),
     NewCommonLazys  = ordsets:subtract(CommonLazys, Removed),
@@ -856,18 +864,16 @@ schedule_tick(Message, Timer, Default) ->
     erlang:send_after(TickMs, ?MODULE, Message).
 
 
+-spec reset_peers(nodeset(), nodeset(), nodeset(), state()) -> state().
+
 reset_peers(AllMembers, EagerPeers, LazyPeers, State) ->
     MyNode = partisan:node(),
     State#state{
-        common_eagers = ordsets:del_element(
-            MyNode, ordsets:from_list(EagerPeers)
-        ),
-        common_lazys  = ordsets:del_element(
-            MyNode, ordsets:from_list(LazyPeers)
-        ),
+        common_eagers = ordsets:del_element(MyNode, EagerPeers),
+        common_lazys  = ordsets:del_element(MyNode, LazyPeers),
         eager_sets    = maps:new(),
         lazy_sets     = maps:new(),
-        all_members   = ordsets:from_list(AllMembers)
+        all_members   = AllMembers
     }.
 
 
