@@ -2,7 +2,7 @@
     {description,
         "Scalable and flexible TCP-based membership system for Erlang/Elixir."
     },
-    {vsn, "4.2.6"},
+    {vsn, "5.0.0-beta.3"},
     {registered, []},
     {applications, [
         kernel,
