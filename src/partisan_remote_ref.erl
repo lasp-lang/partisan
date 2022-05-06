@@ -25,17 +25,17 @@
 encode(Pid) when erlang:is_pid(Pid) ->
     Node = atom_to_binary(partisan:node()),
     PidBin = encode_term(pid_to_list(Pid)),
-    <<"partisan:pid:", Node/binary, $:, PidBin/binary>>;
+    maybe_pad(<<"partisan:pid:", Node/binary, $:, PidBin/binary>>);
 
 encode(Ref) when erlang:is_reference(Ref) ->
     Node = atom_to_binary(partisan:node()),
     <<"#Ref", RefBin/binary>> = encode_term(ref_to_list(Ref)),
-    <<"partisan:ref:", Node/binary, $:, RefBin/binary>>;
+    maybe_pad(<<"partisan:ref:", Node/binary, $:, RefBin/binary>>);
 
 encode(Name) when is_atom(Name) ->
     Node = atom_to_binary(partisan:node(), utf8),
     NameBin = atom_to_binary(Name, utf8),
-    <<"partisan:name:", Node/binary, $:, NameBin/binary>>.
+    maybe_pad(<<"partisan:name:", Node/binary, $:, NameBin/binary>>).
 
 
 %% -----------------------------------------------------------------------------
@@ -200,3 +200,12 @@ decode_term(String) when is_list(String) ->
     lists:append(["<", String, ">"]).
 
 
+maybe_pad(Bin) ->
+    case partisan_config:get(remote_ref_padding, false) of
+        true ->
+            iolist_to_binary(
+                string:pad(<<Bin/binary, $:>>, 65, trailing, <<$\31>>)
+            );
+        false ->
+            Bin
+    end.
