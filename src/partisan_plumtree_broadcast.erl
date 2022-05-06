@@ -739,37 +739,40 @@ random_root(#state{all_members=Members}) ->
 %% picks random peer favoring peers not in eager or lazy set and ensuring
 %% peer is not this node
 random_peer(Root, State=#state{all_members=All}) ->
+    Node = partisan:node(),
     Mode = partisan_config:get(exchange_selection, optimized),
+    Mode = partisan_config:get(exchange_selection, optimized),
+
     Other = case Mode of
-        %% Normal; randomly select a peer from the known membership at
-        %% this node.
         normal ->
-            ordsets:del_element(partisan:node(), All);
-        %% Optimized; attempt to find a peer that's not in the broadcast
-        %% tree, to increase probability of selecting a lagging node.
+            %% Normal; randomly select a peer from the known membership at
+            %% this node.
+            ordsets:del_element(Node, All);
         optimized ->
+            %% Optimized; attempt to find a peer that's not in the broadcast
+            %% tree, to increase probability of selecting a lagging node.
             Eagers = all_eager_peers(Root, State),
             Lazys  = all_lazy_peers(Root, State),
             Union  = ordsets:union([Eagers, Lazys]),
-            ordsets:del_element(partisan:node(), ordsets:subtract(All, Union))
+            ordsets:del_element(Node, ordsets:subtract(All, Union))
     end,
-    Selected = case ordsets:size(Other) of
+
+    case ordsets:size(Other) of
         0 ->
-            random_other_node(ordsets:del_element(partisan:node(), All));
+            random_other_node(ordsets:del_element(Node, All));
         _ ->
             random_other_node(Other)
-    end,
-    Selected.
+    end.
 
 
 %% picks random node from ordset
 random_other_node(OrdSet) ->
     Size = ordsets:size(OrdSet),
+
     case Size of
         0 -> undefined;
         _ ->
-            lists:nth(rand:uniform(Size),
-                     ordsets:to_list(OrdSet))
+            lists:nth(rand:uniform(Size), ordsets:to_list(OrdSet))
     end.
 
 
