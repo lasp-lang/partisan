@@ -1,9 +1,13 @@
 -module(partisan_remote_ref).
 
 
--export([encode/1]).
 -export([decode/1]).
+-export([encode/1]).
 -export([is_local/1]).
+-export([is_name/1]).
+-export([is_pid/1]).
+-export([is_reference/1]).
+-export([node/1]).
 
 
 %% =============================================================================
@@ -18,20 +22,20 @@
 %% -----------------------------------------------------------------------------
 -spec encode(pid() | reference() | atom()) -> binary() | no_return().
 
-encode(Pid) when is_pid(Pid) ->
+encode(Pid) when erlang:is_pid(Pid) ->
     Node = atom_to_binary(partisan:node()),
     PidBin = encode_term(pid_to_list(Pid)),
-    <<"partisan", $:, Node/binary, $:, "Pid", PidBin/binary>>;
+    <<"partisan:pid:", Node/binary, $:, PidBin/binary>>;
 
-encode(Ref) when is_reference(Ref) ->
+encode(Ref) when erlang:is_reference(Ref) ->
     Node = atom_to_binary(partisan:node()),
     <<"#Ref", RefBin/binary>> = encode_term(ref_to_list(Ref)),
-    <<"partisan", $:, Node/binary, $:, "Ref", RefBin/binary>>;
+    <<"partisan:ref:", Node/binary, $:, RefBin/binary>>;
 
 encode(Name) when is_atom(Name) ->
     Node = atom_to_binary(partisan:node(), utf8),
     NameBin = atom_to_binary(Name, utf8),
-    <<"partisan", $:, Node/binary, $:, NameBin/binary>>.
+    <<"partisan:name:", Node/binary, $:, NameBin/binary>>.
 
 
 %% -----------------------------------------------------------------------------
@@ -43,17 +47,17 @@ encode(Name) when is_atom(Name) ->
 decode(<<"partisan:", Rest/binary>>) ->
     ThisNode = nodestring(),
 
-    %% If padded then we will have 3 terms, so we match with cons
+    %% If padded then we will have 4 terms, so we match the first tree with cons
     %% and drop the tail.
-    case binary:split(Rest, <<$:>>) of
-        [Node, <<"Pid", Term/binary>> | _] when Node == ThisNode ->
+    case binary:split(Rest, <<$:>>, [global]) of
+        [Node, Term | _] when Node == ThisNode ->
             list_to_pid(decode_term(Term));
 
-        [Node, <<"Ref", Term/binary>> | _] when Node == ThisNode ->
+        [<<"ref">>, Node, Term | _] when Node == ThisNode ->
             list_to_ref("#Ref" ++ decode_term(Term));
 
-        [Node, Bin | _] when Node == ThisNode ->
-            binary_to_existing_atom(Bin, utf8);
+        [<<"name">>, Node, Term | _] when Node == ThisNode ->
+            binary_to_existing_atom(Term, utf8);
 
         _ ->
             error(badarg)
@@ -64,27 +68,106 @@ decode(<<"partisan:", Rest/binary>>) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
+-spec node(Bin :: binary()) -> node() | no_return().
+
+node(<<"partisan:pid:", Rest/binary>>) ->
+    get_node(Rest);
+
+node(<<"partisan:ref:", Rest/binary>>) ->
+    get_node(Rest);
+
+node(<<"partisan:name:", Rest/binary>>) ->
+    get_node(Rest);
+
+node(_) ->
+    error(badarg).
+
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 -spec is_local(binary()) -> boolean() | no_return().
 
-is_local(<<"partisan:", Rest/binary>>) ->
-    Node = nodestring(),
-    Size = byte_size(Node),
-    case Rest of
-        <<Node:Size/binary, $:, _/binary>> ->
-            true;
-        _ ->
-            false
-    end;
+is_local(<<"partisan:pid:", Rest/binary>>) ->
+    do_is_local(Rest);
+
+is_local(<<"partisan:ref:", Rest/binary>>) ->
+    do_is_local(Rest);
+
+is_local(<<"partisan:name:", Rest/binary>>) ->
+    do_is_local(Rest);
 
 is_local(_) ->
     error(badarg).
 
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_pid(Bin :: binary()) -> boolean().
+
+is_pid(<<"partisan:pid:", _/binary>>) ->
+    true;
+
+is_pid(_) ->
+    false.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_reference(Bin :: binary()) -> boolean().
+
+is_reference(<<"partisan:ref:", _/binary>>) ->
+    true;
+
+is_reference(_) ->
+    false.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_name(Bin :: binary()) -> boolean().
+
+is_name(<<"partisan:name:", _/binary>>) ->
+    true;
+
+is_name(_) ->
+    false.
 
 
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
 
+
+
+%% @private
+get_node(Bin) ->
+    case binary:split(Bin, <<$:>>) of
+        [Node | _]  ->
+            binary_to_existing_atom(Node, utf8);
+        _ ->
+            error(badarg)
+    end.
+
+
+%% @private
+do_is_local(Bin) ->
+    Node = nodestring(),
+    Size = byte_size(Node),
+    case Bin of
+        <<Node:Size/binary, $:, _/binary>> ->
+            true;
+        _ ->
+            false
+    end.
 
 
 %% @private
@@ -103,8 +186,8 @@ nodestring() ->
 -spec encode_term(list()) -> binary().
 
 encode_term(String0) ->
-    String1 = string:replace(String0, "<", "("),
-    iolist_to_binary(string:replace(String1, ">", ")")).
+    String1 = string:replace(String0, "<", ""),
+    iolist_to_binary(string:replace(String1, ">", "")).
 
 
 %% @private
@@ -113,8 +196,7 @@ encode_term(String0) ->
 decode_term(Bin) when is_binary(Bin) ->
     decode_term(binary_to_list(Bin));
 
-decode_term(String0) when is_list(String0)->
-    String1 = string:replace(String0, "(", "<"),
-    lists:flatten(string:replace(String1, ")", ">")).
+decode_term(String) when is_list(String) ->
+    lists:append(["<", String, ">"]).
 
 

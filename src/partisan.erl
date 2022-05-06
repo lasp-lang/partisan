@@ -49,6 +49,10 @@
 -export([is_connected/1]).
 -export([is_connected/2]).
 -export([is_fully_connected/1]).
+-export([is_local/1]).
+-export([is_pid/1]).
+-export([is_process_alive/1]).
+-export([is_reference/1]).
 -export([make_ref/0]).
 -export([monitor/1]).
 -export([monitor/2]).
@@ -67,6 +71,9 @@
 -export([send_message/2]).
 
 -compile({no_auto_import, [demonitor/2]}).
+-compile({no_auto_import, [is_pid/0]}).
+-compile({no_auto_import, [is_process_alive/1]}).
+-compile({no_auto_import, [is_reference/0]}).
 -compile({no_auto_import, [make_ref/0]}).
 -compile({no_auto_import, [monitor/2]}).
 -compile({no_auto_import, [monitor_node/2]}).
@@ -188,7 +195,7 @@ demonitor(Ref) ->
     MonitorRef :: reference() | remote_ref(encoded_ref()),
     OptionList :: [erlang:monitor_option()]) -> boolean().
 
-demonitor(MRef, Opts) when is_reference(MRef) ->
+demonitor(MRef, Opts) when erlang:is_reference(MRef) ->
     erlang:demonitor(MRef, Opts);
 
 demonitor(
@@ -295,6 +302,17 @@ monitor_nodes(Flag, Opts) ->
 %% @doc Returns the name of the local node.
 %% @end
 %% -----------------------------------------------------------------------------
+-spec is_local(pid() | port() | reference() | binary()
+| remote_ref(process_ref() | encoded_ref())) -> boolean().
+
+is_local(Term) ->
+    node(Term) =:= node().
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns the name of the local node.
+%% @end
+%% -----------------------------------------------------------------------------
 -spec node() -> node().
 
 node() ->
@@ -306,11 +324,19 @@ node() ->
 %% a reference, a port or a partisan remote refererence.
 %% @end
 %% -----------------------------------------------------------------------------
-node(Arg) when is_pid(Arg) orelse is_reference(Arg) orelse is_port(Arg) ->
+-spec node(
+    pid() | port() | reference() | binary()
+    | remote_ref(process_ref() | encoded_ref())) -> node() | no_return().
+
+node(Arg)
+when erlang:is_pid(Arg) orelse erlang:is_reference(Arg) orelse is_port(Arg) ->
     erlang:node(Arg);
 
 node({partisan_remote_reference, Node, _}) ->
-    Node.
+    Node;
+
+node(Encoded) when is_binary(Encoded) ->
+    partisan_remote_ref:node(Encoded).
 
 
 %% -----------------------------------------------------------------------------
@@ -445,9 +471,76 @@ node_spec(Node, Endpoints) when is_atom(Node) ->
     {ok, NodeSpec}.
 
 
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 default_channel() ->
     ?DEFAULT_CHANNEL.
 
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_pid(pid() | remote_ref(process_ref()) | binary()) ->
+    boolean() | no_return().
+
+is_pid(Pid) when erlang:is_pid(Pid) ->
+    true;
+
+is_pid({partisan_remote_reference, _, {partisan_process_reference, _}}) ->
+    true;
+
+is_pid(Encoded) when is_binary(Encoded) ->
+    partisan_remote_ref:is_pid(Encoded).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns the name of the local node.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_reference(pid() | remote_ref(encoded_ref()) | binary()) ->
+    boolean() | no_return().
+
+is_reference(Pid) when erlang:is_reference(Pid) ->
+    true;
+
+is_reference({partisan_remote_reference, _, {partisan_encoded_reference, _}}) ->
+    true;
+
+is_reference(Encoded) when is_binary(Encoded) ->
+    partisan_remote_ref:is_reference(Encoded).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns the name of the local node.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_process_alive(pid() | remote_ref(process_ref()) | binary()) ->
+    boolean() | no_return().
+
+is_process_alive(Pid) when erlang:is_pid(Pid) ->
+    erlang:is_process_alive(Pid);
+
+is_process_alive(
+    {partisan_remote_reference, Node, {partisan_process_reference, L}} = E) ->
+    case node() of
+        Node ->
+            Pid = erlang:list_to_pid(L),
+            erlang:is_process_alive(Pid);
+        Other ->
+            partisan_rpc:call(Other, ?MODULE, is_process_alive, [E], 5000)
+    end;
+
+is_process_alive(<<"partisan:pid:", _/binary>> = Encoded) ->
+    case partisan_remote_ref:is_local(Encoded) of
+        true ->
+            erlang:is_process_alive(partisan_remote_ref:decode(Encoded));
+        false ->
+            Node = node(Encoded),
+            partisan_rpc:call(Node, ?MODULE, is_process_alive, [Encoded], 5000)
+    end.
 
 
 %% -----------------------------------------------------------------------------
