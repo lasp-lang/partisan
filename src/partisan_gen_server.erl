@@ -327,7 +327,7 @@ reply(From, Reply) ->
 %% Asynchronous broadcast, returns nothing, it's just send 'n' pray
 %%-----------------------------------------------------------------
 abcast(Name, Request) when is_atom(Name) ->
-    do_abcast([node() | nodes()], Name, cast_msg(Request)).
+    do_abcast([partisan:node() | partisan:nodes()], Name, cast_msg(Request)).
 
 abcast(Nodes, Name, Request) when is_list(Nodes), is_atom(Name) ->
     do_abcast(Nodes, Name, cast_msg(Request)).
@@ -349,7 +349,7 @@ do_abcast([], _,_) -> abcast.
 %%% -----------------------------------------------------------------
 multi_call(Name, Req)
   when is_atom(Name) ->
-    do_multi_call([node() | nodes()], Name, Req, infinity).
+    do_multi_call([partisan:node() | partisan:nodes()], Name, Req, infinity).
 
 multi_call(Nodes, Name, Req)
   when is_list(Nodes), is_atom(Name) ->
@@ -525,25 +525,31 @@ do_send(Dest, Msg) ->
         {RemoteProcess, RemoteNode} ->
             {RemoteNode, RemoteProcess};
         _ ->
-            {node(), Dest}
+            {partisan:node(), Dest}
     end,
     partisan_pluggable_peer_service_manager:forward_message(
         Node, partisan_gen:get_channel(), Process, Msg, []
     ).
 
-do_multi_call([Node], Name, Req, infinity) when Node =:= node() ->
-    % Special case when multi_call is used with local node only.
-    % In that case we can leverage the benefit of recv_mark optimisation
-    % existing in simple partisan_gen:call.
-    try partisan_gen:call(Name, '$gen_call', Req, infinity) of
-        {ok, Res} -> {[{Node, Res}],[]}
-    catch exit:_ ->
-        {[], [Node]}
-    end;
 do_multi_call(Nodes, Name, Req, infinity) ->
-    Tag = partisan_util:make_ref(),
-    Monitors = send_nodes(Nodes, Name, Tag, Req),
-    rec_nodes(Tag, Monitors, Name, undefined);
+    Node = partisan:node(),
+
+    case Nodes of
+        [Node] ->
+            % Special case when multi_call is used with local node only.
+            % In that case we can leverage the benefit of recv_mark optimisation
+            % existing in simple partisan_gen:call.
+            try partisan_gen:call(Name, '$gen_call', Req, infinity) of
+                {ok, Res} -> {[{Node, Res}],[]}
+            catch exit:_ ->
+                {[], [Node]}
+            end;
+        Nodes ->
+            Tag = partisan_util:make_ref(),
+            Monitors = send_nodes(Nodes, Name, Tag, Req),
+            rec_nodes(Tag, Monitors, Name, undefined)
+    end;
+
 do_multi_call(Nodes, Name, Req, Timeout) ->
     Tag = partisan_util:make_ref(),
     Caller = self(),
@@ -612,7 +618,7 @@ send_nodes([], _Name, _Tag, _Req, Monitors) ->
 rec_nodes(Tag, Nodes, Name, TimerId) ->
     rec_nodes(Tag, Nodes, Name, [], [], 2000, TimerId).
 
-rec_nodes(Tag, [{N,R}|Tail], Name, Badnodes, Replies, Time, TimerId ) ->
+rec_nodes(Tag, [{N,R}|Tail], Name, Badnodes, Replies, Time, TimerId) ->
     receive
     {'DOWN', R, _, _, _} ->
         rec_nodes(Tag, Tail, Name, [N|Badnodes], Replies, Time, TimerId);
@@ -1005,17 +1011,20 @@ client_stacktrace(undefined) ->
     undefined;
 client_stacktrace({From,_Tag}) ->
     client_stacktrace(From);
-client_stacktrace(From) when is_pid(From), node(From) =:= node() ->
-    case process_info(From, [current_stacktrace, registered_name]) of
-        undefined ->
-            {From,dead};
-        [{current_stacktrace, Stacktrace}, {registered_name, []}]  ->
-            {From,{From,Stacktrace}};
-        [{current_stacktrace, Stacktrace}, {registered_name, Name}]  ->
-            {From,{Name,Stacktrace}}
-    end;
 client_stacktrace(From) when is_pid(From) ->
-    {From,remote};
+    case partisan:is_local(From) of
+        true ->
+            case process_info(From, [current_stacktrace, registered_name]) of
+                undefined ->
+                    {From,dead};
+                [{current_stacktrace, Stacktrace}, {registered_name, []}]  ->
+                    {From,{From,Stacktrace}};
+                [{current_stacktrace, Stacktrace}, {registered_name, Name}]  ->
+                    {From,{Name,Stacktrace}}
+            end;
+    false ->
+        {From,remote}
+    end;
 client_stacktrace({partisan_remote_reference, _, _} = From) ->
     {From,remote}.
 

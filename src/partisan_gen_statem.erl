@@ -704,16 +704,24 @@ call_dirty(ServerRef, Request, Timeout, T) ->
               Stacktrace)
     end.
 
-call_clean(ServerRef, Request, Timeout, T)
-  when (is_pid(ServerRef)
-        andalso (node(ServerRef) == node()))
-       orelse (element(2, ServerRef) == node()
-               andalso is_atom(element(1, ServerRef))
-               andalso (tuple_size(ServerRef) =:= 2)) ->
-    %% No need to use a proxy locally since we know alias will be
-    %% used as of OTP 24 which will prevent garbage responses...
-    call_dirty(ServerRef, Request, Timeout, T);
 call_clean(ServerRef, Request, Timeout, T) ->
+    Node = partisan:node(),
+    Res =
+        (partisan:is_pid(ServerRef) andalso (partisan:node(ServerRef) == Node))
+        orelse (
+            element(2, ServerRef) == Node andalso is_atom(element(1, ServerRef)
+        )
+        andalso (tuple_size(ServerRef) =:= 2)),
+    case Res of
+        true ->
+            %% No need to use a proxy locally since we know alias will be
+            %% used as of OTP 24 which will prevent garbage responses...
+            call_dirty(ServerRef, Request, Timeout, T);
+        false ->
+            do_call_clean(ServerRef, Request, Timeout, T)
+    end.
+
+do_call_clean(ServerRef, Request, Timeout, T) ->
     %% Call server through proxy process to dodge any late reply
     %%
     %% We still need a proxy in the distributed case since we may
@@ -772,7 +780,7 @@ send(Dest, Msg) ->
         {RemoteProcess, RemoteNode} ->
             {RemoteNode, RemoteProcess};
         _ ->
-            {node(), Dest}
+            {partisan:node(), Dest}
     end,
     partisan_pluggable_peer_service_manager:forward_message(
         Node, partisan_gen:get_channel(), Process, Msg, []
@@ -2442,8 +2450,8 @@ error_info(
 client_stacktrace([]) ->
     undefined;
 client_stacktrace([{{call,{Pid,_Tag}},_Req}|_]) when is_pid(Pid) ->
-    if
-        node(Pid) =:= node() ->
+    case partisan:is_local(Pid) of
+        true ->
             case
                 process_info(Pid, [current_stacktrace, registered_name])
             of
@@ -2456,9 +2464,10 @@ client_stacktrace([{{call,{Pid,_Tag}},_Req}|_]) when is_pid(Pid) ->
                  {registered_name, Name}] ->
                     {Pid,{Name,Stacktrace}}
             end;
-        true ->
+        false ->
             {Pid,remote}
     end;
+
 client_stacktrace([_|_]) ->
     undefined.
 
@@ -2721,7 +2730,7 @@ format_client_log_single(undefined, _, _) ->
 format_client_log_single({Pid,dead}, _, _) ->
     {" Client ~0p is dead.", [Pid]};
 format_client_log_single({Pid,remote}, _, _) ->
-    {" Client ~0p is remote on node ~0p.", [Pid,node(Pid)]};
+    {" Client ~0p is remote on node ~0p.", [Pid, partisan:node(Pid)]};
 format_client_log_single({_Pid,{Name,Stacktrace0}}, P, Depth) ->
     %% Minimize the stacktrace a bit for single line reports. This is
     %% hopefully enough to point out the position.
@@ -2740,7 +2749,7 @@ format_client_log(undefined, _, _) ->
 format_client_log({Pid,dead}, _, _) ->
     {"** Client ~p is dead~n", [Pid]};
 format_client_log({Pid,remote}, _, _) ->
-    {"** Client ~p is remote on node ~p~n", [Pid,node(Pid)]};
+    {"** Client ~p is remote on node ~p~n", [Pid,partisan:node(Pid)]};
 format_client_log({_Pid,{Name,Stacktrace}}, P, Depth) ->
     Format = lists:append(["** Client ",P," stacktrace~n** ",P,"~n"]),
     Args = case Depth of
