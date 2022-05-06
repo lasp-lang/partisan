@@ -50,7 +50,7 @@ decode(<<"partisan:", Rest/binary>>) ->
     %% If padded then we will have 4 terms, so we match the first tree with cons
     %% and drop the tail.
     case binary:split(Rest, <<$:>>, [global]) of
-        [Node, Term | _] when Node == ThisNode ->
+        [<<"pid">>, Node, Term | _] when Node == ThisNode ->
             list_to_pid(decode_term(Term));
 
         [<<"ref">>, Node, Term | _] when Node == ThisNode ->
