@@ -139,6 +139,8 @@ init() ->
                            {peer_port, DefaultPeerPort},
                            {periodic_enabled, ?PERIODIC_ENABLED},
                            {periodic_interval, 10000},
+                           {remote_ref_uri_padding, false},
+                           {remote_ref_as_uri, false},
                            {pid_encoding, true},
                            {ref_encoding, true},
                            {membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING},

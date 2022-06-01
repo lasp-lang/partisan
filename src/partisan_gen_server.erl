@@ -545,13 +545,13 @@ do_multi_call(Nodes, Name, Req, infinity) ->
                 {[], [Node]}
             end;
         Nodes ->
-            Tag = partisan_util:make_ref(),
+            Tag = partisan:make_ref(),
             Monitors = send_nodes(Nodes, Name, Tag, Req),
             rec_nodes(Tag, Monitors, Name, undefined)
     end;
 
 do_multi_call(Nodes, Name, Req, Timeout) ->
-    Tag = partisan_util:make_ref(),
+    Tag = partisan:make_ref(),
     Caller = self(),
     Receiver =
     spawn(

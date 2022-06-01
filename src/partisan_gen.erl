@@ -276,7 +276,7 @@ send_request(Process, Label, Request) ->
     try do_for_proc(Process, Fun)
     catch exit:Reason ->
             %% Make send_request async and fake a down message
-            Ref = partisan_util:make_ref(),
+            Ref = partisan:make_ref(),
             self() ! {'DOWN', Ref, process, Process, Reason},
             Ref
     end.
@@ -585,7 +585,7 @@ format_status_header(TagLine, Name) ->
 
 do_send_request(Process, Label, Request) ->
     %% Generate unique reference.
-    Ref = partisan_util:make_ref(),
+    Ref = partisan:make_ref(),
 
     %% Figure out remote node.
     {Node, ServerRef} = case Process of
@@ -596,7 +596,7 @@ do_send_request(Process, Label, Request) ->
     end,
 
     %% Generate message.
-    Message = {Label, {partisan_util:pid(), Ref}, Request},
+    Message = {Label, {partisan:self(), Ref}, Request},
 
     %% Send message via Partisan.
     ?LOG_DEBUG(#{

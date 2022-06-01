@@ -66,18 +66,18 @@ call(Type, Node, Dest, Label, Request, Timeout) ->
     Mref = make_ref(),
 
     %% Get our pid.
-    Self = partisan_util:pid(),
+    Self = partisan:self(),
 
     %% Send message.
     partisan_pluggable_peer_service_manager:forward_message(Node, undefined, Dest, {Label, {Self, Mref}, Request}, []),
 
-    %% Don't timeout earlier than the timeout -- Distributed Erlang would if the net_ticktime fired and 
-    %% determined that the node is down.  However, this adds nondeterminism into the execution, so wait until 
+    %% Don't timeout earlier than the timeout -- Distributed Erlang would if the net_ticktime fired and
+    %% determined that the node is down.  However, this adds nondeterminism into the execution, so wait until
     %% the timeout.  This is still nondeterministic, but less so.
     receive
         {Mref, Reply} ->
             Reply
-    after 
+    after
         Timeout ->
             exit({timeout, {?MODULE, Type, [Dest, Request, Timeout]}})
     end.

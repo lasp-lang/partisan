@@ -73,7 +73,7 @@ stop() ->
 broadcast(ServerRef, Message) ->
     %% TODO: Bit of a hack just to get this working.
     true = erlang:register(txn_coordinator, self()),
-    From = partisan_util:registered_name(txn_coordinator),
+    From = partisan_remote_ref:from_term(txn_coordinator),
 
     gen_server:cast(?MODULE, {broadcast, From, ServerRef, Message}),
 

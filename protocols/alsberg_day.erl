@@ -87,7 +87,7 @@ read(Key) ->
 read_local(Key) ->
     %% TODO: Bit of a hack just to get this working.
     true = erlang:register(read_coordinator, self()),
-    From = partisan_util:registered_name(read_coordinator),
+    From = partisan_remote_ref:from_term(read_coordinator),
 
     gen_server:cast(?MODULE, {read_local, From, Key}),
 
@@ -154,12 +154,12 @@ handle_cast({read, From0, Key}, #state{next_id=NextId, membership=[Primary|_Rest
             ok
     end,
     true = erlang:register(From, From0),
-    EncodedFrom = partisan_util:registered_name(From),
+    EncodedFrom = partisan_remote_ref:from_term(From),
 
     %% TODO: HACK to get around problem in interprocedural analysis.
-    Request = {read, EncodedFrom, Key}, 
+    Request = {read, EncodedFrom, Key},
 
-    case node() of 
+    case node() of
         Primary ->
             %% Get the value.
             Value = read(Key, Store),
@@ -185,12 +185,12 @@ handle_cast({write, From0, Key, Value}, #state{next_id=NextId, membership=[Prima
             ok
     end,
     true = erlang:register(From, From0),
-    EncodedFrom = partisan_util:registered_name(From),
+    EncodedFrom = partisan_remote_ref:from_term(From),
 
     %% TODO: HACK to get around problem in interprocedural analysis.
     Request = {write, EncodedFrom, Key, Value},
 
-    case node() of 
+    case node() of
         Primary ->
 
             %% Add to list of outstanding requests.
@@ -220,14 +220,14 @@ handle_cast({write, From0, Key, Value}, #state{next_id=NextId, membership=[Prima
 %% @private
 handle_info({collaborate_ack, ReplyingNode, {write, From, Key, Value}}, #state{outstanding=Outstanding0}=State) ->
     %% TODO: HACK to get around problem in interprocedural analysis.
-    Request = {write, From, Key, Value}, 
+    Request = {write, From, Key, Value},
 
     case dict:find(Request, Outstanding0) of
         {ok, {Membership, Replies0}} ->
             %% Update list of nodes that have acknowledged.
             Replies = Replies0 ++ [ReplyingNode],
 
-            case lists:usort(Membership) =:= lists:usort(Replies) of 
+            case lists:usort(Membership) =:= lists:usort(Replies) of
                 true ->
                     partisan_logger:info("Node ~p received all replies for request ~p, acknowleding to user.", [node(), Request]),
                     partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value});
@@ -249,7 +249,7 @@ handle_info({collaborate, CoordinatorNode, {write, From, Key, Value}}, #state{me
     %% TODO: HACK to get around problem in interprocedural analysis.
     Request = {write, From, Key, Value},
 
-    case node() of 
+    case node() of
         Primary ->
             %% Do nothing.
             {noreply, State};
@@ -283,7 +283,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private
 read(Key, Store) ->
-    case dict:find(Key, Store) of 
+    case dict:find(Key, Store) of
         {ok, V} ->
             V;
         error ->

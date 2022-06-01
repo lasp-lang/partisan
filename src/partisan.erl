@@ -30,7 +30,12 @@
                                         | remote_ref(process_ref())
                                         | remote_ref(registered_name_ref()).
 
+-type server_ref()                  ::  pid() | atom()
+                                        | partisan_remote_ref:p()
+                                        | partisan_remote_ref:n().
+
 -export_type([monitor_nodes_opt/0]).
+-export_type([server_ref/0]).
 
 -export([start/0]).
 -export([stop/0]).
@@ -61,6 +66,7 @@
 -export([monitor_nodes/1]).
 -export([monitor_nodes/2]).
 -export([node/0]).
+-export([nodestring/0]).
 -export([node/1]).
 -export([node_spec/0]).
 -export([node_spec/1]).
@@ -111,20 +117,20 @@ stop() ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec make_ref() -> remote_ref(encoded_ref()).
+-spec make_ref() -> partisan_remote_ref:t().
 
 make_ref() ->
-    partisan_util:ref(erlang:make_ref()).
+    partisan_remote_ref:from_term(erlang:make_ref()).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the partisan encoded pid for the calling process.
 %% @end
 %% -----------------------------------------------------------------------------
--spec self() -> remote_ref(process_ref()).
+-spec self() -> partisan_remote_ref:t().
 
 self() ->
-    partisan_util:ref(erlang:self()).
+    partisan_remote_ref:from_term(erlang:self()).
 
 
 %% -----------------------------------------------------------------------------
@@ -145,7 +151,7 @@ monitor(Term) ->
 %% -----------------------------------------------------------------------------
 -spec monitor
     (process, monitor_process_identifier()) ->
-        reference() | remote_ref(encoded_ref()) | no_return();
+        reference() | partisan_remote_ref:r() | no_return();
     (port, erlang:monitor_port_identifier()) ->
         reference() |  no_return();
     (time_offset, clock_service) ->
@@ -164,24 +170,27 @@ monitor(Type, Term) ->
 %% -----------------------------------------------------------------------------
 -spec monitor
     (process, monitor_process_identifier(), [erlang:monitor_option()]) ->
-        reference() | remote_ref(encoded_ref()) | no_return();
+        reference() | partisan_remote_ref:r() | no_return();
     (port, erlang:monitor_port_identifier(), [erlang:monitor_option()]) ->
         reference() |  no_return();
     (time_offset, clock_service, [erlang:monitor_option()]) ->
         reference() | no_return().
 
-monitor(process, {partisan_remote_reference, _, _} = R, Opts) ->
-    partisan_monitor:monitor(R, Opts);
-
 monitor(Type, Term, Opts) ->
-    erlang:monitor(Type, Term, Opts).
+    case partisan_remote_ref:is_type(Term) of
+        true ->
+            partisan_monitor:monitor(Term, Opts);
+        false ->
+            erlang:monitor(Type, Term, Opts)
+    end.
+
 
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec demonitor(MonitorRef :: reference() | remote_ref(encoded_ref())) -> true.
+-spec demonitor(MonitorRef :: reference() | partisan_remote_ref:r()) -> true.
 
 demonitor(Ref) ->
     demonitor(Ref, []).
@@ -192,7 +201,7 @@ demonitor(Ref) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec demonitor(
-    MonitorRef :: reference() | remote_ref(encoded_ref()),
+    MonitorRef :: reference() | partisan_remote_ref:r(),
     OptionList :: [erlang:monitor_option()]) -> boolean().
 
 demonitor(MRef, Opts) when erlang:is_reference(MRef) ->
@@ -317,6 +326,23 @@ is_local(Term) ->
 
 node() ->
     partisan_config:get(name, erlang:node()).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns the name of the local node.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec nodestring() -> binary().
+
+nodestring() ->
+    case partisan_config:get(namestring, undefined) of
+        undefined ->
+            String = atom_to_binary(erlang:node(), utf8),
+            _ = partisan_config:set(namestring, String),
+            String;
+        String ->
+            String
+    end.
 
 
 %% -----------------------------------------------------------------------------
@@ -483,74 +509,60 @@ default_channel() ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec is_pid(pid() | remote_ref(process_ref()) | binary()) ->
+-spec is_pid(pid() | partisan_remote_ref:p()) ->
     boolean() | no_return().
 
 is_pid(Pid) when erlang:is_pid(Pid) ->
     true;
 
-is_pid({partisan_remote_reference, _, {partisan_process_reference, _}}) ->
-    true;
-
-is_pid(Encoded) when is_binary(Encoded) ->
-    partisan_remote_ref:is_pid(Encoded).
+is_pid(RemoteRef) ->
+    partisan_remote_ref:is_pid(RemoteRef).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the name of the local node.
 %% @end
 %% -----------------------------------------------------------------------------
--spec is_reference(pid() | remote_ref(encoded_ref()) | binary()) ->
+-spec is_reference(reference() | partisan_remote_ref:r()) ->
     boolean() | no_return().
 
 is_reference(Pid) when erlang:is_reference(Pid) ->
     true;
 
-is_reference({partisan_remote_reference, _, {partisan_encoded_reference, _}}) ->
-    true;
-
-is_reference(Encoded) when is_binary(Encoded) ->
-    partisan_remote_ref:is_reference(Encoded).
+is_reference(RemoteRef) ->
+    partisan_remote_ref:is_reference(RemoteRef).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the name of the local node.
 %% @end
 %% -----------------------------------------------------------------------------
--spec is_process_alive(pid() | remote_ref(process_ref()) | binary()) ->
+-spec is_process_alive(pid() | partisan_remote_ref:p()) ->
     boolean() | no_return().
 
 is_process_alive(Pid) when erlang:is_pid(Pid) ->
     erlang:is_process_alive(Pid);
 
-is_process_alive(
-    {partisan_remote_reference, Node, {partisan_process_reference, L}} = E) ->
-    case node() of
-        Node ->
-            Pid = erlang:list_to_pid(L),
-            erlang:is_process_alive(Pid);
-        Other ->
-            partisan_rpc:call(Other, ?MODULE, is_process_alive, [E], 5000)
-    end;
-
-is_process_alive(<<"partisan:pid:", _/binary>> = Encoded) ->
-    case partisan_remote_ref:is_local(Encoded) of
+is_process_alive(RemoteRef) ->
+    case partisan_remote_ref:is_local(RemoteRef) of
         true ->
-            erlang:is_process_alive(partisan_remote_ref:decode(Encoded));
+            erlang:is_process_alive(partisan_remote_ref:to_term(RemoteRef));
         false ->
-            Node = node(Encoded),
-            partisan_rpc:call(Node, ?MODULE, is_process_alive, [Encoded], 5000)
+            Node = node(RemoteRef),
+            partisan_rpc:call(
+                Node, ?MODULE, is_process_alive, [RemoteRef], 5000
+            )
     end.
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Cast message to registered process on the remote side.
+%% @doc Send a message to a remote peer_service_manager.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec send_message(node(), message()) -> ok.
 
-send_message(Name, Message) ->
-    (?PEER_SERVICE_MANAGER):send_message(Name, Message).
+send_message(Node, Message) ->
+    (?PEER_SERVICE_MANAGER):send_message(Node, Message).
 
 
 %% -----------------------------------------------------------------------------
@@ -559,8 +571,8 @@ send_message(Name, Message) ->
 %% -----------------------------------------------------------------------------
 -spec cast_message(node(), pid() | atom(), message()) -> ok.
 
-cast_message(Name, ServerRef, Message) ->
-    (?PEER_SERVICE_MANAGER):cast_message(Name, ServerRef, Message).
+cast_message(Node, ServerRef, Message) ->
+    (?PEER_SERVICE_MANAGER):cast_message(Node, ServerRef, Message).
 
 
 %% -----------------------------------------------------------------------------
@@ -569,8 +581,8 @@ cast_message(Name, ServerRef, Message) ->
 %% -----------------------------------------------------------------------------
 -spec cast_message(node(), channel(), pid() | atom(), message()) -> ok.
 
-cast_message(Name, Channel, ServerRef, Message) ->
-    (?PEER_SERVICE_MANAGER):cast_message(Name, Channel, ServerRef, Message).
+cast_message(Node, Channel, ServerRef, Message) ->
+    (?PEER_SERVICE_MANAGER):cast_message(Node, Channel, ServerRef, Message).
 
 
 %% -----------------------------------------------------------------------------

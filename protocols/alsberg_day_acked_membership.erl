@@ -44,11 +44,11 @@
 
 -define(HEARTBEAT_INTERVAL, 2000).
 
--record(state, {next_id, 
-                store, 
-                membership=[], 
-                start_time, 
-                outstanding, 
+-record(state, {next_id,
+                store,
+                membership=[],
+                start_time,
+                outstanding,
                 heartbeats}).
 
 %%%===================================================================
@@ -97,7 +97,7 @@ read(Key) ->
 read_local(Key) ->
     %% TODO: Bit of a hack just to get this working.
     true = erlang:register(read_coordinator, self()),
-    From = partisan_util:registered_name(read_coordinator),
+    From = partisan_remote_ref:from_term(read_coordinator),
 
     gen_server:cast(?MODULE, {read_local, From, Key}),
 
@@ -185,12 +185,12 @@ handle_cast({read, From0, Key}, #state{next_id=NextId, membership=[Primary|_Rest
             ok
     end,
     true = erlang:register(From, From0),
-    EncodedFrom = partisan_util:registered_name(From),
+    EncodedFrom = partisan_remote_ref:from_term(From),
 
     %% TODO: HACK to get around problem in interprocedural analysis.
-    Request = {read, EncodedFrom, Key}, 
+    Request = {read, EncodedFrom, Key},
 
-    case node() of 
+    case node() of
         Primary ->
             %% Get the value.
             Value = read(Key, Store),
@@ -216,12 +216,12 @@ handle_cast({write, From0, Key, Value}, #state{next_id=NextId, membership=[Prima
             ok
     end,
     true = erlang:register(From, From0),
-    EncodedFrom = partisan_util:registered_name(From),
+    EncodedFrom = partisan_remote_ref:from_term(From),
 
     %% TODO: HACK to get around problem in interprocedural analysis.
     Request = {write, EncodedFrom, Key, Value},
 
-    case node() of 
+    case node() of
         Primary ->
 
             %% Add to list of outstanding requests.
@@ -251,14 +251,14 @@ handle_cast({write, From0, Key, Value}, #state{next_id=NextId, membership=[Prima
 %% @private
 handle_info({collaborate_ack, ReplyingNode, {write, From, Key, Value}}, #state{outstanding=Outstanding0}=State) ->
     %% TODO: HACK to get around problem in interprocedural analysis.
-    Request = {write, From, Key, Value}, 
+    Request = {write, From, Key, Value},
 
     case dict:find(Request, Outstanding0) of
         {ok, {Membership, Replies0}} ->
             %% Update list of nodes that have acknowledged.
             Replies = Replies0 ++ [ReplyingNode],
 
-            Outstanding = case lists:usort(Membership) =:= lists:usort(Replies) of 
+            Outstanding = case lists:usort(Membership) =:= lists:usort(Replies) of
                 true ->
                     partisan_logger:info("Node ~p received all replies for request ~p, acknowleding to user.", [node(), Request]),
                     partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value}),
@@ -278,7 +278,7 @@ handle_info({collaborate, CoordinatorNode, {write, From, Key, Value}}, #state{me
     %% TODO: HACK to get around problem in interprocedural analysis.
     Request = {write, From, Key, Value},
 
-    case node() of 
+    case node() of
         Primary ->
             %% Do nothing.
             {noreply, State};
@@ -314,18 +314,18 @@ handle_info(heartbeat, #state{start_time=StartTime, membership=Membership, heart
     CurrentTime = erlang:timestamp(),
 
     NewMembership = lists:foldl(fun(Node, Acc) ->
-        LastHeartbeatTime = case dict:find(Node, Heartbeats) of 
+        LastHeartbeatTime = case dict:find(Node, Heartbeats) of
             {ok, Value} ->
                 Value;
             error ->
                 StartTime
         end,
-    
+
         Difference = timer:now_diff(CurrentTime, LastHeartbeatTime),
         DifferenceMs = Difference / 1000,
 
         %% Two heartbeat intervals.
-        case DifferenceMs > (?HEARTBEAT_INTERVAL * 2) of 
+        case DifferenceMs > (?HEARTBEAT_INTERVAL * 2) of
             true ->
                 partisan_logger:info("membership: node ~p hasn't received heartbeat from node ~p in 2 intervals, removing, difference_ms: ~p", [node(), Node, DifferenceMs]),
                 Acc -- [Node];
@@ -335,7 +335,7 @@ handle_info(heartbeat, #state{start_time=StartTime, membership=Membership, heart
     end, Membership, Membership -- [node()]),
 
     %% Update membership.
-    case lists:usort(NewMembership) of 
+    case lists:usort(NewMembership) of
         Membership ->
             ok;
         _ ->
@@ -366,7 +366,7 @@ handle_info({retry_collaborate, CoordinatorNode, {write, From, Key, Value}}, #st
     Request = {write, From, Key, Value},
 
     %% TODO: Reduce duplication.
-    case node() of 
+    case node() of
         Primary ->
             %% Do nothing.
             {noreply, State};
@@ -383,7 +383,7 @@ handle_info({retry_collaborate, CoordinatorNode, {write, From, Key, Value}}, #st
     end;
 handle_info({retry_collaborate_ack, ReplyingNode, {write, From, Key, Value}}, #state{outstanding=Outstanding0}=State) ->
     %% TODO: HACK to get around problem in interprocedural analysis.
-    Request = {write, From, Key, Value}, 
+    Request = {write, From, Key, Value},
 
     %% TODO: Reduce duplication.
     case dict:find(Request, Outstanding0) of
@@ -391,7 +391,7 @@ handle_info({retry_collaborate_ack, ReplyingNode, {write, From, Key, Value}}, #s
             %% Update list of nodes that have acknowledged.
             Replies = Replies0 ++ [ReplyingNode],
 
-            case lists:usort(Membership) =:= lists:usort(Replies) of 
+            case lists:usort(Membership) =:= lists:usort(Replies) of
                 true ->
                     partisan_logger:info("Node ~p received all replies for request ~p, acknowleding to user.", [node(), Request]),
                     partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value});
@@ -428,7 +428,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private
 read(Key, Store) ->
-    case dict:find(Key, Store) of 
+    case dict:find(Key, Store) of
         {ok, V} ->
             V;
         error ->
