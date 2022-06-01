@@ -197,7 +197,7 @@ member(Node) ->
 %% @doc Return cluster members
 %% @end
 %% -----------------------------------------------------------------------------
--spec members() -> {ok, [name()]}.
+-spec members() -> {ok, [node()]}.
 
 members() ->
     (?PEER_SERVICE_MANAGER):members().

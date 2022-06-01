@@ -83,7 +83,6 @@
                        channels => [channel()],
                        parallelism => non_neg_integer()}.
 -type message() :: term().
--type name() :: node().
 -type partitions() :: [{reference(), node_spec()}].
 -type ttl() :: non_neg_integer().
 -type channel() :: atom().

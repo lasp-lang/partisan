@@ -204,28 +204,28 @@ cast_message(Name, Channel, ServerRef, Message, Options) ->
 forward_message(Pid, Message) when is_pid(Pid) ->
     forward_message(partisan:node(), ?DEFAULT_CHANNEL, Pid, Message);
 
-forward_message({partisan_remote_reference, Name, ServerRef}, Message) ->
-    forward_message(Name, ?DEFAULT_CHANNEL, ServerRef, Message).
+forward_message({partisan_remote_reference, Node, ServerRef}, Message) ->
+    forward_message(Node, ?DEFAULT_CHANNEL, ServerRef, Message).
 
 %% @doc Forward message to registered process on the remote side.
-forward_message(Name, ServerRef, Message) ->
-    forward_message(Name, ?DEFAULT_CHANNEL, ServerRef, Message).
+forward_message(Node, ServerRef, Message) ->
+    forward_message(Node, ?DEFAULT_CHANNEL, ServerRef, Message).
 
 %% @doc Forward message to registered process on the remote side.
-forward_message(Name, Channel, ServerRef, Message) ->
-    forward_message(Name, Channel, ServerRef, Message, #{}).
+forward_message(Node, Channel, ServerRef, Message) ->
+    forward_message(Node, Channel, ServerRef, Message, #{}).
 
 %% @doc Forward message to registered process on the remote side.
-forward_message(Name, Channel, ServerRef, Message, Options)
+forward_message(Node, Channel, ServerRef, Message, Options)
 when is_list(Options) ->
-    forward_message(Name, Channel, ServerRef, Message, maps:from_list(Options));
+    forward_message(Node, Channel, ServerRef, Message, maps:from_list(Options));
 
-forward_message(Name, Channel, ServerRef, Message, Options)
+forward_message(Node, Channel, ServerRef, Message, Options)
 when is_map(Options) ->
 
     %% If attempting to forward to the local node, bypass.
     case partisan:node() of
-        Name ->
+        Node ->
             partisan_util:process_forward(ServerRef, Message),
             ok;
         _ ->
@@ -284,7 +284,7 @@ when is_map(Options) ->
 
                     FullMessage = {
                         forward_message,
-                        Name,
+                        Node,
                         Channel,
                         Clock,
                         PartitionKey,
