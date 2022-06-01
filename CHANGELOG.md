@@ -141,6 +141,7 @@ In general, the API was redesigned to concentrate all functions around two modul
 
 #### Fixes
 * Replaced the use of `state_orset` CRDT with `state_awmap` to avoid an issue where a node will crash and restart with a different IP address e.g. when deploying in K8s. As the membership set contains `node_spec()` objects which contain the IP address we ended up with duplicate entries for the node.  The `state_awmap` tries to solve that by mapping a `node() => state_mvregister(node_spec())`
+
 #### Changes
 
 * `Partisan now requires **OTP24 or later**.`
