@@ -1642,7 +1642,11 @@ schedule_passive_view_maintenance() ->
                       ?MODULE,
                       passive_view_maintenance).
 
-%% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
+%% -----------------------------------------------------------------------------
+%% @doc
+%% http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
+%% @end
+%% -----------------------------------------------------------------------------
 shuffle(L) ->
     [X || {_, X} <- lists:sort([{rand:uniform(), N} || N <- L])].
 
@@ -1667,7 +1671,7 @@ reserved_slot_available(Tag, Reserved) ->
             false
     end.
 
-%% @private
+%% %% @private
 %%remove_from_reserved(Peer, Reserved) ->
 %%    dict:fold(fun(K, V, Acc) ->
 %%                      case V of

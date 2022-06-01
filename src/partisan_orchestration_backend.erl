@@ -190,7 +190,6 @@ init([]) ->
 -spec handle_call(term(), {pid(), term()}, #orchestration_strategy_state{}) ->
     {reply, term(), #orchestration_strategy_state{}}.
 
-%% @private
 handle_call(nodes, _From, #orchestration_strategy_state{nodes=Nodes}=State) ->
     {reply, {ok, Nodes}, State};
 

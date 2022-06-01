@@ -228,7 +228,11 @@ select_random_sublist(State, K) ->
     List = membership_list(State),
     lists:sublist(shuffle(List), K).
 
-%% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
+%% -----------------------------------------------------------------------------
+%% @doc
+%% http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
+%% @end
+%% -----------------------------------------------------------------------------
 shuffle(L) ->
     [X || {_, X} <- lists:sort([{rand:uniform(), N} || N <- L])].
 

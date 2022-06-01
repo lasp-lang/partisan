@@ -146,7 +146,6 @@ init([]) ->
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
 
-%% @private
 handle_call({is_stale, Timestamp}, _From, State) ->
     Result = case ets:lookup(?MODULE, Timestamp) of
         [] ->

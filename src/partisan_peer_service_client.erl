@@ -84,7 +84,6 @@ init([Peer, ListenAddr, Channel, From]) ->
 -spec handle_call(term(), {pid(), term()}, state_t()) ->
     {reply, term(), state_t()}.
 
-%% @private
 handle_call({send_message, Message}, _From, #state{channel=_Channel, socket=Socket}=State) ->
     case get({?MODULE, egress_delay}) of
         0 ->

@@ -42,7 +42,16 @@
          terminate/2,
          code_change/3]).
 
--record(state, {name, label, my_node, local_clock, order_buffer, buffered_messages, delivery_fun, storage}).
+-record(state, {
+    name                ::  atom(),
+    label               ::  atom(),
+    my_node             ::  node(),
+    local_clock,
+    order_buffer,
+    buffered_messages,
+    delivery_fun,
+    storage
+}).
 
 %%%===================================================================
 %%% API
@@ -97,13 +106,15 @@ init([Label]) ->
     Storage = ets:new(Name, [named_table]),
 
     %% Start server.
-    {ok, #state{name=Name,
-                my_node=MyNode,
-                label=Label,
-                local_clock=LocalClock,
-                order_buffer=OrderBuffer,
-                buffered_messages=BufferedMessages,
-                storage=Storage}}.
+    {ok, #state{
+        name = Name,
+        my_node = MyNode,
+        label = Label,
+        local_clock = LocalClock,
+        order_buffer = OrderBuffer,
+        buffered_messages = BufferedMessages,
+        storage = Storage
+    }}.
 
 %% Generate a message identifier and a payload to be transmitted on the wire.
 handle_call({reemit, LocalClock},
@@ -121,7 +132,7 @@ handle_call({emit, Node, ServerRef, Message},
                    my_node=MyNode,
                    label=Label,
                    local_clock=LocalClock0,
-                   order_buffer=OrderBuffer0}=State) ->
+                   order_buffer=OrderBuffer0}=State0) ->
     %% Bump our local clock.
     LocalClock = partisan_vclock:increment(MyNode, LocalClock0),
 
@@ -131,7 +142,7 @@ handle_call({emit, Node, ServerRef, Message},
     %% Return the message to be transmitted.
     CausalMessage = {causal, Label, Node, ServerRef, FilteredOrderBuffer, LocalClock, Message},
 
-    %% Update the order buffer with node and mesage clock.
+    %% Update the order buffer with node and message clock.
     OrderBuffer = orddict:store(Node, LocalClock, OrderBuffer0),
 
     %% Everytime we omit a message, store the clock and message so we can regenerate the message.
@@ -142,7 +153,9 @@ handle_call({emit, Node, ServerRef, Message},
         clock => LocalClock
     }),
 
-    {reply, {ok, LocalClock, CausalMessage}, State#state{local_clock=LocalClock, order_buffer=OrderBuffer}};
+    State = State0#state{local_clock=LocalClock, order_buffer=OrderBuffer},
+
+    {reply, {ok, LocalClock, CausalMessage}, State};
 
 %% Receive a causal messag off the wire; deliver or not depending on whether or not
 %% the causal dependencies have been satisfied.

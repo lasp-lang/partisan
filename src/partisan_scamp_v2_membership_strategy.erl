@@ -292,7 +292,12 @@ handle_message(#scamp_v2{partial_view=PartialView0, in_view=InView0}=State, {kee
 select_random_sublist(#scamp_v2{partial_view=PartialView}, K) ->
     lists:sublist(shuffle(PartialView), K).
 
-%% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
+%% @end
+%% -----------------------------------------------------------------------------
 shuffle(L) ->
     [X || {_, X} <- lists:sort([{rand:uniform(), N} || N <- L])].
 
