@@ -70,6 +70,7 @@ init() ->
 
     %% Must be done here, before the resolution call is made.
     partisan_config:set(name, Name),
+    partisan_config:set(nodestring, atom_to_binary(Name, utf8)),
 
     DefaultTag = case os:getenv("TAG", "false") of
                     "false" ->

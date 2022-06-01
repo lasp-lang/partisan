@@ -325,7 +325,7 @@ is_local(Term) ->
 -spec node() -> node().
 
 node() ->
-    partisan_config:get(name, erlang:node()).
+    partisan_config:get(name).
 
 
 %% -----------------------------------------------------------------------------
@@ -335,14 +335,7 @@ node() ->
 -spec nodestring() -> binary().
 
 nodestring() ->
-    case partisan_config:get(namestring, undefined) of
-        undefined ->
-            String = atom_to_binary(erlang:node(), utf8),
-            _ = partisan_config:set(namestring, String),
-            String;
-        String ->
-            String
-    end.
+    partisan_config:get(nodestring).
 
 
 %% -----------------------------------------------------------------------------
