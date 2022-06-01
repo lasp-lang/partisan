@@ -5,7 +5,6 @@
 ## API
 In general, the API was redesigned to concentrate all functions around two modules: `partisan` and `partisan_peer_service`.
 
-#### Fixes
 #### Changes
 
 * `partisan` module was reporpused as a replacement for the `erlang` module for use cases related to distribution e.g. `erlang:nodes/0` -> `partisan:nodes/0`.
@@ -66,20 +65,21 @@ In general, the API was redesigned to concentrate all functions around two modul
     * `partisan_peer_service:reserve/1`
     * `partisan_peer_service:resolve_partition/1`
     * `partisan_peer_service:update_members/1`
-* Added `partisan_remote_ref` as an optional/alternative representation for encoded pids, references and registered names. In cases where lots of references are stored in process state, ets and specially where those are uses as keys, a binary format is preferable to the tuple format in order to save memory usage and avoid copying the term every time a message is send between processes. `partisan_remote_ref` represents an encoded reference as binary URI. This is controlled by the config option `remote_ref_as_uri` and `remote_ref_binary_padding` in case the resulting URIs are smaller than 65 bytes. The module offers all the functions to convert pids, references and names to/from Partisan encoded references.
+* Added `partisan_remote_ref` to encapsulate the creation of reference and added an optional/alternative representation for encoded pids, references and registered names. The module offers all the functions to convert pids, references and names to/from Partisan encoded references.
+    * Alternative representation: In cases where lots of references are stored in process state, ets and specially where those are uses as keys, a binary format is preferable to the tuple format in order to save memory usage and avoid copying the term every time a message is send between processes. `partisan_remote_ref` represents an encoded reference as binary URI. This is controlled by the config option `remote_ref_as_uri` and `remote_ref_binary_padding` in case the resulting URIs are smaller than 65 bytes.
 
-    ```erlang
-    1> partisan_remote_ref:from_term(self()).
-    {partisan_remote_reference,nonode@nohost,{partisan_process_reference,"<0.1062.0>"}}
-    2> partisan_config:set(remote_ref_as_uri, true).
-    ok
-    3> partisan_remote_ref:from_term(self()).
-    <<"partisan:pid:nonode@nohost:0.1062.0">>
-    4> partisan_config:set(remote_ref_binary_padding, true).
-    ok
-    5> partisan_remote_ref:from_term(self()).
-    <<"partisan:pid:nonode@nohost:0.1062.0:"...>>
-    ```
+        ```erlang
+        1> partisan_remote_ref:from_term(self()).
+        {partisan_remote_reference,nonode@nohost,{partisan_process_reference,"<0.1062.0>"}}
+        2> partisan_config:set(remote_ref_as_uri, true).
+        ok
+        3> partisan_remote_ref:from_term(self()).
+        <<"partisan:pid:nonode@nohost:0.1062.0">>
+        4> partisan_config:set(remote_ref_binary_padding, true).
+        ok
+        5> partisan_remote_ref:from_term(self()).
+        <<"partisan:pid:nonode@nohost:0.1062.0:"...>>
+        ```
 
 ## Peer Membership
 
