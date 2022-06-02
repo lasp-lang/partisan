@@ -1,6 +1,6 @@
 # CHANGELOG
 
-# v5.0.0
+# v5.0.0 (beta)
 
 ## API
 In general, the API was redesigned to concentrate all functions around two modules: `partisan` and `partisan_peer_service`.
