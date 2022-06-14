@@ -38,12 +38,12 @@ perf:
 	pkill -9 beam.smp; pkill -9 epmd; SIZE=${SIZE} LATENCY=${LATENCY} CONCURRENCY=${CONCURRENCY} ${REBAR} ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=default
 	pkill -9 beam.smp; pkill -9 epmd; SIZE=${SIZE} LATENCY=${LATENCY} CONCURRENCY=${CONCURRENCY} PARALLELISM=${CONCURRENCY} ${REBAR} ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=with_parallelism
 
-kill: 
+kill:
 	pkill -9 beam.smp; pkill -9 epmd; exit 0
 
 check: kill test xref dialyzer
 
-test: ct eunit
+test: eunit ct
 
 lint:
 	${REBAR} as lint lint
@@ -82,7 +82,7 @@ DIALYZER_APPS = kernel stdlib erts sasl eunit syntax_tools compiler crypto
 
 include tools.mk
 
-## 
+##
 ## Container targets
 ##
 
