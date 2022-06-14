@@ -846,6 +846,10 @@ do_dispatch(#{name := Node}, ServerRef, Message, Channel, PartitionKey) ->
 -include_lib("eunit/include/eunit.hrl").
 -compile({no_auto_import, [nodes/0]}).
 
+init_test() ->
+    %% A hack to resolve node name
+    partisan_config:init().
+
 pid1() ->
     list_to_pid("<0.5001.0>").
 
