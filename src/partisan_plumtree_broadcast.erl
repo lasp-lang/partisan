@@ -137,10 +137,9 @@
 %% eager set and the lazy sets will be empty. When number of members is less
 %% than 5, each node will initially have one other node in its eager set and
 %% lazy set. If there are more than five nodes each node will have at most two
-%% other nodes in its eager set and one in its lazy set, initally.
+%% other nodes in its eager set and one in its lazy set, initially.
 %% In addition, after the broadcast server is started, a callback is registered
-%% with ring_events
-%% to generate membership updates as the ring changes.
+%% with ring_events to generate membership updates as the ring changes.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
@@ -190,11 +189,11 @@ start_link() ->
 %% a list of modules that may be handlers for broadcasted messages. All modules
 %% in `Mods' should implement the `partisan_plumtree_broadcast_handler'
 %% behaviour.
-%% `Opts' is a proplist with the following possible options:
-%%      Flush all outstanding lazy pushes period (in milliseconds)
-%%          {`lazy_tick_period', non_neg_integer()}
-%%      Possibly perform an exchange period (in milliseconds)
-%%          {`exchange_tick_period', non_neg_integer()}
+%% `Opts' is a proplist or map with the following possible options:
+%%  <ul>
+%%  <li> `lazy_tick_period :: non_neg_integer()' - Flush all outstanding lazy pushes period (in milliseconds)</li>
+%%  <li> `exchange_tick_period :: non_neg_integer()' - Possibly perform an exchange period (in milliseconds)</li>
+%% </ul>
 %%
 %% NOTE: When starting the server using start_link/2 no automatic membership update from
 %% ring_events is registered. Use start_link/0.
