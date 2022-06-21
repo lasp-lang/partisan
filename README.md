@@ -1,5 +1,4 @@
-Partisan
-=======================================================
+# Partisan
 
 [![Build Status](https://travis-ci.org/lasp-lang/partisan.svg?branch=master)](https://travis-ci.org/lasp-lang/partisan)
 
@@ -22,6 +21,13 @@ Partisan has many available peer service managers:
 * HyParView, hybrid partial view membership protocol, with TCP-based failure detection: `partisan_hyparview_peer_service_manager.`
 * Static topology: `partisan_static_peer_service_manager`.
 
-# Requirements
+## Requirements
 
 * Erlang/OTP 24+
+
+
+## Documentation
+Find the documentation at hex.pm or build yourself locally
+
+## Who is Partisan
+
