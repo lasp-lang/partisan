@@ -24,21 +24,30 @@
 -include("partisan_logger.hrl").
 -include("partisan.hrl").
 
--export([build_tree/3,
-         maybe_connect/1,
-         may_disconnect/1,
-         process_forward/2,
-         term_to_iolist/1,
-         gensym/1,
-         make_ref/0,
-         pid/0,
-         pid/1,
-         ref/1,
-         ref/2,
-         registered_name/1,
-         maps_append/3]).
+-export([build_tree/3]).
+-export([gensym/1]).
+-export([make_ref/0]).
+-export([maps_append/3]).
+-export([may_disconnect/1]).
+-export([maybe_connect/1]).
+-export([net_status/0]).
+-export([pid/0]).
+-export([pid/1]).
+-export([process_forward/2]).
+-export([ref/1]).
+-export([ref/2]).
+-export([registered_name/1]).
+-export([term_to_iolist/1]).
 
 -compile({no_auto_import, [make_ref/0, node/1]}).
+
+
+
+%% =============================================================================
+%% API
+%% =============================================================================
+
+
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
 %%      works by treating the list as an array-based tree where, for
@@ -468,3 +477,27 @@ maps_append(Key, Value, Map) ->
         [Value],
         Map
     ).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns `connected' if the host has at least one non-loopback network
+%% interface address. Otherwise returns `disconnected'.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec net_status() -> connected | disconnected.
+
+net_status() ->
+    L = net:getifaddrs(
+        fun
+            (#{addr  := #{family := Family}, flags := Flags})
+            when Family == inet orelse Family == inet6 ->
+			    not lists:member(loopback, Flags);
+            (_) ->
+                false
+            end
+    ),
+
+    case L == [] of
+        true -> disconnected;
+        false -> connected
+    end.
