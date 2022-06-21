@@ -14,6 +14,7 @@
 
 
 -export([from_term/1]).
+-export([from_term/2]).
 -export([is_local/1]).
 -export([is_name/1]).
 -export([is_pid/1]).
@@ -45,6 +46,21 @@ from_term(Term) ->
             encode_as_uri(Term);
         false ->
             encode_as_tuple(Term)
+    end.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec from_term(pid() | reference() | atom(), node()) -> binary() | no_return().
+
+from_term(Term, Node) ->
+    case partisan_config:get(remote_ref_as_uri, false) of
+        true ->
+            encode_as_uri(Term, Node);
+        false ->
+            encode_as_tuple(Term, Node)
     end.
 
 
@@ -168,7 +184,6 @@ is_name(_) ->
 %% =============================================================================
 
 
-
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc
@@ -176,18 +191,30 @@ is_name(_) ->
 %% -----------------------------------------------------------------------------
 -spec encode_as_uri(pid() | reference() | atom()) -> binary() | no_return().
 
-encode_as_uri(Pid) when erlang:is_pid(Pid) ->
-    Node = atom_to_binary(partisan:node()),
+encode_as_uri(Term) ->
+    encode_as_uri(Term, partisan:node()).
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec encode_as_uri(pid() | reference() | atom(), node()) ->
+    binary() | no_return().
+
+encode_as_uri(Pid, Node) when erlang:is_pid(Pid) ->
+    Node = atom_to_binary(Node),
     PidBin = untag(pid_to_list(Pid)),
     maybe_pad(<<"partisan:pid:", Node/binary, $:, PidBin/binary>>);
 
-encode_as_uri(Ref) when erlang:is_reference(Ref) ->
-    Node = atom_to_binary(partisan:node()),
+encode_as_uri(Ref, Node) when erlang:is_reference(Ref) ->
+    Node = atom_to_binary(Node),
     <<"#Ref", RefBin/binary>> = untag(ref_to_list(Ref)),
     maybe_pad(<<"partisan:ref:", Node/binary, $:, RefBin/binary>>);
 
-encode_as_uri(Name) when is_atom(Name) ->
-    Node = atom_to_binary(partisan:node(), utf8),
+encode_as_uri(Name, Node) when is_atom(Name) ->
+    Node = atom_to_binary(Node, utf8),
     NameBin = atom_to_binary(Name, utf8),
     maybe_pad(<<"partisan:name:", Node/binary, $:, NameBin/binary>>).
 
@@ -200,18 +227,27 @@ encode_as_uri(Name) when is_atom(Name) ->
 -spec encode_as_tuple(pid() | reference() | atom()) ->
     remote_ref() | no_return().
 
-encode_as_tuple(Pid) when erlang:is_pid(Pid) ->
-    Node = partisan:node(),
+encode_as_tuple(Term) ->
+    encode_as_tuple(Term, partisan:node()).
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec encode_as_tuple(pid() | reference() | atom(), node()) ->
+    remote_ref() | no_return().
+
+encode_as_tuple(Pid, Node) when erlang:is_pid(Pid) ->
     Encoded = {partisan_process_reference, pid_to_list(Pid)},
     {partisan_remote_reference, Node, Encoded};
 
-encode_as_tuple(Ref) when erlang:is_reference(Ref) ->
-    Node = partisan:node(),
+encode_as_tuple(Ref, Node) when erlang:is_reference(Ref) ->
     Encoded = {partisan_encoded_reference, erlang:ref_to_list(Ref)},
     {partisan_remote_reference, Node, Encoded};
 
-encode_as_tuple(Name) when is_atom(Name) ->
-    Node = partisan:node(),
+encode_as_tuple(Name, Node) when is_atom(Name) ->
     Encoded = {partisan_encoded_reference, atom_to_list(Name)},
     {partisan_registered_name_reference, Node, Encoded}.
 
