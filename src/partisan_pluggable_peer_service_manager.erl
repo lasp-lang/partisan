@@ -24,53 +24,55 @@
 -behaviour(partisan_peer_service_manager).
 
 -include("partisan_logger.hrl").
+-include("partisan.hrl").
 
 %% partisan_peer_service_manager callbacks
--export([start_link/0,
-         members/0,
-         member/1,
-         members_for_orchestration/0,
-         myself/0,
-         get_local_state/0,
-         join/1,
-         sync_join/1,
-         leave/0,
-         leave/1,
-         update_members/1,
-         on_down/2,
-         on_up/2,
-         send_message/2,
-         cast_message/3,
-         forward_message/2,
-         forward_message/3,
-         cast_message/4,
-         forward_message/4,
-         cast_message/5,
-         forward_message/5,
-         receive_message/2,
-         decode/1,
-         reserve/1,
-         partitions/0,
-         add_pre_interposition_fun/2,
-         remove_pre_interposition_fun/1,
-         add_interposition_fun/2,
-         remove_interposition_fun/1,
-         get_interposition_funs/0,
-         get_pre_interposition_funs/0,
-         add_post_interposition_fun/2,
-         remove_post_interposition_fun/1,
-         inject_partition/2,
-         resolve_partition/1]).
+-export([add_interposition_fun/2]).
+-export([add_post_interposition_fun/2]).
+-export([add_pre_interposition_fun/2]).
+-export([cast_message/3]).
+-export([cast_message/4]).
+-export([cast_message/5]).
+-export([decode/1]).
+-export([forward_message/2]).
+-export([forward_message/3]).
+-export([forward_message/4]).
+-export([forward_message/5]).
+-export([get_interposition_funs/0]).
+-export([get_local_state/0]).
+-export([get_pre_interposition_funs/0]).
+-export([inject_partition/2]).
+-export([join/1]).
+-export([leave/0]).
+-export([leave/1]).
+-export([member/1]).
+-export([members/0]).
+-export([members_for_orchestration/0]).
+-export([myself/0]).
+-export([on_down/2]).
+-export([on_up/2]).
+-export([partitions/0]).
+-export([receive_message/2]).
+-export([remove_interposition_fun/1]).
+-export([remove_post_interposition_fun/1]).
+-export([remove_pre_interposition_fun/1]).
+-export([reserve/1]).
+-export([resolve_partition/1]).
+-export([send_message/2]).
+-export([start_link/0]).
+-export([sync_join/1]).
+-export([update_members/1]).
+
 
 %% gen_server callbacks
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([init/1]).
+-export([handle_call/3]).
+-export([handle_cast/2]).
+-export([handle_info/2]).
+-export([terminate/2]).
+-export([code_change/3]).
 
--include("partisan.hrl").
+
 
 
 -define(SET_FROM_LIST(L), sets:from_list(L, [{version, 2}])).
@@ -105,9 +107,14 @@
 
 -type state_t() :: #state{}.
 
-%%%===================================================================
-%%% partisan_peer_service_manager callbacks
-%%%===================================================================
+
+
+
+
+%% =============================================================================
+%% partisan_peer_service_manager callbacks
+%% =============================================================================
+
 
 %% @doc Same as start_link([]).
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
@@ -249,7 +256,8 @@ when is_map(Options) ->
                     CausalLabel =
                         maps:get(causal_label, Options, undefined),
 
-                    %% Get forwarding options and combine with message specific options.
+                    %% Get forwarding options and combine with message
+                    %% specific options.
                     ForwardOptions = maps:merge(Options, forward_options()),
 
                     %% Use configuration to disable fast forwarding.
@@ -261,14 +269,12 @@ when is_map(Options) ->
                     %% Conditions:
                     %% - not labeled for causal delivery
                     %% - message does not need acknowledgements
-                    %%
-                    FastForward = not (CausalLabel =/= undefined)
-                                andalso not ShouldAck
-                                andalso not DisableFastForward,
+                    %% - fastforward is not disabled
+                    FastForward =
+                        not (CausalLabel =/= undefined)
+                        andalso not ShouldAck
+                        andalso not DisableFastForward,
 
-                    %% TODO Unless we need this properties to change in runtime,
-                    %% we should store most of these options in the gen_server
-                    %% state on init
                     BinaryPadding = partisan_config:get(binary_padding, false),
 
                     PaddedMessage = case BinaryPadding of
@@ -295,7 +301,7 @@ when is_map(Options) ->
 
                     case FastForward of
                         true ->
-                            %% Attempt to fast-path by accesing the conneciton
+                            %% Attempt to fast-path by accesing the connection
                             %% directly
                             case partisan_peer_connections:dispatch(FullMessage) of
                                 ok ->
@@ -834,10 +840,14 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
             {LocalClock, Message};
         CausalLabel ->
             case Clock of
-                %% First time through.
                 undefined ->
-                    %% We don't have a clock yet, get one using the causality backend.
-                    {ok, LocalClock0, CausalMessage} = partisan_causality_backend:emit(CausalLabel, Name, ServerRef, Message),
+                    %% First time through.
+                    %% We don't have a clock yet,
+                    %% get one using the causality backend.
+                    {ok, LocalClock0, CausalMessage} =
+                        partisan_causality_backend:emit(
+                            CausalLabel, Name, ServerRef, Message
+                        ),
 
                     %% Wrap the clock wih a scope.
                     %% TODO: Maybe do this wrapping inside of the causality backend.
@@ -845,10 +855,12 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
 
                     %% Return clock and wrapped message.
                     {LocalClock, CausalMessage};
-                %% Retransmission.
+
                 _ ->
+                    %% Retransmission.
                     %% Get the clock and message we used last time.
-                    {ok, LocalClock, CausalMessage} = partisan_causality_backend:reemit(CausalLabel, Clock),
+                    {ok, LocalClock, CausalMessage} =
+                        partisan_causality_backend:reemit(CausalLabel, Clock),
 
                     %% Return clock and wrapped message.
                     {LocalClock, CausalMessage}
@@ -865,8 +877,20 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                     %% Acknowledgements.
                     case maps:get(retransmission, Options, false) of
                         false ->
-                            RescheduleableMessage = {forward_message, From, Name, Channel, MessageClock, PartitionKey, ServerRef, OriginalMessage, Options},
-                            partisan_acknowledgement_backend:store(MessageClock, RescheduleableMessage);
+                            RescheduleableMessage = {
+                                forward_message,
+                                From,
+                                Name,
+                                Channel,
+                                MessageClock,
+                                PartitionKey,
+                                ServerRef,
+                                OriginalMessage,
+                                Options
+                            },
+                            partisan_acknowledgement_backend:store(
+                                MessageClock, RescheduleableMessage
+                            );
                         true ->
                             ok
                     end
@@ -892,6 +916,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
             end,
 
             {noreply, State#state{vclock=VClock}};
+
         {'$delay', NewMessage} ->
             ?LOG_DEBUG(
                 "Delaying receive_message due to interposition result: ~p",
@@ -899,28 +924,35 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
             ),
             gen_server:cast(?MODULE, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, NewMessage, Options}),
             {noreply, State};
+
         _ ->
             %% Store for reliability, if necessary.
             Result = case maps:get(ack, Options, false) of
                 false ->
                     %% Tracing.
                     WrappedMessage = {forward_message, ServerRef, FullMessage},
-                    WrappedOriginalMessage = {forward_message, ServerRef, OriginalMessage},
+                    WrappedOriginalMessage =
+                        {forward_message, ServerRef, OriginalMessage},
 
                     %% Fire post-interposition functions -- trace after wrapping!
                     PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
-                        PostInterpositionFun({forward_message, Name, WrappedOriginalMessage}, {forward_message, Name, WrappedMessage}),
+                        PostInterpositionFun(
+                            {forward_message, Name, WrappedOriginalMessage},
+                            {forward_message, Name, WrappedMessage}
+                        ),
                         ok
                     end,
                     maps:fold(PostFoldFun, ok, PostInterpositionFuns),
 
                     %% Send message along.
-                    do_send_message(Name,
-                                    Channel,
-                                    PartitionKey,
-                                    WrappedMessage,
-                                    Options,
-                                    PreInterpositionFuns);
+                    do_send_message(
+                        Name,
+                        Channel,
+                        PartitionKey,
+                        WrappedMessage,
+                        Options,
+                        PreInterpositionFuns
+                    );
                 true ->
                     %% Tracing.
                     WrappedOriginalMessage = {forward_message, partisan:node(), MessageClock, ServerRef, OriginalMessage},
@@ -932,7 +964,10 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
 
                     %% Fire post-interposition functions -- trace after wrapping!
                     PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
-                        PostInterpositionFun({forward_message, Name, WrappedOriginalMessage}, {forward_message, Name, WrappedMessage}),
+                        PostInterpositionFun(
+                            {forward_message, Name, WrappedOriginalMessage},
+                            {forward_message, Name, WrappedMessage}
+                        ),
                         ok
                     end,
                     maps:fold(PostFoldFun, ok, PostInterpositionFuns),
@@ -949,19 +984,33 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                     %% Acknowledgements.
                     case maps:get(retransmission, Options, false) of
                         false ->
-                            RescheduleableMessage = {forward_message, From, Name, Channel, MessageClock, PartitionKey, ServerRef, OriginalMessage, Options},
-                            partisan_acknowledgement_backend:store(MessageClock, RescheduleableMessage);
+                            RescheduleableMessage = {
+                                forward_message,
+                                From,
+                                Name,
+                                Channel,
+                                MessageClock,
+                                PartitionKey,
+                                ServerRef,
+                                OriginalMessage,
+                                Options
+                            },
+                            partisan_acknowledgement_backend:store(
+                                MessageClock, RescheduleableMessage
+                            );
                         true ->
                             ok
                     end,
 
                     %% Send message along.
-                    do_send_message(Name,
-                                    Channel,
-                                    PartitionKey,
-                                    WrappedMessage,
-                                    Options,
-                                    PreInterpositionFuns)
+                    do_send_message(
+                        Name,
+                        Channel,
+                        PartitionKey,
+                        WrappedMessage,
+                        Options,
+                        PreInterpositionFuns
+                    )
             end,
 
             case From of
@@ -973,6 +1022,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
 
             {noreply, State#state{vclock=VClock}}
     end;
+
 handle_cast(Event, State) ->
     ?LOG_WARNING(#{description => "Unhandled cast event", event => Event}),
     {noreply, State}.
