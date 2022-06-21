@@ -50,6 +50,7 @@ init([]) ->
     partisan_config:init(),
 
     Children = lists:flatten([
+        ?CHILD(partisan_inet, worker),
         ?CHILD(partisan_rpc_backend, worker),
         ?CHILD(partisan_acknowledgement_backend, worker),
         ?CHILD(partisan_orchestration_backend, worker),

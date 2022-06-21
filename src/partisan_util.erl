@@ -30,7 +30,6 @@
 -export([maps_append/3]).
 -export([may_disconnect/1]).
 -export([maybe_connect/1]).
--export([net_status/0]).
 -export([pid/0]).
 -export([pid/1]).
 -export([process_forward/2]).
@@ -479,25 +478,3 @@ maps_append(Key, Value, Map) ->
     ).
 
 
-%% -----------------------------------------------------------------------------
-%% @doc Returns `connected' if the host has at least one non-loopback network
-%% interface address. Otherwise returns `disconnected'.
-%% @end
-%% -----------------------------------------------------------------------------
--spec net_status() -> connected | disconnected.
-
-net_status() ->
-    L = net:getifaddrs(
-        fun
-            (#{addr  := #{family := Family}, flags := Flags})
-            when Family == inet orelse Family == inet6 ->
-			    not lists:member(loopback, Flags);
-            (_) ->
-                false
-            end
-    ),
-
-    case L == [] of
-        true -> disconnected;
-        false -> connected
-    end.
