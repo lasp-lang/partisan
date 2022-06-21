@@ -37,7 +37,7 @@
 
 -callback start_link() -> {ok, pid()} | ignore | {error, term()}.
 
--callback members() -> [name()]. %% TODO: Deprecate me.
+-callback members() -> [node()]. %% TODO: Deprecate me.
 -callback members_for_orchestration() -> [node_spec()].
 -callback myself() -> node_spec().
 
@@ -50,29 +50,34 @@
 
 -callback update_members([node()]) -> ok | {error, not_implemented}.
 
--callback send_message(name(), message()) -> ok.
--callback receive_message(name(), message()) -> ok.
+-callback send_message(node(), message()) -> ok.
 
--callback forward_message({partisan_remote_reference, name(), atom()}, message()) -> ok.
+-callback receive_message(node(), message()) -> ok.
 
--callback cast_message(name(), pid(), message()) -> ok.
--callback forward_message(name(), pid(), message()) -> ok.
+-callback cast_message(node(), pid(), message()) -> ok.
+-callback cast_message(node(), channel(), pid(), message()) -> ok.
+-callback cast_message(node(), channel(), pid(), message(), options()) -> ok.
 
--callback cast_message(name(), channel(), pid(), message()) -> ok.
--callback forward_message(name(), channel(), pid(), message()) -> ok.
+-callback forward_message(
+    partisan_remote_ref:p() | partisan_remote_ref:n() | pid() | atom(),
+    message()) -> ok.
+-callback forward_message(node(), pid(), message()) -> ok.
+-callback forward_message(node(), channel(), pid(), message()) -> ok.
+-callback forward_message(node(), channel(), pid(), message(), options()) -> ok.
 
--callback cast_message(name(), channel(), pid(), message(), options()) -> ok.
--callback forward_message(name(), channel(), pid(), message(), options()) -> ok.
+-callback on_down(node(), function()) -> ok | {error, not_implemented}.
 
--callback on_down(name(), function()) -> ok | {error, not_implemented}.
--callback on_up(name(), function()) -> ok | {error, not_implemented}.
+-callback on_up(node(), function()) -> ok | {error, not_implemented}.
 
 -callback decode(term()) -> term().
 
 -callback reserve(atom()) -> ok | {error, no_available_slots}.
 
 -callback partitions() -> {ok, partitions()} | {error, not_implemented}.
--callback inject_partition(node_spec(), ttl()) -> {ok, reference()} | {error, not_implemented}.
+
+-callback inject_partition(node_spec(), ttl()) ->
+    {ok, reference()} | {error, not_implemented}.
+
 -callback resolve_partition(reference()) -> ok | {error, not_implemented}.
 
 
