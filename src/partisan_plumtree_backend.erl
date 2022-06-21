@@ -122,6 +122,9 @@ exchange(_Peer) ->
     %% about reliable delivery: we always know we'll have another
     %% message to further repair duing the next interval.
     %%
+    %% TODO change exchange callback so that we can return `ignore` and force
+    %% the plumtree_broadcast to count this as a success, or have another
+    %% callback to check if exchanges are enabled
     Pid = spawn_link(fun() -> ok end),
     {ok, Pid}.
 
