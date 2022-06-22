@@ -21,6 +21,7 @@
 -export([is_reference/1]).
 -export([is_type/1]).
 -export([node/1]).
+-export([nodestring/1]).
 -export([to_term/1]).
 
 
@@ -93,6 +94,28 @@ node({partisan_remote_reference, Node, _}) ->
     Node;
 
 node(_) ->
+    error(badarg).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec nodestring(Bin :: binary()) -> binary() | no_return().
+
+nodestring(<<"partisan:pid:", Rest/binary>>) ->
+    get_nodestring(Rest);
+
+nodestring(<<"partisan:ref:", Rest/binary>>) ->
+    get_nodestring(Rest);
+
+nodestring(<<"partisan:name:", Rest/binary>>) ->
+    get_nodestring(Rest);
+
+nodestring({partisan_remote_reference, Node, _}) ->
+    atom_to_binary(Node, utf8);
+
+nodestring(_) ->
     error(badarg).
 
 
@@ -192,7 +215,7 @@ is_name(_) ->
 -spec encode_as_uri(pid() | reference() | atom()) -> binary() | no_return().
 
 encode_as_uri(Term) ->
-    encode_as_uri(Term, partisan:node()).
+    encode_as_uri(Term, partisan:nodestring()).
 
 
 %% -----------------------------------------------------------------------------
@@ -200,23 +223,23 @@ encode_as_uri(Term) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec encode_as_uri(pid() | reference() | atom(), node()) ->
+-spec encode_as_uri(pid() | reference() | atom(), node() | binary()) ->
     binary() | no_return().
 
-encode_as_uri(Pid, Node) when erlang:is_pid(Pid) ->
-    Node = atom_to_binary(Node),
+encode_as_uri(Term, Node) when is_atom(Node) ->
+    encode_as_uri(Term, atom_to_binary(Node, utf8));
+
+encode_as_uri(Pid, Nodestring) when erlang:is_pid(Pid) ->
     PidBin = untag(pid_to_list(Pid)),
-    maybe_pad(<<"partisan:pid:", Node/binary, $:, PidBin/binary>>);
+    maybe_pad(<<"partisan:pid:", Nodestring/binary, $:, PidBin/binary>>);
 
-encode_as_uri(Ref, Node) when erlang:is_reference(Ref) ->
-    Node = atom_to_binary(Node),
+encode_as_uri(Ref, Nodestring) when erlang:is_reference(Ref) ->
     <<"#Ref", RefBin/binary>> = untag(ref_to_list(Ref)),
-    maybe_pad(<<"partisan:ref:", Node/binary, $:, RefBin/binary>>);
+    maybe_pad(<<"partisan:ref:", Nodestring/binary, $:, RefBin/binary>>);
 
-encode_as_uri(Name, Node) when is_atom(Name) ->
-    Node = atom_to_binary(Node, utf8),
+encode_as_uri(Name, Nodestring) when is_atom(Name) ->
     NameBin = atom_to_binary(Name, utf8),
-    maybe_pad(<<"partisan:name:", Node/binary, $:, NameBin/binary>>).
+    maybe_pad(<<"partisan:name:", Nodestring/binary, $:, NameBin/binary>>).
 
 
 %% -----------------------------------------------------------------------------
@@ -283,17 +306,22 @@ decode({partisan_remote_reference, Node, {Type, Value}}) ->
     Node =:= partisan:node() orelse error(badarg),
     case Type of
         partisan_process_reference -> list_to_pid(Value);
-        partisan_encoded_reference -> erlang:ref_to_list(Value);
+        partisan_encoded_reference -> list_to_ref(Value);
         partisan_registered_name_reference -> list_to_atom(Value)
     end.
 
 
-
 %% @private
 get_node(Bin) ->
+    Nodestring = get_nodestring(Bin),
+    binary_to_existing_atom(Nodestring, utf8).
+
+
+%% @private
+get_nodestring(Bin) ->
     case binary:split(Bin, <<$:>>) of
         [Node | _]  ->
-            binary_to_existing_atom(Node, utf8);
+            Node;
         _ ->
             error(badarg)
     end.
@@ -342,3 +370,115 @@ maybe_pad(Bin) when byte_size(Bin) < 65 ->
 
 maybe_pad(Bin) ->
     Bin.
+
+
+%% =============================================================================
+%% EUNIT TESTS
+%% =============================================================================
+
+
+
+-ifdef(TEST).
+
+-include_lib("eunit/include/eunit.hrl").
+
+init_test() ->
+    %% A hack to resolve node name
+    partisan_config:init(),
+    partisan_config:set(name, 'test@127.0.0.1'),
+    partisan_config:set(nodestring, <<"test@127.0.0.1">>),
+    ok.
+
+
+local_pid_test() ->
+    partisan_config:set(remote_ref_as_uri, false),
+    Ref = from_term(self()),
+    ?assert(is_pid(Ref)),
+    ?assert(not is_reference(Ref)),
+    ?assert(not is_name(Ref)),
+    ?assert(is_type(Ref)),
+    ?assert(is_local(Ref)),
+    ?assertEqual(partisan:node(), ?MODULE:node(Ref)),
+    ?assertEqual(partisan:nodestring(), ?MODULE:nodestring(Ref)),
+    ?assertEqual(
+        self(),
+        to_term(Ref)
+    ),
+
+    partisan_config:set(remote_ref_as_uri, true),
+    UriRef = from_term(self()),
+    ?assert(is_pid(UriRef)),
+    ?assert(not is_reference(UriRef)),
+    ?assert(not is_name(UriRef)),
+    ?assert(is_type(UriRef)),
+    ?assert(is_local(UriRef)),
+    ?assertEqual(partisan:node(), ?MODULE:node(UriRef)),
+    ?assertEqual(partisan:nodestring(), ?MODULE:nodestring(UriRef)),
+    ?assertEqual(
+        self(),
+        to_term(UriRef)
+    ).
+
+
+local_name_test() ->
+    partisan_config:set(remote_ref_as_uri, false),
+    Ref = from_term(foo),
+    ?assert(not is_pid(Ref)),
+    ?assert(not is_reference(Ref)),
+    ?assert(is_name(Ref)),
+    ?assert(is_type(Ref)),
+    ?assert(is_local(Ref)),
+    ?assertEqual(partisan:node(), ?MODULE:node(Ref)),
+    ?assertEqual(partisan:nodestring(), ?MODULE:nodestring(Ref)),
+    ?assertEqual(
+        foo,
+        to_term(Ref)
+    ),
+
+    partisan_config:set(remote_ref_as_uri, true),
+    UriRef = from_term(foo),
+    ?assert(not is_pid(UriRef)),
+    ?assert(not is_reference(UriRef)),
+    ?assert(is_name(UriRef)),
+    ?assert(is_type(UriRef)),
+    ?assert(is_local(UriRef)),
+    ?assertEqual(partisan:node(), ?MODULE:node(UriRef)),
+    ?assertEqual(partisan:nodestring(), ?MODULE:nodestring(UriRef)),
+    ?assertEqual(
+        foo,
+        to_term(UriRef)
+    ).
+
+local_ref_test() ->
+    ERef = make_ref(),
+    partisan_config:set(remote_ref_as_uri, false),
+    Ref = from_term(ERef),
+    ?assert(not is_pid(Ref)),
+    ?assert(is_reference(Ref)),
+    ?assert(not is_name(Ref)),
+    ?assert(is_type(Ref)),
+    ?assert(is_local(Ref)),
+    ?assertEqual(partisan:node(), ?MODULE:node(Ref)),
+    ?assertEqual(partisan:nodestring(), ?MODULE:nodestring(Ref)),
+    ?assertEqual(
+        ERef,
+        to_term(Ref)
+    ),
+
+    partisan_config:set(remote_ref_as_uri, true),
+    UriRef = from_term(ERef),
+    ?assert(not is_pid(UriRef)),
+    ?assert(is_reference(UriRef)),
+    ?assert(not is_name(UriRef)),
+    ?assert(is_type(UriRef)),
+    ?assert(is_local(UriRef)),
+    ?assertEqual(partisan:node(), ?MODULE:node(UriRef)),
+    ?assertEqual(partisan:nodestring(), ?MODULE:nodestring(UriRef)),
+    ?assertEqual(
+        ERef,
+        to_term(UriRef)
+    ).
+
+
+
+-endif.
