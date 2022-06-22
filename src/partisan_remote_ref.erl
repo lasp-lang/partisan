@@ -282,7 +282,7 @@ decode(<<"partisan:", Rest/binary>>) ->
 decode({partisan_remote_reference, Node, {Type, Value}}) ->
     Node =:= partisan:node() orelse error(badarg),
     case Type of
-        partisan_remote_reference -> list_to_pid(Value);
+        partisan_process_reference -> list_to_pid(Value);
         partisan_encoded_reference -> erlang:ref_to_list(Value);
         partisan_registered_name_reference -> list_to_atom(Value)
     end.
