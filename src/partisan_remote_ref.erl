@@ -248,8 +248,8 @@ encode_as_tuple(Ref, Node) when erlang:is_reference(Ref) ->
     {partisan_remote_reference, Node, Encoded};
 
 encode_as_tuple(Name, Node) when is_atom(Name) ->
-    Encoded = {partisan_encoded_reference, atom_to_list(Name)},
-    {partisan_registered_name_reference, Node, Encoded}.
+    Encoded = {partisan_registered_name_reference, atom_to_list(Name)},
+    {partisan_remote_reference, Node, Encoded}.
 
 
 %% -----------------------------------------------------------------------------
