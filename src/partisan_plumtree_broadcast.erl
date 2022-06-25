@@ -21,8 +21,6 @@
 
 -behaviour(gen_server).
 
-
-
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
 
@@ -61,6 +59,7 @@
 %% destination
 %% These are stored in the ?PLUMTREE_OUTSTANDING ets table under using nodename
 %% as key.
+%% PLUMTREE_OUTSTANDING is created and owned by partisan_sup
 -type outstanding()     :: {message_id(), module(), message_round(), node()}.
 -type exchange()        :: {module(), node(), reference(), pid()}.
 -type exchanges()       :: [exchange()].
@@ -473,10 +472,12 @@ handle_info(lazy_tick, #state{lazy_tick_period = Period} = State) ->
     ok = send_lazy(),
     schedule_lazy_tick(Period),
     {noreply, State};
+
 handle_info(exchange_tick, #state{exchange_tick_period = Period} = State) ->
     State1 = maybe_exchange(State),
     schedule_exchange_tick(Period),
     {noreply, State1};
+
 handle_info(
     {'DOWN', Ref, process, _Pid, _Reason}, State=#state{exchanges=Exchanges}) ->
     Exchanges1 = lists:keydelete(Ref, 3, Exchanges),
@@ -588,8 +589,10 @@ neighbors_down(Removed, #state{} = State) ->
 
     %% delete outstanding messages to removed peers
     ok = ordsets:fold(
-        fun(RPeer, Acc) ->
-            _ = ets:delete(?PLUMTREE_OUTSTANDING, RPeer),
+        fun(Peer, Acc) ->
+            %% PLUMTREE_OUTSTANDING is a duplicate bag, so delete will delete
+            %% all messages for the removed Peer
+            _ = ets:delete(?PLUMTREE_OUTSTANDING, Peer),
             Acc
         end,
         ok,
