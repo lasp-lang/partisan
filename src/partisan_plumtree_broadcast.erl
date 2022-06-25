@@ -635,13 +635,28 @@ schedule_lazy_push(MessageId, Mod, Round, Root, From, State) ->
 
 
 send_lazy() ->
-    ok = ets:foldl(
-        fun({Peer, Message}, Acc) ->
-            ok = send_lazy(Message, Peer), Acc
+    _ = ets:foldl(
+        fun
+            ({Peer, Message}, {Peer, true} = Acc) ->
+                ok = send_lazy(Message, Peer),
+                Acc;
+            ({Peer, _}, {Peer, false} = Acc) ->
+                %% We skip sending
+                Acc;
+            ({Peer, Message}, _) ->
+                case partisan:is_connected(Peer) of
+                    true ->
+                        ok = send_lazy(Message, Peer),
+                        {Peer, true};
+                    false ->
+                        %% We skip sending
+                        {Peer, false}
+                end
         end,
-        ok,
+        undefined,
         ?PLUMTREE_OUTSTANDING
-    ).
+    ),
+    ok.
 
 
 -spec send_lazy(outstanding(), node()) -> ok.
