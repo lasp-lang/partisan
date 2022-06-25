@@ -122,7 +122,11 @@ handle_cast({send_message, Message}, #state{channel=_Channel, socket=Socket}=Sta
             ?LOG_TRACE("Dispatched message: ~p", [Message]),
             ok;
         Error ->
-            ?LOG_INFO("Message ~p failed to send: ~p", [Message, Error])
+            ?LOG_INFO(#{
+                description => "Failed to send message",
+                message => Message,
+                error => Error
+            })
     end,
     {noreply, State};
 handle_cast(Event, State) ->
