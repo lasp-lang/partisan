@@ -217,6 +217,9 @@ is_connected(#{name := Node}) ->
     NodeOrSpec :: node_spec() | node(),
     Channel :: channel_spec() | [channel_spec()]) -> boolean() | no_return().
 
+is_connected(Node, {monotonic, Channel}) when is_atom(Node) ->
+    is_connected(Node, Channel);
+
 is_connected(Node, Channel) when is_atom(Node) ->
     Node =:= partisan:node() orelse connection_count(Node, Channel) > 0;
 
@@ -296,6 +299,12 @@ connection_count(#partisan_peer_info{connection_count = Val}) ->
     Channel :: channel_spec() | [channel_spec()]) ->
     non_neg_integer() | no_return().
 
+connection_count(Node, Channel) when is_atom(Channel) ->
+    connection_count(Node, [Channel]);
+
+connection_count(Node, {monotonic, Channel} = Spec) when is_atom(Channel) ->
+    connection_count(Node, [Spec]);
+
 connection_count(Node, Channels) when is_atom(Node), is_list(Channels) ->
     Pattern = #partisan_peer_connection{
         pid = '_',
@@ -305,9 +314,8 @@ connection_count(Node, Channels) when is_atom(Node), is_list(Channels) ->
     },
 
     MS = [
-        {Pattern, [{'==', '$1', Channel}], [true]}
+        {Pattern, [{'==', '$1', ms_channel(Channel)}], [true]}
         ||  Channel <- Channels, validate_channel_spec(Channel)
-
     ],
 
     try
@@ -317,14 +325,11 @@ connection_count(Node, Channels) when is_atom(Node), is_list(Channels) ->
             0
     end;
 
-connection_count(Node, Channel) when is_atom(Node) ->
-    connection_count(Node, [Channel]);
+connection_count(#{name := Node}, Channels) ->
+    connection_count(Node, Channels);
 
-connection_count(#{name := Node}, Channel) ->
-    connection_count(Node, Channel);
-
-connection_count(#partisan_peer_info{node = Node}, Channel) ->
-    connection_count(Node, Channel).
+connection_count(#partisan_peer_info{node = Node}, Channels) ->
+    connection_count(Node, Channels).
 
 
 %% -----------------------------------------------------------------------------
@@ -765,6 +770,14 @@ validate_channel_spec({monotonic, Channel}) when is_atom(Channel) ->
 
 validate_channel_spec(Term) ->
     error({badarg, Term}).
+
+
+%% @private
+ms_channel({monotonic, _} = Channel) ->
+    {Channel};
+
+ms_channel(Channel) ->
+    Channel.
 
 
 %% @private
