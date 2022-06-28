@@ -782,8 +782,8 @@ send(Dest, Msg) ->
         _ ->
             {partisan:node(), Dest}
     end,
-    partisan_pluggable_peer_service_manager:forward_message(
-        Node, partisan_gen:get_channel(), Process, Msg, []
+    partisan:forward_message(
+        Node, Process, Msg, #{channel => partisan_gen:get_channel()}
     ).
 
 

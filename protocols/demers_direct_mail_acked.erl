@@ -22,6 +22,8 @@
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+-include("partisan.hrl").
+
 %% API
 -export([start_link/0,
          stop/0,
@@ -90,7 +92,7 @@ handle_cast({broadcast, ServerRef, Message}, #state{next_id=NextId, membership=M
     Id = {MyNode, NextId},
 
     %% Forward to process.
-    partisan_util:process_forward(ServerRef, Message),
+    partisan_peer_service_manager:process_forward(ServerRef, Message),
 
     %% Store outgoing message.
     true = ets:insert(?MODULE, {Id, Message}),
@@ -98,7 +100,12 @@ handle_cast({broadcast, ServerRef, Message}, #state{next_id=NextId, membership=M
     %% Forward message.
     lists:foreach(fun(N) ->
         partisan_logger:info("~p: sending broadcast message to node ~p: ~p", [node(), N, Message]),
-        partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {broadcast, Id, ServerRef, Message}, [{ack, true}])
+        partisan:forward_message(
+            N,
+            ?MODULE,
+            {broadcast, Id, ServerRef, Message},
+            #{channel => ?DEFAULT_CHANNEL, ack => true}
+        )
     end, membership(Membership) -- [MyNode]),
 
     {noreply, State};
@@ -117,7 +124,7 @@ handle_info({broadcast, Id, ServerRef, Message}, State) ->
     case ets:lookup(?MODULE, Id) of
         [] ->
             %% Forward to process.
-            partisan_util:process_forward(ServerRef, Message),
+            partisan_peer_service_manager:process_forward(ServerRef, Message),
 
             %% Store.
             true = ets:insert(?MODULE, {Id, Message}),

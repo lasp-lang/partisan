@@ -412,7 +412,7 @@ decode(<<"partisan:", Rest/binary>>, Mode) ->
              binary_to_existing_atom(Term, utf8);
 
         [<<"name">>, Node, Term | _] when Node == ThisNode, Mode == target ->
-            {partisan_registered_name_reference, Term};
+            {partisan_registered_name_reference, binary_to_list(Term)};
 
         _ ->
             error(badarg)
@@ -453,8 +453,6 @@ decode({partisan_registered_name_reference, _} = Target, target) ->
 
 decode({partisan_registered_name_reference, Value}, term) ->
     list_to_existing_atom(Value).
-
-
 
 
 %% @private
@@ -572,7 +570,7 @@ local_pid_test() ->
         to_term(Ref)
     ),
     ?assertEqual(
-        {partisan_process_reference, pid_to_list(self())}
+        {partisan_process_reference, pid_to_list(self())},
         target(Ref)
     ),
 
@@ -590,7 +588,7 @@ local_pid_test() ->
         to_term(UriRef)
     ),
     ?assertEqual(
-        {partisan_process_reference, pid_to_list(self())}
+        {partisan_process_reference, pid_to_list(self())},
         target(UriRef)
     ).
 
@@ -609,6 +607,10 @@ local_name_test() ->
         foo,
         to_term(Ref)
     ),
+    ?assertEqual(
+        {partisan_registered_name_reference, "foo"},
+        target(Ref)
+    ),
 
     partisan_config:set(remote_ref_as_uri, true),
     UriRef = from_term(foo),
@@ -622,6 +624,10 @@ local_name_test() ->
     ?assertEqual(
         foo,
         to_term(UriRef)
+    ),
+    ?assertEqual(
+        {partisan_registered_name_reference, "foo"},
+        target(UriRef)
     ).
 
 local_ref_test() ->

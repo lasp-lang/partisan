@@ -2,6 +2,7 @@
 
 -behaviour(gen_server).
 
+-include("partisan.hrl").
 -include("partisan_logger.hrl").
 
 -export([start_link/6, submit_transaction/2, start_on_demand/1, get_blocks/1, get_status/1, get_buf/1, stop/1, terminate/2]).
@@ -210,7 +211,12 @@ dispatch({NewHBBFT, {result, {signature, Sig}}}, _Msg, State = #state{tempblock=
                     Process = global:whereis_name(name(Dest)),
                     Node = node(Process),
                     Message = {block, NewBlock},
-                    ok = partisan_pluggable_peer_service_manager:cast_message(Node, undefined, Process, Message, [])
+                    ok = partisan:cast_message(
+                        Node,
+                        Process,
+                        Message,
+                        #{channel => ?DEFAULT_CHANNEL}
+                    )
                 catch
                     _:_ ->
                         %% Node might have gone offline.
@@ -246,7 +252,12 @@ do_send([{unicast, Dest, Msg}|T], State) ->
                 Node = node(Process),
                 Message = {hbbft, State#state.id, Msg},
                 ?LOG_INFO("Sending partisan message to node ~p process ~p: ~p", [Node, Process, Message]),
-                ok = partisan_pluggable_peer_service_manager:cast_message(Node, undefined, Process, Message, [])
+                ok = partisan:cast_message(
+                    Node,
+                    Process,
+                    Message,
+                    #{channel => ?DEFAULT_CHANNEL}
+                )
             catch
                 _:_ ->
                     %% Node might have gone offline.
@@ -266,7 +277,9 @@ do_send([{multicast, Msg}|T], State) ->
                     Node = node(Process),
                     Message = {hbbft, State#state.id, Msg},
                     ?LOG_INFO("Sending partisan message to node ~p process ~p: ~p", [Node, Process, Message]),
-                    ok = partisan_pluggable_peer_service_manager:cast_message(Node, undefined, Process, Message, [])
+                    ok = partisan:cast_message(
+                        Node, Process, Message, #{channel => ?DEFAULT_CHANNEL}
+                    )
                 catch
                     _:_ ->
                         %% Node might have gone offline.

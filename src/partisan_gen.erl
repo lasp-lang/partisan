@@ -366,7 +366,7 @@ end.
 %     Alias ! {Tag, Reply}, ok;
 reply({To, Tag}, Reply) ->
     % try To ! {Tag, Reply}, ok catch _:_ -> ok end.
-    partisan_pluggable_peer_service_manager:forward_message(To, {Tag, Reply}).
+    partisan:forward_message(To, {Tag, Reply}).
 
 
 %%-----------------------------------------------------------------
@@ -606,8 +606,8 @@ do_send_request(Process, Label, Request) ->
         message => Message
     }),
 
-    partisan_pluggable_peer_service_manager:forward_message(
-        Node, get_channel(), ServerRef, Message, []
+    partisan:forward_message(
+        Node, ServerRef, Message, #{channel => get_channel()}
     ),
 
     Ref.

@@ -19,6 +19,7 @@
 %%
 -module(partisan_gen_fsm).
 
+-include("partisan.hrl").
 -include("partisan_logger.hrl").
 
 %%%-----------------------------------------------------------------
@@ -253,7 +254,12 @@ send_event(Name, Event) ->
 		to => Node,
 		process => Name
 	}),
-	partisan_pluggable_peer_service_manager:forward_message(Node, undefined, Process, {'$gen_event', Event}, []),
+	partisan:forward_message(
+		Node,
+		Process,
+		{'$gen_event', Event},
+		#{channel => ?DEFAULT_CHANNEL}
+	),
 	ok.
 
 sync_send_event(Name, Event) ->
@@ -300,8 +306,8 @@ send_all_state_event(Name, Event) ->
 		process => Process,
 		event => Event
 	}),
-	partisan_pluggable_peer_service_manager:forward_message(
-		Node, undefined, Process, {'$gen_all_state_event', Event}, []
+	partisan:forward_message(
+		Node, Process, {'$gen_all_state_event', Event}, #{channel => ?DEFAULT_CHANNEL}
 	),
 	ok.
 
@@ -624,7 +630,7 @@ from(_) -> undefined.
 
 %% Send a reply to the client.
 reply({To, Tag}, Reply) ->
-	partisan_pluggable_peer_service_manager:forward_message(To, {Tag, Reply}).
+	partisan:forward_message(To, {Tag, Reply}).
 
 reply(Name, {To, Tag}, Reply, Debug, StateName) ->
     reply({To, Tag}, Reply),

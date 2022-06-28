@@ -527,8 +527,8 @@ do_send(Dest, Msg) ->
         _ ->
             {partisan:node(), Dest}
     end,
-    partisan_pluggable_peer_service_manager:forward_message(
-        Node, partisan_gen:get_channel(), Process, Msg, []
+    partisan:forward_message(
+        Node, Process, Msg, #{channel => partisan_gen:get_channel()}
     ).
 
 do_multi_call(Nodes, Name, Req, infinity) ->
@@ -592,12 +592,11 @@ send_nodes([Node|Tail], Name, Tag, Req, _Monitors)
   when is_atom(Node) ->
     % Monitor = start_monitor(Node, Name),
     %% Handle non-existing names in rec_nodes.
-    partisan_pluggable_peer_service_manager:forward_message(
+    partisan:forward_message(
         Node,
-        partisan_gen:get_channel(),
         Name,
         {'$gen_call', {self(), {Tag, Node}}, Req},
-        []
+        #{channel => partisan_gen:get_channel()}
     ),
     % catch {Name, Node} ! {'$gen_call', {self(), {Tag, Node}}, Req},
     % send_nodes(Tail, Name, Tag, Req, [Monitor | Monitors]);

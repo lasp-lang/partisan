@@ -366,7 +366,7 @@ registered_name(Name) ->
 process_forward(ServerRef, Message) ->
     ?LOG_DEBUG(
         "node ~p recieved message ~p for ~p",
-        [erlang:node(), Message, ServerRef]
+        [partisan:node(), Message, ServerRef]
     ),
 
     Node = partisan:node(),
@@ -454,6 +454,7 @@ process_forward(ServerRef, Message) ->
                 stacktrace => Stacktrace
             })
     end.
+
 
 split(Subject0, Pattern0) ->
     Subject = list_to_binary(Subject0),

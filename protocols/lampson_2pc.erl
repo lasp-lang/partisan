@@ -25,6 +25,8 @@
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+-include("partisan.hrl").
+
 %% API
 -export([start_link/0,
          broadcast/2,
@@ -150,7 +152,12 @@ handle_cast({broadcast, From, ServerRef, Message}, #state{next_id=NextId, member
     %% Send prepare message to all participants including ourself.
     lists:foreach(fun(N) ->
         partisan_logger:info("~p: sending prepare message to node ~p: ~p", [node(), N, Message]),
-        partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {prepare, Transaction}, [])
+        partisan:forward_message(
+            N,
+            ?MODULE,
+            {prepare, Transaction},
+            #{channel => ?DEFAULT_CHANNEL}
+        )
     end, membership(Membership)),
 
     {noreply, State#state{next_id=NextId + 1}};
@@ -175,7 +182,12 @@ handle_info(heartbeat, #state{membership=Membership}=State) ->
 
         %% Catch shutdown race with sending heartbeat.
         try
-            partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {heartbeat, MyNode}, [])
+            partisan:forward_message(
+                N,
+                ?MODULE,
+                {heartbeat, MyNode},
+                #{channel => ?DEFAULT_CHANNEL}
+            )
         catch
             _:_ ->
                 ok
@@ -206,12 +218,17 @@ handle_info({coordinator_timeout, Id}, State) ->
 
                     %% Reply to caller.
                     partisan_logger:info("Aborting transaction: ~p", [Id]),
-                    partisan_pluggable_peer_service_manager:forward_message(From, error),
+                    partisan:forward_message(From, error),
 
                     %% Send notification to abort.
                     lists:foreach(fun(N) ->
                         partisan_logger:info("~p: sending abort message to node ~p: ~p", [node(), N, Id]),
-                        partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {abort, Transaction}, [])
+                        partisan:forward_message(
+                            N,
+                            ?MODULE,
+                            {abort, Transaction},
+                            #{channel => ?DEFAULT_CHANNEL}
+                        )
                     end, membership(Participants))
             end;
         [] ->
@@ -283,7 +300,12 @@ handle_info({abort, #transaction{id=Id, coordinator=Coordinator}}, State) ->
     MyNode = partisan:node(),
 
     partisan_logger:info("~p: sending abort ack message to node ~p: ~p", [node(), Coordinator, Id]),
-    partisan_pluggable_peer_service_manager:forward_message(Coordinator, undefined, ?MODULE, {abort_ack, MyNode, Id}, []),
+    partisan:forward_message(
+        Coordinator,
+        ?MODULE,
+        {abort_ack, MyNode, Id},
+        #{channel => ?DEFAULT_CHANNEL}
+    ),
 
     {noreply, State};
 handle_info({commit, #transaction{id=Id, coordinator=Coordinator, server_ref=ServerRef, message=Message} = Transaction}, State) ->
@@ -291,12 +313,17 @@ handle_info({commit, #transaction{id=Id, coordinator=Coordinator, server_ref=Ser
     true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=commit}}),
 
     %% Forward to process.
-    partisan_util:process_forward(ServerRef, Message),
+    partisan_peer_service_manager:process_forward(ServerRef, Message),
 
     %% Repond to coordinator that we are now committed.
     MyNode = partisan:node(),
     partisan_logger:info("~p: sending commit ack message to node ~p: ~p", [node(), Coordinator, Id]),
-    partisan_pluggable_peer_service_manager:forward_message(Coordinator, undefined, ?MODULE, {commit_ack, MyNode, Id}, []),
+    partisan:forward_message(
+        Coordinator,
+        ?MODULE,
+        {commit_ack, MyNode, Id},
+        #{channel => ?DEFAULT_CHANNEL}
+    ),
 
     {noreply, State};
 handle_info({prepared, FromNode, Id}, State) ->
@@ -318,12 +345,17 @@ handle_info({prepared, FromNode, Id}, State) ->
 
                     %% Reply to caller.
                     partisan_logger:info("replying to the caller: ~p", [From]),
-                    partisan_pluggable_peer_service_manager:forward_message(From, ok),
+                    partisan:forward_message(From, ok),
 
                     %% Send notification to commit.
                     lists:foreach(fun(N) ->
                         partisan_logger:info("~p: sending commit message to node ~p: ~p", [node(), N, Id]),
-                        partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {commit, Transaction}, [])
+                        partisan:forward_message(
+                            N,
+                            ?MODULE,
+                            {commit, Transaction},
+                            #{channel => ?DEFAULT_CHANNEL}
+                        )
                     end, membership(Participants));
                 false ->
                     %% Update local state before sending decision to participants.
@@ -341,7 +373,12 @@ handle_info({prepare, #transaction{coordinator=Coordinator, id=Id}=Transaction},
     %% Respond to coordinator that we are now prepared.
     MyNode = partisan:node(),
     partisan_logger:info("~p: sending prepared message to node ~p: ~p", [node(), Coordinator, Id]),
-    partisan_pluggable_peer_service_manager:forward_message(Coordinator, undefined, ?MODULE, {prepared, MyNode, Id}, []),
+    partisan:forward_message(
+        Coordinator,
+        ?MODULE,
+        {prepared, MyNode, Id},
+        #{channel => ?DEFAULT_CHANNEL}
+    ),
 
     {noreply, State};
 handle_info(Msg, State) ->

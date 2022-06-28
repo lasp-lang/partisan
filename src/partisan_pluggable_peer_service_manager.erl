@@ -26,54 +26,6 @@
 -include("partisan_logger.hrl").
 -include("partisan.hrl").
 
-%% partisan_peer_service_manager callbacks
--export([add_interposition_fun/2]).
--export([add_post_interposition_fun/2]).
--export([add_pre_interposition_fun/2]).
--export([cast_message/3]).
--export([cast_message/4]).
--export([cast_message/5]).
--export([decode/1]).
--export([forward_message/2]).
--export([forward_message/3]).
--export([forward_message/4]).
--export([forward_message/5]).
--export([get_interposition_funs/0]).
--export([get_local_state/0]).
--export([get_pre_interposition_funs/0]).
--export([inject_partition/2]).
--export([join/1]).
--export([leave/0]).
--export([leave/1]).
--export([member/1]).
--export([members/0]).
--export([members_for_orchestration/0]).
--export([myself/0]).
--export([on_down/2]).
--export([on_up/2]).
--export([partitions/0]).
--export([receive_message/2]).
--export([remove_interposition_fun/1]).
--export([remove_post_interposition_fun/1]).
--export([remove_pre_interposition_fun/1]).
--export([reserve/1]).
--export([resolve_partition/1]).
--export([send_message/2]).
--export([start_link/0]).
--export([sync_join/1]).
--export([update_members/1]).
-
-
-%% gen_server callbacks
--export([init/1]).
--export([handle_call/3]).
--export([handle_cast/2]).
--export([handle_info/2]).
--export([terminate/2]).
--export([code_change/3]).
-
-
-
 
 -define(SET_FROM_LIST(L), sets:from_list(L, [{version, 2}])).
 
@@ -108,23 +60,67 @@
 -type state_t() :: #state{}.
 
 
+%% API
+
+-export([member/1]).
+
+%% PARTISAN_PEER_SERVICE_MANAGER CALLBACKS
+-export([add_interposition_fun/2]).
+-export([add_post_interposition_fun/2]).
+-export([add_pre_interposition_fun/2]).
+-export([cast_message/2]).
+-export([cast_message/3]).
+-export([cast_message/4]).
+-export([decode/1]).
+-export([forward_message/2]).
+-export([forward_message/3]).
+-export([forward_message/4]).
+-export([get_interposition_funs/0]).
+-export([get_local_state/0]).
+-export([get_pre_interposition_funs/0]).
+-export([inject_partition/2]).
+-export([join/1]).
+-export([leave/0]).
+-export([leave/1]).
+-export([members/0]).
+-export([members_for_orchestration/0]).
+-export([myself/0]).
+-export([on_down/2]).
+-export([on_up/2]).
+-export([partitions/0]).
+-export([receive_message/2]).
+-export([remove_interposition_fun/1]).
+-export([remove_post_interposition_fun/1]).
+-export([remove_pre_interposition_fun/1]).
+-export([reserve/1]).
+-export([resolve_partition/1]).
+-export([send_message/2]).
+-export([start_link/0]).
+-export([sync_join/1]).
+-export([update_members/1]).
+
+
+%% gen_server callbacks
+-export([init/1]).
+-export([handle_call/3]).
+-export([handle_cast/2]).
+-export([handle_info/2]).
+-export([terminate/2]).
+-export([code_change/3]).
 
 
 
 %% =============================================================================
-%% partisan_peer_service_manager callbacks
+%% API
 %% =============================================================================
 
 
-%% @doc Same as start_link([]).
--spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 
-start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-
+%% -----------------------------------------------------------------------------
 %% @doc Returns true if node `Node' is a member in the membership list.
 %% Otherwise returns `false'.
 %% @end
+%% -----------------------------------------------------------------------------
 member(#{name := Node}) ->
     member(Node);
 
@@ -132,31 +128,69 @@ member(Node) when is_atom(Node) ->
     gen_server:call(?MODULE, {member, Node}, infinity).
 
 
+
+%% =============================================================================
+%% PARTISAN_PEER_SERVICE_MANAGER CALLBACKS
+%% =============================================================================
+
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Same as start_link([]).
+%% @end
+%% -----------------------------------------------------------------------------
+-spec start_link() -> {ok, pid()} | ignore | {error, term()}.
+
+start_link() ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+
+%% -----------------------------------------------------------------------------
 %% @doc Return membership list.
+%% @end
+%% -----------------------------------------------------------------------------
 members() ->
     gen_server:call(?MODULE, members, infinity).
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Return membership list.
+%% @end
+%% -----------------------------------------------------------------------------
 members_for_orchestration() ->
     gen_server:call(?MODULE, members_for_orchestration, infinity).
 
 
+%% -----------------------------------------------------------------------------
 %% @doc Return partisan:node_spec().
+%% @end
+%% -----------------------------------------------------------------------------
 myself() ->
     partisan:node_spec().
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Update membership.
+%% @end
+%% -----------------------------------------------------------------------------
 update_members(Nodes) ->
     gen_server:call(?MODULE, {update_members, Nodes}, infinity).
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Return local node's view of cluster membership.
+%% @end
+%% -----------------------------------------------------------------------------
 get_local_state() ->
     gen_server:call(?MODULE, get_local_state, infinity).
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Trigger function on connection close for a given node.
 %% `Function' is a function object taking zero or a single argument, where the
 %% argument is the Node name.
 %% @end
+%% -----------------------------------------------------------------------------
 on_down(#{name := Name}, Function) ->
     on_down(Name, Function);
 
@@ -169,10 +203,13 @@ when is_atom(Name) andalso (
 ) ->
     gen_server:call(?MODULE, {on_down, Name, Function}, infinity).
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Trigger function on connection open for a given node.
 %% `Function' is a function object taking zero or a single argument, where the
 %% argument is the Node name.
 %% @end
+%% -----------------------------------------------------------------------------
 on_up(#{name := Name}, Function) ->
     on_up(Name, Function);
 
@@ -187,236 +224,329 @@ when is_atom(Name) andalso (
 ) ->
     gen_server:call(?MODULE, {on_up, Name, Function}, infinity).
 
-%% @doc Send message to a remote manager.
-send_message(Name, Message) ->
-    gen_server:call(?MODULE, {send_message, Name, ?DEFAULT_CHANNEL, Message}, infinity).
 
-%% @doc Cast a message to a remote gen_server.
-cast_message(Name, ServerRef, Message) ->
-    cast_message(Name, ?DEFAULT_CHANNEL, ServerRef, Message).
+%% -----------------------------------------------------------------------------
+%% @doc Attempt to join a remote node.
+%% @end
+%% -----------------------------------------------------------------------------
+join(Node) ->
+    gen_server:call(?MODULE, {join, Node}, infinity).
 
-%% @doc Cast a message to a remote gen_server.
-cast_message(Name, Channel, ServerRef, Message) ->
+
+%% -----------------------------------------------------------------------------
+%% @doc Attempt to join a remote node.
+%% @end
+%% -----------------------------------------------------------------------------
+sync_join(Node) ->
+    gen_server:call(?MODULE, {sync_join, Node}, infinity).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Leave the cluster.
+%% @end
+%% -----------------------------------------------------------------------------
+leave() ->
+    gen_server:call(?MODULE, {leave, partisan:node_spec()}, infinity).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Remove another node from the cluster.
+%% @end
+%% -----------------------------------------------------------------------------
+leave(#{name := _} = NodeSpec) ->
+    gen_server:call(?MODULE, {leave, NodeSpec}, infinity).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Send message to a remote peer service manager.
+%% @end
+%% -----------------------------------------------------------------------------
+send_message(Node, Message) ->
+    Cmd = {send_message, Node, ?DEFAULT_CHANNEL, Message},
+    gen_server:call(?MODULE, Cmd, infinity).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec cast_message(
+    Term :: partisan_remote_ref:p() | partisan_remote_ref:n() | pid(),
+    MEssage :: message()) -> ok.
+
+cast_message(Term, Message) ->
     FullMessage = {'$gen_cast', Message},
-    forward_message(Name, Channel, ServerRef, FullMessage),
-    ok.
+    forward_message(Term, FullMessage, #{}).
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Cast a message to a remote gen_server.
-cast_message(Name, Channel, ServerRef, Message, Options) ->
-    FullMessage = {'$gen_cast', Message},
-    forward_message(Name, Channel, ServerRef, FullMessage, Options),
-    ok.
+%% @end
+%% -----------------------------------------------------------------------------
+cast_message(Node, ServerRef, Message) ->
+    cast_message(Node, ServerRef, Message, #{}).
 
+
+%% -----------------------------------------------------------------------------
+%% @doc Cast a message to a remote gen_server.
+%% @end
+%% -----------------------------------------------------------------------------
+cast_message(Name, ServerRef, Message, Options) ->
+    FullMessage = {'$gen_cast', Message},
+    forward_message(Name, ServerRef, FullMessage, Options).
+
+
+%% -----------------------------------------------------------------------------
 %% @doc Gensym support for forwarding.
-forward_message(Pid, Message) when is_pid(Pid) ->
-    forward_message(partisan:node(), ?DEFAULT_CHANNEL, Pid, Message);
+%% @end
+%% -----------------------------------------------------------------------------
+forward_message(Term, Message) ->
+    forward_message(Term, Message, #{}).
 
-forward_message({partisan_remote_reference, Node, ServerRef}, Message) ->
-    forward_message(Node, ?DEFAULT_CHANNEL, ServerRef, Message).
 
+%% -----------------------------------------------------------------------------
+%% @doc Gensym support for forwarding.
+%% @end
+%% -----------------------------------------------------------------------------
+forward_message(Pid, Message, Opts) when is_pid(Pid) ->
+    forward_message(partisan:node(), Pid, Message, Opts);
+
+forward_message(RemoteRef, Message, Opts) ->
+    partisan_remote_ref:is_pid(RemoteRef)
+        orelse partisan_remote_ref:is_name(RemoteRef)
+        orelse error(badarg),
+
+    Node = partisan_remote_ref:node(RemoteRef),
+    Target = partisan_remote_ref:target(RemoteRef),
+
+    forward_message(Node, Target, Message, Opts).
+
+
+%% -----------------------------------------------------------------------------
 %% @doc Forward message to registered process on the remote side.
-forward_message(Node, ServerRef, Message) ->
-    forward_message(Node, ?DEFAULT_CHANNEL, ServerRef, Message).
+%% @end
+%% -----------------------------------------------------------------------------
+forward_message(Node, ServerRef, Message, Opts) when is_list(Opts) ->
+    forward_message(Node, ServerRef, Message, maps:from_list(Opts));
 
-%% @doc Forward message to registered process on the remote side.
-forward_message(Node, Channel, ServerRef, Message) ->
-    forward_message(Node, Channel, ServerRef, Message, #{}).
+forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
+    %% If attempting to forward to the local node or using disterl, bypass.
+    ProcessFwd =
+        Node =:= partisan:node()
+        orelse partisan_config:get(connect_disterl, false),
 
-%% @doc Forward message to registered process on the remote side.
-forward_message(Node, Channel, ServerRef, Message, Options)
-when is_list(Options) ->
-    forward_message(Node, Channel, ServerRef, Message, maps:from_list(Options));
+    case ProcessFwd of
+        true ->
+            partisan_peer_service_manager:process_forward(ServerRef, Message);
+        false ->
+            Channel = maps:get(channel, Opts, ?DEFAULT_CHANNEL),
 
-forward_message(Node, Channel, ServerRef, Message, Options)
-when is_map(Options) ->
+            %% Attempt to get the partition key, if possible.
+            PartitionKey = maps:get(
+                partition_key, Opts, ?DEFAULT_PARTITION_KEY
+            ),
 
-    %% If attempting to forward to the local node, bypass.
-    case partisan:node() of
-        Node ->
-            partisan_util:process_forward(ServerRef, Message),
-            ok;
-        _ ->
-            case partisan_config:get(connect_disterl, false) of
+            %% Use a clock provided by the sender,
+            %% otherwise, use a generated one.
+            Clock = maps:get(clock, Opts, undefined),
+
+            %% Should ack?
+            ShouldAck = maps:get(ack, Opts, false),
+
+            %% Use causality?
+            CausalLabel =
+                maps:get(causal_label, Opts, undefined),
+
+            %% Get forwarding options and combine with message
+            %% specific options.
+            ForwardOptions = maps:merge(Opts, forward_options()),
+
+            %% Use configuration to disable fast forwarding.
+            DisableFastForward =
+                partisan_config:get(disable_fast_forward, false),
+
+            %% Should use fast forwarding?
+            %%
+            %% Conditions:
+            %% - not labeled for causal delivery
+            %% - message does not need acknowledgements
+            %% - fastforward is not disabled
+            FastForward =
+                not (CausalLabel =/= undefined)
+                andalso not ShouldAck
+                andalso not DisableFastForward,
+
+            BinaryPadding = partisan_config:get(binary_padding, false),
+
+            PaddedMessage = case BinaryPadding of
                 true ->
-                    partisan_util:process_forward(ServerRef, Message),
-                    ok;
-                false ->
-                    %% Attempt to get the partition key, if possible.
-                    PartitionKey = maps:get(
-                        partition_key, Options, ?DEFAULT_PARTITION_KEY
+                    Term = partisan_config:get(
+                        binary_padding_term, undefined
                     ),
+                    {'$partisan_padded', Term, Message};
+                false ->
+                    Message
 
-                    %% Use a clock provided by the sender, otherwise, use a generated one.
-                    Clock = maps:get(clock, Options, undefined),
+            end,
 
-                    %% Should ack?
-                    ShouldAck = maps:get(ack, Options, false),
+            Cmd = {
+                forward_message,
+                Node,
+                Channel,
+                Clock,
+                PartitionKey,
+                ServerRef,
+                PaddedMessage,
+                ForwardOptions
+            },
 
-                    %% Use causality?
-                    CausalLabel =
-                        maps:get(causal_label, Options, undefined),
-
-                    %% Get forwarding options and combine with message
-                    %% specific options.
-                    ForwardOptions = maps:merge(Options, forward_options()),
-
-                    %% Use configuration to disable fast forwarding.
-                    DisableFastForward =
-                        partisan_config:get(disable_fast_forward, false),
-
-                    %% Should use fast forwarding?
-                    %%
-                    %% Conditions:
-                    %% - not labeled for causal delivery
-                    %% - message does not need acknowledgements
-                    %% - fastforward is not disabled
-                    FastForward =
-                        not (CausalLabel =/= undefined)
-                        andalso not ShouldAck
-                        andalso not DisableFastForward,
-
-                    BinaryPadding = partisan_config:get(binary_padding, false),
-
-                    PaddedMessage = case BinaryPadding of
-                        true ->
-                            Term = partisan_config:get(
-                                binary_padding_term, undefined
-                            ),
-                            {'$partisan_padded', Term, Message};
-                        false ->
-                            Message
-
-                    end,
-
-                    FullMessage = {
-                        forward_message,
-                        Node,
-                        Channel,
-                        Clock,
-                        PartitionKey,
-                        ServerRef,
-                        PaddedMessage,
-                        ForwardOptions
-                    },
-
-                    case FastForward of
-                        true ->
-                            %% Attempt to fast-path by accesing the connection
-                            %% directly
-                            case partisan_peer_connections:dispatch(FullMessage) of
-                                ok ->
-                                    ok;
-                                {error, _} ->
-                                    gen_server:call(?MODULE, FullMessage, infinity)
-                            end;
-                        false ->
-                            gen_server:call(?MODULE, FullMessage, infinity)
-                    end
+            case FastForward of
+                true ->
+                    %% Attempt to fast-path by accesing the connection
+                    %% directly
+                    case partisan_peer_connections:dispatch(Cmd) of
+                        ok ->
+                            ok;
+                        {error, _} ->
+                            gen_server:call(?MODULE, Cmd, infinity)
+                    end;
+                false ->
+                    gen_server:call(?MODULE, Cmd, infinity)
             end
     end.
 
-%% @doc Receive message from a remote manager.
-receive_message(Peer, {forward_message, _SourceNode, _MessageClock, _ServerRef, _Message} = FullMessage) ->
-    %% Process the message and generate the acknowledgement.
-    gen_server:call(?MODULE, {receive_message, Peer, FullMessage}, infinity);
 
-receive_message(Peer, {forward_message, ServerRef, {'$partisan_padded', _Padding, Message}}) ->
+%% -----------------------------------------------------------------------------
+%% @doc Receive message from a remote manager.
+%% @end
+%% -----------------------------------------------------------------------------
+receive_message(
+    Peer,
+    {forward_message, _SourceNode, _Clock, _ServerRef, _Message} = Cmd) ->
+    %% Process the message and generate the acknowledgement.
+    gen_server:call(?MODULE, {receive_message, Peer, Cmd}, infinity);
+
+receive_message(
+    Peer,
+    {forward_message, ServerRef, {'$partisan_padded', _Padding, Message}}) ->
     receive_message(Peer, {forward_message, ServerRef, Message});
 
-receive_message(_Peer, {forward_message, _ServerRef, {causal, Label, _, _, _, _, _} = Message}) ->
+receive_message(
+    _Peer,
+    {forward_message, _ServerRef, {causal, Label, _, _, _, _, _} = Message}) ->
     partisan_causality_backend:receive_message(Label, Message);
 
-receive_message(Peer, {forward_message, ServerRef, Message} = FullMessage) ->
+receive_message(Peer, {forward_message, ServerRef, Message} = Cmd) ->
     case partisan_config:get(disable_fast_receive, false) of
         true ->
-            gen_server:call(?MODULE, {receive_message, Peer, FullMessage}, infinity);
+            gen_server:call(?MODULE, {receive_message, Peer, Cmd}, infinity);
         false ->
-            partisan_util:process_forward(ServerRef, Message)
+            partisan_peer_service_manager:process_forward(ServerRef, Message)
     end;
 
 receive_message(Peer, Message) ->
     gen_server:call(?MODULE, {receive_message, Peer, Message}, infinity).
 
 
-%% @doc Attempt to join a remote node.
-sync_join(Node) ->
-    gen_server:call(?MODULE, {sync_join, Node}, infinity).
-
-%% @doc Attempt to join a remote node.
-join(Node) ->
-    gen_server:call(?MODULE, {join, Node}, infinity).
-
-%% @doc Leave the cluster.
-leave() ->
-    gen_server:call(
-        ?MODULE, {leave, partisan:node_spec()}, infinity
-    ).
-
-%% @doc Remove another node from the cluster.
-leave(Node) ->
-    gen_server:call(?MODULE, {leave, Node}, infinity).
-
+%% -----------------------------------------------------------------------------
 %% @doc Decode state.
+%% @end
+%% -----------------------------------------------------------------------------
 decode(Membership) ->
     Membership.
 
+%% -----------------------------------------------------------------------------
 %% @doc Reserve a slot for the particular tag.
+%% @end
+%% -----------------------------------------------------------------------------
 reserve(Tag) ->
     gen_server:call(?MODULE, {reserve, Tag}, infinity).
 
+%% -----------------------------------------------------------------------------
 %% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 add_pre_interposition_fun(Name, PreInterpositionFun) ->
     gen_server:call(?MODULE, {add_pre_interposition_fun, Name, PreInterpositionFun}, infinity).
 
+%% -----------------------------------------------------------------------------
 %% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 remove_pre_interposition_fun(Name) ->
     gen_server:call(?MODULE, {remove_pre_interposition_fun, Name}, infinity).
 
+%% -----------------------------------------------------------------------------
 %% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 add_interposition_fun(Name, InterpositionFun) ->
     gen_server:call(?MODULE, {add_interposition_fun, Name, InterpositionFun}, infinity).
 
+%% -----------------------------------------------------------------------------
 %% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 remove_interposition_fun(Name) ->
     gen_server:call(?MODULE, {remove_interposition_fun, Name}, infinity).
 
+%% -----------------------------------------------------------------------------
 %% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 get_interposition_funs() ->
     gen_server:call(?MODULE, get_interposition_funs, infinity).
 
+%% -----------------------------------------------------------------------------
 %% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 get_pre_interposition_funs() ->
     gen_server:call(?MODULE, get_pre_interposition_funs, infinity).
 
+%% -----------------------------------------------------------------------------
 %% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 add_post_interposition_fun(Name, PostInterpositionFun) ->
     gen_server:call(?MODULE, {add_post_interposition_fun, Name, PostInterpositionFun}, infinity).
 
+%% -----------------------------------------------------------------------------
 %% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 remove_post_interposition_fun(Name) ->
     gen_server:call(?MODULE, {remove_post_interposition_fun, Name}, infinity).
 
+%% -----------------------------------------------------------------------------
 %% @doc Inject a partition.
+%% @end
+%% -----------------------------------------------------------------------------
 inject_partition(_Origin, _TTL) ->
     {error, not_implemented}.
 
+%% -----------------------------------------------------------------------------
 %% @doc Resolve a partition.
+%% @end
+%% -----------------------------------------------------------------------------
 resolve_partition(_Reference) ->
     {error, not_implemented}.
 
+%% -----------------------------------------------------------------------------
 %% @doc Return partitions.
+%% @end
+%% -----------------------------------------------------------------------------
 partitions() ->
     {error, not_implemented}.
 
 
 
-%%%===================================================================
-%%% gen_server callbacks
-%%%===================================================================
+%% =============================================================================
+%% GEN_SERVER CALLBACKS
+%% =============================================================================
 
 
 
-%% @private
 -spec init([]) -> {ok, state_t()}.
 
 init([]) ->
@@ -483,7 +613,6 @@ init([]) ->
     }}.
 
 
-%% @private
 -spec handle_call(term(), {pid(), term()}, state_t()) ->
     {reply, term(), state_t()}.
 
@@ -532,8 +661,8 @@ handle_call({remove_post_interposition_fun, Name}, _From, #state{post_interposit
     PostInterpositionFuns = maps:remove(Name, PostInterpositionFuns0),
     {reply, ok, State#state{post_interposition_funs=PostInterpositionFuns}};
 
-%% For compatibility with external membership services.
 handle_call({update_members, Nodes}, _From, #state{} = State) ->
+    %% For compatibility with external membership services.
     Membership = State#state.membership,
 
     %% Get the current membership.
@@ -808,17 +937,22 @@ handle_cast({receive_message, From, Peer, OriginalMessage}, #state{} = State) ->
             handle_message(Message, From, State)
     end;
 
-handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options},
-            #state{interposition_funs=InterpositionFuns,
-                   pre_interposition_funs=PreInterpositionFuns,
-                   post_interposition_funs=PostInterpositionFuns,
-                   vclock=VClock0}=State) ->
+handle_cast(
+    {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMsg, Options},
+    State) ->
+
+    #state{
+        interposition_funs=InterpositionFuns,
+        pre_interposition_funs=PreInterpositionFuns,
+        post_interposition_funs=PostInterpositionFuns,
+        vclock=VClock0
+    } = State,
+
     %% Filter messages using interposition functions.
     FoldFun = fun(_InterpositionName, InterpositionFun, M) ->
-        InterpositionResult = InterpositionFun({forward_message, Name, M}),
-        InterpositionResult
+        InterpositionFun({forward_message, Name, M})
     end,
-    Message = maps:fold(FoldFun, OriginalMessage, InterpositionFuns),
+    Message = maps:fold(FoldFun, OriginalMsg, InterpositionFuns),
 
     %% Increment the clock.
     VClock = partisan_vclock:increment(partisan:node(), VClock0),
@@ -885,7 +1019,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                                 MessageClock,
                                 PartitionKey,
                                 ServerRef,
-                                OriginalMessage,
+                                OriginalMsg,
                                 Options
                             },
                             partisan_acknowledgement_backend:store(
@@ -898,14 +1032,14 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
 
             %% Fire post-interposition functions.
             PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
-                PostInterpositionFun({forward_message, Name, OriginalMessage}, {forward_message, Name, FullMessage}),
+                PostInterpositionFun({forward_message, Name, OriginalMsg}, {forward_message, Name, FullMessage}),
                 ok
             end,
             maps:fold(PostFoldFun, ok, PostInterpositionFuns),
 
             ?LOG_DEBUG(
                 "~p: Message ~p after send interposition is: ~p",
-                [partisan:node(), OriginalMessage, FullMessage]
+                [partisan:node(), OriginalMsg, FullMessage]
             ),
 
             case From of
@@ -932,7 +1066,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                     %% Tracing.
                     WrappedMessage = {forward_message, ServerRef, FullMessage},
                     WrappedOriginalMessage =
-                        {forward_message, ServerRef, OriginalMessage},
+                        {forward_message, ServerRef, OriginalMsg},
 
                     %% Fire post-interposition functions -- trace after wrapping!
                     PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
@@ -955,7 +1089,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                     );
                 true ->
                     %% Tracing.
-                    WrappedOriginalMessage = {forward_message, partisan:node(), MessageClock, ServerRef, OriginalMessage},
+                    WrappedOriginalMessage = {forward_message, partisan:node(), MessageClock, ServerRef, OriginalMsg},
                     WrappedMessage = {forward_message, partisan:node(), MessageClock, ServerRef, FullMessage},
 
                     ?LOG_DEBUG(
@@ -992,7 +1126,7 @@ handle_cast({forward_message, From, Name, Channel, Clock, PartitionKey, ServerRe
                                 MessageClock,
                                 PartitionKey,
                                 ServerRef,
-                                OriginalMessage,
+                                OriginalMsg,
                                 Options
                             },
                             partisan_acknowledgement_backend:store(
@@ -1316,9 +1450,9 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 
-%%%===================================================================
-%%% Internal functions
-%%%===================================================================
+%% =============================================================================
+%% PRIVATE
+%% =============================================================================
 
 
 
@@ -1337,9 +1471,11 @@ without_me(Members) ->
     lists:filter(fun(#{name := Name}) -> Name =/= MyNode end, Members).
 
 
+%% -----------------------------------------------------------------------------
 %% @private
 %% @doc Establish any new connections.
 %% @end
+%% -----------------------------------------------------------------------------
 establish_connections(Pending, Membership) ->
     %% Compute list of nodes that should be connected.
     Peers = without_me(Membership ++ Pending),
@@ -1349,7 +1485,6 @@ establish_connections(Pending, Membership) ->
         fun(Peer) -> partisan_util:maybe_connect(Peer) end,
         Peers
     ).
-
 
 
 %% @private
@@ -1493,7 +1628,7 @@ handle_message({forward_message, SourceNode, MessageClock, ServerRef, {causal, L
             partisan_causality_backend:receive_message(Label, Message);
         false ->
             %% Attempt message delivery.
-            partisan_util:process_forward(ServerRef, Message)
+            partisan_peer_service_manager:process_forward(ServerRef, Message)
     end,
 
     optional_gen_server_reply(From, ok),
@@ -1507,7 +1642,7 @@ handle_message({forward_message, SourceNode, MessageClock, ServerRef, Message},
     %% Send message acknowledgement.
     send_acknowledgement(SourceNode, MessageClock, PreInterpositionFuns),
 
-    partisan_util:process_forward(ServerRef, Message),
+    partisan_peer_service_manager:process_forward(ServerRef, Message),
 
     optional_gen_server_reply(From, ok),
 
@@ -1522,7 +1657,7 @@ handle_message({forward_message, ServerRef, {causal, Label, _, _, _, _, _} = Mes
             partisan_causality_backend:receive_message(Label, Message);
         false ->
             %% Attempt message delivery.
-            partisan_util:process_forward(ServerRef, Message)
+            partisan_peer_service_manager:process_forward(ServerRef, Message)
     end,
 
     optional_gen_server_reply(From, ok),
@@ -1534,7 +1669,7 @@ handle_message({forward_message, ServerRef, {causal, Label, _, _, _, _, _} = Mes
 handle_message({forward_message, ServerRef, Message},
                From,
                State) ->
-    partisan_util:process_forward(ServerRef, Message),
+    partisan_peer_service_manager:process_forward(ServerRef, Message),
     optional_gen_server_reply(From, ok),
     {noreply, State};
 
@@ -1551,6 +1686,7 @@ handle_message(Message,
     ?LOG_WARNING(#{description => "Unhandled message", message => Message}),
     {noreply, State}.
 
+
 %% @private
 schedule_distance() ->
     case partisan_config:get(distance_enabled, false) of
@@ -1561,6 +1697,7 @@ schedule_distance() ->
             ok
     end.
 
+
 %% @private
 schedule_instrumentation() ->
     case partisan_config:get(instrumentation, false) of
@@ -1569,6 +1706,7 @@ schedule_instrumentation() ->
         _ ->
             ok
     end.
+
 
 %% @private
 schedule_periodic() ->
@@ -1580,15 +1718,18 @@ schedule_periodic() ->
             ok
     end.
 
+
 %% @private
 schedule_retransmit() ->
     RetransmitInterval = partisan_config:get(retransmit_interval, 1000),
     erlang:send_after(RetransmitInterval, ?MODULE, retransmit).
 
+
 %% @private
 schedule_connections() ->
     ConnectionInterval = partisan_config:get(connection_interval, 1000),
     erlang:send_after(ConnectionInterval, ?MODULE, connections).
+
 
 %% @private
 do_send_message(
@@ -1968,6 +2109,7 @@ optional_gen_server_reply(From, Response) ->
     end.
 
 
+%% @private
 forward_options() ->
     case partisan_config:get(forward_options, #{}) of
         List when is_list(List) ->

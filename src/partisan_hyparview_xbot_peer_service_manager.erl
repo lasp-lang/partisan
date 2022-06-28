@@ -31,32 +31,31 @@
 -include("partisan.hrl").
 
 %% partisan_peer_service_manager callbacks
--export([start_link/0,
-         members/0,
-         members_for_orchestration/0,
-         myself/0,
-         get_local_state/0,
-         join/1,
-         sync_join/1,
-         leave/0,
-         leave/1,
-         update_members/1,
-         on_down/2,
-         on_up/2,
-         forward_message/2,
-         send_message/2,
-         cast_message/3,
-         forward_message/3,
-         cast_message/4,
-         forward_message/4,
-         cast_message/5,
-         forward_message/5,
-         receive_message/2,
-         decode/1,
-         reserve/1,
-         partitions/0,
-         inject_partition/2,
-         resolve_partition/1]).
+-export([cast_message/2]).
+-export([cast_message/3]).
+-export([cast_message/4]).
+-export([decode/1]).
+-export([forward_message/2]).
+-export([forward_message/3]).
+-export([forward_message/4]).
+-export([get_local_state/0]).
+-export([inject_partition/2]).
+-export([join/1]).
+-export([leave/0]).
+-export([leave/1]).
+-export([members/0]).
+-export([members_for_orchestration/0]).
+-export([myself/0]).
+-export([on_down/2]).
+-export([on_up/2]).
+-export([partitions/0]).
+-export([receive_message/2]).
+-export([reserve/1]).
+-export([resolve_partition/1]).
+-export([send_message/2]).
+-export([start_link/0]).
+-export([sync_join/1]).
+-export([update_members/1]).
 
 %% debug.
 -export([active/0,
@@ -142,42 +141,73 @@ update_members(_Nodes) ->
 send_message(Name, Message) ->
     gen_server:call(?MODULE, {send_message, Name, Message}, infinity).
 
-%% @doc Cast a message to a remote gen_server.
-cast_message(Name, ServerRef, Message) ->
-    cast_message(Name, ?DEFAULT_CHANNEL, ServerRef, Message).
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec cast_message(
+    Term :: partisan_remote_ref:p() | partisan_remote_ref:n() | pid(),
+    MEssage :: message()) -> ok.
 
-%% @doc Cast a message to a remote gen_server.
-cast_message(Name, Channel, ServerRef, Message) ->
+cast_message(Term, Message) ->
     FullMessage = {'$gen_cast', Message},
-    forward_message(Name, Channel, ServerRef, FullMessage),
-    ok.
+    forward_message(Term, FullMessage, #{}).
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Cast a message to a remote gen_server.
-cast_message(Name, Channel, ServerRef, Message, Options) ->
-    FullMessage = {'$gen_cast', Message},
-    forward_message(Name, Channel, ServerRef, FullMessage, Options),
-    ok.
+%% @end
+%% -----------------------------------------------------------------------------
+cast_message(Node, ServerRef, Message) ->
+    cast_message(Node, ServerRef, Message, #{}).
 
+
+%% -----------------------------------------------------------------------------
+%% @doc Cast a message to a remote gen_server.
+%% @end
+%% -----------------------------------------------------------------------------
+cast_message(Name, ServerRef, Message, Options) ->
+    FullMessage = {'$gen_cast', Message},
+    forward_message(Name, ServerRef, FullMessage, Options).
+
+
+%% -----------------------------------------------------------------------------
 %% @doc Gensym support for forwarding.
-forward_message({partisan_remote_reference, Name, ServerRef}, Message) ->
-    forward_message(Name, ?DEFAULT_CHANNEL, ServerRef, Message).
+%% @end
+%% -----------------------------------------------------------------------------
+forward_message(Term, Message) ->
+    forward_message(Term, Message, #{}).
 
+
+%% -----------------------------------------------------------------------------
+%% @doc Gensym support for forwarding.
+%% @end
+%% -----------------------------------------------------------------------------
+forward_message(Pid, Message, Opts) when is_pid(Pid) ->
+    forward_message(partisan:node(), Pid, Message, Opts);
+
+forward_message(RemoteRef, Message, Opts) ->
+    partisan_remote_ref:is_pid(RemoteRef)
+        orelse partisan_remote_ref:is_name(RemoteRef)
+        orelse error(badarg),
+
+    Node = partisan_remote_ref:node(RemoteRef),
+    Target = partisan_remote_ref:target(RemoteRef),
+
+    forward_message(Node, Target, Message, Opts).
+
+
+
+%% -----------------------------------------------------------------------------
 %% @doc Forward message to registered process on the remote side.
-forward_message(Name, ServerRef, Message) ->
-    forward_message(Name, ?DEFAULT_CHANNEL, ServerRef, Message).
+%% @end
+%% -----------------------------------------------------------------------------
+forward_message(Node, ServerRef, Message, Opts) when is_list(Opts) ->
+    forward_message(Node, ServerRef, Message, maps:from_list(Opts));
 
-%% @doc Forward message to registered process on the remote side.
-forward_message(Name, Channel, ServerRef, Message) ->
-    forward_message(Name, Channel, ServerRef, Message, #{}).
 
-%% @doc Forward message to registered process on the remote side.
-forward_message(Name, Channel, ServerRef, Message, Options)
-when is_list(Options) ->
-    forward_message(Name, Channel, ServerRef, Message, maps:from_list(Options));
-
-forward_message(Name, _Channel, ServerRef, Message, Options)
-when is_map(Options) ->
-    FullMessage = {forward_message, Name, ServerRef, Message, Options},
+forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
+    FullMessage = {forward_message, Node, ServerRef, Message, Opts},
 
     %% Attempt to fast-path through the memoized connection cache.
     case partisan_peer_connections:dispatch(FullMessage) of

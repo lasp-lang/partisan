@@ -27,15 +27,18 @@
 -type monitor_nodes_opt()           ::  nodedown_reason
                                         | {node_type, visible | hidden | all}.
 -type monitor_process_identifier()  ::  erlang:monitor_process_identifier()
-                                        | remote_ref(process_ref())
-                                        | remote_ref(registered_name_ref()).
+                                        | partisan_remote_ref:p()
+                                        | partisan_remote_ref:n().
 
 -type server_ref()                  ::  pid() | atom()
                                         | partisan_remote_ref:p()
                                         | partisan_remote_ref:n().
 
+-type forward_options()  ::  partisan_peer_service_manager:forward_options().
+
 -export_type([monitor_nodes_opt/0]).
 -export_type([server_ref/0]).
+-export_type([forward_options/0]).
 
 -export([start/0]).
 -export([stop/0]).
@@ -47,10 +50,11 @@
 -export([default_channel/0]).
 -export([demonitor/1]).
 -export([demonitor/2]).
+-export([disconnect_node/1]).
 -export([forward_message/2]).
 -export([forward_message/3]).
 -export([forward_message/4]).
--export([forward_message/5]).
+-export([is_alive/0]).
 -export([is_connected/1]).
 -export([is_connected/2]).
 -export([is_fully_connected/1]).
@@ -66,15 +70,14 @@
 -export([monitor_nodes/1]).
 -export([monitor_nodes/2]).
 -export([node/0]).
--export([nodestring/0]).
 -export([node/1]).
 -export([node_spec/0]).
 -export([node_spec/1]).
 -export([node_spec/2]).
 -export([nodes/0]).
 -export([nodes/1]).
+-export([nodestring/0]).
 -export([self/0]).
--export([send_message/2]).
 
 -compile({no_auto_import, [demonitor/2]}).
 -compile({no_auto_import, [is_pid/0]}).
@@ -82,6 +85,7 @@
 -compile({no_auto_import, [is_reference/0]}).
 -compile({no_auto_import, [make_ref/0]}).
 -compile({no_auto_import, [monitor/2]}).
+-compile({no_auto_import, [monitor/3]}).
 -compile({no_auto_import, [monitor_node/2]}).
 -compile({no_auto_import, [node/0]}).
 -compile({no_auto_import, [node/1]}).
@@ -117,7 +121,7 @@ stop() ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec make_ref() -> partisan_remote_ref:t().
+-spec make_ref() -> partisan_remote_ref:r().
 
 make_ref() ->
     partisan_remote_ref:from_term(erlang:make_ref()).
@@ -127,7 +131,7 @@ make_ref() ->
 %% @doc Returns the partisan encoded pid for the calling process.
 %% @end
 %% -----------------------------------------------------------------------------
--spec self() -> partisan_remote_ref:t().
+-spec self() -> partisan_remote_ref:p().
 
 self() ->
     partisan_remote_ref:from_term(erlang:self()).
@@ -143,10 +147,14 @@ monitor(Term) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc when you attempt to monitor a partisan_remote_reference, it is not
-%% guaranteed that you will receive the DOWN message. A few reasons for not
-%% receiving the message are message loss, tree reconfiguration and the node
-%% is no longer reachable.
+%% @doc When you attempt to monitor a remote reference using Partisan (disterl
+%% is disabled), it is not guaranteed that you will receive the DOWN message. A
+%% few reasons for not receiving the message are message loss, tree
+%% reconfiguration and the node is no longer reachable.
+%%
+%% This is the Partisan's equivalent to {@link erlang:monitor/2}.
+%%
+%% Failure: `notalive' if the partisan_monitor process is not alive.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec monitor
@@ -157,15 +165,19 @@ monitor(Term) ->
     (time_offset, clock_service) ->
         reference() | no_return().
 
-monitor(process, {partisan_remote_reference, _, _} = R) ->
-    partisan_monitor:monitor(R, []);
-
 monitor(Type, Term) ->
-    erlang:monitor(Type, Term).
+    monitor(Type, Term, []).
 
 
 %% -----------------------------------------------------------------------------
-%% @doc
+%% @doc When you attempt to monitor a remote reference using Partisan (disterl
+%% is disabled), it is not guaranteed that you will receive the DOWN message. A
+%% few reasons for not receiving the message are message loss, tree
+%% reconfiguration and the node is no longer reachable.
+%%
+%% This is the Partisan's equivalent to {@link erlang:monitor/3}.
+%%
+%% Failure: `notalive' if the partisan_monitor process is not alive.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec monitor
@@ -176,13 +188,34 @@ monitor(Type, Term) ->
     (time_offset, clock_service, [erlang:monitor_option()]) ->
         reference() | no_return().
 
-monitor(Type, Term, Opts) ->
-    case partisan_remote_ref:is_type(Term) of
+
+monitor(process, {Name, Node} = RegPid, Opts) ->
+    case partisan_config:get(connect_disterl) orelse partisan:node() == Node of
         true ->
-            partisan_monitor:monitor(Term, Opts);
+            erlang:monitor(process, RegPid, Opts);
         false ->
-            erlang:monitor(Type, Term, Opts)
-    end.
+            Ref = partisan_remote_ref:from_term(Name, Node),
+            partisan_monitor:monitor(Ref, Opts)
+    end;
+
+monitor(process, Term, Opts) when erlang:is_pid(Term) orelse is_atom(Term) ->
+    erlang:monitor(process, Term, Opts);
+
+monitor(process, Ref, Opts) ->
+    partisan_remote_ref:is_pid(Ref)
+        orelse partisan_remote_ref:is_name(Ref)
+        orelse error(badarg),
+
+    case partisan_remote_ref:is_local(Ref) of
+        true ->
+            Term = partisan_remote_ref:to_term(Ref),
+            erlang:monitor(process, Term, Opts);
+        false ->
+            partisan_monitor:monitor(Ref, Opts)
+    end;
+
+monitor(Type, Term, Opts) ->
+    erlang:monitor(Type, Term, Opts).
 
 
 
@@ -202,15 +235,14 @@ demonitor(Ref) ->
 %% -----------------------------------------------------------------------------
 -spec demonitor(
     MonitorRef :: reference() | partisan_remote_ref:r(),
-    OptionList :: [erlang:monitor_option()]) -> boolean().
+    OptionList :: partisan_monitor:demon_opts()) -> boolean().
 
-demonitor(MRef, Opts) when erlang:is_reference(MRef) ->
-    erlang:demonitor(MRef, Opts);
+demonitor(Ref, Opts) when erlang:is_reference(Ref) ->
+    erlang:demonitor(Ref, Opts);
 
-demonitor(
-    {partisan_remote_reference, _, {partisan_encoded_reference, _}} = R,
-    Opts) ->
-    partisan_monitor:demonitor(R, Opts).
+demonitor(Ref, Opts) ->
+    %% partisan_monitor:demonitor will raise a badarg if Ref is not valid
+    partisan_monitor:demonitor(Ref, Opts).
 
 
 %% -----------------------------------------------------------------------------
@@ -410,6 +442,41 @@ is_fully_connected(NodeOrSpec) ->
     partisan_peer_connections:is_fully_connected(NodeOrSpec).
 
 
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec disconnect_node(Node :: node()) -> boolean() | ignored.
+
+disconnect_node(Node) ->
+    case Node == node() of
+        true ->
+            partisan_peer_service:leave();
+        false ->
+            try node_spec(Node) of
+                {ok, NodeSpec} ->
+                    ok = partisan_peer_service:leave(NodeSpec),
+                    true;
+                {error, _} ->
+                    false
+            catch
+                _:_ ->
+                    false
+            end
+    end.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns true if the local node is alive (that is, if the node can be
+%% part of a distributed system), otherwise false.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_alive() -> boolean().
+
+is_alive() ->
+    %% TODO
+    true.
+
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the node specification of the local node.
@@ -434,11 +501,13 @@ node_spec() ->
 %% -----------------------------------------------------------------------------
 %% @doc Return the partisan node_spec() for node named `Node'.
 %%
-%% If configuration option `connect_disterl' is `true', this function retrieves
-%% the node_spec from the remote node using RPC and returns `{error, Reason}'
-%% if the RPC fails. Otherwise, asumes the node is running on the same host and
-%% return a `node_spec()' with with nodename `Name' and host 'Host' and same
-%% metadata as `myself/0'.
+%% This function retrieves the `node_spec()' from the remote node using RPC and
+%% returns `{error, Reason}' if the RPC fails. Otherwise, asumes the node is
+%% running on the same host and returns a `node_spec()' with with nodename
+%% `Name' and host 'Host' and same metadata as `myself/0'.
+%%
+%% If configuration option `connect_disterl' is `true', the RPC will be
+%% implemented using the `rpc' module. Otherwise it will use `partisan_rpc'.
 %%
 %% You should only use this function when distributed erlang is enabled
 %% (configuration option `connect_disterl' is `true') or if the node is running
@@ -455,14 +524,14 @@ node_spec(Node) when is_atom(Node) ->
 
         _ ->
             Timeout = 15000,
-            Result = rpc:call(
-                Node,
-                partisan_peer_service_manager,
-                myself,
-                [],
-                Timeout
-            ),
-            case Result of
+            Mod = case is_connected(Node) of
+                true ->
+                    partisan_rpc;
+                false ->
+                    rpc
+            end,
+
+            case Mod:call(Node, ?MODULE, node_spec, [], Timeout) of
                 #{name := Node} = NodeSpec ->
                     {ok, NodeSpec};
                 {badrpc, Reason} ->
@@ -549,16 +618,6 @@ is_process_alive(RemoteRef) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Send a message to a remote peer_service_manager.
-%% @end
-%% -----------------------------------------------------------------------------
--spec send_message(node(), message()) -> ok.
-
-send_message(Node, Message) ->
-    (?PEER_SERVICE_MANAGER):send_message(Node, Message).
-
-
-%% -----------------------------------------------------------------------------
 %% @doc Cast message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
@@ -582,7 +641,8 @@ cast_message(Node, Channel, ServerRef, Message) ->
 %% @doc Cast message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
--spec cast_message(node(), channel(), pid() | atom(), message(), options()) ->
+-spec cast_message(
+    node(), channel(), pid() | atom(), message(), forward_options()) ->
     ok.
 
 cast_message(Name, Channel, ServerRef, Message, Options) ->
@@ -603,31 +663,20 @@ forward_message(PidOrRef, Message) ->
 %% @doc Forward message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
--spec forward_message(node(), pid(), message()) -> ok.
+-spec forward_message(remote_ref() | pid(), message(), forward_options()) -> ok.
 
-forward_message(Name, ServerRef, Message) ->
-    (?PEER_SERVICE_MANAGER):forward_message(Name, ServerRef, Message).
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Forward message to registered process on the remote side.
-%% @end
-%% -----------------------------------------------------------------------------
--spec forward_message(node(), channel(), pid(), message()) -> ok.
-
-forward_message(Name, Channel, ServerRef, Message) ->
-    (?PEER_SERVICE_MANAGER):forward_message(Name, Channel, ServerRef, Message).
-
+forward_message(PidOrRef, Message, Opts) ->
+    (?PEER_SERVICE_MANAGER):forward_message(PidOrRef, Message, Opts).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc Forward message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
--spec forward_message(node(), channel(), pid(), message(), options()) -> ok.
+-spec forward_message(node(), pid(), message(), forward_options()) -> ok.
 
-forward_message(Name, Channel, ServerRef, Message, Options) ->
-    (?PEER_SERVICE_MANAGER):forward_message(Name, Channel, ServerRef, Message, Options).
+forward_message(Node, ServerRef, Message, Options) ->
+    (?PEER_SERVICE_MANAGER):forward_message(Node, ServerRef, Message, Options).
 
 
 %% -----------------------------------------------------------------------------

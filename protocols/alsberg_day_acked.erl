@@ -23,6 +23,8 @@
 
 -behaviour(gen_server).
 
+-include("partisan.hrl").
+
 %% API
 -export([start_link/0,
          stop/0,
@@ -144,7 +146,7 @@ handle_cast({read_local, From, Key}, #state{store=Store}=State) ->
     Value = read(Key, Store),
 
     %% Reply to the caller.
-    partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value}),
+    partisan:forward_message(From, {ok, Value}),
 
     {noreply, State};
 handle_cast({read, From0, Key}, #state{next_id=NextId, membership=[Primary|_Rest], store=Store}=State) ->
@@ -168,13 +170,13 @@ handle_cast({read, From0, Key}, #state{next_id=NextId, membership=[Primary|_Rest
             Value = read(Key, Store),
 
             %% Reply to the caller.
-            partisan_pluggable_peer_service_manager:forward_message(EncodedFrom, {ok, Value}),
+            partisan:forward_message(EncodedFrom, {ok, Value}),
 
             {noreply, State#state{next_id=NextId+1}};
         _ ->
             %% Reply to caller.
             partisan_logger:info("Node ~p is not the primary for request: ~p", [node(), Request]),
-            partisan_pluggable_peer_service_manager:forward_message(EncodedFrom, {error, not_primary}),
+            partisan:forward_message(EncodedFrom, {error, not_primary}),
 
             {noreply, State#state{next_id=NextId+1}}
     end;
@@ -205,7 +207,12 @@ handle_cast({write, From0, Key, Value}, #state{next_id=NextId, membership=[Prima
 
             lists:foreach(fun(Node) ->
                 partisan_logger:info("sending collaborate message to node ~p for request ~p", [Node, Request]),
-                partisan_pluggable_peer_service_manager:forward_message(Node, undefined, ?MODULE, {collaborate, CoordinatorNode, Request}, [])
+                partisan:forward_message(
+                    Node,
+                    ?MODULE,
+                    {collaborate, CoordinatorNode, Request},
+                    #{channel => ?DEFAULT_CHANNEL}
+                )
             end, Rest),
 
             %% Write to storage.
@@ -215,7 +222,7 @@ handle_cast({write, From0, Key, Value}, #state{next_id=NextId, membership=[Prima
         _ ->
             %% Reply to caller.
             partisan_logger:info("Node ~p is not the primary for request: ~p", [node(), Request]),
-            partisan_pluggable_peer_service_manager:forward_message(EncodedFrom, {error, not_primary}),
+            partisan:forward_message(EncodedFrom, {error, not_primary}),
 
             {noreply, State#state{next_id=NextId+1}}
     end.
@@ -233,7 +240,7 @@ handle_info({collaborate_ack, ReplyingNode, {write, From, Key, Value}}, #state{o
             Outstanding = case lists:usort(Membership) =:= lists:usort(Replies) of
                 true ->
                     partisan_logger:info("Node ~p received all replies for request ~p, acknowleding to user.", [node(), Request]),
-                    partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value}),
+                    partisan:forward_message(From, {ok, Value}),
                     dict:erase(Request, Outstanding0);
                 false ->
                     partisan_logger:info("Received replies from: ~p, but need replies from: ~p", [Replies, Membership -- Replies]),
@@ -261,7 +268,12 @@ handle_info({collaborate, CoordinatorNode, {write, From, Key, Value}}, #state{me
             %% Reply with collaborate acknowledgement.
             ReplyingNode = node(),
             partisan_logger:info("Node ~p is backup, responding to the primary ~p with acknowledgement", [node(), CoordinatorNode]),
-            partisan_pluggable_peer_service_manager:forward_message(CoordinatorNode, undefined, ?MODULE, {collaborate_ack, ReplyingNode, Request}, []),
+            partisan:forward_message(
+                CoordinatorNode,
+                ?MODULE,
+                {collaborate_ack, ReplyingNode, Request},
+                #{channel => ?DEFAULT_CHANNEL}
+            ),
 
             {noreply, State#state{store=Store}}
     end;
@@ -272,7 +284,12 @@ handle_info(retry, #state{outstanding=Outstanding}=State) ->
 
         lists:foreach(fun(Node) ->
             partisan_logger:info("sending retry collaborate message to node ~p for request ~p", [Node, Request]),
-            partisan_pluggable_peer_service_manager:forward_message(Node, undefined, ?MODULE, {retry_collaborate, CoordinatorNode, Request}, [])
+            partisan:forward_message(
+                Node,
+                ?MODULE,
+                {retry_collaborate, CoordinatorNode, Request},
+                #{channel => ?DEFAULT_CHANNEL}
+            )
         end, Rest)
     end, [], Outstanding),
 
@@ -293,7 +310,12 @@ handle_info({retry_collaborate, CoordinatorNode, {write, From, Key, Value}}, #st
             %% Reply with collaborate acknowledgement.
             ReplyingNode = node(),
             partisan_logger:info("Node ~p is backup, responding to the primary ~p with acknowledgement", [node(), CoordinatorNode]),
-            partisan_pluggable_peer_service_manager:forward_message(CoordinatorNode, undefined, ?MODULE, {retry_collaborate_ack, ReplyingNode, Request}, []),
+            partisan:forward_message(
+                CoordinatorNode,
+                ?MODULE,
+                {retry_collaborate_ack, ReplyingNode, Request},
+                #{channel => ?DEFAULT_CHANNEL}
+            ),
 
             {noreply, State#state{store=Store}}
     end;
@@ -310,7 +332,7 @@ handle_info({retry_collaborate_ack, ReplyingNode, {write, From, Key, Value}}, #s
             case lists:usort(Membership) =:= lists:usort(Replies) of
                 true ->
                     partisan_logger:info("Node ~p received all replies for request ~p, acknowleding to user.", [node(), Request]),
-                    partisan_pluggable_peer_service_manager:forward_message(From, {ok, Value});
+                    partisan:forward_message(From, {ok, Value});
                 false ->
                     partisan_logger:info("Received replies from: ~p, but need replies from: ~p", [Replies, Membership -- Replies]),
                     ok

@@ -542,7 +542,12 @@ receive_interposition_test(Config) ->
     true = rpc:call(Node4, erlang, register, [receiver, Pid]),
 
     %% Send message.
-    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message1, []]),
+    ok = rpc:call(
+        Node3,
+        Manager,
+        forward_message,
+        [Node4, receiver, Message1, []]
+    ),
 
     %% Wait to receive message.
     receive
@@ -557,7 +562,12 @@ receive_interposition_test(Config) ->
     ok = rpc:call(Node4, Manager, remove_interposition_fun, [Node3]),
 
     %% Send message.
-    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message2, []]),
+    ok = rpc:call(
+        Node3,
+        Manager,
+        forward_message,
+        [Node4, receiver, Message2, []]
+    ),
 
     %% Wait to receive message.
     receive
@@ -626,7 +636,17 @@ ack_test(Config) ->
     true = rpc:call(Node4, erlang, register, [receiver, Pid]),
 
     %% Send message.
-    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message1, [{ack, true}]]),
+    ok = rpc:call(
+        Node3,
+        Manager,
+        forward_message,
+        [
+            Node4,
+            receiver,
+            Message1,
+            [{ack, true}]
+        ]
+    ),
 
     %% Wait to receive message.
     receive
@@ -709,7 +729,12 @@ forward_interposition_test(Config) ->
     true = rpc:call(Node4, erlang, register, [receiver, Pid]),
 
     %% Send message.
-    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message1, []]),
+    ok = rpc:call(
+        Node3,
+        Manager,
+        forward_message,
+        [Node4, receiver, Message1, []]
+    ),
 
     %% Wait to receive message.
     receive
@@ -724,7 +749,12 @@ forward_interposition_test(Config) ->
     ok = rpc:call(Node3, Manager, remove_interposition_fun, [Node4]),
 
     %% Send message.
-    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message2, []]),
+    ok = rpc:call(
+        Node3,
+        Manager,
+        forward_message,
+        [Node4, receiver, Message2, []]
+    ),
 
     %% Wait to receive message.
     receive
@@ -778,7 +808,9 @@ pid_test(Config) ->
 
     %% Send message.
     SenderFun = fun() ->
-        ok = Manager:forward_message(Node4, undefined, receiver, {message, self()}, []),
+        ok = Manager:forward_message(
+            Node4, receiver, {message, self()}, []
+        ),
 
         %% Process must stay alive to send the pid.
         receive
@@ -1383,7 +1415,9 @@ forward_delay_interposition_test(Config) ->
     true = rpc:call(Node4, erlang, register, [receiver, Pid]),
 
     %% Send message.
-    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message1, []]),
+    ok = rpc:call(
+        Node3, Manager, forward_message, [Node4, receiver, Message1, []]
+    ),
 
     %% Wait to receive message.
     receive
@@ -1958,7 +1992,10 @@ make_certs(Config) ->
 check_forward_message(Node, Manager, Nodes) ->
     Members = ideally_connected_members(Node, Nodes),
 
-    ForwardOptions = rpc:call(Node, partisan_config, get, [forward_options, []]),
+    ForwardOptions = rpc:call(
+        Node, partisan_config, get, [forward_options, []]
+    ),
+
     ct:pal("Using forward options: ~p", [ForwardOptions]),
 
     lists:foreach(
@@ -1973,7 +2010,12 @@ check_forward_message(Node, Manager, Nodes) ->
 
             Fun = fun() ->
                 ct:pal("Requesting node ~p to forward message ~p to store_proc on node ~p", [Node, Rand, Member]),
-                ok = rpc:call(Node, Manager, forward_message, [Member, undefined, store_proc, {store, Rand}, ForwardOptions]),
+                ok = rpc:call(
+                    Node,
+                    Manager,
+                    forward_message,
+                    [Member, store_proc, {store, Rand}, ForwardOptions]
+                ),
                 ct:pal("Message dispatched..."),
 
                 ct:pal("Checking ~p for value...", [Member]),
@@ -2238,7 +2280,12 @@ receiver(Manager, BenchPid, Count) ->
 sender(_EchoBinary, _Manager, _DestinationNode, _DestinationPid, _PartitionKey, 0) ->
     ok;
 sender(EchoBinary, Manager, DestinationNode, DestinationPid, PartitionKey, Count) ->
-    Manager:forward_message(DestinationNode, undefined, DestinationPid, {EchoBinary, node(), self()}, [{partition_key, PartitionKey}]),
+    Manager:forward_message(
+        DestinationNode,
+        DestinationPid,
+        {EchoBinary, node(), self()},
+        [{partition_key, PartitionKey}]
+    ),
     sender(EchoBinary, Manager, DestinationNode, DestinationPid, PartitionKey, Count - 1).
 
 init_sender(EchoBinary, Manager, DestinationNode, DestinationPid, PartitionKey, Count) ->
