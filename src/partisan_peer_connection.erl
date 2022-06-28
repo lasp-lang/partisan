@@ -175,10 +175,10 @@ socket(Conn) ->
 
 
 %% @private
-do_connect(Address, Port, Options, Timeout, Transport, Control, PartisanOptions) ->
-   Monotonic = maps:get(monotonic, PartisanOptions, false),
+do_connect(Address, Port, ConnectOpts, Timeout, Transport, Control, Opts) ->
+   Monotonic = maps:get(monotonic, Opts, false),
 
-   case Transport:connect(Address, Port, Options, Timeout) of
+   case Transport:connect(Address, Port, ConnectOpts, Timeout) of
        {ok, Socket} ->
             Connection = #connection{
                 socket = Socket,
