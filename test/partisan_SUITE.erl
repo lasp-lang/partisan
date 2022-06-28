@@ -45,6 +45,7 @@
 -define(TIMEOUT, 10000).
 -define(CLIENT_NUMBER, 3).
 -define(HIGH_CLIENT_NUMBER, 10).
+-define(PAUSE_FOR_CLUSTERING, timer:sleep(5000)).
 
 %% ==================================================================
 %% common_test callbacks
@@ -328,8 +329,7 @@ transform_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Test on_down callback.
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
@@ -420,8 +420,7 @@ causal_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Test on_down callback.
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
@@ -506,8 +505,7 @@ receive_interposition_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Test on_down callback.
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
@@ -601,8 +599,7 @@ ack_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Test on_down callback.
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
@@ -693,8 +690,7 @@ forward_interposition_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Test on_down callback.
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
@@ -788,8 +784,7 @@ pid_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Test on_down callback.
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
@@ -863,8 +858,7 @@ rpc_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(5000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Select two of the nodes.
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
@@ -894,8 +888,7 @@ on_down_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Test on_down callback.
     [{_, _}, {_, _}, {Name3, Node3}, {_, Node4}] = Nodes,
@@ -1079,8 +1072,7 @@ performance_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     [{_, Node1}, {_, Node2}] = Nodes,
 
@@ -1198,8 +1190,7 @@ gossip_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
@@ -1274,8 +1265,7 @@ connectivity_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
@@ -1311,8 +1301,7 @@ otp_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %% gen_server tests.
@@ -1325,11 +1314,22 @@ otp_test(Config) ->
 
     %% Ensure that a regular call works.
     [{_, FirstName}, {_, SecondName} | _] = Nodes,
-    ok = rpc:call(FirstName, partisan_gen_server, call, [{partisan_test_server, SecondName}, call, 1000]),
+
+    ok = rpc:call(
+        FirstName,
+        partisan_gen_server, call,
+        [{partisan_test_server, SecondName}, call, 5000]
+    ),
 
     %% Ensure that a regular call with delayed response works.
     [{_, FirstName}, {_, SecondName} | _] = Nodes,
-    ok = rpc:call(FirstName, partisan_gen_server, call, [{partisan_test_server, SecondName}, delayed_reply_call, 1000]),
+
+    ok = rpc:call(
+        FirstName,
+        partisan_gen_server,
+        call,
+        [{partisan_test_server, SecondName}, delayed_reply_call, 5000]
+    ),
 
     %% Ensure that a cast works.
     Self = self(),
@@ -1340,11 +1340,21 @@ otp_test(Config) ->
                 Self ! ok
         end
     end,
+
     CastReceiverPid = rpc:call(SecondName, erlang, spawn, [CastReceiverFun]),
-    true = rpc:call(SecondName, erlang, register, [cast_receiver, CastReceiverPid]),
+
+    true = rpc:call(
+        SecondName, erlang, register, [cast_receiver, CastReceiverPid]
+    ),
 
     [{_, FirstName}, {_, SecondName} | _] = Nodes,
-    ok = rpc:call(FirstName, partisan_gen_server, cast, [{partisan_test_server, SecondName}, {cast, cast_receiver}]),
+
+    ok = rpc:call(
+        FirstName,
+        partisan_gen_server,
+        cast,
+        [{partisan_test_server, SecondName}, {cast, cast_receiver}]
+    ),
 
     receive
         ok ->
@@ -1378,8 +1388,7 @@ forward_delay_interposition_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Test on_down callback.
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
@@ -1451,8 +1460,7 @@ basic_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Verify membership.
     %%
@@ -1696,8 +1704,7 @@ hyparview_manager_partition_test(Config) ->
     ok = rpc:call(PNode, Manager, resolve_partition, [Reference]),
     ct:pal("Partition resolved: ~p", [Reference]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Verify resolved partition.
     ResolveVerifyFun = fun({_Name, Node}) ->
