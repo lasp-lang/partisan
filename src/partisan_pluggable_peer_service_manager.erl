@@ -272,7 +272,7 @@ send_message(Node, Message) ->
 %% -----------------------------------------------------------------------------
 -spec cast_message(
     Term :: partisan_remote_ref:p() | partisan_remote_ref:n() | pid(),
-    MEssage :: message()) -> ok.
+    Message :: message()) -> ok.
 
 cast_message(Term, Message) ->
     FullMessage = {'$gen_cast', Message},
