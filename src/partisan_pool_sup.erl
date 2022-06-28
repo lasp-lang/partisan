@@ -46,10 +46,10 @@ init([]) ->
 
 %% @private
 socket(#{ip := IP, port := Port}) ->
-    #{id => {partisan_socket, IP, Port},
-      start => {partisan_socket, start_link, [IP, Port]}}.
+    #{id => {partisan_acceptor_socket, IP, Port},
+      start => {partisan_acceptor_socket, start_link, [IP, Port]}}.
 
 %% @private
 pool() ->
-    #{id => partisan_pool,
-      start => {partisan_pool, start_link, []}}.
+    #{id => partisan_acceptor_pool,
+      start => {partisan_acceptor_pool, start_link, []}}.

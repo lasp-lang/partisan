@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(partisan_pool).
+-module(partisan_acceptor_pool).
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -behaviour(acceptor_pool).

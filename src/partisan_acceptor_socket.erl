@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(partisan_socket).
+-module(partisan_acceptor_socket).
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -behaviour(gen_server).
@@ -58,7 +58,7 @@ init([PeerIP, PeerPort]) ->
             ok = maybe_update_port_config(PeerIP, PeerPort, Socket),
             % acceptor could close the socket if there is a problem
             MRef = monitor(port, Socket),
-            partisan_pool:accept_socket(Socket, AcceptorPoolSize),
+            partisan_acceptor_pool:accept_socket(Socket, AcceptorPoolSize),
             {ok, {Socket, MRef}};
         {error, Reason} ->
             {stop, Reason}
