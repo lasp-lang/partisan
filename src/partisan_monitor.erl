@@ -87,7 +87,10 @@
 %% @end
 %% -----------------------------------------------------------------------------
 start_link() ->
-    partisan_gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+    Opts = [
+        {spawn_opt, ?PARALLEL_SIGNAL_OPTIMISATION([])}
+    ],
+    partisan_gen_server:start_link({local, ?MODULE}, ?MODULE, [], Opts).
 
 
 %% -----------------------------------------------------------------------------

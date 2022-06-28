@@ -207,10 +207,13 @@ start_link(InitMembers, InitEagers, InitLazys, Mods, Opts) when is_list(Opts) ->
     start_link(InitMembers, InitEagers, InitLazys, Mods, maps:from_list(Opts));
 
 start_link(InitMembers, InitEagers, InitLazys, Mods, Opts) when is_map(Opts) ->
+    StartOpts = [
+        {spawn_opt, ?PARALLEL_SIGNAL_OPTIMISATION([])}
+    ],
     gen_server:start_link(
         {local, ?SERVER}, ?MODULE,
         [InitMembers, InitEagers, InitLazys, Mods, Opts],
-        []
+        StartOpts
     ).
 
 
