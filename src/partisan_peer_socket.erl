@@ -18,8 +18,11 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc Wrapper for peer connections that allows transparent usage of
-%% plain TCP or TLS/SSL.
+%% -----------------------------------------------------------------------------
+%% @doc Wrapper that allows transparent usage of plain TCP or TLS/SSL socket
+%% for peer connections.
+%% @end
+%% -----------------------------------------------------------------------------
 -module(partisan_peer_socket).
 
 -export([
