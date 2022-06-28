@@ -1,26 +1,24 @@
 -define(APP, partisan).
 -define(PEER_IP, {127, 0, 0, 1}).
 -define(PEER_PORT, 9090).
--define(PEER_SERVICE_SERVER, partisan_peer_service_server).
 -define(FANOUT, 5).
--define(CACHE, partisan_connection_cache).
 -define(PLUMTREE_OUTSTANDING, partisan_plumtree_broadcast).
 -define(CONNECTION_JITTER, 1000).
 -define(RELAY_TTL, 5).
--define(MEMBERSHIP_PROTOCOL_CHANNEL, membership).
 
-%% Optimizations.
+-define(CHANNELS, [?DEFAULT_CHANNEL]).
+-define(MEMBERSHIP_PROTOCOL_CHANNEL, membership).
 -define(RPC_CHANNEL, rpc).
 -define(DEFAULT_CHANNEL, undefined).
+-define(GOSSIP_CHANNEL, gossip).
+
+-define(PARALLELISM, 1).
 -define(DEFAULT_PARTITION_KEY, undefined).
--define(PARALLELISM, 1).                            %% How many connections should exist between nodes?
-% -define(CHANNELS,                                 %% What channels should be established?
-%         [undefined, broadcast, vnode, {monotonic, gossip}]).
--define(CHANNELS, [?DEFAULT_CHANNEL]).
--define(CAUSAL_LABELS, []).                         %% What causal channels should be established?
+
+-define(CAUSAL_LABELS, []).
 
 %% Gossip.
--define(GOSSIP_CHANNEL, gossip).
+
 -define(GOSSIP_FANOUT, 5). %% TODO: FIX ME.
 -define(GOSSIP_GC_MIN_SIZE, 10).
 
@@ -61,12 +59,21 @@
 
 -define(OVERRIDE_PERIODIC_INTERVAL, 10000).
 
--define(UTIL, partisan_plumtree_util).
 -define(DEFAULT_LAZY_TICK_PERIOD, 1000).
 -define(DEFAULT_EXCHANGE_TICK_PERIOD, 10000).
 
 -define(XBOT_MIN_INTERVAL, 5000).
 -define(XBOT_RANGE_INTERVAL, 60000).
+
+-if(?OTP_RELEASE >= 25).
+    -define(PARALLEL_SIGNAL_OPTIMISATION(L),
+        lists:keystore(
+            message_queue_data, 1, L, {message_queue_data, off_heap}
+        )
+    ).
+-else.
+    -define(PARALLEL_SIGNAL_OPTIMISATION(L), L).
+-endif.
 
 % parameter used for xbot optimization
 % - latency (uses ping to check better nodes)
