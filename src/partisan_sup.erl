@@ -55,7 +55,6 @@ init([]) ->
         ?CHILD(partisan_acknowledgement_backend, worker),
         ?CHILD(partisan_orchestration_backend, worker),
         ?SUPERVISOR(partisan_peer_service_sup, [], permanent, infinity),
-        ?CHILD(partisan_peer_service_events, worker),
         ?CHILD(partisan_plumtree_backend, worker),
         ?CHILD(partisan_plumtree_broadcast, worker)
     ]),

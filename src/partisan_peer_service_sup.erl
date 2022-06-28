@@ -44,6 +44,7 @@ init([]) ->
 
     Children = [
         ?CHILD(Manager, worker),
+        ?CHILD(partisan_peer_service_events, worker),
         ?CHILD(partisan_monitor, worker)
     ],
     RestartStrategy = {rest_for_one, 10, 10},
