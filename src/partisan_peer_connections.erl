@@ -515,7 +515,7 @@ when is_pid(Pid), is_map(ListenAddr) ->
         listen_addr = ListenAddr
     },
 
-    case ets:insert_new(?MODULE, Conn) of
+    try ets:insert_new(?MODULE, Conn) of
         true ->
             %% We conditionally insert a new info record incrementing its
             %% connection count.
@@ -525,6 +525,9 @@ when is_pid(Pid), is_map(ListenAddr) ->
             ok;
         false ->
             ok
+    catch
+        error:badarg ->
+            error(notalive)
     end.
 
 
@@ -544,13 +547,17 @@ prune(Node) when is_atom(Node) ->
     },
 
     %% Remove all connections
-    Connections = case ets:select(?MODULE, [{MatchHead, [], ['$_']}]) of
-        [] ->
-            [];
-        L ->
-            _ = ets:select_delete(?MODULE, [{MatchHead, [], [true]}]),
-            L
-    end,
+    Connections =
+        try ets:select(?MODULE, [{MatchHead, [], ['$_']}]) of
+            [] ->
+                [];
+            L ->
+                _ = ets:select_delete(?MODULE, [{MatchHead, [], [true]}]),
+                L
+        catch
+            error:badarg ->
+                error(notalive)
+        end,
 
     %% Remove info and return spec
     case ets:take(?MODULE, Node) of
@@ -562,7 +569,7 @@ prune(Node) when is_atom(Node) ->
 
 prune(Pid) when is_pid(Pid) ->
     %% Remove matching connection
-    case ets:take(?MODULE, Pid) of
+    try ets:take(?MODULE, Pid) of
         [#partisan_peer_connection{node = Node}] = L ->
             %% We dexcrease the connection count
             Ops = [{#partisan_peer_info.connection_count, -1}],
@@ -572,6 +579,9 @@ prune(Pid) when is_pid(Pid) ->
             {I, L};
         [] ->
             error(badarg)
+    catch
+        error:badarg ->
+            error(notalive)
     end;
 
 prune(#{name := Node}) ->
@@ -594,10 +604,10 @@ erase(Node) when is_atom(Node) ->
     MS = [{MatchHead, [], [true]}],
 
     %% Remove all connections
-    _ = ets:select_delete(?MODULE, MS),
+    _ = catch ets:select_delete(?MODULE, MS),
 
     %% Remove info and return spec
-    true = ets:delete(?MODULE, Node),
+    _ = catch ets:delete(?MODULE, Node),
 
     ok;
 
@@ -677,7 +687,7 @@ foreach(Fun) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec dispatch_pid(node() | node_spec()) ->
-    {ok, pid()} | {error, disconnected | not_yet_connected}.
+    {ok, pid()} | {error, disconnected | not_yet_connected | notalive}.
 
 dispatch_pid(Node) ->
     dispatch_pid(Node, ?DEFAULT_CHANNEL).
@@ -703,7 +713,7 @@ dispatch_pid(Node, Channel) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec dispatch_pid(node() | node_spec(), channel_spec(), maybe(any())) ->
-    {ok, pid()} | {error, disconnected | not_yet_connected}.
+    {ok, pid()} | {error, disconnected | not_yet_connected | notalive}.
 
 dispatch_pid(Node, {monotonic, Channel}, PartitionKey) ->
     dispatch_pid(Node, Channel, PartitionKey);
@@ -766,11 +776,14 @@ do_dispatch_pid([], _, Node) ->
     },
     MS = [{MatchHead, [], [true]}],
 
-    case ets:select_count(?MODULE, MS) == 1 of
+    try ets:select_count(?MODULE, MS) == 1 of
         true ->
             {error, disconnected};
         false ->
             {error, not_yet_connected}
+    catch
+        error:badarg ->
+            {error, notalive}
     end;
 
 do_dispatch_pid(Connections, PartitionKey, _) ->
