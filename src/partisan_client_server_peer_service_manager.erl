@@ -209,11 +209,13 @@ sync_join(_Node) ->
 
 %% @doc Leave the cluster.
 leave() ->
-    gen_server:call(?MODULE, {leave, partisan:node()}, infinity).
+    gen_server:call(?MODULE, {leave, partisan:node_spec()}, infinity).
+
 
 %% @doc Remove another node from the cluster.
-leave(Node) ->
-    gen_server:call(?MODULE, {leave, Node}, infinity).
+leave(#{name := _} = NodeSpec) ->
+    gen_server:call(?MODULE, {leave, NodeSpec}, infinity).
+
 
 %% @doc Decode state.
 decode(State) ->
@@ -277,10 +279,7 @@ init([]) ->
 handle_call({reserve, _Tag}, _From, State) ->
     {reply, {error, no_available_slots}, State};
 
-handle_call({leave, #{name := NodeName}}, From, State) ->
-    handle_call({leave, NodeName}, From, State);
-
-handle_call({leave, LeavingNode}, _From, #state{} = State0) ->
+handle_call({leave, #{name := LeavingNode}}, _From, #state{} = State0) ->
 
     Membership0 = State0#state.membership,
     Pending = State0#state.pending,
