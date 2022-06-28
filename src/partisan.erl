@@ -44,9 +44,9 @@
 -export([stop/0]).
 
 -export([broadcast/2]).
+-export([cast_message/2]).
 -export([cast_message/3]).
 -export([cast_message/4]).
--export([cast_message/5]).
 -export([default_channel/0]).
 -export([demonitor/1]).
 -export([demonitor/2]).
@@ -618,6 +618,18 @@ is_process_alive(RemoteRef) ->
 
 
 %% -----------------------------------------------------------------------------
+%% @doc Cast message to a remote ref
+%% @end
+%% -----------------------------------------------------------------------------
+-spec cast_message(
+    Term :: partisan_remote_ref:p() | partisan_remote_ref:n() | pid(),
+    MEssage :: message()) -> ok.
+
+cast_message(Term, Message) ->
+    (?PEER_SERVICE_MANAGER):cast_message(Term, Message).
+
+
+%% -----------------------------------------------------------------------------
 %% @doc Cast message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
@@ -631,32 +643,23 @@ cast_message(Node, ServerRef, Message) ->
 %% @doc Cast message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
--spec cast_message(node(), channel(), pid() | atom(), message()) -> ok.
-
-cast_message(Node, Channel, ServerRef, Message) ->
-    (?PEER_SERVICE_MANAGER):cast_message(Node, Channel, ServerRef, Message).
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Cast message to registered process on the remote side.
-%% @end
-%% -----------------------------------------------------------------------------
--spec cast_message(
-    node(), channel(), pid() | atom(), message(), forward_options()) ->
+-spec cast_message(node(), pid() | atom(), message(), forward_options()) ->
     ok.
 
-cast_message(Name, Channel, ServerRef, Message, Options) ->
-    (?PEER_SERVICE_MANAGER):cast_message(Name, Channel, ServerRef, Message, Options).
+cast_message(Name, ServerRef, Message, Options) ->
+    (?PEER_SERVICE_MANAGER):cast_message(Name, ServerRef, Message, Options).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc Forward message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
--spec forward_message(remote_ref() | pid(), message()) -> ok.
+-spec forward_message(
+    Term :: partisan_remote_ref:p() | partisan_remote_ref:n() | pid(),
+    Message :: message()) -> ok.
 
-forward_message(PidOrRef, Message) ->
-    (?PEER_SERVICE_MANAGER):forward_message(PidOrRef, Message).
+forward_message(Term, Message) ->
+    (?PEER_SERVICE_MANAGER):forward_message(Term, Message).
 
 
 %% -----------------------------------------------------------------------------
@@ -675,8 +678,8 @@ forward_message(PidOrRef, Message, Opts) ->
 %% -----------------------------------------------------------------------------
 -spec forward_message(node(), pid(), message(), forward_options()) -> ok.
 
-forward_message(Node, ServerRef, Message, Options) ->
-    (?PEER_SERVICE_MANAGER):forward_message(Node, ServerRef, Message, Options).
+forward_message(Node, ServerRef, Message, Opts) ->
+    (?PEER_SERVICE_MANAGER):forward_message(Node, ServerRef, Message, Opts).
 
 
 %% -----------------------------------------------------------------------------

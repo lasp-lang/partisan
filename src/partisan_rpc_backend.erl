@@ -80,9 +80,12 @@ handle_info({call, Module, Function, Arguments, _Timeout, {origin, Name, Self}},
 
     %% Send the response to execution.
     Manager = partisan_config:get(partisan_peer_service_manager),
-    Options = partisan_config:get(forward_options, #{}),
-    RpcChannel = rpc_channel(),
-    ok = Manager:forward_message(Name, RpcChannel, Self, {response, Response}, Options),
+    Options0 = partisan_config:get(forward_options, #{}),
+    Options = [{channel, rpc_channel()} | Options0],
+
+    ok = Manager:forward_message(
+        Name, Self, {response, Response}, Options
+    ),
 
     {noreply, State};
 

@@ -18,8 +18,13 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
-%%
+
+%% -----------------------------------------------------------------------------
 %% @doc This module is responsible for monitoring processes on remote nodes.
+%% ** YOU SHOULD NOT USE the functions in this module **.
+%% Use the related functions in {@link partisan} instead.
+%% @end
+%% -----------------------------------------------------------------------------
 -module(partisan_monitor).
 
 -behaviour(partisan_gen_server).
@@ -42,8 +47,14 @@
                                 }},
     %% We cache the nodes that are up, so that if we are terminated we can
     %% notify the subscriptions
-    up_nodes                 ::  sets:set(node())
+    up_nodes                ::  sets:set(node())
 }).
+
+-type mon_opts()            ::  list().
+-type demon_opts()          ::  [flush | info].
+
+-export_type([mon_opts/0]).
+-export_type([demon_opts/0]).
 
 
 % API
@@ -72,7 +83,7 @@
 
 
 %% -----------------------------------------------------------------------------
-%% @doc
+%% @doc Starts the partisan monitor server.
 %% @end
 %% -----------------------------------------------------------------------------
 start_link() ->
@@ -80,31 +91,36 @@ start_link() ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc when you attempt to monitor a partisan_remote_reference, it is not
+%% @doc When you attempt to monitor a remote process, it is not
 %% guaranteed that you will receive the DOWN message. A few reasons for not
 %% receiving the message are message loss, tree reconfiguration and the node
 %% is no longer reachable.
+%% The monitor options `Opts' are currently ignored.
+%%
+%% Failure:
+%% <ul>
+%% <li>`notalive' if the partisan_monitor process is not alive.</li>
+%% <li>`not_implemented' if the partisan peer service manager does not support
+%% the required capabilities required for monitoring.</li>
+%% <li>`badarg' if any of the arguments is invalid.</li>
+%% </ul>
 %% @end
 %% -----------------------------------------------------------------------------
--spec monitor(partisan_remote_ref:p() | partisan_remote_ref:node(), list()) ->
+-spec monitor(partisan_remote_ref:p() | partisan_remote_ref:n(), mon_opts()) ->
     partisan_remote_ref:r() | no_return().
 
 monitor(RemoteRef, Opts) ->
-    partisan_remote_ref:is_pid(RemoteRef)
-        orelse partisan_remote_ref:is_name(RemoteRef)
-        orelse error(badarg),
-
+    %% We assume Node is not the local node.
     Node = partisan_remote_ref:node(RemoteRef),
 
     case partisan_peer_connections:is_connected(Node) of
         true ->
             %% We call the remote partisan_monitor process to request a monitor
-            Cmd1 = {monitor, RemoteRef, Opts},
-            case partisan_gen_server:call({?MODULE, Node}, Cmd1) of
+            case call({?MODULE, Node}, {monitor, RemoteRef, Opts}) of
                 {ok, MRef} ->
                     MRef;
-                {error, badarg} ->
-                    error(badarg)
+                {error, Reason} ->
+                    error(Reason)
             end;
         false ->
             %% We reply a ref but we do not record the request as we are
@@ -117,34 +133,39 @@ monitor(RemoteRef, Opts) ->
 
 %% -----------------------------------------------------------------------------
 %% @doc
+%% Failure:
+%% <ul>
+%% <li>`notalive' if the partisan_monitor process is not alive.</li>
+%% <li>`not_implemented' if the partisan peer service manager does not support
+%% the required capabilities required for monitoring.</li>
+%% <li>`badarg' if any of the arguments is invalid.</li>
+%% </ul>
 %% @end
 %% -----------------------------------------------------------------------------
--spec demonitor(
-    RemoteRef :: partisan_remote_ref:r(),
-    OptionList :: [flush | info]) -> boolean() | no_return().
+-spec demonitor(RemoteRef :: partisan_remote_ref:r(), Opts :: demon_opts()) ->
+    boolean() | no_return().
 
 demonitor(RemoteRef, Opts) ->
-
     partisan_remote_ref:is_reference(RemoteRef) orelse error(badarg),
 
+    %% We assume Node is not the local node.
     Node = partisan_remote_ref:node(RemoteRef),
 
     Cmd1 = {demonitor, RemoteRef, Opts},
 
-    case partisan_gen_server:call({?MODULE, Node}, Cmd1) of
-        {ok, Res} ->
+    case call({?MODULE, Node}, Cmd1) of
+        {ok, Bool} ->
             case lists:member(flush, Opts) of
                 true ->
-                    MRef = decode_ref(RemoteRef),
                     receive
-                        {_, MRef, _, _, _} ->
-                            Res
+                        {_, RemoteRef, _, _, _} ->
+                            Bool
                     after
                         0 ->
-                            Res
+                            Bool
                     end;
                 false ->
-                    Res
+                    Bool
             end;
         {error, badarg} ->
             error(badarg)
@@ -155,7 +176,7 @@ demonitor(RemoteRef, Opts) ->
 %% @doc Monitor the status of the node `Node'. If Flag is true, monitoring is
 %% turned on. If `Flag' is `false', monitoring is turned off.
 %%
-%% Making several calls to `monitor_node(Node, true)' for the same `Node' from
+%% Making several calls to `monitor_node(Node, true)' for the same `Node'
 %% is not an error; it results in as many independent monitoring instances as
 %% the number of different calling processes i.e. If a process has made two
 %% calls to `monitor_node(Node, true)' and `Node' terminates, only one
@@ -165,21 +186,28 @@ demonitor(RemoteRef, Opts) ->
 %% If `Node' fails or does not exist, the message `{nodedown, Node}' is
 %% delivered to the calling process. If there is no connection to Node, a
 %% `nodedown' message is delivered. As a result when using a membership
-%% strategy that uses a partial view, you can not monitor nodes that are not
+%% strategy that uses a partial view, you cannot monitor nodes that are not
 %% members of the view.
 %%
-%% If `Node' is the caller's node, the function returns `false'.
+%% Failure:
+%% <ul>
+%% <li>`notalive' if the partisan_monitor process is not alive.</li>
+%% <li>`not_implemented' if the partisan peer service manager does not support
+%% the required capabilities required for monitoring.</li>
+%% <li>`badarg' if any of the arguments is invalid.</li>
+%% </ul>
 %% @end
 %% -----------------------------------------------------------------------------
--spec monitor_node(node() | node_spec(), boolean()) -> boolean().
+-spec monitor_node(node() | node_spec(), boolean()) -> true | no_return().
 
 monitor_node(#{name := Node}, Flag) ->
     monitor_node(Node, Flag);
 
 monitor_node(Node, Flag) ->
+
     case partisan_peer_connections:is_connected(Node) of
         true ->
-            partisan_gen_server:call(?MODULE, {monitor_node, Node, Flag});
+            call(?MODULE, {monitor_node, Node, Flag});
         false ->
             %% We reply true but we do not record the request as we are
             %% immediatly sending a nodedown signal
@@ -199,7 +227,7 @@ monitor_node(Node, Flag) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec monitor_nodes(Flag :: boolean(), [partisan:monitor_nodes_opt()]) ->
-    ok | error | {error, term()}.
+    ok | error | {error, notalive | not_implemented | badarg}.
 
 monitor_nodes(Flag, Opts0) when is_boolean(Flag), is_list(Opts0) ->
     case parse_monitor_nodes_opts(Opts0) of
@@ -207,13 +235,9 @@ monitor_nodes(Flag, Opts0) when is_boolean(Flag), is_list(Opts0) ->
             %% Do nothing as we do not have hidden nodes in Partisan
             ok;
         Opts when Flag == true ->
-            partisan_gen_server:call(
-                ?MODULE, {monitor_nodes, Opts}
-            );
+            safe_call(?MODULE, {monitor_nodes, Opts});
         Opts when Flag == false ->
-            partisan_gen_server:call(
-                ?MODULE, {demonitor_nodes, Opts}
-            )
+            safe_call(?MODULE, {demonitor_nodes, Opts})
     end.
 
 
@@ -240,12 +264,12 @@ init([]) ->
     {ok, State}.
 
 handle_call(_, _, #state{enabled = false} = State) ->
-    %% The peer service manager does not implement on_up/down calls which we ]
+    %% The peer service manager does not implement on_up/down calls which we
     %% require to implement monitors
     {reply, {error, not_implemented}, State};
 
 handle_call({monitor, RemoteRef, _Opts}, {RemotePid, _}, State0) ->
-    %% A remote process wants to monitor Ref on this node
+    %% A remote process wants to monitor a process (Ref) on this node
     %% TODO Implement {tag, UserDefinedTag} option
     try
         Node = partisan_remote_ref:node(RemotePid),
@@ -307,7 +331,7 @@ handle_call({demonitor_nodes, {_, _} = Opts}, {Pid, _}, State0) ->
     {reply, ok, State};
 
 handle_call(_Msg, _From, State) ->
-    {reply, ok, State}.
+    {reply, {error, unsupported_call}, State}.
 
 
 handle_cast(_Msg, State) ->
@@ -487,13 +511,13 @@ subscribe_to_node_status() ->
 
 %% @private
 -spec send_process_down(
-    remote_ref(process_ref()) | pid(),
-    reference(),
-    {id, remote_ref() | {remote_ref(registered_name_ref()), node()}}
-    | pid() | atom() | {atom(), node()},
-    any()) -> ok.
+    Dest :: partisan_remote_ref:p() | partisan_remote_ref:n() | pid() | atom(),
+    MRef :: reference(),
+    Term :: {id, partisan_remote_ref:p() | partisan_remote_ref:n()}
+    | pid() | atom(),
+    Reason :: any()) -> ok.
 
-send_process_down(Pid, MRef, {id, PRef}, Reason) ->
+send_process_down(Dest, MRef, {id, PRef}, Reason) ->
     Down = {
         'DOWN',
         partisan_remote_ref:from_term(MRef),
@@ -501,20 +525,20 @@ send_process_down(Pid, MRef, {id, PRef}, Reason) ->
         PRef,
         Reason
     },
-    partisan:forward_message(Pid, Down);
+    partisan:forward_message(Dest, Down);
 
-send_process_down(Pid, MRef, Term, Reason) when is_pid(Term) ->
+send_process_down(Dest, MRef, Term, Reason) when is_pid(Term) ->
     Id = {id, partisan_remote_ref:from_term(Term)},
-    send_process_down(Pid, MRef, Id, Reason);
+    send_process_down(Dest, MRef, Id, Reason);
 
-send_process_down(Pid, MRef, Name, Reason) when is_atom(Name) ->
+send_process_down(Dest, MRef, Name, Reason) when is_atom(Name) ->
     Id = {id, partisan_remote_ref:from_term(Name)},
-    send_process_down(Pid, MRef, Id, Reason);
+    send_process_down(Dest, MRef, Id, Reason);
 
-send_process_down(Pid, MRef, {Name, Node}, Reason)
+send_process_down(Dest, MRef, {Name, Node}, Reason)
 when is_atom(Name), is_atom(Node) ->
     Id = {id, partisan_remote_ref:from_term(Name, Node)},
-    send_process_down(Pid, MRef, Id, Reason).
+    send_process_down(Dest, MRef, Id, Reason).
 
 
 %% @private
@@ -526,7 +550,7 @@ do_demonitor(Term, State0) ->
 do_demonitor(Term, Opts, State0) ->
     try
         MRef = decode_ref(Term),
-        Res = erlang:demonitor(MRef, Opts),
+        Bool = erlang:demonitor(MRef, Opts),
 
         State = case take_process_monitor(MRef, State0) of
             {{_, RemotePid}, State1} ->
@@ -536,7 +560,7 @@ do_demonitor(Term, Opts, State0) ->
                 State0
         end,
 
-        {{ok, Res}, State}
+        {{ok, Bool}, State}
 
     catch
         _:_ ->
@@ -647,3 +671,47 @@ parse_monitor_nodes_opts(Opts0) ->
     end,
     InclReason = lists:member(nodedown_reason, Opts0),
     {Type, InclReason}.
+
+
+%% @private
+call(ServerRef, Message) ->
+    try
+        partisan_gen_server:call(ServerRef, Message)
+    catch
+        exit:noproc ->
+            error(notalive)
+    end.
+
+
+%% @private
+% call(ServerRef, Message, Timeout) ->
+%     try
+%         partisan_gen_server:call(ServerRef, Message, Timeout)
+%     catch
+%         exit:noproc ->
+%             error(notalive)
+%     end.
+
+
+%% @private
+safe_call(ServerRef, Message) ->
+    try
+        partisan_gen_server:call(ServerRef, Message)
+    catch
+        exit:noproc ->
+            {error, notalive};
+        exist:{nodedown, Node} ->
+            {error, {nodedown, Node}}
+    end.
+
+
+%% @private
+% safe_call(ServerRef, Message, Timeout) ->
+%     try
+%         partisan_gen_server:call(ServerRef, Message, Timeout)
+%     catch
+%         exit:noproc ->
+%             {error, notalive};
+%         exist:{nodedown, Node} ->
+%             {error, {nodedown, Node}}
+%     end.
