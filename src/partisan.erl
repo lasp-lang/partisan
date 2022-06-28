@@ -34,7 +34,7 @@
                                         | partisan_remote_ref:p()
                                         | partisan_remote_ref:n().
 
--type forward_options()  ::  partisan_peer_service_manager:forward_options().
+-type forward_opts()  ::  partisan_peer_service_manager:forward_opts().
 
 -export_type([monitor_nodes_opt/0]).
 -export_type([server_ref/0]).
@@ -643,7 +643,7 @@ cast_message(Node, ServerRef, Message) ->
 %% @doc Cast message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
--spec cast_message(node(), pid() | atom(), message(), forward_options()) ->
+-spec cast_message(node(), pid() | atom(), message(), forward_opts()) ->
     ok.
 
 cast_message(Name, ServerRef, Message, Options) ->
@@ -666,7 +666,7 @@ forward_message(Term, Message) ->
 %% @doc Forward message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
--spec forward_message(remote_ref() | pid(), message(), forward_options()) -> ok.
+-spec forward_message(remote_ref() | pid(), message(), forward_opts()) -> ok.
 
 forward_message(PidOrRef, Message, Opts) ->
     (?PEER_SERVICE_MANAGER):forward_message(PidOrRef, Message, Opts).
@@ -676,7 +676,7 @@ forward_message(PidOrRef, Message, Opts) ->
 %% @doc Forward message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
--spec forward_message(node(), pid(), message(), forward_options()) -> ok.
+-spec forward_message(node(), pid(), message(), forward_opts()) -> ok.
 
 forward_message(Node, ServerRef, Message, Opts) ->
     (?PEER_SERVICE_MANAGER):forward_message(Node, ServerRef, Message, Opts).

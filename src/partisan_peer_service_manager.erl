@@ -35,7 +35,7 @@
                         | {via, module(), ViaName :: atom()}
                         | pid().
 
--type forward_options()     ::  #{
+-type forward_opts()     ::  #{
                             ack => boolean(),
                             causal_label => atom(),
                             channel => channel(),
@@ -44,7 +44,7 @@
                             transitive => boolean()
                         }.
 
--export_type([forward_options/0]).
+-export_type([forward_opts/0]).
 
 -export([mynode/0]).
 -export([myself/0]).
@@ -92,11 +92,11 @@
 -callback cast_message(
     partisan_remote_ref:p() | partisan_remote_ref:n() | pid(),
     message(),
-    forward_options()) -> ok.
+    forward_opts()) -> ok.
 
 % -callback cast_message(node(), pid(), message()) -> ok.
 
--callback cast_message(node(), pid(), message(), forward_options()) -> ok.
+-callback cast_message(node(), pid(), message(), forward_opts()) -> ok.
 
 -callback forward_message(
     partisan_remote_ref:p() | partisan_remote_ref:n() | pid() | atom(),
@@ -105,7 +105,7 @@
 -callback forward_message(
     partisan_remote_ref:p() | partisan_remote_ref:n() | pid() | atom(),
     message(),
-    forward_options()) -> ok.
+    forward_opts()) -> ok.
 
 % -callback forward_message(node(), pid(), message()) -> ok.
 

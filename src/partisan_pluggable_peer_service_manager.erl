@@ -359,7 +359,7 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
 
             %% Get forwarding options and combine with message
             %% specific options.
-            ForwardOptions = maps:merge(Opts, forward_options()),
+            ForwardOptions = maps:merge(Opts, forward_opts()),
 
             %% Use configuration to disable fast forwarding.
             DisableFastForward =
@@ -2110,7 +2110,7 @@ optional_gen_server_reply(From, Response) ->
 
 
 %% @private
-forward_options() ->
+forward_opts() ->
     case partisan_config:get(forward_options, #{}) of
         List when is_list(List) ->
             maps:from_list(List);
