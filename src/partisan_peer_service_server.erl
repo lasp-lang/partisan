@@ -23,7 +23,7 @@
 
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
--include("partisan_peer_connection.hrl").
+-include("partisan_peer_socket.hrl").
 
 -behaviour(acceptor).
 -behaviour(gen_server).
@@ -42,7 +42,7 @@
          code_change/3]).
 
 -record(state, {
-          socket :: partisan_peer_connection:connection(),
+          socket :: partisan_peer_socket:connection(),
           ref :: reference()
          }).
 
@@ -55,7 +55,7 @@ acceptor_init(_SockName, LSocket, []) ->
 
 acceptor_continue(_PeerName, Socket0, MRef) ->
     put({?MODULE, ingress_delay}, partisan_config:get(ingress_delay, 0)),
-    Socket = partisan_peer_connection:accept(Socket0),
+    Socket = partisan_peer_socket:accept(Socket0),
     send_message(Socket, {hello, partisan:node()}),
     gen_server:enter_loop(?MODULE, [], #state{socket=Socket, ref=MRef}).
 
@@ -86,7 +86,7 @@ handle_info({Tag, _RawSocket, Data}, State=#state{socket=Socket}) when ?DATA_MSG
             timer:sleep(Other)
     end,
     handle_message(decode(Data), State),
-    ok = partisan_peer_connection:setopts(Socket, [{active, once}]),
+    ok = partisan_peer_socket:setopts(Socket, [{active, once}]),
     {noreply, State};
 handle_info({Tag, _RawSocket, Reason}, State=#state{socket=Socket}) when ?ERROR_MSG(Tag) ->
     ?LOG_ERROR(#{
@@ -106,7 +106,7 @@ handle_info(_, State) ->
     {noreply, State}.
 
 terminate(_, #state{socket=Socket}) ->
-    ok = partisan_peer_connection:close(Socket),
+    ok = partisan_peer_socket:close(Socket),
     ok.
 
 %% @private
@@ -157,7 +157,7 @@ handle_message(Message, _State) ->
 %% @private
 send_message(Socket, Message) ->
     EncodedMessage = encode(Message),
-    partisan_peer_connection:send(Socket, EncodedMessage).
+    partisan_peer_socket:send(Socket, EncodedMessage).
 
 %% @private
 encode(Message) ->

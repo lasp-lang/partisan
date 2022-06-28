@@ -26,7 +26,7 @@
 
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
--include("partisan_peer_connection.hrl").
+-include("partisan_peer_socket.hrl").
 
 
 -export([start_link/4]).
@@ -92,7 +92,7 @@ handle_call({send_message, Message}, _From, #state{channel=_Channel, socket=Sock
             timer:sleep(Other)
     end,
 
-    case partisan_peer_connection:send(Socket, encode(Message)) of
+    case partisan_peer_socket:send(Socket, encode(Message)) of
         ok ->
             ?LOG_TRACE("Dispatched message: ~p", [Message]),
 
@@ -117,7 +117,7 @@ handle_cast({send_message, Message}, #state{channel=_Channel, socket=Socket}=Sta
             timer:sleep(Other)
     end,
 
-    case partisan_peer_connection:send(Socket, encode(Message)) of
+    case partisan_peer_socket:send(Socket, encode(Message)) of
         ok ->
             ?LOG_TRACE("Dispatched message: ~p", [Message]),
             ok;
@@ -150,7 +150,7 @@ handle_info(Event, State) ->
 -spec terminate(term(), state_t()) -> term().
 terminate(Reason, #state{socket=Socket}) ->
     ?LOG_TRACE("Process ~p terminating for reason ~p...", [self(), Reason]),
-    ok = partisan_peer_connection:close(Socket),
+    ok = partisan_peer_socket:close(Socket),
     ok.
 
 %% @private
@@ -192,7 +192,7 @@ connect(#{ip := Address, port := Port}, Channel) ->
     SocketOptions = [binary, {active, true}, {packet, 4}, {keepalive, true}],
     PartisanOptions = [{monotonic, Monotonic}],
 
-    case partisan_peer_connection:connect(Address, Port, SocketOptions, ?TIMEOUT, PartisanOptions) of
+    case partisan_peer_socket:connect(Address, Port, SocketOptions, ?TIMEOUT, PartisanOptions) of
         {ok, Socket} ->
             {ok, Socket};
         {error, Error} ->
@@ -232,7 +232,7 @@ handle_message({hello, Node}, #state{peer=Peer, socket=Socket}=State) ->
         PeerName ->
             Message = {hello, partisan:node()},
 
-            case partisan_peer_connection:send(Socket, default_encode(Message)) of
+            case partisan_peer_socket:send(Socket, default_encode(Message)) of
                 ok ->
                     ok;
                 Error ->

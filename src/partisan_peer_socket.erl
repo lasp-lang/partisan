@@ -20,7 +20,7 @@
 
 %% @doc Wrapper for peer connections that allows transparent usage of
 %% plain TCP or TLS/SSL.
--module(partisan_peer_connection).
+-module(partisan_peer_socket).
 
 -export([
          accept/1,
