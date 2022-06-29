@@ -38,7 +38,7 @@ call(Node, Module, Function, Arguments, Timeout) ->
     %% Make call.
     Manager = partisan_config:get(partisan_peer_service_manager),
     Self = self(),
-    Options0 = partisan_config:get(forward_options, #{}),
+    Options0 = partisan_config:get(forward_options, []),
     Options = [{channel, rpc_channel()} | Options0],
     OurNode = partisan:node(),
 

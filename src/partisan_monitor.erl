@@ -35,7 +35,7 @@
 -record(state, {
     enabled                 ::  boolean(),
     %% process monitor refs held on behalf of remote processes
-    refs = #{}              ::  #{reference() => remote_ref(process_ref())},
+    refs = #{}              ::  #{reference() => partisan_remote_ref:p()},
     %% refs grouped by node, used to notify/cleanup on a nodedown signal
     refs_by_node = #{}      ::  #{node() => [reference()]},
     %% Local pids that are monitoring a remote node
@@ -47,7 +47,8 @@
                                 }},
     %% We cache the nodes that are up, so that if we are terminated we can
     %% notify the subscriptions
-    up_nodes                ::  sets:set(node())
+    up_nodes                ::  sets:set(node()),
+    self_ref                ::  partisan_remote_ref:r()
 }).
 
 -type mon_opts()            ::  list().
@@ -113,24 +114,33 @@ start_link() ->
     partisan_remote_ref:r() | no_return().
 
 monitor(RemoteRef, Opts) ->
-    %% We assume Node is not the local node.
-    Node = partisan_remote_ref:node(RemoteRef),
-
-    case partisan_peer_connections:is_connected(Node) of
+    case is_self(RemoteRef) of
         true ->
-            %% We call the remote partisan_monitor process to request a monitor
-            case call({?MODULE, Node}, {monitor, RemoteRef, Opts}) of
-                {ok, MRef} ->
-                    MRef;
-                {error, Reason} ->
-                    error(Reason)
-            end;
+            %% We will be calling ourselves, this is becuase we are a
+            %% gen_server and partisan_gen calls partisan:monitor during a call.
+            %% We return the fake ref
+            persistent_term:get({?MODULE, self_ref});
+
         false ->
-            %% We reply a ref but we do not record the request as we are
-            %% immediatly sending a DOWN signal
-            MRef = make_ref(),
-            ok = send_process_down(self(), MRef, {id, RemoteRef}, noconnection),
-            partisan_remote_ref:from_term(MRef)
+            %% We assume Node is not the local node.
+            Node = partisan_remote_ref:node(RemoteRef),
+
+            case partisan_peer_connections:is_connected(Node) of
+                true ->
+                    %% We call the remote partisan_monitor process to request a monitor
+                    case call({?MODULE, Node}, {monitor, RemoteRef, Opts}) of
+                        {ok, MRef} ->
+                            MRef;
+                        {error, Reason} ->
+                            error(Reason)
+                    end;
+                false ->
+                    %% We reply a ref but we do not record the request as we are
+                    %% immediatly sending a DOWN signal
+                    MRef = make_ref(),
+                    ok = send_process_down(self(), MRef, {id, RemoteRef}, noconnection),
+                    partisan_remote_ref:from_term(MRef)
+            end
     end.
 
 
@@ -151,27 +161,32 @@ monitor(RemoteRef, Opts) ->
 demonitor(RemoteRef, Opts) ->
     partisan_remote_ref:is_reference(RemoteRef) orelse error(badarg),
 
-    %% We assume Node is not the local node.
-    Node = partisan_remote_ref:node(RemoteRef),
+    case RemoteRef == persistent_term:get({?MODULE, self_ref}) of
+        true ->
+            true;
+        false ->
+            %% We assume Node is not the local node.
+            Node = partisan_remote_ref:node(RemoteRef),
 
-    Cmd1 = {demonitor, RemoteRef, Opts},
+            Cmd1 = {demonitor, RemoteRef, Opts},
 
-    case call({?MODULE, Node}, Cmd1) of
-        {ok, Bool} ->
-            case lists:member(flush, Opts) of
-                true ->
-                    receive
-                        {_, RemoteRef, _, _, _} ->
-                            Bool
-                    after
-                        0 ->
+            case call({?MODULE, Node}, Cmd1) of
+                {ok, Bool} ->
+                    case lists:member(flush, Opts) of
+                        true ->
+                            receive
+                                {_, RemoteRef, _, _, _} ->
+                                    Bool
+                            after
+                                0 ->
+                                    Bool
+                            end;
+                        false ->
                             Bool
                     end;
-                false ->
-                    Bool
-            end;
-        {error, badarg} ->
-            error(badarg)
+                {error, badarg} ->
+                    error(badarg)
+            end
     end.
 
 
@@ -207,10 +222,12 @@ monitor_node(#{name := Node}, Flag) ->
     monitor_node(Node, Flag);
 
 monitor_node(Node, Flag) ->
-
     case partisan_peer_connections:is_connected(Node) of
         true ->
-            call(?MODULE, {monitor_node, Node, Flag});
+            partisan_gen_server:cast(
+                ?MODULE, {monitor_node, Node, self(), Flag}
+            ),
+            true;
         false ->
             %% We reply true but we do not record the request as we are
             %% immediatly sending a nodedown signal
@@ -260,9 +277,13 @@ init([]) ->
     %% terminated.
     erlang:process_flag(trap_exit, true),
 
+    Ref = partisan:make_ref(),
+    _ = persistent_term:put({?MODULE, self_ref}, Ref),
+
     State = #state{
         enabled = Enabled,
-        up_nodes = sets:new([{version, 2}])
+        up_nodes = sets:new([{version, 2}]),
+        self_ref = Ref
     },
     {ok, State}.
 
@@ -275,25 +296,37 @@ handle_call({monitor, RemoteRef, _Opts}, {RemotePid, _}, State0) ->
     %% A remote process wants to monitor a process (Ref) on this node
     %% TODO Implement {tag, UserDefinedTag} option
     try
-        Node = partisan_remote_ref:node(RemotePid),
-        PidOrName = partisan_remote_ref:to_term(RemoteRef),
 
-        %% We monitor the process on behalf of the remote caller
-        MRef = erlang:monitor(process, PidOrName),
+        case partisan_remote_ref:to_term(RemoteRef) of
+            Term when Term == ?MODULE orelse Term == self() ->
+                %% Circular monitoring, we reply with a fake ref
+                Reply = {ok, State0#state.self_ref},
+                {reply, Reply, State0};
 
-        %% We track the ref to match the 'DOWN' signal
-        State = add_process_monitor(
-            Node, MRef, {PidOrName, RemotePid}, State0
-        ),
+            PidOrName ->
+                Node = partisan_remote_ref:node(RemotePid),
 
-        %% We reply the encoded monitor reference
-        Reply = {ok, partisan_remote_ref:from_term(MRef)},
+                %% We monitor the process on behalf of the remote caller
+                MRef = erlang:monitor(process, PidOrName),
 
-        {reply, Reply, State}
+                %% We track the ref to match the 'DOWN' signal
+                State = add_process_monitor(
+                    Node, MRef, {PidOrName, RemotePid}, State0
+                ),
+
+                %% We reply the encoded monitor reference
+                Reply = {ok, partisan_remote_ref:from_term(MRef)},
+                {reply, Reply, State}
+        end
+
     catch
         error:badarg ->
             {reply, {error, badarg}, State0}
     end;
+
+handle_call({demonitor, Ref, _}, _From, #state{self_ref = Ref} = State) ->
+    %% The case for a process monitoring this server.
+    {reply, true, State};
 
 handle_call({demonitor, RemoteRef, Opts}, _From, State0) ->
     %% Remote process is requesting a demonitor
@@ -336,6 +369,16 @@ handle_call({demonitor_nodes, {_, _} = Opts}, {Pid, _}, State0) ->
 handle_call(_Msg, _From, State) ->
     {reply, {error, unsupported_call}, State}.
 
+
+handle_cast({monitor_node, Node, Pid, true}, State0) ->
+    %% Pid is always local but encoded by partisan_gen
+    State = add_node_monitor(Node, decode_pid(Pid), State0),
+    {noreply, State};
+
+handle_cast({monitor_node, Node, Pid, false}, State0) ->
+    %% Pid is always local but encoded by partisan_gen
+    State = remove_node_monitor(Node, decode_pid(Pid), State0),
+    {noreply, State};
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -718,3 +761,12 @@ safe_call(ServerRef, Message) ->
 %         exist:{nodedown, Node} ->
 %             {error, {nodedown, Node}}
 %     end.
+
+is_self(RemoteRef) ->
+    try
+        Term = partisan_remote_ref:to_term(RemoteRef),
+        Term == ?MODULE orelse Term == whereis(?MODULE)
+    catch
+        _:_ ->
+            false
+    end.
