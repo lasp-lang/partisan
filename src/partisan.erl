@@ -38,7 +38,7 @@
 
 -export_type([monitor_nodes_opt/0]).
 -export_type([server_ref/0]).
--export_type([forward_options/0]).
+-export_type([forward_opts/0]).
 
 -export([start/0]).
 -export([stop/0]).

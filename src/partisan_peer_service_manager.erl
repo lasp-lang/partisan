@@ -109,7 +109,7 @@
 
 % -callback forward_message(node(), pid(), message()) -> ok.
 
--callback forward_message(node(), pid(), message(), forward_options()) -> ok.
+-callback forward_message(node(), server_ref(), message(), forward_opts()) -> ok.
 
 
 -callback decode(term()) -> term().
