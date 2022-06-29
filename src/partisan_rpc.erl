@@ -23,8 +23,12 @@
 
 -include("partisan.hrl").
 
+-type error_reason()    ::  timeout | any().
+
 %% API
+-export([call/4]).
 -export([call/5]).
+-export([prepare_opts/1]).
 
 
 
@@ -33,22 +37,39 @@
 %% =============================================================================
 
 
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec call(
+    Node :: node(),
+    Module :: module(),
+    Function :: atom(),
+    Arguments :: [any()]) -> Reply :: any() | {badrpc, error_reason()}.
+
+call(Node, Module, Function, Arguments) ->
+    call(Node, Module, Function, Arguments, infinity).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec call(
+    Node :: node(),
+    Module :: module(),
+    Function :: atom(),
+    Arguments :: [any()],
+    Timeout :: timeout()) -> Reply :: any() | {badrpc, error_reason()}.
 
 call(Node, Module, Function, Arguments, Timeout) ->
-    %% Make call.
-    Manager = partisan_config:get(partisan_peer_service_manager),
     Self = self(),
-    Options0 = partisan_config:get(forward_options, []),
-    Options = [{channel, rpc_channel()} | Options0],
-    OurNode = partisan:node(),
+    MyNode = partisan:node(),
+    Opts = prepare_opts(partisan_config:get(forward_options, [])),
+    Msg = {call, Module, Function, Arguments, Timeout, {origin, MyNode, Self}},
 
-    Manager:forward_message(
-        Node,
-        partisan_rpc_backend,
-        {call, Module, Function, Arguments, Timeout, {origin, OurNode, Self}}, Options
-    ),
+    partisan:forward_message(Node, partisan_rpc_backend, Msg, Opts),
 
-    %% Wait for response.
     receive
         {response, Response} ->
             Response
@@ -56,6 +77,19 @@ call(Node, Module, Function, Arguments, Timeout) ->
         Timeout ->
             {badrpc, timeout}
     end.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec prepare_opts(list() | map()) -> map().
+
+prepare_opts(L) when is_list(L) ->
+    prepare_opts(maps:from_list(L));
+
+prepare_opts(Opts) when is_map(Opts) ->
+    maps:merge(#{channel => rpc_channel()}, Opts).
 
 
 

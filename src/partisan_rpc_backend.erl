@@ -1,6 +1,7 @@
 %% -------------------------------------------------------------------
 %%
 %% Copyright (c) 2018 Christopher S. Meiklejohn.  All Rights Reserved.
+%% Copyright (c) 2022 Alejandro M. Ramallo. All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -24,95 +25,73 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0,
-         call/5]).
+-export([start_link/0]).
 
 %% gen_server callbacks
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([init/1]).
+-export([handle_call/3]).
+-export([handle_cast/2]).
+-export([handle_info/2]).
+-export([terminate/2]).
+-export([code_change/3]).
 
 -record(state, {}).
 
 -include("partisan.hrl").
 
-%%%===================================================================
-%%% API
-%%%===================================================================
+
+%% =============================================================================
+%% API
+%% =============================================================================
+
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 
-%% to be removed from here.
-call(Name, Module, Function, Arguments, Timeout) ->
-    partisan_rpc:call(Name, Module, Function, Arguments, Timeout).
+%% =============================================================================
+%% GEN_SERVER_CALLBACKS
+%% =============================================================================
 
 
-%%%===================================================================
-%%% gen_server callbacks
-%%%===================================================================
 
-%% @private
 init([]) ->
     {ok, #state{}}.
 
-%% @private
+
+
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
-%% @private
+
+
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-%% @private
-handle_info({call, Module, Function, Arguments, _Timeout, {origin, Name, Self}}, State) ->
+
+handle_info({call, M, F, A, _Timeout, {origin, Name, Self}}, State) ->
     %% Execute function.
     Response = try
-        erlang:apply(Module, Function, Arguments)
+        erlang:apply(M, F, A)
     catch
          Error ->
              {badrpc, Error}
     end,
 
     %% Send the response to execution.
-    Manager = partisan_config:get(partisan_peer_service_manager),
-    Options0 = partisan_config:get(forward_options, []),
-    Options = [{channel, rpc_channel()} | Options0],
+    Opts = partisan_rpc:prepare_opts(partisan_config:get(forward_options, [])),
 
-    ok = Manager:forward_message(
-        Name, Self, {response, Response}, Options
-    ),
+    ok = partisan:forward_message(Name, Self, {response, Response}, Opts),
 
     {noreply, State};
 
 handle_info(_Msg, State) ->
     {noreply, State}.
 
-%% @private
+
 terminate(_Reason, _State) ->
     ok.
 
-%% @private
+
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-
-
-
-%% =============================================================================
-%% PRIVATE
-%% =============================================================================
-
-
-
-rpc_channel() ->
-    Channels = partisan_config:get(channels),
-    case lists:member(?RPC_CHANNEL, Channels) of
-        true ->
-            ?RPC_CHANNEL;
-        false ->
-            ?DEFAULT_CHANNEL
-    end.
