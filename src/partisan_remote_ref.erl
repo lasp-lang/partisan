@@ -70,9 +70,11 @@
 
 -export([from_term/1]).
 -export([from_term/2]).
+-export([is_identical/2]).
 -export([is_local/1]).
 -export([is_local/2]).
 -export([is_name/1]).
+-export([is_name/2]).
 -export([is_pid/1]).
 -export([is_reference/1]).
 -export([is_type/1]).
@@ -84,6 +86,7 @@
 
 -compile({no_auto_import, [is_pid/1]}).
 -compile({no_auto_import, [is_reference/1]}).
+-compile({no_auto_import, [node/1]}).
 
 
 %% =============================================================================
@@ -309,6 +312,61 @@ is_name(_) ->
     false.
 
 
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_name(Ref :: any(), Name :: atom()) -> boolean().
+
+is_name(<<"partisan:name:", Rest/binary>>, Name) ->
+    NameStr = atom_to_binary(Name, utf8),
+    case binary:split(Rest, <<$:>>, [global]) of
+        [_Node, NameStr] ->
+            true;
+        _ ->
+            false
+    end;
+
+is_name({partisan_remote_reference, _, Term}, Name) ->
+    is_name(Term, Name);
+
+is_name({partisan_registered_name_reference, NameStr}, Name) ->
+    NameStr == atom_to_list(Name);
+
+is_name(_, _) ->
+    false.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Checks two refs for identity. Two refs are identical if the are
+%% equal or if one is a process reference and the other one is a registered
+%% name reference of said process.
+%% In the latter case the funcion uses `erlang:whereis/1' which means the check
+%% can fail if the process has died (and thus is no longer registered).
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_identical(A :: t(), B :: t()) -> boolean().
+
+is_identical(A, A) ->
+    true;
+
+is_identical(A, B) ->
+    case node(A) == node(B) of
+        true ->
+            case {to_term(A), to_term(B)} of
+                {Term, Term} ->
+                    true;
+                {Pid, Name} when erlang:is_pid(Pid) andalso is_atom(Name) ->
+                    Pid == whereis(Name);
+                _ ->
+                    false
+            end;
+        false ->
+            false
+    end.
+
+
+
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
@@ -396,23 +454,24 @@ decode(<<"partisan:", Rest/binary>>, Mode) ->
     %% If padded then we will have 4 terms, so we match the first tree with cons
     %% and drop the tail.
     case binary:split(Rest, <<$:>>, [global]) of
+
+        [<<"pid">>, _, Term | _] when Mode == target ->
+            {partisan_process_reference, tag(Term)};
+
+        [<<"ref">>, _, Term | _] when Mode == target ->
+            {partisan_encoded_reference, "#Ref" ++ tag(Term)};
+
+        [<<"name">>, _, Term | _] when Mode == target ->
+            {partisan_registered_name_reference, binary_to_list(Term)};
+
         [<<"pid">>, Node, Term | _] when Node == ThisNode, Mode == term ->
             to_local_pid(tag(Term));
-
-        [<<"pid">>, Node, Term | _] when Node == ThisNode, Mode == target ->
-            {partisan_process_reference, tag(Term)};
 
         [<<"ref">>, Node, Term | _] when Node == ThisNode, Mode == term ->
             list_to_ref("#Ref" ++ tag(Term));
 
-        [<<"ref">>, Node, Term | _] when Node == ThisNode, Mode == target ->
-            {partisan_encoded_reference, "#Ref" ++ tag(Term)};
-
         [<<"name">>, Node, Term | _] when Node == ThisNode, Mode == term ->
              binary_to_existing_atom(Term, utf8);
-
-        [<<"name">>, Node, Term | _] when Node == ThisNode, Mode == target ->
-            {partisan_registered_name_reference, binary_to_list(Term)};
 
         _ ->
             error(badarg)
@@ -660,6 +719,53 @@ local_ref_test() ->
         to_term(UriRef)
     ).
 
+
+non_local_target_test() ->
+    Ref = from_term(self(), 'othernode@127.0.0.1'),
+    ?assertError(
+        badarg,
+        to_term(Ref)
+    ),
+    ?assertEqual(
+        {partisan_process_reference, pid_to_list(self())},
+        target(Ref)
+    ).
+
+
+identical_test() ->
+    true = erlang:register(foo, self()),
+
+    A = from_term(self()),
+    B = from_term(foo),
+
+    ?assert(
+        is_identical(A, B)
+    ),
+    ?assert(
+        is_identical(A, A)
+    ),
+    ?assert(
+        is_identical(B, B)
+    ),
+    ?assertEqual(
+        false,
+        is_identical(A, from_term(bar))
+    ).
+
+
+is_name_test() ->
+    ?assertEqual(
+        true,
+        is_name(from_term(foo), foo)
+    ),
+    ?assertEqual(
+        false,
+        is_name(from_term(foo), bar)
+    ),
+    ?assertEqual(
+        false,
+        is_name(from_term(self()), bar)
+    ).
 
 
 -endif.

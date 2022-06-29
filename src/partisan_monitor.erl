@@ -23,6 +23,11 @@
 %% @doc This module is responsible for monitoring processes on remote nodes.
 %% ** YOU SHOULD NOT USE the functions in this module **.
 %% Use the related functions in {@link partisan} instead.
+%%
+%% Notice: Certain partisan_peer_service_manager implementations might not
+%% support the `partisan_peer_service_manager:on_up/2' and
+%% `partisan_peer_service_manager:on_down/2' callbacks which we need for node
+%% monitoring, so in those cases this module will not work.
 %% @end
 %% -----------------------------------------------------------------------------
 -module(partisan_monitor).
@@ -31,6 +36,9 @@
 
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
+
+-define(REF_KEY, {?MODULE, ref}).
+-define(MREF_KEY, {?MODULE, monitor_ref}).
 
 -record(state, {
     enabled                 ::  boolean(),
@@ -47,8 +55,7 @@
                                 }},
     %% We cache the nodes that are up, so that if we are terminated we can
     %% notify the subscriptions
-    up_nodes                ::  sets:set(node()),
-    self_ref                ::  partisan_remote_ref:r()
+    up_nodes                ::  sets:set(node())
 }).
 
 -type mon_opts()            ::  list().
@@ -114,12 +121,27 @@ start_link() ->
     partisan_remote_ref:r() | no_return().
 
 monitor(RemoteRef, Opts) ->
-    case is_self(RemoteRef) of
+    partisan_remote_ref:is_pid(RemoteRef)
+        orelse partisan_remote_ref:is_name(RemoteRef)
+        orelse error(badarg),
+
+    RegName =
+        erlang:process_info(self(), registered_name),
+
+    Skip =
+        %% Is this a circular call?
+        {registered_name, ?MODULE} == RegName
+        %% Is this a remote partisan_monitor server?
+        orelse partisan_remote_ref:is_name(RemoteRef, ?MODULE)
+        %% Someone trying to monitor ourselves
+        orelse is_self(RemoteRef),
+
+    case Skip of
         true ->
             %% We will be calling ourselves, this is becuase we are a
             %% gen_server and partisan_gen calls partisan:monitor during a call.
-            %% We return the fake ref
-            persistent_term:get({?MODULE, self_ref});
+            %% We return the static ref so that we can recognise when demonitor
+            persistent_term:get(?MREF_KEY);
 
         false ->
             %% We assume Node is not the local node.
@@ -161,7 +183,15 @@ monitor(RemoteRef, Opts) ->
 demonitor(RemoteRef, Opts) ->
     partisan_remote_ref:is_reference(RemoteRef) orelse error(badarg),
 
-    case RemoteRef == persistent_term:get({?MODULE, self_ref}) of
+    RegName = erlang:process_info(self(), registered_name),
+
+    Skip =
+        %% Is this a circular call?
+        {registered_name, ?MODULE} == RegName
+        %% Someone trying to demonitor ourselves
+        orelse is_dummy_ref(RemoteRef),
+
+    case Skip of
         true ->
             true;
         false ->
@@ -270,69 +300,78 @@ monitor_nodes(Flag, Opts0) when is_boolean(Flag), is_list(Opts0) ->
 
 init([]) ->
     %% We subscribe to node status to implement node monitoring
+    %% Certain partisan_peer_service_manager implementations might not support
+    %% the on_up and on_down events which we need for node monitoring, so in
+    %% those cases this module will not work.
     Enabled = subscribe_to_node_status(),
 
-    %% We trap exist so that we get a call to terminate w/reason shutdown when
-    %% the supervisor terminates us when the partisan_peer_service:manager() is
+    %% We trap exists so that we get a call to terminate w/reason shutdown when
+    %% the supervisor terminates us when partisan_peer_service:manager() is
     %% terminated.
     erlang:process_flag(trap_exit, true),
 
-    Ref = partisan:make_ref(),
-    _ = persistent_term:put({?MODULE, self_ref}, Ref),
+    %% gen behaviours call monitor/2 and demonitor/1 so being ourselves a
+    %% gen_server that would create a deadlock due to a circular call.
+    %% We use static refs for those calls to avoid calling ourselves.
+    _ = persistent_term:put(?REF_KEY, partisan_remote_ref:from_term(?MODULE)),
+    _ = persistent_term:put(?MREF_KEY, partisan:make_ref()),
 
     State = #state{
         enabled = Enabled,
-        up_nodes = sets:new([{version, 2}]),
-        self_ref = Ref
+        up_nodes = sets:new([{version, 2}])
     },
+
     {ok, State}.
 
 handle_call(_, _, #state{enabled = false} = State) ->
+    %% Functionality disabled
     %% The peer service manager does not implement on_up/down calls which we
     %% require to implement monitors
-    {reply, {error, not_implemented}, State};
+    {reply, {error, disabled}, State};
+
+handle_call({monitor, RemoteRef, _}, {RemoteRef, _}, State) ->
+        %% A circular call
+        Reply = {ok, persistent_term:get(?MREF_KEY)},
+        {reply, Reply, State};
 
 handle_call({monitor, RemoteRef, _Opts}, {RemotePid, _}, State0) ->
-    %% A remote process wants to monitor a process (Ref) on this node
-    %% TODO Implement {tag, UserDefinedTag} option
-    try
+    %% A remote process (RemotePid) wants to monitor a process (RemoteRef) on
+    %% this node.
 
-        case partisan_remote_ref:to_term(RemoteRef) of
-            Term when Term == ?MODULE orelse Term == self() ->
-                %% Circular monitoring, we reply with a fake ref
-                Reply = {ok, State0#state.self_ref},
-                {reply, Reply, State0};
+    %% We did this check in monitor/2, but we double check again in case
+    %% someone is calling partisan_gen_server:call directly.
+    case is_self(RemoteRef) of
+        true ->
+            %% The case for a process monitoring this server, this server
+            %% monitoring itself or another node's monitor server monitoring
+            %% this one.
+            Reply = {ok, persistent_term:get(?MREF_KEY)},
+            {reply, Reply, State0};
 
-            PidOrName ->
-                Node = partisan_remote_ref:node(RemotePid),
-
-                %% We monitor the process on behalf of the remote caller
-                MRef = erlang:monitor(process, PidOrName),
-
-                %% We track the ref to match the 'DOWN' signal
-                State = add_process_monitor(
-                    Node, MRef, {PidOrName, RemotePid}, State0
-                ),
-
-                %% We reply the encoded monitor reference
-                Reply = {ok, partisan_remote_ref:from_term(MRef)},
-                {reply, Reply, State}
-        end
-
-    catch
-        error:badarg ->
-            {reply, {error, badarg}, State0}
+        false ->
+            %% TODO Implement {tag, UserDefinedTag} option
+            {Reply, State} = do_monitor(RemoteRef, RemotePid, State0),
+            {reply, Reply, State}
     end;
 
-handle_call({demonitor, Ref, _}, _From, #state{self_ref = Ref} = State) ->
-    %% The case for a process monitoring this server.
+handle_call({demonitor, RemoteRef, _}, {RemoteRef, _}, State) ->
+    %% A circular call
     {reply, true, State};
 
-handle_call({demonitor, RemoteRef, Opts}, _From, State0) ->
+handle_call({demonitor, RemoteRef, Opts}, {_RemotePid, _}, State0) ->
     %% Remote process is requesting a demonitor
-    {Res, State} = do_demonitor(RemoteRef, Opts, State0),
-    {reply, Res, State};
+    Skip = is_dummy_ref(RemoteRef),
 
+    case Skip of
+        true ->
+            %% The case for a process monitoring this server, this server
+            %% monitoring itself or another node's monitor server monitoring
+            %% this one.
+            {reply, true, State0};
+        false ->
+            {Reply, State} = do_demonitor(RemoteRef, Opts, State0),
+            {reply, Reply, State}
+    end;
 
 handle_call({monitor_node, Node, true}, {Pid, _}, State0) ->
     %% Pid is always local but encoded by partisan_gen
@@ -370,6 +409,10 @@ handle_call(_Msg, _From, State) ->
     {reply, {error, unsupported_call}, State}.
 
 
+handle_cast(_,  #state{enabled = false} = State) ->
+    %% Functionality disabled
+    {noreply, State};
+
 handle_cast({monitor_node, Node, Pid, true}, State0) ->
     %% Pid is always local but encoded by partisan_gen
     State = add_node_monitor(Node, decode_pid(Pid), State0),
@@ -383,6 +426,10 @@ handle_cast({monitor_node, Node, Pid, false}, State0) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+
+handle_info(_, #state{enabled = false} = State) ->
+    %% Functionality disabled
+    {noreply, State};
 
 handle_info({'DOWN', MRef, process, Pid, Reason}, State0) ->
     State = case take_process_monitor(MRef, State0) of
@@ -588,6 +635,32 @@ when is_atom(Name), is_atom(Node) ->
 
 
 %% @private
+do_monitor(RemoteRef, RemotePid, State0) ->
+    try
+        Node = partisan_remote_ref:node(RemotePid),
+
+        %% Can be a pid or registered name
+        LocalProcess = partisan_remote_ref:to_term(RemoteRef),
+
+        %% We monitor the process on behalf of the remote caller
+        MRef = erlang:monitor(process, LocalProcess),
+
+        %% We track the ref to match the 'DOWN' signal
+        State = add_process_monitor(
+            Node, MRef, {LocalProcess, RemotePid}, State0
+        ),
+
+        %% We reply the encoded monitor reference
+        Reply = {ok, partisan_remote_ref:from_term(MRef)},
+
+        {Reply, State}
+
+    catch
+        error:badarg ->
+            {{error, badarg}, State0}
+    end.
+
+%% @private
 do_demonitor(Term, State0) ->
     do_demonitor(Term, [], State0).
 
@@ -606,7 +679,9 @@ do_demonitor(Term, Opts, State0) ->
                 State0
         end,
 
-        {{ok, Bool}, State}
+        Reply = {ok, Bool},
+
+        {Reply, State}
 
     catch
         _:_ ->
@@ -762,11 +837,16 @@ safe_call(ServerRef, Message) ->
 %             {error, {nodedown, Node}}
 %     end.
 
-is_self(RemoteRef) ->
-    try
-        Term = partisan_remote_ref:to_term(RemoteRef),
-        Term == ?MODULE orelse Term == whereis(?MODULE)
-    catch
-        _:_ ->
-            false
-    end.
+
+%% @private
+is_dummy_ref(RemoteRef) ->
+    RemoteRef == persistent_term:get(?MREF_KEY).
+
+
+%% @private
+is_self(Pid) when is_pid(Pid) ->
+    Pid == self();
+
+is_self(RemoteRef) when is_tuple(RemoteRef); is_binary(RemoteRef) ->
+    SelfRef = persistent_term:get(?REF_KEY),
+    partisan_remote_ref:is_identical(RemoteRef, SelfRef).

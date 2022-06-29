@@ -96,7 +96,7 @@
 %% API
 -export([start/3, start/4,
      start_link/3, start_link/4,
-%         start_monitor/3, start_monitor/4,
+    start_monitor/3, start_monitor/4,
      stop/1, stop/3,
      call/2, call/3,
          send_request/2, wait_response/2,
@@ -207,11 +207,11 @@ start_link(Mod, Args, Options) ->
 start_link(Name, Mod, Args, Options) ->
     partisan_gen:start(?MODULE, link, Name, Mod, Args, Options).
 
-% start_monitor(Mod, Args, Options) ->
-%     partisan_gen:start(?MODULE, monitor, Mod, Args, Options).
+start_monitor(Mod, Args, Options) ->
+    partisan_gen:start(?MODULE, monitor, Mod, Args, Options).
 
-% start_monitor(Name, Mod, Args, Options) ->
-%     partisan_gen:start(?MODULE, monitor, Name, Mod, Args, Options).
+start_monitor(Name, Mod, Args, Options) ->
+    partisan_gen:start(?MODULE, monitor, Name, Mod, Args, Options).
 
 
 %% -----------------------------------------------------------------
@@ -561,7 +561,7 @@ do_multi_call(Nodes, Name, Req, Timeout) ->
           %% the receiver would exit before the caller started
           %% the monitor.
           process_flag(trap_exit, true),
-          Mref = erlang:monitor(process, Caller),
+          Mref = partisan:monitor(process, Caller),
           receive
               {Caller,Tag} ->
               Monitors = send_nodes(Nodes, Name, Tag, Req),
@@ -574,7 +574,7 @@ do_multi_call(Nodes, Name, Req, Timeout) ->
               exit(normal)
           end
       end),
-    Mref = erlang:monitor(process, Receiver),
+    Mref = partisan:monitor(process, Receiver),
     Receiver ! {self(), Tag},
     receive
     {'DOWN',Mref,_,_,{Receiver,Tag,Result}} ->
@@ -588,9 +588,9 @@ do_multi_call(Nodes, Name, Req, Timeout) ->
 send_nodes(Nodes, Name, Tag, Req) ->
     send_nodes(Nodes, Name, Tag, Req, []).
 
-send_nodes([Node|Tail], Name, Tag, Req, _Monitors)
+send_nodes([Node|Tail], Name, Tag, Req, Monitors)
   when is_atom(Node) ->
-    % Monitor = start_monitor(Node, Name),
+    Monitor = start_monitor(Node, Name),
     %% Handle non-existing names in rec_nodes.
     partisan:forward_message(
         Node,
@@ -599,8 +599,7 @@ send_nodes([Node|Tail], Name, Tag, Req, _Monitors)
         #{channel => partisan_gen:get_channel()}
     ),
     % catch {Name, Node} ! {'$gen_call', {self(), {Tag, Node}}, Req},
-    % send_nodes(Tail, Name, Tag, Req, [Monitor | Monitors]);
-    send_nodes(Tail, Name, Tag, Req, []);
+    send_nodes(Tail, Name, Tag, Req, [Monitor | Monitors]);
 send_nodes([_Node|Tail], Name, Tag, Req, Monitors) ->
     %% Skip non-atom Node
     send_nodes(Tail, Name, Tag, Req, Monitors);
@@ -622,11 +621,11 @@ rec_nodes(Tag, [{N,R}|Tail], Name, Badnodes, Replies, Time, TimerId) ->
     {'DOWN', R, _, _, _} ->
         rec_nodes(Tag, Tail, Name, [N|Badnodes], Replies, Time, TimerId);
     {{Tag, N}, Reply} ->  %% Tag is bound !!!
-        % erlang:demonitor(R, [flush]),
+        partisan:demonitor(R, [flush]),
         rec_nodes(Tag, Tail, Name, Badnodes,
               [{N,Reply}|Replies], Time, TimerId);
     {timeout, TimerId, _} ->
-        % erlang:demonitor(R, [flush]),
+        partisan:demonitor(R, [flush]),
         %% Collect all replies that already have arrived
         rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies)
     end;
@@ -634,26 +633,26 @@ rec_nodes(Tag, [N|Tail], Name, Badnodes, Replies, Time, TimerId) ->
     %% R6 node
     receive
     {nodedown, N} ->
-        % monitor_node(N, false),
+        partisan:monitor_node(N, false),
         rec_nodes(Tag, Tail, Name, [N|Badnodes], Replies, 2000, TimerId);
     {{Tag, N}, Reply} ->  %% Tag is bound !!!
         receive {nodedown, N} -> ok after 0 -> ok end,
-        % monitor_node(N, false),
+        partisan:monitor_node(N, false),
         rec_nodes(Tag, Tail, Name, Badnodes,
               [{N,Reply}|Replies], 2000, TimerId);
     {timeout, TimerId, _} ->
         receive {nodedown, N} -> ok after 0 -> ok end,
-        % monitor_node(N, false),
+        partisan:monitor_node(N, false),
         %% Collect all replies that already have arrived
         rec_nodes_rest(Tag, Tail, Name, [N | Badnodes], Replies)
     after Time ->
-        case rpc:call(N, erlang, whereis, [Name]) of
+        case partisan_rpc:call(N, erlang, whereis, [Name]) of
         Pid when is_pid(Pid) -> % It exists try again.
             rec_nodes(Tag, [N|Tail], Name, Badnodes,
                   Replies, infinity, TimerId);
         _ -> % badnode
             receive {nodedown, N} -> ok after 0 -> ok end,
-            % monitor_node(N, false),
+            partisan:monitor_node(N, false),
             rec_nodes(Tag, Tail, Name, [N|Badnodes],
                   Replies, 2000, TimerId)
         end
@@ -677,25 +676,25 @@ rec_nodes_rest(Tag, [{N,R}|Tail], Name, Badnodes, Replies) ->
     {'DOWN', R, _, _, _} ->
         rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies);
     {{Tag, N}, Reply} -> %% Tag is bound !!!
-        % erlang:demonitor(R, [flush]),
+        partisan:demonitor(R, [flush]),
         rec_nodes_rest(Tag, Tail, Name, Badnodes, [{N,Reply}|Replies])
     after 0 ->
-        % erlang:demonitor(R, [flush]),
+        partisan:demonitor(R, [flush]),
         rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies)
     end;
 rec_nodes_rest(Tag, [N|Tail], Name, Badnodes, Replies) ->
     %% R6 node
     receive
     {nodedown, N} ->
-        % monitor_node(N, false),
+        partisan:monitor_node(N, false),
         rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies);
     {{Tag, N}, Reply} ->  %% Tag is bound !!!
         receive {nodedown, N} -> ok after 0 -> ok end,
-        % monitor_node(N, false),
+        partisan:monitor_node(N, false),
         rec_nodes_rest(Tag, Tail, Name, Badnodes, [{N,Reply}|Replies])
     after 0 ->
         receive {nodedown, N} -> ok after 0 -> ok end,
-        % monitor_node(N, false),
+        partisan:monitor_node(N, false),
         rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies)
     end;
 rec_nodes_rest(_Tag, [], _Name, Badnodes, Replies) ->
@@ -706,21 +705,22 @@ rec_nodes_rest(_Tag, [], _Name, Badnodes, Replies) ->
 %%% Monitor functions
 %%% ---------------------------------------------------
 
-% start_monitor(Node, Name) when is_atom(Node), is_atom(Name) ->
-%     if node() =:= nonode@nohost, Node =/= nonode@nohost ->
-%         Ref = make_ref(),
-%         self() ! {'DOWN', Ref, process, {Name, Node}, noconnection},
-%         {Node, Ref};
-%        true ->
-%         case catch erlang:monitor(process, {Name, Node}) of
-%         {'EXIT', _} ->
-%             %% Remote node is R6
-%             monitor_node(Node, true),
-%             Node;
-%         Ref when is_reference(Ref) ->
-%             {Node, Ref}
-%         end
-%     end.
+start_monitor(Node, Name) when is_atom(Node), is_atom(Name) ->
+    if node() =:= nonode@nohost, Node =/= nonode@nohost ->
+        Ref = partisan:make_ref(),
+        self() ! {'DOWN', Ref, process, {Name, Node}, noconnection},
+        {Node, Ref};
+       true ->
+        case catch partisan:monitor(process, {Name, Node}) of
+        {'EXIT', _} ->
+            %% Remote node is R6
+            partisan:monitor_node(Node, true),
+            Node;
+        % Ref when is_reference(Ref) ->
+        Ref ->
+            {Node, Ref}
+        end
+    end.
 
 %% ---------------------------------------------------
 %% Helper functions for try-catch of callbacks.

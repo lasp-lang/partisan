@@ -46,14 +46,13 @@
 
 %%-----------------------------------------------------------------
 
-%% -type linkage()    :: 'monitor' | 'link' | 'nolink'.
--type linkage()    :: 'link' | 'nolink'.
+-type linkage()    :: 'monitor' | 'link' | 'nolink'.
+% -type linkage()    :: 'link' | 'nolink'.
 -type emgr_name()  :: {'local', atom()}
                     | {'global', term()}
                     | {'via', Module :: module(), Name :: term()}.
 
-%% -type start_ret()  :: {'ok', pid()} | {'ok', {pid(), reference()}} | 'ignore' | {'error', term()}.
--type start_ret()  :: {'ok', pid()} | 'ignore' | {'error', term()}.
+-type start_ret()  :: {'ok', pid()} | {'ok', {pid(), reference()}} | 'ignore' | {'error', term()}.
 
 -type debug_flag() :: 'trace' | 'log' | 'statistics' | 'debug'
                     | {'logfile', string()}.
@@ -110,13 +109,13 @@ do_spawn(GenMod, link, Mod, Args, Options) ->
             [GenMod, self(), self(), Mod, Args, Options],
             Time,
             spawn_opts(Options));
-% do_spawn(GenMod, monitor, Mod, Args, Options) ->
-%     Time = timeout(Options),
-%     Ret = proc_lib:start_monitor(?MODULE, init_it,
-%                                  [GenMod, self(), self(), Mod, Args, Options],
-%                                  Time,
-%                                  spawn_opts(Options)),
-%    monitor_return(Ret);
+do_spawn(GenMod, monitor, Mod, Args, Options) ->
+    Time = timeout(Options),
+    Ret = proc_lib:start_monitor(?MODULE, init_it,
+                                 [GenMod, self(), self(), Mod, Args, Options],
+                                 Time,
+                                 spawn_opts(Options)),
+   monitor_return(Ret);
 do_spawn(GenMod, _, Mod, Args, Options) ->
     Time = timeout(Options),
     proc_lib:start(?MODULE, init_it,
@@ -130,13 +129,13 @@ do_spawn(GenMod, link, Name, Mod, Args, Options) ->
             [GenMod, self(), self(), Name, Mod, Args, Options],
             Time,
             spawn_opts(Options));
-% do_spawn(GenMod, monitor, Name, Mod, Args, Options) ->
-%     Time = timeout(Options),
-%     Ret = proc_lib:start_monitor(?MODULE, init_it,
-%                                  [GenMod, self(), self(), Name, Mod, Args, Options],
-%                                  Time,
-%                                  spawn_opts(Options)),
-%     monitor_return(Ret);
+do_spawn(GenMod, monitor, Name, Mod, Args, Options) ->
+    Time = timeout(Options),
+    Ret = proc_lib:start_monitor(?MODULE, init_it,
+                                 [GenMod, self(), self(), Name, Mod, Args, Options],
+                                 Time,
+                                 spawn_opts(Options)),
+    monitor_return(Ret);
 do_spawn(GenMod, _, Name, Mod, Args, Options) ->
     Time = timeout(Options),
     proc_lib:start(?MODULE, init_it,
@@ -163,6 +162,32 @@ do_spawn(GenMod, _, Name, Mod, Args, Options) ->
 %             ok
 %     end,
 %     Error.
+monitor_return({{ok, Pid}, Mon}) ->
+    %% Successful start_monitor()...
+    case partisan:is_pid(Pid) andalso partisan:is_reference(Mon) of
+        true ->
+            {ok, {Pid, Mon}};
+        false ->
+            %% Simulate same error we would have if this was the original
+            %% commented code above
+            error(function_clause)
+    end;
+
+monitor_return({Error, Mon}) when is_reference(Mon) ->
+    %% Failure; wait for spawned process to terminate
+    %% and release resources, then return the error...
+    case partisan:is_reference(Mon) of
+        true ->
+            receive
+                {'DOWN', Mon, process, _Pid, _Reason} ->
+                    ok
+            end,
+            Error;
+        false ->
+            %% Simulate same error we would have if this was the original
+            %% commented code above
+            error(function_clause)
+    end.
 
 %%-----------------------------------------------------------------
 %% Initiate the new process.
@@ -242,31 +267,46 @@ call(Process, Label, Request, Timeout)
 %     end.
 do_call(Process, Label, Request, Timeout) ->
     %% For remote calls we use Partisan
-    Ref = do_send_request(Process, Label, Request),
+    Mref = do_send_request(Process, Label, Request),
 
     %% Wait for reply.
     receive
-        {Ref, Reply} ->
-            {ok, Reply}
+        {Mref, Reply} ->
+            partisan:demonitor(Mref, [flush]),
+            {ok, Reply};
+        {'DOWN', Mref, _, _, noconnection} ->
+            Node = get_node(Process),
+            exit({nodedown, Node});
+        {'DOWN', Mref, _, _, Reason} ->
+            exit(Reason)
     after Timeout ->
+        partisan:demonitor(Mref, [flush]),
         ?LOG_DEBUG(#{
             description => "Timed out at while waiting for response to message",
             message => Request
         }),
-        exit(timeout)
+        receive
+            {Mref, Reply} ->
+                {ok, Reply}
+        after 0 ->
+                exit(timeout)
+        end
     end.
 
-% get_node(Process) ->
-%     %% We trust the arguments to be correct, i.e
-%     %% Process is either a local or remote pid,
-%     %% or a {Name, Node} tuple (of atoms) and in this
-%     %% case this node (node()) _is_ distributed and Node =/= node().
-%     case Process of
-% 	{_S, N} when is_atom(N) ->
-% 	    N;
-% 	_ when is_pid(Process) ->
-% 	    node(Process)
-%     end.
+get_node(Process) ->
+    %% We trust the arguments to be correct, i.e
+    %% Process is either a local or remote pid,
+    %% or a {Name, Node} tuple (of atoms) and in this
+    %% case this node (node()) _is_ distributed and Node =/= node().
+    case Process of
+	{_S, N} when is_atom(N) ->
+	    N;
+	_ when is_pid(Process) ->
+	    node(Process);
+    _ ->
+        %% Process is partisan_remote_ref
+        partisan:node(Process)
+    end.
 
 -spec send_request(Name::server_ref(), Label::term(), Request::term()) -> request_id().
 send_request(Process, Label, Request) when is_pid(Process) ->
@@ -294,64 +334,50 @@ send_request(Process, Label, Request) ->
 
 -spec wait_response(RequestId::request_id(), timeout()) ->
         {reply, Reply::term()} | 'timeout' | {error, {term(), server_ref()}}.
-wait_response(Ref, Timeout)  ->
+wait_response(Mref, Timeout)  ->
     receive
-        {Ref, Reply} ->
+        % {[alias|Mref], Reply} ->
+        {Mref, Reply} ->
+            partisan:demonitor(Mref, [flush]),
             {reply, Reply};
-        {'DOWN', Ref, _, Object, Reason} ->
+        {'DOWN', Mref, _, Object, Reason} ->
             {error, {Reason, Object}}
     after Timeout ->
             timeout
     end.
 
-% wait_response(Mref, Timeout) when is_reference(Mref) ->
-%     receive
-%         {[alias|Mref], Reply} ->
-%             erlang:demonitor(Mref, [flush]),
-%             {reply, Reply};
-%         {'DOWN', Mref, _, Object, Reason} ->
-%             {error, {Reason, Object}}
-%     after Timeout ->
-%             timeout
-%     end.
-
 -spec receive_response(RequestId::request_id(), timeout()) ->
     {reply, Reply::term()} | 'timeout' | {error, {term(), server_ref()}}.
-% receive_response(Mref, Timeout) when is_reference(Mref) ->
-    % receive
-    % 	{[alias|Mref], Reply} ->
-    % 		erlang:demonitor(Mref, [flush]),
-    % 		{reply, Reply};
-    % 	{'DOWN', Mref, _, Object, Reason} ->
-    % 		{error, {Reason, Object}}
-    % after Timeout ->
-    % 		erlang:demonitor(Mref, [flush]),
-    % 		receive
-    % 			{[alias|Mref], Reply} ->
-    % 				{reply, Reply}
-    % 		after 0 ->
-    % 				timeout
-    % 		end
-    % end.
-receive_response(Ref, Timeout) ->
+receive_response(Mref, Timeout) when is_reference(Mref) ->
     receive
-        {Ref, Reply} ->
-            {reply, Reply}
-    after
-        Timeout ->
-            timeout
+    	% {[alias|Mref], Reply} ->
+        {Mref, Reply} ->
+    		partisan:demonitor(Mref, [flush]),
+    		{reply, Reply};
+    	{'DOWN', Mref, _, Object, Reason} ->
+    		{error, {Reason, Object}}
+    after Timeout ->
+    		partisan:demonitor(Mref, [flush]),
+    		receive
+    			% {[alias|Mref], Reply} ->
+                {Mref, Reply} ->
+    				{reply, Reply}
+    		after 0 ->
+    				timeout
+    		end
     end.
 
 -spec check_response(RequestId::term(), Key::request_id()) ->
     {reply, Reply::term()} | 'no_reply' | {error, {term(), server_ref()}}.
-check_response(Msg, Ref) ->
+check_response(Msg, Mref) ->
 case Msg of
     % {[alias|Mref], Reply} ->
-    % 	erlang:demonitor(Mref, [flush]),
-    % 	{reply, Reply};
-    % {'DOWN', Mref, _, Object, Reason} ->
-    % 	{error, {Reason, Object}};
-    {Ref, Reply} ->
+    {Mref, Reply} ->
+    	partisan:demonitor(Mref, [flush]),
+    	{reply, Reply};
+    {'DOWN', Mref, _, Object, Reason} ->
+    	{error, {Reason, Object}};
+    {Mref, Reply} ->
         {reply, Reply};
     _ ->
         no_reply
@@ -366,7 +392,7 @@ end.
 %     Alias ! {Tag, Reply}, ok;
 reply({To, Tag}, Reply) ->
     % try To ! {Tag, Reply}, ok catch _:_ -> ok end.
-    partisan:forward_message(To, {Tag, Reply}).
+    try partisan:forward_message(To, {Tag, Reply}) catch _:_ -> ok end.
 
 
 %%-----------------------------------------------------------------
@@ -583,22 +609,35 @@ format_status_header(TagLine, Name) ->
 
 
 
-do_send_request(Process, Label, Request) ->
-    %% Generate unique reference.
-    Ref = partisan:make_ref(),
+%% @private
+do_send_request(Process, Label, Request)
+when is_pid(Process) orelse is_atom(Process) ->
+    Mref = partisan:monitor(process, Process),
+    Message = {Label, {partisan:self(), Mref}, Request},
+    Node = partisan:node(),
+    forward_message(Node, Process, Message),
+    Mref;
 
-    %% Figure out remote node.
-    {Node, ServerRef} = case Process of
-        {RemoteProcess, RemoteNode} ->
-            {RemoteNode, RemoteProcess};
-        _ ->
-            {partisan:node(), Process}
-    end,
+do_send_request({ServerRef, Node} = Process, Label, Request) ->
+    Mref = partisan:monitor(process, Process),
+    Message = {Label, {partisan:self(), Mref}, Request},
+    forward_message(Node, ServerRef, Message),
+    Mref;
 
-    %% Generate message.
-    Message = {Label, {partisan:self(), Ref}, Request},
+do_send_request(RemoteRef, Label, Request) ->
+    Mref = partisan:monitor(process, RemoteRef),
+    Message = {Label, {partisan:self(), Mref}, Request},
+    ?LOG_DEBUG(#{
+        description => "Sending message",
+        remote_ref => RemoteRef,
+        message => Message
+    }),
+    partisan:forward_message(RemoteRef, Message, #{channel => get_channel()}),
+    Mref.
 
-    %% Send message via Partisan.
+
+%% @private
+forward_message(Node, ServerRef, Message) ->
     ?LOG_DEBUG(#{
         description => "Sending message",
         peer_node => Node,
@@ -608,9 +647,7 @@ do_send_request(Process, Label, Request) ->
 
     partisan:forward_message(
         Node, ServerRef, Message, #{channel => get_channel()}
-    ),
-
-    Ref.
+    ).
 
 
 %% @doc Returns channel from the process dictionary

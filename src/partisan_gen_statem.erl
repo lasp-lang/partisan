@@ -30,7 +30,7 @@
 %% API
 -export(
    [start/3,start/4,start_link/3,start_link/4,
-    % start_monitor/3,start_monitor/4,
+    start_monitor/3,start_monitor/4,
     stop/1,stop/3,
     cast/2,call/2,call/3,
     send_request/2,wait_response/1,wait_response/2,
@@ -490,10 +490,10 @@ timeout_event_type(Type) ->
         {'ok', pid()}
       | 'ignore'
       | {'error', term()}.
-% -type start_mon_ret() ::
-%         {'ok', {pid(),reference()}}
-%       | 'ignore'
-%       | {'error', term()}.
+-type start_mon_ret() ::
+        {'ok', {pid(),reference()}}
+      | 'ignore'
+      | {'error', term()}.
 -type enter_loop_opt() ::
 	{'hibernate_after', HibernateAfterTimeout :: timeout()}
       | {'debug', Dbgs :: [sys:debug_option()]}.
@@ -529,18 +529,18 @@ start_link(ServerName, Module, Args, Opts) ->
     partisan_gen:start(?MODULE, link, ServerName, Module, Args, Opts).
 
 %% Start and monitor a state machine
-% -spec start_monitor(
-% 	Module :: module(), Args :: term(), Opts :: [start_opt()]) ->
-% 		   start_mon_ret().
-% start_monitor(Module, Args, Opts) ->
-%     gen:start(?MODULE, monitor, Module, Args, Opts).
-% %%
-% -spec start_monitor(
-% 	ServerName :: server_name(),
-% 	Module :: module(), Args :: term(), Opts :: [start_opt()]) ->
-% 		   start_mon_ret().
-% start_monitor(ServerName, Module, Args, Opts) ->
-%     gen:start(?MODULE, monitor, ServerName, Module, Args, Opts).
+-spec start_monitor(
+	Module :: module(), Args :: term(), Opts :: [start_opt()]) ->
+		   start_mon_ret().
+start_monitor(Module, Args, Opts) ->
+    gen:start(?MODULE, monitor, Module, Args, Opts).
+%%
+-spec start_monitor(
+	ServerName :: server_name(),
+	Module :: module(), Args :: term(), Opts :: [start_opt()]) ->
+		   start_mon_ret().
+start_monitor(ServerName, Module, Args, Opts) ->
+    gen:start(?MODULE, monitor, ServerName, Module, Args, Opts).
 
 %% Stop a state machine
 -spec stop(ServerRef :: server_ref()) -> ok.
@@ -730,7 +730,7 @@ do_call_clean(ServerRef, Request, Timeout, T) ->
     %% Probably in OTP 26.
     Ref = partisan:make_ref(),
     Self = self(),
-    _Pid = spawn(
+    Pid = spawn(
             fun () ->
                     Self !
                         try partisan_gen:call(
@@ -741,16 +741,16 @@ do_call_clean(ServerRef, Request, Timeout, T) ->
                                 {Ref,Class,Reason,Stacktrace}
                         end
             end),
-    % Mref = monitor(process, Pid),
+    Mref = partisan:monitor(process, Pid),
     receive
         {Ref,Result} ->
-            % demonitor(Mref, [flush]),
+            partisan:demonitor(Mref, [flush]),
             case Result of
                 {ok,Reply} ->
                     Reply
             end;
         {Ref,Class,Reason,Stacktrace} ->
-            % demonitor(Mref, [flush]),
+            partisan:demonitor(Mref, [flush]),
             erlang:raise(
               Class,
               {Reason,{?MODULE,call,[ServerRef,Request,Timeout]}},
