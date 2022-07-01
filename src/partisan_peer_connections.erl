@@ -121,9 +121,9 @@ init() ->
                 protected,
                 ordered_set,
                 {keypos, Pos},
-                %% We enable both as we have concurrent reads and writes, although
-                %% writes will only happen when a connection is started/stopped for a
-                %% peer node.
+                %% We enable both as we have concurrent reads and writes,
+                %% although writes will only happen when a connection is
+                %% started/stopped for a peer node.
                 {read_concurrency, true},
                 {write_concurrency, true}
             ]),
