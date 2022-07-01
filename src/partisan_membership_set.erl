@@ -82,8 +82,15 @@ remove(#{name := Node}, Actor, T) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
-merge(T1, T2) ->
-    state_awmap:merge(T1, T2).
+merge({state_awmap, _} = T1, {state_awmap, _} = T2) ->
+    state_awmap:merge(T1, T2);
+
+merge({state_awmap, _} = T1, _) ->
+    %% Maybe the other node is using a diff version of this module
+    %% TODO implement versioning and migrations to enable two diff versions to
+    %% form a cluster.
+    %% At the moment we just pick the local.
+    T1.
 
 
 %% -----------------------------------------------------------------------------
@@ -173,6 +180,25 @@ add_remove_test() ->
     ?assertEqual(
         [],
         to_list(A1)
+    ).
+
+one_side_updates_test() ->
+    Nodename = 'node1@127.0.0.1',
+    Node1 = node_spec(Nodename, {127, 0, 0, 1}),
+
+    A = B = new(),
+
+    A1 = add(Node1, a, A),
+
+
+    ?assertEqual(
+        [Node1],
+        to_list(A1)
+    ),
+
+    ?assertEqual(
+        [Node1],
+        to_list(merge(A1, B))
     ).
 
 concurrent_updates_test() ->
@@ -265,6 +291,7 @@ assoc_test() ->
         merge(merge(A, B2), C3)
     ).
 
+
 clock_test() ->
     Nodename = 'node1@127.0.0.1',
     Node1 = node_spec(Nodename),
@@ -280,6 +307,7 @@ clock_test() ->
 
     %% LWW
     ?assertEqual([Node2], to_list(AB)).
+
 
 remfield_test() ->
     Name = 'node1@127.0.0.1',
