@@ -76,11 +76,6 @@ init([]) ->
         listen_addr => partisan_config:get(listen_addrs)
     }),
 
-    %% Open connection pool.
-    PoolSup = {partisan_pool_sup,
-               {partisan_pool_sup, start_link, []},
-                permanent, 20000, supervisor, [partisan_pool_sup]},
-
     %% Initialize the plumtree outstanding messages table
     %% supervised by the supervisor.
     %% The table is used by partisan_plumtree_broadcast and maps a nodename()
@@ -91,5 +86,19 @@ init([]) ->
         [public, named_table, duplicate_bag, {read_concurrency, true}]
     ),
 
+    %% Open connection pool.
+    %% This MUST be ther last children to be started
+    PoolSup = {
+        partisan_acceptor_socket_pool_sup,
+        {partisan_acceptor_socket_pool_sup, start_link, []},
+        permanent,
+        20000,
+        supervisor,
+        [partisan_acceptor_socket_pool_sup]
+    },
+
     RestartStrategy = {one_for_one, 10, 10},
-    {ok, {RestartStrategy, Children ++ CausalBackends ++ [PoolSup]}}.
+
+    AllChildren = Children ++ CausalBackends ++ [PoolSup],
+
+    {ok, {RestartStrategy, AllChildren}}.

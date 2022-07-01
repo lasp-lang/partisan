@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(partisan_pool_sup).
+-module(partisan_acceptor_socket_pool_sup).
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -behaviour(supervisor).
