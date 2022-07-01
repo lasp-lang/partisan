@@ -303,8 +303,8 @@ cast(Dest, Request) when is_atom(Dest) ->
     do_cast(Dest, Request);
 cast(Dest, Request) when is_pid(Dest) ->
     do_cast(Dest, Request);
-cast({partisan_remote_reference, _, _} = Dest, Request) ->
-    do_cast(Dest, Request).
+cast(EncodedRef, Request) ->
+    do_cast(EncodedRef, Request).
 
 do_cast(Dest, Request) ->
     do_send(Dest, cast_msg(Request)),
@@ -1024,8 +1024,8 @@ client_stacktrace(From) when is_pid(From) ->
     false ->
         {From,remote}
     end;
-client_stacktrace({partisan_remote_reference, _, _} = From) ->
-    {From,remote}.
+client_stacktrace(EncodedRef) ->
+    {EncodedRef,remote}.
 
 
 %% format_log/1 is the report callback used by Logger handler
