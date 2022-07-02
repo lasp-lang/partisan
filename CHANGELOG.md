@@ -10,16 +10,15 @@ In general, the API was redesigned to concentrate all functions around two modul
 * `partisan` module was repurposed as a replacement for the `erlang` module for use cases related to distribution e.g. `erlang:nodes/0` -> `partisan:nodes/0`.
     * Several functions previously found in `partisan_peer_service`, `partisan_monitor` and `partisan_util` are now in this module:
         * `partisan:broadcast/2`
+        * `partisan:cast_message/2`
         * `partisan:cast_message/3`
         * `partisan:cast_message/4`
-        * `partisan:cast_message/5`
         * `partisan:default_channel/0`
         * `partisan:demonitor/1`
         * `partisan:demonitor/2`
         * `partisan:forward_message/2`
         * `partisan:forward_message/3`
         * `partisan:forward_message/4`
-        * `partisan:forward_message/5`
         * `partisan:is_connected/1`
         * `partisan:is_connected/2`
         * `partisan:is_fully_connected/1`
@@ -124,8 +123,11 @@ In general, the API was redesigned to concentrate all functions around two modul
 * More robust implementation of monitors using the new subscription capabilities provided by `peer_service` `on_up` and `on_down` callback functions.
     - monitor a node or all nodes
     - use node monitors to signal a process monitor when the remote node is disconnected
+    - local cache of process monitor to ensure the delivery of DOWN signal when the connection to the process node is down.
     - avoid leaking monitors
     - new supervisor to ensure that `partisan_monitor` is restarted every time the configured `partisan_peer_service_manager` is restarted.
+    - re-implementation based on ets tables
+    - If using OTP25 the monitor gen_server uses the parallel signal optimisation by placing the process inbox data off heap
 
 #### Changes
 
