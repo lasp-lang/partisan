@@ -63,9 +63,12 @@ transform_statement({op, Line, '!',
     {call, Line, {remote, Line,
                   {atom, Line, partisan_peer_service}, {atom, Line, forward_message}},
         [{var, Line, RemotePid}, {Type, Line, Message}]};
+
 transform_statement({match, Line, {var, Line, RemotePid}, {call, Line, _, _} = Call}) ->
     {match, Line, {var, Line, RemotePid}, transform_statement(Call)};
+
 transform_statement({call, Line, {atom, Line, self}, []}) ->
-    {call, Line, {remote, Line, {atom, Line, partisan_util}, {atom, Line, pid}}, []};
+    {call, Line, {remote, Line, {atom, Line, partisan}, {atom, Line, self}}, []};
+
 transform_statement(Stmt) ->
     Stmt.
