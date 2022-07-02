@@ -82,15 +82,10 @@ remove(#{name := Node}, Actor, T) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
-merge({state_awmap, _} = T1, {state_awmap, _} = T2) ->
-    state_awmap:merge(T1, T2);
+-spec merge(t(), t()) -> t().
 
-merge({state_awmap, _} = T1, _) ->
-    %% Maybe the other node is using a diff version of this module
-    %% TODO implement versioning and migrations to enable two diff versions to
-    %% form a cluster.
-    %% At the moment we just pick the local.
-    T1.
+merge(T1, T2) ->
+    state_awmap:merge(T1, T2).
 
 
 %% -----------------------------------------------------------------------------
