@@ -205,7 +205,7 @@ forward_message(RemoteRef, Message, Opts) ->
 forward_message(Node, ServerRef, Message, Opts) when is_list(Opts) ->
     forward_message(Node, ServerRef, Message, maps:from_list(Opts));
 
-forward_message(Name, ServerRef, Message, Options)
+forward_message(Node, ServerRef, Message, Options)
 when is_map(Options) ->
     ?LOG_TRACE(#{
         description => "About to send message",
@@ -215,7 +215,7 @@ when is_map(Options) ->
     }),
 
     %% We ignore channel
-    FullMessage = {forward_message, Name, ServerRef, Message, Options},
+    FullMessage = {forward_message, Node, ServerRef, Message, Options},
 
     %% Attempt to fast-path through the memoized connection cache.
     case partisan_peer_connections:dispatch(FullMessage) of

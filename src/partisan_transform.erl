@@ -61,7 +61,7 @@ walk_body(Acc, [H|T]) ->
 transform_statement({op, Line, '!',
                      {var, Line, RemotePid}, {Type, Line, Message}}) ->
     {call, Line, {remote, Line,
-                  {atom, Line, partisan_peer_service}, {atom, Line, forward_message}},
+                  {atom, Line, partisan}, {atom, Line, forward_message}},
         [{var, Line, RemotePid}, {Type, Line, Message}]};
 
 transform_statement({match, Line, {var, Line, RemotePid}, {call, Line, _, _} = Call}) ->

@@ -49,23 +49,28 @@
 %% -----------------------------------------------------------------------------
 -module(partisan_remote_ref).
 
+-include("partisan_logger.hrl").
 -include("partisan.hrl").
 
 -type t()               ::  p() | r() | n().
--type p()               ::  remote_ref(process_ref()) | uri().
--type r()               ::  remote_ref(encoded_ref()) | uri().
--type n()               ::  remote_ref(registered_name_ref()) | uri().
 -type uri()             ::  <<_:64, _:_*8>>.
--type tuple_ref()       ::  remote_ref()
-                            | process_ref()
-                            | encoded_ref()
-                            | registered_name_ref().
+-type p()               ::  tuple_ref(encoded_pid()) | uri().
+-type r()               ::  tuple_ref(encoded_ref()) | uri().
+-type n()               ::  tuple_ref(encoded_name()) | uri().
+-type tuple_ref(T)      ::  {partisan_remote_ref, node(), T}.
+-type target()          ::  encoded_pid() | encoded_ref() | encoded_name().
+-type encoded_pid()     ::  {encoded_pid, list()}.
+-type encoded_name()    ::  {encoded_name, list()}.
+-type encoded_ref()     ::  {encoded_ref, list()}.
+
 
 -export_type([t/0]).
 -export_type([p/0]).
 -export_type([r/0]).
 -export_type([n/0]).
--export_type([uri/0]).
+-export_type([encoded_pid/0]).
+-export_type([encoded_name/0]).
+-export_type([encoded_ref/0]).
 
 
 -export([from_term/1]).
@@ -89,6 +94,7 @@
 -compile({no_auto_import, [node/1]}).
 
 
+
 %% =============================================================================
 %% API
 %% =============================================================================
@@ -100,64 +106,57 @@
 %% @end
 %% -----------------------------------------------------------------------------
 -spec from_term(pid() | reference() | atom() | {atom(), node()}) ->
-    uri() | remote_ref() | no_return().
+    t() | no_return().
 
-from_term({Name, Node}) when is_atom(Name); is_atom(Node) ->
+from_term({Name, Node}) ->
     from_term(Name, Node);
 
-from_term(Term) ->
-    case partisan_config:get(remote_ref_as_uri, false) of
-        true ->
-            encode_as_uri(Term);
-        false ->
-            encode_as_tuple(Term)
-    end.
+from_term(Term)
+when is_atom(Term); erlang:is_pid(Term); erlang:is_reference(Term) ->
+    encode(Term, partisan:node()).
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Takes a local Erlang identifier `Term' and a node `Node' and returns a
+%% @doc Takes an atom `Name' and a node `Node' and returns a
 %% partisan remote reference.
 %% @end
 %% -----------------------------------------------------------------------------
--spec from_term(Term :: pid() | reference() | atom(), Node :: node()) ->
-    uri() | remote_ref() | no_return().
+-spec from_term(Name :: atom(), Node :: node()) ->
+    n() | no_return().
 
-from_term(Term, Node) ->
-    case partisan_config:get(remote_ref_as_uri, false) of
-        true ->
-            encode_as_uri(Term, Node);
-        false ->
-            encode_as_tuple(Term, Node)
-    end.
+from_term(Name, Node) when is_atom(Name), is_atom(Node) ->
+    encode(Name, Node);
+
+from_term(_, _) ->
+    error(badarg).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec to_term(uri() | tuple_ref()) ->
+-spec to_term(t()) ->
     pid() | reference() | atom() | no_return().
 
-to_term(RemoteRef) ->
-    decode(RemoteRef, term).
+to_term(Ref) ->
+    decode(Ref, term).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec target(uri() | tuple_ref()) ->
-    pid() | reference() | atom() | no_return().
+-spec target(Ref :: t()) -> target() | no_return().
 
-target(RemoteRef) ->
-    decode(RemoteRef, target).
+target(Ref) ->
+    decode(Ref, target).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec node(Bin :: binary()) -> node() | no_return().
+-spec node(Ref :: t()) -> node() | no_return().
 
 node(<<"partisan:pid:", Rest/binary>>) ->
     get_node(Rest);
@@ -168,7 +167,7 @@ node(<<"partisan:ref:", Rest/binary>>) ->
 node(<<"partisan:name:", Rest/binary>>) ->
     get_node(Rest);
 
-node({partisan_remote_reference, Node, _}) ->
+node({partisan_remote_ref, Node, _}) ->
     Node;
 
 node(_) ->
@@ -179,7 +178,7 @@ node(_) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec nodestring(Bin :: binary()) -> binary() | no_return().
+-spec nodestring(Ref :: t()) -> binary() | no_return().
 
 nodestring(<<"partisan:pid:", Rest/binary>>) ->
     get_nodestring(Rest);
@@ -190,7 +189,7 @@ nodestring(<<"partisan:ref:", Rest/binary>>) ->
 nodestring(<<"partisan:name:", Rest/binary>>) ->
     get_nodestring(Rest);
 
-nodestring({partisan_remote_reference, Node, _}) ->
+nodestring({partisan_remote_ref, Node, _}) ->
     atom_to_binary(Node, utf8);
 
 nodestring(_) ->
@@ -202,7 +201,7 @@ nodestring(_) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec is_local(binary() | tuple()) -> boolean() | no_return().
+-spec is_local(Ref :: t()) -> boolean() | no_return().
 
 is_local(<<"partisan:pid:", Rest/binary>>) ->
     do_is_local(Rest);
@@ -213,7 +212,7 @@ is_local(<<"partisan:ref:", Rest/binary>>) ->
 is_local(<<"partisan:name:", Rest/binary>>) ->
     do_is_local(Rest);
 
-is_local({partisan_remote_reference, Node, _}) ->
+is_local({partisan_remote_ref, Node, _}) ->
     Node =:= partisan:node();
 
 is_local(_) ->
@@ -224,7 +223,7 @@ is_local(_) ->
 %% @doc Returns true if reference `Ref' is located in node `Node'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec is_local(Ref :: binary() | tuple(), Node :: node()) ->
+-spec is_local(Ref :: t(), Node :: node()) ->
     boolean() | no_return().
 
 is_local(<<"partisan:pid:", Rest/binary>>, Node) ->
@@ -236,7 +235,7 @@ is_local(<<"partisan:ref:", Rest/binary>>, Node) ->
 is_local(<<"partisan:name:", Rest/binary>>, Node) ->
     do_is_local(Rest, Node);
 
-is_local({partisan_remote_reference, Node, _}, OtherNode) ->
+is_local({partisan_remote_ref, Node, _}, OtherNode) ->
     Node =:= OtherNode;
 
 is_local(_, _) ->
@@ -264,10 +263,10 @@ is_type(Term) ->
 is_pid(<<"partisan:pid:", _/binary>>) ->
     true;
 
-is_pid({partisan_remote_reference, _, Term}) ->
+is_pid({partisan_remote_ref, _, Term}) ->
     is_pid(Term);
 
-is_pid({partisan_process_reference, _}) ->
+is_pid({encoded_pid, _}) ->
     true;
 
 is_pid(_) ->
@@ -283,10 +282,10 @@ is_pid(_) ->
 is_reference(<<"partisan:ref:", _/binary>>) ->
     true;
 
-is_reference({partisan_remote_reference, _, Term}) ->
+is_reference({partisan_remote_ref, _, Term}) ->
     is_reference(Term);
 
-is_reference({partisan_encoded_reference, _}) ->
+is_reference({encoded_ref, _}) ->
     true;
 
 is_reference(_) ->
@@ -302,10 +301,10 @@ is_reference(_) ->
 is_name(<<"partisan:name:", _/binary>>) ->
     true;
 
-is_name({partisan_remote_reference, _, Term}) ->
+is_name({partisan_remote_ref, _, Term}) ->
     is_name(Term);
 
-is_name({partisan_registered_name_reference, _}) ->
+is_name({encoded_name, _}) ->
     true;
 
 is_name(_) ->
@@ -327,10 +326,10 @@ is_name(<<"partisan:name:", Rest/binary>>, Name) ->
             false
     end;
 
-is_name({partisan_remote_reference, _, Term}, Name) ->
+is_name({partisan_remote_ref, _, Term}, Name) ->
     is_name(Term, Name);
 
-is_name({partisan_registered_name_reference, NameStr}, Name) ->
+is_name({encoded_name, NameStr}, Name) ->
     NameStr == atom_to_list(Name);
 
 is_name(_, _) ->
@@ -372,39 +371,77 @@ is_identical(A, B) ->
 %% =============================================================================
 
 
-%% -----------------------------------------------------------------------------
-%% @private
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
--spec encode_as_uri(pid() | reference() | atom()) -> uri() | no_return().
-
-encode_as_uri(Term) ->
-    encode_as_uri(Term, partisan:nodestring()).
-
 
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec encode_as_uri(pid() | reference() | atom(), node() | binary()) ->
-    uri() | no_return().
+-spec encode(pid() | reference() | atom(), node()) -> t() | no_return().
 
-encode_as_uri(Term, Node) when is_atom(Node) ->
-    encode_as_uri(Term, atom_to_binary(Node, utf8));
+encode(Term, Node) ->
+    case partisan_config:get(remote_ref_as_uri, false) of
+        true ->
+            encode(Term, Node, uri);
+        false ->
+            encode(Term, Node, tuple)
+    end.
 
-encode_as_uri(Pid, Nodestring) when erlang:is_pid(Pid) ->
-    PidBin = untag(pid_to_list(Pid)),
-    maybe_pad(<<"partisan:pid:", Nodestring/binary, $:, PidBin/binary>>);
 
-encode_as_uri(Ref, Nodestring) when erlang:is_reference(Ref) ->
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec encode(pid() | reference() | atom(), node(), uri | tuple) ->
+    t() | no_return().
+
+encode(Pid, Node, Format) when erlang:is_pid(Pid) ->
+    PidNode = erlang:node(Pid),
+    PidStr0 = pid_to_list(Pid),
+    PidStr =
+        case PidNode == Node of
+            true ->
+                _ = maybe_register_pid(Pid, PidNode, local),
+                PidStr0;
+            false ->
+                PidStr1 = to_local_pid_list(PidStr0),
+                LocalPid = list_to_pid(PidStr1),
+                _ = maybe_register_pid(LocalPid, PidNode, remote),
+                PidStr1
+        end,
+
+    case Format of
+        uri ->
+            PidBin = untag(PidStr),
+            Nodestr = atom_to_binary(Node, utf8),
+            maybe_pad(<<"partisan:pid:", Nodestr/binary, $:, PidBin/binary>>);
+        tuple ->
+            Target = {encoded_pid, PidStr},
+            {partisan_remote_ref, Node, Target}
+    end;
+
+encode(Ref, Node, uri) when erlang:is_reference(Ref) ->
+    %% We do not support reference rewriting
+    Node =:= partisan:node() orelse error(badarg),
     <<"#Ref", RefBin/binary>> = untag(ref_to_list(Ref)),
+    Nodestring = atom_to_binary(Node, utf8),
     maybe_pad(<<"partisan:ref:", Nodestring/binary, $:, RefBin/binary>>);
 
-encode_as_uri(Name, Nodestring) when is_atom(Name) ->
+encode(Ref, Node, tuple) when erlang:is_reference(Ref) ->
+    %% We do not support reference rewriting
+    Node =:= partisan:node() orelse error(badarg),
+    Target = {encoded_ref, erlang:ref_to_list(Ref)},
+    {partisan_remote_ref, Node, Target};
+
+encode(Name, Node, uri) when is_atom(Name) ->
     NameBin = atom_to_binary(Name, utf8),
-    maybe_pad(<<"partisan:name:", Nodestring/binary, $:, NameBin/binary>>).
+    Nodestring = atom_to_binary(Node, utf8),
+    maybe_pad(<<"partisan:name:", Nodestring/binary, $:, NameBin/binary>>);
+
+encode(Name, Node, tuple) when is_atom(Name) ->
+    Target = {encoded_name, atom_to_list(Name)},
+    {partisan_remote_ref, Node, Target}.
 
 
 %% -----------------------------------------------------------------------------
@@ -412,41 +449,8 @@ encode_as_uri(Name, Nodestring) when is_atom(Name) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec encode_as_tuple(pid() | reference() | atom()) ->
-    remote_ref() | no_return().
-
-encode_as_tuple(Term) ->
-    encode_as_tuple(Term, partisan:node()).
-
-
-%% -----------------------------------------------------------------------------
-%% @private
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
--spec encode_as_tuple(pid() | reference() | atom(), node()) ->
-    remote_ref() | no_return().
-
-encode_as_tuple(Pid, Node) when erlang:is_pid(Pid) ->
-    Encoded = {partisan_process_reference, pid_to_list(Pid)},
-    {partisan_remote_reference, Node, Encoded};
-
-encode_as_tuple(Ref, Node) when erlang:is_reference(Ref) ->
-    Encoded = {partisan_encoded_reference, erlang:ref_to_list(Ref)},
-    {partisan_remote_reference, Node, Encoded};
-
-encode_as_tuple(Name, Node) when is_atom(Name) ->
-    Encoded = {partisan_registered_name_reference, atom_to_list(Name)},
-    {partisan_remote_reference, Node, Encoded}.
-
-
-%% -----------------------------------------------------------------------------
-%% @private
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
--spec decode(uri() | tuple_ref(), term | target) ->
-    pid() | reference() | atom() | no_return().
+-spec decode(t(), term | target) ->
+    pid() | reference() | atom() | target() | no_return().
 
 decode(<<"partisan:", Rest/binary>>, Mode) ->
     ThisNode = partisan:nodestring(),
@@ -456,13 +460,13 @@ decode(<<"partisan:", Rest/binary>>, Mode) ->
     case binary:split(Rest, <<$:>>, [global]) of
 
         [<<"pid">>, _, Term | _] when Mode == target ->
-            {partisan_process_reference, tag(Term)};
+            {encoded_pid, tag(Term)};
 
         [<<"ref">>, _, Term | _] when Mode == target ->
-            {partisan_encoded_reference, "#Ref" ++ tag(Term)};
+            {encoded_ref, "#Ref" ++ tag(Term)};
 
         [<<"name">>, _, Term | _] when Mode == target ->
-            {partisan_registered_name_reference, binary_to_list(Term)};
+            {encoded_name, binary_to_list(Term)};
 
         [<<"pid">>, Node, Term | _] when Node == ThisNode, Mode == term ->
             to_local_pid(tag(Term));
@@ -477,17 +481,17 @@ decode(<<"partisan:", Rest/binary>>, Mode) ->
             error(badarg)
     end;
 
-decode({partisan_remote_reference, Node, {Type, Value} = Target}, Mode) ->
+decode({partisan_remote_ref, Node, {Type, Value} = Target}, Mode) ->
     IsLocal = Node =:= partisan:node(),
 
     case Type of
-        partisan_process_reference when IsLocal == true, Mode == term ->
+        encoded_pid when IsLocal == true, Mode == term ->
             to_local_pid(Value);
 
-        partisan_encoded_reference when IsLocal == true, Mode == term ->
+        encoded_ref when IsLocal == true, Mode == term ->
             list_to_ref(Value);
 
-        partisan_registered_name_reference when Mode == term ->
+        encoded_name when Mode == term ->
             %% Either local or remote
             list_to_existing_atom(Value);
 
@@ -495,22 +499,22 @@ decode({partisan_remote_reference, Node, {Type, Value} = Target}, Mode) ->
             Target
     end;
 
-decode({partisan_process_reference, _} = Target, target) ->
+decode({encoded_pid, _} = Target, target) ->
     Target;
 
-decode({partisan_process_reference, Value}, term) ->
+decode({encoded_pid, Value}, term) ->
     list_to_pid(Value);
 
-decode({partisan_encoded_reference, _} = Target, target) ->
+decode({encoded_ref, _} = Target, target) ->
     Target;
 
-decode({partisan_encoded_reference, Value}, term) ->
+decode({encoded_ref, Value}, term) ->
     list_to_ref(Value);
 
-decode({partisan_registered_name_reference, _} = Target, target) ->
+decode({encoded_name, _} = Target, target) ->
     Target;
 
-decode({partisan_registered_name_reference, Value}, term) ->
+decode({encoded_name, Value}, term) ->
     list_to_existing_atom(Value).
 
 
@@ -580,20 +584,98 @@ maybe_pad(Bin) ->
 
 
 %% @private
-to_local_pid(Value) ->
+to_local_pid_list(Value) ->
     case string:split(Value, ".", all) of
         ["<0", _, _] ->
-            list_to_pid(Value);
+            Value;
 
         [_, B, C] ->
-            list_to_pid("<0." ++ B ++ "." ++ C);
+            "<0." ++ B ++ "." ++ C;
 
         _ ->
             error(badarg)
     end.
 
 
+%% @private
+to_local_pid(Value) ->
+    list_to_pid(to_local_pid_list(Value)).
 
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+maybe_register_pid(Pid, Node, Mode) ->
+    case partisan_config:get(register_pid_for_encoding, false) of
+        true when Mode == local ->
+            register_local_pid(Pid);
+        true when Mode == remote ->
+            register_remote_pid(Pid, Node);
+        false ->
+            false
+    end.
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec register_local_pid(pid()) -> true.
+
+register_local_pid(Pid) ->
+    %% This is super dangerous.
+    %% This code was in partisan_util in previous versions
+    Unique = erlang:unique_integer([monotonic, positive]),
+
+    Name = case process_info(Pid, registered_name) of
+        {registered_name, Name0} ->
+            ?LOG_DEBUG("unregistering pid: ~p name: ~p", [Pid, Name0]),
+            %% TODO: Race condition on unregister/register.
+            unregister(Name0),
+            Name0;
+        [] ->
+            list_to_atom("partisan_registered_name_" ++ integer_to_list(Unique))
+    end,
+
+    ?LOG_DEBUG("registering pid: ~p name: ~p", [Pid, Name]),
+
+    register(Name, Pid).
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+register_remote_pid(Pid, Node) ->
+    %% This is even more super dangerous.
+    %% This code was in partisan_util in previous versions
+    Unique = erlang:unique_integer([monotonic, positive]),
+    NewName = "partisan_registered_name_" ++ integer_to_list(Unique),
+
+    Register = fun() ->
+        Name = case process_info(Pid, registered_name) of
+            {registered_name, Name0} ->
+                ?LOG_DEBUG("unregistering pid: ~p name: ~p", [Pid, Name0]),
+                %% TODO: Race condition on unregister/register.
+                unregister(Name0),
+                Name0;
+            [] ->
+                list_to_atom(NewName)
+        end,
+        ?LOG_DEBUG(
+            "registering pid: ~p name: ~p at node: ~p",
+            [Pid, NewName, Node]
+        ),
+        erlang:register(Name, Pid)
+    end,
+
+    %% TODO: Race here unless we wait.
+    _ = rpc:call(Node, erlang, spawn, [Register]),
+    true.
 
 
 %% =============================================================================
@@ -629,7 +711,7 @@ local_pid_test() ->
         to_term(Ref)
     ),
     ?assertEqual(
-        {partisan_process_reference, pid_to_list(self())},
+        {encoded_pid, pid_to_list(self())},
         target(Ref)
     ),
 
@@ -647,7 +729,7 @@ local_pid_test() ->
         to_term(UriRef)
     ),
     ?assertEqual(
-        {partisan_process_reference, pid_to_list(self())},
+        {encoded_pid, pid_to_list(self())},
         target(UriRef)
     ).
 
@@ -667,7 +749,7 @@ local_name_test() ->
         to_term(Ref)
     ),
     ?assertEqual(
-        {partisan_registered_name_reference, "foo"},
+        {encoded_name, "foo"},
         target(Ref)
     ),
 
@@ -685,7 +767,7 @@ local_name_test() ->
         to_term(UriRef)
     ),
     ?assertEqual(
-        {partisan_registered_name_reference, "foo"},
+        {encoded_name, "foo"},
         target(UriRef)
     ).
 
@@ -720,14 +802,37 @@ local_ref_test() ->
     ).
 
 
+remote_name_test() ->
+    Ref = from_term(foo, 'othernode@127.0.0.1'),
+    ?assertEqual(
+        true,
+        is_type(Ref)
+    ),
+    ?assertEqual(
+        true,
+        is_name(Ref)
+    ).
+
+from_term_badarg_test() ->
+    ?assertError(
+        badarg,
+        from_term(self(), 'othernode@127.0.0.1')
+    ),
+
+    ?assertError(
+        badarg,
+        from_term(erlang:make_ref(), 'othernode@127.0.0.1')
+    ).
+
+
 non_local_target_test() ->
-    Ref = from_term(self(), 'othernode@127.0.0.1'),
+    Ref =  <<"partisan:pid:othernode@127.0.0.1:0.800.0">>,
     ?assertError(
         badarg,
         to_term(Ref)
     ),
     ?assertEqual(
-        {partisan_process_reference, pid_to_list(self())},
+        {encoded_pid, "<0.800.0>"},
         target(Ref)
     ).
 

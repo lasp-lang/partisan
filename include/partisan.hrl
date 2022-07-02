@@ -93,22 +93,6 @@
 -type partitions() :: [{reference(), node_spec()}].
 -type ttl() :: non_neg_integer().
 -type channel() :: atom().
--type remote_ref() :: {
-        partisan_remote_reference,
-        node(),
-        process_ref() | registered_name_ref() | encoded_ref()
-}.
--type remote_ref(T) :: {
-        partisan_remote_reference,
-        node(),
-        T
-}.
--type remote_process_ref() :: remote_ref(process_ref()).
--type remote_registered_name_ref() :: remote_ref(registered_name_ref()).
--type remote_encoded_ref() :: remote_ref(encoded_ref()).
--type process_ref()  :: {partisan_process_reference, list()}.
--type registered_name_ref()  :: {partisan_registered_name_reference, list()}.
--type encoded_ref()  :: {partisan_encoded_reference, list()}.
 
 %% TODO: add type annotations
 -record(orchestration_strategy_state,

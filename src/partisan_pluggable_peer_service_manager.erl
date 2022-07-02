@@ -291,9 +291,9 @@ cast_message(Node, ServerRef, Message) ->
 %% @doc Cast a message to a remote gen_server.
 %% @end
 %% -----------------------------------------------------------------------------
-cast_message(Name, ServerRef, Message, Options) ->
+cast_message(Node, ServerRef, Message, Options) ->
     FullMessage = {'$gen_cast', Message},
-    forward_message(Name, ServerRef, FullMessage, Options).
+    forward_message(Node, ServerRef, FullMessage, Options).
 
 
 %% -----------------------------------------------------------------------------

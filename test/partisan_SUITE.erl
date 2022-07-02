@@ -351,7 +351,7 @@ transform_test(Config) ->
 
     %% Get process identifier
     case rpc:call(Node3, partisan_transformed_module, get_pid, []) of
-        {partisan_remote_reference, _, _} = Node3Pid1 ->
+        {partisan_remote_ref, _, _} = Node3Pid1 ->
             case rpc:call(Node3, partisan_transformed_module, send_to_pid, [Node3Pid1, Message]) of
                 Message ->
                     ok;
@@ -384,7 +384,7 @@ transform_test(Config) ->
     _ = rpc:call(Node3, erlang, spawn, [GetPidFunction]),
 
     receive
-        {partisan_remote_reference, _, _} = Node3Pid2 ->
+        {partisan_remote_ref, _, _} = Node3Pid2 ->
             rpc:call(Node4, partisan_transformed_module, send_to_pid, [Node3Pid2, Message])
     after
         3000 ->

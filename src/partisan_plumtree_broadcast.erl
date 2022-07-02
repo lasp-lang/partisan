@@ -200,7 +200,11 @@ start_link() ->
 %% -----------------------------------------------------------------------------
 
 -spec start_link(
-    [node()], [node()], [node()], [module()], proplists:proplist() | map()) ->
+    InitMembers :: [node()],
+    InitEagers :: [node()],
+    InitLazys :: [node()],
+    Mods :: [module()],
+    Opts :: proplists:proplist() | map()) ->
     {ok, pid()} | ignore | {error, term()}.
 
 start_link(InitMembers, InitEagers, InitLazys, Mods, Opts) when is_list(Opts) ->
@@ -761,7 +765,6 @@ random_root(#state{all_members=Members}) ->
 random_peer(Root, State=#state{all_members=All}) ->
     Node = partisan:node(),
     Mode = partisan_config:get(exchange_selection, optimized),
-    Mode = partisan_config:get(exchange_selection, optimized),
 
     Other = case Mode of
         normal ->
@@ -863,15 +866,15 @@ all_peers(Root, Sets, Default) ->
     end.
 
 
--spec send(Msg :: any(), Mod :: module(), Peers :: [node()] | node()) -> ok.
+-spec send(Msg :: message(), Mod :: module(), Peers :: [node()] | node()) -> ok.
 
 send(Msg, Mod, Peers) when is_list(Peers) ->
     _ = [send(Msg, Mod, P) || P <- Peers],
     ok;
 
-send(Msg, Mod, P) ->
+send(Msg, Mod, Peer) ->
     instrument_transmission(Msg, Mod),
-    partisan:cast_message(P, ?SERVER, Msg).
+    partisan:cast_message(Peer, ?SERVER, Msg, #{}).
 
 
 schedule_lazy_tick(Period) ->

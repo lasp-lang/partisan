@@ -25,25 +25,34 @@
 -include("partisan.hrl").
 
 
--type server_ref()  ::  partisan_remote_ref:p()
-                        | process_ref()
-                        | partisan_remote_ref:n()
-                        | registered_name_ref()
-                        | Name :: atom()
-                        | {Name :: atom(), node()}
-                        | {global, atom()}
-                        | {via, module(), ViaName :: atom()}
-                        | pid().
+-type server_ref()      ::  partisan_remote_ref:p()
+                            | partisan_remote_ref:encoded_pid()
+                            | partisan_remote_ref:n()
+                            | partisan_remote_ref:encoded_name()
+                            | Name :: atom()
+                            | {Name :: atom(), node()}
+                            | {global, atom()}
+                            | {via, module(), ViaName :: atom()}
+                            | pid().
 
--type forward_opts()     ::  #{
-                            ack => boolean(),
-                            causal_label => atom(),
-                            channel => channel(),
-                            clock => any(),
-                            partition_key => non_neg_integer(),
-                            transitive => boolean()
-                        }.
+-type forward_opts()    ::  #{
+                                ack => boolean(),
+                                causal_label => atom(),
+                                channel => channel(),
+                                clock => any(),
+                                partition_key => non_neg_integer(),
+                                transitive => boolean()
+                            } |
+                            [
+                                {ack, boolean()}
+                                | {causal_label, atom()}
+                                | {channel, channel()}
+                                | {clock, any()}
+                                | {partition_key, non_neg_integer()}
+                                | {transitive, boolean()}
+                            ].
 
+-export_type([server_ref/0]).
 -export_type([forward_opts/0]).
 
 -export([mynode/0]).
@@ -86,30 +95,35 @@
 
 -callback receive_message(node(), message()) -> ok.
 
-% -callback cast_message(
-%     partisan_remote_ref:p() | partisan_remote_ref:n() | pid(), message()) -> ok.
+-callback cast_message(
+    ServerRef :: server_ref(),
+    Msg :: message()) -> ok.
 
 -callback cast_message(
-    partisan_remote_ref:p() | partisan_remote_ref:n() | pid(),
-    message(),
-    forward_opts()) -> ok.
+    ServerRef :: server_ref(),
+    Msg :: message(),
+    Opts :: forward_opts()) -> ok.
 
-% -callback cast_message(node(), pid(), message()) -> ok.
-
--callback cast_message(node(), pid(), message(), forward_opts()) -> ok.
-
--callback forward_message(
-    partisan_remote_ref:p() | partisan_remote_ref:n() | pid() | atom(),
-    message()) -> ok.
+-callback cast_message(
+    Node :: node(),
+    ServerRef :: server_ref(),
+    Msg :: message(),
+    Opts :: forward_opts()) -> ok.
 
 -callback forward_message(
-    partisan_remote_ref:p() | partisan_remote_ref:n() | pid() | atom(),
-    message(),
-    forward_opts()) -> ok.
+    ServerRef :: server_ref(),
+    Msg :: message()) -> ok.
 
-% -callback forward_message(node(), pid(), message()) -> ok.
+-callback forward_message(
+    ServerRef :: server_ref(),
+    Msg :: message(),
+    Opts :: forward_opts()) -> ok.
 
--callback forward_message(node(), server_ref(), message(), forward_opts()) -> ok.
+-callback forward_message(
+    Node :: node(),
+    ServerRef :: server_ref(),
+    Msg :: message(),
+    Opts :: forward_opts()) -> ok.
 
 
 -callback decode(term()) -> term().

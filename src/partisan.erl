@@ -30,10 +30,7 @@
                                         | partisan_remote_ref:p()
                                         | partisan_remote_ref:n().
 
--type server_ref()                  ::  pid() | atom()
-                                        | partisan_remote_ref:p()
-                                        | partisan_remote_ref:n().
-
+-type server_ref()    ::  partisan_peer_service_manager:server_ref().
 -type forward_opts()  ::  partisan_peer_service_manager:forward_opts().
 
 -export_type([monitor_nodes_opt/0]).
@@ -202,17 +199,7 @@ monitor(process, Term, Opts) when erlang:is_pid(Term) orelse is_atom(Term) ->
     erlang:monitor(process, Term, Opts);
 
 monitor(process, Ref, Opts) ->
-    partisan_remote_ref:is_pid(Ref)
-        orelse partisan_remote_ref:is_name(Ref)
-        orelse error(badarg),
-
-    case partisan_remote_ref:is_local(Ref) of
-        true ->
-            Term = partisan_remote_ref:to_term(Ref),
-            erlang:monitor(process, Term, Opts);
-        false ->
-            partisan_monitor:monitor(Ref, Opts)
-    end;
+    partisan_monitor:monitor(Ref, Opts);
 
 monitor(Type, Term, Opts) ->
     erlang:monitor(Type, Term, Opts).
@@ -343,8 +330,11 @@ monitor_nodes(Flag, Opts) ->
 %% @doc Returns the name of the local node.
 %% @end
 %% -----------------------------------------------------------------------------
--spec is_local(pid() | port() | reference() | binary()
-| remote_ref(process_ref() | encoded_ref())) -> boolean().
+-spec is_local(Term) -> Result when
+    Term :: pid() | port() | reference()
+            | partisan_remote_ref:p()
+            | partisan_remote_ref:r(),
+    Result :: boolean().
 
 is_local(Term) ->
     node(Term) =:= node().
@@ -361,7 +351,7 @@ node() ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Returns the name of the local node.
+%% @doc Returns the name of the local node as a binary string.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec nodestring() -> binary().
@@ -375,15 +365,17 @@ nodestring() ->
 %% a reference, a port or a partisan remote refererence.
 %% @end
 %% -----------------------------------------------------------------------------
--spec node(
-    pid() | port() | reference() | binary()
-    | remote_ref(process_ref() | encoded_ref())) -> node() | no_return().
+-spec node(Term) -> Result when
+    Term :: pid() | port() | reference()
+            | partisan_remote_ref:p()
+            | partisan_remote_ref:r(),
+    Result :: node() | no_return().
 
 node(Arg)
 when erlang:is_pid(Arg) orelse erlang:is_reference(Arg) orelse is_port(Arg) ->
     erlang:node(Arg);
 
-node({partisan_remote_reference, Node, _}) ->
+node({partisan_remote_ref, Node, _}) ->
     Node;
 
 node(Encoded) when is_binary(Encoded) ->
@@ -474,8 +466,7 @@ disconnect_node(Node) ->
 -spec is_alive() -> boolean().
 
 is_alive() ->
-    %% TODO
-    true.
+    undefined =/= whereis(?PEER_SERVICE_MANAGER).
 
 
 %% -----------------------------------------------------------------------------
@@ -622,8 +613,8 @@ is_process_alive(RemoteRef) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec cast_message(
-    Term :: partisan_remote_ref:p() | partisan_remote_ref:n() | pid(),
-    MEssage :: message()) -> ok.
+    ServerRef :: server_ref(),
+    Msg :: message()) -> ok.
 
 cast_message(Term, Message) ->
     (?PEER_SERVICE_MANAGER):cast_message(Term, Message).
@@ -633,21 +624,27 @@ cast_message(Term, Message) ->
 %% @doc Cast message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
--spec cast_message(node(), pid() | atom(), message()) -> ok.
+-spec cast_message(
+    ServerRef :: server_ref(),
+    Msg :: message(),
+    Opts :: forward_opts()) -> ok.
 
-cast_message(Node, ServerRef, Message) ->
-    (?PEER_SERVICE_MANAGER):cast_message(Node, ServerRef, Message).
+cast_message(ServerRef, Msg, Opts) ->
+    (?PEER_SERVICE_MANAGER):cast_message(ServerRef, Msg, Opts).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc Cast message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
--spec cast_message(node(), pid() | atom(), message(), forward_opts()) ->
-    ok.
+-spec cast_message(
+    Node :: node(),
+    ServerRef :: server_ref(),
+    Msg :: message(),
+    Opts :: forward_opts()) -> ok.
 
-cast_message(Name, ServerRef, Message, Options) ->
-    (?PEER_SERVICE_MANAGER):cast_message(Name, ServerRef, Message, Options).
+cast_message(Node, ServerRef, Message, Options) ->
+    (?PEER_SERVICE_MANAGER):cast_message(Node, ServerRef, Message, Options).
 
 
 %% -----------------------------------------------------------------------------
@@ -655,28 +652,35 @@ cast_message(Name, ServerRef, Message, Options) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec forward_message(
-    Term :: partisan_remote_ref:p() | partisan_remote_ref:n() | pid(),
-    Message :: message()) -> ok.
+    ServerRef :: server_ref(),
+    Msg :: message()) -> ok.
 
-forward_message(Term, Message) ->
-    (?PEER_SERVICE_MANAGER):forward_message(Term, Message).
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Forward message to registered process on the remote side.
-%% @end
-%% -----------------------------------------------------------------------------
--spec forward_message(remote_ref() | pid(), message(), forward_opts()) -> ok.
-
-forward_message(PidOrRef, Message, Opts) ->
-    (?PEER_SERVICE_MANAGER):forward_message(PidOrRef, Message, Opts).
+forward_message(ServerRef, Message) ->
+    (?PEER_SERVICE_MANAGER):forward_message(ServerRef, Message).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc Forward message to registered process on the remote side.
 %% @end
 %% -----------------------------------------------------------------------------
--spec forward_message(node(), pid(), message(), forward_opts()) -> ok.
+-spec forward_message(
+    ServerRef :: server_ref(),
+    Msg :: message(),
+    Opts :: forward_opts()) -> ok.
+
+forward_message(ServerRef, Message, Opts) ->
+    (?PEER_SERVICE_MANAGER):forward_message(ServerRef, Message, Opts).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Forward message to registered process on the remote side.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec forward_message(
+    Node :: node(),
+    ServerRef :: server_ref(),
+    Msg :: message(),
+    Opts :: forward_opts()) -> ok.
 
 forward_message(Node, ServerRef, Message, Opts) ->
     (?PEER_SERVICE_MANAGER):forward_message(Node, ServerRef, Message, Opts).

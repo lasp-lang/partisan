@@ -574,7 +574,7 @@ cast({via,RegMod,Name}, Msg) ->
     end;
 cast({Name,Node} = ServerRef, Msg) when is_atom(Name), is_atom(Node) ->
     send(ServerRef, wrap_cast(Msg));
-cast({partisan_remote_reference, _, _} = Dest, Msg) ->
+cast({partisan_remote_ref, _, _} = Dest, Msg) ->
     send(Dest, wrap_cast(Msg)).
 
 %% Call a state machine (synchronous; a reply is expected) that
