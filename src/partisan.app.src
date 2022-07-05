@@ -17,9 +17,9 @@
     {modules, []},
     {included_applications, []},
     {env, []},
-    {licenses, ["Apache 2.0"]},
+    {licenses, ["Apache-2.0"]},
     {links, [
-        {"Github","https://github.com/aramallo/partisan"},
-        {"Github","https://github.com/lasp-lang/partisan"}
+        {"Github","https://github.com/lasp-lang/partisan"},
+        {"Github","https://github.com/aramallo/partisan"}
     ]}
 ]}.
