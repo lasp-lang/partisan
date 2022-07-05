@@ -32,7 +32,9 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--type t()   ::  state_awmap:state_awmap().
+-opaque t()   ::  state_awmap:state_awmap().
+
+-export_type[(t/0)].
 
 %% API
 -export([add/3]).

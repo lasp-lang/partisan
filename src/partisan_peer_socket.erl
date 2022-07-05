@@ -39,7 +39,7 @@
         ]).
 
 -type reason() :: closed | inet:posix().
--type options() :: [ssl:option()] | map().
+-type options() :: [gen_tcp:option()] | map().
 -record(connection, {
           socket :: gen_tcp:socket() | ssl:sslsocket(),
           transport :: gen_tcp | ssl,
@@ -171,7 +171,7 @@ when is_map(PartisanOptions) ->
     end.
 
 %% @doc Returns the wrapped socket from within the connection.
--spec socket(connection()) -> gen_tcp:socket() | ssl:ssl_socket().
+-spec socket(connection()) -> gen_tcp:socket() | ssl:sslsocket().
 socket(Conn) ->
     Conn#connection.socket.
 

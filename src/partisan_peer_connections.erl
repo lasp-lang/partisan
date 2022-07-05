@@ -148,7 +148,7 @@ nodes() ->
 %% type `Arg'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec nodes(Arg :: erlang:node_type()) -> [node()].
+-spec nodes(Arg :: partisan:node_type()) -> [node()].
 
 nodes(Arg) ->
     case partisan_config:get(connect_disterl, false) of

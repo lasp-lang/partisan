@@ -68,6 +68,7 @@ unsorted-logs:
 logs:
 	cat priv/lager/*/log/*.log | sort -k2M # -k3n -k4
 
+
 ##
 ## Release targets
 ##

@@ -691,14 +691,6 @@ decode_ref(RemoteRef) ->
     partisan_remote_ref:to_term(RemoteRef).
 
 
-%% @private
-% maybe_decode_pid(Pid) when is_pid(Pid) ->
-%     Pid;
-
-% maybe_decode_pid(RemoteRef) ->
-%     partisan_remote_ref:to_term(RemoteRef).
-
-
 
 %% =============================================================================
 %% PRIVATE: SIGNALING

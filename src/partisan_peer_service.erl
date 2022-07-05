@@ -333,7 +333,7 @@ broadcast_members(Timeout) ->
 %% running.
 %% @end
 %% -----------------------------------------------------------------------------
--spec exchanges() -> partisan_plumtree_broadcas:exchanges().
+-spec exchanges() -> partisan_plumtree_broadcast:exchanges().
 
 exchanges() ->
     partisan_plumtree_broadcast:exchanges().

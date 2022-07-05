@@ -32,10 +32,12 @@
 
 -type server_ref()    ::  partisan_peer_service_manager:server_ref().
 -type forward_opts()  ::  partisan_peer_service_manager:forward_opts().
+-type node_type()     ::  this | known | visible | connected | hidden | all.
 
 -export_type([monitor_nodes_opt/0]).
 -export_type([server_ref/0]).
 -export_type([forward_opts/0]).
+-export_type([node_type/0]).
 
 -export([start/0]).
 -export([stop/0]).
@@ -222,7 +224,7 @@ demonitor(Ref) ->
 %% -----------------------------------------------------------------------------
 -spec demonitor(
     MonitorRef :: reference() | partisan_remote_ref:r(),
-    OptionList :: partisan_monitor:demon_opts()) -> boolean().
+    OptionList :: partisan_monitor:demonitor_opts()) -> boolean().
 
 demonitor(Ref, Opts) when erlang:is_reference(Ref) ->
     erlang:demonitor(Ref, Opts);
@@ -398,7 +400,7 @@ nodes() ->
 %% connections (that is, hidden nodes are not listed). Same as nodes(visible).
 %% @end
 %% -----------------------------------------------------------------------------
--spec nodes(Arg :: erlang:node_type()) -> [node()].
+-spec nodes(Arg :: node_type()) -> [node()].
 
 nodes(Arg) ->
     partisan_peer_connections:nodes(Arg).
