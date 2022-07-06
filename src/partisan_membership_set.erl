@@ -32,7 +32,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--opaque t()   ::  state_awmap:state_awmap().
+-opaque t()   ::  state_orset:state_orset().
 
 -export_type[(t/0)].
 
@@ -59,24 +59,24 @@
 %% @end
 %% -----------------------------------------------------------------------------
 new() ->
-    state_awmap:new([state_mvregister]).
+    state_orset:new().
 
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
-add(#{name := Node} = NodeSpec, Actor, T) ->
-    {ok, T1} = state_awmap:mutate({apply, Node, {set, 0, NodeSpec}}, Actor, T),
-    T1.
+add(#{name := _} = NodeSpec, Actor, T0) ->
+    {ok, T} = state_orset:mutate({add, NodeSpec}, Actor, T0),
+    T.
 
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
-remove(#{name := Node}, Actor, T) ->
-    {ok, T1} = state_awmap:mutate({rmv, Node}, Actor, T),
+remove(#{name := _} = NodeSpec, Actor, T) ->
+    {ok, T1} = state_orset:mutate({rmv, NodeSpec}, Actor, T),
     T1.
 
 
@@ -87,7 +87,7 @@ remove(#{name := Node}, Actor, T) ->
 -spec merge(t(), t()) -> t().
 
 merge(T1, T2) ->
-    state_awmap:merge(T1, T2).
+    state_orset:merge(T1, T2).
 
 
 %% -----------------------------------------------------------------------------
@@ -95,7 +95,7 @@ merge(T1, T2) ->
 %% @end
 %% -----------------------------------------------------------------------------
 equal(T1, T2) ->
-    state_awmap:equal(T1, T2).
+    state_orset:equal(T1, T2).
 
 
 %% -----------------------------------------------------------------------------
@@ -103,11 +103,7 @@ equal(T1, T2) ->
 %% @end
 %% -----------------------------------------------------------------------------
 to_list(T) ->
-    lists:usort(
-        lists:append(
-            [sets:to_list(Values) || {_, Values} <- state_awmap:query(T)]
-        )
-    ).
+    sets:to_list(state_orset:query(T)).
 
 
 %% -----------------------------------------------------------------------------
@@ -250,7 +246,7 @@ concurrent_remove_update_test() ->
     ),
 
     ?assertEqual(
-        [Node2],
+        [Node1, Node2],
         to_list(B1)
     ),
     %% Replicate to A
