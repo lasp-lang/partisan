@@ -34,7 +34,7 @@
 
 -opaque t()   ::  state_orset:state_orset().
 
--export_type[(t/0)].
+-export_type([t/0]).
 
 %% API
 -export([add/3]).
@@ -58,6 +58,8 @@
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
+-spec new() -> t().
+
 new() ->
     state_orset:new().
 
@@ -66,6 +68,8 @@ new() ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
+-spec add(node_spec(), Actor :: actor(), t()) -> t().
+
 add(#{name := _} = NodeSpec, Actor, T0) ->
     {ok, T} = state_orset:mutate({add, NodeSpec}, Actor, T0),
     T.
@@ -75,6 +79,8 @@ add(#{name := _} = NodeSpec, Actor, T0) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
+-spec remove(node_spec(), Actor :: actor(), t()) -> t().
+
 remove(#{name := _} = NodeSpec, Actor, T) ->
     {ok, T1} = state_orset:mutate({rmv, NodeSpec}, Actor, T),
     T1.
@@ -94,6 +100,8 @@ merge(T1, T2) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
+-spec equal(t(), t()) -> boolean().
+
 equal(T1, T2) ->
     state_orset:equal(T1, T2).
 
@@ -102,6 +110,8 @@ equal(T1, T2) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
+-spec to_list(t()) -> [node_spec()].
+
 to_list(T) ->
     sets:to_list(state_orset:query(T)).
 
