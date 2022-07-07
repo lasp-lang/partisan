@@ -146,7 +146,9 @@ monitor(Term) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc When you attempt to monitor a remote reference using Partisan (disterl
+%% @doc
+%%
+%% When you attempt to monitor a remote reference using Partisan (disterl
 %% is disabled), it is not guaranteed that you will receive the DOWN message. A
 %% few reasons for not receiving the message are message loss, tree
 %% reconfiguration and the node is no longer reachable.
@@ -169,7 +171,9 @@ monitor(Type, Term) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc When you attempt to monitor a remote reference using Partisan (disterl
+%% @doc
+%%
+%% When you attempt to monitor a remote reference using Partisan (disterl
 %% is disabled), it is not guaranteed that you will receive the DOWN message. A
 %% few reasons for not receiving the message are message loss, tree
 %% reconfiguration and the node is no longer reachable.
@@ -690,10 +694,11 @@ forward_message(Node, ServerRef, Message, Opts) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Broadcasts a message originating from this node. The message will be
-%% delivered to each node at least once. The `Mod' passed is responsible for
-%% handling the message on remote nodes as well as providing some other
-%% information both locally and and on other nodes.
+%% @doc Broadcasts a message originating from this node.
+%%
+%% The message will be delivered to each node at least once. The `Mod' passed
+%% is responsible for handling the message on remote nodes as well as providing
+%% some other information both locally and and on other nodes.
 %% `Mod' must be loaded on all members of the clusters and implement the
 %% `partisan_plumtree_broadcast_handler' behaviour.
 %% @end

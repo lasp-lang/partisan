@@ -16,7 +16,11 @@
 %% limitations under the License.
 %%
 %% %CopyrightEnd%
-%%
+
+%% -----------------------------------------------------------------------------
+%% @doc @deprecated
+%% @end
+%% -----------------------------------------------------------------------------
 -module(partisan_gen_fsm).
 
 -include("partisan.hrl").

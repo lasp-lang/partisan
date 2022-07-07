@@ -20,7 +20,27 @@
 %% -----------------------------------------------------------------------------
 
 %% -----------------------------------------------------------------------------
-%% @doc Actually not a set but an Add-Wins Multi-value Register Map Causal CRDT.
+%% @doc This module represents the cluster membership view for this node.
+%% It is implemented as a CRDT set containing `node_spec()' objects.
+%%
+%% Notice that the set can have multiple `node_spec()' objects per peer node.
+%% This can occur on the following scenarios:
+%% <ul>
+%% <li>
+%% A node crashes (without leaving the cluster) and returns bearing
+%% **different IP Addresses** (the value of the node specification's
+%% `listen_addrs' property). This is common in cloud/container orchestration
+%% scenarios where the new instances have dynamic IP addresses.
+%% </li>
+%% <li>
+%% A node crashes (without leaving the cluster) and returns bearing
+%% different values for the node specification properties `channels' and/or
+%% `parallelism'. This can happen in the case the node configuration has
+%% changed before the node restarts.
+%% </li>
+%% </ul>
+%%
+%%
 %% @end
 %% -----------------------------------------------------------------------------
 -module(partisan_membership_set).

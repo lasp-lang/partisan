@@ -183,14 +183,14 @@ process_forward(ServerRef, Msg) ->
     end.
 
 
-%% @deprecated use partisan:node_spec/0 instead.
+%% @deprecated use {@link partisan:node_spec/0} instead
 -spec myself() -> node_spec().
 
 myself() ->
     partisan:node_spec().
 
 
-%% @deprecated use partisan:node/0 instead.
+%% @deprecated use {@link partisan:node/0} instead
 -spec mynode() -> atom().
 
 mynode() ->
