@@ -478,9 +478,10 @@ is_alive() ->
 -spec node_spec() -> node_spec().
 
 node_spec() ->
-    Parallelism = partisan_config:get(parallelism, ?PARALLELISM),
-    Channels = partisan_config:get(channels, ?CHANNELS),
     Name = partisan_config:get(name),
+    Parallelism = partisan_config:get(parallelism, ?PARALLELISM),
+    %% Channels and ListenAddrs are sorted already
+    Channels = partisan_config:get(channels, ?CHANNELS),
     ListenAddrs = partisan_config:get(listen_addrs),
 
     #{

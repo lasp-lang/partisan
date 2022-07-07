@@ -171,7 +171,10 @@ init() ->
                 DefaultAddr0#{host => Host}
         end,
 
-    env_or_default(listen_addrs, [DefaultAddr]),
+    %% We make sure they are sorted so that we can compare them (specially when
+    %% part of the node_spec()).
+    ListenAddrs = lists:usort(env_or_default(listen_addrs, [DefaultAddr])),
+    ok = set(listen_addrs, ListenAddrs),
 
     ok.
 
