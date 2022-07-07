@@ -46,21 +46,37 @@
 %% Macros.
 -define(TIMEOUT, 1000).
 
+
 %%%===================================================================
 %%% API
 %%%===================================================================
 
+%% -----------------------------------------------------------------------------
 %% @doc Start and link to calling process.
--spec start_link(node_spec(), listen_addr(), channel(), pid()) -> {ok, pid()} | ignore | {error, term()}.
+%% If the process is tarted and can get a connection it returns `{ok, pid()}'.
+%% Otherwise if it fails with
+%% @end
+%% -----------------------------------------------------------------------------
+-spec start_link(node_spec(), listen_addr(), channel(), pid()) ->
+    {ok, pid()} | ignore | {error, normal}.
+
 start_link(Peer, ListenAddr, Channel, From) ->
     gen_server:start_link(?MODULE, [Peer, ListenAddr, Channel, From], []).
 
-%%%===================================================================
-%%% gen_server callbacks
-%%%===================================================================
+
+
+
+
+
+%% =============================================================================
+%% GEN_SERVER CALLBACKS
+%% =============================================================================
+
+
 
 %% @private
--spec init([iolist()]) -> {ok, state_t()}.
+-spec init([iolist()]) -> {ok, state_t()} | {stop, Reason :: inet:posix()}.
+
 init([Peer, ListenAddr, Channel, From]) ->
     case connect(ListenAddr, Channel) of
         {ok, Socket} ->
@@ -71,12 +87,21 @@ init([Peer, ListenAddr, Channel, From]) ->
             put({?MODULE, peer}, Peer),
             put({?MODULE, egress_delay}, partisan_config:get(egress_delay, 0)),
 
-            {ok, #state{from=From, listen_addr=ListenAddr, channel=Channel, socket=Socket, peer=Peer}};
-        Error ->
+            State = #state{
+                from = From,
+                listen_addr = ListenAddr,
+                channel = Channel,
+                socket = Socket,
+                peer = Peer
+            },
+            {ok, State};
+
+        {error, Reason} ->
             ?LOG_TRACE(
                 "Pid ~p is unable to connect to ~p due to ~p",
-                [self(), Peer, Error]
+                [self(), Peer, Reason]
             ),
+            %% We use shutdown to avoid a crash report
             {stop, normal}
     end.
 

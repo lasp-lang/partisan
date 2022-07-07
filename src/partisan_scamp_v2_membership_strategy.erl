@@ -35,6 +35,7 @@
 -export([init/1,
          join/3,
          leave/2,
+         prune/2,
          periodic/1,
          handle_message/2]).
 
@@ -113,6 +114,16 @@ leave(#scamp_v2{partial_view=PartialView}=State0, Node) ->
     Message = {bootstrap_remove_subscription, Node},
     OutgoingMessages = lists:map(fun(Peer) -> {Peer, {membership_strategy, Message}} end, PartialView),
     {ok, PartialView, OutgoingMessages, State0}.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+prune(#scamp_v2{partial_view = PartialView} = State, _Nodes) ->
+    %% Not implemented
+    {ok, PartialView, State}.
+
 
 %% @doc Periodic protocol maintenance.
 periodic(#scamp_v2{partial_view=PartialView, last_message_time=LastMessageTime}=State) ->

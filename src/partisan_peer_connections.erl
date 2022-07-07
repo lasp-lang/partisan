@@ -38,23 +38,29 @@
 -record(partisan_peer_info, {
     node                    ::  maybe_var(node()),
     node_spec               ::  maybe_var(node_spec()),
-    connection_count = 0    ::  maybe_var(non_neg_integer())
+    connection_count = 0    ::  maybe_var(non_neg_integer()),
+    timestamp               ::  non_neg_integer()
 }).
 
 -record(partisan_peer_connection, {
     pid                     ::  maybe_var(pid()),
     node                    ::  maybe_var(node()),
     channel                 ::  maybe_var(channel_spec()),
-    listen_addr             ::  maybe_var(listen_addr())
+    listen_addr             ::  maybe_var(listen_addr() | listen_addr_spec()),
+    timestamp               ::  non_neg_integer()
 }).
 
+
+-type optional(T)           ::  T | undefined.
+-type maybe_var(T)          ::  T | '_' | '$1' | '$2' | '$3'.
 -type info()                ::  #partisan_peer_info{}.
 -type connection()          ::  #partisan_peer_connection{}.
 -type connections()         ::  [connection()].
-%% Use when pattern matching e.g. '_', '$1'
--type maybe_var(T)          ::  T | atom().
 -type channel_spec()        ::  channel() | {monotonic, channel()}.
--type maybe(T)              ::  T | undefined.
+-type listen_addr_spec()    :: #{
+                                    ip := maybe_var(inet:ip_address()),
+                                    port := maybe_var(non_neg_integer())
+                                }.
 
 -export_type([connection/0]).
 -export_type([info/0]).
@@ -62,11 +68,14 @@
 -export_type([channel_spec/0]).
 
 -export([channel/1]).
+-export([connection_count/0]).
 -export([connection_count/1]).
 -export([connection_count/2]).
+-export([connection_count/3]).
 -export([connections/0]).
 -export([connections/1]).
 -export([connections/2]).
+-export([connections/3]).
 -export([dispatch/1]).
 -export([dispatch_pid/1]).
 -export([dispatch_pid/2]).
@@ -90,6 +99,7 @@
 -export([processes/2]).
 -export([prune/1]).
 -export([store/4]).
+-export([timestamp/1]).
 
 
 -compile({no_auto_import, [nodes/1]}).
@@ -161,7 +171,8 @@ nodes(Arg) ->
             MatchHead = #partisan_peer_info{
                 node = '$1',
                 node_spec = '_',
-                connection_count = '$2'
+                connection_count = '$2',
+                timestamp = '_'
             },
             MS = [{MatchHead, [{'>', '$2', 0}], ['$1']}],
             ?SELECT(MS);
@@ -187,7 +198,8 @@ node_specs() ->
     MatchHead = #partisan_peer_info{
         node = '_',
         node_spec = '$1',
-        connection_count = '$2'
+        connection_count = '$2',
+        timestamp = '_'
     },
     MS = [{MatchHead, [{'>', '$2', 0}], ['$1']}],
     ?SELECT(MS).
@@ -204,8 +216,8 @@ node_specs() ->
 is_connected(Node) when is_atom(Node) ->
     Node =:= partisan:node() orelse connection_count(Node) > 0;
 
-is_connected(#{name := Node}) ->
-    is_connected(Node).
+is_connected(#{name := _} = NodeSpec) ->
+    is_connected(NodeSpec, '_').
 
 
 %% -----------------------------------------------------------------------------
@@ -217,14 +229,11 @@ is_connected(#{name := Node}) ->
     NodeOrSpec :: node_spec() | node(),
     Channel :: channel_spec() | [channel_spec()]) -> boolean() | no_return().
 
-is_connected(Node, {monotonic, Channel}) when is_atom(Node) ->
-    is_connected(Node, Channel);
-
 is_connected(Node, Channel) when is_atom(Node) ->
     Node =:= partisan:node() orelse connection_count(Node, Channel) > 0;
 
-is_connected(#{name := Node}, Channel) ->
-    is_connected(Node, Channel).
+is_connected(#{name := Node} = Spec, Channel) ->
+    Node =:= partisan:node() orelse connection_count(Spec, Channel) > 0.
 
 
 %% -----------------------------------------------------------------------------
@@ -265,26 +274,46 @@ is_fully_connected(#{name := Node}) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Returns the nbr of connections for node `Node'.
+%% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec connection_count(NodeOrSpec :: node_spec() | node() | info()) ->
+-spec connection_count() -> non_neg_integer().
+
+connection_count() ->
+    MS = match_spec('_', '_', '_', count),
+    try
+        ets:select_count(?MODULE, MS)
+    catch
+        error:badarg ->
+            0
+    end.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns the number of connections for node `Node'.
+%%
+%% When passed a `node_spec()' as `Arg' it is equivalent to calling
+%% {@link connection_count/2} with a wildcard as a second argument i.e. '_'.
+%% However, when passed a `node()` as `Arg' is uses the more efficient `ets`
+%% `lookup_element' operation.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec connection_count(Arg :: node_spec() | node() | info()) ->
     non_neg_integer().
 
-connection_count(Node) when is_atom(Node) ->
-    %% An optimisation that is faster than connection_count(Node, '_'),
+connection_count(Arg) when is_atom(Arg) ->
+    %% An optimisation that is faster than connection_count(Arg, '_'),
     %% as connection_count/1 is more often called than connection_count/2.
     try
         Pos = #partisan_peer_info.connection_count,
-        ets:lookup_element(?MODULE, Node, Pos)
+        ets:lookup_element(?MODULE, Arg, Pos)
     catch
         error:badarg ->
             0
     end;
 
-connection_count(#{name := Node}) ->
-    connection_count(Node);
-
+connection_count(Arg) when is_map(Arg)->
+    connection_count(Arg, '_');
 
 connection_count(#partisan_peer_info{connection_count = Val}) ->
     Val.
@@ -295,41 +324,38 @@ connection_count(#partisan_peer_info{connection_count = Val}) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec connection_count(
-    NodeOrSpec :: node_spec() | node() | info(),
-    Channel :: channel_spec() | [channel_spec()]) ->
+    NodeOrSpec :: maybe_var(node_spec() | node()),
+    Channel :: maybe_var(channel_spec() | [channel_spec()])) ->
     non_neg_integer() | no_return().
 
-connection_count(Node, Channel) when is_atom(Channel) ->
-    connection_count(Node, [Channel]);
-
-connection_count(Node, {monotonic, Channel} = Spec) when is_atom(Channel) ->
-    connection_count(Node, [Spec]);
-
-connection_count(Node, Channels) when is_atom(Node), is_list(Channels) ->
-    Pattern = #partisan_peer_connection{
-        pid = '_',
-        node = Node,
-        channel = '$1',
-        listen_addr = '_'
-    },
-
-    MS = [
-        {Pattern, [{'==', '$1', ms_channel(Channel)}], [true]}
-        ||  Channel <- Channels, validate_channel_spec(Channel)
-    ],
-
+connection_count(Node, Channels) ->
+    MS = match_spec(Node, Channels, '_', count),
     try
         ets:select_count(?MODULE, MS)
     catch
         error:badarg ->
             0
-    end;
+    end.
 
-connection_count(#{name := Node}, Channels) ->
-    connection_count(Node, Channels);
 
-connection_count(#partisan_peer_info{node = Node}, Channels) ->
-    connection_count(Node, Channels).
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec connection_count(
+    Node :: maybe_var(node() | node_spec()),
+    Channel :: maybe_var(channel_spec() | [channel_spec()]),
+    ListenAddr :: listen_addr()) -> Count :: non_neg_integer().
+
+connection_count(Node, Channel, ListenAddr) ->
+    MS = match_spec(Node, Channel, ListenAddr, count),
+    try
+        ets:select_count(?MODULE, MS)
+    catch
+        error:badarg ->
+            0
+    end.
 
 
 %% -----------------------------------------------------------------------------
@@ -358,23 +384,27 @@ connections(NodeOrSpec) ->
 %% -----------------------------------------------------------------------------
 -spec connections(
     NodeOrSpec :: maybe_var(atom() | node_spec()),
-    Channel :: maybe_var(channel_spec())) ->
+    Channels ::  maybe_var(channel_spec() | [channel_spec()])) ->
     connections() | no_return().
 
-connections(Node, Channel) when is_atom(Node) ->
-    true = validate_channel_spec(Channel),
+connections(Node, Channels) ->
+    MS = match_spec(Node, Channels, '_', select),
+    ?SELECT(MS).
 
-    MatchHead = #partisan_peer_connection{
-        pid = '_',
-        node = Node,
-        channel = Channel,
-        listen_addr = '_'
-    },
-    MS = [{MatchHead, [], ['$_']}],
-    ?SELECT(MS);
 
-connections(#{name := Node}, Channel) ->
-    connections(Node, Channel).
+%% -----------------------------------------------------------------------------
+%% @doc Finds connection for a node and channel.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec connections(
+    NodeOrSpec :: maybe_var(atom() | node_spec()),
+    Channel :: maybe_var(channel_spec()),
+    ListenAddr :: listen_addr()) ->
+    connections() | no_return().
+
+connections(Node, Channels, ListenAddr) ->
+    MS = match_spec(Node, Channels, ListenAddr, select),
+    ?SELECT(MS).
 
 
 %% -----------------------------------------------------------------------------
@@ -394,6 +424,10 @@ processes(NodeOrSpec) ->
 -spec processes(
     NodeOrSpec :: atom() | node_spec(), Channel :: channel_spec()) -> [pid()].
 
+
+processes(#{name := Node}, Channel) ->
+    processes(Node, Channel);
+
 processes(Node, Channel) when is_atom(Node) ->
     true = validate_channel_spec(Channel),
 
@@ -401,13 +435,11 @@ processes(Node, Channel) when is_atom(Node) ->
         pid = '$1',
         node = Node,
         channel = Channel,
-        listen_addr = '_'
+        listen_addr = '_',
+        timestamp = '_'
     },
     MS = [{MatchHead, [], ['$1']}],
-    ?SELECT(MS);
-
-processes(#{name := Node}, Channel) ->
-    processes(Node, Channel).
+    ?SELECT(MS).
 
 
 %% -----------------------------------------------------------------------------
@@ -496,6 +528,19 @@ node_spec(#partisan_peer_connection{node = Node}) ->
     end.
 
 
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec timestamp(info() | connection()) -> non_neg_integer().
+
+timestamp(#partisan_peer_info{timestamp = Val}) ->
+    Val;
+
+timestamp(#partisan_peer_connection{timestamp = Val}) ->
+    Val.
+
+
 
 %% -----------------------------------------------------------------------------
 %% @doc Store a connection
@@ -517,7 +562,8 @@ when is_pid(Pid), is_map(ListenAddr) ->
         pid = Pid,
         node = Node,
         channel = Channel,
-        listen_addr = ListenAddr
+        listen_addr = ListenAddr,
+        timestamp = erlang:system_time(nanosecond)
     },
 
     try ets:insert_new(?MODULE, Conn) of
@@ -525,7 +571,11 @@ when is_pid(Pid), is_map(ListenAddr) ->
             %% We conditionally insert a new info record incrementing its
             %% connection count.
             Ops = [{#partisan_peer_info.connection_count, 1}],
-            Default = #partisan_peer_info{node = Node, node_spec = Spec},
+            Default = #partisan_peer_info{
+                node = Node,
+                node_spec = Spec,
+                timestamp = erlang:system_time(nanosecond)
+            },
             _ = ets:update_counter(?MODULE, Node, Ops, Default),
             ok;
         false ->
@@ -548,7 +598,8 @@ prune(Node) when is_atom(Node) ->
         pid = '_',
         node = Node,
         channel = '_',
-        listen_addr = '_'
+        listen_addr = '_',
+        timestamp = '_'
     },
 
     %% Remove all connections
@@ -604,14 +655,15 @@ erase(Node) when is_atom(Node) ->
         pid = '_',
         node = Node,
         channel = '_',
-        listen_addr = '_'
+        listen_addr = '_',
+        timestamp = '_'
     },
     MS = [{MatchHead, [], [true]}],
 
     %% Remove all connections
     _ = catch ets:select_delete(?MODULE, MS),
 
-    %% Remove info and return spec
+    %% Remove info
     _ = catch ets:delete(?MODULE, Node),
 
     ok;
@@ -632,7 +684,8 @@ fold(Fun, Acc) ->
     MatchHead = #partisan_peer_info{
         node = '_',
         node_spec = '_',
-        connection_count = '$1'
+        connection_count = '$1',
+        timestamp = '_'
     },
     MS = [{MatchHead, [{'>', '$1', 0}], ['$_']}],
 
@@ -663,7 +716,8 @@ foreach(Fun) ->
     MatchHead = #partisan_peer_info{
         node = '_',
         node_spec = '_',
-        connection_count = '$1'
+        connection_count = '$1',
+        timestamp = '_'
     },
     MS = [{MatchHead, [{'>', '$1', 0}], ['$_']}],
 
@@ -717,7 +771,7 @@ dispatch_pid(Node, Channel) ->
 %% If no connections exist returns `{error, disconnected}'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec dispatch_pid(node() | node_spec(), channel_spec(), maybe(any())) ->
+-spec dispatch_pid(node() | node_spec(), channel_spec(), optional(any())) ->
     {ok, pid()} | {error, disconnected | not_yet_connected | notalive}.
 
 dispatch_pid(Node, {monotonic, Channel}, PartitionKey) ->
@@ -747,8 +801,9 @@ dispatch_pid(#{name := Node}, Channel, PartitionKey) ->
 dispatch({forward_message, Node, ServerRef, Message, _Options}) ->
     do_dispatch(Node, ServerRef, Message, ?DEFAULT_CHANNEL, undefined);
 
-dispatch({forward_message, Node, Channel, _Clock, PartitionKey, ServerRef, Message, _Options}) ->
-    do_dispatch(Node, ServerRef, Message, Channel, PartitionKey).
+dispatch(
+    {forward_message, Node, Channel, _Clock, PartKey, ServerRef, Msg, _Opts}) ->
+    do_dispatch(Node, ServerRef, Msg, Channel, PartKey).
 
 
 
@@ -780,12 +835,141 @@ ms_channel(Channel) ->
     Channel.
 
 
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+match_spec(Node, Channel, ListenAddr, Mode)
+when is_tuple(Channel) orelse (is_atom(Channel) andalso Channel =/= '_') ->
+    match_spec(Node, [Channel], ListenAddr, Mode);
+
+match_spec(Node, Channels, ListenAddr, select)
+when is_list(Channels); Channels =:= '_' ->
+    do_match_spec(Node, Channels, ListenAddr, ['$_']);
+
+match_spec(Node, Channels, ListenAddr, count)
+when is_list(Channels); Channels =:= '_' ->
+    do_match_spec(Node, Channels, ListenAddr, [true]).
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+do_match_spec(Node, '_', '_', Return) when is_atom(Node) ->
+    Pattern = #partisan_peer_connection{
+        pid = '_',
+        node = Node,
+        channel = '_',
+        listen_addr = '_',
+        timestamp = '_'
+    },
+    [{Pattern, [], Return}];
+
+do_match_spec(Node, Channels, '_', Return) when is_atom(Node), is_list(Channels) ->
+    Pattern = #partisan_peer_connection{
+        pid = '_',
+        node = Node,
+        channel = '$1',
+        listen_addr = '_',
+        timestamp = '_'
+    },
+
+    [
+        {Pattern, [{'==', '$1', ms_channel(Channel)}], Return}
+        ||  Channel <- Channels,
+            validate_channel_spec(Channel)
+    ];
+
+do_match_spec(#{name := Node} = Spec, '_', '_', Return) ->
+    ListenAddrs = maps:get(listen_addrs, Spec),
+
+    Pattern = #partisan_peer_connection{
+        pid = '_',
+        node = Node,
+        channel = '_',
+        listen_addr = #{ip => '$1', port => '$2'},
+        timestamp = '_'
+    },
+
+    [
+        {
+            Pattern,
+            [{'andalso',
+                {'==', '$1', {IP}},
+                {'==', '$2', Port}
+            }],
+            Return
+        }
+        ||  #{ip := IP, port := Port} <- ListenAddrs
+    ];
+
+do_match_spec(#{name := Node} = Spec, Channels, '_', Return) when is_list(Channels) ->
+    ListenAddrs = maps:get(listen_addrs, Spec),
+
+    Pattern = #partisan_peer_connection{
+        pid = '_',
+        node = Node,
+        channel = '$3',
+        listen_addr = #{ip => '$1', port => '$2'},
+        timestamp = '_'
+    },
+
+    [
+        {
+            Pattern,
+            [ {'andalso',
+                {'==', '$1', {IP}},
+                {'==', '$2', Port},
+                {'==', '$3', ms_channel(Channel)}
+            }],
+            Return
+        }
+        ||  Channel <- Channels,
+            #{ip := IP, port := Port} <- ListenAddrs,
+            validate_channel_spec(Channel)
+    ];
+
+do_match_spec(#{name := Node}, Channels, ListenAddr, Return)
+when is_list(Channels) ->
+    %% We extract the node as channel and listenaddr override those in spec
+    do_match_spec(Node, Channels, ListenAddr, Return);
+
+do_match_spec(Node, Channels, #{ip := IP, port := Port}, Return)
+when is_list(Channels) ->
+
+    Pattern = #partisan_peer_connection{
+        pid = '_',
+        node = Node,
+        channel = '$3',
+        listen_addr = #{ip => '$1', port => '$2'},
+        timestamp = '_'
+    },
+
+    [
+        {
+            Pattern,
+            [{'andalso',
+                {'==', '$1', {IP}},
+                {'==', '$2', Port},
+                {'==', '$3', ms_channel(Channel)}
+            }],
+            Return
+        }
+        ||  Channel <- Channels,
+            validate_channel_spec(Channel)
+    ].
+
+
 %% @private
 do_dispatch_pid([], _, Node) ->
     MatchHead = #partisan_peer_info{
         node = Node,
         node_spec = '_',
-        connection_count = '_'
+        connection_count = '_',
+        timestamp = '_'
     },
     MS = [{MatchHead, [], [true]}],
 
@@ -1017,14 +1201,6 @@ one_connection_test() ->
         nodes(hidden)
     ),
     ?assertEqual(
-        true,
-        is_connected(node1)
-    ),
-    ?assertEqual(
-        true,
-        is_connected(spec1())
-    ),
-    ?assertEqual(
         1,
         connection_count(node1)
     ),
@@ -1041,12 +1217,28 @@ one_connection_test() ->
         connection_count(spec1(), undefined)
     ),
     ?assertEqual(
+        1,
+        connection_count(node1, undefined, listen_addr1())
+    ),
+    ?assertEqual(
         0,
         connection_count(node1, unknown_channel)
     ),
     ?assertEqual(
         0,
         connection_count(spec1(), unknown_channel)
+    ),
+    ?assertEqual(
+        0,
+        connection_count(node1, unknown_channel, listen_addr1())
+    ),
+    ?assertEqual(
+        true,
+        is_connected(node1)
+    ),
+    ?assertEqual(
+        true,
+        is_connected(spec1())
     ),
 
     Spec1 = spec1(),
@@ -1076,7 +1268,7 @@ several_connections_test() ->
     Addr1 = listen_addr1(),
 
     Pid2 = pid2(),
-    Addr2 = listen_addr2(),
+    Addr2 = #{ip => {192,168,50,3}, port => 81},
     Spec2 = spec2(),
 
     ok = init(),
@@ -1131,16 +1323,18 @@ several_connections_test() ->
         connection_count(node1)
     ),
     ?assertEqual(
-        2,
-        connection_count(Spec1)
+        1,
+        connection_count(Spec1),
+        "eventhough the node has 2 connections, the spec matches 1, becuase the second connection has a diff IP"
     ),
     ?assertEqual(
         2,
         connection_count(node1, undefined)
     ),
     ?assertEqual(
-        2,
-        connection_count(Spec1, undefined)
+        1,
+        connection_count(Spec1, undefined),
+        "eventhough the node has 2 connections, the spec matches 1, becuase the second connection has a diff IP"
     ),
     ?assertEqual(
         0,
@@ -1193,10 +1387,14 @@ several_connections_test() ->
     ),
     ?assertMatch(
         [
-            #partisan_peer_connection{pid = Pid1},
-            #partisan_peer_connection{pid = Pid2}
+            #partisan_peer_connection{pid = Pid1}
         ],
-        connections(Spec1)
+        connections(Spec1),
+        "When we match with spec we should only get 1 as the second"
+    ),
+    ?assertMatch(
+        [],
+        connections(Spec2)
     ).
 
 
@@ -1228,6 +1426,7 @@ prune_test() ->
         badarg,
         prune(node1)
     ).
+
 
 
 -endif.

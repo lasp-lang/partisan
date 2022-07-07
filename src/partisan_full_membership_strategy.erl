@@ -31,6 +31,7 @@
          join/3,
          leave/2,
          periodic/1,
+         prune/2,
          handle_message/2]).
 
 -record(full_v1, {
@@ -105,6 +106,21 @@ periodic(State) ->
     OutgoingMessages = gossip_messages(State),
 
     {ok, MembershipList, OutgoingMessages, State}.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+prune(#full_v1{membership = Membership0} = State0, [H|T]) ->
+    Actor = State0#full_v1.actor,
+    Membership = partisan_membership_set:remove(H, Actor, Membership0),
+    State = State0#full_v1{membership = Membership},
+    prune(State, T);
+
+prune(State, []) ->
+    {ok, membership_list(State), State}.
+
 
 %% @doc Handling incoming protocol message.
 handle_message(

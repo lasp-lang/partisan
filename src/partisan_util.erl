@@ -24,10 +24,13 @@
 -include("partisan_logger.hrl").
 -include("partisan.hrl").
 
+-type connect_opts() :: #{prune => boolean()}.
+
 -export([build_tree/3]).
 -export([maps_append/3]).
 -export([may_disconnect/1]).
 -export([maybe_connect/1]).
+-export([maybe_connect/2]).
 -export([term_to_iolist/1]).
 
 -compile({no_auto_import, [node/1]}).
@@ -90,21 +93,52 @@ maps_append(Key, Value, Map) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Create a new connection to a node and return a new dictionary
-%%      with the associated connect pid
-%%
-%%      Function should enforce the invariant that all cluster members are
-%%      keys in the dict pointing to empty list if they are disconnected or a
-%%      socket pid if they are connected.
+%% @doc Tries to create a new connection to a node if required. If succesfull
+%% it store the new connection record in partisan_peer_connections.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec maybe_connect(Node :: node_spec()) -> ok.
 
-maybe_connect(#{name := _, listen_addrs := ListenAddrs} = NodeSpec) ->
-    FoldFun = fun(ListenAddr, ok) ->
-        maybe_connect_listen_addr(NodeSpec, ListenAddr)
-    end,
-    lists:foldl(FoldFun, ok, ListenAddrs).
+maybe_connect(NodeSpec) ->
+    maybe_connect(NodeSpec, #{prune => false}).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Create a new connection to a node storing a new connection record in
+%% partisan_peer_connections.
+%%
+%% Returns the tuple `{ok, L :: [node_spec()]}' where list L is the list of all
+%% invalid nodes specifications.
+%%
+%% Aa specification is invalid if there is anotehr specification for the same
+%% node for which we already have succesful connections. An invalid
+%% specification will exist when a node has crashed (without leaving the
+%% cluster) and later on returned with a different IP address i.e. a normal
+%% situation on cloud orchestration platforms. In this case the membership set
+%% ({@link partisan_membership_set}) will have two node specifications for the
+%% same node (with differing values for the `listen_addrs' property).
+%% @end
+%% -----------------------------------------------------------------------------
+-spec maybe_connect(Node :: node_spec(), connect_opts()) ->
+    ok | {ok, ToPrune :: [node_spec()]}.
+
+maybe_connect(#{listen_addrs := ListenAddrs} = NodeSpec, #{prune := true}) ->
+    ToPrune = lists:foldl(
+        fun(ListenAddr, Acc) ->
+            maybe_connect(NodeSpec, ListenAddr, Acc)
+        end,
+        [],
+        ListenAddrs
+    ),
+    {ok, ToPrune};
+
+maybe_connect(#{listen_addrs := ListenAddrs} = NodeSpec, #{prune := false}) ->
+    ok = lists:foreach(
+        fun(ListenAddr) ->
+            maybe_connect(NodeSpec, ListenAddr, ok)
+        end,
+        ListenAddrs
+    ).
 
 
 %% -----------------------------------------------------------------------------
@@ -113,52 +147,6 @@ maybe_connect(#{name := _, listen_addrs := ListenAddrs} = NodeSpec) ->
 %% -----------------------------------------------------------------------------
 may_disconnect(NodeName) ->
     partisan_peer_connections:erase(NodeName).
-
-
-%% -----------------------------------------------------------------------------
-%% @private
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
-maybe_connect_listen_addr(Node, ListenAddr) ->
-    Parallelism = maps:get(parallelism, Node, ?PARALLELISM),
-
-    %% Always have a default, unlabeled channel.
-    Channels = case maps:get(channels, Node, [?DEFAULT_CHANNEL]) of
-        [] ->
-            [?DEFAULT_CHANNEL];
-        undefined ->
-            [?DEFAULT_CHANNEL];
-        Other ->
-            lists:usort(Other ++ [?DEFAULT_CHANNEL])
-    end,
-
-    %% Initiate connections.
-    case partisan_peer_connections:connection_count(Node) of
-        0 ->
-            %% Found disconnected or not found
-            ?LOG_DEBUG("Node ~p is not connected; initiating.", [Node]),
-            case connect(Node, ListenAddr, ?DEFAULT_CHANNEL) of
-                {ok, Pid} ->
-                    ?LOG_DEBUG("Node ~p connected, pid: ~p", [Node, Pid]),
-                    ok = partisan_peer_connections:store(
-                        Node, Pid, ?DEFAULT_CHANNEL, ListenAddr
-                    );
-                {error, normal} ->
-                    ?LOG_DEBUG("Node ~p isn't online just yet.", [Node]),
-                    ok;
-                Error ->
-                    ?LOG_DEBUG("Node ~p failed connection: ~p.", [Node, Error]),
-                    ok
-            end;
-        %% Found and connected.
-        _ ->
-            maybe_init_parallel_connections(
-                Channels, Node, ListenAddr, Parallelism
-            )
-    end.
-
-
 
 
 %% -----------------------------------------------------------------------------
@@ -176,61 +164,174 @@ term_to_iolist(Term) ->
 %% =============================================================================
 
 
-%% -----------------------------------------------------------------------------
-%% @private
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
--spec connect(Node :: node_spec(), listen_addr(), channel()) -> {ok, pid()} | ignore | {error, term()}.
-
-connect(Node, ListenAddr, Channel) ->
-    Self = self(),
-    partisan_peer_service_client:start_link(Node, ListenAddr, Channel, Self).
-
 
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
-maybe_init_parallel_connections(_, _, _, undefined) ->
-    ok;
+maybe_connect(#{name := Node} = NodeSpec, ListenAddr, Acc) ->
+    Parallelism = maps:get(parallelism, NodeSpec, ?PARALLELISM),
 
-maybe_init_parallel_connections([Channel|T], Node, ListenAddr, Parallelism) ->
-    Count = partisan_peer_connections:connection_count(Node, Channel),
+    %% Always have a default, unlabeled channel.
+    Channels = case maps:get(channels, NodeSpec, [?DEFAULT_CHANNEL]) of
+        undefined ->
+            [?DEFAULT_CHANNEL];
+        [] ->
+            [?DEFAULT_CHANNEL];
+        Other ->
+            lists:usort(Other ++ [?DEFAULT_CHANNEL])
+    end,
 
-    case Count < Parallelism of
-        true ->
+    %% We check count using Node and not NodeSpec cause it is much faster and
+    %% we are only interested in knowing if we have at least one connection
+    %% even of this was an invalid NodeSpec e.g. previous node spec for this
+    %% node with a previous IP Address.
+    case partisan_peer_connections:connection_count(Node) of
+        0 ->
+            %% Found disconnected or not found
+            ?LOG_DEBUG("Node ~p is not connected; initiating.", [NodeSpec]),
+
+            case connect(NodeSpec, ListenAddr, ?DEFAULT_CHANNEL) of
+                {ok, Pid} ->
+                    ?LOG_DEBUG("Node ~p connected, pid: ~p", [NodeSpec, Pid]),
+                    ok = partisan_peer_connections:store(
+                        NodeSpec, Pid, ?DEFAULT_CHANNEL, ListenAddr
+                    ),
+                    Acc;
+                {error, normal} ->
+                    ?LOG_DEBUG("Node ~p isn't online just yet.", [NodeSpec]),
+                    Acc;
+                Error ->
+                    ?LOG_DEBUG(
+                        "Node ~p failed connection: ~p.", [NodeSpec, Error]
+                    ),
+                    Acc
+            end;
+        _ ->
+            %% Found and connected.
+            maybe_connect(Channels, NodeSpec, ListenAddr, Parallelism, Acc)
+    end.
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+maybe_connect(_, _, _, undefined, Acc) ->
+    Acc;
+
+maybe_connect([Ch|T], NodeSpec, ListenAddr, Parallelism, Acc) ->
+
+    %% We use the NodeSpec and not the Node to do the count.
+    case partisan_peer_connections:connection_count(NodeSpec, Ch) of
+        Count when Count < Parallelism ->
             ?LOG_DEBUG(
                 "~p of ~p connected for channel ~p) Connecting node ~p.",
-                [Count, Parallelism, Channel, Node]
+                [Count, Parallelism, Ch, NodeSpec]
             ),
 
-            case connect(Node, ListenAddr, Channel) of
+            case connect(NodeSpec, ListenAddr, Ch) of
                 {ok, Pid} ->
                     ?LOG_DEBUG(
-                        "Node ~p connected, pid: ~p", [Node, Pid]
+                        "Node ~p connected, pid: ~p", [NodeSpec, Pid]
                     ),
                     ok = partisan_peer_connections:store(
-                        Node, Pid, Channel, ListenAddr
-                    );
+                        NodeSpec, Pid, Ch, ListenAddr
+                    ),
+                    Acc;
+
+                _Error when Count == 0 ->
+                    maybe_invalid(NodeSpec, Ch, ListenAddr, Acc);
+
                 Error ->
+                    %% We have some connections to this ListenAddr already
                     ?LOG_ERROR(#{
                         description => "Node failed to connect",
                         error => Error,
-                        node => Node,
+                        node_spec => NodeSpec,
                         listen_address => ListenAddr,
-                        channel => Channel
+                        channel => Ch
                     }),
-                    ok
+                    Acc
             end;
-        false ->
-            ok
-    end,
-    maybe_init_parallel_connections(T, Node, ListenAddr, Parallelism);
 
-maybe_init_parallel_connections([], _, _, _) ->
-    ok.
+        Count when Count == Parallelism ->
+            Acc
+    end,
+
+    maybe_connect(T, NodeSpec, ListenAddr, Parallelism, Acc);
+
+maybe_connect([], _, _, _, Acc) ->
+    Acc.
+
+
+%% @private
+maybe_invalid(NodeSpec, Channel, ListenAddr, Acc) ->
+    Node = maps:get(name, NodeSpec),
+        %% TODO check is we are already connected using connection_count
+    %% (Node, Channel). If so, then this ListenAddr is not longer valid
+    %% we need to accumulate this NodeSpec and return to the caller of
+    %% maybe_connect
+
+    %% Do we have a connection to the node for this channel on this addr?
+    %% If so, check the connected spec with this one, cause this might be
+    %% invalid.
+    %% If not, then we cannot rule out the NodeSpec as valid.
+    ListenAddrCount =
+        partisan_peer_connections:connection_count(Node, Channel, ListenAddr),
+
+
+    case ListenAddrCount > 0 of
+        true ->
+            ListenAddrs = maps:get(listen_addrs, NodeSpec),
+
+            %% We got connections for Node, so we fetch the associated Info
+            %% which contains the node_spec
+            {ok, Info} = partisan_peer_connections:info(Node),
+
+            %% We are trying to determine if NodeSpec might be a previous
+            %% instance.
+            case partisan_peer_connections:node_spec(Info) of
+                Connected when Connected == NodeSpec ->
+                    %% It is the same node_spec, so we are just having problems
+                    %% openning more connections at the time being.
+                    Acc;
+                #{listen_addrs := L} when L == ListenAddrs ->
+                    %% The specs differ on channels or parallelism
+                    Acc;
+
+                _ ->
+                    %% TODO use info and connections timestamps
+                    case partisan_peer_connections:is_connected(NodeSpec) of
+                        true ->
+                            %% Ummmm....we got some connections, so we keep it
+                            Acc;
+                        false ->
+                            %% IP has changed
+                            %% We add it to the invalid list
+                            [NodeSpec|Acc]
+                    end
+            end;
+
+        false ->
+            Acc
+    end.
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec connect(Node :: node_spec(), listen_addr(), channel()) ->
+    {ok, pid()} | ignore | {error, term()}.
+
+connect(NodeSpec, Address, Channel) ->
+    partisan_peer_service_client:start_link(NodeSpec, Address, Channel, self()).
+
+
 
 
 

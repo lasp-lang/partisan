@@ -83,8 +83,8 @@ In general, the API was redesigned to concentrate all functions around two modul
 ## Peer Membership
 
 #### Fixes
-
-* Replaced the use of `state_orset` CRDT with `state_awmap` to avoid an issue where a node will crash and restart with a different IP address e.g. when deploying in K8s. As the membership set contains `node_spec()` objects which contain the IP address we ended up with duplicate entries for the node.  The `state_awmap` tries to solve that by mapping a `node() => state_mvregister(node_spec())`
+* Extracted the use of `state_orset` from `partisan_full_membership_strategy` into its own module `partisan_membership_set` which will allow the possibility to explore alternative data structures to manage the membership set.
+* Introduced a membership prune operation to remove duplicate node specifications in the underlying `state_orset` data structure. This isto avoid an issue where a node will crash and restart with a different IP address e.g. when deploying in cloud orchestration platforms. As the membership set contains `node_spec()` objects which contain the IP address we ended up with duplicate entries for the node.  The prune operation tries to break ties between these duplicates at time of connection, trying to recognise when a node specification might be no longer valid forcing the remove of the removal of the spec from the set.
 * Fixes several bugs related to the `leave` operation in `partisan_pluggable_peer_service_manager`:
     * Added a missing call to update the membership set during leave
     * Fixed a concurrency issue whereby on self leave the peer service server will restart before being able to sending the new state with the cluster peers and thus the node would remain as a member in all other nodes.
@@ -103,7 +103,7 @@ In general, the API was redesigned to concentrate all functions around two modul
 
 #### Fixes
 
-* Fixes a bug where connections where not properly kill during a leave
+* Fixes a bug where connections where not properly killed during a leave
 * Split TLS options for client and server roles
     * Removed `tls_options`
     * Added `tls_client_options` and `tls_server_options`

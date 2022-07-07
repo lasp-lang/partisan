@@ -57,7 +57,7 @@
     membership_strategy_state   ::  term()
 }).
 
--type state_t() :: #state{}.
+-type t() :: #state{}.
 
 
 %% API
@@ -422,7 +422,7 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
 %% -----------------------------------------------------------------------------
 receive_message(
     Peer,
-    {forward_message, _SourceNode, _Clock, _ServerRef, _Message} = Cmd) ->
+    {forward_message, _SrcNode, _Clock, _ServerRef, _Message} = Cmd) ->
     %% Process the message and generate the acknowledgement.
     gen_server:call(?MODULE, {receive_message, Peer, Cmd}, infinity);
 
@@ -547,7 +547,7 @@ partitions() ->
 
 
 
--spec init([]) -> {ok, state_t()}.
+-spec init([]) -> {ok, t()}.
 
 init([]) ->
     %% Seed the random number generator.
@@ -613,8 +613,8 @@ init([]) ->
     }}.
 
 
--spec handle_call(term(), {pid(), term()}, state_t()) ->
-    {reply, term(), state_t()}.
+-spec handle_call(term(), {pid(), term()}, t()) ->
+    {reply, term(), t()}.
 
 handle_call({reserve, _Tag}, _From, State) ->
     {reply, {error, no_available_slots}, State};
@@ -888,7 +888,7 @@ handle_call(Event, _From, State) ->
     {reply, ok, State}.
 
 %% @private
--spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
+-spec handle_cast(term(), t()) -> {noreply, t()}.
 
 handle_cast(stop, State) ->
     %% We send ourselves this message when we left the cluster
@@ -1162,7 +1162,7 @@ handle_cast(Event, State) ->
     {noreply, State}.
 
 %% @private
--spec handle_info(term(), state_t()) -> {noreply, state_t()}.
+-spec handle_info(term(), t()) -> {noreply, t()}.
 handle_info(tree_refresh, #state{}=State) ->
     %% Get lazily computed outlinks.
     OutLinks = retrieve_outlinks(),
@@ -1172,27 +1172,29 @@ handle_info(tree_refresh, #state{}=State) ->
 
     {noreply, State#state{out_links=OutLinks}};
 
-handle_info(distance, #state{pending=Pending,
-                             membership=Membership,
-                             pre_interposition_funs=PreInterpositionFuns}=State) ->
+handle_info(distance, #state{} = State0) ->
     %% Establish any new connections.
-    ok = establish_connections(Pending, Membership),
+    State = establish_connections(State0),
 
     %% Record time.
-    SourceTime = erlang:timestamp(),
+    SrcTime = erlang:timestamp(),
 
     %% Send distance requests.
-    SourceNode = partisan:node_spec(),
+    SrcNode = partisan:node_spec(),
+    PreInterpositionFuns = State#state.pre_interposition_funs,
 
-    lists:foreach(fun(Peer) ->
-        schedule_self_message_delivery(
-            Peer,
-            {ping, SourceNode, Peer, SourceTime},
-            ?MEMBERSHIP_PROTOCOL_CHANNEL,
-            ?DEFAULT_PARTITION_KEY,
-            PreInterpositionFuns
-        )
-    end, Membership),
+    ok = lists:foreach(
+        fun(Peer) ->
+            schedule_self_message_delivery(
+                Peer,
+                {ping, SrcNode, Peer, SrcTime},
+                ?MEMBERSHIP_PROTOCOL_CHANNEL,
+                ?DEFAULT_PARTITION_KEY,
+                PreInterpositionFuns
+            )
+        end,
+        State#state.membership
+    ),
 
     schedule_distance(),
 
@@ -1204,32 +1206,38 @@ handle_info(instrumentation, State) ->
     schedule_instrumentation(),
     {noreply, State};
 
-handle_info(periodic, #state{pending=Pending,
-                             membership_strategy=MStrategy,
+handle_info(periodic, #state{membership_strategy=MStrategy,
                              membership_strategy_state=MStrategyState0,
                              pre_interposition_funs=PreInterpositionFuns
-                             }=State) ->
-    {ok, Membership, OutgoingMessages, MStrategyState} = MStrategy:periodic(MStrategyState0),
-
-    %% Establish any new connections.
-    ok = establish_connections(Pending, Membership),
+                             }=State0) ->
+    {ok, Membership, OutgoingMessages, MStrategyState} =
+        MStrategy:periodic(MStrategyState0),
 
     %% Send outgoing messages.
-    lists:foreach(fun({Peer, Message}) ->
-        schedule_self_message_delivery(
-            Peer,
-            Message,
-            ?MEMBERSHIP_PROTOCOL_CHANNEL,
-            ?DEFAULT_PARTITION_KEY,
-            PreInterpositionFuns
-        )
-    end, OutgoingMessages),
+    ok = lists:foreach(
+        fun({Peer, Message}) ->
+            schedule_self_message_delivery(
+                Peer,
+                Message,
+                ?MEMBERSHIP_PROTOCOL_CHANNEL,
+                ?DEFAULT_PARTITION_KEY,
+                PreInterpositionFuns
+            )
+        end,
+        OutgoingMessages
+    ),
+
+    State1 = State0#state{
+        membership = Membership,
+        membership_strategy_state = MStrategyState
+    },
+
+    %% Establish any new connections.
+    State = establish_connections(State1),
 
     schedule_periodic(),
 
-    {noreply, State#state{membership=Membership,
-                          membership_strategy_state=MStrategyState
-                          }};
+    {noreply, State};
 
 handle_info(retransmit, #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
     RetransmitFun = fun({_, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options}}) ->
@@ -1276,15 +1284,10 @@ handle_info(retransmit, #state{pre_interposition_funs=PreInterpositionFuns}=Stat
 
     {noreply, State};
 
-handle_info(connections, #state{} = State) ->
-    #state{
-        pending = Pending,
-        membership = Membership,
-        sync_joins = SyncJoins0
-    } = State,
+handle_info(connections, #state{} = State0) ->
+    State1 = establish_connections(State0),
 
-    %% Establish any new connections.
-    ok = establish_connections(Pending, Membership),
+    SyncJoins0 = State1#state.sync_joins,
 
     %% Advance sync_join's if we have enough open connections to remote host.
     SyncJoins = lists:foldl(
@@ -1305,9 +1308,11 @@ handle_info(connections, #state{} = State) ->
         SyncJoins0
     ),
 
+    State = State1#state{sync_joins = SyncJoins},
+
     schedule_connections(),
 
-    {noreply, State#state{pending = Pending, sync_joins = SyncJoins}};
+    {noreply, State};
 
 handle_info({'EXIT', Pid, Reason}, #state{} = State0) ->
     ?LOG_DEBUG(#{
@@ -1425,7 +1430,7 @@ handle_info(Msg, State) ->
 
 
 %% @private
--spec terminate(term(), state_t()) -> term().
+-spec terminate(term(), t()) -> term().
 
 terminate(_Reason, #state{}) ->
     Fun = fun(_NodeInfo, Connections) ->
@@ -1442,8 +1447,8 @@ terminate(_Reason, #state{}) ->
 
 
 %% @private
--spec code_change(term() | {down, term()}, state_t(), term()) ->
-    {ok, state_t()}.
+-spec code_change(term() | {down, term()}, t(), term()) ->
+    {ok, t()}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -1473,18 +1478,48 @@ without_me(Members) ->
 
 %% -----------------------------------------------------------------------------
 %% @private
-%% @doc Establish any new connections.
+%% @doc Establish any new connections and prunes no longer valid nodes.
 %% @end
 %% -----------------------------------------------------------------------------
-establish_connections(Pending, Membership) ->
+-spec establish_connections(t()) -> {ok, ToPrune :: [node_spec()]}.
+
+establish_connections(State) ->
+    Pending = State#state.pending,
+    Membership = State#state.membership,
+
     %% Compute list of nodes that should be connected.
     Peers = without_me(Membership ++ Pending),
 
     %% Reconnect disconnected members and members waiting to join.
-    ok = lists:foreach(
-        fun(Peer) -> partisan_util:maybe_connect(Peer) end,
+    LoL = lists:foldl(
+        fun(Peer, Acc) ->
+            %% TODO this should be a fold that will return the invalid NodeSpes
+            %% (nodes that have an invalid IP address because we already have a
+            %% connection to NodeSpec.node on another IP address)
+            %% We then remove those NodeSpes from the membership set and update
+            %% ourselves without the need for sending any leave/join gossip.
+            {ok, L} = partisan_util:maybe_connect(Peer, #{prune => true}),
+            [L | Acc]
+        end,
+        [],
         Peers
-    ).
+    ),
+    prune(lists:append(LoL), State).
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+prune([], State) ->
+    State;
+
+prune(L, State) ->
+    Mod = State#state.membership_strategy,
+    MState0 = State#state.membership_strategy_state,
+    {ok, MList, MState} = Mod:prune(L, MState0),
+    State#state{membership = MList, membership_strategy_state = MState}.
 
 
 %% @private
@@ -1500,22 +1535,17 @@ kill_connections(Nodes, State) ->
 
 
 %% @private
-handle_message(
-    {ping, SourceNode, DestinationNode, SourceTime}, From, #state{} = State) ->
-
-    #state{
-        pending = Pending,
-        membership = Membership,
-        pre_interposition_funs = PreInterpositionFuns
-    } = State,
+handle_message({ping, SrcNode, DestNode, SrcTime}, From, #state{} = State0) ->
 
     %% Establish any new connections.
-    ok = establish_connections(Pending, Membership),
+    State = establish_connections(State0),
+
+    PreInterpositionFuns = State#state.pre_interposition_funs,
 
     %% Send ping response.
     schedule_self_message_delivery(
-        SourceNode,
-        {pong, SourceNode, DestinationNode, SourceTime},
+        SrcNode,
+        {pong, SrcNode, DestNode, SrcTime},
         ?MEMBERSHIP_PROTOCOL_CHANNEL,
         ?DEFAULT_PARTITION_KEY,
         PreInterpositionFuns
@@ -1525,20 +1555,20 @@ handle_message(
 
     {noreply, State};
 
-handle_message({pong, SourceNode, DestinationNode, SourceTime},
-               From,
-               #state{distance_metrics=DistanceMetrics0}=State) ->
+handle_message({pong, SrcNode, DestNode, SrcTime}, From, #state{} = State) ->
+
     %% Compute difference.
+    DistanceMetrics0 = State#state.distance_metrics,
     ArrivalTime = erlang:timestamp(),
-    Difference = timer:now_diff(ArrivalTime, SourceTime),
+    Difference = timer:now_diff(ArrivalTime, SrcTime),
 
     ?LOG_TRACE(
         "Updating distance metric for node ~p => ~p communication: ~p",
-        [SourceNode, DestinationNode, Difference]
+        [SrcNode, DestNode, Difference]
     ),
 
     %% Update differences.
-    DistanceMetrics = maps:put(DestinationNode, Difference, DistanceMetrics0),
+    DistanceMetrics = maps:put(DestNode, Difference, DistanceMetrics0),
 
     %% Store in pdict.
     put(distance_metrics, DistanceMetrics),
@@ -1589,11 +1619,10 @@ handle_message({membership_strategy, ProtocolMsg}, From, #state{} = State0) ->
     },
 
     {Pending, LeavingNodes} = pending_leavers(State1),
+    State2 = State1#state{pending = Pending},
 
     %% Establish any new connections.
-    ok = establish_connections(Pending, Membership),
-
-    State = State1#state{pending = Pending},
+    State = establish_connections(State2),
 
     gen_server:cast(?MODULE, {kill_connections, LeavingNodes}),
 
@@ -1617,11 +1646,11 @@ handle_message({membership_strategy, ProtocolMsg}, From, #state{} = State0) ->
     end;
 
 %% Causal and acknowledged messages.
-handle_message({forward_message, SourceNode, MessageClock, ServerRef, {causal, Label, _, _, _, _, _} = Message},
+handle_message({forward_message, SrcNode, MessageClock, ServerRef, {causal, Label, _, _, _, _, _} = Message},
                From,
                #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
     %% Send message acknowledgement.
-    send_acknowledgement(SourceNode, MessageClock, PreInterpositionFuns),
+    send_acknowledgement(SrcNode, MessageClock, PreInterpositionFuns),
 
     case partisan_causality_backend:is_causal_message(Message) of
         true ->
@@ -1636,11 +1665,11 @@ handle_message({forward_message, SourceNode, MessageClock, ServerRef, {causal, L
     {noreply, State};
 
 %% Acknowledged messages.
-handle_message({forward_message, SourceNode, MessageClock, ServerRef, Message},
+handle_message({forward_message, SrcNode, MessageClock, ServerRef, Message},
                From,
                #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
     %% Send message acknowledgement.
-    send_acknowledgement(SourceNode, MessageClock, PreInterpositionFuns),
+    send_acknowledgement(SrcNode, MessageClock, PreInterpositionFuns),
 
     partisan_peer_service_manager:process_forward(ServerRef, Message),
 
@@ -1649,7 +1678,8 @@ handle_message({forward_message, SourceNode, MessageClock, ServerRef, Message},
     {noreply, State};
 
 %% Causal messages.
-handle_message({forward_message, ServerRef, {causal, Label, _, _, _, _, _} = Message},
+handle_message(
+    {forward_message, ServerRef, {causal, Label, _, _, _, _, _} = Message},
                From,
                State) ->
     case partisan_causality_backend:is_causal_message(Message) of
@@ -1712,8 +1742,8 @@ schedule_instrumentation() ->
 schedule_periodic() ->
     case partisan_config:get(periodic_enabled, false) of
         true ->
-            PeriodicInterval = partisan_config:get(periodic_interval, ?PERIODIC_INTERVAL),
-            erlang:send_after(PeriodicInterval, ?MODULE, periodic);
+            Time = partisan_config:get(periodic_interval, ?PERIODIC_INTERVAL),
+            erlang:send_after(Time, ?MODULE, periodic);
         false ->
             ok
     end.
@@ -1721,14 +1751,14 @@ schedule_periodic() ->
 
 %% @private
 schedule_retransmit() ->
-    RetransmitInterval = partisan_config:get(retransmit_interval, 1000),
-    erlang:send_after(RetransmitInterval, ?MODULE, retransmit).
+    Time = partisan_config:get(retransmit_interval, 1000),
+    erlang:send_after(Time, ?MODULE, retransmit).
 
 
 %% @private
 schedule_connections() ->
-    ConnectionInterval = partisan_config:get(connection_interval, 1000),
-    erlang:send_after(ConnectionInterval, ?MODULE, connections).
+    Time = partisan_config:get(connection_interval, 1000),
+    erlang:send_after(Time, ?MODULE, connections).
 
 
 %% @private
@@ -1844,14 +1874,13 @@ pending_leavers(#state{} = State) ->
 
 
 %% @private
-internal_leave(#{name := Name} = Node, State) ->
+internal_leave(#{name := Name} = Node, State0) ->
 
     #state{
-        pending = Pending,
         membership_strategy = MStrategy,
         membership_strategy_state = MStrategyState0,
         pre_interposition_funs = PreInterpositionFuns
-    } = State,
+    } = State0,
 
     ?LOG_DEBUG(#{
         description => "Processing leave",
@@ -1869,8 +1898,15 @@ internal_leave(#{name := Name} = Node, State) ->
         new_membership => Membership
     }),
 
+    State1 = State0#state{
+        membership = Membership,
+        membership_strategy_state = MStrategyState
+    },
+
     %% Establish any new connections.
-    ok = establish_connections(Pending, Membership),
+    %% This will also prune no longer valid node_specs, setting the new
+    %% membership in State
+    State = establish_connections(State1),
 
     %% Transmit outgoing messages.
     lists:foreach(
@@ -1887,7 +1923,7 @@ internal_leave(#{name := Name} = Node, State) ->
         OutgoingMessages
     ),
 
-    partisan_peer_service_events:update(Membership),
+    partisan_peer_service_events:update(State#state.membership),
 
     case partisan_config:get(connect_disterl, false) of
         true ->
@@ -1898,20 +1934,16 @@ internal_leave(#{name := Name} = Node, State) ->
             ok
     end,
 
-    State#state{
-        membership = Membership,
-        membership_strategy_state = MStrategyState
-    }.
+    State.
 
 
 %% @private
-internal_join(#{name := Node} = NodeSpec, From, #state{} = State) ->
+internal_join(#{name := Node} = NodeSpec, From, #state{} = State0) ->
 
     #state{
         pending = Pending0,
-        membership = Membership,
         sync_joins = SyncJoins0
-    } = State,
+    } = State0,
 
     case partisan_config:get(connect_disterl, false) of
         true ->
@@ -1935,13 +1967,13 @@ internal_join(#{name := Node} = NodeSpec, From, #state{} = State) ->
             SyncJoins0 ++ [{NodeSpec, From}]
     end,
 
-    %% Establish any new connections.
-    ok = establish_connections(Pending, Membership),
-
-    State#state{
+    State = State0#state{
         pending = Pending,
         sync_joins = SyncJoins
-    }.
+    },
+
+    %% Establish any new connections.
+    establish_connections(State).
 
 
 %% @private

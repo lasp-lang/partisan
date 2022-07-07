@@ -32,6 +32,7 @@
 -export([init/1,
          join/3,
          leave/2,
+         prune/2,
          periodic/1,
          handle_message/2]).
 
@@ -108,6 +109,16 @@ leave(#scamp_v1{membership=Membership0}=State0, Node) ->
     MembershipList = membership_list(State),
 
     {ok, MembershipList, OutgoingMessages, State}.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+prune(#scamp_v1{} = State, _Nodes) ->
+    %% Not implemented
+    {ok, membership_list(State), State}.
+
 
 %% @doc Periodic protocol maintenance.
 periodic(#scamp_v1{last_message_time=LastMessageTime} = State) ->
