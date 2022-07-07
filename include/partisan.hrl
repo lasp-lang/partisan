@@ -83,8 +83,7 @@
 -type options() :: [{atom(), term()}] | #{atom() => term()}.
 
 -type actor() :: binary().
--type listen_addr() :: #{ip => inet:ip_address(), port => non_neg_integer()}
-                        | #{host => list(), port => non_neg_integer()}.
+-type listen_addr() :: #{ip => inet:ip_address(), port => non_neg_integer()}.
 -type node_spec() :: #{name => node(),
                        listen_addrs => [listen_addr()],
                        channels => [channel()],
