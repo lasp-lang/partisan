@@ -252,7 +252,6 @@ concurrent_updates_test() ->
     ).
 
 
-
 concurrent_remove_update_test() ->
     Nodename = 'node1@127.0.0.1',
     Node1 = node_spec(Nodename, {127, 0, 0, 1}),
