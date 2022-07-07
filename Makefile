@@ -1,20 +1,37 @@
-PACKAGE         ?= partisan
-VERSION         ?= $(shell git describe --tags)
 BASE_DIR         = $(shell pwd)
-ERLANG_BIN       = $(shell dirname $(shell which erl))
-REBAR            = rebar3
-MAKE			 = make
 CONCURRENCY 	 ?= 4
+DEP_DIR         ?= "deps"
+EBIN_DIR        ?= "ebin"
+ERLANG_BIN       = $(shell dirname $(shell which erl))
 LATENCY 		 ?= 0
-SIZE 			 ?= 1024
+MAKE			 = make
+PACKAGE         ?= partisan
+PROJECT         ?= $(shell basename `find src -name "*.app.src"` .app.src)
+REBAR           ?= rebar3
+REVISION        ?= $(shell git rev-parse --short HEAD)
+SIZE 			?= 1024
+VERSION         ?= $(shell git describe --tags)
 
-.PHONY: rel deps test plots
+.PHONY: compile-no-deps test docs xref dialyzer-run dialyzer-quick dialyzer \
+		cleanplt upload-docs rel deps test plots
 
 all: compile
 
 ##
 ## Compilation targets
 ##
+
+compile-no-deps:
+	${REBAR} compile skip_deps=true
+
+docs:
+	${REBAR} ex_doc skip_deps=true
+
+xref: compile
+	${REBAR} xref skip_deps=true
+
+dialyzer: compile
+	${REBAR} dialyzer
 
 compile:
 	$(REBAR) compile
@@ -81,7 +98,6 @@ stage:
 
 DIALYZER_APPS = kernel stdlib erts sasl eunit syntax_tools compiler crypto
 
-include tools.mk
 
 ##
 ## Container targets
