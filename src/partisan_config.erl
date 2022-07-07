@@ -173,8 +173,9 @@ init() ->
 
     %% We make sure they are sorted so that we can compare them (specially when
     %% part of the node_spec()).
-    ListenAddrs = lists:usort(env_or_default(listen_addrs, [DefaultAddr])),
-    ok = set(listen_addrs, ListenAddrs),
+    ok = env_or_default(listen_addrs, [DefaultAddr]),
+    ListenAddrs = lists:usort(partisan_config:get(listen_addrs)),
+    ok = partisan_config:set(listen_addrs, ListenAddrs),
 
     ok.
 
