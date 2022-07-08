@@ -21,25 +21,41 @@
 
 %% -----------------------------------------------------------------------------
 %% @doc This module represents the cluster membership view for this node.
-%% It is implemented as a CRDT set containing `node_spec()' objects.
 %%
-%% Notice that the set can have multiple `node_spec()' objects per peer node.
-%% This can occur on the following scenarios:
+%% When a node joins the cluster it is added to the set. Conversely when a node
+%% leaves the cluster it is removed from the set. A node that crashes or gets
+%% disconnected will remain in the set so that Partisan can try to re-connect
+%% with the node when it restarts or becomes reachable again.
+%%
+%% == Implementation ==
+%% The set is implemented as a CRDT set of `node_spec()' objects. More
+%% specifically a state_orset.
+%%
+%% Notice that because the set stores `node_spec()' objects and not `node()',
+%% the set can have multiple `node_spec()' objects for the same node.
+%%
+%% This can occur when the set contains one or more
+%% <em>stale specifications</em>.
+%%
+%% == Stale Specifications ==
+%% A stale specification exists due to the following reasons:
+%%
 %% <ul>
 %% <li>
 %% A node crashes (without leaving the cluster) and returns bearing
-%% **different IP Addresses** (the value of the node specification's
-%% `listen_addrs' property). This is common in cloud/container orchestration
-%% scenarios where the new instances have dynamic IP addresses.
+%% <em>different IP Addresses</em> (the value of the node specification's
+%% `listen_addrs' property). This is common in cloud orchestration
+%% scenarios where instances have dynamic IP addresses.
 %% </li>
 %% <li>
 %% A node crashes (without leaving the cluster) and returns bearing
 %% different values for the node specification properties `channels' and/or
-%% `parallelism'. This can happen in the case the node configuration has
-%% changed before the node restarts.
+%% `parallelism'. For example, this can happen in the case the Partisan
+%% configuration has changed when using a rolling update strategy i.e. a
+%% gradual update process that allows you to update a cluster one node at a
+%% time to minimise downtime.
 %% </li>
 %% </ul>
-%%
 %%
 %% @end
 %% -----------------------------------------------------------------------------
