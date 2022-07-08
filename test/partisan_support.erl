@@ -62,18 +62,20 @@ start(Case, Config, Options) ->
 
     %% Start all nodes.
     InitializerFun = fun(Name) ->
-                            debug("Starting node: ~p", [Name]),
+        debug("Starting node: ~p", [Name]),
 
-                            NodeConfig = [{monitor_master, true},
-                                          {startup_functions, [{code, set_path, [codepath()]}]}],
+        NodeConfig = [
+            {monitor_master, true},
+            {startup_functions, [{code, set_path, [codepath()]}]}
+        ],
 
-                            case ct_slave:start(Name, NodeConfig) of
-                                {ok, Node} ->
-                                    {Name, Node};
-                                Error ->
-                                    ct:fail(Error)
-                            end
-                     end,
+        case ct_slave:start(Name, NodeConfig) of
+            {ok, Node} ->
+                {Name, Node};
+            Error ->
+                ct:fail(Error)
+        end
+    end,
     Nodes = lists:map(InitializerFun, NodeNames),
 
     %% Load applications on all of the nodes.

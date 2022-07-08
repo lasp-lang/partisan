@@ -1474,24 +1474,29 @@ basic_test(Config) ->
                 true ->
                     true;
                 false ->
-                    ct:pal("Membership incorrect; node ~p should have ~p ~nbut has ~p",
-                           [Node, SortedNodes, SortedMembers]),
+                    ct:pal(
+                        "Membership incorrect; node ~p should have ~p ~nbut has ~p",
+                        [Node, SortedNodes, SortedMembers]
+                    ),
                     {false, {Node, SortedNodes, SortedMembers}}
             end
     end,
 
     %% Verify the membership is correct.
-    lists:foreach(fun(Node) ->
-                          VerifyNodeFun = fun() -> VerifyFun(Node) end,
+    lists:foreach(
+        fun(Node) ->
+            VerifyNodeFun = fun() -> VerifyFun(Node) end,
 
-                          case wait_until(VerifyNodeFun, 60 * 2, 100) of
-                              ok ->
-                                  ok;
-                              {fail, {false, {Node, Expected, Contains}}} ->
-                                 ct:fail("Membership incorrect; node ~p should have ~p ~nbut has ~p",
-                                         [Node, Expected, Contains])
-                          end
-                  end, Nodes),
+            case wait_until(VerifyNodeFun, 60 * 2, 100) of
+                ok ->
+                    ok;
+                {fail, {false, {Node, Expected, Contains}}} ->
+                    ct:fail("Membership incorrect; node ~p should have ~p ~nbut has ~p",
+                            [Node, Expected, Contains])
+            end
+        end,
+        Nodes
+    ),
 
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
@@ -1977,10 +1982,10 @@ make_certs(Config) ->
     DataDir = ?config(data_dir, Config),
     PrivDir = ?config(priv_dir, Config),
     ct:pal("Generating TLS certificates into ~s", [PrivDir]),
-    MakeCertsFile = filename:join(DataDir, "make_certs.erl"),
-    {ok, make_certs, ModBin} = compile:file(MakeCertsFile,
-        [binary, debug_info, report_errors, report_warnings]),
-    {module, make_certs} = code:load_binary(make_certs, MakeCertsFile, ModBin),
+    % MakeCertsFile = filename:join(DataDir, "make_certs.erl"),
+    % {ok, make_certs, ModBin} = compile:file(MakeCertsFile,
+    %     [binary, debug_info, report_errors, report_warnings]),
+    % {module, make_certs} = code:load_binary(make_certs, MakeCertsFile, ModBin),
 
     make_certs:all(DataDir, PrivDir),
 
