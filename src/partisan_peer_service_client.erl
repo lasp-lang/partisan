@@ -58,7 +58,7 @@
 %% @end
 %% -----------------------------------------------------------------------------
 -spec start_link(node_spec(), listen_addr(), channel(), pid()) ->
-    {ok, pid()} | ignore | {error, normal}.
+    {ok, pid()} | ignore | {error, Reason :: any()}.
 
 start_link(Peer, ListenAddr, Channel, From) ->
     gen_server:start_link(?MODULE, [Peer, ListenAddr, Channel, From], []).
