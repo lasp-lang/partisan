@@ -41,6 +41,13 @@
     )
 ).
 
+-define(MEMBERSHIP_STRATEGY,
+    partisan_config:get(
+        membership_strategy,
+        ?DEFAULT_MEMBERSHIP_STRATEGY
+    )
+).
+
 %% Pluggable manager options.
 -define(DISTANCE_ENABLED, true).
 -define(PERIODIC_ENABLED, true).

@@ -516,45 +516,57 @@ node_spec() ->
 -spec node_spec(node()) -> {ok, node_spec()} | {error, Reason :: any()}.
 
 node_spec(Node) when is_atom(Node) ->
+    node_spec(Node, #{}).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Return the tuple `{ok, node_spec()' for node named `Node' or the tuple
+%% `{error, Reason}'.
+%%
+%% This function first checks If there is a partisan connection to `Node', if
+%% so returns the cached specification that was used for creating the
+%% connection. If no connection is present (the case for a p2p topology), then
+%% it tries to use @@link partisan_rpc} to retrieve the node specification from
+%% the remote node. This later alternative requires the partisan configuration
+%% `forward_opts` to have `broadcast' and `transitive' enabled.
+%%
+%% NOTICE: At the moment partisan_rpc might not work corrently w/ a p2p
+%% topology.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec node_spec(
+    Node :: list() | node(),
+    Opts :: #{rpc_timeout => timeout()}) ->
+    {ok, node_spec()} | {error, Reason :: any()}.
+
+node_spec(Node, Opts) when is_list(Node) ->
+    node_spec(list_to_node(Node), Opts);
+
+node_spec(Node, Opts) when is_atom(Node), is_map(Opts) ->
+    Timeout = maps:get(rpc_timeout, Opts, 5000),
+
     case partisan:node() of
         Node ->
             {ok, partisan:node_spec()};
 
         _ ->
-            Timeout = 15000,
-            Mod = case is_connected(Node) of
+            case is_connected(Node) of
                 true ->
-                    partisan_rpc;
-                false ->
-                    rpc
-            end,
+                    {ok, Info} = partisan_peer_connections:info(Node),
+                    {ok, partisan_peer_connections:node_spec(Info)};
 
-            case Mod:call(Node, ?MODULE, node_spec, [], Timeout) of
-                #{name := Node} = NodeSpec ->
-                    {ok, NodeSpec};
-                {badrpc, Reason} ->
-                    {error, Reason}
+                false ->
+                    M = ?MODULE,
+                    F = node_spec,
+                    A = [],
+                    case partisan_rpc:call(Node, M, F, A, Timeout) of
+                        #{name := Node} = Spec ->
+                            {ok, Spec};
+                        {badrpc, Reason} ->
+                            {error, Reason}
+                    end
             end
     end.
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Returns a peer with nodename `Name' and host 'Host' and same metadata
-%% as `myself/0'.
-%% @end
-%% -----------------------------------------------------------------------------
--spec node_spec(Node :: list() | node(), listen_addr() | [listen_addr()]) ->
-    {ok, node_spec()} | {error, Reason :: any()}.
-
-node_spec(Node, Endpoints) when is_list(Node) ->
-    node_spec(list_to_node(Node), Endpoints);
-
-node_spec(Node, Endpoints) when is_atom(Node) ->
-    Addresses = coerce_listen_addr(Endpoints),
-    %% We assume all nodes have the same parallelism and channel config
-    NodeSpec0 = partisan:node_spec(),
-    NodeSpec = NodeSpec0#{name => Node, listen_addrs => Addresses},
-    {ok, NodeSpec}.
 
 
 %% -----------------------------------------------------------------------------
@@ -718,17 +730,3 @@ broadcast(Broadcast, Mod) ->
 %% @private
 list_to_node(NodeStr) ->
     erlang:list_to_atom(lists:flatten(NodeStr)).
-
-
-%% @private
-coerce_listen_addr({IP, Port})  ->
-    [#{ip => IP, port => Port}];
-
-coerce_listen_addr([{_, _} | _] = L) ->
-    [#{ip => IP, port => Port} || {IP, Port} <- L];
-
-coerce_listen_addr(#{ip := _, port := _} = L)  ->
-    [L];
-
-coerce_listen_addr([#{ip := _, port := _} | _] = L) ->
-    L.
