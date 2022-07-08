@@ -1481,7 +1481,7 @@ without_me(Members) ->
 %% @doc Establish any new connections and prunes no longer valid nodes.
 %% @end
 %% -----------------------------------------------------------------------------
--spec establish_connections(t()) -> {ok, ToPrune :: [node_spec()]}.
+-spec establish_connections(t()) -> t().
 
 establish_connections(State) ->
     Pending = State#state.pending,
