@@ -124,16 +124,16 @@ prune(State, []) ->
 
 %% @doc Handling incoming protocol message.
 handle_message(
-    #full_v1{membership = Membership0} = State0,
-    {#{name := From}, #full_v1{membership = Membership1}}) ->
+    #full_v1{membership = M0} = State0,
+    {#{name := From}, #full_v1{membership = M1}}) ->
 
     ?LOG_DEBUG(#{
         description => "Received membership_strategy",
         from => From,
-        membership => partisan_membership_set:to_list(Membership1)
+        membership => partisan_membership_set:to_list(M1)
     }),
 
-    case partisan_membership_set:equal(Membership0, Membership1) of
+    case partisan_membership_set:equal(M0, M1) of
         true ->
             %% Convergence of gossip at this node.
             MembershipList = membership_list(State0),
@@ -141,8 +141,8 @@ handle_message(
             {ok, MembershipList, OutgoingMessages, State0};
         false ->
             %% Merge, persist, reforward to peers.
-            Membership = partisan_membership_set:merge(Membership0, Membership1),
-            State = State0#full_v1{membership = Membership},
+            M = partisan_membership_set:merge(M0, M1),
+            State = State0#full_v1{membership = M},
             MembershipList = membership_list(State),
             OutgoingMessages = gossip_messages(State),
             persist_state(State),
@@ -155,8 +155,8 @@ handle_message(
 %%%===================================================================
 
 %% @private
-membership_list(#full_v1{membership=Membership}) ->
-    partisan_membership_set:to_list(Membership).
+membership_list(#full_v1{membership = M}) ->
+    partisan_membership_set:to_list(M).
 
 %% @private
 gossip_messages(State) ->
@@ -164,11 +164,9 @@ gossip_messages(State) ->
 
 %% @private
 gossip_messages(State0, State) ->
-    MembershipList = without_me(membership_list(State0)),
-
     case partisan_config:get(gossip, true) of
         true ->
-            case MembershipList of
+            case without_me(membership_list(State0)) of
                 [] ->
                     [];
                 AllPeers ->
@@ -199,6 +197,7 @@ maybe_load_state_from_disk(Actor) ->
             end
     end.
 
+
 %% @private
 data_root() ->
     case application:get_env(partisan, partisan_data_dir) of
@@ -207,6 +206,7 @@ data_root() ->
         undefined ->
             undefined
     end.
+
 
 %% @private
 new_state(Actor) ->
@@ -222,6 +222,7 @@ new_state(Actor) ->
 myself() ->
     partisan:node_spec().
 
+
 %% @private
 persist_state(State) ->
     case partisan_config:get(persist_state, true) of
@@ -230,6 +231,7 @@ persist_state(State) ->
         false ->
             ok
     end.
+
 
 %% @private
 write_state_to_disk(State) ->
