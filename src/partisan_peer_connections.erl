@@ -18,6 +18,11 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 -module(partisan_peer_connections).
 
 -include("partisan.hrl").
@@ -39,7 +44,7 @@
     node                    ::  maybe_var(node()),
     node_spec               ::  maybe_var(node_spec()),
     connection_count = 0    ::  maybe_var(non_neg_integer()),
-    timestamp               ::  non_neg_integer()
+    timestamp               ::  maybe_var(non_neg_integer())
 }).
 
 -record(partisan_peer_connection, {
@@ -47,7 +52,7 @@
     node                    ::  maybe_var(node()),
     channel                 ::  maybe_var(channel_spec()),
     listen_addr             ::  maybe_var(listen_addr() | listen_addr_spec()),
-    timestamp               ::  non_neg_integer()
+    timestamp               ::  maybe_var(non_neg_integer())
 }).
 
 
@@ -325,7 +330,7 @@ connection_count(#partisan_peer_info{connection_count = Val}) ->
 %% -----------------------------------------------------------------------------
 -spec connection_count(
     NodeOrSpec :: maybe_var(node_spec() | node()),
-    Channel :: maybe_var(channel_spec() | [channel_spec()])) ->
+    Channels :: maybe_var(channel_spec() | [channel_spec()])) ->
     non_neg_integer() | no_return().
 
 connection_count(Node, Channels) ->
@@ -333,10 +338,16 @@ connection_count(Node, Channels) ->
     try
         ets:select_count(?MODULE, MS)
     catch
-        error:badarg ->
-            0
+        error:badarg:Stacktrace ->
+            case ets:info(id) == undefined of
+                true ->
+                    %% Tab doesn't exist
+                    0;
+                false ->
+                    %% We have a bug in our match spec
+                    error(error, badarg, Stacktrace)
+            end
     end.
-
 
 
 %% -----------------------------------------------------------------------------
@@ -345,11 +356,11 @@ connection_count(Node, Channels) ->
 %% -----------------------------------------------------------------------------
 -spec connection_count(
     Node :: maybe_var(node() | node_spec()),
-    Channel :: maybe_var(channel_spec() | [channel_spec()]),
+    Channels :: maybe_var(channel_spec() | [channel_spec()]),
     ListenAddr :: listen_addr()) -> Count :: non_neg_integer().
 
-connection_count(Node, Channel, ListenAddr) ->
-    MS = match_spec(Node, Channel, ListenAddr, count),
+connection_count(Node, Channels, ListenAddr) ->
+    MS = match_spec(Node, Channels, ListenAddr, count),
     try
         ets:select_count(?MODULE, MS)
     catch
@@ -424,7 +435,6 @@ processes(NodeOrSpec) ->
 -spec processes(
     NodeOrSpec :: atom() | node_spec(), Channel :: channel_spec()) -> [pid()].
 
-
 processes(#{name := Node}, Channel) ->
     processes(Node, Channel);
 
@@ -443,7 +453,9 @@ processes(Node, Channel) when is_atom(Node) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Returns true is this node is connected to `NodeOrName'.
+%% @doc Returns a tuple `{ok, Value}', where `Value' is an instance of
+%% `info()' associated with `Node', or `error' if no info is associated with
+%% `Node'.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec info(NodeOrSpec :: node_spec() | node()) -> {ok, info()} | error.
@@ -541,7 +553,6 @@ timestamp(#partisan_peer_connection{timestamp = Val}) ->
     Val.
 
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Store a connection
 %% @end
@@ -568,18 +579,36 @@ when is_pid(Pid), is_map(ListenAddr) ->
 
     try ets:insert_new(?MODULE, Conn) of
         true ->
-            %% We conditionally insert a new info record incrementing its
-            %% connection count.
-            Ops = [{#partisan_peer_info.connection_count, 1}],
-            Default = #partisan_peer_info{
-                node = Node,
-                node_spec = Spec,
-                timestamp = erlang:system_time(nanosecond)
-            },
-            _ = ets:update_counter(?MODULE, Node, Ops, Default),
-            ok;
+            incr_counter(Spec);
         false ->
-            ok
+            {ok, Info} = info(Node),
+            InfoSpec = node_spec(Info),
+            Count = connection_count(Node),
+
+            case Count == 0 of
+                true ->
+                    ?LOG_DEBUG(#{
+                        description => "A new connection was made using a node specification instance that differs from the existing specification for node. Replacing the existing specification with the new one as no existing connections exist.",
+                        node_spec => InfoSpec,
+                        connection => #{
+                            pid => Pid,
+                            node_spec => Spec
+                        }
+                    }),
+                    ets:insert(?MODULE, Conn),
+                    incr_counter(Spec);
+                false ->
+                    ?LOG_WARNING(#{
+                        description => "A new connection was made using a node specification instance that differs from the existing specification for node. Keeping the existing specification in the info record as connections exist.",
+                        node_spec => InfoSpec,
+                        connection_count => Count,
+                        connection => #{
+                            pid => Pid,
+                            node_spec => Spec
+                        }
+                    }),
+                    ok
+            end
     catch
         error:badarg ->
             error(notalive)
@@ -725,7 +754,7 @@ foreach(Fun) ->
         [] ->
             ok;
         L ->
-            %% We asume we have at most a few hundreds of connections max.
+            %% We asume we have at most a few hundreds connections max.
             %% An optimisation will be to use batches (limit + continuations).
             %% E.g. a 100 node full-mesh cluster with 4 channels and
             %% parallelism of 1 will have 800 connections
@@ -772,12 +801,12 @@ dispatch_pid(Node, Channel) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec dispatch_pid(node() | node_spec(), channel_spec(), optional(any())) ->
-    {ok, pid()} | {error, disconnected | not_yet_connected | notalive}.
-
-dispatch_pid(Node, {monotonic, Channel}, PartitionKey) ->
-    dispatch_pid(Node, Channel, PartitionKey);
+    {ok, pid()}
+    | {error, disconnected | not_yet_connected | notalive}
+    | no_return().
 
 dispatch_pid(Node, Channel, PartitionKey) when is_atom(Node) ->
+    true = validate_channel_spec(Channel),
     Connections = case connections(Node, Channel) of
         [] when Channel =/= ?DEFAULT_CHANNEL ->
             %% Fallback to default channel
@@ -789,7 +818,6 @@ dispatch_pid(Node, Channel, PartitionKey) when is_atom(Node) ->
 
 dispatch_pid(#{name := Node}, Channel, PartitionKey) ->
     dispatch_pid(Node, Channel, PartitionKey).
-
 
 
 %% -----------------------------------------------------------------------------
@@ -811,6 +839,23 @@ dispatch(
 %% PRIVATE
 %% =============================================================================
 
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc We conditionally insert a new info record incrementing its connection
+%% count.
+%% @end
+%% -----------------------------------------------------------------------------
+incr_counter(#{name := Node} = Spec) ->
+    Ops = [{#partisan_peer_info.connection_count, 1}],
+    Default = #partisan_peer_info{
+        node = Node,
+        node_spec = Spec,
+        timestamp = erlang:system_time(nanosecond)
+    },
+    _ = ets:update_counter(?MODULE, Node, Ops, Default),
+    ok.
 
 
 %% @private
@@ -1066,11 +1111,30 @@ pid1() ->
 pid2() ->
     list_to_pid("<0.5002.0>").
 
+pid3() ->
+    list_to_pid("<0.5003.0>").
+
+pid4() ->
+    list_to_pid("<0.5004.0>").
+
+channels() ->
+    [undefined, {monotonic, foo}].
+
 spec1() ->
-    #{name => node1, listen_addrs => [listen_addr1()]}.
+    #{
+        name => node1,
+        listen_addrs => [listen_addr1()],
+        channels => channels(),
+        parallelism => 1
+    }.
 
 spec2() ->
-    #{name => node2, listen_addrs => [listen_addr2()]}.
+    #{
+        name => node2,
+        listen_addrs => [listen_addr2()],
+        channels => channels(),
+        parallelism => 1
+    }.
 
 listen_addr1() ->
     #{ip => {127, 0, 0, 1}, port => 80}.
@@ -1169,15 +1233,18 @@ no_connections_test() ->
 
 
 one_connection_test() ->
+    Spec1 = spec1(),
+    Pid1 = pid1(),
+
     ok = init(),
-    ok = store(spec1(), pid1(), undefined, listen_addr1()),
+    ok = store(Spec1, Pid1, undefined, listen_addr1()),
 
     ?assertEqual(
         [node1],
         nodes()
     ),
 
-    ok = store(spec1(), pid1(), undefined, listen_addr1()),
+    ok = store(Spec1, Pid1, undefined, listen_addr1()),
     ?assertEqual(
         [node1],
         nodes(),
@@ -1206,7 +1273,7 @@ one_connection_test() ->
     ),
     ?assertEqual(
         1,
-        connection_count(spec1())
+        connection_count(Spec1)
     ),
     ?assertEqual(
         1,
@@ -1214,7 +1281,7 @@ one_connection_test() ->
     ),
     ?assertEqual(
         1,
-        connection_count(spec1(), undefined)
+        connection_count(Spec1, undefined)
     ),
     ?assertEqual(
         1,
@@ -1226,7 +1293,7 @@ one_connection_test() ->
     ),
     ?assertEqual(
         0,
-        connection_count(spec1(), unknown_channel)
+        connection_count(Spec1, unknown_channel)
     ),
     ?assertEqual(
         0,
@@ -1238,11 +1305,8 @@ one_connection_test() ->
     ),
     ?assertEqual(
         true,
-        is_connected(spec1())
+        is_connected(Spec1)
     ),
-
-    Spec1 = spec1(),
-    Pid1 = pid1(),
 
     ?assertMatch(
         {ok, #partisan_peer_info{node = node1}},
@@ -1394,6 +1458,204 @@ several_connections_test() ->
     ),
     ?assertMatch(
         [],
+        connections(Spec2)
+    ).
+
+
+
+several_nodes_undefined_test() ->
+    dbg:stop(),
+    Spec2 = spec2(),
+    Channel = undefined,
+    Pid3 = pid3(),
+    ok = init(),
+    ok = store(Spec2, Pid3, Channel, listen_addr2()),
+
+    ?assertEqual(
+        [node1, node2],
+        nodes()
+    ),
+
+    ok = store(Spec2, Pid3, Channel, listen_addr2()),
+    ?assertEqual(
+        [node1, node2],
+        nodes(),
+        "store/4 is idempotent"
+    ),
+
+    ?assertEqual(
+        [node1, node2],
+        nodes(visible)
+    ),
+    ?assertEqual(
+        [node1, node2],
+        nodes(connected)
+    ),
+    ?assertExit(
+        {noproc, _},
+        nodes(known) %% data from membership, not our table
+    ),
+    ?assertEqual(
+        [],
+        nodes(hidden)
+    ),
+    ?assertEqual(
+        1,
+        connection_count(node2)
+    ),
+    ?assertEqual(
+        1,
+        connection_count(Spec2)
+    ),
+    ?assertEqual(
+        1,
+        connection_count(node2, Channel)
+    ),
+    ?assertEqual(
+        1,
+        connection_count(Spec2, Channel)
+    ),
+    ?assertEqual(
+        1,
+        connection_count(node2, Channel, listen_addr2())
+    ),
+    ?assertEqual(
+        0,
+        connection_count(node2, unknown_channel)
+    ),
+    ?assertEqual(
+        0,
+        connection_count(Spec2, unknown_channel)
+    ),
+    ?assertEqual(
+        0,
+        connection_count(node2, unknown_channel, listen_addr2())
+    ),
+    ?assertEqual(
+        true,
+        is_connected(node2)
+    ),
+    ?assertEqual(
+        true,
+        is_connected(Spec2)
+    ),
+
+    ?assertMatch(
+        {ok, #partisan_peer_info{node = node2}},
+        info(node2)
+    ),
+    ?assertMatch(
+        {ok, #partisan_peer_info{node = node2}},
+        info(Spec2)
+    ),
+    ?assertMatch(
+        [#partisan_peer_connection{pid = Pid3}],
+        connections(node2)
+    ),
+    ?assertMatch(
+        [#partisan_peer_connection{pid = Pid3}],
+        connections(Spec2)
+    ).
+
+
+several_nodes_foo_test() ->
+    dbg:stop(),
+    Spec2 = spec2(),
+    Channel = {monotonic, foo},
+    Pid3 = pid3(),
+    Pid4 = pid4(),
+    ok = init(),
+    ok = store(Spec2, Pid4, Channel, listen_addr2()),
+
+    ?assertEqual(
+        [node1, node2],
+        nodes()
+    ),
+
+    ok = store(Spec2, Pid4, Channel, listen_addr2()),
+    ?assertEqual(
+        [node1, node2],
+        nodes(),
+        "store/4 is idempotent"
+    ),
+
+    ?assertEqual(
+        [node1, node2],
+        nodes(visible)
+    ),
+    ?assertEqual(
+        [node1, node2],
+        nodes(connected)
+    ),
+    ?assertExit(
+        {noproc, _},
+        nodes(known) %% data from membership, not our table
+    ),
+    ?assertEqual(
+        [],
+        nodes(hidden)
+    ),
+    ?assertEqual(
+        2,
+        connection_count(node2)
+    ),
+    ?assertEqual(
+        2,
+        connection_count(Spec2)
+    ),
+    ?assertEqual(
+        1,
+        connection_count(node2, Channel)
+    ),
+    ?assertEqual(
+        1,
+        connection_count(Spec2, Channel)
+    ),
+    ?assertEqual(
+        1,
+        connection_count(node2, Channel, listen_addr2())
+    ),
+    ?assertEqual(
+        0,
+        connection_count(node2, unknown_channel)
+    ),
+    ?assertEqual(
+        0,
+        connection_count(Spec2, unknown_channel)
+    ),
+    ?assertEqual(
+        0,
+        connection_count(node2, unknown_channel, listen_addr2())
+    ),
+    ?assertEqual(
+        true,
+        is_connected(node2)
+    ),
+    ?assertEqual(
+        true,
+        is_connected(Spec2)
+    ),
+
+    ?assertMatch(
+        {ok, #partisan_peer_info{node = node2}},
+        info(node2)
+    ),
+    ?assertMatch(
+        {ok, #partisan_peer_info{node = node2}},
+        info(Spec2)
+    ),
+    ?assertMatch(
+        [
+            #partisan_peer_connection{pid = Pid3},
+            #partisan_peer_connection{pid = Pid4}
+        ],
+        connections(node2)
+    ),
+    ?assertMatch(
+        [
+            #partisan_peer_connection{pid = Pid3},
+            #partisan_peer_connection{pid = Pid4}
+        ],
         connections(Spec2)
     ).
 
