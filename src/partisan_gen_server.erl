@@ -241,10 +241,6 @@ call(Name, Request) ->
     {ok,Res} ->
         Res;
     {'EXIT',Reason} ->
-        ?LOG_WARNING(#{
-            description => "Received EXIT message",
-            reason => Reason
-        }),
         exit({Reason, {?MODULE, call, [Name, Request]}})
     end.
 
@@ -257,10 +253,6 @@ call(Name, Request, Timeout) ->
     {ok,Res} ->
         Res;
     {'EXIT',Reason} ->
-        ?LOG_WARNING(#{
-            description => "Received EXIT message",
-            reason => Reason
-        }),
         exit({Reason, {?MODULE, call, [Name, Request, Timeout]}})
     end.
 
