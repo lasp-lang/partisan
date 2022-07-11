@@ -1210,6 +1210,30 @@ no_connections_test() ->
         [],
         connections(spec1())
     ),
+    ?assertMatch(
+        {error, not_yet_connected},
+        dispatch_pid(node1)
+    ),
+    ?assertMatch(
+        {error, not_yet_connected},
+        dispatch_pid(spec1())
+    ),
+    ?assertMatch(
+        {error, not_yet_connected},
+        dispatch_pid(node1, undefined)
+    ),
+    ?assertMatch(
+        {error, not_yet_connected},
+        dispatch_pid(node1, {monotonic, foo})
+    ),
+    ?assertMatch(
+        {error, not_yet_connected},
+        dispatch_pid(node1, unknown_channel)
+    ),
+    ?assertMatch(
+        {error, not_yet_connected},
+        dispatch_pid(node1, undefined, 100)
+    ),
     ?assertError(
         badarg,
         prune(node1)
@@ -1323,6 +1347,30 @@ one_connection_test() ->
     ?assertMatch(
         [#partisan_peer_connection{pid = Pid1}],
         connections(Spec1)
+    ),
+    ?assertMatch(
+        {ok, Pid1},
+        dispatch_pid(node1)
+    ),
+    ?assertMatch(
+        {ok, Pid1},
+        dispatch_pid(spec1())
+    ),
+    ?assertMatch(
+        {ok, Pid1},
+        dispatch_pid(node1, undefined)
+    ),
+    ?assertMatch(
+        {ok, Pid1},
+        dispatch_pid(node1, {monotonic, foo})
+    ),
+    ?assertMatch(
+        {ok, Pid1},
+        dispatch_pid(node1, unknown_channel)
+    ),
+    ?assertMatch(
+        {ok, Pid1},
+        dispatch_pid(node1, undefined, 100)
     ).
 
 
@@ -1343,7 +1391,7 @@ several_connections_test() ->
         nodes()
     ),
 
-    ok = store(Spec1, Pid2, undefined, Addr2),
+    ok = store(Spec1, Pid2, {monotonic, foo}, Addr2),
     ?assertEqual(
         [node1],
         nodes(),
@@ -1392,8 +1440,12 @@ several_connections_test() ->
         "eventhough the node has 2 connections, the spec matches 1, becuase the second connection has a diff IP"
     ),
     ?assertEqual(
-        2,
+        1,
         connection_count(node1, undefined)
+    ),
+    ?assertEqual(
+        1,
+        connection_count(node1, {monotonic, foo})
     ),
     ?assertEqual(
         1,
@@ -1459,6 +1511,34 @@ several_connections_test() ->
     ?assertMatch(
         [],
         connections(Spec2)
+    ),
+    ?assertMatch(
+        {ok, Pid1},
+        dispatch_pid(node1)
+    ),
+    ?assertMatch(
+        {ok, Pid1},
+        dispatch_pid(spec1())
+    ),
+    ?assertMatch(
+        {ok, Pid1},
+        dispatch_pid(node1, undefined)
+    ),
+    ?assertMatch(
+        {ok, Pid2},
+        dispatch_pid(node1, {monotonic, foo})
+    ),
+    ?assertMatch(
+        {ok, Pid1},
+        dispatch_pid(node1, unknown_channel)
+    ),
+    ?assertMatch(
+        {ok, Pid1},
+        dispatch_pid(node1, undefined, 100)
+    ),
+    ?assertMatch(
+        {ok, Pid2},
+        dispatch_pid(node1, {monotonic, foo}, 100)
     ).
 
 
@@ -1555,7 +1635,37 @@ several_nodes_undefined_test() ->
     ?assertMatch(
         [#partisan_peer_connection{pid = Pid3}],
         connections(Spec2)
+    ),
+
+    ?assertMatch(
+        {ok, Pid3},
+        dispatch_pid(node2)
+    ),
+    ?assertMatch(
+        {ok, Pid3},
+        dispatch_pid(Spec2)
+    ),
+    ?assertMatch(
+        {ok, Pid3},
+        dispatch_pid(node2, undefined)
+    ),
+    ?assertMatch(
+        {ok, Pid3},
+        dispatch_pid(node2, {monotonic, foo})
+    ),
+    ?assertMatch(
+        {ok, Pid3},
+        dispatch_pid(node2, unknown_channel)
+    ),
+    ?assertMatch(
+        {ok, Pid3},
+        dispatch_pid(node2, undefined, 100)
+    ),
+    ?assertMatch(
+        {ok, Pid3},
+        dispatch_pid(node2, {monotonic, foo}, 100)
     ).
+
 
 
 several_nodes_foo_test() ->
