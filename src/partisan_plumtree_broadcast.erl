@@ -24,6 +24,8 @@
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
 
+-define(EVENT_MANAGER, partisan_peer_service_events).
+
 %% API
 -export([start_link/0,
          start_link/5,
@@ -487,7 +489,31 @@ handle_info(exchange_tick, #state{exchange_tick_period = Period} = State) ->
 handle_info(
     {'DOWN', Ref, process, _Pid, _Reason}, State=#state{exchanges=Exchanges}) ->
     Exchanges1 = lists:keydelete(Ref, 3, Exchanges),
-    {noreply, State#state{exchanges=Exchanges1}}.
+    {noreply, State#state{exchanges=Exchanges1}};
+
+handle_info({gen_event_EXIT, {?EVENT_MANAGER, _}, Reason}, State)
+when Reason == normal; Reason == shutdown ->
+    {noreply, State};
+
+handle_info({gen_event_EXIT, {?EVENT_MANAGER, _}, {swapped, _, _}}, State) ->
+    {noreply, State};
+
+handle_info({gen_event_EXIT, {?EVENT_MANAGER, _}, Reason}, State) ->
+    ?LOG_INFO(#{
+        description => "Event handler terminated. Adding new handler.",
+        reason => Reason,
+        manager => ?EVENT_MANAGER
+    }),
+    partisan_peer_service:add_sup_callback(fun ?MODULE:update/1),
+    {noreply, State};
+
+
+
+
+handle_info(Event, State) ->
+    ?LOG_INFO(#{description => "Unhandled info event", event => Event}),
+    {noreply, State}.
+
 
 
 -spec terminate(term(), state()) -> term().
