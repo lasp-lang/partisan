@@ -25,10 +25,32 @@
 -include("partisan_logger.hrl").
 -include("partisan.hrl").
 
+-define(SUPERVISOR(Id, Args, Restart, Timeout), #{
+    id => Id,
+    start => {Id, start_link, Args},
+    restart => Restart,
+    shutdown => Timeout,
+    type => supervisor,
+    modules => [Id]
+}).
 
--define(CHILD(I, Type, Timeout),
-        {I, {I, start_link, []}, permanent, Timeout, Type, [I]}).
--define(CHILD(I, Type), ?CHILD(I, Type, 5000)).
+-define(WORKER(Id, Args, Restart, Timeout), #{
+    id => Id,
+    start => {Id, start_link, Args},
+    restart => Restart,
+    shutdown => Timeout,
+    type => worker,
+    modules => [Id]
+}).
+
+-define(EVENT_MANAGER(Id, Restart, Timeout), #{
+    id => Id,
+    start => {gen_event, start_link, [{local, Id}]},
+    restart => Restart,
+    shutdown => Timeout,
+    type => worker,
+    modules => [dynamic]
+}).
 
 -export([start_link/0]).
 
@@ -43,9 +65,9 @@ init([]) ->
     Manager = partisan_peer_service:manager(),
 
     Children = [
-        ?CHILD(Manager, worker),
-        ?CHILD(partisan_peer_service_events, worker),
-        ?CHILD(partisan_monitor, worker)
+        ?WORKER(Manager, [], permanent, 5000),
+        ?EVENT_MANAGER(partisan_peer_service_events, permanent, 5000),
+        ?WORKER(partisan_monitor, [], permanent, 5000)
     ],
     RestartStrategy = {rest_for_one, 10, 10},
     {ok, {RestartStrategy, Children}}.

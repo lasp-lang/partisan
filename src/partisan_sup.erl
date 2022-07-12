@@ -39,9 +39,23 @@
     modules => [Id]
 }).
 
--define(CHILD(I, Type, Timeout),
-        {I, {I, start_link, []}, permanent, Timeout, Type, [I]}).
--define(CHILD(I, Type), ?CHILD(I, Type, 5000)).
+-define(WORKER(Id, Args, Restart, Timeout), #{
+    id => Id,
+    start => {Id, start_link, Args},
+    restart => Restart,
+    shutdown => Timeout,
+    type => worker,
+    modules => [Id]
+}).
+
+-define(EVENT_MANAGER(Id, Restart, Timeout), #{
+    id => Id,
+    start => {gen_event, start_link, [{local, Id}]},
+    restart => Restart,
+    shutdown => Timeout,
+    type => worker,
+    modules => [dynamic]
+}).
 
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
@@ -50,13 +64,13 @@ init([]) ->
     partisan_config:init(),
 
     Children = lists:flatten([
-        ?CHILD(partisan_inet, worker),
-        ?CHILD(partisan_rpc_backend, worker),
-        ?CHILD(partisan_acknowledgement_backend, worker),
-        ?CHILD(partisan_orchestration_backend, worker),
+        ?WORKER(partisan_inet, [], permanent, 5000),
+        ?WORKER(partisan_rpc_backend, [], permanent, 5000),
+        ?WORKER(partisan_acknowledgement_backend, [], permanent, 5000),
+        ?WORKER(partisan_orchestration_backend, [], permanent, 5000),
         ?SUPERVISOR(partisan_peer_service_sup, [], permanent, infinity),
-        ?CHILD(partisan_plumtree_backend, worker),
-        ?CHILD(partisan_plumtree_broadcast, worker)
+        ?WORKER(partisan_plumtree_backend, [], permanent, 5000),
+        ?WORKER(partisan_plumtree_broadcast, [], permanent, 5000)
     ]),
 
     %% Run a single backend for each label.
