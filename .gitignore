@@ -38,3 +38,4 @@ node*/
 _checkouts.old/
 /.vscode
 /erlang_ls.config
+/doc
