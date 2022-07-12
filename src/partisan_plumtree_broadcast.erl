@@ -169,12 +169,7 @@ start_link() ->
 
     Mods = partisan_config:get(broadcast_mods, []),
 
-    Res = start_link(Members, InitEagers, InitLazys, Mods, Opts),
-
-    %% We subscribe to the membership change events
-    partisan_peer_service:add_sup_callback(fun ?MODULE:update/1),
-
-    Res.
+    start_link(Members, InitEagers, InitLazys, Mods, Opts).
 
 
 %% -----------------------------------------------------------------------------
@@ -351,10 +346,14 @@ debug_get_tree(Root, Nodes) ->
 -spec init([[any()], ...]) -> {ok, state()}.
 
 init([Members, InitEagers0, InitLazys0, Mods, Opts]) ->
+    %% We subscribe to the membership change events
+    partisan_peer_service:add_sup_callback(fun ?MODULE:update/1),
+
     LazyTickPeriod = maps:get(lazy_tick_period, Opts),
     ExchangeTickPeriod = maps:get(exchange_tick_period, Opts),
     schedule_lazy_tick(LazyTickPeriod),
     schedule_exchange_tick(ExchangeTickPeriod),
+
     State1 =  #state{
         mods = lists:usort(Mods),
         exchanges = [],
