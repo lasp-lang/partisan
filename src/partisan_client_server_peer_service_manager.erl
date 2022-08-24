@@ -26,6 +26,20 @@
 -behaviour(partisan_peer_service_manager).
 
 -include("partisan_logger.hrl").
+-include("partisan.hrl").
+
+-record(state, {
+    myself              ::  node_spec(),
+    tag                 ::  tag(),
+    pending             ::  pending(),
+    membership          ::  membership()
+}).
+
+
+-type pending()         ::  sets:set(node_spec()).
+-type membership()      ::  sets:set(node_spec()).
+-type tag()             ::  atom().
+-type state_t()         ::  #state{}.
 
 
 %% partisan_peer_service_manager callbacks
@@ -56,69 +70,91 @@
 -export([update_members/1]).
 
 %% gen_server callbacks
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
-
--include("partisan.hrl").
-
--record(state, {
-    myself              ::  node_spec(),
-    tag                 ::  tag(),
-    pending             ::  pending(),
-    membership          ::  membership()
-}).
-
-
--type pending()         ::  sets:set(node_spec()).
--type membership()      ::  sets:set(node_spec()).
--type tag()             ::  atom().
--type state_t()         ::  #state{}.
+-export([init/1]).
+-export([handle_call/3]).
+-export([handle_cast/2]).
+-export([handle_info/2]).
+-export([terminate/2]).
+-export([code_change/3]).
 
 
 
+%% =============================================================================
+%% PARTISAN_PEER_SERVICE_MANAGER CALLBACKS
+%% =============================================================================
 
-%%%===================================================================
-%%% partisan_peer_service_manager callbacks
-%%%===================================================================
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Same as start_link([]).
+%% @end
+%% -----------------------------------------------------------------------------
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
+
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Return membership list.
+%% @end
+%% -----------------------------------------------------------------------------
 members() ->
     gen_server:call(?MODULE, members, infinity).
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Return membership list.
+%% @end
+%% -----------------------------------------------------------------------------
 members_for_orchestration() ->
     gen_server:call(?MODULE, members_for_orchestration, infinity).
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Return myself.
+%% @end
+%% -----------------------------------------------------------------------------
 myself() ->
     partisan:node_spec().
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Return local node's view of cluster membership.
+%% @end
+%% -----------------------------------------------------------------------------
 get_local_state() ->
     gen_server:call(?MODULE, get_local_state, infinity).
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Register a trigger to fire when a connection drops.
+%% @end
+%% -----------------------------------------------------------------------------
 on_down(_Name, _Function) ->
     {error, not_implemented}.
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Register a trigger to fire when a connection opens.
+%% @end
+%% -----------------------------------------------------------------------------
 on_up(_Name, _Function) ->
     {error, not_implemented}.
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Update membership.
+%% @end
+%% -----------------------------------------------------------------------------
 update_members(_Nodes) ->
     {error, not_implemented}.
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Send message to a remote manager.
+%% @end
+%% -----------------------------------------------------------------------------
 send_message(Name, Message) ->
     gen_server:call(?MODULE, {send_message, Name, Message}, infinity).
 
@@ -196,53 +232,97 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
         infinity
     ).
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Receive message from a remote manager.
+%% @end
+%% -----------------------------------------------------------------------------
 receive_message(_Peer, Message) ->
     gen_server:call(?MODULE, {receive_message, Message}, infinity).
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Attempt to join a remote node.
+%% @end
+%% -----------------------------------------------------------------------------
 join(Node) ->
     gen_server:call(?MODULE, {join, Node}, infinity).
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Attempt to join a remote node.
+%% @end
+%% -----------------------------------------------------------------------------
 sync_join(_Node) ->
     {error, not_implemented}.
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Leave the cluster.
+%% @end
+%% -----------------------------------------------------------------------------
 leave() ->
     gen_server:call(?MODULE, {leave, partisan:node_spec()}, infinity).
 
 
+%% -----------------------------------------------------------------------------
 %% @doc Remove another node from the cluster.
+%% @end
+%% -----------------------------------------------------------------------------
 leave(#{name := _} = NodeSpec) ->
     gen_server:call(?MODULE, {leave, NodeSpec}, infinity).
 
 
+%% -----------------------------------------------------------------------------
 %% @doc Decode state.
+%% @end
+%% -----------------------------------------------------------------------------
 decode(State) ->
     sets:to_list(State).
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Reserve a slot for the particular tag.
+%% @end
+%% -----------------------------------------------------------------------------
 reserve(Tag) ->
     gen_server:call(?MODULE, {reserve, Tag}, infinity).
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Inject a partition.
+%% @end
+%% -----------------------------------------------------------------------------
 inject_partition(_Origin, _TTL) ->
     {error, not_implemented}.
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Resolve a partition.
+%% @end
+%% -----------------------------------------------------------------------------
 resolve_partition(_Reference) ->
     {error, not_implemented}.
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Return partitions.
+%% @end
+%% -----------------------------------------------------------------------------
 partitions() ->
     {error, not_implemented}.
 
-%%%===================================================================
-%%% gen_server callbacks
-%%%===================================================================
 
-%% @private
+
+
+%% =============================================================================
+%% GEN_SERVER CALLBACKS
+%% =============================================================================
+
+
+
+
+
 -spec init([]) -> {ok, state_t()}.
 init([]) ->
     %% Seed the random number generator.
@@ -255,10 +335,10 @@ init([]) ->
 
     Membership = maybe_load_state_from_disk(),
 
-    Myself = myself(),
+    Myself = partisan:node_spec(),
 
     logger:set_process_metadata(#{
-        node => myself()
+        node => Myself
     }),
 
     %% Get tag, if set.
@@ -273,7 +353,6 @@ init([]) ->
     {ok, State}.
 
 
-%% @private
 -spec handle_call(term(), {pid(), term()}, state_t()) ->
     {reply, term(), state_t()}.
 
@@ -288,15 +367,15 @@ handle_call({leave, #{name := LeavingNode}}, _From, #state{} = State0) ->
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
     Membership = lists:foldl(
-        fun(#{name := Node} = NodeSpec, L0) ->
-            case LeavingNode of
-                Node ->
-                    sets:del_element(NodeSpec, L0);
-                _ ->
-                    %% call the net_kernel:disconnect(Node) function to leave erlang network explicitly
-                    rpc:call(LeavingNode, net_kernel, disconnect, [Node]),
-                    L0
-            end
+        fun
+            (#{name := Node} = NodeSpec, L0) when Node == LeavingNode ->
+                sets:del_element(NodeSpec, L0);
+
+            (#{name := Node}, L0) ->
+                %% call the net_kernel:disconnect(Node) function to leave
+                %% erlang network explicitly
+                _ = rpc:call(LeavingNode, net_kernel, disconnect, [Node]),
+                L0
         end,
         Membership0,
         decode(Membership0)
@@ -314,9 +393,7 @@ handle_call({leave, #{name := LeavingNode}}, _From, #state{} = State0) ->
             ok = partisan_util:may_disconnect(LeavingNode),
 
             NewPending = sets:filter(
-                fun(#{name := Node}) ->
-                    Node =/= LeavingNode
-                end,
+                fun(#{name := Node}) -> Node =/= LeavingNode end,
                 Pending
             ),
 
@@ -373,6 +450,7 @@ handle_call(Msg, _From, State) ->
 
 %% @private
 -spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
+
 handle_cast(Msg, State) ->
     ?LOG_WARNING(#{
         description => "Unhandled cast messages",
@@ -447,6 +525,7 @@ handle_info(Event, State) ->
     ?LOG_WARNING(#{description => "Unhandled info event", event => Event}),
     {noreply, State}.
 
+
 %% @private
 -spec terminate(term(), state_t()) -> term().
 
@@ -464,20 +543,26 @@ terminate(_Reason, #state{}) ->
     ok = partisan_peer_connections:foreach(Fun),
     ok.
 
+
 %% @private
 -spec code_change(term() | {down, term()}, state_t(), term()) -> {ok, state_t()}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-%%%===================================================================
-%%% Internal functions
-%%%===================================================================
+
+
+%% =============================================================================
+%% PRIVATE
+%% =============================================================================
+
+
 
 %% @private
 empty_membership() ->
-    LocalState = sets:add_element(myself(), sets:new()),
+    LocalState = sets:add_element(partisan:node_spec(), sets:new()),
     persist_state(LocalState),
     LocalState.
+
 
 %% @private
 data_root() ->
@@ -487,6 +572,7 @@ data_root() ->
         undefined ->
             undefined
     end.
+
 
 %% @private
 write_state_to_disk(State) ->
@@ -498,6 +584,7 @@ write_state_to_disk(State) ->
             ok = filelib:ensure_dir(File),
             ok = file:write_file(File, term_to_binary(State))
     end.
+
 
 %% @private
 delete_state_from_disk() ->
@@ -520,6 +607,7 @@ delete_state_from_disk() ->
                     })
             end
     end.
+
 
 %% @private
 maybe_load_state_from_disk() ->
@@ -587,6 +675,7 @@ do_send_message(Node, Message) ->
         {error, _} = Error ->
             Error
     end.
+
 
 %% @private
 accept_join_with_tag(OurTag, TheirTag) ->
