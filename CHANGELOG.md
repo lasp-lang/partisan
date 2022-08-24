@@ -16,9 +16,11 @@ In general, the API was redesigned to concentrate all functions around two modul
         * `partisan:default_channel/0`
         * `partisan:demonitor/1`
         * `partisan:demonitor/2`
+        * `partisan:disconnect_node/1`.
         * `partisan:forward_message/2`
         * `partisan:forward_message/3`
         * `partisan:forward_message/4`
+        * `partisan:is_alive/0`
         * `partisan:is_connected/1`
         * `partisan:is_connected/2`
         * `partisan:is_fully_connected/1`
@@ -34,15 +36,14 @@ In general, the API was redesigned to concentrate all functions around two modul
         * `partisan:monitor_nodes/1`
         * `partisan:monitor_nodes/2`
         * `partisan:node/0`
-        * `partisan:nodestring/0`
         * `partisan:node/1`
         * `partisan:node_spec/0`
         * `partisan:node_spec/1`
         * `partisan:node_spec/2`
         * `partisan:nodes/0`
         * `partisan:nodes/1`
+        * `partisan:nodestring/0`
         * `partisan:self/0`
-        * `partisan:send_message/2`
 * Added the following functions:
     * `partisan_peer_service:broadcast_members/0`
     * `partisan_peer_service:broadcast_members/1`
@@ -84,7 +85,7 @@ In general, the API was redesigned to concentrate all functions around two modul
 
 #### Fixes
 * Extracted the use of `state_orset` from `partisan_full_membership_strategy` into its own module `partisan_membership_set` which will allow the possibility to explore alternative data structures to manage the membership set.
-* Introduced a membership prune operation to remove duplicate node specifications in the underlying `state_orset` data structure. This isto avoid an issue where a node will crash and restart with a different IP address e.g. when deploying in cloud orchestration platforms. As the membership set contains `node_spec()` objects which contain the IP address we ended up with duplicate entries for the node.  The prune operation tries to break ties between these duplicates at time of connection, trying to recognise when a node specification might be no longer valid forcing the remove of the removal of the spec from the set.
+* Introduced a membership prune operation to remove duplicate node specifications in the underlying `state_orset` data structure. This isto avoid an issue where a node will crash and restart with a different IP address e.g. when deploying in cloud orchestration platforms. As the membership set contains `node_spec()` objects which contain IP addresses we ended up with duplicate entries for the node.  The prune operation tries to break ties between these duplicates at time of connection, trying to recognise when a node specification might be no longer valid forcing the removal of the spec from the set.
 * Fixes several bugs related to the `leave` operation in `partisan_pluggable_peer_service_manager`:
     * Added a missing call to update the membership set during leave
     * Fixed a concurrency issue whereby on self leave the peer service server will restart before being able to sending the new state with the cluster peers and thus the node would remain as a member in all other nodes.
@@ -110,17 +111,17 @@ In general, the API was redesigned to concentrate all functions around two modul
 
 #### Changes
 
-- New module `peer_service_connections` replaces the former process state data structure and the `partisan_connection_cache` module. It offers an ets-based solution with use of counters for quick node connection status check
-* `partisan_peer_connections` has been re-implemented to use ets to increase perfomance and remove the need for an additional caching feature.
+* New module `peer_service_connections`:
+    * Replaces the former `peer_service_connections` process state data structure and the `partisan_connection_cache` module.
     * As a result, the `partisan_connection_cache` module has been was removed.
-    * Checking connection status is now a fast `ets` lookup operation and leverages `ets:update_counter/4`, `ets:lookup_element/3` and `ets:select_count/2` to handle concurreny and minimise copying data into the caller's process heap.
+    * Checking connection status is now very fast and cheap. The implementation uses `ets`  to handle concurreny. It leverages leverages `ets:update_counter/4`, `ets:lookup_element/3` and `ets:select_count/2` for fast access and to minimise copying data into the caller's process heap.
 
 
 ## Process and Peer Monitoring
 
 #### Fixes
 * A more complete/safe implementation of process monitoring in `partisan_monitor`.
-* More robust implementation of monitors using the new subscription capabilities provided by `peer_service` `on_up` and `on_down` callback functions.
+* More robust implementation of monitors using the new subscription capabilities provided by `peer_service:on_up` and `peer_service:on_down` callback functions.
     - monitor a node or all nodes
     - use node monitors to signal a process monitor when the remote node is disconnected
     - local cache of process monitor to ensure the delivery of DOWN signal when the connection to the process node is down.

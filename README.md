@@ -5,14 +5,16 @@
 Partisan is a flexible, TCP-based membership system for Erlang/Elixir.
 
 Partisan features:
-
-* Single node testing, facilitated by a disterl control channel for figuring out which ports the peer service is operating at.
+* Erlang-like API
+* OTP compliance: Partisan offers re-implementations of `gen_server` and `gen_statem`.
+* Monitoring: Partisan offers an PI similar to the modules `erlang` and `net_kernel` for monitoring nodes and remote processes.
 * Messages are sent via TCP connections that are maintained to all cluster members.
-* Failure detection is performed TCP.
+* Failure detection is performed using TCP.
+* Configurable number of connections between nodes (named channels and fanout).
 * Connections are verified at each gossip round.
-* Configurable fanout.
 * On join, gossip is performed immediately, instead of having to wait for the next gossip round.
 * HyParView implementation.
+* Single node testing, facilitated by a disterl control channel for figuring out which ports the peer service is operating at.
 
 Partisan has many available peer service managers:
 
@@ -29,5 +31,4 @@ Partisan has many available peer service managers:
 ## Documentation
 Find the documentation at hex.pm or build yourself locally
 
-## Who is Partisan
 
