@@ -191,17 +191,17 @@ get_local_state() ->
 %% argument is the Node name.
 %% @end
 %% -----------------------------------------------------------------------------
-on_down(#{name := Name}, Function) ->
-    on_down(Name, Function);
+on_down(#{name := Node}, Function) ->
+    on_down(Node, Function);
 
 on_down(any, Function) ->
     on_down('_', Function);
 
-on_down(Name, Function)
-when is_atom(Name) andalso (
+on_down(Node, Function)
+when is_atom(Node) andalso (
     is_function(Function, 0) orelse is_function(Function, 1)
 ) ->
-    gen_server:call(?MODULE, {on_down, Name, Function}, infinity).
+    gen_server:call(?MODULE, {on_down, Node, Function}, infinity).
 
 
 %% -----------------------------------------------------------------------------
@@ -210,35 +210,35 @@ when is_atom(Name) andalso (
 %% argument is the Node name.
 %% @end
 %% -----------------------------------------------------------------------------
-on_up(#{name := Name}, Function) ->
-    on_up(Name, Function);
+on_up(#{name := Node}, Function) ->
+    on_up(Node, Function);
 
 on_up(any, Function) ->
     on_up('_', Function);
 
-on_up(Name, Function)
-when is_atom(Name) andalso (
+on_up(Node, Function)
+when is_atom(Node) andalso (
     is_function(Function, 0) orelse
     is_function(Function, 1) orelse
     is_function(Function, 2)
 ) ->
-    gen_server:call(?MODULE, {on_up, Name, Function}, infinity).
+    gen_server:call(?MODULE, {on_up, Node, Function}, infinity).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc Attempt to join a remote node.
 %% @end
 %% -----------------------------------------------------------------------------
-join(Node) ->
-    gen_server:call(?MODULE, {join, Node}, infinity).
+join(#{name := _} = NodeSpec) ->
+    gen_server:call(?MODULE, {join, NodeSpec}, infinity).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc Attempt to join a remote node.
 %% @end
 %% -----------------------------------------------------------------------------
-sync_join(Node) ->
-    gen_server:call(?MODULE, {sync_join, Node}, infinity).
+sync_join(#{name := _} = NodeSpec) ->
+    gen_server:call(?MODULE, {sync_join, NodeSpec}, infinity).
 
 
 %% -----------------------------------------------------------------------------
@@ -421,31 +421,31 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
 %% @end
 %% -----------------------------------------------------------------------------
 receive_message(
-    Peer,
+    Node,
     {forward_message, _SrcNode, _Clock, _ServerRef, _Message} = Cmd) ->
     %% Process the message and generate the acknowledgement.
-    gen_server:call(?MODULE, {receive_message, Peer, Cmd}, infinity);
+    gen_server:call(?MODULE, {receive_message, Node, Cmd}, infinity);
 
 receive_message(
-    Peer,
+    Node,
     {forward_message, ServerRef, {'$partisan_padded', _Padding, Message}}) ->
-    receive_message(Peer, {forward_message, ServerRef, Message});
+    receive_message(Node, {forward_message, ServerRef, Message});
 
 receive_message(
-    _Peer,
+    _,
     {forward_message, _ServerRef, {causal, Label, _, _, _, _, _} = Message}) ->
     partisan_causality_backend:receive_message(Label, Message);
 
-receive_message(Peer, {forward_message, ServerRef, Message} = Cmd) ->
+receive_message(Node, {forward_message, ServerRef, Message} = Cmd) ->
     case partisan_config:get(disable_fast_receive, false) of
         true ->
-            gen_server:call(?MODULE, {receive_message, Peer, Cmd}, infinity);
+            gen_server:call(?MODULE, {receive_message, Node, Cmd}, infinity);
         false ->
             partisan_peer_service_manager:process_forward(ServerRef, Message)
     end;
 
-receive_message(Peer, Message) ->
-    gen_server:call(?MODULE, {receive_message, Peer, Message}, infinity).
+receive_message(Node, Message) ->
+    gen_server:call(?MODULE, {receive_message, Node, Message}, infinity).
 
 
 %% -----------------------------------------------------------------------------
@@ -467,7 +467,11 @@ reserve(Tag) ->
 %% @end
 %% -----------------------------------------------------------------------------
 add_pre_interposition_fun(Name, PreInterpositionFun) ->
-    gen_server:call(?MODULE, {add_pre_interposition_fun, Name, PreInterpositionFun}, infinity).
+    gen_server:call(
+        ?MODULE,
+        {add_pre_interposition_fun, Name, PreInterpositionFun},
+        infinity
+    ).
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -481,7 +485,9 @@ remove_pre_interposition_fun(Name) ->
 %% @end
 %% -----------------------------------------------------------------------------
 add_interposition_fun(Name, InterpositionFun) ->
-    gen_server:call(?MODULE, {add_interposition_fun, Name, InterpositionFun}, infinity).
+    gen_server:call(
+        ?MODULE, {add_interposition_fun, Name, InterpositionFun}, infinity
+    ).
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -509,7 +515,11 @@ get_pre_interposition_funs() ->
 %% @end
 %% -----------------------------------------------------------------------------
 add_post_interposition_fun(Name, PostInterpositionFun) ->
-    gen_server:call(?MODULE, {add_post_interposition_fun, Name, PostInterpositionFun}, infinity).
+    gen_server:call(
+        ?MODULE,
+        {add_post_interposition_fun, Name, PostInterpositionFun},
+        infinity
+    ).
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -619,31 +629,45 @@ init([]) ->
 handle_call({reserve, _Tag}, _From, State) ->
     {reply, {error, no_available_slots}, State};
 
-handle_call({on_up, Name, Function},
-            _From,
-            #state{up_functions=UpFunctions0}=State) ->
+handle_call(
+    {on_up, Name, Function},
+    _From,
+    #state{up_functions = UpFunctions0} = State) ->
     UpFunctions = partisan_util:maps_append(Name, Function, UpFunctions0),
     {reply, ok, State#state{up_functions=UpFunctions}};
 
-handle_call({on_down, Name, Function},
-            _From,
-            #state{down_functions=DownFunctions0}=State) ->
+handle_call(
+    {on_down, Name, Function},
+    _From,
+    #state{down_functions = DownFunctions0} = State) ->
     DownFunctions = partisan_util:maps_append(Name, Function, DownFunctions0),
     {reply, ok, State#state{down_functions=DownFunctions}};
 
-handle_call({add_pre_interposition_fun, Name, PreInterpositionFun}, _From, #state{pre_interposition_funs=PreInterpositionFuns0}=State) ->
+handle_call(
+    {add_pre_interposition_fun, Name, PreInterpositionFun},
+    _From,
+    #state{pre_interposition_funs = PreInterpositionFuns0} = State) ->
     PreInterpositionFuns = maps:put(Name, PreInterpositionFun, PreInterpositionFuns0),
     {reply, ok, State#state{pre_interposition_funs=PreInterpositionFuns}};
 
-handle_call({remove_pre_interposition_fun, Name}, _From, #state{pre_interposition_funs=PreInterpositionFuns0}=State) ->
+handle_call(
+    {remove_pre_interposition_fun, Name},
+    _From,
+    #state{pre_interposition_funs = PreInterpositionFuns0} = State) ->
     PreInterpositionFuns = maps:remove(Name, PreInterpositionFuns0),
     {reply, ok, State#state{pre_interposition_funs=PreInterpositionFuns}};
 
-handle_call({add_interposition_fun, Name, InterpositionFun}, _From, #state{interposition_funs=InterpositionFuns0}=State) ->
+handle_call(
+    {add_interposition_fun, Name, InterpositionFun},
+    _From,
+    #state{interposition_funs = InterpositionFuns0} = State) ->
     InterpositionFuns = maps:put(Name, InterpositionFun, InterpositionFuns0),
     {reply, ok, State#state{interposition_funs=InterpositionFuns}};
 
-handle_call({remove_interposition_fun, Name}, _From, #state{interposition_funs=InterpositionFuns0}=State) ->
+handle_call(
+    {remove_interposition_fun, Name},
+    _From,
+    #state{interposition_funs=InterpositionFuns0} = State) ->
     InterpositionFuns = maps:remove(Name, InterpositionFuns0),
     {reply, ok, State#state{interposition_funs=InterpositionFuns}};
 
@@ -661,41 +685,42 @@ handle_call({remove_post_interposition_fun, Name}, _From, #state{post_interposit
     PostInterpositionFuns = maps:remove(Name, PostInterpositionFuns0),
     {reply, ok, State#state{post_interposition_funs=PostInterpositionFuns}};
 
-handle_call({update_members, Nodes}, _From, #state{} = State) ->
+handle_call({update_members, L}, _From, #state{} = State) ->
     %% For compatibility with external membership services.
     Membership = State#state.membership,
 
     %% Get the current membership.
-    CurrentMembership = [N || #{name := N} <- Membership],
+    CurrentMembership = [Node || #{name := Node} <- Membership],
 
     %% need to support Nodes as a list of maps or atoms
     %% TODO: require each node to be a map
-    NodesNames = lists:map(
+    Nodes = lists:map(
         fun
-            (#{name := N}) ->
-                N;
-            (N) when is_atom(N) ->
-                N
+            (#{name := Node}) ->
+                Node;
+            (Node) when is_atom(Node) ->
+                Node
         end,
-        Nodes
+        L
     ),
 
     %% Compute leaving list.
     LeavingNodes = lists:filter(
-        fun(N) -> not lists:member(N, NodesNames) end,
+        fun(Node) -> not lists:member(Node, Nodes) end,
         CurrentMembership
     ),
 
     %% Issue leaves.
     State1 = lists:foldl(
-        fun(N, S) ->
-            case N of
-                Map when is_map(Map) ->
-                    internal_leave(Map, S);
-                N when is_atom(N) ->
+        fun(Term, S) ->
+            case Term of
+                NodeSpec when is_map(NodeSpec) ->
+                    internal_leave(NodeSpec, S);
+
+                Node when is_atom(Node) ->
                     %% find map based on name
                     [Map] = lists:filter(
-                        fun(M) -> maps:get(name, M) == N end,
+                        fun(M) -> maps:get(name, M) == Node end,
                         Membership
                     ),
                     internal_leave(Map, S)
@@ -707,25 +732,22 @@ handle_call({update_members, Nodes}, _From, #state{} = State) ->
 
     %% Compute joining list.
     JoiningNodes = lists:filter(
-        fun
-            (#{name := N}) ->
-                not lists:member(N, CurrentMembership);
-            (N) when is_atom(N) ->
-                not lists:member(N, CurrentMembership)
+        fun(Node) when is_atom(Node) ->
+            not lists:member(Node, CurrentMembership)
         end,
         Nodes
     ),
 
     %% Issue joins.
     State2=#state{pending=Pending} = lists:foldl(
-        fun(N, S) -> internal_join(N, undefined, S) end,
+        fun(Node, S) -> internal_join(Node, undefined, S) end,
         State1,
         JoiningNodes
     ),
 
     %% Compute current pending list.
     Pending1 = lists:filter(
-        fun(#{name := N}) -> lists:member(N, NodesNames) end,
+        fun(#{name := Node}) -> lists:member(Node, Nodes) end,
         Pending
     ),
 
@@ -736,12 +758,12 @@ handle_call({update_members, Nodes}, _From, #state{} = State) ->
 
     {reply, ok, State2#state{pending=Pending1}};
 
-handle_call({leave, #{name := Name} = Node}, From, State0) ->
+handle_call({leave, #{name := Node} = NodeSpec}, From, State0) ->
     %% Perform leave.
-    State = internal_leave(Node, State0),
+    State = internal_leave(NodeSpec, State0),
 
-    case partisan:node() of
-        Name ->
+    case Node == partisan:node() of
+        true ->
             gen_server:reply(From, ok),
 
             %% We need to stop (to cleanup all connections and state) or do it
@@ -750,45 +772,48 @@ handle_call({leave, #{name := Name} = Node}, From, State0) ->
             %% (casts to ourself) so we cast ourselves a shutdown message.
             gen_server:cast(?MODULE, stop),
             {noreply, State};
-        _ ->
-            gen_server:cast(?MODULE, {kill_connections, [Node]}),
+
+        false ->
+            gen_server:cast(?MODULE, {kill_connections, [NodeSpec]}),
             {reply, ok, State}
     end;
 
-handle_call({join, #{name := Name} = Node}, _From, State0) ->
-    case partisan:node() of
-        Name ->
+handle_call({join, #{name := Node} = NodeSpec}, _From, State0) ->
+    case Node == partisan:node() of
+        true ->
             %% Ignoring self join.
             {reply, ok, State0};
-        _ ->
+
+        false ->
             %% Perform join.
-            State = internal_join(Node, undefined, State0),
+            State = internal_join(NodeSpec, undefined, State0),
 
             %% Return.
             {reply, ok, State}
     end;
 
-handle_call({sync_join, #{name := Name} = Node}, From, State0) ->
+handle_call({sync_join, #{name := Node} = NodeSpec}, From, State0) ->
     ?LOG_DEBUG(#{
         description => "Starting synchronous join with peer",
         node => partisan:node(),
-        peer => Node
+        peer => NodeSpec
     }),
 
-    case partisan:node() of
-        Name ->
+    case Node == partisan:node() of
+        true ->
             %% Ignoring self join.
             {reply, ok, State0};
-        _ ->
+
+        false ->
             %% Perform join.
-            State = internal_join(Node, From, State0),
+            State = internal_join(NodeSpec, From, State0),
             {noreply, State}
     end;
 
-handle_call({send_message, Name, Channel, Message}, _From, #state{} = State) ->
+handle_call({send_message, Node, Channel, Message}, _From, #state{} = State) ->
 
     schedule_self_message_delivery(
-        Name,
+        Node,
         Message,
         Channel,
         ?DEFAULT_PARTITION_KEY,
@@ -798,7 +823,7 @@ handle_call({send_message, Name, Channel, Message}, _From, #state{} = State) ->
 
 handle_call(
     {forward_message,
-        Name, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options
+        Node, Channel, Clock, PartitionKey, ServerRef, OriginalMessage, Options
     },
     From,
     #state{} = State) ->
@@ -806,8 +831,8 @@ handle_call(
     %% Run all interposition functions.
     DeliveryFun = fun() ->
         %% Fire pre-interposition functions.
-        PreFoldFun = fun(_Name, Fun, ok) ->
-            Fun({forward_message, Name, OriginalMessage}),
+        PreFoldFun = fun(_Node, Fun, ok) ->
+            Fun({forward_message, Node, OriginalMessage}),
             ok
         end,
         maps:fold(PreFoldFun, ok, State#state.pre_interposition_funs),
@@ -816,7 +841,7 @@ handle_call(
         Msg = {
             forward_message,
             From,
-            Name,
+            Node,
             Channel,
             Clock,
             PartitionKey,
@@ -838,21 +863,19 @@ handle_call(
 
     {noreply, State};
 
-handle_call({receive_message, Peer, OriginalMessage},
-            From,
-            #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
-
+handle_call({receive_message, Node, OriginalMessage}, From, #state{} = State) ->
+    #state{pre_interposition_funs = PreInterpositionFuns} = State,
     %% Run all interposition functions.
     DeliveryFun = fun() ->
         %% Fire pre-interposition functions.
         PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
-            PreInterpositionFun({receive_message, Peer, OriginalMessage}),
+            PreInterpositionFun({receive_message, Node, OriginalMessage}),
             ok
         end,
         maps:fold(PreFoldFun, ok, PreInterpositionFuns),
 
         %% Once pre-interposition returns, then schedule for delivery.
-        gen_server:cast(?MODULE, {receive_message, From, Peer, OriginalMessage})
+        gen_server:cast(?MODULE, {receive_message, From, Node, OriginalMessage})
     end,
 
     case partisan_config:get(replaying, false) of
@@ -870,12 +893,12 @@ handle_call(members_for_orchestration, _From, #state{} = State) ->
     {reply, {ok, State#state.membership}, State};
 
 handle_call(members, _From, #state{} = State) ->
-    Members = [P || #{name := P} <- State#state.membership],
+    Members = [Node || #{name := Node} <- State#state.membership],
     {reply, {ok, Members}, State};
 
 handle_call({member, Node}, _From, #state{} = State) ->
     IsMember = lists:any(
-        fun(#{name := Name}) -> Name =:= Node end,
+        fun(#{name := X}) -> X =:= Node end,
         State#state.membership
     ),
     {reply, IsMember, State};
@@ -886,6 +909,7 @@ handle_call(get_local_state, _From, #state{} = State) ->
 handle_call(Event, _From, State) ->
     ?LOG_WARNING(#{description => "Unhandled call event", event => Event}),
     {reply, ok, State}.
+
 
 %% @private
 -spec handle_cast(term(), t()) -> {noreply, t()}.
@@ -901,10 +925,10 @@ handle_cast({kill_connections, Nodes}, State) ->
     ok = kill_connections(Nodes, State),
     {noreply, State};
 
-handle_cast({receive_message, From, Peer, OriginalMessage}, #state{} = State) ->
+handle_cast({receive_message, From, Node, OriginalMessage}, #state{} = State) ->
     %% Filter messages using interposition functions.
     FoldFun = fun(_InterpositionName, Fun, M) ->
-        Fun({receive_message, Peer, M})
+        Fun({receive_message, Node, M})
     end,
     Message = maps:fold(
         FoldFun, OriginalMessage, State#state.interposition_funs
@@ -913,8 +937,8 @@ handle_cast({receive_message, From, Peer, OriginalMessage}, #state{} = State) ->
     %% Fire post-interposition functions.
     PostFoldFun = fun(_Name, Fun, ok) ->
         Fun(
-            {receive_message, Peer, OriginalMessage},
-            {receive_message, Peer, Message}
+            {receive_message, Node, OriginalMessage},
+            {receive_message, Node, Message}
         ),
         ok
     end,
@@ -930,7 +954,7 @@ handle_cast({receive_message, From, Peer, OriginalMessage}, #state{} = State) ->
                 "Delaying receive_message due to interposition result: ~p",
                 [NewMessage]
             ),
-            gen_server:cast(?MODULE, {receive_message, From, Peer, NewMessage}),
+            gen_server:cast(?MODULE, {receive_message, From, Node, NewMessage}),
             {noreply, State};
 
         _ ->
@@ -938,19 +962,19 @@ handle_cast({receive_message, From, Peer, OriginalMessage}, #state{} = State) ->
     end;
 
 handle_cast(
-    {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, OriginalMsg, Options},
+    {forward_message, From, Node, Channel, Clock, PartitionKey, ServerRef, OriginalMsg, Options},
     State) ->
 
     #state{
-        interposition_funs=InterpositionFuns,
-        pre_interposition_funs=PreInterpositionFuns,
-        post_interposition_funs=PostInterpositionFuns,
-        vclock=VClock0
+        interposition_funs = InterpositionFuns,
+        pre_interposition_funs = PreInterpositionFuns,
+        post_interposition_funs = PostInterpositionFuns,
+        vclock = VClock0
     } = State,
 
     %% Filter messages using interposition functions.
     FoldFun = fun(_InterpositionName, InterpositionFun, M) ->
-        InterpositionFun({forward_message, Name, M})
+        InterpositionFun({forward_message, Node, M})
     end,
     Message = maps:fold(FoldFun, OriginalMsg, InterpositionFuns),
 
@@ -980,7 +1004,7 @@ handle_cast(
                     %% get one using the causality backend.
                     {ok, LocalClock0, CausalMessage} =
                         partisan_causality_backend:emit(
-                            CausalLabel, Name, ServerRef, Message
+                            CausalLabel, Node, ServerRef, Message
                         ),
 
                     %% Wrap the clock wih a scope.
@@ -1014,7 +1038,7 @@ handle_cast(
                             RescheduleableMessage = {
                                 forward_message,
                                 From,
-                                Name,
+                                Node,
                                 Channel,
                                 MessageClock,
                                 PartitionKey,
@@ -1032,7 +1056,10 @@ handle_cast(
 
             %% Fire post-interposition functions.
             PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
-                PostInterpositionFun({forward_message, Name, OriginalMsg}, {forward_message, Name, FullMessage}),
+                PostInterpositionFun(
+                    {forward_message, Node, OriginalMsg},
+                    {forward_message, Node, FullMessage}
+                ),
                 ok
             end,
             maps:fold(PostFoldFun, ok, PostInterpositionFuns),
@@ -1049,14 +1076,27 @@ handle_cast(
                     gen_server:reply(From, ok)
             end,
 
-            {noreply, State#state{vclock=VClock}};
+            {noreply, State#state{vclock = VClock}};
 
         {'$delay', NewMessage} ->
             ?LOG_DEBUG(
                 "Delaying receive_message due to interposition result: ~p",
                 [NewMessage]
             ),
-            gen_server:cast(?MODULE, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, NewMessage, Options}),
+            gen_server:cast(
+                ?MODULE,
+                {
+                    forward_message,
+                    From,
+                    Node,
+                    Channel,
+                    Clock,
+                    PartitionKey,
+                    ServerRef,
+                    NewMessage,
+                    Options
+                }
+            ),
             {noreply, State};
 
         _ ->
@@ -1071,8 +1111,8 @@ handle_cast(
                     %% Fire post-interposition functions -- trace after wrapping!
                     PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
                         PostInterpositionFun(
-                            {forward_message, Name, WrappedOriginalMessage},
-                            {forward_message, Name, WrappedMessage}
+                            {forward_message, Node, WrappedOriginalMessage},
+                            {forward_message, Node, WrappedMessage}
                         ),
                         ok
                     end,
@@ -1080,7 +1120,7 @@ handle_cast(
 
                     %% Send message along.
                     do_send_message(
-                        Name,
+                        Node,
                         Channel,
                         PartitionKey,
                         WrappedMessage,
@@ -1099,8 +1139,8 @@ handle_cast(
                     %% Fire post-interposition functions -- trace after wrapping!
                     PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
                         PostInterpositionFun(
-                            {forward_message, Name, WrappedOriginalMessage},
-                            {forward_message, Name, WrappedMessage}
+                            {forward_message, Node, WrappedOriginalMessage},
+                            {forward_message, Node, WrappedMessage}
                         ),
                         ok
                     end,
@@ -1121,7 +1161,7 @@ handle_cast(
                             RescheduleableMessage = {
                                 forward_message,
                                 From,
-                                Name,
+                                Node,
                                 Channel,
                                 MessageClock,
                                 PartitionKey,
@@ -1138,7 +1178,7 @@ handle_cast(
 
                     %% Send message along.
                     do_send_message(
-                        Name,
+                        Node,
                         Channel,
                         PartitionKey,
                         WrappedMessage,
@@ -1154,7 +1194,7 @@ handle_cast(
                     gen_server:reply(From, Result)
             end,
 
-            {noreply, State#state{vclock=VClock}}
+            {noreply, State#state{vclock = VClock}}
     end;
 
 handle_cast(Event, State) ->
@@ -1163,31 +1203,31 @@ handle_cast(Event, State) ->
 
 %% @private
 -spec handle_info(term(), t()) -> {noreply, t()}.
-handle_info(tree_refresh, #state{}=State) ->
+handle_info(tree_refresh, #state{} = State) ->
     %% Get lazily computed outlinks.
     OutLinks = retrieve_outlinks(),
 
     %% Reschedule.
     schedule_tree_refresh(),
 
-    {noreply, State#state{out_links=OutLinks}};
+    {noreply, State#state{out_links = OutLinks}};
 
 handle_info(distance, #state{} = State0) ->
     %% Establish any new connections.
     State = establish_connections(State0),
 
     %% Record time.
-    SrcTime = erlang:timestamp(),
+    Time = erlang:timestamp(),
 
     %% Send distance requests.
     SrcNode = partisan:node_spec(),
     PreInterpositionFuns = State#state.pre_interposition_funs,
 
     ok = lists:foreach(
-        fun(Peer) ->
+        fun(DestTo) ->
             schedule_self_message_delivery(
-                Peer,
-                {ping, SrcNode, Peer, SrcTime},
+                DestTo,
+                {ping, SrcNode, DestTo, Time},
                 ?MEMBERSHIP_PROTOCOL_CHANNEL,
                 ?DEFAULT_PARTITION_KEY,
                 PreInterpositionFuns
@@ -1215,9 +1255,9 @@ handle_info(periodic, #state{membership_strategy=MStrategy,
 
     %% Send outgoing messages.
     ok = lists:foreach(
-        fun({Peer, Message}) ->
+        fun({Node, Message}) ->
             schedule_self_message_delivery(
-                Peer,
+                Node,
                 Message,
                 ?MEMBERSHIP_PROTOCOL_CHANNEL,
                 ?DEFAULT_PARTITION_KEY,
@@ -1239,12 +1279,14 @@ handle_info(periodic, #state{membership_strategy=MStrategy,
 
     {noreply, State};
 
-handle_info(retransmit, #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
-    RetransmitFun = fun({_, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, Message, Options}}) ->
-        Mynode = partisan:node(),
+handle_info(retransmit, #state{} = State) ->
+    PreInterpositionFuns = State#state.pre_interposition_funs,
+
+    RetransmitFun = fun({_, {forward_message, From, Node, Channel, Clock, PartitionKey, ServerRef, Message, Options}}) ->
         ?LOG_DEBUG(
-            "~p no acknowledgement yet, restranmitting message ~p with clock ~p to ~p",
-            [Mynode, Message, Clock, Name]
+            "~p no acknowledgement yet, "
+            "restranmitting message ~p with clock ~p to ~p",
+            [partisan:node(), Message, Clock, Node]
         ),
 
         %% Fire pre-interposition functions.
@@ -1253,7 +1295,7 @@ handle_info(retransmit, #state{pre_interposition_funs=PreInterpositionFuns}=Stat
                 "firing preinterposition fun for original message: ~p",
                 [Message]
             ),
-            PreInterpositionFun({forward_message, Name, Message}),
+            PreInterpositionFun({forward_message, Node, Message}),
             ok
         end,
         maps:fold(PreFoldFun, ok, PreInterpositionFuns),
@@ -1261,28 +1303,47 @@ handle_info(retransmit, #state{pre_interposition_funs=PreInterpositionFuns}=Stat
         %% Schedule message for redelivery.
         RetryOptions = Options#{retransmission => true},
 
-        gen_server:cast(?MODULE, {forward_message, From, Name, Channel, Clock, PartitionKey, ServerRef, Message, RetryOptions})
+        gen_server:cast(
+            ?MODULE,
+            {
+                forward_message,
+                From,
+                Node,
+                Channel,
+                Clock,
+                PartitionKey,
+                ServerRef,
+                Message,
+                RetryOptions
+            }
+        )
     end,
 
     {ok, Outstanding} = partisan_acknowledgement_backend:outstanding(),
 
     case partisan_config:get(replaying, false) of
         false ->
-            %% Fire all pre-interposition functions, and then deliver, preserving serial order of messages.
+            %% Fire all pre-interposition functions, and then deliver,
+            %% preserving serial order of messages.
             lists:foreach(RetransmitFun, Outstanding);
         true ->
-            %% Allow the system to proceed, and the message will be delivered once pre-interposition is done.
-            lists:foreach(fun(OutstandingMessage) ->
-                spawn_link(fun() ->
-                    RetransmitFun(OutstandingMessage)
-                end)
-            end, Outstanding)
+            %% Allow the system to proceed, and the message will be delivered
+            %% once pre-interposition is done.
+            lists:foreach(
+                fun(OutstandingMessage) ->
+                    spawn_link(fun() ->
+                        RetransmitFun(OutstandingMessage)
+                    end)
+                end,
+                Outstanding
+            )
     end,
 
     %% Reschedule retransmission.
     schedule_retransmit(),
 
     {noreply, State};
+
 
 handle_info(connections, #state{} = State0) ->
     State1 = establish_connections(State0),
@@ -1291,10 +1352,10 @@ handle_info(connections, #state{} = State0) ->
 
     %% Advance sync_join's if we have enough open connections to remote host.
     SyncJoins = lists:foldl(
-        fun({NodeSpec, FromPid}, Joins) ->
+        fun({#{name := Node} = NodeSpec, FromPid}, Joins) ->
             case partisan:is_fully_connected(NodeSpec) of
                 true ->
-                    ?LOG_DEBUG("Node ~p is now fully connected.", [NodeSpec]),
+                    ?LOG_DEBUG("Node ~p is now fully connected.", [Node]),
 
                     gen_server:reply(FromPid, ok),
 
@@ -1377,9 +1438,9 @@ handle_info(
 
             %% Gossip the new membership.
             lists:foreach(
-                fun({Peer, Message}) ->
+                fun({Node, Message}) ->
                     schedule_self_message_delivery(
-                        Peer,
+                        Node,
                         Message,
                         ?MEMBERSHIP_PROTOCOL_CHANNEL,
                         ?DEFAULT_PARTITION_KEY,
@@ -1392,10 +1453,10 @@ handle_info(
             %% notify subscribers
             up(NodeSpec, State0),
 
-            ok = case Membership of
-                Membership0 ->
+            ok = case Membership == Membership0 of
+                true ->
                     ok;
-                _ ->
+                false ->
                     partisan_peer_service_events:update(Membership)
             end,
 
@@ -1411,8 +1472,8 @@ handle_info(
 
     %% Notify for sync join.
     SyncJoins = case lists:keyfind(NodeSpec, 1, SyncJoins0) of
-        {NodeSpec, FromPid} ->
-            case partisan:is_fully_connected(NodeSpec) of
+        {PeerNodeSpec, FromPid} ->
+            case partisan:is_fully_connected(PeerNodeSpec) of
                 true ->
                     gen_server:reply(FromPid, ok),
                     lists:keydelete(FromPid, 2, SyncJoins0);
@@ -1472,8 +1533,8 @@ gen_actor() ->
 
 %% @private
 without_me(Members) ->
-    MyNode = partisan:node(),
-    lists:filter(fun(#{name := Name}) -> Name =/= MyNode end, Members).
+    Node = partisan:node(),
+    lists:filter(fun(#{name := X}) -> X =/= Node end, Members).
 
 
 %% -----------------------------------------------------------------------------
@@ -1488,21 +1549,21 @@ establish_connections(State) ->
     Membership = State#state.membership,
 
     %% Compute list of nodes that should be connected.
-    Peers = without_me(Membership ++ Pending),
+    Nodes = without_me(Membership ++ Pending),
 
     %% Reconnect disconnected members and members waiting to join.
     LoL = lists:foldl(
-        fun(Peer, Acc) ->
+        fun(Node, Acc) ->
             %% TODO this should be a fold that will return the invalid NodeSpes
             %% (nodes that have an invalid IP address because we already have a
             %% connection to NodeSpec.node on another IP address)
             %% We then remove those NodeSpes from the membership set and update
             %% ourselves without the need for sending any leave/join gossip.
-            {ok, L} = partisan_util:maybe_connect(Peer, #{prune => true}),
+            {ok, L} = partisan_util:maybe_connect(Node, #{prune => true}),
             [L | Acc]
         end,
         [],
-        Peers
+        Nodes
     ),
     prune(lists:append(LoL), State).
 
@@ -1524,12 +1585,12 @@ prune(L, State) ->
 
 %% @private
 kill_connections(Nodes, State) ->
-    MyNode = partisan:node(),
+    Node = partisan:node(),
     _ = [
         begin
-            ok = partisan_peer_connections:erase(Node),
+            ok = partisan_peer_connections:erase(N),
             ok = down(Node, State)
-        end || Node <- Nodes, Node =/= MyNode
+        end || N <- Nodes, N =/= Node
     ],
     ok.
 
@@ -1592,18 +1653,18 @@ handle_message({membership_strategy, ProtocolMsg}, From, #state{} = State0) ->
 
 
     %% Update users of the peer service.
-    case Membership of
-        Membership0 ->
+    case Membership == Membership0 of
+        true ->
             ok;
-        _ ->
+        false ->
             partisan_peer_service_events:update(Membership)
     end,
 
     %% Send outgoing messages.
     lists:foreach(
-        fun({Peer, Message}) ->
+        fun({Node, Message}) ->
             schedule_self_message_delivery(
-                Peer,
+                Node,
                 Message,
                 ?MEMBERSHIP_PROTOCOL_CHANNEL,
                 ?DEFAULT_PARTITION_KEY,
@@ -1977,27 +2038,31 @@ internal_join(#{name := Node} = NodeSpec, From, #state{} = State0) ->
 
 
 %% @private
-rand_bits(Bits) ->
-        Bytes = (Bits + 7) div 8,
-        <<Result:Bits/bits, _/bits>> = crypto:strong_rand_bytes(Bytes),
-        Result.
+rand_bits(BitLen) ->
+    Bytes = (BitLen + 7) div 8,
+    <<Result:BitLen/bits, _/bits>> = crypto:strong_rand_bytes(Bytes),
+    Result.
+
 
 %% @private
 avoid_rush() ->
     %% Sleep before connecting, to avoid a rush on connections.
-    ConnectionJitter = partisan_config:get(connection_jitter, ?CONNECTION_JITTER),
+    Jitter = partisan_config:get(connection_jitter, ?CONNECTION_JITTER),
     case partisan_config:get(jitter, false) of
         true ->
-            timer:sleep(rand:uniform(ConnectionJitter));
+            timer:sleep(rand:uniform(Jitter));
         false ->
-            timer:sleep(ConnectionJitter)
+            timer:sleep(Jitter)
     end.
 
 %% @private
-do_tree_forward(Node, Channel, PartitionKey, Message, Options, TTL, PreInterpositionFuns) ->
+do_tree_forward(
+    Node, Channel, PartitionKey, Message, Options, TTL, PreInterpositionFuns) ->
+    MyNode = partisan:node(),
+
     ?LOG_TRACE(
         "Attempting to forward message ~p from ~p to ~p.",
-        [Message, partisan:node(), Node]
+        [Message, MyNode, Node]
     ),
 
     %% Preempt with user-supplied outlinks.
@@ -2017,7 +2082,7 @@ do_tree_forward(Node, Channel, PartitionKey, Message, Options, TTL, PreInterposi
                     []
             end;
         OL ->
-            OL -- [partisan:node()]
+            OL -- [MyNode]
     end,
 
     %% Send messages, but don't attempt to forward again, if we aren't connected.
@@ -2044,8 +2109,9 @@ retrieve_outlinks() ->
     ?LOG_TRACE(#{description => "About to retrieve outlinks..."}),
 
     Root = partisan:node(),
+    Result = partisan_plumtree_broadcast:debug_get_peers(Root, Root, 1000),
 
-    OutLinks = try partisan_plumtree_broadcast:debug_get_peers(partisan:node(), Root, 1000) of
+    OutLinks = try Result of
         {EagerPeers, _LazyPeers} ->
             ordsets:to_list(EagerPeers)
     catch
@@ -2056,7 +2122,8 @@ retrieve_outlinks() ->
 
     ?LOG_TRACE("Finished getting outlinks: ~p", [OutLinks]),
 
-    OutLinks -- [partisan:node()].
+    OutLinks -- [Root].
+
 
 %% @private
 schedule_tree_refresh() ->
@@ -2070,14 +2137,14 @@ schedule_tree_refresh() ->
 
 %% @private
 schedule_self_message_delivery(
-    Name, Message, Channel, PartitionKey, PreInterpositionFuns) ->
+    Node, Message, Channel, PartitionKey, PreInterpositionFuns) ->
     schedule_self_message_delivery(
-        Name, Message, Channel, PartitionKey, #{}, PreInterpositionFuns
+        Node, Message, Channel, PartitionKey, #{}, PreInterpositionFuns
     ).
 
 %% @private
 schedule_self_message_delivery(
-    Name, Message, Channel, PartitionKey, Options, PreInterpositionFuns) ->
+    Node, Message, Channel, PartitionKey, Options, PreInterpositionFuns) ->
     %% Run all interposition functions.
     DeliveryFun = fun() ->
         %% Fire pre-interposition functions.
@@ -2086,7 +2153,7 @@ schedule_self_message_delivery(
                 "firing forward_message preinterposition fun for message: ~p",
                 [Message]
             ),
-            PreInterpositionFun({forward_message, Name, Message}),
+            PreInterpositionFun({forward_message, Node, Message}),
             ok
         end,
 
@@ -2096,7 +2163,7 @@ schedule_self_message_delivery(
         gen_server:cast(?MODULE, {
             forward_message,
             undefined,
-            Name,
+            Node,
             Channel,
             undefined,
             PartitionKey,
@@ -2118,13 +2185,13 @@ schedule_self_message_delivery(
     ok.
 
 %% @private
-send_acknowledgement(Name, MessageClock, PreInterpositionFuns) ->
+send_acknowledgement(Node, MessageClock, PreInterpositionFuns) ->
     %% Generate message.
     Message = {ack, MessageClock},
 
     %% Send on the default channel.
     schedule_self_message_delivery(
-        Name,
+        Node,
         Message,
         ?DEFAULT_CHANNEL,
         ?DEFAULT_PARTITION_KEY,
