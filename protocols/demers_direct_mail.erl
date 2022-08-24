@@ -23,6 +23,7 @@
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -include("partisan.hrl").
+-include("partisan_logger.hrl").
 
 %% API
 -export([start_link/0,
@@ -76,13 +77,13 @@ init([]) ->
 
     %% Start with initial membership.
     {ok, Membership} = partisan_peer_service:members(),
-    partisan_logger:info("Starting with membership: ~p", [Membership]),
+    ?LOG_INFO("Starting with membership: ~p", [Membership]),
 
     {ok, #state{next_id=0, membership=membership(Membership)}}.
 
 %% @private
 handle_call(Msg, _From, State) ->
-    partisan_logger:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
+    ?LOG_WARNING("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
     {reply, ok, State}.
 
 %% @private
@@ -99,7 +100,7 @@ handle_cast({broadcast, ServerRef, Message}, #state{next_id=NextId, membership=M
 
     %% Forward message.
     lists:foreach(fun(N) ->
-        partisan_logger:info("~p: sending broadcast message to node ~p: ~p", [node(), N, Message]),
+        ?LOG_INFO("~p: sending broadcast message to node ~p: ~p", [node(), N, Message]),
         partisan:forward_message(
             N,
             ?MODULE,
@@ -113,13 +114,15 @@ handle_cast({update, Membership0}, State) ->
     Membership = membership(Membership0),
     {noreply, State#state{membership=Membership}};
 handle_cast(Msg, State) ->
-    partisan_logger:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
+    ?LOG_WARNING("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
 
 %% @private
 %% Incoming messages.
 handle_info({broadcast, Id, ServerRef, Message}, State) ->
-    partisan_logger:info("~p received value from broadcast: ~p", [node(), Message]),
+    ?LOG_INFO(
+        "~p received value from broadcast: ~p", [node(), Message]
+    ),
 
     case ets:lookup(?MODULE, Id) of
         [] ->

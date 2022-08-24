@@ -24,6 +24,7 @@
 -behaviour(gen_server).
 
 -include("partisan.hrl").
+-include("partisan_logger.hrl").
 
 %% API
 -export([start_link/0,
@@ -122,7 +123,7 @@ init([]) ->
 
     %% Start with initial membership.
     {ok, Membership0} = partisan_peer_service:members(),
-    partisan_logger:info("node ~p starting with membership: ~p", [node(), Membership0]),
+    ?LOG_INFO("node ~p starting with membership: ~p", [node(), Membership0]),
 
     %% Initialization values.
     Store = dict:new(),
@@ -157,10 +158,10 @@ handle_call(_Msg, _From, State) ->
 %% @private
 handle_cast({update, Membership0}, #state{membership=OldMembership, outstanding=Outstanding0}=State) ->
     Membership = membership(Membership0),
-    partisan_logger:info("updating membership at node ~p with ~p", [node(), Membership]),
+    ?LOG_INFO("updating membership at node ~p with ~p", [node(), Membership]),
 
     Difference = OldMembership -- Membership,
-    partisan_logger:info("node: ~p, membership differencep ~p", [node(), Difference]),
+    ?LOG_INFO("node: ~p, membership differencep ~p", [node(), Difference]),
 
     Outstanding = dict:fold(fun(Request, {RequestMembership, Replies}, Acc) ->
         dict:store(Request, {RequestMembership -- Difference, Replies}, Acc)
@@ -203,7 +204,7 @@ handle_cast({read, From0, Key}, #state{next_id=NextId, membership=[Primary|_Rest
             {noreply, State#state{next_id=NextId+1}};
         _ ->
             %% Reply to caller.
-            partisan_logger:info("Node ~p is not the primary for request: ~p", [node(), Request]),
+            ?LOG_INFO("Node ~p is not the primary for request: ~p", [node(), Request]),
             partisan:forward_message(EncodedFrom, {error, not_primary}),
 
             {noreply, State#state{next_id=NextId+1}}
@@ -234,7 +235,7 @@ handle_cast({write, From0, Key, Value}, #state{next_id=NextId, membership=[Prima
             CoordinatorNode = node(),
 
             lists:foreach(fun(Node) ->
-                partisan_logger:info("sending collaborate message to node ~p for request ~p", [Node, Request]),
+                ?LOG_INFO("sending collaborate message to node ~p for request ~p", [Node, Request]),
                 partisan:forward_message(
                     Node,
                     ?MODULE,
@@ -249,7 +250,7 @@ handle_cast({write, From0, Key, Value}, #state{next_id=NextId, membership=[Prima
             {noreply, State#state{store=Store, outstanding=Outstanding, next_id=NextId+1}};
         _ ->
             %% Reply to caller.
-            partisan_logger:info("Node ~p is not the primary for request: ~p", [node(), Request]),
+            ?LOG_INFO("Node ~p is not the primary for request: ~p", [node(), Request]),
             partisan:forward_message(EncodedFrom, {error, not_primary}),
 
             {noreply, State#state{next_id=NextId+1}}
@@ -267,17 +268,17 @@ handle_info({collaborate_ack, ReplyingNode, {write, From, Key, Value}}, #state{o
 
             Outstanding = case lists:usort(Membership) =:= lists:usort(Replies) of
                 true ->
-                    partisan_logger:info("Node ~p received all replies for request ~p, acknowleding to user.", [node(), Request]),
+                    ?LOG_INFO("Node ~p received all replies for request ~p, acknowleding to user.", [node(), Request]),
                     partisan:forward_message(From, {ok, Value}),
                     dict:erase(Request, Outstanding0);
                 false ->
-                    partisan_logger:info("Received replies from: ~p, but need replies from: ~p", [Replies, Membership -- Replies]),
+                    ?LOG_INFO("Received replies from: ~p, but need replies from: ~p", [Replies, Membership -- Replies]),
                     dict:store(Request, {Membership, Replies}, Outstanding0)
             end,
 
             {noreply, State#state{outstanding=Outstanding}};
         _ ->
-            partisan_logger:info("Received reply for unknown request: ~p", [Request]),
+            ?LOG_INFO("Received reply for unknown request: ~p", [Request]),
 
             {noreply, State}
     end;
@@ -295,7 +296,7 @@ handle_info({collaborate, CoordinatorNode, {write, From, Key, Value}}, #state{me
 
             %% Reply with collaborate acknowledgement.
             ReplyingNode = node(),
-            partisan_logger:info("Node ~p is backup, responding to the primary ~p with acknowledgement", [node(), CoordinatorNode]),
+            ?LOG_INFO("Node ~p is backup, responding to the primary ~p with acknowledgement", [node(), CoordinatorNode]),
             partisan:forward_message(
                 CoordinatorNode,
                 ?MODULE,
@@ -306,7 +307,7 @@ handle_info({collaborate, CoordinatorNode, {write, From, Key, Value}}, #state{me
             {noreply, State#state{store=Store}}
     end;
 handle_info({heartbeat, OtherNode}, #state{heartbeats=Heartbeats0}=State) ->
-    partisan_logger:info("received heartbeat from ~p at ~p", [OtherNode, node()]),
+    ?LOG_INFO("received heartbeat from ~p at ~p", [OtherNode, node()]),
 
     Time = erlang:timestamp(),
     Heartbeats = dict:store(OtherNode, Time, Heartbeats0),
@@ -318,7 +319,7 @@ handle_info(heartbeat, #state{start_time=StartTime, membership=Membership, heart
 
     %% Outgoing heartbeats.
     lists:foreach(fun(Node) ->
-        partisan_logger:info("sending heartbeat from ~p to ~p", [CoordinatorNode, Node]),
+        ?LOG_INFO("sending heartbeat from ~p to ~p", [CoordinatorNode, Node]),
         partisan:forward_message(
             Node,?MODULE, {heartbeat, CoordinatorNode}, #{channel => ?DEFAULT_CHANNEL}
         )
@@ -341,7 +342,7 @@ handle_info(heartbeat, #state{start_time=StartTime, membership=Membership, heart
         %% Two heartbeat intervals.
         case DifferenceMs > (?HEARTBEAT_INTERVAL * 2) of
             true ->
-                partisan_logger:info("membership: node ~p hasn't received heartbeat from node ~p in 2 intervals, removing, difference_ms: ~p", [node(), Node, DifferenceMs]),
+                ?LOG_INFO("membership: node ~p hasn't received heartbeat from node ~p in 2 intervals, removing, difference_ms: ~p", [node(), Node, DifferenceMs]),
                 Acc -- [Node];
             false ->
                 Acc
@@ -366,7 +367,7 @@ handle_info(retry, #state{outstanding=Outstanding}=State) ->
         CoordinatorNode = node(),
 
         lists:foreach(fun(Node) ->
-            partisan_logger:info("sending retry collaborate message to node ~p for request ~p", [Node, Request]),
+            ?LOG_INFO("sending retry collaborate message to node ~p for request ~p", [Node, Request]),
             partisan:forward_message(
                 Node,
                 ?MODULE,
@@ -395,7 +396,7 @@ handle_info({retry_collaborate, CoordinatorNode, {write, From, Key, Value}}, #st
 
             %% Reply with collaborate acknowledgement.
             ReplyingNode = node(),
-            partisan_logger:info("Node ~p is backup, responding to the primary ~p with acknowledgement", [node(), CoordinatorNode]),
+            ?LOG_INFO("Node ~p is backup, responding to the primary ~p with acknowledgement", [node(), CoordinatorNode]),
             partisan:forward_message(
                 CoordinatorNode,
                 ?MODULE,
@@ -417,10 +418,10 @@ handle_info({retry_collaborate_ack, ReplyingNode, {write, From, Key, Value}}, #s
 
             case lists:usort(Membership) =:= lists:usort(Replies) of
                 true ->
-                    partisan_logger:info("Node ~p received all replies for request ~p, acknowleding to user.", [node(), Request]),
+                    ?LOG_INFO("Node ~p received all replies for request ~p, acknowleding to user.", [node(), Request]),
                     partisan:forward_message(From, {ok, Value});
                 false ->
-                    partisan_logger:info("Received replies from: ~p, but need replies from: ~p", [lists:usort(Replies), Membership -- Replies]),
+                    ?LOG_INFO("Received replies from: ~p, but need replies from: ~p", [lists:usort(Replies), Membership -- Replies]),
                     ok
             end,
 
@@ -429,12 +430,12 @@ handle_info({retry_collaborate_ack, ReplyingNode, {write, From, Key, Value}}, #s
 
             {noreply, State#state{outstanding=Outstanding}};
         _ ->
-            partisan_logger:info("Received reply for unknown request: ~p", [Request]),
+            ?LOG_INFO("Received reply for unknown request: ~p", [Request]),
 
             {noreply, State}
     end;
 handle_info(Msg, State) ->
-    partisan_logger:info("Received message ~p with no handler!", [Msg]),
+    ?LOG_INFO("Received message ~p with no handler!", [Msg]),
 
     {noreply, State}.
 

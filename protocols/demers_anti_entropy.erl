@@ -78,7 +78,7 @@ init([]) ->
 
     %% Start with initial membership.
     {ok, Membership} = partisan_peer_service:members(),
-    partisan_logger:info("Starting with membership: ~p", [Membership]),
+    ?LOG_INFO("Starting with membership: ~p", [Membership]),
 
     %% Schedule anti-entropy.
     schedule_anti_entropy(),
@@ -87,7 +87,7 @@ init([]) ->
 
 %% @private
 handle_call(Msg, _From, State) ->
-    partisan_logger:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
+    ?LOG_WARNING("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
     {reply, ok, State}.
 
 %% @private
@@ -109,7 +109,7 @@ handle_cast({update, Membership0}, State) ->
     {noreply, State#state{membership=Membership}};
 
 handle_cast(Msg, State) ->
-    partisan_logger:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
+    ?LOG_WARNING("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
 
 %% @private
@@ -164,7 +164,7 @@ handle_info({push, FromNode, TheirMessages}, State) ->
     end, [], ?MODULE),
 
     %% Forward message back to sender.
-    partisan_logger:info("~p: sending messages to node ~p", [node(), FromNode]),
+    ?LOG_INFO("~p: sending messages to node ~p", [node(), FromNode]),
     partisan:forward_message(
         FromNode,
         ?MODULE,

@@ -26,6 +26,7 @@
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -include("partisan.hrl").
+-include("partisan_logger.hrl").
 
 %% API
 -export([start_link/0,
@@ -109,13 +110,13 @@ init([]) ->
 
     %% Start with initial membership.
     {ok, Membership} = partisan_peer_service:members(),
-    partisan_logger:info("Starting with membership: ~p", [Membership]),
+    ?LOG_INFO("Starting with membership: ~p", [Membership]),
 
     {ok, #state{next_id=0, membership=membership(Membership)}}.
 
 %% @private
 handle_call(Msg, _From, State) ->
-    partisan_logger:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
+    ?LOG_WARNING("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
     {reply, ok, State}.
 
 %% @private
@@ -148,7 +149,7 @@ handle_cast({broadcast, From, ServerRef, Message}, #state{next_id=NextId, member
 
     %% Send prepare message to all participants including ourself.
     lists:foreach(fun(N) ->
-        partisan_logger:info("~p: sending prepare message to node ~p: ~p", [node(), N, Message]),
+        ?LOG_INFO("~p: sending prepare message to node ~p: ~p", [node(), N, Message]),
         partisan:forward_message(
             N, ?MODULE, {prepare, Transaction}, #{channel => ?DEFAULT_CHANNEL}
         )
@@ -159,7 +160,7 @@ handle_cast({update, Membership0}, State) ->
     Membership = membership(Membership0),
     {noreply, State#state{membership=Membership}};
 handle_cast(Msg, State) ->
-    partisan_logger:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
+    ?LOG_WARNING("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
 
 %% @private
@@ -172,20 +173,20 @@ handle_info({decision, FromNode, Id, Decision}, State) ->
         [{_Id, #transaction{participant_status=ParticipantStatus, uncertain=Uncertain0, server_ref=ServerRef, message=Message}=Transaction}] ->
             case ParticipantStatus of
                 abort ->
-                    partisan_logger:error("~p: decision already reached: ~p, ignoring decision.", [node(), ParticipantStatus]);
+                    ?LOG_ERROR("~p: decision already reached: ~p, ignoring decision.", [node(), ParticipantStatus]);
                 commit ->
-                    partisan_logger:error("~p: decision already reached: ~p, ignoring decision.", [node(), ParticipantStatus]);
+                    ?LOG_ERROR("~p: decision already reached: ~p, ignoring decision.", [node(), ParticipantStatus]);
                 _ ->
                     case Decision of
                         abort ->
-                            partisan_logger:info("~p: decision was abort.", [node()]),
+                            ?LOG_INFO("~p: decision was abort.", [node()]),
 
                             %% Write log record showing abort occurred.
                             true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=abort, uncertain=[]}}),
 
                             %% Notify uncertain.
                             lists:foreach(fun(N) ->
-                                partisan_logger:info("~p: sending decision message to uncertain node ~p: ~p", [node(), N, Decision]),
+                                ?LOG_INFO("~p: sending decision message to uncertain node ~p: ~p", [node(), N, Decision]),
                                 partisan:forward_message(
                                     N,
                                     ?MODULE,
@@ -196,7 +197,7 @@ handle_info({decision, FromNode, Id, Decision}, State) ->
 
                             ok;
                         uncertain ->
-                            partisan_logger:info("~p: decision was uncertain.", [node()]),
+                            ?LOG_INFO("~p: decision was uncertain.", [node()]),
 
                             %% Don't know, do nothing, possibly block.
 
@@ -206,14 +207,14 @@ handle_info({decision, FromNode, Id, Decision}, State) ->
 
                             ok;
                         commit ->
-                            partisan_logger:info("~p: decision was commit.", [node()]),
+                            ?LOG_INFO("~p: decision was commit.", [node()]),
 
                             %% Write log record showing commit occurred.
                             true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=commit, uncertain=[]}}),
 
                             %% Notify uncertain.
                             lists:foreach(fun(N) ->
-                                partisan_logger:info("~p: sending decision message to uncertain node ~p: ~p", [node(), N, Decision]),
+                                ?LOG_INFO("~p: sending decision message to uncertain node ~p: ~p", [node(), N, Decision]),
                                 partisan:forward_message(
                                     N,
                                     ?MODULE,
@@ -229,7 +230,7 @@ handle_info({decision, FromNode, Id, Decision}, State) ->
                     end
             end;
         [] ->
-            partisan_logger:error("Notification for decision message but no transaction found!", [])
+            ?LOG_ERROR("Notification for decision message but no transaction found!", [])
     end,
 
     {noreply, State};
@@ -253,7 +254,7 @@ handle_info({decision_request, FromNode, Id}, State) ->
                     uncertain
             end,
 
-            partisan_logger:info("~p: sending decision-request message to node ~p: ~p", [node(), FromNode, Decision]),
+            ?LOG_INFO("~p: sending decision-request message to node ~p: ~p", [node(), FromNode, Decision]),
             partisan:forward_message(
                 FromNode,
                 ?MODULE,
@@ -261,11 +262,11 @@ handle_info({decision_request, FromNode, Id}, State) ->
                 #{channel => ?DEFAULT_CHANNEL}
             );
         [] ->
-            partisan_logger:error("Notification for decision-request message but no transaction found!", []),
+            ?LOG_ERROR("Notification for decision-request message but no transaction found!", []),
 
             Decision = uncertain,
 
-            partisan_logger:info("~p: sending decision-request message to node ~p: ~p", [node(), FromNode, Decision]),
+            ?LOG_INFO("~p: sending decision-request message to node ~p: ~p", [node(), FromNode, Decision]),
             partisan:forward_message(
                 FromNode,
                 ?MODULE,
@@ -289,7 +290,7 @@ handle_info({participant_timeout, Id}, State) ->
                 _Other ->
                     %% Send decision request to all participants.
                     lists:foreach(fun(N) ->
-                        partisan_logger:info("~p: decision locally is ~p; sending decision-request message to node ~p: ~p", [node(), ParticipantStatus, N, Id]),
+                        ?LOG_INFO("~p: decision locally is ~p; sending decision-request message to node ~p: ~p", [node(), ParticipantStatus, N, Id]),
                         partisan:forward_message(
                             N,
                             ?MODULE,
@@ -301,7 +302,7 @@ handle_info({participant_timeout, Id}, State) ->
                     ok
             end;
         [] ->
-            partisan_logger:error("Notification for participant timeout message but no transaction found!", [])
+            ?LOG_ERROR("Notification for participant timeout message but no transaction found!", [])
     end,
 
     {noreply, State};
@@ -317,19 +318,19 @@ handle_info({coordinator_timeout, Id}, State) ->
                     %% Can't do anything; block.
                     ok;
                 preparing ->
-                    partisan_logger:info("Received coordinator timeout for transaction id ~p", [Id]),
+                    ?LOG_INFO("Received coordinator timeout for transaction id ~p", [Id]),
 
                     %% Update local state.
                     Transaction = Transaction0#transaction{coordinator_status=aborting},
                     true = ets:insert(?COORDINATING_TRANSACTIONS, {Id, Transaction}),
 
                     %% Reply to caller.
-                    partisan_logger:info("Aborting transaction: ~p", [Id]),
+                    ?LOG_INFO("Aborting transaction: ~p", [Id]),
                     partisan:forward_message(From, error),
 
                     %% Send notification to abort.
                     lists:foreach(fun(N) ->
-                        partisan_logger:info("~p: sending abort message to node ~p: ~p", [node(), N, Id]),
+                        ?LOG_INFO("~p: sending abort message to node ~p: ~p", [node(), N, Id]),
                         partisan:forward_message(
                             N,
                             ?MODULE,
@@ -339,7 +340,7 @@ handle_info({coordinator_timeout, Id}, State) ->
                     end, membership(Participants))
             end;
         [] ->
-            partisan_logger:error("Notification for coordinator timeout message but no transaction found!", [])
+            ?LOG_ERROR("Notification for coordinator timeout message but no transaction found!", [])
     end,
 
     {noreply, State};
@@ -347,7 +348,7 @@ handle_info({abort_ack, FromNode, Id}, State) ->
     %% Find transaction record.
     case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of
         [{_Id, #transaction{participants=Participants, aborted=Aborted0} = Transaction}] ->
-            partisan_logger:info("Received abort_ack from node ~p", [FromNode]),
+            ?LOG_INFO("Received abort_ack from node ~p", [FromNode]),
 
             %% Update aborted.
             Aborted = lists:usort(Aborted0 ++ [FromNode]),
@@ -360,7 +361,7 @@ handle_info({abort_ack, FromNode, Id}, State) ->
 
                     ok;
                 false ->
-                    partisan_logger:info("Not all participants have aborted yet: ~p != ~p", [Aborted, Participants]),
+                    ?LOG_INFO("Not all participants have aborted yet: ~p != ~p", [Aborted, Participants]),
 
                     %% Update local state.
                     true = ets:insert(?COORDINATING_TRANSACTIONS, {Id, Transaction#transaction{aborted=Aborted}}),
@@ -368,7 +369,7 @@ handle_info({abort_ack, FromNode, Id}, State) ->
                     ok
             end;
         [] ->
-            partisan_logger:error("Notification for abort_ack message but no transaction found!", [])
+            ?LOG_ERROR("Notification for abort_ack message but no transaction found!", [])
     end,
 
     {noreply, State};
@@ -376,7 +377,7 @@ handle_info({commit_ack, FromNode, Id}, State) ->
     %% Find transaction record.
     case ets:lookup(?COORDINATING_TRANSACTIONS, Id) of
         [{_Id, #transaction{participants=Participants, committed=Committed0} = Transaction}] ->
-            partisan_logger:info("Received commit_ack from node ~p", [FromNode]),
+            ?LOG_INFO("Received commit_ack from node ~p", [FromNode]),
 
             %% Update committed.
             Committed = lists:usort(Committed0 ++ [FromNode]),
@@ -389,7 +390,7 @@ handle_info({commit_ack, FromNode, Id}, State) ->
 
                     ok;
                 false ->
-                    partisan_logger:info("Not all participants have committed yet: ~p != ~p", [Committed, Participants]),
+                    ?LOG_INFO("Not all participants have committed yet: ~p != ~p", [Committed, Participants]),
 
                     %% Update local state.
                     true = ets:insert(?COORDINATING_TRANSACTIONS, {Id, Transaction#transaction{committed=Committed}}),
@@ -397,7 +398,7 @@ handle_info({commit_ack, FromNode, Id}, State) ->
                     ok
             end;
         [] ->
-            partisan_logger:error("Notification for commit_ack message but no transaction found!", [])
+            ?LOG_ERROR("Notification for commit_ack message but no transaction found!", [])
     end,
 
     {noreply, State};
@@ -405,7 +406,7 @@ handle_info({abort, #transaction{id=Id, coordinator=Coordinator}}, State) ->
     true = ets:delete(?PARTICIPATING_TRANSACTIONS, Id),
 
     MyNode = partisan:node(),
-    partisan_logger:info("~p: sending abort ack message to node ~p: ~p", [node(), Coordinator, Id]),
+    ?LOG_INFO("~p: sending abort ack message to node ~p: ~p", [node(), Coordinator, Id]),
     partisan:forward_message(
         Coordinator,
         ?MODULE,
@@ -423,7 +424,7 @@ handle_info({commit, #transaction{id=Id, coordinator=Coordinator, server_ref=Ser
 
     %% Repond to coordinator that we are now committed.
     MyNode = partisan:node(),
-    partisan_logger:info("~p: sending commit ack message to node ~p: ~p", [node(), Coordinator, Id]),
+    ?LOG_INFO("~p: sending commit ack message to node ~p: ~p", [node(), Coordinator, Id]),
     partisan:forward_message(
         Coordinator,
         ?MODULE,
@@ -450,12 +451,12 @@ handle_info({prepared, FromNode, Id}, State) ->
                     true = ets:insert(?COORDINATING_TRANSACTIONS, {Id, Transaction}),
 
                     %% Reply to caller.
-                    partisan_logger:info("replying to the caller: ~p", [From]),
+                    ?LOG_INFO("replying to the caller: ~p", [From]),
                     partisan:forward_message(From, ok),
 
                     %% Send notification to commit.
                     lists:foreach(fun(N) ->
-                        partisan_logger:info("~p: sending commit message to node ~p: ~p", [node(), N, Id]),
+                        ?LOG_INFO("~p: sending commit message to node ~p: ~p", [node(), N, Id]),
                         partisan:forward_message(
                             N,
                             ?MODULE,
@@ -468,7 +469,7 @@ handle_info({prepared, FromNode, Id}, State) ->
                     true = ets:insert(?COORDINATING_TRANSACTIONS, {Id, Transaction0#transaction{prepared=Prepared}})
             end;
         [] ->
-            partisan_logger:error("Notification for prepared message but no transaction found!", [])
+            ?LOG_ERROR("Notification for prepared message but no transaction found!", [])
     end,
 
     {noreply, State};
@@ -481,7 +482,7 @@ handle_info({prepare, #transaction{coordinator=Coordinator, id=Id}=Transaction},
 
     %% Repond to coordinator that we are now prepared.
     MyNode = partisan:node(),
-    partisan_logger:info("~p: sending prepared message to node ~p: ~p", [node(), Coordinator, Id]),
+    ?LOG_INFO("~p: sending prepared message to node ~p: ~p", [node(), Coordinator, Id]),
     partisan:forward_message(
         Coordinator,
         ?MODULE,
@@ -491,7 +492,7 @@ handle_info({prepare, #transaction{coordinator=Coordinator, id=Id}=Transaction},
 
     {noreply, State};
 handle_info(Msg, State) ->
-    partisan_logger:info("~p received unhandled message: ~p", [node(), Msg]),
+    ?LOG_INFO("~p received unhandled message: ~p", [node(), Msg]),
     {noreply, State}.
 
 %% @private
