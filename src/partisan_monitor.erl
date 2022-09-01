@@ -473,13 +473,13 @@ handle_info(_, #state{enabled = false} = State) ->
     %% Functionality disabled
     {noreply, State};
 
-handle_info({'DOWN', Mref, process, Pid, Reason}, State) ->
-    %% Local process down signal
+handle_info({'DOWN', Mref, process, _ServerRef, Reason}, State) ->
     case take_process_mon(Mref) of
-        {Mref, Pid, OwnerRef} ->
+        {Mref, PidOrName, OwnerRef} ->
+            %% Local process down signal
             Node = partisan:node(OwnerRef),
             del_process_monitor_idx(Node, Mref),
-            ok = send_process_down(OwnerRef, Mref, Pid, Reason);
+            ok = send_process_down(OwnerRef, Mref, PidOrName, Reason);
         error ->
             ok
     end,

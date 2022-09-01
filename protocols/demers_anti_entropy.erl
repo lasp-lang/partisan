@@ -22,6 +22,7 @@
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+-include("partisan_logger.hrl").
 -include("partisan.hrl").
 
 %% API
