@@ -200,16 +200,18 @@ groups() ->
       ]},
 
      {simple, [],
-      [basic_test,
-       leave_test,
-       self_leave_test,
-       on_down_test,
-       rpc_test,
-       client_server_manager_test,
-       pid_test,
-       rejoin_test,
-       transform_test,
-       otp_test]},
+      [
+        basic_test,
+        leave_test,
+        self_leave_test,
+        on_down_test,
+        rpc_test,
+        client_server_manager_test,
+        pid_test,
+        rejoin_test,
+        transform_test,
+        otp_test
+    ]},
 
      {hyparview, [],
       [
@@ -1296,12 +1298,16 @@ otp_test(Config) ->
     Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
-    Nodes = ?SUPPORT:start(otp_test, Config,
-                  [{partisan_peer_service_manager, Manager},
-                   {servers, Servers},
-                   {clients, Clients}]),
+    Nodes = ?SUPPORT:start(
+        otp_test, Config, [
+            {partisan_peer_service_manager, Manager},
+            {servers, Servers},
+            {clients, Clients}
+        ]
+    ),
 
     ?PAUSE_FOR_CLUSTERING,
+
 
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %% gen_server tests.
@@ -1315,10 +1321,14 @@ otp_test(Config) ->
     %% Ensure that a regular call works.
     [{_, FirstName}, {_, SecondName} | _] = Nodes,
 
-    ok = rpc:call(
-        FirstName,
-        partisan_gen_server, call,
-        [{partisan_test_server, SecondName}, call, 5000]
+
+    ?assertEqual(
+        ok,
+        rpc:call(
+            FirstName,
+            partisan_gen_server, call,
+            [{partisan_test_server, SecondName}, call, 5000]
+        )
     ),
 
     %% Ensure that a regular call with delayed response works.
@@ -1616,7 +1626,11 @@ client_server_manager_test(Config) ->
                 true ->
                     ok;
                 false ->
-                    ct:fail("Membership incorrect; node ~p should have ~p ~nbut has ~p", [Node, Nodes, Members])
+                    ct:fail(
+                        "Membership incorrect; node ~p "
+                        "should have ~p ~nbut has ~p",
+                        [Node, Nodes, Members]
+                    )
             end
     end,
 
@@ -2215,9 +2229,9 @@ verify_leave({_, NodeToLeave}, Nodes, Manager) ->
 
     %% Remove a node from the cluster.
     [{_, _}, {_, Node2}, {_, _}, {_, _}] = Nodes,
-    NodeToLeaveMap = rpc:call(NodeToLeave, partisan, node_spec, []),
-    ct:pal("Removing node ~p from the cluster with node map: ~p", [NodeToLeave, NodeToLeaveMap]),
-    ok = rpc:call(Node2, partisan_peer_service, leave, [NodeToLeaveMap]),
+    NodeToLeaveSpec = rpc:call(NodeToLeave, partisan, node_spec, []),
+    ct:pal("Removing node ~p from the cluster with node spec: ~p", [NodeToLeave, NodeToLeaveSpec]),
+    ok = rpc:call(Node2, partisan_peer_service, leave, [NodeToLeaveSpec]),
 
     %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
     timer:sleep(?OVERRIDE_PERIODIC_INTERVAL * length(Nodes) + ?OVERRIDE_PERIODIC_INTERVAL),

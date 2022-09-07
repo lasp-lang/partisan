@@ -433,13 +433,20 @@ cluster({_, Node}, {_, OtherNode}, Config) ->
                         join
                   end,
     debug("Joining node: ~p to ~p at port ~p", [Node, OtherNode, PeerPort]),
-    ok = rpc:call(Node,
-                  partisan_peer_service,
-                  JoinMethod,
-                  [#{name => OtherNode,
-                     listen_addrs => [#{ip => {127, 0, 0, 1}, port => PeerPort}],
-                     channels => Channels,
-                     parallelism => Parallelism}]).
+
+    ok = rpc:call(
+        Node,
+        partisan_peer_service,
+        JoinMethod,
+        [#{
+            name => OtherNode,
+            listen_addrs => [#{ip => {127, 0, 0, 1}, port => PeerPort}],
+            channels => Channels,
+            parallelism => Parallelism
+        }]
+    ),
+    ok.
+
 
 %% @private
 stop(Nodes) ->
