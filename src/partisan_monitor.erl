@@ -553,7 +553,7 @@ subscribe_to_node_status() ->
         true ->
             case net_kernel:monitor_nodes(true) of
                 ok ->
-                    ok;
+                    true;
                 error ->
                     error({monitor_nodes_failed, unknown});
                 {error, Reason} ->
