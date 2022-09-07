@@ -229,7 +229,7 @@ call(Process, Label, Request, Timeout) when is_pid(Process),
     do_call(Process, Label, Request, Timeout);
 call(Process, Label, Request, Timeout)
   when Timeout =:= infinity; is_integer(Timeout), Timeout >= 0 ->
-    Fun = fun(Pid) -> do_call(Pid, Label, Request, Timeout) end,
+    Fun = fun(Arg) -> do_call(Arg, Label, Request, Timeout) end,
     do_for_proc(Process, Fun).
 
 -dialyzer({no_improper_lists, do_call/4}).
