@@ -117,7 +117,9 @@ stop() ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc
+%% @doc Returns a new partisan_remote_ref.
+%% This is the same as calling
+%% `partisan_remote_ref:from_term(erlang:make_ref())'.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec make_ref() -> partisan_remote_ref:r().
@@ -128,6 +130,8 @@ make_ref() ->
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the partisan encoded pid for the calling process.
+%% This is the same as calling
+%% `partisan_remote_ref:from_term(erlang:self())'.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec self() -> partisan_remote_ref:p().
@@ -137,7 +141,7 @@ self() ->
 
 
 %% -----------------------------------------------------------------------------
-%% @deprecated
+%% @deprecated Use monitor/2 instead.
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
@@ -146,16 +150,15 @@ monitor(Term) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc
-%%
-%% When you attempt to monitor a remote reference using Partisan (disterl
-%% is disabled), it is not guaranteed that you will receive the DOWN message. A
-%% few reasons for not receiving the message are message loss, tree
-%% reconfiguration and the node is no longer reachable.
+%% @doc Sends a monitor request of type `Type' to the entity identified by
+%% `Item'. If the monitored entity does not exist or it changes monitored
+%% state, the caller of `monitor/2' is notified by a message on the following
+%% format:
+%% `{Tag, MonitorRef, Type, Object, Info}'
 %%
 %% This is the Partisan's equivalent to {@link erlang:monitor/2}.
 %%
-%% Failure: `notalive' if the partisan_monitor process is not alive.
+%% Failure: `notalive' if the `partisan_monitor' server is not alive.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec monitor
@@ -166,21 +169,35 @@ monitor(Term) ->
     (time_offset, clock_service) ->
         reference() | no_return().
 
-monitor(Type, Term) ->
-    monitor(Type, Term, []).
+monitor(Type, Item) ->
+    monitor(Type, Item, []).
 
 
 %% -----------------------------------------------------------------------------
-%% @doc
+%% @doc Sends a monitor request of type `Type' to the entity identified by
+%% `Item'. If the monitored entity does not exist or it changes monitored
+%% state, the caller of `monitor/2' is notified by a message on the following
+%% format:
 %%
-%% When you attempt to monitor a remote reference using Partisan (disterl
-%% is disabled), it is not guaranteed that you will receive the DOWN message. A
-%% few reasons for not receiving the message are message loss, tree
-%% reconfiguration and the node is no longer reachable.
+%% `{Tag, MonitorRef, Type, Object, Info}'
 %%
-%% This is the Partisan's equivalent to {@link erlang:monitor/3}.
+%% This is the Partisan's equivalent to {@link erlang:monitor/2}. It differs
+%% from the Erlang implementation only when monitoring a `process'. For all
+%% other cases (monitoring a `port' or `time_offset') this function calls
+%% `erlang:monitor/2'.
 %%
-%% Failure: `notalive' if the partisan_monitor process is not alive.
+%% === Monitoring a `process` ===
+%% Creates monitor between the current process and another process identified
+%% by Item, which can be a `pid()' (local or remote), an atom `RegisteredName'
+%% or a tuple `{RegisteredName, Node}'' for a registered process, located
+%% elsewhere.
+%%
+%% In the case of a local `pid()' or a remote `pid()'
+%% A process monitor by name resolves the `RegisteredName' to `pid()' or
+%% `port()' only once at the moment of monitor instantiation, later changes to
+%% the name registration will not affect the existing monitor.
+%%
+%% Failure: `notalive' if the `partisan_monitor' server is not alive.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec monitor
@@ -192,22 +209,23 @@ monitor(Type, Term) ->
         reference() | no_return().
 
 
-monitor(process, {Name, Node} = RegPid, Opts) ->
+monitor(process, {RegisteredName, Node} = RegPid, Opts) ->
     case partisan_config:get(connect_disterl) orelse partisan:node() == Node of
         true ->
             erlang:monitor(process, RegPid, Opts);
         false ->
-            Ref = partisan_remote_ref:from_term(Name, Node),
+            Ref = partisan_remote_ref:from_term(RegisteredName, Node),
             partisan_monitor:monitor(Ref, Opts)
     end;
 
 monitor(process, Term, Opts) when erlang:is_pid(Term) orelse is_atom(Term) ->
     erlang:monitor(process, Term, Opts);
 
-monitor(process, Ref, Opts) ->
-    partisan_monitor:monitor(Ref, Opts);
+monitor(process, RemoteRef, Opts)
+when is_tuple(RemoteRef) orelse is_binary(RemoteRef) ->
+    partisan_monitor:monitor(RemoteRef, Opts);
 
-monitor(Type, Term, Opts) ->
+monitor(Type, Term, Opts) when Type == port orelse Type == time_offset ->
     erlang:monitor(Type, Term, Opts).
 
 
