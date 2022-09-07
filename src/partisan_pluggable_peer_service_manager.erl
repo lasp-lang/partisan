@@ -807,7 +807,7 @@ handle_call({sync_join, #{name := Node} = NodeSpec}, From, State0) ->
         false ->
             %% Perform join.
             State = internal_join(NodeSpec, From, State0),
-            {noreply, State}
+            {reply, ok, State}
     end;
 
 handle_call({send_message, Node, Channel, Message}, _From, #state{} = State) ->
