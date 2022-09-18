@@ -83,7 +83,7 @@ start(Case, Config, Options) ->
         debug("Loading applications on node: ~p", [Node]),
 
         PrivDir = code:priv_dir(?APP),
-        NodeDir = filename:join([PrivDir, "lager", Node]),
+        NodeDir = filename:join([PrivDir, "logger", Node]),
 
         %% Manually force sasl loading, and disable the logger.
         ok = rpc:call(Node, application, load, [sasl]),
