@@ -5,7 +5,7 @@
 Partisan is a flexible, TCP-based membership system and distribution layer for the BEAM. It bypasses the use of Distributed Erlang for manual connection management via TCP, and has several pluggable backends for different deployment scenarios.
 
 
-Partisan features:
+## Partisan features
 
 * Erlang-like API
 * OTP compliance: Partisan offers re-implementations of `gen_server` and `gen_statem`.
@@ -30,7 +30,7 @@ Partisan has many available backends a.k.a peer service managers:
 
 
 ## Documentation
-Find the documentation at [hex.pm](htts://hex.pm).
+Find the documentation at [hex.pm](https://hex.pm).
 
 Alternatively you can build it yourself locally using `make docs`.
 
