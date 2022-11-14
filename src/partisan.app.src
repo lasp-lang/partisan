@@ -1,6 +1,6 @@
 {application, partisan, [
     {description,
-        "Scalable and flexible TCP-based membership system for Erlang/Elixir."
+        "Partisan is a scalable and flexible, TCP-based membership system and distribution layer for the BEAM."
     },
     {vsn, "5.0.0-beta.11"},
     {registered, []},
@@ -19,7 +19,6 @@
     {env, []},
     {licenses, ["Apache-2.0"]},
     {links, [
-        {"Github","https://github.com/lasp-lang/partisan"},
-        {"Github","https://github.com/aramallo/partisan"}
+        {"Github","https://github.com/lasp-lang/partisan"}
     ]}
 ]}.
