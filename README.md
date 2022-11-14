@@ -30,7 +30,7 @@ Partisan has many available backends a.k.a peer service managers:
 
 
 ## Documentation
-Find the documentation at [hex.pm](htts://hex.pm].
+Find the documentation at [hex.pm](htts://hex.pm).
 
 Alternatively you can build it yourself locally using `make docs`.
 
