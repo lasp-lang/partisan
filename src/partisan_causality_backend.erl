@@ -145,7 +145,7 @@ handle_call({emit, Node, ServerRef, Message},
     %% Update the order buffer with node and message clock.
     OrderBuffer = orddict:store(Node, LocalClock, OrderBuffer0),
 
-    %% Everytime we omit a message, store the clock and message so we can regenerate the message.
+    %% Every time we omit a message, store the clock and message so we can regenerate the message.
     true = ets:insert(Storage, {LocalClock, CausalMessage}),
 
     ?LOG_DEBUG(#{
@@ -157,7 +157,7 @@ handle_call({emit, Node, ServerRef, Message},
 
     {reply, {ok, LocalClock, CausalMessage}, State};
 
-%% Receive a causal messag off the wire; deliver or not depending on whether or not
+%% Receive a causal message off the wire; deliver or not depending on whether or not
 %% the causal dependencies have been satisfied.
 handle_call({receive_message, {causal, Label, _Node, _ServerRef, _IncomingOrderBuffer, MessageClock, _Message}=FullMessage},
             _From,

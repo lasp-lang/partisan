@@ -2140,7 +2140,7 @@ hyparview_membership_check(Nodes) ->
             {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
             Active = sets:to_list(ActiveSet),
 
-            %% Add vertexes and edges.
+            %% Add vertices and edges.
             [?SUPPORT:connect(Graph, Node, N) || #{name := N} <- Active]
          end,
     %% Build a digraph representing the membership
@@ -2373,7 +2373,7 @@ hyparview_xbot_membership_check(Nodes) ->
             {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
             Active = sets:to_list(ActiveSet),
 
-            %% Add vertexes and edges.
+            %% Add vertices and edges.
             [?SUPPORT:connect(Graph, Node, N) || #{name := N} <- Active]
          end,
     %% Build a digraph representing the membership

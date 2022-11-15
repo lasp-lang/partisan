@@ -104,7 +104,7 @@ partisan_analysis(Tree) ->
 
 	%% Run a forward interprocedural analysis beginning from the receive points
 	%% to establish the causal relationships between messages.
-	io:format("Performing interprocedural analysis from receieve points.~n", []),
+	io:format("Performing interprocedural analysis from receive points.~n", []),
 	MessageEntryPoints = [{handle_info,2},{handle_call,3},{handle_cast,2}],
 	FinalResults = lists:foldl(fun(EntryPoint, Acc) ->
 		case dict:find(EntryPoint, NamesToFunctions) of
@@ -1024,7 +1024,7 @@ generate_names_to_functions(StartFun) ->
 						case length(Anns) >= 3 of
 							true ->
 								%% Variable that represents the usage of a function in a function body.
-								% io:format("***** ignoring variable as it's a body occurence ~p~n", [N]),
+								% io:format("***** ignoring variable as it's a body occurrence ~p~n", [N]),
 								{N2Fs, CandidateTree, CandidateLabel, CandidateAnns};
 							false ->
 								%% Match!

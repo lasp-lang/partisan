@@ -168,7 +168,7 @@ equal(VA, VB) ->
 sort(Clock) ->
     lists:sort(Clock).
 
-%% @doc an effecient format for disk / wire.
+%% @doc an efficient format for disk / wire.
 %5 @see from_binary/1
 -spec to_binary(vclock()) -> binary_vclock().
 to_binary(Clock) ->

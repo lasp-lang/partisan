@@ -274,7 +274,7 @@ analyze(Pass, NumPassed0, NumFailed0, NumPruned0, PreloadOmissionFile, ReplayTra
                                     %% Once we start omitting, omit everything after that's a message
                                     %% send because we don't know what might be coming. In 2PC, if we
                                     %% have a successful trace and omit a prepare -- we can't be guaranteed
-                                    %% to ever see a prepare vote or commmit.
+                                    %% to ever see a prepare vote or commit.
                                     case InterpositionType of 
                                         forward_message ->
                                             case lists:member(Line, Omissions) of 
@@ -820,7 +820,7 @@ execute_schedule(PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {I
                         _ ->
                             %% This failed.
                             io:format("Test FAILED!~n", []),
-                            % io:format("Failing test contained the following omitted mesage types: ~p~n", [Omissions]),
+                            % io:format("Failing test contained the following omitted message types: ~p~n", [Omissions]),
 
                             OmissionTypes = message_types(Omissions),
                             io:format("=> OmissionTypes: ~p~n", [OmissionTypes]),

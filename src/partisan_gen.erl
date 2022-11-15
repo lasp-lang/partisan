@@ -396,7 +396,7 @@ reply({To, Tag}, Reply) ->
 
 
 %%-----------------------------------------------------------------
-%% Syncronously stop a generic process
+%% Synchronously stop a generic process
 %%-----------------------------------------------------------------
 stop(Process) ->
     stop(Process, normal, infinity).
