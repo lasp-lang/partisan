@@ -18,10 +18,12 @@
 %%
 %% -------------------------------------------------------------------
 
--module(partisan_socket).
+-module(partisan_acceptor_socket).
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -behaviour(gen_server).
+
+-include("partisan_logger.hrl").
 
 %% public api
 
@@ -56,7 +58,7 @@ init([PeerIP, PeerPort]) ->
             ok = maybe_update_port_config(PeerIP, PeerPort, Socket),
             % acceptor could close the socket if there is a problem
             MRef = monitor(port, Socket),
-            partisan_pool:accept_socket(Socket, AcceptorPoolSize),
+            partisan_acceptor_pool:accept_socket(Socket, AcceptorPoolSize),
             {ok, {Socket, MRef}};
         {error, Reason} ->
             {stop, Reason}
@@ -86,8 +88,11 @@ terminate(_, {Socket, _MRef}) ->
 maybe_update_port_config(PeerIP, 0, Socket) ->
     case inet:sockname(Socket) of
         {ok, {_IPAddress, Port}} ->
-            lager:info("partisan listening on peer ~p, system allocated port ~p",
-                       [PeerIP, Port]),
+            ?LOG_INFO(#{
+                description => "Partisan listening",
+                ip_address => PeerIP,
+                port_number => Port
+            }),
             partisan_config:set(peer_port, Port),
             % search the listen addrs map for the provided ip Address
             % and update the port key

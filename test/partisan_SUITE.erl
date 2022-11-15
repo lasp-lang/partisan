@@ -22,7 +22,12 @@
 -module(partisan_SUITE).
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+
+-include_lib("common_test/include/ct.hrl").
+-include_lib("eunit/include/eunit.hrl").
+-include_lib("kernel/include/inet.hrl").
 -include("partisan.hrl").
+-include("partisan_logger.hrl").
 
 %% common_test callbacks
 -export([%% suite/0,
@@ -37,13 +42,10 @@
 %% tests
 -compile([export_all]).
 
--include_lib("common_test/include/ct.hrl").
--include_lib("eunit/include/eunit.hrl").
--include_lib("kernel/include/inet.hrl").
-
 -define(TIMEOUT, 10000).
 -define(CLIENT_NUMBER, 3).
 -define(HIGH_CLIENT_NUMBER, 10).
+-define(PAUSE_FOR_CLUSTERING, timer:sleep(5000)).
 
 %% ==================================================================
 %% common_test callbacks
@@ -66,7 +68,7 @@ end_per_testcase(Case, _Config) ->
     _Config.
 
 init_per_group(with_disterl, Config) ->
-    [{disterl, true}] ++ Config;
+    [{connect_disterl, true}] ++ Config;
 init_per_group(with_scamp_v1_membership_strategy, Config) ->
     [{membership_strategy, partisan_scamp_v1_membership_strategy}] ++ Config;
 init_per_group(with_scamp_v2_membership_strategy, Config) ->
@@ -169,7 +171,7 @@ all() ->
      {group, with_channels, [parallel]},
 
      {group, with_no_channels, [parallel]},
-     
+
      {group, with_monotonic_channels, [parallel]},
 
      %% Debug.
@@ -198,27 +200,29 @@ groups() ->
       ]},
 
      {simple, [],
-      [basic_test,
-       leave_test,
-       self_leave_test,
-       on_down_test,
-       rpc_test,
-       client_server_manager_test,
-       pid_test,
-       rejoin_test,
-       transform_test,
-       otp_test]},
-       
+      [
+        basic_test,
+        leave_test,
+        self_leave_test,
+        on_down_test,
+        rpc_test,
+        client_server_manager_test,
+        pid_test,
+        rejoin_test,
+        transform_test,
+        otp_test
+    ]},
+
      {hyparview, [],
-      [ 
+      [
        hyparview_manager_partition_test,
        hyparview_manager_high_active_test,
        %% hyparview_manager_low_active_test,
        hyparview_manager_high_client_test
       ]},
-       
+
      {hyparview_xbot, [],
-      [ 
+      [
        %% hyparview_xbot_manager_high_active_test,
        %% hyparview_xbot_manager_low_active_test,
        %% hyparview_xbot_manager_high_client_test
@@ -245,7 +249,7 @@ groups() ->
 
      {with_causal_send, [],
       [basic_test]},
-     
+
      {with_causal_send_and_ack, [],
       [basic_test]},
 
@@ -272,7 +276,7 @@ groups() ->
 
      {with_partisan_bypass_pid_encoding, [],
       [performance_test]},
-     
+
      {with_channels, [],
       [basic_test,
        rpc_test
@@ -327,14 +331,17 @@ transform_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Test on_down callback.
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
 
     %% Generate message.
     Message = message,
+
+    % @TODO REVIEW why do we need this check here, pid_encoding is configured
+    % in the nodes, not here.
+    % ?assert(partisan_config:get(pid_encoding)),
 
     %% Verify local send transformation.
     case rpc:call(Node3, partisan_transformed_module, local_send, [Message]) of
@@ -346,7 +353,7 @@ transform_test(Config) ->
 
     %% Get process identifier
     case rpc:call(Node3, partisan_transformed_module, get_pid, []) of
-        {partisan_remote_reference, _, _} = Node3Pid1 ->
+        {partisan_remote_ref, _, _} = Node3Pid1 ->
             case rpc:call(Node3, partisan_transformed_module, send_to_pid, [Node3Pid1, Message]) of
                 Message ->
                     ok;
@@ -366,12 +373,12 @@ transform_test(Config) ->
         %% Send Node3 process to the runner.
         RunnerPid ! OurPid,
 
-        %% Wait for message from Node4 at Node3. 
+        %% Wait for message from Node4 at Node3.
         receive
             Message ->
                 %% Tell runner that we finished.
                 RunnerPid ! finished
-        after 
+        after
             1000 ->
                 ct:fail("Didn't receive message in time.")
         end
@@ -379,18 +386,18 @@ transform_test(Config) ->
     _ = rpc:call(Node3, erlang, spawn, [GetPidFunction]),
 
     receive
-        {partisan_remote_reference, _, _} = Node3Pid2 ->
+        {partisan_remote_ref, _, _} = Node3Pid2 ->
             rpc:call(Node4, partisan_transformed_module, send_to_pid, [Node3Pid2, Message])
     after
-        1000 ->
+        3000 ->
             ct:fail("Received no proper response!")
     end,
 
     receive
         finished ->
             ok
-    after 
-        1000 ->
+    after
+        3000 ->
             ct:fail("Never received a response.")
     end,
 
@@ -415,8 +422,7 @@ causal_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Test on_down callback.
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
@@ -447,7 +453,7 @@ causal_test(Config) ->
 
     %% Attempt to deliver message2.
     ok = rpc:call(Node4, partisan_causality_backend, receive_message, [Label, FullMessage2]),
-    
+
     %% Message2 reception.
     receive
         Message2 ->
@@ -501,14 +507,13 @@ receive_interposition_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Test on_down callback.
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
 
     %% Set message filter.
-    InterpositionFun = 
+    InterpositionFun =
         fun({receive_message, N, M}) ->
             case N of
                 Node3 ->
@@ -516,11 +521,11 @@ receive_interposition_test(Config) ->
                 _ ->
                     M
             end;
-            ({_, _, M}) -> 
+            ({_, _, M}) ->
                 M
     end,
     ok = rpc:call(Node4, Manager, add_interposition_fun, [Node3, InterpositionFun]),
-    
+
     %% Spawn receiver process.
     Message1 = message1,
     Message2 = message2,
@@ -528,7 +533,7 @@ receive_interposition_test(Config) ->
     Self = self(),
 
     ReceiverFun = fun() ->
-        receive 
+        receive
             X ->
                 Self ! X
         end
@@ -537,13 +542,18 @@ receive_interposition_test(Config) ->
     true = rpc:call(Node4, erlang, register, [receiver, Pid]),
 
     %% Send message.
-    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message1, []]),
+    ok = rpc:call(
+        Node3,
+        Manager,
+        forward_message,
+        [Node4, receiver, Message1, []]
+    ),
 
     %% Wait to receive message.
     receive
         Message1 ->
             ct:fail("Received message we shouldn't have!")
-    after 
+    after
         1000 ->
             ok
     end,
@@ -552,7 +562,12 @@ receive_interposition_test(Config) ->
     ok = rpc:call(Node4, Manager, remove_interposition_fun, [Node3]),
 
     %% Send message.
-    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message2, []]),
+    ok = rpc:call(
+        Node3,
+        Manager,
+        forward_message,
+        [Node4, receiver, Message2, []]
+    ),
 
     %% Wait to receive message.
     receive
@@ -560,7 +575,7 @@ receive_interposition_test(Config) ->
             ct:fail("Received message we shouldn't have!");
         Message2 ->
             ok
-    after 
+    after
         1000 ->
             ct:fail("Didn't receive message we should have!")
     end,
@@ -586,14 +601,13 @@ ack_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Test on_down callback.
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
 
     %% Set message filter.
-    InterpositionFun = 
+    InterpositionFun =
         fun({forward_message, N, M}) ->
             case N of
                 Node4 ->
@@ -601,18 +615,18 @@ ack_test(Config) ->
                 _ ->
                     M
             end;
-            ({_, _, M}) -> 
+            ({_, _, M}) ->
                 M
     end,
     ok = rpc:call(Node3, Manager, add_interposition_fun, [Node4, InterpositionFun]),
-    
+
     %% Spawn receiver process.
     Message1 = message1,
 
     Self = self(),
 
     ReceiverFun = fun() ->
-        receive 
+        receive
             X ->
                 Self ! X
         end
@@ -621,13 +635,23 @@ ack_test(Config) ->
     true = rpc:call(Node4, erlang, register, [receiver, Pid]),
 
     %% Send message.
-    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message1, [{ack, true}]]),
+    ok = rpc:call(
+        Node3,
+        Manager,
+        forward_message,
+        [
+            Node4,
+            receiver,
+            Message1,
+            [{ack, true}]
+        ]
+    ),
 
     %% Wait to receive message.
     receive
         Message1 ->
             ct:fail("Received message we shouldn't have!")
-    after 
+    after
         1000 ->
             ok
     end,
@@ -639,7 +663,7 @@ ack_test(Config) ->
     receive
         Message1 ->
             ok
-    after 
+    after
         2000 ->
             ct:fail("Didn't receive message we should have!")
     end,
@@ -668,14 +692,13 @@ forward_interposition_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Test on_down callback.
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
 
     %% Set message filter.
-    InterpositionFun = 
+    InterpositionFun =
         fun({forward_message, N, M}) ->
             case N of
                 Node4 ->
@@ -683,11 +706,11 @@ forward_interposition_test(Config) ->
                 _ ->
                     M
             end;
-            ({_, _, M}) -> 
+            ({_, _, M}) ->
                 M
     end,
     ok = rpc:call(Node3, Manager, add_interposition_fun, [Node4, InterpositionFun]),
-    
+
     %% Spawn receiver process.
     Message1 = message1,
     Message2 = message2,
@@ -695,7 +718,7 @@ forward_interposition_test(Config) ->
     Self = self(),
 
     ReceiverFun = fun() ->
-        receive 
+        receive
             X ->
                 Self ! X
         end
@@ -704,13 +727,18 @@ forward_interposition_test(Config) ->
     true = rpc:call(Node4, erlang, register, [receiver, Pid]),
 
     %% Send message.
-    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message1, []]),
+    ok = rpc:call(
+        Node3,
+        Manager,
+        forward_message,
+        [Node4, receiver, Message1, []]
+    ),
 
     %% Wait to receive message.
     receive
         Message1 ->
             ct:fail("Received message we shouldn't have!")
-    after 
+    after
         1000 ->
             ok
     end,
@@ -719,7 +747,12 @@ forward_interposition_test(Config) ->
     ok = rpc:call(Node3, Manager, remove_interposition_fun, [Node4]),
 
     %% Send message.
-    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message2, []]),
+    ok = rpc:call(
+        Node3,
+        Manager,
+        forward_message,
+        [Node4, receiver, Message2, []]
+    ),
 
     %% Wait to receive message.
     receive
@@ -727,7 +760,7 @@ forward_interposition_test(Config) ->
             ct:fail("Received message we shouldn't have!");
         Message2 ->
             ok
-    after 
+    after
         1000 ->
             ct:fail("Didn't receive message we should have!")
     end,
@@ -753,8 +786,7 @@ pid_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Test on_down callback.
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
@@ -763,7 +795,7 @@ pid_test(Config) ->
     Self = self(),
 
     ReceiverFun = fun() ->
-        receive 
+        receive
             X ->
                 Self ! X
         end
@@ -773,7 +805,9 @@ pid_test(Config) ->
 
     %% Send message.
     SenderFun = fun() ->
-        ok = Manager:forward_message(Node4, undefined, receiver, {message, self()}, []),
+        ok = Manager:forward_message(
+            Node4, receiver, {message, self()}, []
+        ),
 
         %% Process must stay alive to send the pid.
         receive
@@ -788,10 +822,10 @@ pid_test(Config) ->
         {message, Pid} when is_pid(Pid) ->
             ct:fail("Received incorrect message!");
         {message, GenSym} = Message ->
-            lager:info("Received correct message: ~p", [Message]),
+            ?LOG_DEBUG("Received correct message: ~p", [Message]),
             ok = rpc:call(Node4, Manager, forward_message, [GenSym, Message]),
             ok
-    after 
+    after
         1000 ->
             ct:fail("Didn't receive message!")
     end,
@@ -826,15 +860,14 @@ rpc_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(5000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Select two of the nodes.
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
 
     %% Issue RPC.
     ct:pal("Issuing RPC to remote node: ~p", [Node4]),
-    {_, _, _} = rpc:call(Node3, partisan_rpc_backend, call, [Node4, erlang, now, [], infinity]),
+    {_, _, _} = rpc:call(Node3, partisan_rpc, call, [Node4, erlang, now, [], infinity]),
 
     %% Stop nodes.
     ?SUPPORT:stop(Nodes),
@@ -857,8 +890,7 @@ on_down_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Test on_down callback.
     [{_, _}, {_, _}, {Name3, Node3}, {_, Node4}] = Nodes,
@@ -878,7 +910,7 @@ on_down_test(Config) ->
     receive
         down ->
             ok
-    after 
+    after
         ?TIMEOUT ->
             ct:fail("Didn't receive down callback.")
     end,
@@ -909,12 +941,12 @@ rejoin_test(Config) ->
             NodeToLeave = lists:nth(length(Nodes), Nodes),
             ct:pal("Verifying leave for ~p", [NodeToLeave]),
             verify_leave(NodeToLeave, Nodes, Manager),
-            
+
             %% Join a node from the cluster.
             [{_, _}, {_, Node2}, {_, _}, {_, Node4}] = Nodes,
             ct:pal("Joining node ~p to the cluster.", [Node4]),
             ok = rpc:call(Node2, partisan_peer_service, join, [Node4]),
-            
+
             %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
             timer:sleep(?OVERRIDE_PERIODIC_INTERVAL * length(Nodes) + ?OVERRIDE_PERIODIC_INTERVAL),
 
@@ -933,7 +965,7 @@ rejoin_test(Config) ->
                         true ->
                             true;
                         false ->
-                            ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
+                            ct:pal("Membership incorrect; node ~p should have ~p ~nbut has ~p",
                                 [Node, SortedNodes, SortedMembers]),
                             {false, {Node, SortedNodes, SortedMembers}}
                     end
@@ -947,7 +979,7 @@ rejoin_test(Config) ->
                                     ok ->
                                         ok;
                                     {fail, {false, {IncorrectNode, Expected, Contains}}} ->
-                                        ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
+                                        ct:fail("Membership incorrect; node ~p should have ~p ~nbut has ~p",
                                                 [IncorrectNode, Expected, Contains])
                                 end
                         end, Nodes),
@@ -1042,8 +1074,7 @@ performance_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     [{_, Node1}, {_, Node2}] = Nodes,
 
@@ -1078,7 +1109,7 @@ performance_test(Config) ->
         P ->
             P
     end,
-        
+
     NumMessages = 1000,
     BenchPid = self(),
     BytesSize = Size * 1024,
@@ -1119,7 +1150,7 @@ performance_test(Config) ->
     ResultsFile = RootDir ++ "results.csv",
     ct:pal("Writing results to: ~p", [ResultsFile]),
     {ok, FileHandle} = file:open(ResultsFile, [append]),
-    Backend = case rpc:call(Node1, partisan_config, get, [disterl]) of
+    Backend = case rpc:call(Node1, partisan_config, get, [connect_disterl]) of
         true ->
             disterl;
         _ ->
@@ -1161,8 +1192,7 @@ gossip_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
@@ -1185,7 +1215,7 @@ gossip_test(Config) ->
     ReceiverFun = fun() ->
         receive
             hello ->
-                lager:info("received value from gossip receiver", []),
+                ?LOG_DEBUG("received value from gossip receiver", []),
                 Self ! hello
         end
     end,
@@ -1237,8 +1267,7 @@ connectivity_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
@@ -1269,13 +1298,16 @@ otp_test(Config) ->
     Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
 
     %% Start nodes.
-    Nodes = ?SUPPORT:start(otp_test, Config,
-                  [{partisan_peer_service_manager, Manager},
-                   {servers, Servers},
-                   {clients, Clients}]),
+    Nodes = ?SUPPORT:start(
+        otp_test, Config, [
+            {partisan_peer_service_manager, Manager},
+            {servers, Servers},
+            {clients, Clients}
+        ]
+    ),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
+
 
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %% gen_server tests.
@@ -1288,26 +1320,51 @@ otp_test(Config) ->
 
     %% Ensure that a regular call works.
     [{_, FirstName}, {_, SecondName} | _] = Nodes,
-    ok = rpc:call(FirstName, partisan_gen_server, call, [{partisan_test_server, SecondName}, call, 1000]),
+
+
+    ?assertEqual(
+        ok,
+        rpc:call(
+            FirstName,
+            partisan_gen_server, call,
+            [{partisan_test_server, SecondName}, call, 5000]
+        )
+    ),
 
     %% Ensure that a regular call with delayed response works.
     [{_, FirstName}, {_, SecondName} | _] = Nodes,
-    ok = rpc:call(FirstName, partisan_gen_server, call, [{partisan_test_server, SecondName}, delayed_reply_call, 1000]),
+
+    ok = rpc:call(
+        FirstName,
+        partisan_gen_server,
+        call,
+        [{partisan_test_server, SecondName}, delayed_reply_call, 5000]
+    ),
 
     %% Ensure that a cast works.
     Self = self(),
 
     CastReceiverFun = fun() ->
-        receive 
+        receive
             ok ->
                 Self ! ok
         end
     end,
+
     CastReceiverPid = rpc:call(SecondName, erlang, spawn, [CastReceiverFun]),
-    true = rpc:call(SecondName, erlang, register, [cast_receiver, CastReceiverPid]),
+
+    true = rpc:call(
+        SecondName, erlang, register, [cast_receiver, CastReceiverPid]
+    ),
 
     [{_, FirstName}, {_, SecondName} | _] = Nodes,
-    ok = rpc:call(FirstName, partisan_gen_server, cast, [{partisan_test_server, SecondName}, {cast, cast_receiver}]),
+
+    ok = rpc:call(
+        FirstName,
+        partisan_gen_server,
+        cast,
+        [{partisan_test_server, SecondName}, {cast, cast_receiver}]
+    ),
 
     receive
         ok ->
@@ -1315,7 +1372,7 @@ otp_test(Config) ->
         Other ->
             error_logger:format("Received invalid response: ~p", [Other]),
             ct:fail({error, wrong_message})
-    after 
+    after
         1000 ->
             ct:fail({error, no_message})
     end,
@@ -1341,8 +1398,7 @@ forward_delay_interposition_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Test on_down callback.
     [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
@@ -1354,13 +1410,13 @@ forward_delay_interposition_test(Config) ->
     %% Set message filter.
     InterpositionFun = fun
             ({forward_message, _N, M}) ->
-                case M of 
+                case M of
                     Message1 ->
                         {'$delay', Message2};
                     _ ->
                         M
                 end;
-            ({_, _, M}) -> 
+            ({_, _, M}) ->
                 M
     end,
     ok = rpc:call(Node3, Manager, add_interposition_fun, [Node4, InterpositionFun]),
@@ -1369,7 +1425,7 @@ forward_delay_interposition_test(Config) ->
     Self = self(),
 
     ReceiverFun = fun() ->
-        receive 
+        receive
             X ->
                 Self ! X
         end
@@ -1378,7 +1434,9 @@ forward_delay_interposition_test(Config) ->
     true = rpc:call(Node4, erlang, register, [receiver, Pid]),
 
     %% Send message.
-    ok = rpc:call(Node3, Manager, forward_message, [Node4, undefined, receiver, Message1, []]),
+    ok = rpc:call(
+        Node3, Manager, forward_message, [Node4, receiver, Message1, []]
+    ),
 
     %% Wait to receive message.
     receive
@@ -1386,7 +1444,7 @@ forward_delay_interposition_test(Config) ->
             ct:fail("Received message we shouldn't have!");
         Message2 ->
             ct:pal("Received correct message!")
-    after 
+    after
         1000 ->
             ok
     end,
@@ -1412,8 +1470,7 @@ basic_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Verify membership.
     %%
@@ -1427,24 +1484,29 @@ basic_test(Config) ->
                 true ->
                     true;
                 false ->
-                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
-                           [Node, SortedNodes, SortedMembers]),
+                    ct:pal(
+                        "Membership incorrect; node ~p should have ~p ~nbut has ~p",
+                        [Node, SortedNodes, SortedMembers]
+                    ),
                     {false, {Node, SortedNodes, SortedMembers}}
             end
     end,
 
     %% Verify the membership is correct.
-    lists:foreach(fun(Node) ->
-                          VerifyNodeFun = fun() -> VerifyFun(Node) end,
+    lists:foreach(
+        fun(Node) ->
+            VerifyNodeFun = fun() -> VerifyFun(Node) end,
 
-                          case wait_until(VerifyNodeFun, 60 * 2, 100) of
-                              ok ->
-                                  ok;
-                              {fail, {false, {Node, Expected, Contains}}} ->
-                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
-                                         [Node, Expected, Contains])
-                          end
-                  end, Nodes),
+            case wait_until(VerifyNodeFun, 60 * 2, 100) of
+                ok ->
+                    ok;
+                {fail, {false, {Node, Expected, Contains}}} ->
+                    ct:fail("Membership incorrect; node ~p should have ~p ~nbut has ~p",
+                            [Node, Expected, Contains])
+            end
+        end,
+        Nodes
+    ),
 
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
@@ -1459,63 +1521,61 @@ basic_test(Config) ->
     ConfigChannels = proplists:get_value(channels, Config, ?CHANNELS),
     ct:pal("Configured channels: ~p", [ConfigChannels]),
 
-    ConnectionsFun = fun(Node) ->
-                             Connections = rpc:call(Node,
-                                      ?DEFAULT_PEER_SERVICE_MANAGER,
-                                      connections,
-                                      []),
-                             %% ct:pal("Connections: ~p~n", [Connections]),
-                             Connections
-                     end,
-
+    %% Verify we have enough connections.
     VerifyConnectionsFun = fun(Node, Channel, Parallelism) ->
-                                %% Get list of connections.
-                                {ok, Connections} = ConnectionsFun(Node),
 
-                                %% Verify we have enough connections.
-                                dict:fold(fun(_N, Active, Acc) ->
-                                    Filtered = lists:filter(fun({_, C, _}) -> 
-                                        case C of
-                                            Channel ->
-                                                true;
-                                            _ ->
-                                                false
-                                        end
-                                    end, Active),
+        FoldFun = fun(_NodeSpec, NodeConnections, Acc) ->
+            ChannelConnections = lists:filter(
+                fun(C) ->
+                    partisan_peer_connections:channel(C)
+                    == Channel
+                end,
+                NodeConnections
+            ),
 
-                                    case length(Filtered) == Parallelism of
-                                        true ->
-                                            Acc andalso true;
-                                        false ->
-                                            Acc andalso false
-                                    end
-                                end, true, Connections)
-                          end,
+            case length(ChannelConnections) == Parallelism of
+                true ->
+                    Acc andalso true;
+                false ->
+                    Acc andalso false
+            end
+        end,
 
-    lists:foreach(fun({_Name, Node}) ->
-                        %% Get enabled parallelism.
-                        Parallelism = rpc:call(Node, partisan_config, get, [parallelism, ?PARALLELISM]),
-                        ct:pal("Parallelism is: ~p", [Parallelism]),
+        rpc:call(Node, partisan_peer_connections, fold, [FoldFun, true])
 
-                        %% Get enabled channels.
-                        Channels = rpc:call(Node, partisan_config, get, [channels, ?CHANNELS]),
-                        ct:pal("Channels are: ~p", [Channels]),
+    end,
 
-                        lists:foreach(fun(Channel) ->
-                            %% Generate fun.
-                            VerifyConnectionsNodeFun = fun() ->
-                                                            VerifyConnectionsFun(Node, Channel, Parallelism)
-                                                    end,
+    lists:foreach(
+        fun({_Name, Node}) ->
+            %% Get enabled parallelism.
+            Parallelism = rpc:call(
+                Node, partisan_config, get, [parallelism, ?PARALLELISM]
+            ),
+            ct:pal("Parallelism is: ~p", [Parallelism]),
 
-                            %% Wait until connections established.
-                            case wait_until(VerifyConnectionsNodeFun, 60 * 2, 100) of
-                                ok ->
-                                    ok;
-                                _ ->
-                                    ct:fail("Not enough connections have been opened; need: ~p", [Parallelism])
-                            end
-                        end, Channels)
-                  end, Nodes),
+            %% Get enabled channels.
+            Channels = rpc:call(
+                Node, partisan_config, get, [channels, ?CHANNELS]
+            ),
+            ct:pal("Channels are: ~p", [Channels]),
+
+            lists:foreach(fun(Channel) ->
+                %% Generate fun.
+                VerifyConnectionsNodeFun = fun() ->
+                    VerifyConnectionsFun(Node, Channel, Parallelism)
+                end,
+
+                %% Wait until connections established.
+                case wait_until(VerifyConnectionsNodeFun, 60 * 2, 100) of
+                    ok ->
+                        ok;
+                    _ ->
+                        ct:fail("Not enough connections have been opened; need: ~p", [Parallelism])
+                end
+            end, Channels)
+        end,
+        Nodes
+    ),
 
     %% Stop nodes.
     ?SUPPORT:stop(Nodes),
@@ -1539,7 +1599,7 @@ client_server_manager_test(Config) ->
                    {clients, Clients}]),
 
     %% Pause for clustering.
-    timer:sleep(1000),
+    timer:sleep(10000),
 
     %% Verify membership.
     %%
@@ -1566,7 +1626,11 @@ client_server_manager_test(Config) ->
                 true ->
                     ok;
                 false ->
-                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Nodes, Members])
+                    ct:fail(
+                        "Membership incorrect; node ~p "
+                        "should have ~p ~nbut has ~p",
+                        [Node, Nodes, Members]
+                    )
             end
     end,
 
@@ -1633,7 +1697,7 @@ hyparview_manager_partition_test(Config) ->
 
     %% Inject a partition.
     {_, PNode} = hd(Nodes),
-    PFullNode = rpc:call(PNode, Manager, myself, []),
+    PFullNode = rpc:call(PNode, partisan, node_spec, []),
 
     {ok, Reference} = rpc:call(PNode, Manager, inject_partition, [PFullNode, 1]),
     ct:pal("Partition generated: ~p", [Reference]),
@@ -1659,8 +1723,7 @@ hyparview_manager_partition_test(Config) ->
     ok = rpc:call(PNode, Manager, resolve_partition, [Reference]),
     ct:pal("Partition resolved: ~p", [Reference]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Verify resolved partition.
     ResolveVerifyFun = fun({_Name, Node}) ->
@@ -1894,7 +1957,7 @@ hyparview_manager_high_client_test(Config) ->
                     "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
                     "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
     end,
-    
+
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
                     ok = check_forward_message(Node, Manager, Nodes)
@@ -1933,10 +1996,10 @@ make_certs(Config) ->
     DataDir = ?config(data_dir, Config),
     PrivDir = ?config(priv_dir, Config),
     ct:pal("Generating TLS certificates into ~s", [PrivDir]),
-    MakeCertsFile = filename:join(DataDir, "make_certs.erl"),
-    {ok, make_certs, ModBin} = compile:file(MakeCertsFile, 
-        [binary, debug_info, report_errors, report_warnings]),
-    {module, make_certs} = code:load_binary(make_certs, MakeCertsFile, ModBin),
+    % MakeCertsFile = filename:join(DataDir, "make_certs.erl"),
+    % {ok, make_certs, ModBin} = compile:file(MakeCertsFile,
+    %     [binary, debug_info, report_errors, report_warnings]),
+    % {module, make_certs} = code:load_binary(make_certs, MakeCertsFile, ModBin),
 
     make_certs:all(DataDir, PrivDir),
 
@@ -1955,41 +2018,62 @@ make_certs(Config) ->
 check_forward_message(Node, Manager, Nodes) ->
     Members = ideally_connected_members(Node, Nodes),
 
-    ForwardOptions = rpc:call(Node, partisan_config, get, [forward_options, []]),
+    ForwardOptions = rpc:call(
+        Node, partisan_config, get, [forward_options, []]
+    ),
+
     ct:pal("Using forward options: ~p", [ForwardOptions]),
 
-    lists:foreach(fun(Member) ->
-        Rand = rand:uniform(),
+    lists:foreach(
+        fun(Member) ->
+            Rand = rand:uniform(),
 
-        %% {ok, DirectMembers} = rpc:call(Node, Manager, members, []),
-        %% IsDirect = lists:member(Member, DirectMembers),
-        %% ct:pal("Node ~p is directly connected: ~p; ~p", [Member, IsDirect, DirectMembers]),
+            %% {ok, DirectMembers} = rpc:call(Node, Manager, members, []),
+            %% IsDirect = lists:member(Member, DirectMembers),
+            %% ct:pal("Node ~p is directly connected: ~p; ~p", [Member, IsDirect, DirectMembers]),
 
-        %% now fetch the value from the random destination node
-        case wait_until(fun() ->
-                        ct:pal("Requesting node ~p to forward message ~p to store_proc on node ~p", [Node, Rand, Member]),
-                        ok = rpc:call(Node, Manager, forward_message, [Member, undefined, store_proc, {store, Rand}, ForwardOptions]),
-                        ct:pal("Message dispatched..."),
+            %% now fetch the value from the random destination node
 
-                        ct:pal("Checking ~p for value...", [Member]),
+            Fun = fun() ->
+                ct:pal("Requesting node ~p to forward message ~p to store_proc on node ~p", [Node, Rand, Member]),
+                ok = rpc:call(
+                    Node,
+                    Manager,
+                    forward_message,
+                    [Member, store_proc, {store, Rand}, ForwardOptions]
+                ),
+                ct:pal("Message dispatched..."),
 
-                        %% it must match with what we asked the node to forward
-                        case rpc:call(Member, application, get_env, [partisan, forward_message_test]) of
-                            {ok, R} ->
-                                Test = R =:= Rand,
-                                ct:pal("Received from ~p ~p, should be ~p: ~p", [Member, R, Rand, Test]),
-                                Test;
-                            Other ->
-                                ct:pal("Received other, failing: ~p", [Other]),
-                                false
-                        end
-                end, 60 * 2, 500) of
-            ok ->
-                ok;
-            {fail, false} ->
-                ct:fail("Message delivery failed, Node:~p, Manager:~p, Nodes:~p~n ", [Node, Manager, Nodes])
-        end
-    end, Members -- [Node]),
+                ct:pal("Checking ~p for value...", [Member]),
+
+                %% it must match with what we asked the node to forward
+                Response = rpc:call(
+                    Member,
+                    application,
+                    get_env,
+                    [partisan, forward_message_test]
+                ),
+
+                case Response of
+                    {ok, R} ->
+                        Test = R =:= Rand,
+                        ct:pal("Received from ~p ~p, should be ~p: ~p", [Member, R, Rand, Test]),
+                        Test;
+                    Other ->
+                        ct:pal("Received other, failing: ~p", [Other]),
+                        false
+                end
+            end,
+
+            case wait_until(Fun, 60 * 2, 500) of
+                ok ->
+                    ok;
+                {fail, false} ->
+                    ct:fail("Message delivery failed, Node:~p, Manager:~p, Nodes:~p~n ", [Node, Manager, Nodes])
+            end
+        end,
+        Members -- [Node]
+    ),
 
     ok.
 
@@ -2017,11 +2101,11 @@ wait_until(Fun, Retry, Delay) when Retry > 0 ->
     end.
 
 %% @private
-%% 
+%%
 %% Kill a random node and then return a list of nodes that still have the
 %% killed node in their membership
 %%
-hyparview_check_stopped_member(_, [_Node]) -> 
+hyparview_check_stopped_member(_, [_Node]) ->
     {undefined, []};
 hyparview_check_stopped_member(KilledNode, Nodes) ->
     ct:pal("Killed node ~p.", [KilledNode]),
@@ -2124,7 +2208,7 @@ verify_leave({_, NodeToLeave}, Nodes, Manager) ->
                 true ->
                     true;
                 false ->
-                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
+                    ct:pal("Membership incorrect; node ~p should have ~p ~nbut has ~p",
                            [Node, SortedNodes, SortedMembers]),
                     {false, {Node, SortedNodes, SortedMembers}}
             end
@@ -2138,17 +2222,17 @@ verify_leave({_, NodeToLeave}, Nodes, Manager) ->
                               ok ->
                                   ok;
                               {fail, {false, {IncorrenectNode, Expected, Contains}}} ->
-                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
+                                 ct:fail("Initial membership incorrect; node ~p should have ~p ~nbut has ~p",
                                          [IncorrenectNode, Expected, Contains])
                           end
                   end, Nodes),
 
     %% Remove a node from the cluster.
     [{_, _}, {_, Node2}, {_, _}, {_, _}] = Nodes,
-    NodeToLeaveMap = rpc:call(NodeToLeave, partisan_peer_service_manager, myself, []),
-    ct:pal("Removing node ~p from the cluster with node map: ~p", [NodeToLeave, NodeToLeaveMap]),
-    ok = rpc:call(Node2, partisan_peer_service, leave, [NodeToLeaveMap]),
-    
+    NodeToLeaveSpec = rpc:call(NodeToLeave, partisan, node_spec, []),
+    ct:pal("Removing node ~p from the cluster with node spec: ~p", [NodeToLeave, NodeToLeaveSpec]),
+    ok = rpc:call(Node2, partisan_peer_service, leave, [NodeToLeaveSpec]),
+
     %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
     timer:sleep(?OVERRIDE_PERIODIC_INTERVAL * length(Nodes) + ?OVERRIDE_PERIODIC_INTERVAL),
 
@@ -2170,7 +2254,7 @@ verify_leave({_, NodeToLeave}, Nodes, Manager) ->
                 true ->
                     true;
                 false ->
-                    ct:pal("Membership incorrect; node ~p should have ~p but has ~p",
+                    ct:pal("Membership incorrect; node ~p should have ~p ~nbut has ~p",
                            [Node, SortedNodes, SortedMembers]),
                     {false, {Node, SortedNodes, SortedMembers}}
             end
@@ -2194,7 +2278,7 @@ verify_leave({_, NodeToLeave}, Nodes, Manager) ->
                               ok ->
                                   ok;
                               {fail, {false, {IncorrectNode, Expected, Contains}}} ->
-                                 ct:fail("Membership incorrect; node ~p should have ~p but has ~p",
+                                 ct:fail("Membership incorrect; node ~p should have ~p ~nbut has ~p",
                                          [IncorrectNode, Expected, Contains])
                           end
                   end, Nodes),
@@ -2216,13 +2300,18 @@ receiver(Manager, BenchPid, Count) ->
         {_Message, _SourceNode, _SourcePid} ->
             receiver(Manager, BenchPid, Count - 1);
         Other ->
-            lager:warning("Got incorrect message: ~p", [Other])
+            ?LOG_WARNING("Got incorrect message: ~p", [Other])
     end.
 
 sender(_EchoBinary, _Manager, _DestinationNode, _DestinationPid, _PartitionKey, 0) ->
     ok;
 sender(EchoBinary, Manager, DestinationNode, DestinationPid, PartitionKey, Count) ->
-    Manager:forward_message(DestinationNode, undefined, DestinationPid, {EchoBinary, node(), self()}, [{partition_key, PartitionKey}]),
+    Manager:forward_message(
+        DestinationNode,
+        DestinationPid,
+        {EchoBinary, node(), self()},
+        [{partition_key, PartitionKey}]
+    ),
     sender(EchoBinary, Manager, DestinationNode, DestinationPid, PartitionKey, Count - 1).
 
 init_sender(EchoBinary, Manager, DestinationNode, DestinationPid, PartitionKey, Count) ->
@@ -2334,7 +2423,7 @@ hyparview_xbot_membership_check(Nodes) ->
             end, Nodes),
 
     {ConnectedFails, SymmetryFails}.
-    
+
 hyparview_xbot_manager_high_active_test(Config) ->
     %% Use hyparview with xbot integration.
     Manager = partisan_hyparview_xbot_peer_service_manager,
@@ -2351,7 +2440,7 @@ hyparview_xbot_manager_high_active_test(Config) ->
                    {max_active_size, 5},
                    {servers, Servers},
                    {clients, Clients}]),
-                   
+
     %%timer:sleep(20000),
 
     CheckStartedFun = fun() ->
@@ -2393,7 +2482,7 @@ hyparview_xbot_manager_high_active_test(Config) ->
     ok = rpc:call(KilledNode, partisan, stop, []),
     CheckStoppedFun = fun() ->
                         case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
-                            [] -> 
+                            [] ->
                                 true;
                             FailedNodes ->
                                 FailedNodes
@@ -2531,7 +2620,7 @@ hyparview_xbot_manager_high_client_test(Config) ->
                     "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
                     "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
     end,
-    
+
     %% Verify forward message functionality.
     lists:foreach(fun({_Name, Node}) ->
                     ok = check_forward_message(Node, Manager, Nodes)

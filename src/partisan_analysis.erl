@@ -1,5 +1,6 @@
 %% -------------------------------------------------------------------
 %%
+%% Copyright (c) 2001-2002 Richard Carlsson.  All Rights Reserved.
 %% Copyright (c) 2019 Christopher S. Meiklejohn.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
@@ -17,10 +18,6 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
-%%
-%% @copyright 2001-2002 Richard Carlsson
-%% @copyright 2019 Christopher S. Meiklejohn
-%%
 
 %% TODO: might need a "top" (`any') element for any-length value lists.
 
@@ -35,7 +32,7 @@
 %% are also used by Dialyzer (file dialyzer/src/dialyzer_dep.erl)
 -export([is_escape_op/2, is_escape_op/3, is_literal_op/2, is_literal_op/3]).
 
--import(cerl, 
+-import(cerl,
 		[
 		   ann_c_apply/3, ann_c_fun/3, ann_c_var/2, apply_args/1,
 	       apply_op/1, atom_val/1, bitstr_size/1, bitstr_val/1,
@@ -86,20 +83,20 @@ partisan_analysis(Tree) ->
 			  c_letrec([{External, ExtFun}, {Top, TopFun}],
 				   c_nil())),
 
-	%% With partisan (or, with gen_*), the handle_* callback is 
-	%% used to pattern match message sends to the server.  Therefore, 
-	%% we need to ensure we use this as a potential entry point of 
+	%% With partisan (or, with gen_*), the handle_* callback is
+	%% used to pattern match message sends to the server.  Therefore,
+	%% we need to ensure we use this as a potential entry point of
 	%% the analysis for incoming messages.
-	%% 
+	%%
 	%% This allows us to establish causal relations, where we can identify
 	%% which receives are responsible for triggering subsequent sends.
 	io:format("Generating names to function bindings.~n", []),
 	NamesToFunctions = generate_names_to_functions(StartFun),
 
-	%% Run forward interprocedural analysis from the start of the 
+	%% Run forward interprocedural analysis from the start of the
 	%% tree to identify *all* messages the application sends.
 	io:format("Performing intraprocedural analysis from start of module.~n", []),
-	%% Use the original tree here: should find a way to fix this but didn't want 
+	%% Use the original tree here: should find a way to fix this but didn't want
 	%% to modify Richard's analysis wrapping.
 	{_Xs, _Out, _Esc, _Deps, _Par, Sends, _Applys} = intraprocedural(Tree),
 	io:format("All sends: ~p~n", [sets:to_list(Sends)]),
@@ -190,7 +187,7 @@ annotate(Tree) ->
     {cerl_trees:map(F, Tree), Xs, Out, Esc, Deps, Par, Sends, Applys}.
 
 append_ann(Tag, Val, [X | Xs]) ->
-    if tuple_size(X) >= 1, element(1, X) =:= Tag -> 
+    if tuple_size(X) >= 1, element(1, X) =:= Tag ->
 	    append_ann(Tag, Val, Xs);
        true ->
 	    [X | append_ann(Tag, Val, Xs)]
@@ -343,7 +340,7 @@ intraprocedural(Tree) ->
     Vars1 = dict:store(escape, from_label_list([top, external]), Vars),
 
     %% Enter the fixpoint iteration at the StartFun.
-    St = intraprocedural_loop(StartFun, start, #intraprocedural_state{vars = Vars1, 
+    St = intraprocedural_loop(StartFun, start, #intraprocedural_state{vars = Vars1,
 					  out = Out,
 				      dep = dict:new(),
 				      work = init_work(),
@@ -457,10 +454,10 @@ visit(T, L, St) ->
 		    D = dict:store(L1, X, St3#intraprocedural_state.dep),
 
 			ApplyOp = cerl:apply_op(T),
-			St4 = case type(ApplyOp) of 
+			St4 = case type(ApplyOp) of
 				var ->
 					VarName = var_name(ApplyOp),
-					case VarName of 
+					case VarName of
 						{external, 1} ->
 							%% Called only by outside of this module.
 							St3;
@@ -532,7 +529,7 @@ visit(T, L, St) ->
 	    %% a tuple of function variables in the body of a `letrec'.
 	    visit(c_letrec(module_defs(T), c_tuple(module_exports(T))),
 		  L, St);
-	map -> 
+	map ->
 		%% Ignore maps.
 		{none, St}
     end.
@@ -867,7 +864,7 @@ set__union(X, Y) -> ordsets:union(X, Y).
 
 set__add(X, S) -> ordsets:add_element(X, S).
 
-set__is_member(X, S) -> ordsets:is_element(X, S).    
+set__is_member(X, S) -> ordsets:is_element(X, S).
 
 set__subtract(X, Y) -> ordsets:subtract(X, Y).
 
@@ -922,7 +919,7 @@ take_work({Queue0, Set0}) ->
 
 -spec is_escape_op(atom(), arity()) -> boolean().
 
-is_escape_op(match_fail, 1) -> false; 
+is_escape_op(match_fail, 1) -> false;
 is_escape_op(F, A) when is_atom(F), is_integer(A) -> true.
 
 -spec is_escape_op(atom(), atom(), arity()) -> boolean().
@@ -980,8 +977,8 @@ is_pure_op(M, F, A) -> erl_bifs:is_pure(M, F, A).
 
 %% TODO: Document me.
 partisan_forward_call(M, F, A, St) ->
-	try 
-		case {concrete(M), concrete(F)} of 
+	try
+		case {concrete(M), concrete(F)} of
 			{partisan_pluggable_peer_service_manager, forward_message} ->
 				% io:format("=> found partisan call ~p:~p/~p~n", [concrete(M), concrete(F), length(A)]),
 
@@ -1019,7 +1016,7 @@ generate_names_to_functions(StartFun) ->
 				% L = get_label(T),
 				Anns = get_ann(T),
 
-				case N of 
+				case N of
 					{_, _} ->
 						%% Function variables.
 						% io:format("~p at label ~p with anns: ~p~n", [N, L, Anns]),
@@ -1067,7 +1064,7 @@ generate_names_to_functions(StartFun) ->
 				S
 		end
 	end,
-	{NameToFuns, _, _, _} = reverse_postorder_fold(FoldFun, 
+	{NameToFuns, _, _, _} = reverse_postorder_fold(FoldFun,
 		{NameToFuns0, CandidateTree0, CandidateLabel0, CandidateAnns0}, StartFun),
 
 	% io:format("~n", []),
@@ -1087,7 +1084,7 @@ reverse_postorder_fold(FoldFun, Acc, Tree) ->
 %% TODO: Document me.
 analysis_from_function_clause(NamesToFunctions, Top, Tree) ->
 	FindFunctionClauseFun = fun(T, {Found, Dict0}) ->
-		case type(T) of 
+		case type(T) of
 			'case' ->
 				case Found of
 					false ->
@@ -1098,7 +1095,7 @@ analysis_from_function_clause(NamesToFunctions, Top, Tree) ->
 							%% Get message type.
 							MessageType = message_type_from_function_clause(Clause),
 
-							case MessageType of 
+							case MessageType of
 								undefined ->
 									%% Pattern matching against a wildcard tells us abolsutely nothing.
 									Dict1;
@@ -1146,14 +1143,14 @@ analysis_from_function_clause(NamesToFunctions, Top, Tree) ->
 %% TODO: Document me.
 message_type_from_function_clause(Clause) ->
 	Anns = get_ann(Clause),
-	case lists:member(compiler_generated, Anns) of 
+	case lists:member(compiler_generated, Anns) of
 		true ->
 			undefined;
 		false ->
 			Pats = clause_pats(Clause),
 			FirstPattern = hd(Pats),
 			% io:format("=> first pattern: ~p~n", [FirstPattern]),
-			case is_leaf(FirstPattern) of 
+			case is_leaf(FirstPattern) of
 				true ->
 					case cerl:is_literal(FirstPattern) of
 						true ->
@@ -1172,7 +1169,7 @@ message_type_from_function_clause(Clause) ->
 
 %% TODO: Document me.
 message_type_from_args(Args) ->
-	Tree = case length(Args) of 
+	Tree = case length(Args) of
 		2 ->
 			%% Reply call.
 			lists:nth(2, Args);
@@ -1181,9 +1178,9 @@ message_type_from_args(Args) ->
 			lists:nth(4, Args)
 	end,
 
-	case is_leaf(Tree) of 
+	case is_leaf(Tree) of
 		true ->
-			case cerl:is_literal(Tree) of 
+			case cerl:is_literal(Tree) of
 				true ->
 					concrete(Tree);
 				false ->
@@ -1218,7 +1215,7 @@ interprocedural_loop(NamesToFunctions, Top, [Tree|Rest], Sends0) ->
 
 	%% Add any calls to the worklist.
 	WorklistAdditions = lists:flatmap(fun(X) ->
-		case dict:find(X, NamesToFunctions) of 
+		case dict:find(X, NamesToFunctions) of
 			{ok, {_, ApplyTree}} ->
 				[ApplyTree];
 			_ ->

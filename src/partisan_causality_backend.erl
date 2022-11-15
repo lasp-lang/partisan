@@ -23,6 +23,9 @@
 
 -behaviour(gen_server).
 
+-include("partisan_logger.hrl").
+
+
 %% API
 -export([start_link/1,
          emit/4,
@@ -39,7 +42,16 @@
          terminate/2,
          code_change/3]).
 
--record(state, {name, label, my_node, local_clock, order_buffer, buffered_messages, delivery_fun, storage}).
+-record(state, {
+    name                ::  atom(),
+    label               ::  atom(),
+    my_node             ::  node(),
+    local_clock,
+    order_buffer,
+    buffered_messages,
+    delivery_fun,
+    storage
+}).
 
 %%%===================================================================
 %%% API
@@ -73,7 +85,7 @@ set_delivery_fun(Label, DeliveryFun) ->
 %% @private
 init([Label]) ->
     %% Figure out who we are.
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
 
     %% Generate a local clock that's used to track local dependencies.
     LocalClock = partisan_vclock:fresh(),
@@ -94,17 +106,19 @@ init([Label]) ->
     Storage = ets:new(Name, [named_table]),
 
     %% Start server.
-    {ok, #state{name=Name,
-                my_node=MyNode,
-                label=Label, 
-                local_clock=LocalClock, 
-                order_buffer=OrderBuffer, 
-                buffered_messages=BufferedMessages,
-                storage=Storage}}.
+    {ok, #state{
+        name = Name,
+        my_node = MyNode,
+        label = Label,
+        local_clock = LocalClock,
+        order_buffer = OrderBuffer,
+        buffered_messages = BufferedMessages,
+        storage = Storage
+    }}.
 
 %% Generate a message identifier and a payload to be transmitted on the wire.
-handle_call({reemit, LocalClock}, 
-            _From, 
+handle_call({reemit, LocalClock},
+            _From,
             #state{storage=Storage}=State) ->
     %% Lookup previously emitted message and return it's clock and message.
     [{LocalClock, CausalMessage}] = ets:lookup(Storage, LocalClock),
@@ -112,13 +126,13 @@ handle_call({reemit, LocalClock},
     {reply, {ok, LocalClock, CausalMessage}, State};
 
 %% Generate a message identifier and a payload to be transmitted on the wire.
-handle_call({emit, Node, ServerRef, Message}, 
-            _From, 
+handle_call({emit, Node, ServerRef, Message},
+            _From,
             #state{storage=Storage,
-                   my_node=MyNode, 
-                   label=Label, 
-                   local_clock=LocalClock0, 
-                   order_buffer=OrderBuffer0}=State) ->
+                   my_node=MyNode,
+                   label=Label,
+                   local_clock=LocalClock0,
+                   order_buffer=OrderBuffer0}=State0) ->
     %% Bump our local clock.
     LocalClock = partisan_vclock:increment(MyNode, LocalClock0),
 
@@ -134,17 +148,26 @@ handle_call({emit, Node, ServerRef, Message},
     %% Every time we omit a message, store the clock and message so we can regenerate the message.
     true = ets:insert(Storage, {LocalClock, CausalMessage}),
 
-    lager:info("Emitting message with clock: ~p", [LocalClock]),
+    ?LOG_DEBUG(#{
+        description => "Emitting message",
+        clock => LocalClock
+    }),
 
-    {reply, {ok, LocalClock, CausalMessage}, State#state{local_clock=LocalClock, order_buffer=OrderBuffer}};
+    State = State0#state{local_clock=LocalClock, order_buffer=OrderBuffer},
+
+    {reply, {ok, LocalClock, CausalMessage}, State};
 
 %% Receive a causal message off the wire; deliver or not depending on whether or not
 %% the causal dependencies have been satisfied.
-handle_call({receive_message, {causal, Label, _Node, _ServerRef, _IncomingOrderBuffer, MessageClock, _Message}=FullMessage}, 
-            _From, 
+handle_call({receive_message, {causal, Label, _Node, _ServerRef, _IncomingOrderBuffer, MessageClock, _Message}=FullMessage},
+            _From,
             #state{label=Label, buffered_messages=BufferedMessages0}=State0) ->
     %% Add to the buffer and try to deliver.
-    lager:info("Received message ~p and inserting into buffer.", [MessageClock]),
+    ?LOG_DEBUG(#{
+        description => "Received message, inserting into buffer.",
+        message => MessageClock
+    }),
+
     BufferedMessages = BufferedMessages0 ++ [FullMessage],
     State = lists:foldl(fun(M, S) -> internal_receive_message(M, S) end, State0#state{buffered_messages=BufferedMessages}, BufferedMessages),
 
@@ -190,7 +213,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private
-deliver(#state{my_node=MyNode, local_clock=LocalClock, order_buffer=OrderBuffer, delivery_fun=DeliveryFun}=State0, 
+deliver(#state{my_node=MyNode, local_clock=LocalClock, order_buffer=OrderBuffer, delivery_fun=DeliveryFun}=State0,
         IncomingOrderBuffer, MessageClock, ServerRef, Message) ->
     %% Merge order buffers.
     MergeFun = fun(_Key, Value1, Value2) ->
@@ -208,10 +231,15 @@ deliver(#state{my_node=MyNode, local_clock=LocalClock, order_buffer=OrderBuffer,
     case DeliveryFun of
         undefined ->
             try
-                partisan_util:process_forward(ServerRef, Message)
+                partisan_peer_service_manager:process_forward(ServerRef, Message)
             catch
-                _:Error ->
-                    lager:debug("Error forwarding message ~p to process ~p: ~p", [Message, ServerRef, Error])
+                _:Reason ->
+                    ?LOG_DEBUG(#{
+                        description => "Error forwarding message to process",
+                        reason => Reason,
+                        message => Message,
+                        process => ServerRef
+                    })
             end;
         DeliveryFun ->
             DeliveryFun(ServerRef, Message)
@@ -229,26 +257,39 @@ schedule_delivery(Label) ->
     erlang:send_after(Interval, Name, deliver).
 
 %% @private
-internal_receive_message({causal, _Label, _Node, ServerRef, IncomingOrderBuffer, MessageClock, Message}=FullMessage, 
+internal_receive_message({causal, _Label, _Node, ServerRef, IncomingOrderBuffer, MessageClock, Message}=FullMessage,
                          #state{my_node=MyNode, local_clock=LocalClock, buffered_messages=BufferedMessages}=State0) ->
-    lager:info("Attempting delivery of messages: ~p", [MessageClock]),
+    ?LOG_DEBUG(#{
+        description => "Attempting delivery of messages",
+        messages => MessageClock
+    }),
 
     case orddict:find(MyNode, IncomingOrderBuffer) of
         %% No dependencies.
         error ->
-            lager:info("Message ~p has no dependencies, delivering.", [MessageClock]),
+            ?LOG_DEBUG(#{
+                description => "Message has no dependencies, delivering",
+                messages => MessageClock
+            }),
             deliver(State0#state{buffered_messages=BufferedMessages -- [FullMessage]}, IncomingOrderBuffer, MessageClock, ServerRef, Message);
         %% Dependencies.
         {ok, DependencyClock} ->
             case partisan_vclock:dominates(LocalClock, DependencyClock) of
                 %% Dependencies met.
                 true ->
-                    lager:info("Message ~p dependencies met, delivering.", [MessageClock]),
+                    ?LOG_DEBUG(#{
+                        description => "Message dependencies met, delivering",
+                        messages => MessageClock
+                    }),
                     deliver(State0#state{buffered_messages=BufferedMessages -- [FullMessage]}, IncomingOrderBuffer, MessageClock, ServerRef, Message);
                 %% Dependencies NOT met.
                 false ->
                     %% Buffer, for later delivery.
-                    lager:info("Message ~p dependencies ~p NOT met.", [MessageClock, DependencyClock]),
+                    ?LOG_DEBUG(#{
+                        description => "Message dependencies NOT met, delivering",
+                        messages => MessageClock,
+                        dependencies => DependencyClock
+                    }),
                     State0#state{buffered_messages=BufferedMessages}
             end
     end.

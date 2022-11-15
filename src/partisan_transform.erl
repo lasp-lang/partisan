@@ -47,8 +47,8 @@ walk_ast(Acc, [H|T]) ->
 walk_clauses(Acc, []) ->
     lists:reverse(Acc);
 walk_clauses(Acc, [{clause, Line, Arguments, Guards, Body}|T]) ->
-    walk_clauses([{clause, 
-                   Line, Arguments, Guards, walk_body([], Body)}|Acc], 
+    walk_clauses([{clause,
+                   Line, Arguments, Guards, walk_body([], Body)}|Acc],
                  T).
 
 %% @private
@@ -58,14 +58,17 @@ walk_body(Acc, [H|T]) ->
     walk_body([transform_statement(H)|Acc], T).
 
 %% @private
-transform_statement({op, Line, '!', 
+transform_statement({op, Line, '!',
                      {var, Line, RemotePid}, {Type, Line, Message}}) ->
-    {call, Line, {remote, Line, 
-                  {atom, Line, partisan_peer_service_manager}, {atom, Line, forward_message}},
+    {call, Line, {remote, Line,
+                  {atom, Line, partisan}, {atom, Line, forward_message}},
         [{var, Line, RemotePid}, {Type, Line, Message}]};
+
 transform_statement({match, Line, {var, Line, RemotePid}, {call, Line, _, _} = Call}) ->
     {match, Line, {var, Line, RemotePid}, transform_statement(Call)};
+
 transform_statement({call, Line, {atom, Line, self}, []}) ->
-    {call, Line, {remote, Line, {atom, Line, partisan_util}, {atom, Line, pid}}, []};
+    {call, Line, {remote, Line, {atom, Line, partisan}, {atom, Line, self}}, []};
+
 transform_statement(Stmt) ->
     Stmt.

@@ -21,75 +21,238 @@
 -module(partisan_peer_service_manager).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+-include("partisan_logger.hrl").
 -include("partisan.hrl").
 
--export([myself/0, 
-         mynode/0, 
-         forward_message/2]).
+
+-type server_ref()      ::  partisan_remote_ref:p()
+                            | partisan_remote_ref:encoded_pid()
+                            | partisan_remote_ref:n()
+                            | partisan_remote_ref:encoded_name()
+                            | Name :: atom()
+                            | {Name :: atom(), node()}
+                            | {global, atom()}
+                            | {via, module(), ViaName :: atom()}
+                            | pid().
+
+-type forward_opts()    ::  #{
+                                ack => boolean(),
+                                causal_label => atom(),
+                                channel => channel(),
+                                clock => any(),
+                                partition_key => non_neg_integer(),
+                                transitive => boolean()
+                            } |
+                            [
+                                {ack, boolean()}
+                                | {causal_label, atom()}
+                                | {channel, channel()}
+                                | {clock, any()}
+                                | {partition_key, non_neg_integer()}
+                                | {transitive, boolean()}
+                            ].
+
+-export_type([server_ref/0]).
+-export_type([forward_opts/0]).
+
+-export([mynode/0]).
+-export([myself/0]).
+-export([process_forward/2]).
+-export([send_message/2]).
+
+
+%% =============================================================================
+%% BEHAVIOUR CALLBACKS
+%% =============================================================================
+
+
 
 -callback start_link() -> {ok, pid()} | ignore | {error, term()}.
--callback members() -> [name()]. %% TODO: Deprecate me.
+
+-callback members() -> [node()]. %% TODO: Deprecate me.
+
 -callback members_for_orchestration() -> [node_spec()].
+
 -callback myself() -> node_spec().
-
--callback get_local_state() -> term().
-
--callback join(node_spec()) -> ok.
--callback sync_join(node_spec()) -> ok | {error, not_implemented}.
--callback leave() -> ok.
--callback leave(node_spec()) -> ok.
 
 -callback update_members([node()]) -> ok | {error, not_implemented}.
 
--callback send_message(name(), message()) -> ok.
--callback receive_message(name(), message()) -> ok.
+-callback get_local_state() -> term().
 
--callback forward_message({partisan_remote_reference, name(), atom()}, message()) -> ok.
+-callback on_down(node(), function()) -> ok | {error, not_implemented}.
 
--callback cast_message(name(), pid(), message()) -> ok.
--callback forward_message(name(), pid(), message()) -> ok.
+-callback on_up(node(), function()) -> ok | {error, not_implemented}.
 
--callback cast_message(name(), channel(), pid(), message()) -> ok.
--callback forward_message(name(), channel(), pid(), message()) -> ok.
+-callback join(node_spec()) -> ok.
 
--callback cast_message(name(), channel(), pid(), message(), options()) -> ok.
--callback forward_message(name(), channel(), pid(), message(), options()) -> ok.
+-callback sync_join(node_spec()) -> ok | {error, not_implemented}.
 
--callback on_down(name(), function()) -> ok | {error, not_implemented}.
--callback on_up(name(), function()) -> ok | {error, not_implemented}.
+-callback leave() -> ok.
+
+-callback leave(node_spec()) -> ok.
+
+-callback send_message(node(), message()) -> ok.
+
+-callback receive_message(node(), message()) -> ok.
+
+-callback cast_message(
+    ServerRef :: server_ref(),
+    Msg :: message()) -> ok.
+
+-callback cast_message(
+    ServerRef :: server_ref(),
+    Msg :: message(),
+    Opts :: forward_opts()) -> ok.
+
+-callback cast_message(
+    Node :: node(),
+    ServerRef :: server_ref(),
+    Msg :: message(),
+    Opts :: forward_opts()) -> ok.
+
+-callback forward_message(
+    ServerRef :: server_ref(),
+    Msg :: message()) -> ok.
+
+-callback forward_message(
+    ServerRef :: server_ref(),
+    Msg :: message(),
+    Opts :: forward_opts()) -> ok.
+
+-callback forward_message(
+    Node :: node(),
+    ServerRef :: server_ref(),
+    Msg :: message(),
+    Opts :: forward_opts()) -> ok.
+
 
 -callback decode(term()) -> term().
 
 -callback reserve(atom()) -> ok | {error, no_available_slots}.
 
 -callback partitions() -> {ok, partitions()} | {error, not_implemented}.
--callback inject_partition(node_spec(), ttl()) -> {ok, reference()} | {error, not_implemented}.
+
+-callback inject_partition(node_spec(), ttl()) ->
+    {ok, reference()} | {error, not_implemented}.
+
 -callback resolve_partition(reference()) -> ok | {error, not_implemented}.
 
+
+
+%% =============================================================================
+%% API
+%% =============================================================================
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Send a message to a remote peer_service_manager.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec send_message(node(), message()) -> ok.
+
+send_message(Node, Message) ->
+    (?PEER_SERVICE_MANAGER):send_message(Node, Message).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Internal function used by peer_service manager implementations to
+%% forward a message to a  process identified by `ServerRef' that is either
+%% local or located at remote process when the remote node is connected via
+%% disterl.
+%% Trying to send a message to a remote server reference when the process is
+%% located at a node connected with Partisan will return `ok' but will not
+%% succeed.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec process_forward(ServerRef :: server_ref(), Msg :: any()) -> ok.
+
+process_forward(ServerRef, Msg) ->
+    try
+        do_process_forward(ServerRef, Msg)
+    catch
+        Class:Reason:Stacktrace ->
+            ?LOG_DEBUG(#{
+                description => "Error forwarding message",
+                message => Msg,
+                destination => ServerRef,
+                class => Class,
+                reason => Reason,
+                stacktrace => Stacktrace
+            }),
+            ok
+    end.
+
+
+%% @deprecated use {@link partisan:node_spec/0} instead
 -spec myself() -> node_spec().
 
 myself() ->
-    Parallelism = partisan_config:get(parallelism, ?PARALLELISM),
-    Channels = partisan_config:get(channels, ?CHANNELS),
-    Name = partisan_config:get(name),
-    ListenAddrs = partisan_config:get(listen_addrs),
-    #{name => Name, listen_addrs => ListenAddrs, channels => Channels, parallelism => Parallelism}.
+    partisan:node_spec().
+
+
+%% @deprecated use {@link partisan:node/0} instead
+-spec mynode() -> atom().
 
 mynode() ->
-    partisan_config:get(name, node()).
+    partisan:node().
 
-forward_message({partisan_remote_reference, Name, ServerRef} = RemotePid, Message) ->
-    case mynode() of
-        Name ->
-            lager:info("Local pid ~p, routing message accordingly: ~p", [ServerRef, Message]),
-            case ServerRef of
-                {partisan_process_reference, Pid} ->
-                    DeserializedPid = list_to_pid(Pid),
-                    DeserializedPid ! Message;
-                _ ->
-                    ServerRef ! Message
-            end;
-        _ ->
-            Manager = partisan_config:get(partisan_peer_service_manager),
-            Manager:forward_message(RemotePid, Message)
+
+
+%% =============================================================================
+%% PRIVATE
+%% =============================================================================
+
+
+
+%% @private
+do_process_forward({global, Name}, Message) ->
+    Pid = global:whereis_name(Name),
+    Pid ! Message,
+    ok;
+
+do_process_forward({via, Module, Name}, Message) ->
+    Pid = Module:whereis_name(Name),
+    Pid ! Message,
+    ok;
+
+do_process_forward(ServerRef, Message)
+when is_pid(ServerRef) orelse is_atom(ServerRef) ->
+    ServerRef ! Message,
+
+    Trace =
+        (
+            is_pid(ServerRef) andalso
+            not is_process_alive(ServerRef)
+        ) orelse (
+            not is_pid(ServerRef) andalso (
+                whereis(ServerRef) == undefined orelse
+                not is_process_alive(whereis(ServerRef))
+            )
+        ),
+
+    ?LOG_TRACE_IF(
+        Trace, "Process ~p is NOT ALIVE.", [ServerRef]
+    ),
+
+    ok;
+
+do_process_forward(ServerRef, Message)
+when is_tuple(ServerRef) orelse is_binary(ServerRef) ->
+    ?LOG_DEBUG(
+        "node ~p recieved message ~p for ~p",
+        [partisan:node(), Message, ServerRef]
+    ),
+
+    case partisan_remote_ref:to_term(ServerRef) of
+        Pid when is_pid(Pid) ->
+            ?LOG_TRACE_IF(
+                not is_process_alive(Pid),
+                "Process ~p is NOT ALIVE for message: ~p", [ServerRef, Message]
+            ),
+            Pid ! Message,
+            ok;
+
+        Name when is_atom(Name) ->
+            Name ! Message,
+            ok
     end.

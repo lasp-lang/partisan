@@ -21,6 +21,7 @@
 -module(partisan_kubernetes_orchestration_strategy).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+-include("partisan_logger.hrl").
 -include("partisan.hrl").
 
 -behaviour(partisan_orchestration_strategy).
@@ -33,24 +34,21 @@
 %% @private
 upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Payload) ->
     {ok, <<"OK">>} = eredis:q(Eredis, ["SET", Node, Payload]),
-    % lager:info("Pushed artifact to Redis: ~p", [Node]),
     ok.
 
 %% @private
 download_artifact(#orchestration_strategy_state{eredis=Eredis}, Node) ->
-    % lager:info("Retrieving object ~p from redis.", [Node]),
 
     try
         case eredis:q(Eredis, ["GET", Node]) of
             {ok, Payload} ->
-                % lager:info("Received artifact from Redis: ~p", [Node]),
                 Payload;
             {error,no_connection} ->
                 undefined
         end
     catch
         _:Error ->
-            lager:info("Exception caught: ~p", [Error]),
+            ?LOG_INFO("Exception caught: ~p", [Error]),
             undefined
     end.
 
@@ -74,7 +72,7 @@ pods_from_kubernetes(LabelSelector) ->
         {ok, PodList} ->
             generate_pod_nodes(PodList);
         Error ->
-            _ = lager:info("Invalid response: ~p", [Error]),
+            ?LOG_INFO("Invalid response: ~p", [Error]),
             sets:new()
     end.
 
@@ -127,7 +125,7 @@ generate_pod_nodes(#{<<"items">> := Items}) ->
 generate_pod_node(Name, Host) ->
     {ok, IPAddress} = inet_parse:address(binary_to_list(Host)),
     Port = list_to_integer(os:getenv("PEER_PORT", "9090")),
-    #{name => list_to_atom(binary_to_list(Name) ++ "@" ++ binary_to_list(Host)), 
+    #{name => list_to_atom(binary_to_list(Name) ++ "@" ++ binary_to_list(Host)),
       listen_addrs => [#{ip => IPAddress, port => Port}]}.
 
 %% @private
@@ -137,7 +135,7 @@ get_request(Url, DecodeFun) ->
         {ok, {{_, 200, _}, _, Body}} ->
             {ok, DecodeFun(Body)};
         Other ->
-            _ = lager:info("Request failed; ~p", [Other]),
+            _ = ?LOG_INFO("Request failed; ~p", [Other]),
             {error, invalid}
     end.
 

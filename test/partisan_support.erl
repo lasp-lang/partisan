@@ -24,6 +24,7 @@
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -include("partisan.hrl").
+-include("partisan_logger.hrl").
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -35,7 +36,7 @@
 start(Case, Config, Options) ->
     debug("Beginning test case: ~p", [Case]),
 
-    {ok, Hostname} = inet:gethostname(), 
+    {ok, Hostname} = inet:gethostname(),
     os:cmd(os:find_executable("epmd") ++ " -daemon"),
     case net_kernel:start([list_to_atom("runner@" ++ Hostname), shortnames]) of
         {ok, _} ->
@@ -46,13 +47,8 @@ start(Case, Config, Options) ->
 
     %% Load sasl.
     application:load(sasl),
-    ok = application:set_env(sasl,
-                             sasl_error_logger,
-                             false),
+    ok = application:set_env(sasl, sasl_error_logger, false),
     application:start(sasl),
-
-    %% Load lager.
-    {ok, _} = application:ensure_all_started(lager),
 
     Servers = proplists:get_value(servers, Options, []),
     Clients = proplists:get_value(clients, Options, []),
@@ -60,48 +56,54 @@ start(Case, Config, Options) ->
     NodeNames = case proplists:get_value(num_nodes, Options, undefined) of
         undefined ->
             lists:flatten(Servers ++ Clients);
-        NumNodes -> 
+        NumNodes ->
             node_list(NumNodes, "node", Config)
     end,
 
     %% Start all nodes.
     InitializerFun = fun(Name) ->
-                            debug("Starting node: ~p", [Name]),
+        debug("Starting node: ~p", [Name]),
 
-                            NodeConfig = [{monitor_master, true},
-                                          {startup_functions, [{code, set_path, [codepath()]}]}],
+        NodeConfig = [
+            {monitor_master, true},
+            {startup_functions, [{code, set_path, [codepath()]}]}
+        ],
 
-                            case ct_slave:start(Name, NodeConfig) of
-                                {ok, Node} ->
-                                    {Name, Node};
-                                Error ->
-                                    ct:fail(Error)
-                            end
-                     end,
+        case ct_slave:start(Name, NodeConfig) of
+            {ok, Node} ->
+                {Name, Node};
+            Error ->
+                ct:fail(Error)
+        end
+    end,
     Nodes = lists:map(InitializerFun, NodeNames),
 
     %% Load applications on all of the nodes.
     LoaderFun = fun({_Name, Node}) ->
-                            debug("Loading applications on node: ~p", [Node]),
+        debug("Loading applications on node: ~p", [Node]),
 
-                            PrivDir = code:priv_dir(?APP),
-                            NodeDir = filename:join([PrivDir, "lager", Node]),
+        PrivDir = code:priv_dir(?APP),
+        NodeDir = filename:join([PrivDir, "logger", Node]),
 
-                            %% Manually force sasl loading, and disable the logger.
-                            ok = rpc:call(Node, application, load, [sasl]),
-                            ok = rpc:call(Node, application, set_env,
-                                          [sasl, sasl_error_logger, false]),
-                            ok = rpc:call(Node, application, start, [sasl]),
-
-                            ok = rpc:call(Node, application, load, [partisan]),
-                            ok = rpc:call(Node, application, load, [lager]),
-                            ok = rpc:call(Node, application, set_env, [sasl,
-                                                                       sasl_error_logger,
-                                                                       false]),
-                            ok = rpc:call(Node, application, set_env, [lager,
-                                                                       log_root,
-                                                                       NodeDir])
-                     end,
+        %% Manually force sasl loading, and disable the logger.
+        ok = rpc:call(Node, application, load, [sasl]),
+        ok = rpc:call(Node, application, set_env,
+                        [sasl, sasl_error_logger, false]),
+        ok = rpc:call(Node, application, start, [sasl]),
+        ok = rpc:call(Node, application, load, [partisan]),
+        LoggerConf = [
+            {handler, default, logger_disk_log_h,
+            #{config => #{
+                file => filename:join(NodeDir, "log/partisan.log"),
+                max_no_files => 4,
+                filesync_repeat_interval => 60000,
+                max_no_bytes => 1048576
+            }}}
+        ],
+        ok = rpc:call(Node, application, set_env,
+            [kernel, logger, LoggerConf]
+        )
+    end,
     lists:map(LoaderFun, Nodes),
 
     %% Configure settings.
@@ -115,7 +117,7 @@ start(Case, Config, Options) ->
             MaxActiveSize = proplists:get_value(max_active_size, Options, 5),
             ok = rpc:call(Node, partisan_config, set,
                           [max_active_size, MaxActiveSize]),
-                          
+
             ok = rpc:call(Node, partisan_config, set,
                           [periodic_interval, ?OVERRIDE_PERIODIC_INTERVAL]),
 
@@ -194,7 +196,7 @@ start(Case, Config, Options) ->
             debug("Enabling tracing since we are in test mode....", []),
             ok = rpc:call(Node, partisan_config, set, [tracing, false]),
 
-            Disterl = case ?config(disterl, Config) of
+            Disterl = case ?config(connect_disterl, Config) of
                               undefined ->
                                   false;
                               false ->
@@ -203,7 +205,9 @@ start(Case, Config, Options) ->
                                   true
                           end,
             debug("Setting disterl to: ~p", [Disterl]),
-            ok = rpc:call(Node, partisan_config, set, [disterl, Disterl]),
+            ok = rpc:call(
+                Node, partisan_config, set, [connect_disterl, Disterl]
+            ),
 
             DisableFastReceive = case ?config(disable_fast_receive, Config) of
                               undefined ->
@@ -303,7 +307,7 @@ start(Case, Config, Options) ->
             case lists:member(Name, Servers) of
                 true ->
                     ok = rpc:call(Node, partisan_config, set, [tag, server]),
-                    ok = rpc:call(Node, partisan_config, set, [tls_options, ?config(tls_server_opts, Config)]);
+                    ok = rpc:call(Node, partisan_config, set, [tls_server_opts, ?config(tls_server_opts, Config)]);
                 false ->
                     ok
             end,
@@ -312,7 +316,7 @@ start(Case, Config, Options) ->
             case lists:member(Name, Clients) of
                 true ->
                     ok = rpc:call(Node, partisan_config, set, [tag, client]),
-                    ok = rpc:call(Node, partisan_config, set, [tls_options, ?config(tls_client_opts, Config)]);
+                    ok = rpc:call(Node, partisan_config, set, [tls_client_opts, ?config(tls_client_opts, Config)]);
                 false ->
                     ok
             end
@@ -401,6 +405,8 @@ cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
                         end
                  end,
     lists:map(fun(OtherNode) -> cluster(Myself, OtherNode, Config) end, OtherNodes).
+
+
 cluster({_, Node}, {_, OtherNode}, Config) ->
     PeerPort = rpc:call(OtherNode,
                         partisan_config,
@@ -427,13 +433,20 @@ cluster({_, Node}, {_, OtherNode}, Config) ->
                         join
                   end,
     debug("Joining node: ~p to ~p at port ~p", [Node, OtherNode, PeerPort]),
-    ok = rpc:call(Node,
-                  partisan_peer_service,
-                  JoinMethod,
-                  [#{name => OtherNode,
-                     listen_addrs => [#{ip => {127, 0, 0, 1}, port => PeerPort}],
-                     channels => Channels,
-                     parallelism => Parallelism}]).
+
+    ok = rpc:call(
+        Node,
+        partisan_peer_service,
+        JoinMethod,
+        [#{
+            name => OtherNode,
+            listen_addrs => [#{ip => {127, 0, 0, 1}, port => PeerPort}],
+            channels => Channels,
+            parallelism => Parallelism
+        }]
+    ),
+    ok.
+
 
 %% @private
 stop(Nodes) ->
@@ -492,7 +505,7 @@ omit(OmitNameList, Nodes0) ->
     lists:foldl(FoldFun, [], Nodes0).
 
 %% @private
-node_list(0, _Name, _Config) -> 
+node_list(0, _Name, _Config) ->
     [];
 node_list(N, Name, Config) ->
     case ?config(hash, Config) of

@@ -22,6 +22,9 @@
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+-include("partisan.hrl").
+-include("partisan_logger.hrl").
+
 %% API
 -export([start_link/0,
          stop/0,
@@ -36,7 +39,7 @@
          terminate/2,
          code_change/3]).
 
--define(FANOUT, 2).
+-define(THIS_FANOUT, 2).
 
 -record(state, {next_id, membership}).
 
@@ -76,32 +79,37 @@ init([]) ->
 
     %% Start with initial membership.
     {ok, Membership} = partisan_peer_service:members(),
-    partisan_logger:info("Starting with membership: ~p", [Membership]),
+    ?LOG_INFO("Starting with membership: ~p", [Membership]),
 
     {ok, #state{next_id=0, membership=membership(Membership)}}.
 
 %% @private
 handle_call(Msg, _From, State) ->
-    partisan_logger:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
+    ?LOG_WARNING("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
     {reply, ok, State}.
 
 %% @private
 handle_cast({broadcast, ServerRef, Message}, #state{next_id=NextId, membership=Membership}=State) ->
     %% Generate message id.
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
     Id = {MyNode, NextId},
 
     %% Forward to process.
-    partisan_util:process_forward(ServerRef, Message),
+    partisan_peer_service_manager:process_forward(ServerRef, Message),
 
     %% Store outgoing message.
     true = ets:insert(?MODULE, {Id, Message}),
 
     %% Forward to random subset of peers.
-    AntiEntropyMembers = select_random_sublist(membership(Membership), ?FANOUT),
+    AntiEntropyMembers = select_random_sublist(membership(Membership), ?THIS_FANOUT),
 
     lists:foreach(fun(N) ->
-        partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {broadcast, Id, ServerRef, Message, MyNode}, [])
+        partisan:forward_message(
+            N,
+            ?MODULE,
+            {broadcast, Id, ServerRef, Message, MyNode},
+            #{channel => ?DEFAULT_CHANNEL}
+        )
     end, AntiEntropyMembers -- [MyNode]),
 
     {noreply, State#state{next_id=NextId + 1}};
@@ -111,30 +119,35 @@ handle_cast({update, Membership0}, State) ->
     {noreply, State#state{membership=Membership}};
 
 handle_cast(Msg, State) ->
-    partisan_logger:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
+    ?LOG_WARNING("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
 
 %% @private
 %% Incoming messages.
 handle_info({broadcast, Id, ServerRef, Message, FromNode}, #state{membership=Membership}=State) ->
-    partisan_logger:info("~p received broadcast value from node ~p: ~p", [node(), FromNode, Message]),
+    ?LOG_INFO("~p received broadcast value from node ~p: ~p", [node(), FromNode, Message]),
 
     case ets:lookup(?MODULE, Id) of
         [] ->
             %% Forward to process.
-            partisan_util:process_forward(ServerRef, Message),
+            partisan_peer_service_manager:process_forward(ServerRef, Message),
 
             %% Store.
             true = ets:insert(?MODULE, {Id, Message}),
 
             %% Forward to our peers.
-            MyNode = partisan_peer_service_manager:mynode(),
+            MyNode = partisan:node(),
 
             %% Forward to random subset of peers: except ourselves and where we got it from.
-            AntiEntropyMembers = select_random_sublist(membership(Membership), ?FANOUT),
+            AntiEntropyMembers = select_random_sublist(membership(Membership), ?THIS_FANOUT),
 
             lists:foreach(fun(N) ->
-                partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {broadcast, Id, ServerRef, Message, MyNode}, [])
+                partisan:forward_message(
+                    N,
+                    ?MODULE,
+                    {broadcast, Id, ServerRef, Message, MyNode},
+                    #{channel => ?DEFAULT_CHANNEL}
+                )
             end, AntiEntropyMembers -- [MyNode, FromNode]),
 
             ok;
@@ -165,7 +178,7 @@ membership(Membership) ->
 %% @private
 select_random_sublist(Membership, K) ->
     Result = lists:sublist(shuffle(Membership), K),
-    partisan_logger:info("random draw at node ~p was ~p", [node(), Result]),
+    ?LOG_INFO("random draw at node ~p was ~p", [node(), Result]),
     Result.
 
 %% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501

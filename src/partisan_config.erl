@@ -21,13 +21,16 @@
 -module(partisan_config).
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+-include("partisan_logger.hrl").
 -include("partisan.hrl").
+
 
 -export([init/0,
          channels/0,
          parallelism/0,
          trace/2,
          listen_addrs/0,
+         default_channel/0,
          set/2,
          seed/0,
          seed/1,
@@ -49,21 +52,25 @@ init() ->
     %% Configure the partisan node name.
     Name = case node() of
         nonode@nohost ->
-            lager:info("Distributed Erlang is not enabled, generating UUID."),
-            UUIDState = uuid:new(self()),
-            {UUID, _UUIDState1} = uuid:get_v1(UUIDState),
-            lager:info("Generated UUID: ~p, converting to string.", [UUID]),
-            StringUUID = uuid:uuid_to_string(UUID),
-            NodeName = list_to_atom(StringUUID ++ "@127.0.0.1"),
-            lager:info("Generated name for node: ~p", [NodeName]),
+            NodeName = gen_node_name(),
+            ?LOG_INFO(#{
+                description => "Partisan node name configured",
+                name => NodeName,
+                disterl_enabled => false
+            }),
             NodeName;
         Other ->
-            lager:info("Using node name: ~p", [Other]),
+            ?LOG_INFO(#{
+                description => "Partisan node name configured",
+                name => Other,
+                disterl_enabled => true
+            }),
             Other
     end,
 
     %% Must be done here, before the resolution call is made.
     partisan_config:set(name, Name),
+    partisan_config:set(nodestring, atom_to_binary(Name, utf8)),
 
     DefaultTag = case os:getenv("TAG", "false") of
                     "false" ->
@@ -75,7 +82,7 @@ init() ->
                 end,
 
     %% Determine if we are replaying.
-    case os:getenv("REPLAY", "false") of 
+    case os:getenv("REPLAY", "false") of
         "false" ->
             false;
         _ ->
@@ -84,7 +91,7 @@ init() ->
     end,
 
     %% Determine if we are shrinking.
-    case os:getenv("SHRINKING", "false") of 
+    case os:getenv("SHRINKING", "false") of
         "false" ->
             false;
         _ ->
@@ -97,7 +104,7 @@ init() ->
     DefaultPeerPort = random_port(),
 
     %% Configure X-BOT interval.
-    XbotInterval = rand:uniform(?XBOT_RANGE_INTERVAL) + ?XBOT_MIN_INTERVAL, 
+    XbotInterval = rand:uniform(?XBOT_RANGE_INTERVAL) + ?XBOT_MIN_INTERVAL,
 
     [env_or_default(Key, Default) ||
         {Key, Default} <- [{arwl, 5},
@@ -113,9 +120,13 @@ init() ->
                            {disable_fast_receive, false},
                            {distance_enabled, ?DISTANCE_ENABLED},
                            {egress_delay, 0},
+                           {exchange_selection, optimized},
+                           {exchange_tick_period,
+                            ?DEFAULT_EXCHANGE_TICK_PERIOD},
                            {fanout, ?FANOUT},
                            {gossip, true},
                            {ingress_delay, 0},
+                           {lazy_tick_period, ?DEFAULT_LAZY_TICK_PERIOD},
                            {max_active_size, 6},
                            {max_passive_size, 30},
                            {min_active_size, 3},
@@ -124,10 +135,13 @@ init() ->
                            {parallelism, ?PARALLELISM},
                            {membership_strategy, ?DEFAULT_MEMBERSHIP_STRATEGY},
                            {partisan_peer_service_manager, PeerService},
+                           {peer_host, undefined},
                            {peer_ip, DefaultPeerIP},
                            {peer_port, DefaultPeerPort},
                            {periodic_enabled, ?PERIODIC_ENABLED},
                            {periodic_interval, 10000},
+                           {remote_ref_uri_padding, false},
+                           {remote_ref_as_uri, false},
                            {pid_encoding, true},
                            {ref_encoding, true},
                            {membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING},
@@ -140,13 +154,28 @@ init() ->
                            {shrinking, false},
                            {tracing, false},
                            {tls, false},
-                           {tls_options, []},
+                           {tls_server_options, []},
+                           {tls_client_options, []},
                            {tag, DefaultTag},
                            {xbot_interval, XbotInterval}]],
 
     %% Setup default listen addr.
-    DefaultListenAddrs = [#{ip => ?MODULE:get(peer_ip), port => ?MODULE:get(peer_port)}],
-    env_or_default(listen_addrs, DefaultListenAddrs),
+    %% This will be part of the partisan:node_spec() which is the map
+    DefaultAddr0 = #{port => ?MODULE:get(peer_port)},
+
+    DefaultAddr =
+        case ?MODULE:get(peer_host) of
+            undefined ->
+                DefaultAddr0#{ip => ?MODULE:get(peer_ip)};
+            Host ->
+                DefaultAddr0#{host => Host}
+        end,
+
+    %% We make sure they are sorted so that we can compare them (specially when
+    %% part of the node_spec()).
+    ok = env_or_default(listen_addrs, [DefaultAddr]),
+    ListenAddrs = lists:usort(partisan_config:get(listen_addrs)),
+    ok = partisan_config:set(listen_addrs, ListenAddrs),
 
     ok.
 
@@ -157,25 +186,28 @@ seed(Seed) ->
 %% Seed the process.
 seed() ->
     RandomSeed = random_seed(),
-    lager:info("node ~p choosing random seed: ~p", [node(), RandomSeed]),
+    ?LOG_DEBUG(#{
+        description => "Chossing random seed",
+        node => node(),
+        seed => RandomSeed
+    }),
     rand:seed(exsplus, RandomSeed).
 
 %% Return a random seed, either from the environment or one that's generated for the run.
 random_seed() ->
     case partisan_config:get(random_seed, undefined) of
         undefined ->
-            {erlang:phash2([partisan_peer_service_manager:mynode()]), erlang:monotonic_time(), erlang:unique_integer()};
+            {erlang:phash2([partisan:node()]), erlang:monotonic_time(), erlang:unique_integer()};
         Other ->
             Other
     end.
 
 trace(Message, Args) ->
-    case partisan_config:get(tracing, ?TRACING) of
-        true ->
-            lager:info(Message, Args);
-        false ->
-            ok
-    end.
+    ?LOG_TRACE(#{
+        description => "Trace",
+        message => Message,
+        args => Args
+    }).
 
 env_or_default(Key, Default) ->
     case application:get_env(partisan, Key) of
@@ -185,27 +217,45 @@ env_or_default(Key, Default) ->
             set(Key, Default)
     end.
 
+
 get(Key) ->
-    partisan_mochiglobal:get(Key).
+    persistent_term:get(Key).
 
 get(Key, Default) ->
-    partisan_mochiglobal:get(Key, Default).
+    persistent_term:get(Key, Default).
+
 
 set(peer_ip, Value) when is_list(Value) ->
     {ok, ParsedIP} = inet_parse:address(Value),
     set(peer_ip, ParsedIP);
+
+set(channels, Value) ->
+    do_set(channels, lists:usort(Value ++ ?CHANNELS));
+
 set(Key, Value) ->
-    application:set_env(?APP, Key, Value),
-    partisan_mochiglobal:put(Key, Value).
+    do_set(Key, Value).
+
 
 listen_addrs() ->
     partisan_config:get(listen_addrs).
 
+
 channels() ->
-    partisan_config:get(channels).
+    partisan_config:get(channels, ?CHANNELS).
+
+
+default_channel() ->
+    ?DEFAULT_CHANNEL.
+
 
 parallelism() ->
-    partisan_config:get(parallelism).
+    partisan_config:get(parallelism, ?PARALLELISM).
+
+
+do_set(Key, Value) ->
+    application:set_env(?APP, Key, Value),
+    persistent_term:put(Key, Value).
+
 
 %% @private
 random_port() ->
@@ -213,6 +263,7 @@ random_port() ->
     {ok, {_, Port}} = inet:sockname(Socket),
     ok = gen_tcp:close(Socket),
     Port.
+
 
 %% @private
 try_get_node_address() ->
@@ -225,20 +276,31 @@ try_get_node_address() ->
 
 %% @private
 get_node_address() ->
-    Name = atom_to_list(partisan_peer_service_manager:mynode()),
+    Name = atom_to_list(partisan:node()),
     [_Hostname, FQDN] = string:tokens(Name, "@"),
 
     %% Spawn a process to perform resolution.
     Me = self(),
 
     ResolverFun = fun() ->
-        lager:info("Resolving ~p...", [FQDN]),
+        ?LOG_INFO(#{
+            description => "Resolving FQDN",
+            fqdn => FQDN
+        }),
         case inet:getaddr(FQDN, inet) of
             {ok, Address} ->
-                lager:info("Resolved ~p to ~p", [Name, Address]),
+                ?LOG_INFO(#{
+                    description => "Resolved domain name",
+                    name => Name,
+                    address => Address
+                }),
                 Me ! {ok, Address};
-            {error, Error} ->
-                lager:error("Cannot resolve local name ~p, resulting to 127.0.0.1: ~p", [FQDN, Error]),
+            {error, Reason} ->
+                ?LOG_INFO(#{
+                    description => "Cannot resolve local name, resulting to 127.0.0.1",
+                    fqdn => FQDN,
+                    reason => Reason
+                }),
                 Me ! {ok, ?PEER_IP}
         end
     end,
@@ -252,9 +314,25 @@ get_node_address() ->
     %% Wait for response, either answer or exit.
     receive
         {ok, Address} ->
-            lager:info("Resolved ~p to ~p", [FQDN, Address]),
+            ?LOG_INFO(#{
+                description => "Resolving FQDN",
+                fqdn => FQDN,
+                address => Address
+            }),
             Address;
         Error ->
-            lager:error("Error resolving name ~p: ~p", [Error, FQDN]),
+            ?LOG_INFO(#{
+                description => "Error resolving FQDN",
+                fqdn => FQDN,
+                error => Error
+            }),
             ?PEER_IP
     end.
+
+
+%% @private
+gen_node_name() ->
+    UUIDState = uuid:new(self()),
+    {UUID, _UUIDState1} = uuid:get_v1(UUIDState),
+    StringUUID = uuid:uuid_to_string(UUID),
+    list_to_atom(StringUUID ++ "@127.0.0.1").

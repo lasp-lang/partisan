@@ -22,7 +22,9 @@
 -module(filibuster_SUITE).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+
 -include("partisan.hrl").
+-include("partisan_logger.hrl").
 
 %% Counterexamples
 -define(COUNTEREXAMPLE_FILE, "rebar3_proper-counterexamples.consult").
@@ -104,7 +106,7 @@ groups() ->
 %% ===================================================================
 
 annotations_test(_Config) ->
-    lager:info("~p: starting nodes!", [?MODULE]),
+    ?LOG_INFO("~p: starting nodes!", [?MODULE]),
 
     %% Get self.
     Self = self(),
@@ -119,9 +121,9 @@ annotations_test(_Config) ->
               {causal_labels, ?CAUSAL_LABELS},
               {pid_encoding, false},
               {sync_join, false},
-              {forward_options, []},
+              {forward_options, #{}},
               {broadcast, false},
-              {disterl, false},
+              {connect_disterl, false},
               {hash, undefined},
               {egress_delay, ?EGRESS_DELAY},
               {ingress_delay, ?INGRESS_DELAY},
@@ -135,7 +137,7 @@ annotations_test(_Config) ->
               {membership_strategy, partisan_full_membership_strategy}],
 
     %% Cluster and start options.
-    Options = [{partisan_peer_service_manager, ?MANAGER}, 
+    Options = [{partisan_peer_service_manager, ?MANAGER},
                 {num_nodes, node_num_nodes()},
                 {cluster_nodes, ?CLUSTER_NODES}],
 
@@ -177,7 +179,7 @@ annotations_test(_Config) ->
             %% Open the annotations file.
             AnnotationsFile = BasePath ++ "/annotations/partisan-annotations-" ++ ModuleString,
 
-            case filelib:is_file(AnnotationsFile) of 
+            case filelib:is_file(AnnotationsFile) of
                 false ->
                     debug("Annotations file doesn't exist: ~p~n", [AnnotationsFile]),
                     ct:fail({notfound, AnnotationsFile});
@@ -242,7 +244,7 @@ annotations_test(_Config) ->
     end.
 
 model_checker_test(_Config) ->
-    lager:info("~p: starting nodes!", [?MODULE]),
+    ?LOG_INFO("~p: starting nodes!", [?MODULE]),
 
     %% Get self.
     Self = self(),
@@ -257,9 +259,9 @@ model_checker_test(_Config) ->
               {causal_labels, ?CAUSAL_LABELS},
               {pid_encoding, false},
               {sync_join, false},
-              {forward_options, []},
+              {forward_options, #{}},
               {broadcast, false},
-              {disterl, false},
+              {connect_disterl, false},
               {hash, undefined},
               {egress_delay, ?EGRESS_DELAY},
               {ingress_delay, ?INGRESS_DELAY},
@@ -273,7 +275,7 @@ model_checker_test(_Config) ->
               {membership_strategy, partisan_full_membership_strategy}],
 
     %% Cluster and start options.
-    Options = [{partisan_peer_service_manager, ?MANAGER}, 
+    Options = [{partisan_peer_service_manager, ?MANAGER},
                 {num_nodes, node_num_nodes()},
                 {cluster_nodes, ?CLUSTER_NODES}],
 
@@ -301,7 +303,7 @@ model_checker_test(_Config) ->
     %% Compile cover.
     {ok, Base} = file:get_cwd(),
     CoverModule = filename:join([Base, "../../../../protocols/" ++ atom_to_list(ImplementationModule) ++ ".erl"]),
-    case filelib:is_file(CoverModule) of 
+    case filelib:is_file(CoverModule) of
         true ->
             {ok, _ImplementationModule} = cover:compile(filename:join([Base, "../../../../protocols/" ++ atom_to_list(ImplementationModule) ++ ".erl"])),
             ok;
@@ -313,7 +315,7 @@ model_checker_test(_Config) ->
     % CoverModules = cover:modules(),
     % debug("cover:modules: ~p", [CoverModules]),
 
-    %% Start cover on all nodes. 
+    %% Start cover on all nodes.
     %% TODO: Replace me with cover:start(Nodes)
     lists:map(fun({_, Node}) ->
         case rpc:call(Node, cover, remote_start, [node()]) of
@@ -377,7 +379,7 @@ model_checker_test(_Config) ->
 %% ===================================================================
 
 execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
-    debug("execute starting...", []), 
+    debug("execute starting...", []),
 
     %% Ensure replaying option is set.
     lists:foreach(fun({ShortName, _}) ->
@@ -399,7 +401,7 @@ execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
     ok = partisan_trace_orchestrator:reset(),
 
     %% Start tracing.
-    lager:info("enabling tracing for nodes: ~p", [Nodes]),
+    ?LOG_INFO("Enabling tracing for nodes: ~p", [Nodes]),
     ok = partisan_trace_orchestrator:enable(Nodes),
 
     %% Set replay.
@@ -408,8 +410,8 @@ execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
     %% Set shrinking.
     partisan_config:set(shrinking, Shrinking),
 
-    %% Perform preloads.    
-    case PerformPreloads of 
+    %% Perform preloads.
+    case PerformPreloads of
         true ->
             ok = partisan_trace_orchestrator:perform_preloads(Nodes);
         false ->
@@ -418,7 +420,6 @@ execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
 
     %% Identify trace.
     TraceRandomNumber = rand:uniform(100000),
-    %% lager:info("~p: trace random generated: ~p", [?MODULE, TraceRandomNumber]),
     TraceIdentifier = atom_to_list(system_model()) ++ "_" ++ integer_to_list(TraceRandomNumber),
     ok = partisan_trace_orchestrator:identify(TraceIdentifier),
 
@@ -439,7 +440,7 @@ execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
     partisan_trace_orchestrator:stop(),
 
     debug("execute returning: ~p", [Result]),
-    
+
     Result.
 
 %% ===================================================================
@@ -449,7 +450,7 @@ execute(Nodes, PerformPreloads, Replaying, Shrinking, Tracing, {M, F, A}) ->
 debug(Line, Args) ->
     case ?DEBUG of
         true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            ?LOG_INFO("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
@@ -463,7 +464,7 @@ system_model() ->
             list_to_atom(SystemModel)
     end.
 
-%% 
+%%
 node_num_nodes() ->
     SystemModel = system_model(),
     SystemModel:node_num_nodes().
@@ -494,7 +495,7 @@ init(Nodes, _Counterexample, TraceFile, ReplayTraceFile, CounterexampleConsultFi
     %% Open the causality file.
     CausalityFile = BasePath ++ "/analysis/partisan-causality-" ++ ModuleString,
 
-    case filelib:is_file(CausalityFile) of 
+    case filelib:is_file(CausalityFile) of
         false ->
             debug("Causality file doesn't exist: ~p~n", [CausalityFile]),
             ct:fail({notfound, CausalityFile});
@@ -509,7 +510,7 @@ init(Nodes, _Counterexample, TraceFile, ReplayTraceFile, CounterexampleConsultFi
     %% Open the annotations file.
     AnnotationsFile = BasePath ++ "/annotations/partisan-annotations-" ++ ModuleString,
 
-    case filelib:is_file(AnnotationsFile) of 
+    case filelib:is_file(AnnotationsFile) of
         false ->
             debug("Annotations file doesn't exist: ~p~n", [AnnotationsFile]),
             ct:fail({notfound, AnnotationsFile});
@@ -534,7 +535,7 @@ init(Nodes, _Counterexample, TraceFile, ReplayTraceFile, CounterexampleConsultFi
     %% Check that we have the necessary preconditions.
     PreconditionsPresent = ensure_preconditions_present(Causality, CausalityAnnotations, BackgroundAnnotations),
     debug("All preconditions present: ~p~n", [PreconditionsPresent]),
-    case PreconditionsPresent of 
+    case PreconditionsPresent of
         true ->
             ok;
         false ->
@@ -572,7 +573,7 @@ init(Nodes, _Counterexample, TraceFile, ReplayTraceFile, CounterexampleConsultFi
 
     %% Remove forced failure from the trace.
     TraceLinesWithoutFailure = lists:filter(fun(Command) ->
-        case Command of 
+        case Command of
             {_, {_, [forced_failure]}} ->
                 debug("Removing command from trace: ~p~n", [Command]),
                 false;
@@ -587,7 +588,7 @@ init(Nodes, _Counterexample, TraceFile, ReplayTraceFile, CounterexampleConsultFi
     analyze(StartTime, Nodes, Counterexample, 1, 0, 0, 0, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, PreviousIteration, PreviousClassificationsExplored, [{TraceLinesWithoutFailure, [], [], []}]),
 
     %% Should we try to find witnesses?
-    case os:getenv("FIND_WITNESSES") of 
+    case os:getenv("FIND_WITNESSES") of
         false ->
             ok;
         _Other ->
@@ -609,20 +610,20 @@ init(Nodes, _Counterexample, TraceFile, ReplayTraceFile, CounterexampleConsultFi
 filter_trace_lines(_, TraceLines, BackgroundAnnotations) ->
     %% Filter the trace into message trace lines.
     MessageTraceLines = lists:filter(fun({Type, Message}) ->
-        case Type =:= pre_interposition_fun of 
+        case Type =:= pre_interposition_fun of
             true ->
                 {_TracingNode, InterpositionType, _OriginNode, _MessagePayload} = Message,
 
-                case InterpositionType of 
+                case InterpositionType of
                     forward_message ->
                         MessageType = message_type(Message),
-                        case lists:member(element(2, MessageType), BackgroundAnnotations) of 
+                        case lists:member(element(2, MessageType), BackgroundAnnotations) of
                             true ->
                                 false;
                             false ->
                                 true
                         end;
-                    _ -> 
+                    _ ->
                         false
                 end;
             false ->
@@ -642,7 +643,7 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
     debug("Beginning analyze pass: ~p with previous iteration: ~p, traces remaining: ~p~n", [Pass, PreviousIteration, length(RestTraceLines)]),
 
     %% Generate the powerset of tracelines.
-    {MessageTraceLines, MessageTraceLinesPowerset} = case length(DifferenceTraceLines) > 0 of 
+    {MessageTraceLines, MessageTraceLinesPowerset} = case length(DifferenceTraceLines) > 0 of
         true ->
             %% Generate powerset offset to reduce redundant schedule exploration.
             % debug("length(DifferenceTraceLines): ~p~n", [length(DifferenceTraceLines)]),
@@ -680,11 +681,11 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
             {FilteredTraceLines, FinalPowerset}
     end,
 
-    TracesToIterate = case os:getenv("SUBLIST") of 
+    TracesToIterate = case os:getenv("SUBLIST") of
         false ->
             lists:reverse(MessageTraceLinesPowerset);
         Other ->
-            case Other of 
+            case Other of
                 "" ->
                     exit({error, no_sublist_provided});
                 "0" ->
@@ -740,21 +741,21 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
                 debug("Generating new trace based on message omissions (~p omissions, iteration ~p): ~n", [length(Omissions), GenIteration0]),
 
                 {FinalTraceLines, _, _, PrefixMessageTypes, OmittedMessageTypes, ConditionalMessageTypes, _, _BackgroundOmissions} = lists:foldl(fun({Type, Message} = Line, {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0, OmittedMessageTypes0, ConditionalMessageTypes0, FaultedNodes0, BackgroundOmissions0}) ->
-                    case Type =:= pre_interposition_fun of 
+                    case Type =:= pre_interposition_fun of
                         true ->
                             {TracingNode, InterpositionType, OriginNode, MessagePayload} = Message,
 
                             % debug("Looking at message type: ~p~n", [message_type(Message)]),
 
-                            case FaultsStarted0 of 
+                            case FaultsStarted0 of
                                 true ->
                                     %% Once we start omitting, omit everything after that's a message
                                     %% send because we don't know what might be coming. In 2PC, if we
                                     %% have a successful trace and omit a prepare -- we can't be guaranteed
-                                    %% to ever see a prepare vote or commit.
-                                    case InterpositionType of 
+                                    %% to ever see a prepare vote or commmit.
+                                    case InterpositionType of
                                         forward_message ->
-                                            case lists:member(Line, Omissions) of 
+                                            case lists:member(Line, Omissions) of
                                                 true ->
                                                     %% Another fault: this should be added to the list of faulted nodes.
                                                     FaultedNodes = update_faulted_nodes(TraceLines, {Type, Message}, Omissions, BackgroundAnnotations, FaultedNodes0),
@@ -772,7 +773,7 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
                                                             % debug("=> found background message from ~p to node ~p~n", [TracingNode, OriginNode]),
                                                             % debug("=> faulted nodes: ~p~n", [dict:to_list(FaultedNodes0)]),
 
-                                                            case dict:find(TracingNode, FaultedNodes0) of 
+                                                            case dict:find(TracingNode, FaultedNodes0) of
                                                                 {ok, true} ->
                                                                     % debug("Found background message for FAULTED node: ~p~n", [TracingNode]),
 
@@ -789,7 +790,7 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
                                                     end
                                             end;
                                         receive_message ->
-                                            case lists:member(Line, AdditionalOmissions0) of 
+                                            case lists:member(Line, AdditionalOmissions0) of
                                                 true ->
                                                     {FinalTrace0, FaultsStarted0, AdditionalOmissions0 -- [Line], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0, FaultedNodes0, BackgroundOmissions0};
                                                 false ->
@@ -798,9 +799,9 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
                                     end;
                                 false ->
                                     %% Otherwise, find just the targeted commands to remove.
-                                    case InterpositionType of 
+                                    case InterpositionType of
                                         forward_message ->
-                                            case lists:member(Line, Omissions) of 
+                                            case lists:member(Line, Omissions) of
                                                 true ->
                                                     % debug("fault started with line: ~p~n", [Line]),
 
@@ -812,7 +813,7 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
 
                                                     {FinalTrace0, true, AdditionalOmissions0 ++ [ReceiveOmission], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0, FaultedNodes, BackgroundOmissions0};
                                                 false ->
-                                                    case lists:member(element(2, message_type(Message)), BackgroundAnnotations) of 
+                                                    case lists:member(element(2, message_type(Message)), BackgroundAnnotations) of
                                                         true ->
                                                             % debug("forward_message message outside of fault schedule, not adding to replay trace: ~p~n", [message_type(Message)]),
                                                             {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0 ++ [message_type(Message)], OmittedMessageTypes0, ConditionalMessageTypes0, FaultedNodes0, BackgroundOmissions0};
@@ -820,12 +821,12 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
                                                             {FinalTrace0 ++ [Line], FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0 ++ [message_type(Message)], OmittedMessageTypes0, ConditionalMessageTypes0, FaultedNodes0, BackgroundOmissions0}
                                                     end
                                             end;
-                                        receive_message -> 
-                                            case lists:member(Line, AdditionalOmissions0) of 
+                                        receive_message ->
+                                            case lists:member(Line, AdditionalOmissions0) of
                                                 true ->
                                                     {FinalTrace0, FaultsStarted0, AdditionalOmissions0 -- [Line], PrefixMessageTypes0, OmittedMessageTypes0 ++ [message_type(Message)], ConditionalMessageTypes0, FaultedNodes0, BackgroundOmissions0};
                                                 false ->
-                                                    case lists:member(element(2, message_type(Message)), BackgroundAnnotations) of 
+                                                    case lists:member(element(2, message_type(Message)), BackgroundAnnotations) of
                                                         true ->
                                                             % debug("receive_message message outside of fault schedule, not adding to replay trace: ~p~n", [message_type(Message)]),
                                                             {FinalTrace0, FaultsStarted0, AdditionalOmissions0, PrefixMessageTypes0 ++ [message_type(Message)], OmittedMessageTypes0, ConditionalMessageTypes0, FaultedNodes0, BackgroundOmissions0};
@@ -876,7 +877,7 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
                 % debug("=> length(BackgroundOmissions): ~p~n", [length(BackgroundOmissions)]),
                 % debug("=> length(lists:usort(BackgroundOmissions)): ~p~n", [length(lists:usort(BackgroundOmissions))]),
 
-                case os:getenv("PRELOAD_SCHEDULES") of 
+                case os:getenv("PRELOAD_SCHEDULES") of
                     "true" ->
                         debug("Inserting into generated schedule list.~n", []),
 
@@ -885,7 +886,7 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
 
                         {GenIteration0 + 1, GenNumPassed0, GenNumFailed0, GetNumPruned0, GenClassificationsExplored0, GenAdditionalTraces0};
                     _Other ->
-                        case GenIteration0 rem 10000 == 0 of 
+                        case GenIteration0 rem 10000 == 0 of
                             true ->
                                 debug(".", []);
                             false ->
@@ -910,7 +911,7 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
                         end
                 end;
             false ->
-                case GenIteration0 rem 10000 == 0 of 
+                case GenIteration0 rem 10000 == 0 of
                     true ->
                         debug(".", []);
                     false ->
@@ -942,7 +943,7 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
     debug("Pass: ~p, Iterations: ~p - ~p, Aggregate: Passed: ~p, Failed: ~p, Pruned: ~p~n", [Pass, PreviousIteration, GenIteration, PreloadNumPassed, PreloadNumFailed, PreloadNumPruned]),
 
     %% Should we explore any new schedules we have discovered?
-    case os:getenv("RECURSIVE") of 
+    case os:getenv("RECURSIVE") of
         "true" ->
             analyze(StartTime, Nodes, Counterexample, Pass + 1, PreloadNumPassed, PreloadNumFailed, PreloadNumPruned, PreloadOmissionFile, ReplayTraceFile, TraceFile, Causality, CausalityAnnotations, BackgroundAnnotations, 1, [], PreloadAdditionalTraces);
         _ ->
@@ -950,16 +951,16 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
     end.
 
 %% @doc Generate the powerset of messages.
-powerset([]) -> 
+powerset([]) ->
     [[]];
 
-powerset([H|T]) -> 
+powerset([H|T]) ->
     PT = powerset(T),
     [ [H|X] || X <- PT ] ++ PT.
 
 %% @private
 implementation_module() ->
-    case os:getenv("IMPLEMENTATION_MODULE") of 
+    case os:getenv("IMPLEMENTATION_MODULE") of
         false ->
             exit({error, no_implementation_module_specified});
         Other ->
@@ -984,11 +985,11 @@ is_subtrace(Trace1, Trace2) ->
 message_type(Message) ->
     {_TracingNode, InterpositionType, _OriginNode, MessagePayload} = Message,
 
-    case InterpositionType of 
+    case InterpositionType of
         forward_message ->
             MessageType1 = element(1, MessagePayload),
 
-            ActualType = case MessageType1 of 
+            ActualType = case MessageType1 of
                 '$gen_sync_all_state_event' ->
                     CastMessage = element(2, MessagePayload),
                     element(1, CastMessage);
@@ -1004,7 +1005,7 @@ message_type(Message) ->
             {forward_message, _Module, Payload} = MessagePayload,
             MessageType1 = element(1, Payload),
 
-            ActualType = case MessageType1 of 
+            ActualType = case MessageType1 of
                 '$gen_sync_all_state_event' ->
                     CastMessage = element(2, Payload),
                     element(1, CastMessage);
@@ -1033,16 +1034,16 @@ schedule_valid_causality(Causality, PrefixSchedule, _OmittedSchedule, Conditiona
         {AtLeastOneDependency, SatifyingDependency} = lists:foldl(fun({K, V}, {_AtLeastOne, Found}) ->
             % debug("=> V: ~p~n", [V]),
 
-            case Found of 
+            case Found of
                 true ->
                     % debug("=> already found satisfyng dependency for ~p, not checking further~n", [Type]),
                     {true, true};
                 false ->
-                    case lists:member(Type, V) of 
+                    case lists:member(Type, V) of
                         true ->
                             % debug("=> Presence of ~p requires: ~p~n", [Type, K]),
 
-                            case lists:member(K, DerivedSchedule) of 
+                            case lists:member(K, DerivedSchedule) of
                                 true ->
                                     % debug("=> Present!~n", []),
                                     {true, true};
@@ -1057,7 +1058,7 @@ schedule_valid_causality(Causality, PrefixSchedule, _OmittedSchedule, Conditiona
             end
         end, {false, false}, dict:to_list(Causality)),
 
-        case AtLeastOneDependency of 
+        case AtLeastOneDependency of
             true ->
                 %% We searched at least once, but didn't find one.
                 SatifyingDependency andalso Acc;
@@ -1067,7 +1068,7 @@ schedule_valid_causality(Causality, PrefixSchedule, _OmittedSchedule, Conditiona
         end
     end, true, DerivedSchedule),
 
-    case RequirementsMet of 
+    case RequirementsMet of
         true ->
             debug("Causality verified.~n", []),
             ok;
@@ -1087,7 +1088,7 @@ identify_minimal_witnesses() ->
         % debug("=> looking at iteration ~p~n", [Iteration]),
 
         %% For each trace that passes.
-        case Status of 
+        case Status of
             true ->
                 %% Ensure all supertraces also pass.
                 AllSupertracesPass = ets:foldl(fun({_, {_Iteration1, FinalTraceLines1, _Omissions1, Status1}}, AllSupertracesPass1) ->
@@ -1102,7 +1103,7 @@ identify_minimal_witnesses() ->
 
                 % debug("=> ~p, all_super_traces_passing? ~p~n", [Iteration, AllSupertracesPass]),
 
-                case AllSupertracesPass of 
+                case AllSupertracesPass of
                     true ->
                         % debug("=> witness found!~n", []),
                         Witnesses1 ++ [Candidate];
@@ -1124,7 +1125,7 @@ identify_minimal_witnesses() ->
         %% See if any of the traces are subtraces of this.
         StillMinimal = lists:foldl(fun({Iteration1, FinalTraceLines1, _Omissions1, _Status1}, StillMinimal1) ->
             %% Is this other trace a subtrace of me?  If so, discard us
-            case is_subtrace(FinalTraceLines1, FinalTraceLines) andalso Iteration =/= Iteration1 of 
+            case is_subtrace(FinalTraceLines1, FinalTraceLines) andalso Iteration =/= Iteration1 of
                 true ->
                     % debug("=> => found subtrace in iteration: ~p, status: ~p~n", [Iteration1, Status1]),
                     StillMinimal1 andalso false;
@@ -1135,7 +1136,7 @@ identify_minimal_witnesses() ->
 
         % debug("=> ~p, still_minimal? ~p~n", [Iteration, StillMinimal]),
 
-        case StillMinimal of 
+        case StillMinimal of
             true ->
                 % debug("=> minimal witness found!~n", []),
                 MinimalWitnesses ++ [Witness];
@@ -1156,7 +1157,7 @@ classify_schedule(_N, CausalityAnnotations0, PrefixSchedule, _OmittedSchedule, C
 
     %% Remove any annotations where the condition is trivially true before classifying.
     CausalityAnnotations = dict:fold(fun(Key, Value, Acc) ->
-        case Value of 
+        case Value of
             [true] ->
                 Acc;
             _ ->
@@ -1168,7 +1169,7 @@ classify_schedule(_N, CausalityAnnotations0, PrefixSchedule, _OmittedSchedule, C
 
     Classification = lists:foldl(fun({Type, Preconditions}, Dict0) ->
         Result = lists:foldl(fun(Precondition, Acc) ->
-            case Precondition of 
+            case Precondition of
                 {PreconditionType, N} ->
                     Num = length(lists:filter(fun(T) -> T =:= PreconditionType end, DerivedSchedule)),
                     % debug("=> * found ~p messages of type ~p~n", [Num, PreconditionType]),
@@ -1193,7 +1194,7 @@ classify_schedule(_N, CausalityAnnotations0, CandidateTrace0) ->
 
     %% Remove any annotations where the condition is trivially true before classifying.
     CausalityAnnotations = dict:fold(fun(Key, Value, Acc) ->
-        case Value of 
+        case Value of
             [true] ->
                 Acc;
             _ ->
@@ -1207,7 +1208,7 @@ classify_schedule(_N, CausalityAnnotations0, CandidateTrace0) ->
         Result = lists:foldl(fun(Precondition, Acc) ->
             % debug("checking precondition: ~p", [Precondition]),
 
-            case Precondition of 
+            case Precondition of
                 {{_, PreconditionType}, N} ->
                     Num = length(lists:filter(fun(T) -> T =:= {forward_message, PreconditionType} end, CandidateTrace)),
                     % debug("=> * found ~p messages of type ~p~n", [Num, PreconditionType]),
@@ -1234,11 +1235,11 @@ ensure_preconditions_present(Causality, CausalityAnnotations, BackgroundAnnotati
     end, [], dict:to_list(Causality)),
 
     lists:foldl(fun(Message, Acc) ->
-        case lists:keymember(Message, 1, dict:to_list(CausalityAnnotations)) of 
+        case lists:keymember(Message, 1, dict:to_list(CausalityAnnotations)) of
             true ->
                 Acc andalso true;
             false ->
-                case lists:member(element(2, Message), BackgroundAnnotations) of 
+                case lists:member(element(2, Message), BackgroundAnnotations) of
                     true ->
                         Acc andalso true;
                     false ->
@@ -1252,7 +1253,7 @@ ensure_preconditions_present(Causality, CausalityAnnotations, BackgroundAnnotati
 message_types(TraceLines) ->
     %% Filter the trace into message trace lines.
     lists:flatmap(fun({Type, Message}) ->
-        case Type =:= pre_interposition_fun of 
+        case Type =:= pre_interposition_fun of
             true ->
                 [message_type(Message)];
             false ->
@@ -1264,11 +1265,11 @@ message_types(TraceLines) ->
 execute_schedule(StartTime, CurrentIteration, Nodes, Counterexample, PreloadOmissionFile, ReplayTraceFile, TraceFile, TraceLines, {Iteration, {Omissions, FinalTraceLines, ClassifySchedule, ScheduleValid}}, ClassificationsExplored0, NewTraces0) ->
     Classification = dict:to_list(ClassifySchedule),
 
-    case ScheduleValid of 
+    case ScheduleValid of
         false ->
             invalid;
         true ->
-            case classification_explored(Classification, ClassificationsExplored0) andalso pruning() of  
+            case classification_explored(Classification, ClassificationsExplored0) andalso pruning() of
                 true ->
                     debug("Classification: ~p~n", [Classification]),
                     debug("Classifications explored: ~p~n", [ClassificationsExplored0]),
@@ -1329,7 +1330,7 @@ execute_schedule(StartTime, CurrentIteration, Nodes, Counterexample, PreloadOmis
                         true ->
                             debug("=> * Adding trace to list to explore.~n", []),
 
-                            case lists:keymember(DifferenceTypes, 3, NewTraces0) of 
+                            case lists:keymember(DifferenceTypes, 3, NewTraces0) of
                                 true ->
                                     debug("=> * Similar trace already exists, ignoring!~n", []),
                                     NewTraces0;
@@ -1353,12 +1354,12 @@ execute_schedule(StartTime, CurrentIteration, Nodes, Counterexample, PreloadOmis
                         false ->
                             %% This failed.
                             debug("Test FAILED!~n", []),
-                            % debug("Failing test contained the following omitted message types: ~p~n", [Omissions]),
+                            % debug("Failing test contained the following omitted mesage types: ~p~n", [Omissions]),
 
                             OmissionTypes = message_types(Omissions),
                             debug("=> OmissionTypes: ~p~n", [OmissionTypes]),
 
-                            case os:getenv("EXIT_ON_COUNTEREXAMPLE") of 
+                            case os:getenv("EXIT_ON_COUNTEREXAMPLE") of
                                 false ->
                                     ok;
                                 "true" ->
@@ -1393,16 +1394,16 @@ schedule_valid_causality(Causality, CandidateTrace0) ->
         {AtLeastOneDependency, SatifyingDependency} = lists:foldl(fun({K, V}, {_AtLeastOne, Found}) ->
             % debug("=> V: ~p~n", [V]),
 
-            case Found of 
+            case Found of
                 true ->
                     % debug("=> already found satisfying dependency for ~p, not checking further~n", [Type]),
                     {true, true};
                 false ->
-                    case lists:member(Type, V) of 
+                    case lists:member(Type, V) of
                         true ->
                             % debug("=> Presence of ~p requires: ~p~n", [Type, K]),
 
-                            SearchType = case K of 
+                            SearchType = case K of
                                 {receive_message, T} ->
                                     {forward_message, T};
                                 Other ->
@@ -1411,7 +1412,7 @@ schedule_valid_causality(Causality, CandidateTrace0) ->
 
                             % debug("=> Rewriting to look for send of same message type: ~p~n", [SearchType]),
 
-                            case lists:member(SearchType, CandidateTrace) of 
+                            case lists:member(SearchType, CandidateTrace) of
                                 true ->
                                     % debug("=> Present!~n", []),
                                     {true, true};
@@ -1426,7 +1427,7 @@ schedule_valid_causality(Causality, CandidateTrace0) ->
             end
         end, {false, false}, dict:to_list(Causality)),
 
-        case AtLeastOneDependency of 
+        case AtLeastOneDependency of
             true ->
                 %% We searched at least once, but didn't find one.
                 SatifyingDependency andalso Acc;
@@ -1436,7 +1437,7 @@ schedule_valid_causality(Causality, CandidateTrace0) ->
         end
     end, true, CandidateTrace),
 
-    case RequirementsMet of 
+    case RequirementsMet of
         true ->
             % debug("Causality verified.~n", []),
             ok;
@@ -1454,10 +1455,10 @@ update_faulted_nodes(TraceLines, {_Type, Message} = Line, Omissions, BackgroundA
 
     %% Filter omissions for the tracing node.
     OmissionsFilterFun = fun({Type1, Message1}) ->
-        case Type1 of 
+        case Type1 of
             pre_interposition_fun ->
                 {TracingNode1, InterpositionType1, _OriginNode1, _MessagePayload1} = Message1,
-                case InterpositionType1 of 
+                case InterpositionType1 of
                     forward_message ->
                         TracingNode =:= TracingNode1;
                     _ ->
@@ -1466,7 +1467,7 @@ update_faulted_nodes(TraceLines, {_Type, Message} = Line, Omissions, BackgroundA
             _ ->
                 false
         end
-    end, 
+    end,
     OmissionsForTracingNode = lists:filter(OmissionsFilterFun, Omissions),
 
     %% Get last omission for node.
@@ -1474,15 +1475,15 @@ update_faulted_nodes(TraceLines, {_Type, Message} = Line, Omissions, BackgroundA
 
     %% Get last non-background message for node.
     TraceFilterFun = fun({Type1, Message1}) ->
-        case Type1 of 
+        case Type1 of
             pre_interposition_fun ->
                 {TracingNode1, InterpositionType1, _OriginNode1, _MessagePayload1} = Message1,
 
-                case InterpositionType1 of 
+                case InterpositionType1 of
                     forward_message ->
-                        case TracingNode =:= TracingNode1 of 
+                        case TracingNode =:= TracingNode1 of
                             true ->
-                                case lists:member(element(2, message_type(Message1)), BackgroundAnnotations) of 
+                                case lists:member(element(2, message_type(Message1)), BackgroundAnnotations) of
                                     true ->
                                         % debug("=> message is background message, false: ~p~n", [Message1]),
                                         false;
@@ -1499,21 +1500,21 @@ update_faulted_nodes(TraceLines, {_Type, Message} = Line, Omissions, BackgroundA
             _ ->
                 false
         end
-    end, 
+    end,
     MessagesForTracingNode = lists:filter(TraceFilterFun, TraceLines),
 
     %% Last sent message.
     LastMessageForTracingNode = lists:last(MessagesForTracingNode),
 
-    case InterpositionType of 
+    case InterpositionType of
         forward_message ->
-            case dict:find(TracingNode, FaultedNodes0) of 
+            case dict:find(TracingNode, FaultedNodes0) of
                 {ok, true} ->
                     %% Node is already faulted.
-                    case LastOmissionForTracingNode =:= Line of 
+                    case LastOmissionForTracingNode =:= Line of
                         true ->
                             %% Conditional resolve.
-                            case LastMessageForTracingNode =:= Line of 
+                            case LastMessageForTracingNode =:= Line of
                                 true ->
                                     % debug("Node ~p is already faulted, sends no more messages, keeping faulted.~n", [TracingNode]),
 
@@ -1537,9 +1538,9 @@ update_faulted_nodes(TraceLines, {_Type, Message} = Line, Omissions, BackgroundA
                     end;
                 _ ->
                     %% Node is not already faulted.
-                    case LastOmissionForTracingNode =:= Line of 
+                    case LastOmissionForTracingNode =:= Line of
                         true ->
-                            case LastMessageForTracingNode =:= Line of 
+                            case LastMessageForTracingNode =:= Line of
                                 true ->
                                     %% Set faulted if this is the last message the node sends.
                                     % debug("Adding ~p to list of faulted nodes for message type: ~p.~n", [TracingNode, MessageType]),
@@ -1569,7 +1570,7 @@ update_faulted_nodes(TraceLines, {_Type, Message} = Line, Omissions, BackgroundA
 
 %% @private
 pruning() ->
-    case os:getenv("PRUNING") of 
+    case os:getenv("PRUNING") of
         "false" ->
             false;
         _ ->
@@ -1597,7 +1598,7 @@ verify_annotations(CausalityAnnotations, MessageTypesFromTraceLines) ->
             true ->
                 debug("=> has the following requirements: ~p", [Requirements]),
 
-                %% Find first occurrence of the message in the trace.
+                %% Find first occurence of the message in the trace.
                 Nth = index_of(MessageType, MessageTypesFromTraceLines),
                 debug("=> ~p is index: ~p", [MessageType, Nth]),
 
@@ -1608,7 +1609,7 @@ verify_annotations(CausalityAnnotations, MessageTypesFromTraceLines) ->
                 PossiblyWrong = lists:foldl(fun(Requirement, Acc1) ->
                     debug(" -> examining requirement: ~p", [Requirement]),
 
-                    case Requirement of 
+                    case Requirement of
                         true ->
                             debug(" -> criteria trivially true, MET!", []),
                             Acc1;
@@ -1617,9 +1618,9 @@ verify_annotations(CausalityAnnotations, MessageTypesFromTraceLines) ->
                             CriteriaMessages = lists:filter(fun(N) -> N =:= Message end, PrefixTrace),
                             debug(" -> found ~p messages fitting criteria", [length(CriteriaMessages)]),
 
-                            case Criteria of 
+                            case Criteria of
                                 N when N =< length(CriteriaMessages) ->
-                                    %% Weakest precondition candidate.
+                                    %% Weakest precondition candidiate.
                                     debug(" -> criteria, MET!", []),
                                     Acc1;
                                 _ ->
@@ -1630,7 +1631,7 @@ verify_annotations(CausalityAnnotations, MessageTypesFromTraceLines) ->
                     end
                 end, [], Requirements),
 
-                case PossiblyWrong of 
+                case PossiblyWrong of
                     [] ->
                         debug("=> at the end of requirements analysis, requirements correct!", []),
                         Acc;
@@ -1654,7 +1655,7 @@ verify_annotations(CausalityAnnotations, MessageTypesFromTraceLines) ->
 
 %% @private
 classification_explored(Classification, ClassificationsExplored) ->
-    case Classification of 
+    case Classification of
         [] ->
             false;
         _ ->

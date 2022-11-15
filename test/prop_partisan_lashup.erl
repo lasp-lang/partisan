@@ -23,7 +23,7 @@
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -include("partisan.hrl").
-
+-include("partisan_logger.hrl").
 -include_lib("proper/include/proper.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
 
@@ -39,8 +39,8 @@ node_name() ->
     oneof(names()).
 
 names() ->
-    NameFun = fun(N) -> 
-        list_to_atom("node_" ++ integer_to_list(N)) 
+    NameFun = fun(N) ->
+        list_to_atom("node_" ++ integer_to_list(N))
     end,
     lists:map(NameFun, lists:seq(1, node_num_nodes())).
 
@@ -110,11 +110,11 @@ node_postcondition(#node_state{values=Values}, {call, ?MODULE, check_delivery, [
     Result = dict:fold(fun(Key, Value, Acc1) ->
         %% Make sure each node received it.
         dict:fold(fun(Node, NodeResults, Acc2) ->
-            case NodeResults of 
+            case NodeResults of
                 {badrpc, nodedown} ->
                     Acc2 andalso true;
                 _ ->
-                    case lists:member(Key, NodeResults) of 
+                    case lists:member(Key, NodeResults) of
                         true ->
                             node_debug("=> node: ~p received key: ~p", [Node, Key]),
                             Acc2 andalso true;
@@ -133,7 +133,7 @@ node_postcondition(_NodeState, {call, ?MODULE, update, [_Node, _Key, _Value]}, {
 node_postcondition(_NodeState, {call, ?MODULE, sleep, []}, _Result) ->
     true;
 node_postcondition(_NodeState, Command, Response) ->
-    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
+    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p",
                [Command, Response]),
     false.
 
@@ -155,9 +155,9 @@ update(Node, Key, Value) ->
 
     Key1 = [a, b, Key],
 
-    Result = rpc:call(?NAME(Node), lashup_kv, request_op, [Key1, {update, 
-                    [{update, 
-                        {flag, riak_dt_lwwreg}, 
+    Result = rpc:call(?NAME(Node), lashup_kv, request_op, [Key1, {update,
+                    [{update,
+                        {flag, riak_dt_lwwreg},
                         {assign, Value, erlang:system_time(nano_seconds)}
                     }]
                 }]),
@@ -210,7 +210,7 @@ check_delivery() ->
 node_debug(Line, Args) ->
     case ?NODE_DEBUG of
         true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            ?LOG_INFO("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
@@ -239,7 +239,7 @@ node_begin_case() ->
     %% Load, configure, and start lashup.
     lists:foreach(fun({ShortName, _}) ->
         % node_debug("starting lashup at node ~p", [ShortName]),
-        case rpc:call(?NAME(ShortName), application, load, [lashup]) of 
+        case rpc:call(?NAME(ShortName), application, load, [lashup]) of
             ok ->
                 ok;
             {error, {already_loaded, lashup}} ->
@@ -277,7 +277,7 @@ node_end_case() ->
     %% Stop lashup.
     lists:foreach(fun({ShortName, _}) ->
         % node_debug("stopping lashup on node ~p", [ShortName]),
-        case rpc:call(?NAME(ShortName), application, stop, [lashup]) of 
+        case rpc:call(?NAME(ShortName), application, stop, [lashup]) of
             ok ->
                 ok;
             {badrpc, nodedown} ->
@@ -290,7 +290,7 @@ node_end_case() ->
         end,
 
         % node_debug("stopping prometheus on node ~p", [ShortName]),
-        case rpc:call(?NAME(ShortName), application, stop, [prometheus]) of 
+        case rpc:call(?NAME(ShortName), application, stop, [prometheus]) of
             ok ->
                 ok;
             {badrpc, nodedown} ->

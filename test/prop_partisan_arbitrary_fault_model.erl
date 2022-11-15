@@ -22,9 +22,10 @@
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
--include("partisan.hrl").
 
 -include_lib("proper/include/proper.hrl").
+-include("partisan.hrl").
+-include("partisan_logger.hrl").
 
 -compile([export_all]).
 
@@ -42,7 +43,7 @@
 %%%===================================================================
 
 message() ->
-    ?LET(Id, erlang:unique_integer([positive, monotonic]), 
+    ?LET(Id, erlang:unique_integer([positive, monotonic]),
         ?LET(Random, integer(),
             {Id, Random})).
 
@@ -50,8 +51,8 @@ node_name() ->
     oneof(names()).
 
 names() ->
-    NameFun = fun(N) -> 
-        list_to_atom("node_" ++ integer_to_list(N)) 
+    NameFun = fun(N) ->
+        list_to_atom("node_" ++ integer_to_list(N))
     end,
     lists:map(NameFun, lists:seq(1, node_num_nodes())).
 
@@ -100,12 +101,12 @@ begin_reordering(Node) ->
     InterpositionFun = fun
         ({receive_message, _N, Message}) ->
             Message;
-        ({forward_message, _N, Message}) -> 
-            case Message of 
+        ({forward_message, _N, Message}) ->
+            case Message of
                 undefined ->
                     undefined;
                 _ ->
-                    case rand:uniform(10) rem 2 =:= 0 of 
+                    case rand:uniform(10) rem 2 =:= 0 of
                         true ->
                             {'$delay', Message};
                         false ->
@@ -165,10 +166,16 @@ begin_receive_omission(SourceNode0, DestinationNode) ->
     InterpositionFun = fun({receive_message, N, Message}) ->
         case N of
             SourceNode ->
-                lager:info("~p: dropping packet from ~p to ~p due to interposition.", [node(), SourceNode, DestinationNode]),
+                ?LOG_DEBUG(
+                    "~p: dropping packet from ~p to ~p due to interposition.",
+                    [node(), SourceNode, DestinationNode]
+                ),
                 undefined;
             OtherNode ->
-                lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
+                ?LOG_DEBUG(
+                    "~p: allowing message, doesn't match interposition as destination is ~p and not ~p",
+                    [node(), OtherNode, DestinationNode]
+                ),
                 Message
         end;
         ({forward_message, _N, Message}) -> Message
@@ -206,10 +213,16 @@ begin_send_omission(SourceNode, DestinationNode0) ->
     InterpositionFun = fun({forward_message, N, Message}) ->
         case N of
             DestinationNode ->
-                lager:info("~p: dropping packet from ~p to ~p due to interposition.", [node(), SourceNode, DestinationNode]),
+                ?LOG_DEBUG(
+                    "~p: dropping packet from ~p to ~p due to interposition.",
+                    [node(), SourceNode, DestinationNode]
+                ),
                 undefined;
             OtherNode ->
-                lager:info("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
+                ?LOG_DEBUG(
+                    "~p: allowing message, doesn't match interposition as destination is ~p and not ~p",
+                    [node(), OtherNode, DestinationNode]
+                ),
                 Message
         end;
         ({receive_message, _N, Message}) -> Message
@@ -247,7 +260,7 @@ resolve_all_faults_with_heal() ->
     lists:foreach(fun(Node) ->
         % fault_debug("getting interposition funs at node ~p", [Node]),
 
-        case rpc:call(?NAME(Node), ?MANAGER, get_interposition_funs, []) of 
+        case rpc:call(?NAME(Node), ?MANAGER, get_interposition_funs, []) of
             {badrpc, nodedown} ->
                 ok;
             {ok, InterpositionFuns0} ->
@@ -280,7 +293,7 @@ resolve_all_faults_with_crash() ->
     NodesToCrash = lists:foldl(fun(Node, ToCrash) ->
         % fault_debug("getting interposition funs at node ~p", [Node]),
 
-        case rpc:call(?NAME(Node), ?MANAGER, get_interposition_funs, []) of 
+        case rpc:call(?NAME(Node), ?MANAGER, get_interposition_funs, []) of
             {badrpc, nodedown} ->
                 ToCrash;
             {ok, InterpositionFuns0} ->
@@ -308,18 +321,18 @@ resolve_all_faults_with_crash() ->
 
     %% Any faulted nodes should also be crashed.
     NodesToCrash1 = lists:foldl(fun(N, Acc) ->
-        case rpc:call(?NAME(N), partisan_config, get, [faulted]) of 
+        case rpc:call(?NAME(N), partisan_config, get, [faulted]) of
             true ->
                 Acc ++ [N];
             _ ->
                 Acc
-        end 
+        end
     end, [], names()),
 
     %% Crash faulted nodes.
-    lists:foreach(fun(N) -> 
+    lists:foreach(fun(N) ->
         fault_debug("crashing faulted node: ~p", [N]),
-        internal_crash(N) 
+        internal_crash(N)
     end, lists:usort(NodesToCrash ++ NodesToCrash1)),
 
     %% Sleep.
@@ -377,7 +390,7 @@ fault_global_functions() ->
 
 %% Initialize failure state.
 fault_initial_state() ->
-    Tolerance = case os:getenv("FAULT_TOLERANCE") of 
+    Tolerance = case os:getenv("FAULT_TOLERANCE") of
         false ->
             1;
         ToleranceString ->
@@ -394,7 +407,7 @@ fault_initial_state() ->
 
     #fault_model_state{tolerance=Tolerance,
                        reorderings=Reorderings,
-                       crashed_nodes=CrashedNodes, 
+                       crashed_nodes=CrashedNodes,
                        send_omissions=SendOmissions,
                        receive_omissions=ReceiveOmissions,
                        general_omissions=GeneralOmissions}.
@@ -402,7 +415,7 @@ fault_initial_state() ->
 %% Reorderings.
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, reorderings=Reorderings}=FaultModelState, {call, _Mod, begin_reordering, [Node]}=Call) ->
     %% Fault must be allowed at this moment.
-    fault_allowed(Call, FaultModelState) andalso 
+    fault_allowed(Call, FaultModelState) andalso
 
     %% Both nodes have to be non-crashed.
     not lists:member(Node, Reorderings) andalso not lists:member(Node, CrashedNodes);
@@ -420,7 +433,7 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, reorderings=Re
 %% General omission.
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, general_omissions=GeneralOmissions}=FaultModelState, {call, _Mod, begin_omission, [Node]}=Call) ->
     %% Fault must be allowed at this moment.
-    fault_allowed(Call, FaultModelState) andalso 
+    fault_allowed(Call, FaultModelState) andalso
 
     %% Both nodes have to be non-crashed.
     not lists:member(Node, GeneralOmissions) andalso not lists:member(Node, CrashedNodes);
@@ -438,7 +451,7 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, general_omissi
 %% Receive omission.
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, receive_omissions=ReceiveOmissions}=FaultModelState, {call, _Mod, begin_receive_omission, [SourceNode, DestinationNode]}=Call) ->
     %% We must not already have a receive omission for these nodes.
-    BeginCondition = case dict:find({SourceNode, DestinationNode}, ReceiveOmissions) of 
+    BeginCondition = case dict:find({SourceNode, DestinationNode}, ReceiveOmissions) of
         {ok, _Value} ->
             false;
         error ->
@@ -446,7 +459,7 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, receive_omissi
     end,
 
     %% Fault must be allowed at this moment.
-    fault_allowed(Call, FaultModelState) andalso 
+    fault_allowed(Call, FaultModelState) andalso
 
     %% Nodes must not be the same node.
     SourceNode =/= DestinationNode andalso
@@ -459,7 +472,7 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, receive_omissi
 
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, receive_omissions=ReceiveOmissions}, {call, _Mod, end_receive_omission, [SourceNode, DestinationNode]}) ->
     %% We must be in the middle of a send omission to resolve it.
-    EndCondition = case dict:find({SourceNode, DestinationNode}, ReceiveOmissions) of 
+    EndCondition = case dict:find({SourceNode, DestinationNode}, ReceiveOmissions) of
         {ok, _Value} ->
             true;
         error ->
@@ -471,7 +484,7 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, receive_omissi
 %% Send omission.
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, send_omissions=SendOmissions}=FaultModelState, {call, _Mod, begin_send_omission, [SourceNode, DestinationNode]}=Call) ->
     %% We must not already have a receive omission for these nodes.
-    BeginCondition = case dict:find({SourceNode, DestinationNode}, SendOmissions) of 
+    BeginCondition = case dict:find({SourceNode, DestinationNode}, SendOmissions) of
         {ok, _Value} ->
             false;
         error ->
@@ -479,7 +492,7 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, send_omissions
     end,
 
     %% Fault must be allowed at this moment.
-    fault_allowed(Call, FaultModelState) andalso 
+    fault_allowed(Call, FaultModelState) andalso
 
     %% Nodes must not be the same node.
     SourceNode =/= DestinationNode andalso
@@ -492,7 +505,7 @@ fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, send_omissions
 
 fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, send_omissions=SendOmissions}, {call, _Mod, end_send_omission, [SourceNode, DestinationNode]}) ->
     %% We must be in the middle of a send omission to resolve it.
-    EndCondition = case dict:find({SourceNode, DestinationNode}, SendOmissions) of 
+    EndCondition = case dict:find({SourceNode, DestinationNode}, SendOmissions) of
         {ok, _Value} ->
             true;
         error ->
@@ -552,15 +565,15 @@ fault_next_state(_State, FaultModelState, _Res, {call, _Mod, resolve_all_faults_
     FaultModelState#fault_model_state{send_omissions=SendOmissions, receive_omissions=ReceiveOmissions};
 
 fault_next_state(_State,
-                 #fault_model_state{crashed_nodes=CrashedNodes0}=FaultModelState, 
-                 _Res, 
+                 #fault_model_state{crashed_nodes=CrashedNodes0}=FaultModelState,
+                 _Res,
                  {call, _Mod, resolve_all_faults_with_crash, []}) ->
     SendOmissions = dict:new(),
     ReceiveOmissions = dict:new(),
     CrashedNodes = lists:usort(CrashedNodes0 ++ active_faults(FaultModelState)),
 
-    FaultModelState#fault_model_state{crashed_nodes=CrashedNodes, 
-                                      send_omissions=SendOmissions, 
+    FaultModelState#fault_model_state{crashed_nodes=CrashedNodes,
+                                      send_omissions=SendOmissions,
                                       receive_omissions=ReceiveOmissions};
 
 fault_next_state(_State, FaultModelState, _Res, _Call) ->
@@ -622,20 +635,20 @@ num_active_faults(FaultModelState) ->
 
 %% Resolvable faults.
 fault_num_resolvable_faults(#fault_model_state{general_omissions=GeneralOmissions, send_omissions=SendOmissions0, receive_omissions=ReceiveOmissions0}) ->
-    SendOmissions = lists:map(fun({{SourceNode, _DestinationNode}, true}) -> SourceNode end, 
+    SendOmissions = lists:map(fun({{SourceNode, _DestinationNode}, true}) -> SourceNode end,
                         dict:to_list(SendOmissions0)),
-    ReceiveOmissions = lists:map(fun({{_SourceNode, DestinationNode}, true}) -> DestinationNode end, 
+    ReceiveOmissions = lists:map(fun({{_SourceNode, DestinationNode}, true}) -> DestinationNode end,
                         dict:to_list(ReceiveOmissions0)),
     ResolvableFaults = lists:usort(SendOmissions ++ ReceiveOmissions ++ GeneralOmissions),
     length(ResolvableFaults).
 
 %% The nodes that are faulted.
 active_faults(#fault_model_state{crashed_nodes=CrashedNodes, reorderings=Reorderings, general_omissions=GeneralOmissions, send_omissions=SendOmissions0, receive_omissions=ReceiveOmissions0}) ->
-    SendOmissions = lists:map(fun({{SourceNode, _DestinationNode}, true}) -> SourceNode end, 
+    SendOmissions = lists:map(fun({{SourceNode, _DestinationNode}, true}) -> SourceNode end,
                         dict:to_list(SendOmissions0)),
     % fault_debug("=> => send_omissions: ~p", [SendOmissions]),
 
-    ReceiveOmissions = lists:map(fun({{_SourceNode, DestinationNode}, true}) -> DestinationNode end, 
+    ReceiveOmissions = lists:map(fun({{_SourceNode, DestinationNode}, true}) -> DestinationNode end,
                         dict:to_list(ReceiveOmissions0)),
     % fault_debug("=> => receive_omissions: ~p", [ReceiveOmissions]),
 
@@ -703,7 +716,7 @@ fault_allowed({call, _Mod, begin_receive_omission, [_SourceNode, DestinationNode
 fault_debug(Line, Args) ->
     case ?FAULT_DEBUG of
         true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            ?LOG_INFO("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
@@ -731,7 +744,9 @@ wait_until_nodes_agree_on_membership(Nodes) ->
         end
     end,
     [ok = wait_until(Node, AgreementFun) || Node <- Nodes],
-    lager:info("All nodes agree on membership!"),
+
+    ?LOG_INFO(#{description => "All nodes agree on membership!"}),
+
     ok.
 
 %% @private

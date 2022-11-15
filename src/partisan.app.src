@@ -1,18 +1,24 @@
-{application,partisan,
- [{description,"Scalable peer service for Lasp"},
-  {vsn,"git"},
-  {registered,[]},
-  {applications,[kernel,
-                 stdlib,
-                 crypto,
-                 lager,
-                 types,
-                 acceptor_pool,
-                 ssl,
-                 uuid]},
-  {mod,{partisan_app,[]}},
-  {modules,[]},
-  {included_applications,[]},
-  {env,[{partisan,"data"}]},
-  {licenses,["Apache 2.0"]},
-  {links,[{"Github","https://github.com/lasp-lang/partisan"}]}]}.
+{application, partisan, [
+    {description,
+        "Partisan is a scalable and flexible, TCP-based membership system and distribution layer for the BEAM."
+    },
+    {vsn, "5.0.0-beta.11"},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib,
+        crypto,
+        ssl,
+        types,
+        acceptor_pool,
+        uuid
+    ]},
+    {mod, {partisan_app,[]}},
+    {modules, []},
+    {included_applications, []},
+    {env, []},
+    {licenses, ["Apache-2.0"]},
+    {links, [
+        {"Github","https://github.com/lasp-lang/partisan"}
+    ]}
+]}.

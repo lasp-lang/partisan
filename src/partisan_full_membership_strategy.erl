@@ -24,15 +24,20 @@
 
 -behaviour(partisan_membership_strategy).
 
+-include("partisan.hrl").
+-include("partisan_logger.hrl").
+
 -export([init/1,
          join/3,
          leave/2,
          periodic/1,
+         prune/2,
          handle_message/2]).
 
--define(SET, state_orset).
-
--record(full_v1, {actor, membership}).
+-record(full_v1, {
+    actor           ::  actor(),
+    membership      ::  partisan_membership_set:t()
+}).
 
 %%%===================================================================
 %%% API
@@ -47,7 +52,7 @@ init(Identity) ->
 
 %% @doc When a node is connected, return the state, membership and outgoing message queue to be transmitted.
 join(#full_v1{membership=Membership0} = State0, _Node, #full_v1{membership=NodeMembership}) ->
-    Membership = ?SET:merge(Membership0, NodeMembership),
+    Membership = partisan_membership_set:merge(Membership0, NodeMembership),
     State = State0#full_v1{membership=Membership},
     MembershipList = membership_list(State),
     OutgoingMessages = gossip_messages(State),
@@ -55,25 +60,30 @@ join(#full_v1{membership=Membership0} = State0, _Node, #full_v1{membership=NodeM
     {ok, MembershipList, OutgoingMessages, State}.
 
 %% @doc Leave a node from the cluster.
-leave(#full_v1{membership=Membership0, actor=Actor}=State0, #{name := NameToRemove}) ->
+leave(#full_v1{}=State0, #{name := NameToRemove}) ->
+    Membership0 = State0#full_v1.membership,
+    Actor = State0#full_v1.actor,
+
     %% Node may exist in the membership on multiple ports, so we need to
     %% remove all.
-    Membership = lists:foldl(fun(#{name := Name} = N, M0) ->
-                        case NameToRemove of
-                            Name ->
-                                {ok, M} = ?SET:mutate({rmv, N}, Actor, M0),
-                                M;
-                            _ ->
-                                M0
-                        end
-                end, Membership0, membership_list(State0)),
+    Membership = lists:foldl(
+        fun
+            (#{name := Name} = N, Acc0) when Name == NameToRemove ->
+                partisan_membership_set:remove(N, Actor, Acc0);
+            (_, Acc0) ->
+                Acc0
+        end,
+        Membership0,
+        membership_list(State0)
+    ),
 
     %% Self-leave removes our own state and resets it.
-    StateToGossip = State0#full_v1{membership=Membership},
+    StateToGossip = State0#full_v1{membership = Membership},
 
-    State = case partisan_peer_service_manager:mynode() of
+    State = case partisan:node() of
         NameToRemove ->
-            %% Reset our state, store this, but gossip the state with us removed to the remainder of the members.
+            %% Reset our state, store this, but gossip the state with us
+            %% removed to the remainder of the members.
             new_state(Actor);
         _ ->
             %% Gossip state with member removed.
@@ -84,9 +94,11 @@ leave(#full_v1{membership=Membership0, actor=Actor}=State0, #{name := NameToRemo
 
     %% Gossip new membership to existing members, so they remove themselves.
     OutgoingMessages = gossip_messages(State0, StateToGossip),
+
     persist_state(State),
 
     {ok, MembershipList, OutgoingMessages, State}.
+
 
 %% @doc Periodic protocol maintenance.
 periodic(State) ->
@@ -95,19 +107,42 @@ periodic(State) ->
 
     {ok, MembershipList, OutgoingMessages, State}.
 
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+prune(#full_v1{membership = Membership0} = State0, [H|T]) ->
+    Actor = State0#full_v1.actor,
+    Membership = partisan_membership_set:remove(H, Actor, Membership0),
+    State = State0#full_v1{membership = Membership},
+    prune(State, T);
+
+prune(State, []) ->
+    {ok, membership_list(State), State}.
+
+
 %% @doc Handling incoming protocol message.
-handle_message(#full_v1{membership=Membership0}=State0, {#{name := _From}, #full_v1{membership=NodeMembership}}) ->
-    case ?SET:equal(Membership0, NodeMembership) of
+handle_message(
+    #full_v1{membership = M0} = State0,
+    {#{name := From}, #full_v1{membership = M1}}) ->
+
+    ?LOG_DEBUG(#{
+        description => "Received membership_strategy",
+        from => From,
+        membership => partisan_membership_set:to_list(M1)
+    }),
+
+    case partisan_membership_set:equal(M0, M1) of
         true ->
             %% Convergence of gossip at this node.
             MembershipList = membership_list(State0),
             OutgoingMessages = [],
-
             {ok, MembershipList, OutgoingMessages, State0};
         false ->
             %% Merge, persist, reforward to peers.
-            Membership = ?SET:merge(Membership0, NodeMembership),
-            State = State0#full_v1{membership=Membership},
+            M = partisan_membership_set:merge(M0, M1),
+            State = State0#full_v1{membership = M},
             MembershipList = membership_list(State),
             OutgoingMessages = gossip_messages(State),
             persist_state(State),
@@ -120,8 +155,8 @@ handle_message(#full_v1{membership=Membership0}=State0, {#{name := _From}, #full
 %%%===================================================================
 
 %% @private
-membership_list(#full_v1{membership=Membership}) ->
-    sets:to_list(?SET:query(Membership)).
+membership_list(#full_v1{membership = M}) ->
+    partisan_membership_set:to_list(M).
 
 %% @private
 gossip_messages(State) ->
@@ -129,15 +164,19 @@ gossip_messages(State) ->
 
 %% @private
 gossip_messages(State0, State) ->
-    MembershipList = membership_list(State0),
-
     case partisan_config:get(gossip, true) of
         true ->
-            case MembershipList of
+            case without_me(membership_list(State0)) of
                 [] ->
                     [];
                 AllPeers ->
-                    lists:map(fun(Peer) -> {Peer, {membership_strategy, {myself(), State}}} end, AllPeers)
+                    lists:map(
+                        fun(Peer) ->
+                            Message = {membership_strategy, {myself(), State}},
+                            {Peer, Message}
+                        end,
+                        AllPeers
+                    )
             end;
         _ ->
             []
@@ -158,6 +197,7 @@ maybe_load_state_from_disk(Actor) ->
             end
     end.
 
+
 %% @private
 data_root() ->
     case application:get_env(partisan, partisan_data_dir) of
@@ -167,16 +207,21 @@ data_root() ->
             undefined
     end.
 
+
 %% @private
 new_state(Actor) ->
-    {ok, Membership} = ?SET:mutate({add, myself()}, Actor, ?SET:new()),
+    Membership = partisan_membership_set:add(
+        myself(), Actor, partisan_membership_set:new()
+    ),
     LocalState = #full_v1{membership=Membership, actor=Actor},
     persist_state(LocalState),
     LocalState.
 
+
 %% @private
 myself() ->
-    partisan_peer_service_manager:myself().
+    partisan:node_spec().
+
 
 %% @private
 persist_state(State) ->
@@ -186,6 +231,7 @@ persist_state(State) ->
         false ->
             ok
     end.
+
 
 %% @private
 write_state_to_disk(State) ->
@@ -197,3 +243,9 @@ write_state_to_disk(State) ->
             ok = filelib:ensure_dir(File),
             ok = file:write_file(File, term_to_binary(State))
     end.
+
+
+%% @private
+without_me(MembershipList) ->
+    MyNode = partisan:node(),
+    lists:filter(fun(#{name := Name}) -> Name =/= MyNode end, MembershipList).

@@ -1,20 +1,37 @@
-PACKAGE         ?= partisan
-VERSION         ?= $(shell git describe --tags)
 BASE_DIR         = $(shell pwd)
-ERLANG_BIN       = $(shell dirname $(shell which erl))
-REBAR            = rebar3
-MAKE			 = make
 CONCURRENCY 	 ?= 4
+DEP_DIR         ?= "deps"
+EBIN_DIR        ?= "ebin"
+ERLANG_BIN       = $(shell dirname $(shell which erl))
 LATENCY 		 ?= 0
-SIZE 			 ?= 1024
+MAKE			 = make
+PACKAGE         ?= partisan
+PROJECT         ?= $(shell basename `find src -name "*.app.src"` .app.src)
+REBAR           ?= rebar3
+REVISION        ?= $(shell git rev-parse --short HEAD)
+SIZE 			?= 1024
+VERSION         ?= $(shell git describe --tags)
 
-.PHONY: rel deps test plots
+.PHONY: compile-no-deps test docs xref dialyzer-run dialyzer-quick dialyzer \
+		cleanplt upload-docs rel deps test plots
 
 all: compile
 
 ##
 ## Compilation targets
 ##
+
+compile-no-deps:
+	${REBAR} compile skip_deps=true
+
+docs:
+	${REBAR} ex_doc skip_deps=true
+
+xref: compile
+	${REBAR} xref skip_deps=true
+
+dialyzer: compile
+	${REBAR} dialyzer
 
 compile:
 	$(REBAR) compile
@@ -38,12 +55,12 @@ perf:
 	pkill -9 beam.smp; pkill -9 epmd; SIZE=${SIZE} LATENCY=${LATENCY} CONCURRENCY=${CONCURRENCY} ${REBAR} ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=default
 	pkill -9 beam.smp; pkill -9 epmd; SIZE=${SIZE} LATENCY=${LATENCY} CONCURRENCY=${CONCURRENCY} PARALLELISM=${CONCURRENCY} ${REBAR} ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=with_parallelism
 
-kill: 
+kill:
 	pkill -9 beam.smp; pkill -9 epmd; exit 0
 
 check: kill test xref dialyzer
 
-test: ct eunit
+test: eunit ct
 
 lint:
 	${REBAR} as lint lint
@@ -68,6 +85,7 @@ unsorted-logs:
 logs:
 	cat priv/lager/*/log/*.log | sort -k2M # -k3n -k4
 
+
 ##
 ## Release targets
 ##
@@ -80,9 +98,8 @@ stage:
 
 DIALYZER_APPS = kernel stdlib erts sasl eunit syntax_tools compiler crypto
 
-include tools.mk
 
-## 
+##
 ## Container targets
 ##
 

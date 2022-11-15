@@ -30,7 +30,18 @@
 -type membership_list() :: [node_spec()].
 
 -callback init(actor()) -> {ok, membership_list(), state()}.
--callback join(state(), node_spec(), state()) -> {ok, membership_list(), outgoing_messages(), state()}.
--callback leave(state(), node_spec()) -> {ok, membership_list(), outgoing_messages(), state()}.
--callback periodic(state()) -> {ok, membership_list(), outgoing_messages(), state()}.
--callback handle_message(state(), message()) -> {ok, membership_list(), outgoing_messages(), state()}.
+
+-callback join(state(), node_spec(), state()) ->
+    {ok, membership_list(), outgoing_messages(), state()}.
+
+-callback leave(state(), node_spec()) ->
+    {ok, membership_list(), outgoing_messages(), state()}.
+
+-callback prune(state(), [node_spec()]) ->
+    {ok, membership_list(), state()}.
+
+-callback periodic(state()) ->
+    {ok, membership_list(), outgoing_messages(), state()}.
+
+-callback handle_message(state(), message()) ->
+    {ok, membership_list(), outgoing_messages(), state()}.

@@ -18,28 +18,38 @@
 %%
 %% -------------------------------------------------------------------
 
--module(partisan_pool).
+-module(partisan_acceptor_socket_pool_sup).
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
--behaviour(acceptor_pool).
+-behaviour(supervisor).
 
--export([start_link/0,
-         accept_socket/2]).
+%% public api
+
+-export([start_link/0]).
+
+%% supervisor api
 
 -export([init/1]).
 
 %% public api
 
 start_link() ->
-    acceptor_pool:start_link({local, ?MODULE}, ?MODULE, []).
+    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-accept_socket(Socket, Acceptors) ->
-    acceptor_pool:accept_socket(?MODULE, Socket, Acceptors).
-
-%% acceptor_pool api
+%% supervisor api
 
 init([]) ->
-    Conn = #{id => partisan_peer_service_server,
-             start => {partisan_peer_service_server, [], []},
-             grace => 5000}, % Give connections 5000ms to close before shutdown
-    {ok, {#{}, [Conn]}}.
+    Flags = #{strategy => rest_for_one},
+    Pool = pool(),
+    Sockets = [socket(ListenAddr) || ListenAddr <- partisan_config:listen_addrs()],
+    {ok, {Flags, lists:flatten([Pool, Sockets])}}.
+
+%% @private
+socket(#{ip := IP, port := Port}) ->
+    #{id => {partisan_acceptor_socket, IP, Port},
+      start => {partisan_acceptor_socket, start_link, [IP, Port]}}.
+
+%% @private
+pool() ->
+    #{id => partisan_acceptor_pool,
+      start => {partisan_acceptor_pool, start_link, []}}.

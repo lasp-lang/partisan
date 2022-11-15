@@ -22,6 +22,9 @@
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+-include("partisan_logger.hrl").
+-include("partisan.hrl").
+
 %% API
 -export([start_link/0,
          stop/0,
@@ -36,7 +39,7 @@
          terminate/2,
          code_change/3]).
 
--define(FANOUT, 2).
+-define(THIS_FANOUT, 2).
 
 -record(state, {next_id, membership}).
 
@@ -76,7 +79,7 @@ init([]) ->
 
     %% Start with initial membership.
     {ok, Membership} = partisan_peer_service:members(),
-    partisan_logger:info("Starting with membership: ~p", [Membership]),
+    ?LOG_INFO("Starting with membership: ~p", [Membership]),
 
     %% Schedule anti-entropy.
     schedule_anti_entropy(),
@@ -85,17 +88,17 @@ init([]) ->
 
 %% @private
 handle_call(Msg, _From, State) ->
-    partisan_logger:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
+    ?LOG_WARNING("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
     {reply, ok, State}.
 
 %% @private
 handle_cast({broadcast, ServerRef, Message}, #state{next_id=NextId}=State) ->
     %% Generate message id.
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
     Id = {MyNode, NextId},
 
     %% Forward to process.
-    partisan_util:process_forward(ServerRef, Message),
+    partisan_peer_service_manager:process_forward(ServerRef, Message),
 
     %% Store outgoing message.
     true = ets:insert(?MODULE, {Id, {ServerRef, Message}}),
@@ -107,24 +110,29 @@ handle_cast({update, Membership0}, State) ->
     {noreply, State#state{membership=Membership}};
 
 handle_cast(Msg, State) ->
-    partisan_logger:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
+    ?LOG_WARNING("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
 
 %% @private
 %% Incoming messages.
 handle_info(antientropy, #state{membership=Membership}=State) ->
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
 
     %% Get all of our messages.
     OurMessages = ets:foldl(fun({Id, {ServerRef, Message}}, Acc) ->
-        Acc ++ [{Id, {ServerRef, Message}}] 
+        Acc ++ [{Id, {ServerRef, Message}}]
     end, [], ?MODULE),
 
     %% Forward to random subset of peers.
-    AntiEntropyMembers = select_random_sublist(membership(Membership), ?FANOUT),
+    AntiEntropyMembers = select_random_sublist(membership(Membership), ?THIS_FANOUT),
 
     lists:foreach(fun(N) ->
-        partisan_pluggable_peer_service_manager:forward_message(N, undefined, ?MODULE, {push, MyNode, OurMessages}, [])
+        partisan:forward_message(
+            N,
+            ?MODULE,
+            {push, MyNode, OurMessages},
+            #{channel => ?DEFAULT_CHANNEL}
+        )
     end, AntiEntropyMembers -- [MyNode]),
 
     %% Reschedule.
@@ -133,14 +141,14 @@ handle_info(antientropy, #state{membership=Membership}=State) ->
     {noreply, State};
 
 handle_info({push, FromNode, TheirMessages}, State) ->
-    MyNode = partisan_peer_service_manager:mynode(),
+    MyNode = partisan:node(),
 
     %% Encorporate their messages and process them if we didn't see them.
     lists:foreach(fun({Id, {ServerRef, Message}}) ->
         case ets:lookup(?MODULE, Id) of
             [] ->
                 %% Forward to process.
-                partisan_util:process_forward(ServerRef, Message),
+                partisan_peer_service_manager:process_forward(ServerRef, Message),
 
                 %% Store.
                 true = ets:insert(?MODULE, {Id, {ServerRef, Message}}),
@@ -153,12 +161,17 @@ handle_info({push, FromNode, TheirMessages}, State) ->
 
     %% Get all of our messages.
     OurMessages = ets:foldl(fun({Id, {ServerRef, Message}}, Acc) ->
-        Acc ++ [{Id, {ServerRef, Message}}] 
+        Acc ++ [{Id, {ServerRef, Message}}]
     end, [], ?MODULE),
 
     %% Forward message back to sender.
-    partisan_logger:info("~p: sending messages to node ~p", [node(), FromNode]),
-    partisan_pluggable_peer_service_manager:forward_message(FromNode, undefined, ?MODULE, {pull, MyNode, OurMessages}, []),
+    ?LOG_INFO("~p: sending messages to node ~p", [node(), FromNode]),
+    partisan:forward_message(
+        FromNode,
+        ?MODULE,
+        {pull, MyNode, OurMessages},
+        #{channel => ?DEFAULT_CHANNEL}
+    ),
 
     {noreply, State};
 
@@ -168,7 +181,7 @@ handle_info({pull, _FromNode, Messages}, State) ->
         case ets:lookup(?MODULE, Id) of
             [] ->
                 %% Forward to process.
-                partisan_util:process_forward(ServerRef, Message),
+                partisan_peer_service_manager:process_forward(ServerRef, Message),
 
                 %% Store.
                 true = ets:insert(?MODULE, {Id, {ServerRef, Message}}),

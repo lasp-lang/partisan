@@ -18,9 +18,12 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc Wrapper for peer connections that allows transparent usage of
-%% plain TCP or TLS/SSL.
--module(partisan_peer_connection).
+%% -----------------------------------------------------------------------------
+%% @doc Wrapper that allows transparent usage of plain TCP or TLS/SSL socket
+%% for peer connections.
+%% @end
+%% -----------------------------------------------------------------------------
+-module(partisan_peer_socket).
 
 -export([
          accept/1,
@@ -36,7 +39,7 @@
         ]).
 
 -type reason() :: closed | inet:posix().
--type options() :: [ssl:option()].
+-type options() :: [gen_tcp:option()] | map().
 -record(connection, {
           socket :: gen_tcp:socket() | ssl:sslsocket(),
           transport :: gen_tcp | ssl,
@@ -62,7 +65,7 @@
 accept(TCPSocket) ->
     case tls_enabled() of
         true ->
-            TLSOpts = tls_options(),
+            TLSOpts = partisan_config:get(tls_server_options),
             %% as per http://erlang.org/doc/man/ssl.html#ssl_accept-1
             %% The listen socket is to be in mode {active, false} before telling the client
             %% that the server is ready to upgrade by calling this function, else the upgrade
@@ -71,9 +74,19 @@ accept(TCPSocket) ->
             {ok, TLSSocket} = ?ssl_accept(TCPSocket, TLSOpts),
             %% restore the expected active once setting
             ssl:setopts(TLSSocket, [{active, once}]),
-            #connection{socket = TLSSocket, transport = ssl, control = ssl, monotonic = false};
+            #connection{
+                socket = TLSSocket,
+                transport = ssl,
+                control = ssl,
+                monotonic = false
+            };
         _ ->
-            #connection{socket = TCPSocket, transport = gen_tcp, control = inet, monotonic = false}
+            #connection{
+                socket = TCPSocket,
+                transport = gen_tcp,
+                control = inet,
+                monotonic = false
+            }
     end.
 
 %% @see gen_tcp:send/2
@@ -114,6 +127,10 @@ recv(#connection{socket = Socket, transport = Transport}, Length, Timeout) ->
 %% @see inet:setopts/2
 %% @see ssl:setopts/2
 -spec setopts(connection(), options()) -> ok | {error, inet:posix()}.
+
+setopts(#connection{} = Connection, Options) when is_map(Options) ->
+    setopts(Connection, maps:to_list(Options));
+
 setopts(#connection{socket = Socket, control = Control}, Options) ->
     Control:setopts(Socket, Options).
 
@@ -131,41 +148,65 @@ connect(Address, Port, Options) ->
 
 -spec connect(inet:socket_address() | inet:hostname(), inet:port_number(),  options(), timeout()) -> {ok, connection()} | {error, inet:posix()}.
 connect(Address, Port, Options, Timeout) ->
-    connect(Address, Port, Options, Timeout, []).
+    connect(Address, Port, Options, Timeout, #{}).
 
--spec connect(inet:socket_address() | inet:hostname(), inet:port_number(),  options(), timeout(), list()) -> {ok, connection()} | {error, inet:posix()}.
-connect(Address, Port, Options, Timeout, PartisanOptions) ->
+
+-spec connect(inet:socket_address() | inet:hostname(), inet:port_number(),  options(), timeout(), map() | list()) ->
+    {ok, connection()} | {error, inet:posix()}.
+
+connect(Address, Port, Options, Timeout, PartisanOptions)
+when is_list(PartisanOptions) ->
+    connect(Address, Port, Options, Timeout, maps:from_list(PartisanOptions));
+
+connect(Address, Port, Options0, Timeout, PartisanOptions)
+when is_map(PartisanOptions) ->
+    Options = connection_options(Options0),
+
     case tls_enabled() of
         true ->
-            TLSOptions = tls_options(),
+            TLSOptions = partisan_config:get(tls_client_options),
             do_connect(Address, Port, Options ++ TLSOptions, Timeout, ssl, ssl, PartisanOptions);
         _ ->
             do_connect(Address, Port, Options, Timeout, gen_tcp, inet, PartisanOptions)
     end.
 
 %% @doc Returns the wrapped socket from within the connection.
--spec socket(connection()) -> gen_tcp:socket() | ssl:ssl_socket().
+-spec socket(connection()) -> gen_tcp:socket() | ssl:sslsocket().
 socket(Conn) ->
     Conn#connection.socket.
 
-%% @private
-do_connect(Address, Port, Options, Timeout, Transport, Control, PartisanOptions) ->
-   Monotonic = proplists:get_value(monotonic, PartisanOptions, false),
 
-   case Transport:connect(Address, Port, Options ++ [{nodelay, true}], Timeout) of
+
+%% @private
+do_connect(Address, Port, ConnectOpts, Timeout, Transport, Control, Opts) ->
+   Monotonic = maps:get(monotonic, Opts, false),
+
+   case Transport:connect(Address, Port, ConnectOpts, Timeout) of
        {ok, Socket} ->
-           {ok, #connection{socket = Socket, transport = Transport, control = Control, monotonic = Monotonic}};
+            Connection = #connection{
+                socket = Socket,
+                transport = Transport,
+                control = Control,
+                monotonic = Monotonic
+            },
+           {ok, Connection};
        Error ->
            Error
    end.
+
+
+%% @private
+connection_options(Options) when is_map(Options) ->
+    connection_options(maps:to_list(Options));
+
+connection_options(Options) when is_list(Options) ->
+    Options ++ [{nodelay, true}].
+
 
 %% @private
 tls_enabled() ->
     partisan_config:get(tls).
 
-%% @private
-tls_options() ->
-    partisan_config:get(tls_options).
 
 %% @private
 monotonic_now() ->
@@ -178,10 +219,10 @@ send(Transport, Socket, Data) ->
 
 %% Determine if we should transmit:
 %%
-%% If there's another message in the queue, we can skip 
-%% sending this message.  However, if the arrival rate of 
+%% If there's another message in the queue, we can skip
+%% sending this message.  However, if the arrival rate of
 %% messages is too high, we risk starvation where
-%% we may never send.  Therefore, we must force a transmission 
+%% we may never send.  Therefore, we must force a transmission
 %% after a given period with no transmissions.
 %%
 %% @private

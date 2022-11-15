@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2019 Christopher S. Meiklejohn.  All Rights Reserved.
+%% Copyright (c) 2016 Christopher Meiklejohn.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -17,17 +17,29 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
-%%
 
--module(partisan_logger).
+-module(partisan_acceptor_pool).
+-author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
--export([info/2, warning/2, error/2]).
+-behaviour(acceptor_pool).
 
-info(Format, Args) ->
-    lager:info(Format, Args).
+-export([start_link/0,
+         accept_socket/2]).
 
-warning(Format, Args) ->
-    lager:warning(Format, Args).
+-export([init/1]).
 
-error(Format, Args) ->
-    lager:error(Format, Args).
+%% public api
+
+start_link() ->
+    acceptor_pool:start_link({local, ?MODULE}, ?MODULE, []).
+
+accept_socket(Socket, Acceptors) ->
+    acceptor_pool:accept_socket(?MODULE, Socket, Acceptors).
+
+%% acceptor_pool api
+
+init([]) ->
+    Conn = #{id => partisan_peer_service_server,
+             start => {partisan_peer_service_server, [], []},
+             grace => 5000}, % Give connections 5000ms to close before shutdown
+    {ok, {#{}, [Conn]}}.

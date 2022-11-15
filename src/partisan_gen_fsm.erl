@@ -16,8 +16,15 @@
 %% limitations under the License.
 %%
 %% %CopyrightEnd%
-%%
+
+%% -----------------------------------------------------------------------------
+%% @doc @deprecated
+%% @end
+%% -----------------------------------------------------------------------------
 -module(partisan_gen_fsm).
+
+-include("partisan.hrl").
+-include("partisan_logger.hrl").
 
 %%%-----------------------------------------------------------------
 %%%
@@ -245,20 +252,29 @@ send_event(Name, Event) ->
 		_ ->
 			{node(), Name}
 	end,
-	lager:info("[cmeik] sending event to node: ~p name: ~p event: ~p", [Node, Process, Event]),
-	partisan_pluggable_peer_service_manager:forward_message(Node, undefined, Process, {'$gen_event', Event}, []),
+	?LOG_DEBUG(#{
+		description => "Sending event",
+		event => Event,
+		to => Node,
+		process => Name
+	}),
+	partisan:forward_message(
+		Node,
+		Process,
+		{'$gen_event', Event},
+		#{channel => ?DEFAULT_CHANNEL}
+	),
 	ok.
-
-	% lager:info("[cmeik] sending event to name: ~p with event: ~p", [Name, Event]),
-    % Name ! {'$gen_event', Event},
-    % ok.
 
 sync_send_event(Name, Event) ->
     case catch partisan_gen:call(Name, '$gen_sync_event', Event) of
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
-		lager:info("[cmeik] exit for ~p", [Reason]),
+		?LOG_DEBUG(#{
+			description => "Received EXIT message",
+			reason => Event
+		}),
 	    exit({Reason, {?MODULE, sync_send_event, [Name, Event]}})
     end.
 
@@ -267,7 +283,10 @@ sync_send_event(Name, Event, Timeout) ->
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
-		lager:info("[cmeik] exit for ~p", [Reason]),
+		?LOG_DEBUG(#{
+			description => "Received EXIT message",
+			reason => Reason
+		}),
 	    exit({Reason, {?MODULE, sync_send_event, [Name, Event, Timeout]}})
     end.
 
@@ -284,31 +303,50 @@ send_all_state_event(Name, Event) ->
 		_ ->
 			{node(), Name}
 	end,
-	lager:info("[cmeik] sending all state event from node: ~p to node ~p name ~p event ~p", [node(), Node, Process, Event]),
-	partisan_pluggable_peer_service_manager:forward_message(Node, undefined, Process, {'$gen_all_state_event', Event}, []),
+	?LOG_DEBUG(#{
+		description => "Sending all state event to peer node",
+		node => node(),
+		peer_node => Node,
+		process => Process,
+		event => Event
+	}),
+	partisan:forward_message(
+		Node, Process, {'$gen_all_state_event', Event}, #{channel => ?DEFAULT_CHANNEL}
+	),
 	ok.
 
-	% lager:info("[cmeik] sending all state event to name: ~p and event: ~p", [Name, Event]),
-    % Name ! {'$gen_all_state_event', Event},
-    % ok.
-
 sync_send_all_state_event(Name, Event) ->
-	lager:info("calling sync_send_all_event with name ~p", [Name]),
+	?LOG_DEBUG(#{
+		description => "Calling sync_send_all_event",
+		name => Name
+	}),
     case catch partisan_gen:call(Name, '$gen_sync_all_state_event', Event) of
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
-		lager:info("[cmeik] exit for ~p", [Reason]),
+		?LOG_DEBUG(#{
+			description => "Received EXIT message",
+			reason => Reason
+		}),
 	    exit({Reason, {?MODULE, sync_send_all_state_event, [Name, Event]}})
     end.
 
 sync_send_all_state_event(Name, Event, Timeout) ->
-	lager:info("calling sync_send_all_event with name ~p", [Name]),
+	?LOG_DEBUG(#{
+		description => "Calling sync_send_all_event",
+		name => Name
+	}),
     case catch partisan_gen:call(Name, '$gen_sync_all_state_event', Event, Timeout) of
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
-		lager:info("[cmeik] exit for ~p after node: ~p sending event: ~p to ~p", [Reason, node(), Event, Name]),
+		?LOG_DEBUG(#{
+			description => "Received EXIT message after sending event to process",
+			reason => Reason,
+			node => node(),
+			event => Event,
+			process => Name
+		}),
 	    exit({Reason, {?MODULE, sync_send_all_state_event,
 			   [Name, Event, Timeout]}})
     end.
@@ -596,7 +634,7 @@ from(_) -> undefined.
 
 %% Send a reply to the client.
 reply({To, Tag}, Reply) ->
-	partisan_pluggable_peer_service_manager:forward_message(To, {Tag, Reply}).
+	partisan:forward_message(To, {Tag, Reply}).
 
 reply(Name, {To, Tag}, Reply, Debug, StateName) ->
     reply({To, Tag}, Reply),

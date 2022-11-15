@@ -23,6 +23,8 @@
 
 -behaviour(partisan_plumtree_broadcast_handler).
 
+-include("partisan_logger.hrl").
+
 %% API
 -export([start_link/0,
          start_link/1]).
@@ -85,7 +87,7 @@ broadcast_data(#broadcast{timestamp=Timestamp}) ->
 %%      local datastore.
 -spec merge(broadcast_id(), broadcast_payload()) -> boolean().
 merge(Timestamp, Timestamp) ->
-    lager:debug("Heartbeat received: ~p", [Timestamp]),
+    ?LOG_DEBUG("Heartbeat received: ~p", [Timestamp]),
 
     case is_stale(Timestamp) of
         true ->
@@ -120,6 +122,9 @@ exchange(_Peer) ->
     %% about reliable delivery: we always know we'll have another
     %% message to further repair duing the next interval.
     %%
+    %% TODO change exchange callback so that we can return `ignore` and force
+    %% the plumtree_broadcast to count this as a success, or have another
+    %% callback to check if exchanges are enabled
     Pid = spawn_link(fun() -> ok end),
     {ok, Pid}.
 
@@ -144,7 +149,6 @@ init([]) ->
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
 
-%% @private
 handle_call({is_stale, Timestamp}, _From, State) ->
     Result = case ets:lookup(?MODULE, Timestamp) of
         [] ->
@@ -156,7 +160,7 @@ handle_call({is_stale, Timestamp}, _From, State) ->
 handle_call({graft, Timestamp}, _From, State) ->
     Result = case ets:lookup(?MODULE, Timestamp) of
         [] ->
-            lager:info("Timestamp: ~p not found for graft.", [Timestamp]),
+            ?LOG_INFO("Timestamp: ~p not found for graft.", [Timestamp]),
             {error, {not_found, Timestamp}};
         [{Timestamp, _}] ->
             {ok, Timestamp}
@@ -165,15 +169,14 @@ handle_call({graft, Timestamp}, _From, State) ->
 handle_call({merge, Timestamp}, _From, State) ->
     true = ets:insert(?MODULE, [{Timestamp, true}]),
     {reply, ok, State};
-handle_call(Msg, _From, State) ->
-    lager:warning("Unhandled call messages at module ~p: ~p", [?MODULE, Msg]),
+handle_call(Event, _From, State) ->
+    ?LOG_WARNING(#{description => "Unhandled call event", event => Event}),
     {reply, ok, State}.
 
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
 %% @private
-handle_cast(Msg, State) ->
-    lager:warning("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
-    {noreply, State}.
+handle_cast(Event, State) ->
+    ?LOG_WARNING(#{description => "Unhandled cast event", event => Event}),    {noreply, State}.
 
 %% @private
 handle_info(heartbeat, State) ->
@@ -184,7 +187,7 @@ handle_info(heartbeat, State) ->
     %% identifier: this means that we can have this tree
     %% participate in multiple trees, each rooted at a different
     %% node.
-    Timestamp = {partisan_peer_service_manager:mynode(), Counter},
+    Timestamp = {partisan:node(), Counter},
 
     %% Insert a new message into the table.
     true = ets:insert(?MODULE, [{Timestamp, true}]),
@@ -192,14 +195,14 @@ handle_info(heartbeat, State) ->
     %% Send message with monotonically increasing integer.
     ok = partisan_plumtree_broadcast:broadcast(#broadcast{timestamp=Timestamp}, ?MODULE),
 
-    lager:debug("Heartbeat triggered: sending ping ~p to ensure tree.", [Timestamp]),
+    ?LOG_DEBUG("Heartbeat triggered: sending ping ~p to ensure tree.", [Timestamp]),
 
     %% Schedule report.
     schedule_heartbeat(),
 
     {noreply, State};
-handle_info(Msg, State) ->
-    lager:warning("Unhandled info messages at module ~p: ~p", [?MODULE, Msg]),
+handle_info(Event, State) ->
+    ?LOG_WARNING(#{description => "Unhandled info event", event => Event}),
     {noreply, State}.
 
 %% @private
@@ -242,5 +245,5 @@ extract_log_type_and_payload({broadcast, MessageId, Timestamp, _Mod, Round, Root
 extract_log_type_and_payload({i_have, MessageId, _Mod, Round, Root, From}) ->
     [{broadcast_protocol, {MessageId, Round, Root, From}}];
 extract_log_type_and_payload(Message) ->
-    lager:info("No match for extracted payload: ~p", [Message]),
+    ?LOG_INFO("No match for extracted payload: ~p", [Message]),
     [].

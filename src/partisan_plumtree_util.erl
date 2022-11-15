@@ -20,8 +20,11 @@
 
 -module(partisan_plumtree_util).
 
+
+-include("partisan_logger.hrl").
+
 -export([build_tree/3,
-         log/2, 
+         log/2,
          log/3]).
 
 %% @doc Convert a list of elements into an N-ary tree. This conversion
@@ -59,11 +62,11 @@ log(Level, String) ->
     log(Level, String, []).
 
 log(debug, String, Args) ->
-    lager:debug(String, Args);
+    ?LOG_DEBUG(String, Args);
 log(info, String, Args) ->
-    lager:info(String, Args);
+    ?LOG_INFO(String, Args);
 log(error, String, Args) ->
-    lager:error(String, Args).
+    ?LOG_ERROR(String, Args).
 
 -else.
 

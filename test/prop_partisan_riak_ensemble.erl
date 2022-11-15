@@ -23,7 +23,7 @@
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -include("partisan.hrl").
-
+-include("partisan_logger.hrl").
 -include_lib("proper/include/proper.hrl").
 
 -compile([export_all]).
@@ -49,8 +49,8 @@ node_name() ->
     oneof(names()).
 
 names() ->
-    NameFun = fun(N) -> 
-        list_to_atom("node_" ++ integer_to_list(N)) 
+    NameFun = fun(N) ->
+        list_to_atom("node_" ++ integer_to_list(N))
     end,
     lists:map(NameFun, lists:seq(1, node_num_nodes())).
 
@@ -93,9 +93,9 @@ node_precondition(_NodeState, _Command) ->
     false.
 
 %% Next state.
-node_next_state(#property_state{joined_nodes=_JoinedNodes}, 
-                #node_state{values=Values0}=NodeState, 
-                {ok, _}, 
+node_next_state(#property_state{joined_nodes=_JoinedNodes},
+                #node_state{values=Values0}=NodeState,
+                {ok, _},
                 {call, ?MODULE, write, [_Node, Key, Value]}) ->
     Values = dict:store(Key, Value, Values0),
     NodeState#node_state{values=Values};
@@ -108,22 +108,22 @@ node_next_state(_State, NodeState, _Response, _Command) ->
 node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {ok, _}) ->
     true;
 node_postcondition(#node_state{values=Values}=_NodeState, {call, ?MODULE, read, []}, Results) ->
-    lager:info("results: ~p", [Results]),
-    lager:info("values: ~p", [dict:to_list(Values)]),
+    ?LOG_INFO("results: ~p", [Results]),
+    ?LOG_INFO("values: ~p", [dict:to_list(Values)]),
 
     Result = lists:foldl(fun({Key, {obj, _, _, Key, Value}}, Acc) ->
-        lager:info("looking for ~p with value ~p", [Key, Value]),
+        ?LOG_INFO("looking for ~p with value ~p", [Key, Value]),
 
-        case dict:find(Key, Values) of 
+        case dict:find(Key, Values) of
             {ok, Value} ->
-                lager:info("found!", []),
+                ?LOG_INFO("found!", []),
                 true andalso Acc;
             error ->
-                case Value of 
+                case Value of
                     notfound ->
                         true andalso Acc;
                     _ ->
-                        lager:info("not found when it should be!", []),
+                        ?LOG_INFO("not found when it should be!", []),
                         false andalso Acc
                 end
         end
@@ -131,7 +131,7 @@ node_postcondition(#node_state{values=Values}=_NodeState, {call, ?MODULE, read, 
 
     Result;
 node_postcondition(_NodeState, Command, Response) ->
-    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p", 
+    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p",
                [Command, Response]),
     false.
 
@@ -185,7 +185,7 @@ read() ->
 node_debug(Line, Args) ->
     case ?NODE_DEBUG of
         true ->
-            lager:info("~p: " ++ Line, [?MODULE] ++ Args);
+            ?LOG_INFO("~p: " ++ Line, [?MODULE] ++ Args);
         false ->
             ok
     end.
@@ -257,12 +257,11 @@ node_begin_case() ->
 
         %% Sleep for convergenece.
         timer:sleep(10000),
-        
+
         %% Wait on the shortname.
         wait_stable(?NAME(ShortName), root),
 
         % Result = rpc:call(?NAME(FirstName), riak_ensemble_manager, cluster, []),
-        % lager:info("Result from cluster: ~p", [Result]),
 
         %% Wait for stabilization.
         wait_stable(?NAME(FirstName), root),

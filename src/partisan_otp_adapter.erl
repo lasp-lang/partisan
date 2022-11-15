@@ -22,6 +22,8 @@
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+-include("partisan.hrl").
+
 -export([
          gen_server_cast/3,
          gen_server_call/4,
@@ -36,7 +38,12 @@
 %%%===================================================================
 
 gen_server_cast(Node, Dest, Request) ->
-    partisan_pluggable_peer_service_manager:forward_message(Node, undefined, Dest, {'$gen_cast', Request}, []).
+    partisan:forward_message(
+        Node,
+        Dest,
+        {'$gen_cast', Request},
+        #{channel => ?DEFAULT_CHANNEL}
+    ).
 
 gen_server_call(Node, Dest, Request, Timeout) ->
     call(gen_server_call, Node, Dest, '$gen_call', Request, Timeout).
@@ -46,10 +53,20 @@ gen_server_call(Node, Dest, Request, Timeout) ->
 %%%===================================================================
 
 gen_fsm_send_event(Node, Dest, Request) ->
-    partisan_pluggable_peer_service_manager:forward_message(Node, undefined, Dest, {'$gen_event', Request}, []).
+    partisan:forward_message(
+        Node,
+        Dest,
+        {'$gen_event', Request},
+        #{channel => ?DEFAULT_CHANNEL}
+    ).
 
 gen_fsm_send_all_state_event(Node, Dest, Request) ->
-    partisan_pluggable_peer_service_manager:forward_message(Node, undefined, Dest, {'$gen_all_state_event', Request}, []).
+    partisan:forward_message(
+        Node,
+        Dest,
+        {'$gen_all_state_event', Request},
+        #{channel => ?DEFAULT_CHANNEL}
+    ).
 
 gen_fsm_sync_send_event(Node, Dest, Request, Timeout) ->
     call(gen_fsm_sync_send_event, Node, Dest, '$gen_sync_event', Request, Timeout).
@@ -66,18 +83,23 @@ call(Type, Node, Dest, Label, Request, Timeout) ->
     Mref = make_ref(),
 
     %% Get our pid.
-    Self = partisan_util:pid(),
+    Self = partisan:self(),
 
     %% Send message.
-    partisan_pluggable_peer_service_manager:forward_message(Node, undefined, Dest, {Label, {Self, Mref}, Request}, []),
+    partisan:forward_message(
+        Node,
+        Dest,
+        {Label, {Self, Mref}, Request},
+        #{channel => ?DEFAULT_CHANNEL}
+    ),
 
-    %% Don't timeout earlier than the timeout -- Distributed Erlang would if the net_ticktime fired and 
-    %% determined that the node is down.  However, this adds nondeterminism into the execution, so wait until 
+    %% Don't timeout earlier than the timeout -- Distributed Erlang would if the net_ticktime fired and
+    %% determined that the node is down.  However, this adds nondeterminism into the execution, so wait until
     %% the timeout.  This is still nondeterministic, but less so.
     receive
         {Mref, Reply} ->
             Reply
-    after 
+    after
         Timeout ->
             exit({timeout, {?MODULE, Type, [Dest, Request, Timeout]}})
     end.
