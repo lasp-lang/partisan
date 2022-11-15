@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/lasp-lang/partisan.svg?branch=master)](https://travis-ci.org/lasp-lang/partisan)
 
-Partisan is a flexible, TCP-based membership system and distribution layer for the BEAM. It bypasses the use of Distributed Erlang for manual connection management via TCP, and has several pluggable backends for different deployment scenarios.
+Partisan is a scalable and flexible, TCP-based membership system and distribution layer for the BEAM. It bypasses the use of Distributed Erlang for manual connection management via TCP, and has several pluggable backends for different deployment scenarios.
 
 
 ## Partisan features
@@ -39,6 +39,8 @@ The resulting documentation will be found in the `docs` directory.
 
 ## Who is using Partisan
 
-* [Bondy](https://www.bondy.io)
+* [Erleans](https://github.com/erleans/erleans)
+* [PlumDB](https://github.com/Leapsight/plum_db)
+* [Bondy](https://github.com/bondy-io/bondy)
 * [Leapsight](https://www.leapsight.com)
 
