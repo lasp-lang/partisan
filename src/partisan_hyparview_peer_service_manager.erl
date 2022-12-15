@@ -167,7 +167,8 @@ update_members(_Nodes) ->
 %% @end
 %% -----------------------------------------------------------------------------
 send_message(Name, Message) ->
-    gen_server:call(?MODULE, {send_message, Name, Message}, infinity).
+    Cmd = {send_message, Name, Message},
+    gen_server:call(?MODULE, Cmd, infinity).
 
 
 %% -----------------------------------------------------------------------------
