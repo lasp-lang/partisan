@@ -18,6 +18,30 @@
 %%
 %% -------------------------------------------------------------------
 
+%% -----------------------------------------------------------------------------
+%% @doc This module realises the {@link partisan_peer_service_manager}
+%% behaviour implementing a peer-to-peer partial mesh topology using the
+%% <a href="https://bit.ly/3Hy7bfi">Hyparview membership protocol</a>.
+%%
+%% == Characteristics ==
+%% <ul>
+%% <li>Uses TCP/IP.</li>
+%% <li>Nodes are considered "failed" when connection is dropped.</li>
+%% <li>Nodes maintain partial views of the network. Every node will contain and
+%% active view that forms a connected grah, and a passive view of backup links
+%% are used to repair graph connectivity under failure. Some links to passive
+%% nodes are kept open for fast replacement of failed nodes in the active
+%% view. So the view is probabilistic. </li>
+%% <li>The algorithm constantly works towards and ensures that eventually the
+%% membership is a fully-connected component. </li>
+%% <li>Point-to-point messaging for connected nodes with a minimum of 1 hop via
+%% transitive message delivery (as not all nodes directly connected). Delivery
+%% is probabilistic.</li>
+%% <li>Scalability to up-to 2,000 nodes.</li>
+%% </ul>
+%%
+%% @end
+%% -----------------------------------------------------------------------------
 -module(partisan_hyparview_peer_service_manager).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
@@ -137,7 +161,11 @@ on_up(_Name, _Function) ->
 update_members(_Nodes) ->
     {error, not_implemented}.
 
-%% @doc Send message to a remote manager.
+
+%% -----------------------------------------------------------------------------
+%% @doc Send message to a remote peer service manager.
+%% @end
+%% -----------------------------------------------------------------------------
 send_message(Name, Message) ->
     gen_server:call(?MODULE, {send_message, Name, Message}, infinity).
 
@@ -161,6 +189,7 @@ cast_message(Term, Message) ->
 %% -----------------------------------------------------------------------------
 cast_message(Node, ServerRef, Message) ->
     cast_message(Node, ServerRef, Message, #{}).
+
 
 %% -----------------------------------------------------------------------------
 %% @doc Cast a message to a remote gen_server.
@@ -214,7 +243,7 @@ when is_map(Options) ->
         message => Message
     }),
 
-    %% We ignore channel
+    %% We ignore channel -> Why?
     FullMessage = {forward_message, Node, ServerRef, Message, Options},
 
     %% Attempt to fast-path through the memoized connection cache.

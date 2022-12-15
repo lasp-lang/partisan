@@ -18,6 +18,23 @@
 %%
 %% -------------------------------------------------------------------
 
+%% -----------------------------------------------------------------------------
+%% @doc This module realises the {@link partisan_peer_service_manager}
+%% behaviour implementing a full-mesh topology.
+%%
+%% == Characteristics ==
+%% <ul>
+%% <li>Uses TCP/IP.</li>
+%% <li>All nodes communicate and maintain connections with all other nodes.</li>
+%% <li>Nodes periodically send hearbeat messages. The service considers a node
+%% "failed" when it misses X heartbeats.</li>
+%% <li>Point-to-point messaging with a single network hop.</li>
+%% <li>Eventually consistent membership maintained in a CRDT and replicated
+%% using gossip.</li>
+%% <li>Scalability limited to hundres of nodes (60-200 nodes).</li>
+%% </ul>
+%% @end
+%% -----------------------------------------------------------------------------
 -module(partisan_pluggable_peer_service_manager).
 
 -behaviour(gen_server).

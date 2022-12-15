@@ -19,6 +19,13 @@
 %%
 %% -------------------------------------------------------------------
 
+%% -----------------------------------------------------------------------------
+%% @doc This modules implement the Peer Service API.
+%% All functions in this module will forward the invocation to module defined
+%% by the configuration option `partisan_peer_service_manager' which should
+%% implement the behaviour {@link partisan_peer_service_manager}.
+%% @end
+%% -----------------------------------------------------------------------------
 -module(partisan_peer_service).
 
 -include("partisan_logger.hrl").

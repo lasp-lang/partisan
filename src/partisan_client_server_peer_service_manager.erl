@@ -19,6 +19,27 @@
 %%
 %% -------------------------------------------------------------------
 
+%% -----------------------------------------------------------------------------
+%% @doc This module realises the {@link partisan_peer_service_manager}
+%% behaviour implementing client-server topology where clients communicate with
+%% a single server and servers forma a full-mesh topology.
+%%
+%% == Characteristics ==
+%% <ul>
+%% <li>Uses TCP/IP.</li>
+%% <li>Client nodes communicate and maintain connections with server nodes.
+%% They refuse connections from other clients but refer them to a server
+%% node.</li>
+%% <li>Server nodes communicate and maintain connections with all other server
+%% nodes.</li>
+%% <li>Nodes periodically send hearbeat messages. The service considers a node
+%% "failed" when it misses X heartbeats.</li>
+%% <li>Point-to-point messaging through the server (server as relay).</li>
+%% <li>Eventually consistent membership maintained in a CRDT and replicated using gossip.</li>
+%% <li>Scalability limited to hundres of nodes (60-200 nodes).</li>
+%% </ul>
+%% @end
+%% -----------------------------------------------------------------------------
 -module(partisan_client_server_peer_service_manager).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
