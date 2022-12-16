@@ -12,6 +12,7 @@
 -define(DEFAULT_CHANNEL, undefined).
 -define(GOSSIP_CHANNEL, gossip).
 -define(CHANNELS, [?DEFAULT_CHANNEL]).
+-define(BROADCAST_MODS, [partisan_plumtree_backend]).
 
 -define(PARALLELISM, 1).
 -define(DEFAULT_PARTITION_KEY, undefined).

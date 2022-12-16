@@ -242,6 +242,9 @@ set(peer_ip, Value) when is_list(Value) ->
 set(channels, Value) ->
     do_set(channels, lists:usort(Value ++ ?CHANNELS));
 
+set(broadcast_mods, Value) ->
+    do_set(broadcast_mods, lists:usort(Value ++ ?BROADCAST_MODS));
+
 set(Key, Value) ->
     do_set(Key, Value).
 
