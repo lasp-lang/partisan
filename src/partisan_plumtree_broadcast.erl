@@ -597,6 +597,7 @@ handle_graft({error, Reason}, _MessageId, Mod, _Round, _Root, _From, State) ->
     State.
 
 
+%% @private
 neighbors_down(Removed, #state{} = State) ->
     #state{
         all_members = AllMembers,
@@ -704,6 +705,7 @@ send_lazy() ->
     ok.
 
 
+%% @private
 -spec send_lazy(outstanding(), node()) -> ok.
 
 send_lazy({MessageId, Mod, Round, Root}, Peer) ->
@@ -714,6 +716,7 @@ send_lazy({MessageId, Mod, Round, Root}, Peer) ->
     send({i_have, MessageId, Mod, Round, Root, partisan:node()}, Mod, Peer).
 
 
+%% @private
 maybe_exchange(State) ->
     Root = random_root(State),
     Peer = random_peer(Root, State),
