@@ -39,7 +39,8 @@ Partisan was designed to increase scalability, reduce latency and failure detect
     * Increasing parallelism - by increasing the number of TCP/IP channels between nodes
     * Configurable number of connections between nodes (named channels and fanout).
     * Pushing background and maintenance traffic to other communication channels - to avoid the Head-of-line blocking due to background activity
-    * Leveraging monotonicity - so that you can do load shedding more possible
+    * Leveraging monotonicity - so that you can do load shedding more possible.
+        * Monotonic channels drop messges when state is increasing on the channel to reduce load and transmission of redundation information. Ideal for growing monotonic hash rings, objects designated with vector clock, CRDTs, etc.
 * Failure detection
     * Performed using TCP/IP
     * Connections are verified at each gossip round
