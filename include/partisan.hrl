@@ -88,9 +88,8 @@
 % - true (always returns true when checking better)
 -define(XPARAM, latency).
 
--type options() :: [{atom(), term()}] | #{atom() => term()}.
-
--type actor() :: binary().
+-type options()     :: [{atom(), term()}] | #{atom() => term()}.
+-type actor()       :: binary().
 -type listen_addr() ::  #{
                             ip := inet:ip_address(),
                             port := non_neg_integer()
@@ -112,14 +111,15 @@
                         }.
 
 %% TODO: add type annotations
--record(orchestration_strategy_state,
-               {orchestration_strategy,
-                is_connected,
-                was_connected,
-                attempted_nodes,
-                peer_service,
-                graph,
-                tree,
-                eredis,
-                servers,
-                nodes}).
+-record(orchestration_strategy_state, {
+    orchestration_strategy,
+    is_connected,
+    was_connected,
+    attempted_nodes,
+    peer_service,
+    graph,
+    tree,
+    eredis,
+    servers,
+    nodes
+}).

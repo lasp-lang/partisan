@@ -18,17 +18,50 @@
 %%
 %% -------------------------------------------------------------------
 
+%% -----------------------------------------------------------------------------
+%% @doc This modules implements a server that realises the
+%% {@link partisan_plumtree_broadcast_handler} behaviour in order to diseminate
+%% heartbeat messages. Partisan uses these heartbeat messages to stimulate the
+%% Epidemic Broadcast Tree construction.
+%%
+%% The server will schedule the sending of a `hearbeat` message periodically
+%% using the `broadcast_heartbeat_interval` option.
+%%
+%% Notice that this handler does not perform AAE Exchanges, as we will always
+%% have a periodic heartbeat. For that reason, the implementation
+%% of the {@link partisan_plumtree_broadcast_handler:exchange/1}
+%% callback always returns `ignore'.
+%%
+%% @end
+%% -----------------------------------------------------------------------------
 -module(partisan_plumtree_backend).
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+-behaviour(gen_server).
 -behaviour(partisan_plumtree_broadcast_handler).
 
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
 
+
+-record(state, {}).
+
+-record(broadcast, {
+    timestamp               :: timestamp()
+}).
+
+-type broadcast_message()   :: #broadcast{}.
+-type timestamp()           :: {node(), non_neg_integer()}.
+-type broadcast_id()        :: timestamp().
+-type broadcast_payload()   :: timestamp().
+
+
 %% API
 -export([start_link/0]).
 -export([start_link/1]).
+
+%% transmission callbacks
+-export([extract_log_type_and_payload/1]).
 
 %% partisan_plumtree_broadcast_handler callbacks
 -export([broadcast_channel/0]).
@@ -45,21 +78,6 @@
 -export([handle_info/2]).
 -export([terminate/2]).
 -export([code_change/3]).
-
-%% transmission callbacks
--export([extract_log_type_and_payload/1]).
-
-%% State record.
--record(state, {}).
-
-%% Broadcast record.
--record(broadcast, {timestamp}).
-
-
--type timestamp() :: non_neg_integer().
--type broadcast_message() :: #broadcast{}.
--type broadcast_id() :: timestamp().
--type broadcast_payload() :: timestamp().
 
 
 
@@ -78,6 +96,7 @@
 start_link() ->
     start_link([]).
 
+
 %% -----------------------------------------------------------------------------
 %% @doc Start and link to calling process.
 %% @end
@@ -89,6 +108,32 @@ start_link(Opts) ->
 
 
 
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+extract_log_type_and_payload({prune, Root, From}) ->
+    [{broadcast_protocol, {Root, From}}];
+
+extract_log_type_and_payload({ignored_i_have, MessageId, _Mod, Round, Root, From}) ->
+    [{broadcast_protocol, {MessageId, Round, Root, From}}];
+
+extract_log_type_and_payload({graft, MessageId, _Mod, Round, Root, From}) ->
+    [{broadcast_protocol, {MessageId, Round, Root, From}}];
+
+extract_log_type_and_payload(
+    {broadcast, MessageId, Timestamp, _Mod, Round, Root, From}) ->
+    [{broadcast_protocol, {Timestamp, MessageId, Round, Root, From}}];
+
+extract_log_type_and_payload({i_have, MessageId, _Mod, Round, Root, From}) ->
+    [{broadcast_protocol, {MessageId, Round, Root, From}}];
+
+extract_log_type_and_payload(Message) ->
+    ?LOG_INFO("No match for extracted payload: ~p", [Message]),
+    [].
+
+
+
 %% =============================================================================
 %% PARTISAN_PLUMTREE_BROADCAST_HANDLER CALLBACKS
 %% =============================================================================
@@ -96,11 +141,11 @@ start_link(Opts) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Returns the channel to be used when sending broadcasting a message
-%% on behalf of this habler
+%% @doc Returns the channel to be used when broadcasting a message
+%% on behalf of this handler.
 %% @end
 %% -----------------------------------------------------------------------------
--spec broadcast_channel() -> channel().
+-spec broadcast_channel() -> partisan:channel().
 
 broadcast_channel() ->
     ?DEFAULT_CHANNEL.
@@ -108,6 +153,9 @@ broadcast_channel() ->
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns from the broadcast message the identifier and the payload.
+%% In this case a tuple where both arguments have the broadcast message
+%% `timestamp`. These messages are used by Partisan as a stimulus for the
+%% Epidemic Broadcast Tree (Plumtree) construction.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec broadcast_data(broadcast_message()) ->
@@ -159,17 +207,15 @@ graft(Timestamp) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Anti-entropy mechanism.
+%% @doc Returns `ignore`.
+%% This is because we don't need to worry about reliable delivery: we always
+%% know we'll have another heartbeat message to further repair during the next
+%% interval.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec exchange(node()) -> {ok, pid()} | {error, any()} | ignore.
 
 exchange(_Peer) ->
-    %% Ignore the standard anti-entropy mechanism from plumtree.
-    %%
-    %% This is because we don't need to worry about reliable delivery: we always
-    %% know we'll have another message to further repair during the next
-    %% interval.
     ignore.
 
 
@@ -180,7 +226,7 @@ exchange(_Peer) ->
 
 
 
--spec init([]) -> {ok, #state{}}.
+-spec init([]) -> {ok, state()}.
 
 init([]) ->
     %% Seed the random number generator.
@@ -194,8 +240,8 @@ init([]) ->
     {ok, #state{}}.
 
 
--spec handle_call(term(), {pid(), term()}, #state{}) ->
-    {reply, term(), #state{}}.
+-spec handle_call(term(), {pid(), term()}, state()) ->
+    {reply, term(), state()}.
 
 handle_call({is_stale, Timestamp}, _From, State) ->
     Result = case ets:lookup(?MODULE, Timestamp) of
@@ -209,7 +255,10 @@ handle_call({is_stale, Timestamp}, _From, State) ->
 handle_call({graft, Timestamp}, _From, State) ->
     Result = case ets:lookup(?MODULE, Timestamp) of
         [] ->
-            ?LOG_INFO("Timestamp: ~p not found for graft.", [Timestamp]),
+            ?LOG_DEBUG(#{
+                description => "Heartbeat message not found for graft.",
+                timestamp => Timestamp
+            }),
             {error, {not_found, Timestamp}};
         [{Timestamp, _}] ->
             {ok, Timestamp}
@@ -225,10 +274,11 @@ handle_call(Event, _From, State) ->
     {reply, ok, State}.
 
 
--spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
+-spec handle_cast(term(), state()) -> {noreply, state()}.
 
 handle_cast(Event, State) ->
-    ?LOG_WARNING(#{description => "Unhandled cast event", event => Event}),    {noreply, State}.
+    ?LOG_WARNING(#{description => "Unhandled cast event", event => Event}),
+    {noreply, State}.
 
 
 handle_info(heartbeat, State) ->
@@ -265,14 +315,14 @@ handle_info(Event, State) ->
     {noreply, State}.
 
 
--spec terminate(term(), #state{}) -> term().
+-spec terminate(term(), state()) -> term().
 
 terminate(_Reason, _State) ->
     ok.
 
 
--spec code_change(term() | {down, term()}, #state{}, term()) ->
-    {ok, #state{}}.
+-spec code_change(term() | {down, term()}, state(), term()) ->
+    {ok, state()}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -295,24 +345,3 @@ schedule_heartbeat() ->
             ok
     end.
 
-
-%% @private
-extract_log_type_and_payload({prune, Root, From}) ->
-    [{broadcast_protocol, {Root, From}}];
-
-extract_log_type_and_payload({ignored_i_have, MessageId, _Mod, Round, Root, From}) ->
-    [{broadcast_protocol, {MessageId, Round, Root, From}}];
-
-extract_log_type_and_payload({graft, MessageId, _Mod, Round, Root, From}) ->
-    [{broadcast_protocol, {MessageId, Round, Root, From}}];
-
-extract_log_type_and_payload(
-    {broadcast, MessageId, Timestamp, _Mod, Round, Root, From}) ->
-    [{broadcast_protocol, {Timestamp, MessageId, Round, Root, From}}];
-
-extract_log_type_and_payload({i_have, MessageId, _Mod, Round, Root, From}) ->
-    [{broadcast_protocol, {MessageId, Round, Root, From}}];
-
-extract_log_type_and_payload(Message) ->
-    ?LOG_INFO("No match for extracted payload: ~p", [Message]),
-    [].

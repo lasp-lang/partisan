@@ -17,6 +17,27 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
+
+%% -----------------------------------------------------------------------------
+%% @doc This module defines a behaviour to customise the implementation
+%% for the operations performed by the {@link partisan_plumtree_broadcast}
+%% server.
+%%
+%% == Callbacks ==
+%% The behviour defines the following callbacks:
+%% <ul>
+%% <li>`broadcast_data/1` - must return a two-tuple of message id and payload
+%% from a given broadcast. Where the broadcasted message is
+%% application-specific.
+%% </li>
+%% <li>`broadcast_channel/1` (optional) - Must return the channel to be used
+%% when broadcasting data associate with this handler.
+%% See {@link partisan_plumtree_broadcast:broadcast/2}.
+%% </li>
+%% </ul>
+%%
+%% @end
+%% -----------------------------------------------------------------------------
 -module(partisan_plumtree_broadcast_handler).
 
 -include("partisan.hrl").
@@ -38,16 +59,19 @@
 %% `false' otherwise
 -callback is_stale(any()) -> boolean().
 
-%% Return the message associated with the given message id. In some cases a message
-%% has already been sent with information that subsumes the message associated with the given
-%% message id. In this case, `stale' is returned.
+%% Return the message associated with the given message id. In some cases a
+%% message has already been sent with information that subsumes the message
+%% associated with the given message id. In this case, `stale' is returned.
 -callback graft(any()) -> stale | {ok, any()} | {error, any()}.
 
-%% Trigger an exchange between the local handler and the handler on the given node.
-%% How the exchange is performed is not defined but it should be performed as a background
-%% process and ensure that it delivers any messages missing on either the local or remote node.
-%% The exchange does not need to account for messages in-flight when it is started or broadcast
-%% during its operation. These can be taken care of in future exchanges.
+%% Trigger an exchange between the local handler and the handler on the given
+%% node.
+%% How the exchange is performed is not defined but it should be performed as a
+%% background process and ensure that it delivers any messages missing on
+%% either the local or remote node.
+%% The exchange does not need to account for messages in-flight when it is
+%% started or broadcast during its operation. These can be taken care of in
+%% future exchanges.
 -callback exchange(node()) -> {ok, pid()} | {error, term()} | ignore.
 
 
