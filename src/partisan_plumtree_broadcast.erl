@@ -776,7 +776,7 @@ exchange(Peer, #state{exchanges = Exchanges} = State, Mod) ->
 
         {ok, Pid} ->
             ?LOG_DEBUG(
-                "started ~p exchange with ~p (~p).", [Mod, Peer, Pid]
+                "Started ~p exchange with ~p (~p).", [Mod, Peer, Pid]
             ),
             Ref = monitor(process, Pid),
             State#state{exchanges = [{Mod, Peer, Ref, Pid} | Exchanges]};

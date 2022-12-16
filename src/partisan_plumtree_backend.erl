@@ -154,19 +154,10 @@ graft(Timestamp) ->
 exchange(_Peer) ->
     %% Ignore the standard anti-entropy mechanism from plumtree.
     %%
-    %% Spawn a process that terminates immediately, because the
-    %% broadcast exchange timer tracks the number of in progress
-    %% exchanges and bounds it by that limit.
-    %%
-    %% Ignore the anti-entropy mechanism because we don't need to worry
-    %% about reliable delivery: we always know we'll have another
-    %% message to further repair during the next interval.
-    %%
-    %% TODO change exchange callback so that we can return `ignore` and force
-    %% the plumtree_broadcast to count this as a success, or have another
-    %% callback to check if exchanges are enabled
-    Pid = spawn_link(fun() -> ok end),
-    {ok, Pid}.
+    %% This is because we don't need to worry about reliable delivery: we always
+    %% know we'll have another message to further repair during the next
+    %% interval.
+    ignore.
 
 
 
