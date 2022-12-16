@@ -6,11 +6,12 @@
 -define(CONNECTION_JITTER, 1000).
 -define(RELAY_TTL, 5).
 
--define(CHANNELS, [?DEFAULT_CHANNEL]).
+
 -define(MEMBERSHIP_PROTOCOL_CHANNEL, membership).
 -define(RPC_CHANNEL, rpc).
 -define(DEFAULT_CHANNEL, undefined).
 -define(GOSSIP_CHANNEL, gossip).
+-define(CHANNELS, [?DEFAULT_CHANNEL]).
 
 -define(PARALLELISM, 1).
 -define(DEFAULT_PARTITION_KEY, undefined).
@@ -90,15 +91,25 @@
 -type options() :: [{atom(), term()}] | #{atom() => term()}.
 
 -type actor() :: binary().
--type listen_addr() :: #{ip => inet:ip_address(), port => non_neg_integer()}.
--type node_spec() :: #{name => node(),
-                       listen_addrs => [listen_addr()],
-                       channels => [channel()],
-                       parallelism => non_neg_integer()}.
--type message() :: term().
--type partitions() :: [{reference(), node_spec()}].
--type ttl() :: non_neg_integer().
--type channel() :: atom().
+-type listen_addr() ::  #{
+                            ip := inet:ip_address(),
+                            port := non_neg_integer()
+                        }.
+-type node_spec()   ::  #{
+                            name := node(),
+                            listen_addrs := [listen_addr()],
+                            channels := [channel()],
+                            parallelism := non_neg_integer()
+                        }.
+-type message()     ::  term().
+-type partitions()  ::  [{reference(), node_spec()}].
+-type ttl()         ::  non_neg_integer().
+-type channel()     ::  atom() | {atom(), monotonic}
+                        | #{
+                            name := atom(),
+                            parallelism := non_neg_integer(),
+                            monotonic => boolean()
+                        }.
 
 %% TODO: add type annotations
 -record(orchestration_strategy_state,
