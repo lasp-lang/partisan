@@ -754,7 +754,9 @@ maybe_exchange(Peer, #state{mods = [_|Mods]} = State, [H|T]) ->
         true ->
             %% We skip current Mod as there is already an exchange for it
             ?LOG_DEBUG(
-                "~p ignoring exchange request with ~p, limit reached.",
+                "Ignoring exchange request for ~p with ~p, "
+                "there is already another exchange running "
+                "for the same handler.",
                 [H, Peer]
             ),
             maybe_exchange(Peer, NewState, T);
@@ -768,12 +770,14 @@ exchange(Peer, #state{exchanges = Exchanges} = State, Mod) ->
     case Mod:exchange(Peer) of
         ignore ->
             ?LOG_DEBUG(
-                "~p ignored exchange request with ~p", [Mod, Peer]
+                "~p ignored exchange request with ~p.", [Mod, Peer]
             ),
             State;
 
         {ok, Pid} ->
-            ?LOG_DEBUG("started ~p exchange with ~p (~p)", [Mod, Peer, Pid]),
+            ?LOG_DEBUG(
+                "started ~p exchange with ~p (~p).", [Mod, Peer, Pid]
+            ),
             Ref = monitor(process, Pid),
             State#state{exchanges = [{Mod, Peer, Ref, Pid} | Exchanges]};
 
