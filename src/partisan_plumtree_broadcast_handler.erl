@@ -40,4 +40,4 @@
 %% process and ensure that it delivers any messages missing on either the local or remote node.
 %% The exchange does not need to account for messages in-flight when it is started or broadcast
 %% during its operation. These can be taken care of in future exchanges.
--callback exchange(node()) -> {ok, pid()} | {error, term()}.
+-callback exchange(node()) -> {ok, pid()} | {error, term()} | ignore.

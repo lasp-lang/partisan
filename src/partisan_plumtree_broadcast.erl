@@ -722,32 +722,61 @@ maybe_exchange(State) ->
 maybe_exchange(undefined, State) ->
     State;
 
-maybe_exchange(Peer, State=#state{mods=[Mod | _], exchanges=Exchanges}) ->
+maybe_exchange(_, #state{mods = []} = State) ->
+    State;
+
+maybe_exchange(Peer, State) ->
     %% limit the number of exchanges this node can start concurrently.
     %% the exchange must (currently?) implement any "inbound" concurrency limits
-    ExchangeLimit = partisan_config:get(broadcast_start_exchange_limit, 1),
-    BelowLimit = not (length(Exchanges) >= ExchangeLimit),
-    FreeMod = lists:keyfind(Mod, 1, Exchanges) =:= false,
-    case BelowLimit and FreeMod of
-        true -> exchange(Peer, State);
-        false -> State
-    end;
+    Limit = partisan_config:get(broadcast_start_exchange_limit),
 
-maybe_exchange(_Peer, State=#state{mods=[]}) ->
-    %% No registered handler.
-    State.
+    case length(State#state.exchanges) >= Limit of
+        true ->
+            State;
+        false ->
+            maybe_exchange(Peer, State, State#state.mods)
+    end.
 
 
-exchange(Peer, State=#state{mods=[Mod | Mods], exchanges=Exchanges}) ->
-    State1 = case Mod:exchange(Peer) of
+%% @private
+maybe_exchange(_Peer, State, []) ->
+    State;
+
+maybe_exchange(Peer, #state{mods = [_|Mods]} = State, [H|T]) ->
+    %% We place the current Mod at the end of the list i.e. results in a
+    %% roundrobin algorithm for when limit =/= length(Mods)
+    NewState = State#state{mods = Mods ++ [H]},
+
+    case lists:keyfind(H, 1, State#state.exchanges) of
+        true ->
+            %% We skip current Mod as there is already an exchange for it
+            ?LOG_DEBUG(
+                "~p ignoring exchange request with ~p, limit reached.",
+                [H, Peer]
+            ),
+            maybe_exchange(Peer, NewState, T);
+        false ->
+            maybe_exchange(Peer, exchange(Peer, State, H), T)
+    end.
+
+
+%% @private
+exchange(Peer, #state{exchanges = Exchanges} = State, Mod) ->
+    case Mod:exchange(Peer) of
+        ignore ->
+            ?LOG_DEBUG(
+                "~p ignored exchange request with ~p", [Mod, Peer]
+            ),
+            State;
+
         {ok, Pid} ->
             ?LOG_DEBUG("started ~p exchange with ~p (~p)", [Mod, Peer, Pid]),
             Ref = monitor(process, Pid),
-            State#state{exchanges=[{Mod, Peer, Ref, Pid} | Exchanges]};
+            State#state{exchanges = [{Mod, Peer, Ref, Pid} | Exchanges]};
+
         {error, _Reason} ->
             State
-    end,
-    State1#state{mods=Mods ++ [Mod]}.
+    end.
 
 
 %% @private
