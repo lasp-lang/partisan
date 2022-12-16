@@ -1245,7 +1245,7 @@ handle_info(distance, #state{} = State0) ->
             schedule_self_message_delivery(
                 DestTo,
                 {ping, SrcNode, DestTo, Time},
-                ?MEMBERSHIP_PROTOCOL_CHANNEL,
+                ?MEMBERSHIP_CHANNEL,
                 ?DEFAULT_PARTITION_KEY,
                 PreInterpositionFuns
             )
@@ -1276,7 +1276,7 @@ handle_info(periodic, #state{membership_strategy=MStrategy,
             schedule_self_message_delivery(
                 Node,
                 Message,
-                ?MEMBERSHIP_PROTOCOL_CHANNEL,
+                ?MEMBERSHIP_CHANNEL,
                 ?DEFAULT_PARTITION_KEY,
                 PreInterpositionFuns
             )
@@ -1459,7 +1459,7 @@ handle_info(
                     schedule_self_message_delivery(
                         Node,
                         Message,
-                        ?MEMBERSHIP_PROTOCOL_CHANNEL,
+                        ?MEMBERSHIP_CHANNEL,
                         ?DEFAULT_PARTITION_KEY,
                         PreInterpositionFuns
                     )
@@ -1624,7 +1624,7 @@ handle_message({ping, SrcNode, DestNode, SrcTime}, From, #state{} = State0) ->
     schedule_self_message_delivery(
         SrcNode,
         {pong, SrcNode, DestNode, SrcTime},
-        ?MEMBERSHIP_PROTOCOL_CHANNEL,
+        ?MEMBERSHIP_CHANNEL,
         ?DEFAULT_PARTITION_KEY,
         PreInterpositionFuns
     ),
@@ -1683,7 +1683,7 @@ handle_message({membership_strategy, ProtocolMsg}, From, #state{} = State0) ->
             schedule_self_message_delivery(
                 Node,
                 Message,
-                ?MEMBERSHIP_PROTOCOL_CHANNEL,
+                ?MEMBERSHIP_CHANNEL,
                 ?DEFAULT_PARTITION_KEY,
                 PreInterpositionFuns
             )
@@ -1993,7 +1993,7 @@ internal_leave(#{name := Name} = Node, State0) ->
                 schedule_self_message_delivery(
                     Peername,
                     Message,
-                    ?MEMBERSHIP_PROTOCOL_CHANNEL,
+                    ?MEMBERSHIP_CHANNEL,
                     ?DEFAULT_PARTITION_KEY,
                     PreInterpositionFuns
                 )

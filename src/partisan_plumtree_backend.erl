@@ -148,7 +148,7 @@ extract_log_type_and_payload(Message) ->
 -spec broadcast_channel() -> partisan:channel().
 
 broadcast_channel() ->
-    ?DEFAULT_CHANNEL.
+    ?MEMBERSHIP_CHANNEL.
 
 
 %% -----------------------------------------------------------------------------

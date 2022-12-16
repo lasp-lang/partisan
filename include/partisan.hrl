@@ -7,7 +7,7 @@
 -define(RELAY_TTL, 5).
 
 
--define(MEMBERSHIP_PROTOCOL_CHANNEL, membership).
+-define(MEMBERSHIP_CHANNEL, partisan_membership).
 -define(RPC_CHANNEL, rpc).
 -define(DEFAULT_CHANNEL, undefined).
 -define(CHANNELS, [?DEFAULT_CHANNEL]).
