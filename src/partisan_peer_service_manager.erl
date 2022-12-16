@@ -239,7 +239,7 @@ when is_pid(ServerRef) orelse is_atom(ServerRef) ->
 do_process_forward(ServerRef, Message)
 when is_tuple(ServerRef) orelse is_binary(ServerRef) ->
     ?LOG_DEBUG(
-        "node ~p recieved message ~p for ~p",
+        "node ~p received message ~p for ~p",
         [partisan:node(), Message, ServerRef]
     ),
 
