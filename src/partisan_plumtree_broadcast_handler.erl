@@ -49,7 +49,7 @@
 
 %% Return the channel to be used when broadcasting data associate with this
 %% handler
--callback broadcast_channel() -> channel().
+-callback broadcast_channel() -> partisan:channel().
 
 %% Given the message id and payload, merge the message in the local state.
 %% If the message has already been received return `false', otherwise return `true'

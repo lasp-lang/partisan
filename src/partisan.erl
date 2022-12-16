@@ -34,6 +34,7 @@
 -type forward_opts()    ::  partisan_peer_service_manager:forward_opts().
 -type node_type()       ::  this | known | visible | connected | hidden | all.
 
+-export_type([channel/0]).
 -export_type([forward_opts/0]).
 -export_type([monitor_nodes_opt/0]).
 -export_type([node_type/0]).
