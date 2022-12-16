@@ -25,32 +25,9 @@
 -include("partisan_logger.hrl").
 
 -define(EVENT_MANAGER, partisan_peer_service_events).
-
-%% API
--export([start_link/0,
-         start_link/5,
-         broadcast/2,
-         update/1,
-         broadcast_members/0,
-         broadcast_members/1,
-         exchanges/0,
-         exchanges/1,
-         cancel_exchanges/1]).
-
-%% Debug API
--export([debug_get_peers/2,
-         debug_get_peers/3,
-         debug_get_tree/2]).
-
-%% gen_server callbacks
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
-
 -define(SERVER, ?MODULE).
+
+
 
 -type message_id()      :: any().
 -type message_round()   :: non_neg_integer().
@@ -119,9 +96,33 @@
 
 }).
 
+-type state()           :: #state{}.
 -type nodeset()         :: ordsets:ordset(node()).
 
--type state()           :: #state{}.
+
+%% API
+-export([broadcast/2]).
+-export([broadcast_members/0]).
+-export([broadcast_members/1]).
+-export([cancel_exchanges/1]).
+-export([exchanges/0]).
+-export([exchanges/1]).
+-export([start_link/0]).
+-export([start_link/5]).
+-export([update/1]).
+
+%% Debug API
+-export([debug_get_peers/2]).
+-export([debug_get_peers/3]).
+-export([debug_get_tree/2]).
+
+%% gen_server callbacks
+-export([init/1]).
+-export([handle_call/3]).
+-export([handle_cast/2]).
+-export([handle_info/2]).
+-export([terminate/2]).
+-export([code_change/3]).
 
 
 
@@ -175,8 +176,9 @@ start_link() ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Starts the broadcast server on this node. `InitMembers' must be a list
-%% of all members known to this node when starting the broadcast server.
+%% @doc Starts the broadcast server on this node.
+%% `InitMembers' must be a list of all members known to this node when starting
+%% the broadcast server.
 %% `InitEagers' are the initial peers of this node for all broadcast trees.
 %% `InitLazys' is a list of random peers not in `InitEagers' that will be used
 %% as the initial lazy peer shared by all trees for this node. If the number
@@ -185,14 +187,15 @@ start_link() ->
 %% a list of modules that may be handlers for broadcasted messages. All modules
 %% in `Mods' should implement the `partisan_plumtree_broadcast_handler'
 %% behaviour.
+%%
 %% `Opts' is a proplist or map with the following possible options:
 %%  <ul>
 %%  <li> `lazy_tick_period :: non_neg_integer()' - Flush all outstanding lazy pushes period (in milliseconds)</li>
 %%  <li> `exchange_tick_period :: non_neg_integer()' - Possibly perform an exchange period (in milliseconds)</li>
 %% </ul>
 %%
-%% NOTE: When starting the server using start_link/2 no automatic membership update from
-%% ring_events is registered. Use start_link/0.
+%% NOTE: When starting the server using start_link/2 no automatic membership
+%% update from ring_events is registered. Use {@link start_link/0}.
 %% @end
 %% -----------------------------------------------------------------------------
 
@@ -208,23 +211,20 @@ start_link(InitMembers, InitEagers, InitLazys, Mods, Opts) when is_list(Opts) ->
     start_link(InitMembers, InitEagers, InitLazys, Mods, maps:from_list(Opts));
 
 start_link(InitMembers, InitEagers, InitLazys, Mods, Opts) when is_map(Opts) ->
+    Args = [InitMembers, InitEagers, InitLazys, Mods, Opts],
     StartOpts = [
         {spawn_opt, ?PARALLEL_SIGNAL_OPTIMISATION([])}
     ],
-    gen_server:start_link(
-        {local, ?SERVER}, ?MODULE,
-        [InitMembers, InitEagers, InitLazys, Mods, Opts],
-        StartOpts
-    ).
+    gen_server:start_link({local, ?SERVER}, ?MODULE, Args, StartOpts).
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Broadcasts a message originating from this node. The message will be
-%% delivered to each node at least once. The `Mod' passed is responsible for
+%% @doc Broadcasts a message originating from this node.
+%% The message will be delivered to each node at least once. The `Mod' passed
+%% must be loaded on all members of the cluster and implement the
+%% `partisan_plumtree_broadcast_handler' behaviour which is responsible for
 %% handling the message on remote nodes as well as providing some other
-%% information both locally and and on other nodes.
-%% `Mod' must be loaded on all members of the clusters and implement the
-%% `partisan_plumtree_broadcast_handler' behaviour.
+%% information both locally and on other nodes.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec broadcast(any(), module()) -> ok.
@@ -279,8 +279,7 @@ exchanges() ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc returns a list of exchanges, started by broadcast on `Node', that are
-%% running.
+%% @doc Returns a list of running exchanges, started on `Node'.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec exchanges(node()) -> partisan_plumtree_broadcast:exchanges().
@@ -290,53 +289,13 @@ exchanges(Node) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc cancel exchanges started by this node.
+%% @doc Cancel exchanges started by this node.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec cancel_exchanges(selector()) -> exchanges().
 
-cancel_exchanges(WhichExchanges) ->
-    gen_server:call(?SERVER, {cancel_exchanges, WhichExchanges}, infinity).
-
-
-
-%% =============================================================================
-%% DEBUG API
-%% =============================================================================
-
-
-
-%% @doc return the peers for `Node' for the tree rooted at `Root'.
-%% Wait indefinitely for a response is returned from the process
--spec debug_get_peers(node(), node()) ->
-    {nodeset(), nodeset()}.
-
-debug_get_peers(Node, Root) ->
-    debug_get_peers(Node, Root, infinity).
-
-
-%% @doc return the peers for `Node' for the tree rooted at `Root'.
-%% Waits `Timeout' ms for a response from the server
--spec debug_get_peers(node(), node(), infinity | pos_integer()) ->
-    {nodeset(), nodeset()}.
-
-debug_get_peers(Node, Root, Timeout) ->
-    gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
-
-
-%% @doc return peers for all `Nodes' for tree rooted at `Root'
-%% Wait indefinitely for a response is returned from the process
--spec debug_get_tree(node(), [node()]) ->
-    [{node(), {nodeset(), nodeset()}}].
-
-debug_get_tree(Root, Nodes) ->
-    [begin
-         Peers = try debug_get_peers(Node, Root)
-                 catch _:_ -> down
-                 end,
-         {Node, Peers}
-     end || Node <- Nodes].
-
+cancel_exchanges(Selector) ->
+    gen_server:call(?SERVER, {cancel_exchanges, Selector}, infinity).
 
 
 %% =============================================================================
@@ -366,8 +325,8 @@ init([Members, InitEagers0, InitLazys0, Mods, Opts]) ->
     AllMembers = ordsets:from_list(Members),
     InitEagers = ordsets:from_list(InitEagers0),
     InitLazys = ordsets:from_list(InitLazys0),
-
     State2 = reset_peers(AllMembers, InitEagers, InitLazys, State1),
+
     {ok, State2}.
 
 
@@ -481,13 +440,14 @@ handle_info(lazy_tick, #state{lazy_tick_period = Period} = State) ->
     schedule_lazy_tick(Period),
     {noreply, State};
 
-handle_info(exchange_tick, #state{exchange_tick_period = Period} = State) ->
+handle_info(exchange_tick, #state{exchange_tick_period = Period} = State) ->
     State1 = maybe_exchange(State),
     schedule_exchange_tick(Period),
     {noreply, State1};
 
 handle_info(
     {'DOWN', Ref, process, _Pid, _Reason}, State=#state{exchanges=Exchanges}) ->
+    %% An exchange has terminated
     Exchanges1 = lists:keydelete(Ref, 3, Exchanges),
     {noreply, State#state{exchanges=Exchanges1}};
 
@@ -506,9 +466,6 @@ handle_info({gen_event_EXIT, {?EVENT_MANAGER, _}, Reason}, State) ->
     }),
     partisan_peer_service:add_sup_callback(fun ?MODULE:update/1),
     {noreply, State};
-
-
-
 
 handle_info(Event, State) ->
     ?LOG_INFO(#{description => "Unhandled info event", event => Event}),
@@ -530,11 +487,50 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 %% =============================================================================
-%% PRIVATE
+%% DEBUG API
 %% =============================================================================
 
 
 
+%% @doc return the peers for `Node' for the tree rooted at `Root'.
+%% Wait indefinitely for a response is returned from the process
+-spec debug_get_peers(node(), node()) ->
+    {nodeset(), nodeset()}.
+
+debug_get_peers(Node, Root) ->
+    debug_get_peers(Node, Root, infinity).
+
+
+%% @doc return the peers for `Node' for the tree rooted at `Root'.
+%% Waits `Timeout' ms for a response from the server
+-spec debug_get_peers(node(), node(), infinity | pos_integer()) ->
+    {nodeset(), nodeset()}.
+
+debug_get_peers(Node, Root, Timeout) ->
+    gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
+
+
+%% @doc return peers for all `Nodes' for tree rooted at `Root'
+%% Wait indefinitely for a response is returned from the process
+-spec debug_get_tree(node(), [node()]) ->
+    [{node(), {nodeset(), nodeset()}}].
+
+debug_get_tree(Root, Nodes) ->
+    [begin
+         Peers = try debug_get_peers(Node, Root)
+                 catch _:_ -> down
+                 end,
+         {Node, Peers}
+     end || Node <- Nodes].
+
+
+
+%% =============================================================================
+%% PRIVATE
+%% =============================================================================
+
+
+%% @private
 handle_broadcast(
     false, _MessageId, _Message, Mod, _Round, Root, From, State) ->
     %% stale msg
@@ -551,6 +547,8 @@ handle_broadcast(true, MessageId, Message, Mod, Round, Root, From, State) ->
     State2 = eager_push(MessageId, Message, Mod, Round + 1, Root, From, State1),
     schedule_lazy_push(MessageId, Mod, Round + 1, Root, From, State2).
 
+
+%% @private
 handle_ihave(true, MessageId, Mod, Round, Root, From, State) ->
     %% stale i_have
     ok = send(
@@ -559,6 +557,7 @@ handle_ihave(true, MessageId, Mod, Round, Root, From, State) ->
         From
     ),
     State;
+
 handle_ihave(false, MessageId, Mod, Round, Root, From, State) ->
     %% valid i_have
     %% TODO: don't graft immediately
@@ -567,6 +566,8 @@ handle_ihave(false, MessageId, Mod, Round, Root, From, State) ->
     ),
     add_eager(From, Root, State).
 
+
+%% @private
 handle_graft(stale, MessageId, Mod, Round, Root, From, State) ->
     %% There has been a subsequent broadcast that is causally newer than this
     %% message according to Mod. We ack the outstanding message since the
@@ -639,11 +640,15 @@ neighbors_down(Removed, #state{} = State) ->
         lazy_sets = NewLazySets
     }.
 
+
+%% @private
 eager_push(MessageId, Message, Mod, State) ->
     eager_push(
         MessageId, Message, Mod, 0, partisan:node(), partisan:node(), State
     ).
 
+
+%% @private
 eager_push(MessageId, Message, Mod, Round, Root, From, State) ->
     Peers = eager_peers(Root, From, State),
     ?LOG_DEBUG("eager push to peers: ~p", [Peers]),
@@ -654,11 +659,15 @@ eager_push(MessageId, Message, Mod, Round, Root, From, State) ->
     ),
     State.
 
+
+%% @private
 schedule_lazy_push(MessageId, Mod, State) ->
     schedule_lazy_push(
         MessageId, Mod, 0, partisan:node(), partisan:node(), State
     ).
 
+
+%% @private
 schedule_lazy_push(MessageId, Mod, Round, Root, From, State) ->
     Peers = lazy_peers(Root, From, State),
     ?LOG_DEBUG(
@@ -669,6 +678,7 @@ schedule_lazy_push(MessageId, Mod, Round, Root, From, State) ->
     State.
 
 
+%% @private
 send_lazy() ->
     _ = ets:foldl(
         fun
@@ -740,17 +750,19 @@ exchange(Peer, State=#state{mods=[Mod | Mods], exchanges=Exchanges}) ->
     State1#state{mods=Mods ++ [Mod]}.
 
 
+%% @private
 cancel_exchanges(all, Exchanges) ->
     kill_exchanges(Exchanges);
 
-cancel_exchanges(WhichProc, Exchanges) when is_reference(WhichProc) orelse
-                                            is_pid(WhichProc) ->
+cancel_exchanges(WhichProc, Exchanges)
+when is_reference(WhichProc) orelse is_pid(WhichProc) ->
     KeyPos = case is_reference(WhichProc) of
-              true -> 3;
-              false -> 4
-          end,
+        true -> 3;
+        false -> 4
+    end,
     case lists:keyfind(WhichProc, KeyPos, Exchanges) of
-        false -> [];
+        false ->
+            [];
         Exchange ->
             kill_exchange(Exchange),
             [Exchange]
@@ -762,15 +774,18 @@ cancel_exchanges(Which, Exchanges) ->
     kill_exchanges(ToCancel).
 
 
+%% @private
 kill_exchanges(Exchanges) ->
     _ = [kill_exchange(Exchange) || Exchange <- Exchanges],
     Exchanges.
 
 
+%% @private
 kill_exchange({_, _, _, ExchangePid}) ->
     exit(ExchangePid, cancel_exchange).
 
 
+%% @private
 exchange_filter({peer, Peer}) ->
     fun({_, ExchangePeer, _, _}) ->
             Peer =:= ExchangePeer
@@ -780,13 +795,21 @@ exchange_filter({mod, Mod}) ->
             Mod =:= ExchangeMod
     end.
 
-%% picks random root uniformly
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc picks random root uniformly
+%% @end
+%% -----------------------------------------------------------------------------
 random_root(#state{all_members=Members}) ->
     random_other_node(Members).
 
 
-%% picks random peer favoring peers not in eager or lazy set and ensuring
+%% -----------------------------------------------------------------------------
+%% @doc picks random peer favoring peers not in eager or lazy set and ensuring
 %% peer is not this node
+%% @end
+%% -----------------------------------------------------------------------------
 random_peer(Root, State=#state{all_members=All}) ->
     Node = partisan:node(),
     Mode = partisan_config:get(exchange_selection, optimized),
@@ -813,7 +836,11 @@ random_peer(Root, State=#state{all_members=All}) ->
     end.
 
 
-%% picks random node from ordset
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc picks random node from ordset
+%% @end
+%% -----------------------------------------------------------------------------
 random_other_node(OrdSet) ->
     Size = ordsets:size(OrdSet),
 
@@ -824,6 +851,7 @@ random_other_node(OrdSet) ->
     end.
 
 
+%% @private
 ack_outstanding(MessageId, Mod, Round, Root, From) ->
     true = ets:delete_object(
         ?PLUMTREE_OUTSTANDING, {From, {MessageId, Mod, Round, Root}}
@@ -831,6 +859,7 @@ ack_outstanding(MessageId, Mod, Round, Root, From) ->
     ok.
 
 
+%% @private
 add_all_outstanding(MessageId, Mod, Round, Root, Peers) ->
     Message = {MessageId, Mod, Round, Root},
     Objects = [{Peer, Message} || Peer <- ordsets:to_list(Peers)],
@@ -838,14 +867,17 @@ add_all_outstanding(MessageId, Mod, Round, Root, Peers) ->
     ok.
 
 
+%% @private
 add_eager(From, Root, State) ->
     update_peers(From, Root, fun ordsets:add_element/2, fun ordsets:del_element/2, State).
 
 
+%% @private
 add_lazy(From, Root, State) ->
     update_peers(From, Root, fun ordsets:del_element/2, fun ordsets:add_element/2, State).
 
 
+%% @private
 update_peers(From, Root, EagerUpdate, LazyUpdate, State) ->
     CurrentEagers = all_eager_peers(Root, State),
     CurrentLazys = all_lazy_peers(Root, State),
@@ -854,6 +886,7 @@ update_peers(From, Root, EagerUpdate, LazyUpdate, State) ->
     set_peers(Root, NewEagers, NewLazys, State).
 
 
+%% @private
 set_peers(Root, Eagers, Lazys, #state{} = State) ->
     #state{eager_sets = EagerSets, lazy_sets = LazySets} = State,
     NewEagers = maps:put(Root, Eagers, EagerSets),
@@ -861,29 +894,35 @@ set_peers(Root, Eagers, Lazys, #state{} = State) ->
     State#state{eager_sets = NewEagers, lazy_sets = NewLazys}.
 
 
+%% @private
 all_eager_peers(Root, State) ->
     all_peers(Root, State#state.eager_sets, State#state.common_eagers).
 
 
+%% @private
 all_lazy_peers(Root, State) ->
     all_peers(Root, State#state.lazy_sets, State#state.common_lazys).
 
 
+%% @private
 eager_peers(Root, From, #state{} = State) ->
     #state{eager_sets = EagerSets, common_eagers = CommonEagers} = State,
     all_filtered_peers(Root, From, EagerSets, CommonEagers).
 
 
+%% @private
 lazy_peers(Root, From, #state{} = State) ->
     #state{lazy_sets = LazySets, common_lazys = CommonLazys} = State,
     all_filtered_peers(Root, From, LazySets, CommonLazys).
 
 
+%% @private
 all_filtered_peers(Root, From, Sets, Common) ->
     All = all_peers(Root, Sets, Common),
     ordsets:del_element(From, All).
 
 
+%% @private
 all_peers(Root, Sets, Default) ->
     case maps:find(Root, Sets) of
         {ok, Peers} -> Peers;
@@ -891,6 +930,7 @@ all_peers(Root, Sets, Default) ->
     end.
 
 
+%% @private
 -spec send(Msg :: message(), Mod :: module(), Peers :: [node()] | node()) -> ok.
 
 send(Msg, Mod, Peers) when is_list(Peers) ->
@@ -902,19 +942,23 @@ send(Msg, Mod, Peer) ->
     partisan:cast_message(Peer, ?SERVER, Msg, #{}).
 
 
+%% @private
 schedule_lazy_tick(Period) ->
     schedule_tick(lazy_tick, lazy_tick_period, Period).
 
 
+%% @private
 schedule_exchange_tick(Period) ->
     schedule_tick(exchange_tick, exchange_tick_period, Period).
 
 
+%% @private
 schedule_tick(Message, Timer, Default) ->
     TickMs = partisan_config:get(Timer, Default),
     erlang:send_after(TickMs, ?MODULE, Message).
 
 
+%% @private
 -spec reset_peers(nodeset(), nodeset(), nodeset(), state()) -> state().
 
 reset_peers(AllMembers, EagerPeers, LazyPeers, State) ->
