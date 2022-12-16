@@ -102,6 +102,7 @@
 
 %% API
 -export([broadcast/2]).
+-export([broadcast_channel/1]).
 -export([broadcast_members/0]).
 -export([broadcast_members/1]).
 -export([cancel_exchanges/1]).
@@ -225,6 +226,9 @@ start_link(InitMembers, InitEagers, InitLazys, Mods, Opts) when is_map(Opts) ->
 %% `partisan_plumtree_broadcast_handler' behaviour which is responsible for
 %% handling the message on remote nodes as well as providing some other
 %% information both locally and on other nodes.
+%%
+%% The broadcast will be sent over the channel defined by
+%% {@link broadcast_channel/1}.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec broadcast(any(), module()) -> ok.
@@ -232,6 +236,25 @@ start_link(InitMembers, InitEagers, InitLazys, Mods, Opts) when is_map(Opts) ->
 broadcast(Broadcast, Mod) ->
     {MessageId, Payload} = Mod:broadcast_data(Broadcast),
     gen_server:cast(?SERVER, {broadcast, MessageId, Payload, Mod}).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns the channel to be used when sending broadcasting a message
+%% on behalf of module `Mod'.
+%%
+%% The channel defined by the callback `Mod:broadcast_channel()' or the
+%% `default' channel is the callback is not implemented.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec broadcast_channel(Mod :: module()) -> channel().
+
+broadcast_channel(Mod) ->
+    case erlang:function_exported(Mod, broadcast_channel, 0) of
+        true ->
+            Mod:broadcast_channel();
+        false ->
+            ?DEFAULT_CHANNEL
+    end.
 
 
 %% -----------------------------------------------------------------------------
@@ -692,6 +715,11 @@ send_lazy() ->
             ({Peer, Message}, _) ->
                 case partisan:is_connected(Peer) of
                     true ->
+                        %% This will send even when Mod:broadcast_channel is
+                        %% not connected as it will use the default channel.
+                        %% TODO make this option configurable so that we can
+                        %% ask Partisan to skip in case broadcast_channel is
+                        %% not connected.
                         ok = send_lazy(Message, Peer),
                         {Peer, true};
                     false ->
@@ -975,7 +1003,8 @@ send(Msg, Mod, Peers) when is_list(Peers) ->
 
 send(Msg, Mod, Peer) ->
     instrument_transmission(Msg, Mod),
-    partisan:cast_message(Peer, ?SERVER, Msg, #{}).
+    Opts = #{channel => broadcast_channel(Mod)},
+    partisan:cast_message(Peer, ?SERVER, Msg, Opts).
 
 
 %% @private

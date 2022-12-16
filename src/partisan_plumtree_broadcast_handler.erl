@@ -19,8 +19,16 @@
 %% -------------------------------------------------------------------
 -module(partisan_plumtree_broadcast_handler).
 
+-include("partisan.hrl").
+
+
 %% Return a two-tuple of message id and payload from a given broadcast
 -callback broadcast_data(any()) -> {any(), any()}.
+
+
+%% Return the channel to be used when broadcasting data associate with this
+%% handler
+-callback broadcast_channel() -> channel().
 
 %% Given the message id and payload, merge the message in the local state.
 %% If the message has already been received return `false', otherwise return `true'
@@ -41,3 +49,8 @@
 %% The exchange does not need to account for messages in-flight when it is started or broadcast
 %% during its operation. These can be taken care of in future exchanges.
 -callback exchange(node()) -> {ok, pid()} | {error, term()} | ignore.
+
+
+-optional_callbacks([broadcast_channel/0]).
+
+

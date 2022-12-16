@@ -10,7 +10,6 @@
 -define(MEMBERSHIP_PROTOCOL_CHANNEL, membership).
 -define(RPC_CHANNEL, rpc).
 -define(DEFAULT_CHANNEL, undefined).
--define(GOSSIP_CHANNEL, gossip).
 -define(CHANNELS, [?DEFAULT_CHANNEL]).
 -define(BROADCAST_MODS, [partisan_plumtree_backend]).
 

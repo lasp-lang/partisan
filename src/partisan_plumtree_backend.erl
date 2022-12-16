@@ -23,26 +23,28 @@
 
 -behaviour(partisan_plumtree_broadcast_handler).
 
+-include("partisan.hrl").
 -include("partisan_logger.hrl").
 
 %% API
--export([start_link/0,
-         start_link/1]).
+-export([start_link/0]).
+-export([start_link/1]).
 
 %% partisan_plumtree_broadcast_handler callbacks
--export([broadcast_data/1,
-         merge/2,
-         is_stale/1,
-         graft/1,
-         exchange/1]).
+-export([broadcast_channel/0]).
+-export([broadcast_data/1]).
+-export([exchange/1]).
+-export([graft/1]).
+-export([is_stale/1]).
+-export([merge/2]).
 
 %% gen_server callbacks
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([init/1]).
+-export([handle_call/3]).
+-export([handle_cast/2]).
+-export([handle_info/2]).
+-export([terminate/2]).
+-export([code_change/3]).
 
 %% transmission callbacks
 -export([extract_log_type_and_payload/1]).
@@ -94,13 +96,24 @@ start_link(Opts) ->
 
 
 %% -----------------------------------------------------------------------------
+%% @doc Returns the channel to be used when sending broadcasting a message
+%% on behalf of this habler
+%% @end
+%% -----------------------------------------------------------------------------
+-spec broadcast_channel() -> channel().
+
+broadcast_channel() ->
+    ?DEFAULT_CHANNEL.
+
+
+%% -----------------------------------------------------------------------------
 %% @doc Returns from the broadcast message the identifier and the payload.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec broadcast_data(broadcast_message()) ->
     {broadcast_id(), broadcast_payload()}.
 
-broadcast_data(#broadcast{timestamp=Timestamp}) ->
+broadcast_data(#broadcast{timestamp = Timestamp}) ->
     {Timestamp, Timestamp}.
 
 
@@ -232,7 +245,10 @@ handle_info(heartbeat, State) ->
     true = ets:insert(?MODULE, [{Timestamp, true}]),
 
     %% Send message with monotonically increasing integer.
-    ok = partisan_plumtree_broadcast:broadcast(#broadcast{timestamp=Timestamp}, ?MODULE),
+    ok = partisan_plumtree_broadcast:broadcast(
+        #broadcast{timestamp = Timestamp},
+        ?MODULE
+    ),
 
     ?LOG_DEBUG(
         "Heartbeat triggered: sending ping ~p to ensure tree.",
