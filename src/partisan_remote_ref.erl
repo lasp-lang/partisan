@@ -29,21 +29,56 @@
 %% Because Partisan doesn't use disterl it needs to implement this same
 %% disambiguation mechanism somehow. As disterl's implementation is done by the
 %% BEAM internally and not API is exposed, this module is required to
-%% achieve the same result.
+%% achieve a similar result.
 %%
 %% == Representation ==
-%% This module provide two representation formats for remote identifiers (in
-%% general, "references"): (i) a binary URI and; (ii) a tuple.
+%% In cases where lots of references are stored in process state, `ets' and
+%% specially where those are uses as keys, a binary format is preferable to the
+%% tuple format in order to save memory and avoid copying the term every time a
+%% message is send between processes (by leveraging off-heap binary storage).
 %%
-%% The functions in this module will check which format to use by reading the
-%% configuration parameter `remote_ref_as_uri'. If `true' they will return an
-%% URI representation. Otherwise they will return a tuple representation.
+%% For this reason, this module implements two alternative representations:
+%% <ul>
+%% <li>references as binary URIs</li>
+%% <li>references as tuples</li>
+%% </ul>
+%%
+%% The representation to use is controlled by the configuration option
+%% `remote_ref_as_uri`. If `true' this module will generate references as
+%% binary URIs. Otherwise it will generate them as tuples.r
 %%
 %% === URI Representation ===
 %%
+%% ```
+%% 1> partisan_remote_ref:from_term(self()).
+%% <<"partisan:pid:nonode@nohost:0.1062.0">>
+%% '''
+%%
 %% ==== URI Padding ====
 %%
+%% For those cases where the resulting references are smaller than 64 bytes (
+%% and thus will be stored on the process heap) this module can pad the
+%% generated bianry URIs to 65 bytes, thus forcing them to be stored off-heap.
+%% This is controlled with the configuration option `remote_ref_binary_padding'.
+%%
+%% ```
+%% 1> partisan_config:set(remote_ref_binary_padding, false).
+%% 2> partisan_remote_ref:from_term(self()).
+%% <<"partisan:pid:nonode@nohost:0.1062.0">>
+%% 3> partisan_config:set(remote_ref_binary_padding, true).
+%% ok
+%% 4> partisan_remote_ref:from_term(self()).
+%% <<"partisan:pid:nonode@nohost:0.1062.0:"...>>
+%% '''
+%%
 %% === Tuple Representation ===
+%%
+%% ```
+%% 1> partisan_remote_ref:from_term(self()).
+%% {partisan_remote_reference,
+%%    nonode@nohost,
+%%    {partisan_process_reference,"<0.1062.0>"}}
+%% '''
 %%
 %% @end
 %% -----------------------------------------------------------------------------
