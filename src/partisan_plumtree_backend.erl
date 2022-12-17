@@ -46,6 +46,8 @@
 
 -record(state, {}).
 
+-type state()   ::  #state{}.
+
 -record(broadcast, {
     timestamp               :: timestamp()
 }).
@@ -154,7 +156,7 @@ broadcast_channel() ->
 %% -----------------------------------------------------------------------------
 %% @doc Returns from the broadcast message the identifier and the payload.
 %% In this case a tuple where both arguments have the broadcast message
-%% `timestamp`. These messages are used by Partisan as a stimulus for the
+%% `timestamp'. These messages are used by Partisan as a stimulus for the
 %% Epidemic Broadcast Tree (Plumtree) construction.
 %% @end
 %% -----------------------------------------------------------------------------
