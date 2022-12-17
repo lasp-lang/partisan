@@ -26,11 +26,11 @@
 %% == Callbacks ==
 %% The behviour defines the following callbacks:
 %% <ul>
-%% <li>`broadcast_data/1` - must return a two-tuple of message id and payload
+%% <li>`broadcast_data/1' - must return a two-tuple of message id and payload
 %% from a given broadcast. Where the broadcasted message is
 %% application-specific.
 %% </li>
-%% <li>`broadcast_channel/1` (optional) - Must return the channel to be used
+%% <li>`broadcast_channel/1' (optional) - Must return the channel to be used
 %% when broadcasting data associate with this handler.
 %% See {@link partisan_plumtree_broadcast:broadcast/2}.
 %% </li>
