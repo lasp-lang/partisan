@@ -779,7 +779,7 @@ maybe_exchange(Peer, #state{mods = [_|Mods]} = State, [H|T]) ->
     NewState = State#state{mods = Mods ++ [H]},
 
     case lists:keyfind(H, 1, State#state.exchanges) of
-        true ->
+        {H, _, _, _} ->
             %% We skip current Mod as there is already an exchange for it
             ?LOG_DEBUG(
                 "Ignoring exchange request for ~p with ~p, "
