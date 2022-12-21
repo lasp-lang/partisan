@@ -92,7 +92,7 @@ maps_append(Key, Value, Map) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Tries to create a new connection to a node if required. If succesfull
+%% @doc Tries to create a new connection to a node if required. If successful
 %% it store the new connection record in partisan_peer_connections.
 %% @end
 %% -----------------------------------------------------------------------------
@@ -110,7 +110,7 @@ maybe_connect(NodeSpec) ->
 %% invalid nodes specifications.
 %%
 %% Aa specification is invalid if there is another specification for the same
-%% node for which we already have succesful connections. An invalid
+%% node for which we already have successful connections. An invalid
 %% specification will exist when a node has crashed (without leaving the
 %% cluster) and later on returned with a different IP address i.e. a normal
 %% situation on cloud orchestration platforms. In this case the membership set
@@ -324,7 +324,7 @@ maybe_stale(NodeSpec, Channel, ListenAddr, Acc, 0, Reason) ->
             case partisan_peer_connections:node_spec(Info) of
                 Connected when Connected == NodeSpec ->
                     %% It is the same node_spec, so we are just having problems
-                    %% openning more connections at the time being.
+                    %% opening more connections at the time being.
                     ?LOG_DEBUG(#{
                         description => "Node failed to connect",
                         reason => Reason,

@@ -791,7 +791,7 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
                       recv_message_map=RecvMessageMap0}=State0) ->
     ?LOG_DEBUG(#{
         description => "Node is now connected",
-        mysefl => Myself0,
+        myself => Myself0,
         peer_node => Peer,
         peer_epoch => PeerEpoch
     }),
@@ -801,7 +801,7 @@ handle_message({join, Peer, PeerTag, PeerEpoch},
     State = case IsAddable andalso NotInActiveView of
         true ->
             ?LOG_DEBUG(#{
-                description => "Addding peer node to the active view",
+                description => "Adding peer node to the active view",
                 peer_node => Peer
             }),
             %% Establish connections.

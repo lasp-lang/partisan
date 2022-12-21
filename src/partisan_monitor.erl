@@ -58,7 +58,7 @@
 -define(NODES_MON_TAB, partisan_monitor_nodes_mon).
 
 -record(state, {
-    %% wether monitoring is enabled, depends on partisan_peer_service_manager
+    %% whether monitoring is enabled, depends on partisan_peer_service_manager
     %% being used
     enabled                     ::  boolean(),
     %% We cache a snapshot of the nodes, so that if we are terminated we can
@@ -166,7 +166,7 @@ monitor(RemoteRef, Opts) ->
         orelse error(badarg),
 
     %% We might be calling ourselves, in whicn case we need to skip monitoring
-    %% This occurs becuase we are a partisan_gen_server ourselves and
+    %% This occurs because we are a partisan_gen_server ourselves and
     %% partisan_gen calls for monitoring.
     %% We return the static ref so that we can recognise when demonitor
     Skip =
@@ -296,7 +296,7 @@ monitor_node(Node, Flag) when is_atom(Node) ->
             add_node_monitor(Node, self());
         false when Flag == true ->
             %% The node is down.
-            %% We don't record the request and immediatly send a
+            %% We don't record the request and immediately send a
             %% nodedown signal
             self() ! {nodedown, Node},
             true;
@@ -619,7 +619,7 @@ monitor(RemoteRef, Opts, {connection, false}) ->
 
 monitor(RemoteRef, _, Reason) ->
     %% We reply a transient ref but we do not record the
-    %% request as we are immediatly sending a DOWN
+    %% request as we are immediately sending a DOWN
     %% signal
     Mref = partisan:make_ref(),
     ok = send_process_down(self(), Mref, {ref, RemoteRef}, Reason),

@@ -46,7 +46,7 @@
 %% Only field removals can be deferred.
 -type deferred()        :: #{context() => [nodename()]}.
 -type nodename()        :: atom().
-%% Only for present fields, ensures removes propogate
+%% Only for present fields, ensures removes propagate
 -type entry_value()     :: {dotmap(), tombstone()}.
 -type dotmap()          :: #{dot() => value()}.
 -type value()           :: node_value() | tombstone().
@@ -715,7 +715,7 @@ ctx_rem_node(Nodename, Entries, Ctx, _Clock) ->
             %% current field is {a, 2}, the tombstone ensures that all events
             %% from {a, 1} are removed from the crdt value. If the ctx remove
             %% is at {a, 3} and the current field is at {a, 2} then we need to
-            %% remove only events upto {a, 2}. The glb clock enables that.
+            %% remove only events up to {a, 2}. The glb clock enables that.
             %%
             %% GLB is events seen by both clocks only
             % TombClock = partisan_vclock:glb(Ctx, Clock),
@@ -813,7 +813,7 @@ filter_unique(Nodenames, Entries, Clock, Acc) ->
                     %% dots in the tombstone will have no
                     %% impact on the value, if the otherside
                     %% removed it, then the removed dots
-                    %% will be propogated by the tombstone.
+                    %% will be propagated by the tombstone.
                     Tombstone = merge_values(Tombstone0, tombstone()),
                     maps:put(Nodename, {DotMap, Tombstone}, IAcc)
             end
@@ -1094,7 +1094,7 @@ tombstone_remove_test() ->
     %% merged with the surviving field. When the second update to B
     %% was merged with A, that information contained in the superseded
     %% field in A at {b,1} was lost (since it was merged into the
-    %% _VALUE_). This casued the [0] from A's first dot to
+    %% _VALUE_). This caused the [0] from A's first dot to
     %% resurface. By adding the tombstone, the superseded field merges
     %% it's tombstone with the surviving {b, 2} field so the remove
     %% information is preserved, even though the {b, 1} value is

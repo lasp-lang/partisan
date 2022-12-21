@@ -237,7 +237,7 @@ handle_info({collaborate_ack, ReplyingNode, {write, From, Key, Value}}, #state{o
 
             case lists:usort(Membership) =:= lists:usort(Replies) of
                 true ->
-                    ?LOG_INFO("Node ~p received all replies for request ~p, acknowleding to user.", [node(), Request]),
+                    ?LOG_INFO("Node ~p received all replies for request ~p, acknowledging to user.", [node(), Request]),
                     partisan:forward_message(From, {ok, Value});
                 false ->
                     ?LOG_INFO("Received replies from: ~p, but need replies from: ~p", [Replies, Membership -- Replies]),

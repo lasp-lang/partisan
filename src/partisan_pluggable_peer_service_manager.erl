@@ -26,7 +26,7 @@
 %% <ul>
 %% <li>Uses TCP/IP.</li>
 %% <li>All nodes communicate and maintain connections with all other nodes.</li>
-%% <li>Nodes periodically send hearbeat messages. The service considers a node
+%% <li>Nodes periodically send heartbeat messages. The service considers a node
 %% "failed" when it misses X heartbeats.</li>
 %% <li>Point-to-point messaging with a single network hop.</li>
 %% <li>Eventually consistent membership maintained in a CRDT and replicated
@@ -419,7 +419,7 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
 
             case FastForward of
                 true ->
-                    %% Attempt to fast-path by accesing the connection
+                    %% Attempt to fast-path by accessing the connection
                     %% directly
                     case partisan_peer_connections:dispatch(Cmd) of
                         ok ->
@@ -1024,7 +1024,7 @@ handle_cast(
                             CausalLabel, Node, ServerRef, Message
                         ),
 
-                    %% Wrap the clock wih a scope.
+                    %% Wrap the clock with a scope.
                     %% TODO: Maybe do this wrapping inside of the causality backend.
                     LocalClock = {CausalLabel, LocalClock0},
 

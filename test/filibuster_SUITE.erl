@@ -752,7 +752,7 @@ analyze(StartTime, Nodes, Counterexample, Pass, NumPassed0, NumFailed0, NumPrune
                                     %% Once we start omitting, omit everything after that's a message
                                     %% send because we don't know what might be coming. In 2PC, if we
                                     %% have a successful trace and omit a prepare -- we can't be guaranteed
-                                    %% to ever see a prepare vote or commmit.
+                                    %% to ever see a prepare vote or commit.
                                     case InterpositionType of
                                         forward_message ->
                                             case lists:member(Line, Omissions) of
@@ -1354,7 +1354,7 @@ execute_schedule(StartTime, CurrentIteration, Nodes, Counterexample, PreloadOmis
                         false ->
                             %% This failed.
                             debug("Test FAILED!~n", []),
-                            % debug("Failing test contained the following omitted mesage types: ~p~n", [Omissions]),
+                            % debug("Failing test contained the following omitted message types: ~p~n", [Omissions]),
 
                             OmissionTypes = message_types(Omissions),
                             debug("=> OmissionTypes: ~p~n", [OmissionTypes]),
@@ -1598,7 +1598,7 @@ verify_annotations(CausalityAnnotations, MessageTypesFromTraceLines) ->
             true ->
                 debug("=> has the following requirements: ~p", [Requirements]),
 
-                %% Find first occurence of the message in the trace.
+                %% Find first occurrence of the message in the trace.
                 Nth = index_of(MessageType, MessageTypesFromTraceLines),
                 debug("=> ~p is index: ~p", [MessageType, Nth]),
 
@@ -1620,7 +1620,7 @@ verify_annotations(CausalityAnnotations, MessageTypesFromTraceLines) ->
 
                             case Criteria of
                                 N when N =< length(CriteriaMessages) ->
-                                    %% Weakest precondition candidiate.
+                                    %% Weakest precondition candidate.
                                     debug(" -> criteria, MET!", []),
                                     Acc1;
                                 _ ->

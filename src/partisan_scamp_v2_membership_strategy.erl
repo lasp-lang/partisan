@@ -150,7 +150,7 @@ periodic(#scamp_v2{partial_view=PartialView, last_message_time=LastMessageTime}=
     OutgoingSubscriptionMessages = case Difference > (?PERIODIC_INTERVAL * ?SCAMP_MESSAGE_WINDOW) of
         true ->
             %% Node is isolated.
-            ?LOG_TRACE("~p: Node is possibily isolated.", [node()]),
+            ?LOG_TRACE("~p: Node is possibly isolated.", [node()]),
 
             Myself = myself(),
 

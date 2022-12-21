@@ -11,7 +11,7 @@ Erlang/OTP, specifically distributed erlang (a.k.a. `disterl`), uses a full-mesh
 
 Failure detector. These nodes send periodic heartbeat messages to their connected nodes and deem a node "failed" or "unreachable" when it misses a certain number of heartbeat messages i.e. `net_tick_time` setting in `disterl`.
 
-Due to this hearbeating and other issues in the way Erlang handles certain internal data structures, Erlang systems present a limit to the number of connected nodes that depending on the application goes between 60 and 200 nodes.
+Due to this heartbeating and other issues in the way Erlang handles certain internal data structures, Erlang systems present a limit to the number of connected nodes that depending on the application goes between 60 and 200 nodes.
 
 Also, Erlang conflates control plane messages with application messages on the same TCP/IP connection and uses a single TCP/IP connection between two nodes, which suffers to [Head-of-line blocking](https://en.wikipedia.org/wiki/Head-of-line_blocking). This also leads to congestion and contention that further affects latency.
 
@@ -31,7 +31,7 @@ We also need to handle failures:
 Partisan was designed to increase scalability, reduce latency and failure detection for Erlang/BEAM distributed applications.
 
 * Scalability
-    * Provides serveral overlays that are configurable at runtime
+    * Provides several overlays that are configurable at runtime
         * Full mesh
     * Specialised to particular application communication patterns
     * Doesn't alter application behaviour
@@ -40,7 +40,7 @@ Partisan was designed to increase scalability, reduce latency and failure detect
     * Configurable number of connections between nodes (named channels and fanout).
     * Pushing background and maintenance traffic to other communication channels - to avoid the Head-of-line blocking due to background activity
     * Leveraging monotonicity - so that you can do load shedding more possible.
-        * Monotonic channels drop messges when state is increasing on the channel to reduce load and transmission of redundation information. Ideal for growing monotonic hash rings, objects designated with vector clock, CRDTs, etc.
+        * Monotonic channels drop messages when state is increasing on the channel to reduce load and transmission of redundation information. Ideal for growing monotonic hash rings, objects designated with vector clock, CRDTs, etc.
 * Failure detection
     * Performed using TCP/IP
     * Connections are verified at each gossip round

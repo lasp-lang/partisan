@@ -142,7 +142,7 @@
 -type action() ::
 	%% During a state change:
 	%% * NextState and NewData are set.
-	%% * All action()s are executed in order of apperance.
+	%% * All action()s are executed in order of appearance.
 	%% * Postponing the current event is performed
 	%%   iff 'postpone' is 'true'.
 	%% * A state timeout is started iff 'timeout' is set.
@@ -150,7 +150,7 @@
 	%%   no pending events the server goes into receive
 	%%   or hibernate (iff 'hibernate' is 'true')
 	%%
-	%% These action()s are executed in order of appearence
+	%% These action()s are executed in order of appearance
 	%% in the containing list. The ones that set options
 	%% will override any previous so the last of each kind wins.
 	%%
