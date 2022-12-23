@@ -13,9 +13,10 @@ SIZE 			?= 1024
 VERSION         ?= $(shell git describe --tags)
 CODESPELL 		= $(shell which codespell)
 SPELLCHECK 	    = $(CODESPELL) -S _build -S doc -S .git -L applys,nd,accout,mattern,pres,fo
+SPELLFIX      	= $(SPELLCHECK) -i 3 -w
 
 .PHONY: compile-no-deps test docs xref dialyzer-run dialyzer-quick dialyzer \
-		cleanplt upload-docs rel deps test plots spellcheck
+		cleanplt upload-docs rel deps test plots spellcheck spellfix
 
 all: compile
 
@@ -63,7 +64,12 @@ kill:
 check: kill test xref dialyzer spellcheck
 
 spellcheck:
-	$(if $(CODESPELL), $(SPELLCHECK), $(error "Aborting codespell, command codespell not found in PATH"))
+	$(if $(CODESPELL), $(SPELLCHECK), $(error "Aborting codecheck, command codespell not found in PATH"))
+
+
+spellfix:
+	$(if $(CODESPELL), $(SPELLFIX), $(error "Aborting codecheck, command codespell not found in PATH"))
+
 
 
 test: eunit ct cover
