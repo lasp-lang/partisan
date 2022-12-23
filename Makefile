@@ -63,7 +63,7 @@ kill:
 check: kill test xref dialyzer spellcheck
 
 spellcheck:
-	$(if $(CODESPELL), $(SPELLCHECK), $(error "Aborting spellcheck, command codespell not found in PATH"))
+	$(if $(CODESPELL), $(SPELLCHECK), $(error "Aborting codespell, command codespell not found in PATH"))
 
 
 test: eunit ct cover
