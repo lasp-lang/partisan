@@ -130,7 +130,9 @@ start(Case, Config, Options) ->
                                   DE
                           end,
             debug("Setting distance_enabled to: ~p", [DistanceEnabled]),
-            ok = rpc:call(Node, partisan_config, set, [distance_enabled, DistanceEnabled]),
+            ok = rpc:call(
+                Node, partisan_config, set, [distance_enabled, DistanceEnabled]
+            ),
 
             PeriodicEnabled = case ?config(periodic_enabled, Config) of
                               undefined ->
@@ -139,7 +141,9 @@ start(Case, Config, Options) ->
                                   PDE
                           end,
             debug("Setting periodic_enabled to: ~p", [PeriodicEnabled]),
-            ok = rpc:call(Node, partisan_config, set, [periodic_enabled, PeriodicEnabled]),
+            ok = rpc:call(
+                Node, partisan_config, set, [periodic_enabled, PeriodicEnabled]
+            ),
 
             MembershipStrategyTracing = case ?config(membership_strategy_tracing, Config) of
                               undefined ->
@@ -194,7 +198,7 @@ start(Case, Config, Options) ->
             ok = rpc:call(Node, partisan_config, set, [membership_strategy, MembershipStrategy]),
 
             debug("Enabling tracing since we are in test mode....", []),
-            ok = rpc:call(Node, partisan_config, set, [tracing, false]),
+            ok = rpc:call(Node, partisan_config, set, [tracing, true]),
 
             Disterl = case ?config(connect_disterl, Config) of
                               undefined ->
@@ -326,19 +330,32 @@ start(Case, Config, Options) ->
     debug("Starting nodes.", []),
 
     StartFun = fun({_Name, Node}) ->
-                        %% Start partisan.
-                        {ok, _} = rpc:call(Node, application, ensure_all_started, [partisan]),
-                        %% Start a dummy registered process that saves in the env whatever message it gets.
-                        Pid = rpc:call(Node, erlang, spawn, [fun() -> store_proc_receiver() end]),
-                        true = rpc:call(Node, erlang, register, [store_proc, Pid]),
-                        debug("Registered store_proc on pid ~p, node ~p", [Pid, Node])
-               end,
+        %% Start partisan.
+        {ok, _} = rpc:call(Node, application, ensure_all_started, [partisan]),
+        %% Start a dummy registered process that saves in the env whatever
+        %% message it gets.
+        Pid = rpc:call(
+            Node, erlang, spawn, [fun() -> store_proc_receiver() end]
+        ),
+        true = rpc:call(Node, erlang, register, [store_proc, Pid]),
+        debug("Registered store_proc on pid ~p, node ~p", [Pid, Node])
+    end,
     lists:foreach(StartFun, Nodes),
 
     debug("Clustering nodes.", []),
-    lists:foreach(fun(Node) -> cluster(Node, Nodes, Options, Config) end, Nodes),
+    lists:foreach(
+        fun(Node) ->
+            cluster(Node, Nodes, Options, Config)
+        end,
+        Nodes
+    ),
 
     debug("Partisan fully initialized.", []),
+    {_, Node} = hd(Nodes),
+    {ok, Members} = rpc:call(
+        Node, partisan_peer_service, members, [], 3000
+    ),
+    debug("Cluster members: ~p", [Members]),
 
     Nodes.
 
@@ -364,7 +381,7 @@ cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
 
     OtherNodes = case Manager of
                      ?DEFAULT_PEER_SERVICE_MANAGER ->
-                         %% Omit just ourselves.
+                         %% We are all peers, I connect to everyone (but myself)
                          omit([Name], Nodes);
                      partisan_client_server_peer_service_manager ->
                          case {AmIServer, AmIClient} of
@@ -376,6 +393,8 @@ cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
                                 %% I'm a client, pick servers.
                                 omit(Clients, Nodes);
                              {_, _} ->
+                                %% I assume I'm a server, I connect to both
+                                %% clients and servers!
                                 omit([Name], Nodes)
                          end;
                      partisan_hyparview_peer_service_manager ->
@@ -408,22 +427,8 @@ cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
 
 
 cluster({_, Node}, {_, OtherNode}, Config) ->
-    PeerPort = rpc:call(OtherNode,
-                        partisan_config,
-                        get,
-                        [peer_port, ?PEER_PORT]),
-    Parallelism = case ?config(parallelism, Config) of
-                      undefined ->
-                          1;
-                      P ->
-                          P
-                  end,
-    Channels = case ?config(channels, Config) of
-                      undefined ->
-                          ?CHANNELS;
-                      C ->
-                          C
-                  end,
+    NodeSpec = rpc:call(OtherNode, partisan, node_spec, []),
+
     JoinMethod = case ?config(sync_join, Config) of
                     undefined ->
                         join;
@@ -432,19 +437,9 @@ cluster({_, Node}, {_, OtherNode}, Config) ->
                     false ->
                         join
                   end,
-    debug("Joining node: ~p to ~p at port ~p", [Node, OtherNode, PeerPort]),
+    debug("Joining node with spec: ~p", [NodeSpec]),
 
-    ok = rpc:call(
-        Node,
-        partisan_peer_service,
-        JoinMethod,
-        [#{
-            name => OtherNode,
-            listen_addrs => [#{ip => {127, 0, 0, 1}, port => PeerPort}],
-            channels => Channels,
-            parallelism => Parallelism
-        }]
-    ),
+    ok = rpc:call(Node, partisan_peer_service, JoinMethod, [NodeSpec]),
     ok.
 
 
@@ -524,7 +519,7 @@ node_list(N, Name, Config) ->
 
 %% @private
 debug(Message, Format) ->
-    case partisan_config:get(tracing, ?TRACING) of
+    case partisan_config:get(tracing, true) of
         true ->
             ct:print(Message, Format);
         false ->

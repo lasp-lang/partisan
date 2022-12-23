@@ -18,16 +18,25 @@
 %%
 %% -------------------------------------------------------------------
 
+%% -----------------------------------------------------------------------------
+%% @doc
 %% @reference https://people.maths.bris.ac.uk/~maajg/hiscamp-sigops.pdf
-
+%%
+%%
+%% ==Isolation prevention ==
+%%
+%% Protocol has no specific description of how detection of recovery or
+%% isolation is performed, so we use the protocol specification for that taken
+%% from the scamp_v1 membership strategy.
+%%
 %% @todo Join of InView.
 %% @todo Node unsubscript.
-
+%% @end
+%% -----------------------------------------------------------------------------
 -module(partisan_scamp_v2_membership_strategy).
+-behaviour(partisan_membership_strategy).
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
-
--behaviour(partisan_membership_strategy).
 
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
@@ -39,30 +48,33 @@
          periodic/1,
          handle_message/2]).
 
-%% Isolation prevention.
-%%
-%% Protocol has no specific description of how detection of recovery or isolation
-%% is performed, so we use the protocol specification for that taken from the
-%% scamp_v1 membership strategy.
+
+-record(scamp_v2, {
+    actor               :: term(),
+    partial_view        :: [partisan:node_spec()],
+    in_view             :: [partisan:node_spec()],
+    last_message_time   :: term()
+}).
 
 
 
--record(scamp_v2, {actor :: term(),
-                   partial_view :: [node_spec()],
-                   in_view :: [node_spec()],
-                   last_message_time :: term()}).
+%% =============================================================================
+%% API
+%% =============================================================================
 
-%%%===================================================================
-%%% API
-%%%===================================================================
+
 
 %% @doc Initialize the strategy state.
 %%      Start with an empty state with only ourselves known.
 init(Identity) ->
-    PartialView = [myself()],
-    InView = [],
-    State = #scamp_v2{in_view=InView, partial_view=PartialView, actor=Identity},
+    PartialView = [partisan:node_spec()],
+    State = #scamp_v2{
+        in_view = [],
+        partial_view = PartialView,
+        actor = Identity
+    },
     {ok, PartialView, State}.
+
 
 %% @doc When a remote node is connected, notify that node to add us.  Then, perform forwarding, if necessary.
 join(#scamp_v2{partial_view=PartialView0}=State0, Node, _NodeState) ->
@@ -75,16 +87,24 @@ join(#scamp_v2{partial_view=PartialView0}=State0, Node, _NodeState) ->
     %% 2. Notify node to add us to its state.
     %%    This is lazily done to ensure we can setup the TCP connection both ways, first.
     Myself = partisan:node_spec(),
-    OutgoingMessages1 = OutgoingMessages0 ++ [{Node, {membership_strategy, {forward_subscription, Myself}}}],
+    OutgoingMessages1 = OutgoingMessages0 ++ [
+        {Node, {membership_strategy, {forward_subscription, Myself}}}
+    ],
 
     %% 3. Notify all members we know about to add node to their partial_view.
-    OutgoingMessages2 = lists:foldl(fun(N, OM) ->
-        ?LOG_INFO(
-            "~p: Forwarding subscription for ~p to node: ~p", [node(), Node, N]
-        ),
+    OutgoingMessages2 =
+        lists:foldl(
+            fun(N, OM) ->
+                ?LOG_DEBUG(
+                    "~p: Forwarding subscription for ~p to node: ~p",
+                    [node(), Node, N]
+                ),
 
-        OM ++ [{N, {membership_strategy, {forward_subscription, Node}}}]
-        end, OutgoingMessages1, PartialView0),
+                OM ++ [{N, {membership_strategy, {forward_subscription, Node}}}]
+            end,
+            OutgoingMessages1,
+            PartialView0
+        ),
 
     %% 4. Use 'c - 1' (failure tolerance value) to send forwarded subscriptions for node.
     %%
@@ -127,7 +147,7 @@ prune(#scamp_v2{partial_view = PartialView} = State, _Nodes) ->
 
 %% @doc Periodic protocol maintenance.
 periodic(#scamp_v2{partial_view=PartialView, last_message_time=LastMessageTime}=State) ->
-    SourceNode = myself(),
+    SourceNode = partisan:node_spec(),
 
     %% Isolation detection:
     %%
@@ -152,7 +172,7 @@ periodic(#scamp_v2{partial_view=PartialView, last_message_time=LastMessageTime}=
             %% Node is isolated.
             ?LOG_TRACE("~p: Node is possibly isolated.", [node()]),
 
-            Myself = myself(),
+            Myself = partisan:node_spec(),
 
             lists:map(fun(N) ->
                 ?LOG_TRACE(
@@ -182,7 +202,7 @@ handle_message(#scamp_v2{partial_view=PartialView0, in_view=InView0}=State0, {bo
         [node(), Node]
     ),
 
-    Myself = myself(),
+    Myself = partisan:node_spec(),
     C = partisan_config:get(scamp_c, ?SCAMP_C_VALUE),
 
     case Node of
@@ -275,7 +295,7 @@ handle_message(#scamp_v2{partial_view=PartialView0}=State0, {forward_subscriptio
             ?LOG_TRACE(
                 "~p: Notifying ~p to keep us: ~p", [node(), Node, node()]
             ),
-            OutgoingMessages = [{Node, {membership_strategy, {keep_subscription, myself()}}}],
+            OutgoingMessages = [{Node, {membership_strategy, {keep_subscription, partisan:node_spec()}}}],
 
             {ok, PartialView, OutgoingMessages, State0#scamp_v2{partial_view=PartialView}};
         false ->
@@ -321,7 +341,3 @@ random_0_or_1() ->
         false ->
             0
     end.
-
-%% @private
-myself() ->
-    partisan:node_spec().

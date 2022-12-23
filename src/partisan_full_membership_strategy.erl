@@ -35,15 +35,22 @@
          handle_message/2]).
 
 -record(full_v1, {
-    actor           ::  actor(),
+    actor           ::  partisan:actor(),
     membership      ::  partisan_membership_set:t()
 }).
 
-%%%===================================================================
-%%% API
-%%%===================================================================
 
+
+%% =============================================================================
+%% API
+%% =============================================================================
+
+
+
+%% -----------------------------------------------------------------------------
 %% @doc Initialize the strategy state.
+%% @end
+%% -----------------------------------------------------------------------------
 init(Identity) ->
     State = maybe_load_state_from_disk(Identity),
     MembershipList = membership_list(State),
@@ -51,7 +58,10 @@ init(Identity) ->
     {ok, MembershipList, State}.
 
 %% @doc When a node is connected, return the state, membership and outgoing message queue to be transmitted.
-join(#full_v1{membership=Membership0} = State0, _Node, #full_v1{membership=NodeMembership}) ->
+join(
+    #full_v1{membership = Membership0} = State0,
+    _Node,
+    #full_v1{membership = NodeMembership}) ->
     Membership = partisan_membership_set:merge(Membership0, NodeMembership),
     State = State0#full_v1{membership=Membership},
     MembershipList = membership_list(State),

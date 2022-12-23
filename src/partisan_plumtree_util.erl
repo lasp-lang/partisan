@@ -23,24 +23,28 @@
 
 -include("partisan_logger.hrl").
 
--export([build_tree/3,
-         log/2,
-         log/3]).
+-export([build_tree/3]).
+-export([log/2]).
+-export([log/3]).
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Convert a list of elements into an N-ary tree. This conversion
 %%      works by treating the list as an array-based tree where, for
 %%      example in a binary 2-ary tree, a node at index i has children
 %%      2i and 2i+1. The conversion also supports a "cycles" mode where
 %%      the array is logically wrapped around to ensure leaf nodes also
 %%      have children by giving them backedges to other elements.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec build_tree(N :: integer(), Nodes :: [term()], Opts :: [term()]) ->
+    orddict:orddict().
 
--spec build_tree(N :: integer(), Nodes :: [term()], Opts :: [term()])
-                -> orddict:orddict().
 build_tree(N, Nodes, Opts) ->
     Expand =
         case lists:member(cycles, Opts) of
             true ->
-                lists:flatten(lists:duplicate(N+1, Nodes));
+                lists:flatten(lists:duplicate(N + 1, Nodes));
             false ->
                 Nodes
         end,
@@ -53,18 +57,25 @@ build_tree(N, Nodes, Opts) ->
                     end, {[], tl(Expand)}, Nodes),
     orddict:from_list(Tree).
 
--spec log(debug | info | error,
-          String :: string(),
-          Args :: list(term())) -> ok.
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec log(debug | info | error, String :: string(), Args :: list(term())) -> ok.
+
 -ifdef(TEST).
 
 log(Level, String) ->
     log(Level, String, []).
 
+
 log(debug, String, Args) ->
     ?LOG_DEBUG(String, Args);
+
 log(info, String, Args) ->
     ?LOG_INFO(String, Args);
+
 log(error, String, Args) ->
     ?LOG_ERROR(String, Args).
 
@@ -75,9 +86,15 @@ log(_Level, _String, _Args) -> ok.
 
 -endif.
 
-%%
-%% Tests
-%%
+
+
+
+%% =============================================================================
+%% TESTS
+%% =============================================================================
+
+
+
 -ifdef(TEST).
 
 -include_lib("eunit/include/eunit.hrl").

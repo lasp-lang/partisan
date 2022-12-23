@@ -242,11 +242,12 @@ broadcast(Broadcast, Mod) ->
 %% @doc Returns the channel to be used when sending broadcasting a message
 %% on behalf of module `Mod'.
 %%
-%% The channel defined by the callback `Mod:broadcast_channel()' or the
-%% `default' channel is the callback is not implemented.
+%% The channel defined by the callback `Mod:broadcast_channel()' or default
+%% channel i.e. {@link partisan:default_channel/0} if the callback is not
+%% implemented.
 %% @end
 %% -----------------------------------------------------------------------------
--spec broadcast_channel(Mod :: module()) -> channel().
+-spec broadcast_channel(Mod :: module()) -> partisan:channel().
 
 broadcast_channel(Mod) ->
     case erlang:function_exported(Mod, broadcast_channel, 0) of
@@ -995,7 +996,10 @@ all_peers(Root, Sets, Default) ->
 
 
 %% @private
--spec send(Msg :: message(), Mod :: module(), Peers :: [node()] | node()) -> ok.
+-spec send(
+    Msg :: partisan:message(),
+    Mod :: module(),
+    Peers :: [node()] | node()) -> ok.
 
 send(Msg, Mod, Peers) when is_list(Peers) ->
     _ = [send(Msg, Mod, P) || P <- Peers],

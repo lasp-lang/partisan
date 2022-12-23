@@ -20,10 +20,22 @@
 %% -------------------------------------------------------------------
 
 %% -----------------------------------------------------------------------------
-%% @doc This modules implement the Peer Service API.
-%% All functions in this module will forward the invocation to module defined
-%% by the configuration option `partisan_peer_service_manager' which should
-%% implement the behaviour {@link partisan_peer_service_manager}.
+%% @doc This modules implements the Peer Service API.
+%% All functions in this module forward the invocation to the configured
+%% peer service manager (option `partisan_peer_service_manager') which must be
+%% one of the Partisan's managers implementing
+%% {@link partisan_peer_service_manager}, i.e. one of:
+%% <ul>
+%% <li>`partisan_pluggable_peer_service_manager'</li>
+%% <li>`partisan_client_server_peer_service_manager'</li>
+%% <li>`partisan_hyparview_peer_service_manager'</li>
+%% <li>`partisan_hyparview_xbot_peer_service_manager'</li>
+%% <li>`partisan_static_peer_service_manager'</li>
+%% </ul>
+%%
+%% Each node running Partisan listens for connections on a particular IP
+%% address and port. This is the information that is required when other nodes
+%% wish to join this node.
 %% @end
 %% -----------------------------------------------------------------------------
 -module(partisan_peer_service).
@@ -100,7 +112,8 @@ manager() ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec join(node_spec() | node() | list) -> ok | {error, self_join | any()}.
+-spec join(partisan:node_spec() | node() | list) ->
+    ok | {error, self_join | any()}.
 
 join(#{name := Node} = NodeSpec) ->
     case partisan:node() of
@@ -123,7 +136,7 @@ join(Node) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec sync_join(node_spec()) ->
+-spec sync_join(partisan:node_spec()) ->
     ok | {error, self_join | not_implemented | any()}.
 
 sync_join(#{name := Node} = NodeSpec) ->
@@ -152,7 +165,7 @@ leave() ->
 %% restarted first.
 %% @end
 %% -----------------------------------------------------------------------------
--spec leave(node_spec()) -> ok.
+-spec leave(partisan:node_spec()) -> ok.
 
 leave(#{name := Node} = NodeSpec) ->
     case partisan:node() of
@@ -167,9 +180,13 @@ leave(#{name := Node} = NodeSpec) ->
 %% @doc Trigger function on connection open for a given node.
 %% `Function' is a function object taking zero or a single argument, where the
 %% argument is the Node name.
+%%
+%% At the moment, this only works when using a full-mesh topology i.e.
+%% `partisan_pluggable_peer_service_manager' or
+%% `partisan_static_peer_service_manager'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec on_up(node() | node_spec() | any | '_', function()) ->
+-spec on_up(node() | partisan:node_spec() | any | '_', function()) ->
     ok | {error, not_implemented}.
 
 on_up(Node, Function) ->
@@ -180,9 +197,13 @@ on_up(Node, Function) ->
 %% @doc Trigger function on connection close for a given node.
 %% `Function' is a function object taking zero or a single argument, where the
 %% argument is the Node name.
+%%
+%% At the moment, this only works when using a full-mesh topology i.e.
+%% `partisan_pluggable_peer_service_manager' or
+%% `partisan_static_peer_service_manager'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec on_down(node() | node_spec() | any | '_', function()) ->
+-spec on_down(node() | partisan:node_spec() | any | '_', function()) ->
     ok | {error, not_implemented}.
 
 on_down(Node, Function) ->
@@ -190,10 +211,15 @@ on_down(Node, Function) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Return cluster members
+%% @doc Return a sampling of nodes connected to this node.
+%% When using a full-mesh topology i.e.
+%% `partisan_pluggable_peer_service_manager' or
+%% `partisan_static_peer_service_manager' this is the set of all cluster
+%% members. However, if you're using other managers, the result will only be a
+%% sampling of the nodes.
 %% @end
 %% -----------------------------------------------------------------------------
--spec member(Node :: node() | node_spec()) -> boolean().
+-spec member(Node :: node() | partisan:node_spec()) -> boolean().
 
 member(Node) ->
     (?PEER_SERVICE_MANAGER):member(Node).
@@ -214,7 +240,7 @@ members() ->
 %% @doc Return cluster members
 %% @end
 %% -----------------------------------------------------------------------------
--spec members_for_orchestration() -> [node_spec()].
+-spec members_for_orchestration() -> [partisan:node_spec()].
 
 members_for_orchestration() ->
     (?PEER_SERVICE_MANAGER):members_for_orchestration().
@@ -263,7 +289,7 @@ reserve(Tag) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec partitions() -> {ok, partitions()} | {error, not_implemented}.
+-spec partitions() -> {ok, partisan_peer_service_manager:partitions()} | {error, not_implemented}.
 
 partitions() ->
     (?PEER_SERVICE_MANAGER):partitions().
@@ -274,7 +300,7 @@ partitions() ->
 %% @doc Inject a partition.
 %% @end
 %% -----------------------------------------------------------------------------
--spec inject_partition(node_spec(), ttl()) ->
+-spec inject_partition(partisan:node_spec(), ttl()) ->
     {ok, reference()} | {error, not_implemented}.
 
 inject_partition(Origin, TTL) ->

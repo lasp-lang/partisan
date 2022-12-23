@@ -24,19 +24,42 @@
 
 -include("partisan.hrl").
 
--type monitor_nodes_opt()           ::  nodedown_reason
-                                        | {node_type, visible | hidden | all}.
--type monitor_process_identifier()  ::  erlang:monitor_process_identifier()
-                                        | partisan_remote_ref:p()
-                                        | partisan_remote_ref:n().
+-type monitor_nodes_opt()   ::  nodedown_reason
+                                | {node_type, visible | hidden | all}.
+-type monitor_process_id()  ::  erlang:monitor_process_identifier()
+                                | partisan_remote_ref:p()
+                                | partisan_remote_ref:n().
 
--type server_ref()      ::  partisan_peer_service_manager:server_ref().
--type forward_opts()    ::  partisan_peer_service_manager:forward_opts().
--type node_type()       ::  this | known | visible | connected | hidden | all.
+-type server_ref()          ::  partisan_peer_service_manager:server_ref().
+-type forward_opts()        ::  partisan_peer_service_manager:forward_opts().
+-type node_type()           ::  this | known | visible | connected | hidden
+                                | all.
+-type channel()             ::  atom().
+-type channel_opts()        ::  #{
+                                    parallelism := non_neg_integer(),
+                                    monotonic => boolean()
+                                }.
+-type actor()               ::  binary().
+-type listen_addr()         ::  #{
+                                    ip := inet:ip_address(),
+                                    port := non_neg_integer()
+                                }.
+-type node_spec()           ::  #{
+                                    name := node(),
+                                    listen_addrs := [listen_addr()],
+                                    channels := #{channel() => channel_opts()}
+                                }.
+-type message()             ::  term().
 
+
+-export_type([actor/0]).
 -export_type([channel/0]).
+-export_type([channel_opts/0]).
 -export_type([forward_opts/0]).
+-export_type([listen_addr/0]).
+-export_type([message/0]).
 -export_type([monitor_nodes_opt/0]).
+-export_type([node_spec/0]).
 -export_type([node_type/0]).
 -export_type([server_ref/0]).
 
@@ -47,6 +70,7 @@
 -export([cast_message/2]).
 -export([cast_message/3]).
 -export([cast_message/4]).
+-export([channel_opts/1]).
 -export([default_channel/0]).
 -export([demonitor/1]).
 -export([demonitor/2]).
@@ -163,7 +187,7 @@ monitor(Term) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec monitor
-    (process, monitor_process_identifier()) ->
+    (process, monitor_process_id()) ->
         reference() | partisan_remote_ref:r() | no_return();
     (port, erlang:monitor_port_identifier()) ->
         reference() |  no_return();
@@ -202,13 +226,12 @@ monitor(Type, Item) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec monitor
-    (process, monitor_process_identifier(), [erlang:monitor_option()]) ->
+    (process, monitor_process_id(), [erlang:monitor_option()]) ->
         reference() | partisan_remote_ref:r() | no_return();
     (port, erlang:monitor_port_identifier(), [erlang:monitor_option()]) ->
         reference() |  no_return();
     (time_offset, clock_service, [erlang:monitor_option()]) ->
         reference() | no_return().
-
 
 monitor(process, {RegisteredName, Node} = RegPid, Opts) ->
     case partisan_config:get(connect_disterl) orelse partisan:node() == Node of
@@ -228,7 +251,6 @@ when is_tuple(RemoteRef) orelse is_binary(RemoteRef) ->
 
 monitor(Type, Term, Opts) when Type == port orelse Type == time_offset ->
     erlang:monitor(Type, Term, Opts).
-
 
 
 %% -----------------------------------------------------------------------------
@@ -408,8 +430,13 @@ node(Encoded) when is_binary(Encoded) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Returns a list of all nodes connected to this node through normal
-%% connections (that is, hidden nodes are not listed). Same as nodes(visible).
+%% @doc Returns a list of all nodes connected to this node via Partisan.
+%% Equivalent to {@link erlang:nodes/1}.
+%% Sames as calling `nodes(visible)'.
+%%
+%% Notice that if `connect_disterl' is `true' (possibly the case when testing),
+%% this function will NOT return the disterl nodes. For that you still need to
+%% call {@link erlang:nodes/1}.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec nodes() -> [node()].
@@ -443,7 +470,8 @@ is_connected(NodeOrSpec) ->
 %% @doc Returns the name of the local node.
 %% @end
 %% -----------------------------------------------------------------------------
--spec is_connected(node_spec() | node(), channel()) -> boolean().
+-spec is_connected(NodeOrSpec :: node_spec() | node(), Channel :: channel()) ->
+    boolean().
 
 is_connected(NodeOrSpec, Channel) ->
     partisan_peer_connections:is_connected(NodeOrSpec, Channel).
@@ -496,22 +524,26 @@ is_alive() ->
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the node specification of the local node.
+%% This is the information required when other nodes wish to join this node
+%% (See {@link partisan_peer_service:join/1}).
+%%
+%% Notice that the values of the keys must be sorted for the peer service to be
+%% able to compare node specifications, and prevent duplicates in the
+%% membership view data structure. This is important in case you find
+%% yourself building this representation manually in order to implement a
+%% particular orchestration strategy. As Erlang maps are naturally sorted, the
+%% only property that you need to keep sorted is `listen_addrs' as it is
+%% implemented as a list.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec node_spec() -> node_spec().
 
 node_spec() ->
-    Name = partisan_config:get(name),
-    Parallelism = partisan_config:get(parallelism, ?PARALLELISM),
     %% Channels and ListenAddrs are sorted already
-    Channels = partisan_config:get(channels, ?CHANNELS),
-    ListenAddrs = partisan_config:get(listen_addrs),
-
     #{
-        name => Name,
-        listen_addrs => ListenAddrs,
-        channels => Channels,
-        parallelism => Parallelism
+        name => partisan_config:get(name),
+        listen_addrs => partisan_config:get(listen_addrs),
+        channels => partisan_config:get(channels)
     }.
 
 
@@ -592,8 +624,21 @@ node_spec(Node, Opts) when is_atom(Node), is_map(Opts) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
+-spec default_channel() -> channel().
+
 default_channel() ->
     ?DEFAULT_CHANNEL.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns a channel with name `Name'.
+%% Fails if a channel named `Name' doesn't exist.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec channel_opts(Name :: channel()) -> channel_opts() | no_return().
+
+channel_opts(Name) when is_atom(Name) ->
+    partisan_config:channel_opts(Name).
 
 
 %% -----------------------------------------------------------------------------
@@ -749,3 +794,4 @@ broadcast(Broadcast, Mod) ->
 %% @private
 list_to_node(NodeStr) ->
     erlang:list_to_atom(lists:flatten(NodeStr)).
+

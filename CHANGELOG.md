@@ -1,6 +1,38 @@
 # CHANGELOG
 
-# v5.0.0 (beta)
+# v5.0.0-beta.14
+
+## API
+
+#### Changes
+
+* Several functions previously found in `partisan_util` are now in `partisan_peer_service_manager`.
+- Types previously found in `partisan.hrl` are now defined and exported by the `partisan` module.
+
+## Peer Membership
+
+#### Fixes
+
+* Several bug fixes in the following backends:
+    * `partisan_hyparview_peer_service_manager`
+    * `partisan_xbot_hyparview_peer_service_manager`
+    * `partisan_client_server_peer_service_manager`
+* Fixes a bug in `partisan_plumbtree_broadcast` where not all the handlers were used.
+    * The configuration option `broadcast_start_exchange_limit` is now considered to refer to each handler i.e. a limit of `1` means Partisan will only allow one instance of a broadcast AAE exchange per handler (and not a single one in total).
+
+## Peer Connection Management
+
+#### Changes
+
+* **Channel parallelism** can now be defined **per channel**
+    * `channels` configuration option is overloaded to allow the new configuration options while keeping backwards compatibility. Check the documentation for the new formats in [partisan_config](partisan_config.html).
+    * The `partisan:node_spec()` representation was changed:
+        * `parallelism` was removed
+        * `channels` was changed from a list of atoms or tuples to a the return of `partisan_config:get(channels)` i.e. a map.
+    * `parallelism` is now used as a default when the user doesn’t define a per channel parallelism.
+    * The `partisan` module now exports the new function  `channel_opts/1` with returns the options for a given channel.
+
+# v5.0.0-beta.13
 
 ## API
 In general, the API was redesigned to concentrate all functions around two modules: `partisan` and `partisan_peer_service`.
@@ -129,6 +161,10 @@ In general, the API was redesigned to concentrate all functions around two modul
     - new supervisor to ensure that `partisan_monitor` is restarted every time the configured `partisan_peer_service_manager` is restarted.
     - re-implementation based on ets tables
     - If using OTP25 the monitor gen_server uses the parallel signal optimisation by placing the process inbox data off heap
+
+> #### NOTICE {: .warning}
+>
+> At the moment this only works for `partisan_pluggable_peer_service_manager` backend.
 
 #### Changes
 

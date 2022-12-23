@@ -16,12 +16,25 @@
 %% limitations under the License.
 %%
 %% %CopyrightEnd%
+
+%% -----------------------------------------------------------------------------
+%% @doc This module is an adaptation of Erlang's `gen' module which
+%% implements the really generic stuff of the generic standard behaviours (e.g.
+%% gen_server, gen_fsm).
 %%
+%% It replaces all instances of `erlang:send/2` and `erlang:monitor/2` with
+%% their Partisan counterparts.
+%%
+%% <strong>NOTICE:</strong>
+%% At the moment this only works for `partisan_pluggable_peer_service_manager'.
+%% @end
+%% -----------------------------------------------------------------------------
 -module(partisan_gen).
 
 -include("partisan_logger.hrl").
 
 % -compile({inline,[get_node/1]}).
+
 
 %%%-----------------------------------------------------------------
 %%% This module implements the really generic stuff of the generic

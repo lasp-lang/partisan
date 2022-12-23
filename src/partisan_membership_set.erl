@@ -28,11 +28,11 @@
 %% with the node when it restarts or becomes reachable again.
 %%
 %% == Implementation ==
-%% The set is implemented as a CRDT set of `node_spec()' objects. More
+%% The set is implemented as a CRDT set of `partisan:node_spec()' objects. More
 %% specifically a state_orset.
 %%
-%% Notice that because the set stores `node_spec()' objects and not `node()',
-%% the set can have multiple `node_spec()' objects for the same node.
+%% Notice that because the set stores `partisan:node_spec()' objects and not `node()',
+%% the set can have multiple `partisan:node_spec()' objects for the same node.
 %%
 %% This can occur when the set contains one or more
 %% <em>stale specifications</em>.
@@ -104,7 +104,7 @@ new() ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec add(node_spec(), Actor :: actor(), t()) -> t().
+-spec add(partisan:node_spec(), Actor :: partisan:actor(), t()) -> t().
 
 add(#{name := _} = NodeSpec, Actor, T0) ->
     {ok, T} = state_orset:mutate({add, NodeSpec}, Actor, T0),
@@ -115,7 +115,7 @@ add(#{name := _} = NodeSpec, Actor, T0) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec remove(node_spec(), Actor :: actor(), t()) -> t().
+-spec remove(partisan:node_spec(), Actor :: partisan:actor(), t()) -> t().
 
 remove(#{name := _} = NodeSpec, Actor, T) ->
     {ok, T1} = state_orset:mutate({rmv, NodeSpec}, Actor, T),
@@ -146,10 +146,10 @@ equal(T1, T2) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec to_list(t()) -> [node_spec()].
+-spec to_list(t()) -> [partisan:node_spec()].
 
 to_list(T) ->
-    sets:to_list(state_orset:query(T)).
+    lists:sort(sets:to_list(state_orset:query(T))).
 
 
 %% -----------------------------------------------------------------------------
@@ -196,10 +196,14 @@ node_spec(Nodename) ->
 
 node_spec(Nodename, IP) ->
     #{
-        channels => [undefined],
-        listen_addrs => [#{ip => IP, port => 62823}],
         name => Nodename,
-        parallelism => 1
+        listen_addrs => [#{ip => IP, port => 62823}],
+        channels => #{
+            ?DEFAULT_CHANNEL => #{
+                parallelism => 1,
+                monotonic => false
+            }
+        }
     }.
 
 
