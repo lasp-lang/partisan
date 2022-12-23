@@ -32,7 +32,7 @@ Partisan was also designed to handle failures:
 Partisan was designed to increase scalability, reduce latency and improve failure detection for Erlang/BEAM distributed applications.
 
 * Scalability
-    * Provides serveral overlays that are configurable at runtime
+    * Provides several overlays that are configurable at runtime
         * `partisan_pluggable_peer_service_manager`: full mesh with TCP-based failure detection. All nodes maintain active connections to all other nodes in the system using one or more TPC connections.
         * `partisan_hyparview_peer_service_manager.`: modified implementation of the HyParView protocol, peer-to-peer, designed for high scale, high churn environments. A hybrid partial view membership protocol, with TCP-based failure detection.
         * `partisan_client_server_peer_service_manager.`: star topology, where clients communicate with servers, and servers communicate with other servers.

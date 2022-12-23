@@ -202,7 +202,7 @@ connect(NodeSpec) ->
 %%
 %% If option `prune' is `true' returns the tuple `{ok, L :: [
 %% partisan:node_spec()]}' where list L is the list of nodes specifications for
-%% all stale nodes. Othwerwise returns `ok'.
+%% all stale nodes. Otherwise returns `ok'.
 %%
 %% A specification is stale if there is another specification for the same
 %% node for which we already have one or more active connections. A stale
@@ -464,7 +464,7 @@ maybe_connect([{Channel, ChannelOpts}|T], NodeSpec, ListenAddr, Acc) ->
     end,
 
     %% We continue with next channel, even though we might have not finished
-    %% connecting all the connections required by the paralellism of the
+    %% connecting all the connections required by the parallelism of the
     %% current channel. We will try on the next tick.
     %% It is fairer this way, so that we can get connections one channel at a
     %% time.
@@ -507,7 +507,7 @@ maybe_stale(NodeSpec, Channel, ListenAddr, Acc, 0, Reason) ->
             case partisan_peer_connections:node_spec(Info) of
                 Connected when Connected == NodeSpec ->
                     %% It is the same node_spec, so we are just having problems
-                    %% openning more connections at the time being.
+                    %% opening more connections at the time being.
                     ?LOG_DEBUG(#{
                         description => "Node failed to connect",
                         reason => Reason,

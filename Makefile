@@ -11,9 +11,11 @@ REBAR           ?= rebar3
 REVISION        ?= $(shell git rev-parse --short HEAD)
 SIZE 			?= 1024
 VERSION         ?= $(shell git describe --tags)
+CODESPELL 		= $(shell which codespell)
+SPELLCHECK 	    = $(CODESPELL) -S _build -S doc -S .git -L applys,nd,accout,mattern,pres,fo
 
 .PHONY: compile-no-deps test docs xref dialyzer-run dialyzer-quick dialyzer \
-		cleanplt upload-docs rel deps test plots
+		cleanplt upload-docs rel deps test plots spellcheck
 
 all: compile
 
@@ -58,7 +60,11 @@ perf:
 kill:
 	pkill -9 beam.smp; pkill -9 epmd; exit 0
 
-check: kill test xref dialyzer
+check: kill test xref dialyzer spellcheck
+
+spellcheck:
+	$(if $(CODESPELL), $(SPELLCHECK), $(error "Aborting spellcheck, command codespell not found in PATH"))
+
 
 test: eunit ct cover
 
