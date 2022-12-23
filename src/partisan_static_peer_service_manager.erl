@@ -51,6 +51,7 @@
 -export([resolve_partition/1]).
 -export([send_message/2]).
 -export([start_link/0]).
+-export([supports_capability/1]).
 -export([sync_join/1]).
 -export([update_members/1]).
 
@@ -63,11 +64,11 @@
          code_change/3]).
 
 
--type pending() :: [node_spec()].
--type membership() :: sets:set(node_spec()).
+-type pending() :: [partisan:node_spec()].
+-type membership() :: sets:set(partisan:node_spec()).
 
 -record(state, {
-    myself :: node_spec(),
+    myself :: partisan:node_spec(),
     pending :: pending(),
     membership :: membership()
 }).
@@ -121,7 +122,7 @@ send_message(Name, Message) ->
 %% -----------------------------------------------------------------------------
 -spec cast_message(
     Term :: partisan_remote_ref:p() | partisan_remote_ref:n() | pid(),
-    MEssage :: message()) -> ok.
+    MEssage :: partisan:message()) -> ok.
 
 cast_message(Term, Message) ->
     FullMessage = {'$gen_cast', Message},
@@ -215,6 +216,20 @@ decode(State) ->
 reserve(Tag) ->
     gen_server:call(?MODULE, {reserve, Tag}, infinity).
 
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec supports_capability(Arg :: atom()) -> boolean().
+
+supports_capability(monitoring) ->
+    false;
+
+supports_capability(_) ->
+    false.
+
+
 %% @doc Inject a partition.
 inject_partition(_Origin, _TTL) ->
     {error, not_implemented}.
@@ -270,7 +285,7 @@ handle_call(
     Pending = [Node|Pending0],
 
     %% Trigger connection.
-    ok = partisan_util:maybe_connect(Node),
+    ok = partisan_peer_service_manager:connect(Node),
 
     %% Return.
     {reply, ok, State#state{pending=Pending}};
@@ -431,7 +446,7 @@ establish_connections(Pending, Membership) ->
         fun(#{name := N}) -> partisan:node() =/= N end,
         Members ++ Pending
     ),
-    lists:foreach(fun partisan_util:maybe_connect/1, AllPeers),
+    lists:foreach(fun partisan_peer_service_manager:connect/1, AllPeers),
     ok.
 
 
@@ -441,7 +456,7 @@ handle_message({forward_message, ServerRef, Message}, State) ->
 
 
 %% @private
--spec do_send_message(Node :: node_spec(), Message :: term()) ->
+-spec do_send_message(Node :: partisan:node_spec(), Message :: term()) ->
     ok | {error, disconnected | not_yet_connected} | {error, term()}.
 
 do_send_message(Node, Message) ->

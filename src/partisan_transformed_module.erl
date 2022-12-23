@@ -32,16 +32,27 @@
 
 -include("partisan_logger.hrl").
 
--export([local_send/1,
-         get_pid/0,
-         send_to_pid/2]).
+-export([local_send/1]).
+-export([get_pid/0]).
+-export([send_to_pid/2]).
 
 -compile([{parse_transform, partisan_transform}]).
+
+
+
+
+%% =============================================================================
+%% API
+%% =============================================================================
+
+
 
 local_send(Message) ->
     Pid = self(),
     ?LOG_DEBUG("Local pid is: ~p", [Pid]),
+
     Pid ! Message,
+
     receive
         Message ->
             Message
@@ -49,6 +60,7 @@ local_send(Message) ->
         1000 ->
             error
     end.
+
 
 get_pid() ->
     self().
@@ -65,5 +77,5 @@ send_to_pid(Ref, Message) ->
             {encoded_pid, List} = partisan_remote_ref:target(Ref),
             send_to_pid(list_to_pid(List), Message);
         false ->
-            error({not_my_node, Node})
+            partisan:forward_message(Ref, Message)
     end.

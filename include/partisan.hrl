@@ -1,39 +1,36 @@
 -define(APP, partisan).
 -define(PEER_IP, {127, 0, 0, 1}).
 -define(PEER_PORT, 9090).
--define(FANOUT, 5).
+
+
+
+%% PLUMTREE
 -define(PLUMTREE_OUTSTANDING, partisan_plumtree_broadcast).
--define(CONNECTION_JITTER, 1000).
--define(RELAY_TTL, 5).
-
-
--define(MEMBERSHIP_CHANNEL, partisan_membership).
--define(RPC_CHANNEL, rpc).
--define(DEFAULT_CHANNEL, undefined).
--define(CHANNELS, [?DEFAULT_CHANNEL]).
 -define(BROADCAST_MODS, [partisan_plumtree_backend]).
 
+
+%% CHANNELS
+-define(DEFAULT_CHANNEL, undefined).
+-define(MEMBERSHIP_CHANNEL, partisan_membership).
+-define(RPC_CHANNEL, rpc).
 -define(PARALLELISM, 1).
+
 -define(DEFAULT_PARTITION_KEY, undefined).
 
 -define(CAUSAL_LABELS, []).
 
 %% Gossip.
+-define(GOSSIP_FANOUT, 5). % TODO: FIX ME. % not used?
+-define(GOSSIP_GC_MIN_SIZE, 10). % not used?
+-define(FANOUT, 5). % not used?
 
--define(GOSSIP_FANOUT, 5). %% TODO: FIX ME.
--define(GOSSIP_GC_MIN_SIZE, 10).
-
-%% Pluggable manager.
--define(PERIODIC_INTERVAL, 10000).
-
-%% Scamp protocol.
--define(SCAMP_C_VALUE, 5). %% TODO: FIX ME.
--define(SCAMP_MESSAGE_WINDOW, 10).
-
-%% Defaults.
+%% PEER SERVICE
 -define(DEFAULT_PEER_SERVICE_MANAGER, partisan_pluggable_peer_service_manager).
 -define(DEFAULT_MEMBERSHIP_STRATEGY, partisan_full_membership_strategy).
 -define(DEFAULT_ORCHESTRATION_STRATEGY, undefined).
+-define(CONNECTION_JITTER, 1000).
+-define(RELAY_TTL, 5).
+-define(PERIODIC_INTERVAL, 10000).
 
 -define(PEER_SERVICE_MANAGER,
     partisan_config:get(
@@ -53,7 +50,55 @@
 -define(DISTANCE_ENABLED, true).
 -define(PERIODIC_ENABLED, true).
 
-%% Test variables.
+
+%% COMMON TYPES
+-type options()         :: [{atom(), term()}] | #{atom() => term()}.
+
+
+-type ttl()             ::  non_neg_integer().
+
+
+
+%% TODO: add type annotations
+-record(orchestration_strategy_state, {
+    orchestration_strategy,
+    is_connected,
+    was_connected,
+    attempted_nodes,
+    peer_service,
+    graph,
+    tree,
+    eredis,
+    servers,
+    nodes
+}).
+
+
+
+%% =============================================================================
+%% PROTOCOLS
+%% =============================================================================
+
+%% Scamp protocol.
+-define(SCAMP_C_VALUE, 5). %% TODO: FIX ME.
+-define(SCAMP_MESSAGE_WINDOW, 10).
+
+
+
+%% =============================================================================
+%% USED IN TESTING
+%% =============================================================================
+
+
+
+-define(CHANNELS, ?CHANNELS(?PARALLELISM)).
+-define(CHANNELS(Parallelism), #{
+    undefined => #{
+        name => ?DEFAULT_CHANNEL,
+        parallelism => Parallelism,
+        monotonic => false
+    }
+}).
 -define(MEMBERSHIP_STRATEGY_TRACING, false).
 
 -record(property_state,
@@ -87,39 +132,3 @@
 % - latency (uses ping to check better nodes)
 % - true (always returns true when checking better)
 -define(XPARAM, latency).
-
--type options()     :: [{atom(), term()}] | #{atom() => term()}.
--type actor()       :: binary().
--type listen_addr() ::  #{
-                            ip := inet:ip_address(),
-                            port := non_neg_integer()
-                        }.
--type node_spec()   ::  #{
-                            name := node(),
-                            listen_addrs := [listen_addr()],
-                            channels := [channel()],
-                            parallelism := non_neg_integer()
-                        }.
--type message()     ::  term().
--type partitions()  ::  [{reference(), node_spec()}].
--type ttl()         ::  non_neg_integer().
--type channel()     ::  atom() | {atom(), monotonic}
-                        | #{
-                            name := atom(),
-                            parallelism := non_neg_integer(),
-                            monotonic => boolean()
-                        }.
-
-%% TODO: add type annotations
--record(orchestration_strategy_state, {
-    orchestration_strategy,
-    is_connected,
-    was_connected,
-    attempted_nodes,
-    peer_service,
-    graph,
-    tree,
-    eredis,
-    servers,
-    nodes
-}).

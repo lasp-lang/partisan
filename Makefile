@@ -60,7 +60,7 @@ kill:
 
 check: kill test xref dialyzer
 
-test: eunit ct
+test: eunit ct cover
 
 lint:
 	${REBAR} as lint lint
@@ -71,6 +71,8 @@ eunit:
 ct:
 	openssl rand -out test/partisan_SUITE_data/RAND 4096
 	${REBAR} ct -v --readable=false --suite=partisan_SUITE
+
+cover:
 	${REBAR} cover
 
 shell:

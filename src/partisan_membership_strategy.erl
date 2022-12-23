@@ -25,23 +25,23 @@
 -include("partisan.hrl").
 
 -type state() :: term().
--type outgoing_message() :: {node(), message()}.
+-type outgoing_message() :: {node(), partisan:message()}.
 -type outgoing_messages() :: [outgoing_message()].
--type membership_list() :: [node_spec()].
+-type membership_list() :: [partisan:node_spec()].
 
--callback init(actor()) -> {ok, membership_list(), state()}.
+-callback init(partisan:actor()) -> {ok, membership_list(), state()}.
 
--callback join(state(), node_spec(), state()) ->
+-callback join(state(), partisan:node_spec(), state()) ->
     {ok, membership_list(), outgoing_messages(), state()}.
 
--callback leave(state(), node_spec()) ->
+-callback leave(state(), partisan:node_spec()) ->
     {ok, membership_list(), outgoing_messages(), state()}.
 
--callback prune(state(), [node_spec()]) ->
+-callback prune(state(), [partisan:node_spec()]) ->
     {ok, membership_list(), state()}.
 
 -callback periodic(state()) ->
     {ok, membership_list(), outgoing_messages(), state()}.
 
--callback handle_message(state(), message()) ->
+-callback handle_message(state(), partisan:message()) ->
     {ok, membership_list(), outgoing_messages(), state()}.

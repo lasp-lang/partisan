@@ -643,7 +643,6 @@ start_or_reload_nodes() ->
               {parallelism, ?PARALLELISM},
               {tls, false},
               {binary_padding, false},
-              {channels, ?CHANNELS},
               {vnode_partitioning, ?VNODE_PARTITIONING},
               {causal_labels, ?CAUSAL_LABELS},
               {pid_encoding, false},

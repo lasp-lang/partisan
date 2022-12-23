@@ -21,13 +21,25 @@
 
 %% -----------------------------------------------------------------------------
 %% @doc This module is responsible for monitoring processes on remote nodes.
-%% ** YOU SHOULD NOT USE the functions in this module **.
+%%
+%% <strong>YOU SHOULD NEVER USE the functions in this module.</strong>
 %% Use the related functions in {@link partisan} instead.
 %%
-%% Notice: Certain partisan_peer_service_manager implementations might not
-%% support the `partisan_peer_service_manager:on_up/2' and
-%% `partisan_peer_service_manager:on_down/2' callbacks which we need for node
-%% monitoring, so in those cases this module will not work.
+%% <blockquote class="warning">
+%% <h4 class="warning">NOTICE</h4>
+%% <p>At the moment this only works for
+%% <code class="inline">partisan_pluggable_peer_service_manager</code> backend.
+%% </p>
+%% <p>Also, certain partisan_peer_service_manager implementations might not
+%% support the
+%% <code class="inline">partisan_peer_service_manager:on_up/2</code> and
+%% <code class="inline">partisan_peer_service_manager:on_down/2</code>
+%%  callbacks which we need for node monitoring, so in those cases this module
+%%  will not work.
+%% </p>
+%% </blockquote>
+%%
+
 %%
 %% @end
 %% -----------------------------------------------------------------------------
@@ -285,7 +297,7 @@ demonitor(RemoteRef, Opts) ->
 %% </ul>
 %% @end
 %% -----------------------------------------------------------------------------
--spec monitor_node(node() | node_spec(), boolean()) -> true.
+-spec monitor_node(node() | partisan:node_spec(), boolean()) -> true.
 
 monitor_node(#{name := Node}, Flag) ->
     monitor_node(Node, Flag);

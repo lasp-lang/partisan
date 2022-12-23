@@ -16,7 +16,21 @@
 %% limitations under the License.
 %%
 %% %CopyrightEnd%
+
+%% -----------------------------------------------------------------------------
+%% @doc This module is an adaptation of Erlang's `gen_server' module.
 %%
+%% It replaces all instances of `erlang:send/2' and `erlang:monitor/2' with
+%% their Partisan counterparts.
+%%
+%% <blockquote class="warning">
+%% <h4 class="warning">NOTICE</h4>
+%% <p>At the moment this only works for
+%% <code class="inline">partisan_pluggable_peer_service_manager</code> backend.
+%% </p>
+%% </blockquote>
+%% @end
+%% -----------------------------------------------------------------------------
 -module(partisan_gen_server).
 
 %%%

@@ -1,0 +1,65 @@
+# Partisan Cheatsheet
+The following cheatsheet assumes you have two nodes running: `foo@127.0.0.1` (foo) and `bar@127.0.0.1` (bar).
+
+## Connecting to other peers
+{: .col-2}
+
+### Manually joining using Erlang's console
+
+#### Obtain bar's node specification
+
+```erlang
+(bar@127.0.0.1)1> NodeSpec = partisan:node_spec().
+```
+
+#### Join foo to bar
+
+```erlang
+(foo@127.0.0.1)1> NodeSpec = ... % paste NodeSpec obtained at 'bar@127.0.0.1'
+(foo@127.0.0.1)2> partisan_peer_service:join(NodeSpec).
+```
+{: .wrap}
+
+### Checking cluster membership view
+
+#### Obtain members
+
+```erlang
+(bar@127.0.0.1)1> partisan_peer_service:members().
+```
+
+Returns `[node_spec()]` and should contain both node specifications.
+
+#### Obtain nodes
+
+```erlang
+(bar@127.0.0.1)1> partisan:nodes().
+```
+
+Returns `[node()]` and should contain both nodes.
+
+## Sending messages
+{: .col-2}
+
+### Obtain bar's shell pid
+
+```erlang
+(bar@127.0.0.1)2> partisan:self().
+% <<"partisan:pid:plum_db1@127.0.0.1:0.813.0">>
+```
+
+Returns `[partisan_remote_ref:t()]`
+
+### Send message from foo
+
+```erlang
+(foo@127.0.0.1)3> Ref = <<"partisan:pid:plum_db1@127.0.0.1:0.813.0">>.
+(foo@127.0.0.1)4> partisan:forward_message(Ref, hello).
+```
+{: .wrap}
+
+```erlang
+(bar@127.0.0.1)3> flush().
+% Shell got hello
+% ok
+```

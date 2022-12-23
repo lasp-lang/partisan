@@ -46,8 +46,9 @@
 
 -define(SET_FROM_LIST(L), sets:from_list(L, [{version, 2}])).
 
+
+-type on_change_fun()  ::  partisan_peer_service_manager:on_change_fun().
 -type from()                    ::  {pid(), atom()}.
--type on_change_function()      ::  fun(() -> ok) | fun((node()) -> ok).
 -type interposition_arg()       ::  {receive_message, node(), any()}.
 -type interposition_fun()       ::  fun(
                                         (interposition_arg()) ->
@@ -57,19 +58,21 @@
                                         (interposition_arg()) -> ok
                                     ).
 
+
+
 -record(state, {
-    actor                       ::  actor(),
+    actor                       ::  partisan:actor(),
     distance_metrics            ::  map(),
     vclock                      ::  term(),
-    pending                     ::  [node_spec()],
-    membership                  ::  [node_spec()],
-    down_functions              ::  #{'_' | node() => on_change_function()},
-    up_functions                ::  #{'_' | node() => on_change_function()},
+    pending                     ::  [partisan:node_spec()],
+    membership                  ::  [partisan:node_spec()],
+    down_functions              ::  #{'_' | node() => on_change_fun()},
+    up_functions                ::  #{'_' | node() => on_change_fun()},
     out_links                   ::  [term()],
     pre_interposition_funs      ::  #{any() => pre_post_interposition_fun()},
     interposition_funs          ::  #{any() => interposition_fun()},
     post_interposition_funs     ::  #{any() => pre_post_interposition_fun()},
-    sync_joins                  ::  [{node_spec(), from()}],
+    sync_joins                  ::  [{partisan:node_spec(), from()}],
     membership_strategy         ::  atom(),
     membership_strategy_state   ::  term()
 }).
@@ -78,7 +81,6 @@
 
 
 %% API
-
 -export([member/1]).
 
 %% PARTISAN_PEER_SERVICE_MANAGER CALLBACKS
@@ -113,6 +115,7 @@
 -export([resolve_partition/1]).
 -export([send_message/2]).
 -export([start_link/0]).
+-export([supports_capability/1]).
 -export([sync_join/1]).
 -export([update_members/1]).
 
@@ -289,7 +292,7 @@ send_message(Node, Message) ->
 %% -----------------------------------------------------------------------------
 -spec cast_message(
     Term :: partisan_remote_ref:p() | partisan_remote_ref:n() | pid(),
-    Message :: message()) -> ok.
+    Message :: partisan:message()) -> ok.
 
 cast_message(Term, Message) ->
     FullMessage = {'$gen_cast', Message},
@@ -479,6 +482,20 @@ decode(Membership) ->
 reserve(Tag) ->
     gen_server:call(?MODULE, {reserve, Tag}, infinity).
 
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec supports_capability(Arg :: atom()) -> boolean().
+
+supports_capability(monitoring) ->
+    true;
+
+supports_capability(_) ->
+    false.
+
+
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -545,6 +562,7 @@ add_post_interposition_fun(Name, PostInterpositionFun) ->
 remove_post_interposition_fun(Name) ->
     gen_server:call(?MODULE, {remove_post_interposition_fun, Name}, infinity).
 
+
 %% -----------------------------------------------------------------------------
 %% @doc Inject a partition.
 %% @end
@@ -552,12 +570,14 @@ remove_post_interposition_fun(Name) ->
 inject_partition(_Origin, _TTL) ->
     {error, not_implemented}.
 
+
 %% -----------------------------------------------------------------------------
 %% @doc Resolve a partition.
 %% @end
 %% -----------------------------------------------------------------------------
 resolve_partition(_Reference) ->
     {error, not_implemented}.
+
 
 %% -----------------------------------------------------------------------------
 %% @doc Return partitions.
@@ -1401,7 +1421,6 @@ handle_info({'EXIT', Pid, Reason}, #state{} = State0) ->
     %% A connection has closed, prune it from the connections table
     try partisan_peer_connections:prune(Pid) of
         {Info, [_Connection]} ->
-
             State =
                 case partisan_peer_connections:connection_count(Info) of
                     0 ->
@@ -1467,15 +1486,16 @@ handle_info(
                 OutgoingMessages
             ),
 
-            %% notify subscribers
-            up(NodeSpec, State0),
-
+            %% Notify event handlers
             ok = case Membership == Membership0 of
                 true ->
                     ok;
                 false ->
                     partisan_peer_service_events:update(Membership)
             end,
+
+            %% notify subscribers
+            up(NodeSpec, State0),
 
             State0#state{
                 pending = Pending,
@@ -1576,7 +1596,8 @@ establish_connections(State) ->
             %% connection to NodeSpec.node on another IP address)
             %% We then remove those NodeSpes from the membership set and update
             %% ourselves without the need for sending any leave/join gossip.
-            {ok, L} = partisan_util:maybe_connect(Node, #{prune => true}),
+            {ok, L} =
+                partisan_peer_service_manager:connect(Node, #{prune => true}),
             [L | Acc]
         end,
         [],
@@ -1602,14 +1623,10 @@ prune(L, State) ->
 
 %% @private
 kill_connections(Nodes, State) ->
-    Node = partisan:node(),
-    _ = [
-        begin
-            ok = partisan_peer_connections:erase(N),
-            ok = down(Node, State)
-        end || N <- Nodes, N =/= Node
-    ],
-    ok.
+    Fun = fun(Node) ->
+        ok = down(Node, State)
+    end,
+    partisan_peer_service_manager:disconnect(Nodes, Fun).
 
 
 %% @private
@@ -2002,15 +2019,6 @@ internal_leave(#{name := Name} = Node, State0) ->
     ),
 
     partisan_peer_service_events:update(State#state.membership),
-
-    case partisan_config:get(connect_disterl, false) of
-        true ->
-            %% call the net_kernel:disconnect(Node) function to leave
-            %% erlang network explicitly
-            net_kernel:disconnect(Name);
-        false ->
-            ok
-    end,
 
     State.
 

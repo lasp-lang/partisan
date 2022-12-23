@@ -100,10 +100,9 @@ prepare_opts(Opts) when is_map(Opts) ->
 
 
 rpc_channel() ->
-    Channels = partisan_config:get(channels),
-    case lists:member(?RPC_CHANNEL, Channels) of
-        true ->
+    case maps:find(?RPC_CHANNEL, partisan_config:get(channels)) of
+        {ok, _} ->
             ?RPC_CHANNEL;
-        false ->
+        error ->
             ?DEFAULT_CHANNEL
     end.

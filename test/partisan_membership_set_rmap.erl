@@ -50,14 +50,14 @@
 -type entry_value()     :: {dotmap(), tombstone()}.
 -type dotmap()          :: #{dot() => value()}.
 -type value()           :: node_value() | tombstone().
--type node_value()      :: {node_spec(), Ts :: non_neg_integer()}.
+-type node_value()      :: {partisan:node_spec(), Ts :: non_neg_integer()}.
 -type tombstone()       :: {undefined, 0}.
 -type dot()             :: {Actor :: nodename(), pos_integer()}.
--type op()              :: {add, node_spec()} | {remove, node_spec()}.
+-type op()              :: {add, partisan:node_spec()}
+                            | {remove, partisan:node_spec()}.
 -type not_member()      :: {not_member, nodename()}.
 
 -export_type([t/0]).
--export_type([actor/0]).
 -export_type([context/0]).
 -export_type([value/0]).
 -export_type([dot/0]).
@@ -131,7 +131,7 @@ decode(Binary) ->
 %% @doc get the current set of values for this Map
 %% @end
 %% -----------------------------------------------------------------------------
--spec to_list(t()) -> [node_spec()].
+-spec to_list(t()) -> [partisan:node_spec()].
 
 to_list(#partisan_membership_set{entries = Entries}) ->
    lists:reverse(
@@ -158,7 +158,7 @@ to_list(#partisan_membership_set{entries = Entries}) ->
 %% Atomic, all of `Ops' are performed successfully, or none are.
 %% @end
 %% -----------------------------------------------------------------------------
--spec add(node_spec(), nodename() | dot(), t()) ->
+-spec add(partisan:node_spec(), nodename() | dot(), t()) ->
     {ok, t()} | {error, not_member()}.
 
 add(#{name := _} = NodeSpec, ActorOrDot, T) ->
@@ -173,7 +173,7 @@ add(#{name := _} = NodeSpec, ActorOrDot, T) ->
 %%  still present, and it's value will contain the concurrent update.
 %% @end
 %% -----------------------------------------------------------------------------
--spec remove(node_spec() | nodename(), nodename() | dot(), t()) ->
+-spec remove(partisan:node_spec() | nodename(), nodename() | dot(), t()) ->
     {ok, t()} | {error, not_member()}.
 
 remove(#{name := Nodename}, ActorOrDot, T) ->
@@ -616,7 +616,7 @@ tombstone() ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec new_value(node_spec()) -> node_value().
+-spec new_value(partisan:node_spec()) -> node_value().
 
 new_value(Nodespec) ->
     {Nodespec, erlang:system_time(microsecond)}.
@@ -628,7 +628,7 @@ new_value(Nodespec) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec new_value(node_spec(), non_neg_integer()) -> node_value().
+-spec new_value(partisan:node_spec(), non_neg_integer()) -> node_value().
 
 new_value(Nodespec, Timestamp) ->
     {Nodespec, Timestamp}.
@@ -668,7 +668,7 @@ update_value(NodeSpec, {_, Ts} = OldValue) ->
 %% _not_ present
 %% @end
 %% -----------------------------------------------------------------------------
--spec remove_node(nodename() | node_spec(), t(), context()) ->
+-spec remove_node(nodename() | partisan:node_spec(), t(), context()) ->
     t() | no_return().
 
 remove_node(#{name := Nodename}, T, Ctx) ->

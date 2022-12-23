@@ -19,36 +19,13 @@
 %% -------------------------------------------------------------------
 
 %% -----------------------------------------------------------------------------
-%% @doc Wrapper that allows transparent usage of plain TCP or TLS/SSL socket
+%% @doc Wrapper that allows transparent usage of plain TCP or TLS socket
 %% for peer connections.
+%%
+%% This module also implements the monotonic channel functionality.
 %% @end
 %% -----------------------------------------------------------------------------
 -module(partisan_peer_socket).
-
--export([
-         accept/1,
-         close/1,
-         connect/3,
-         connect/4,
-         connect/5,
-         recv/2,
-         recv/3,
-         send/2,
-         setopts/2,
-         socket/1
-        ]).
-
--type reason() :: closed | inet:posix().
--type options() :: [gen_tcp:option()] | map().
--record(connection, {
-          socket :: gen_tcp:socket() | ssl:sslsocket(),
-          transport :: gen_tcp | ssl,
-          control :: inet | ssl,
-          monotonic :: boolean()
-         }).
-
--type connection() :: #connection{}.
--export_type([connection/0]).
 
 %% this macro only exists in OTP-21 and above, where ssl_accept/2 is deprecated
 -ifdef(OTP_RELEASE).
@@ -57,19 +34,60 @@
 -define(ssl_accept(TCPSocket, TLSOpts), ssl:ssl_accept(TCPSocket, TLSOpts)).
 -endif.
 
+
+-record(connection, {
+    socket              :: gen_tcp:socket() | ssl:sslsocket(),
+    transport           :: gen_tcp | ssl,
+    control             :: inet | ssl,
+    monotonic = false   :: boolean()
+}).
+
+-type reason()          :: closed | inet:posix().
+-type options()         :: [gen_tcp:option()] | map().
+
+
+-type connection()      :: #connection{}.
+
+-export_type([connection/0]).
+
+
+-export([accept/1]).
+-export([close/1]).
+-export([connect/3]).
+-export([connect/4]).
+-export([connect/5]).
+-export([recv/2]).
+-export([recv/3]).
+-export([send/2]).
+-export([setopts/2]).
+-export([socket/1]).
+
+
+
+%% =============================================================================
+%% API
+%% =============================================================================
+
+
+
+%% -----------------------------------------------------------------------------
 %% @doc Wraps a TCP socket with the appropriate information for
 %% transceiving on and controlling the socket later. If TLS/SSL is
 %% enabled, this performs the socket upgrade/negotiation before
 %% returning the wrapped socket.
+%% @end
+%% -----------------------------------------------------------------------------
 -spec accept(gen_tcp:socket()) -> connection().
+
 accept(TCPSocket) ->
     case tls_enabled() of
         true ->
             TLSOpts = partisan_config:get(tls_server_options),
             %% as per http://erlang.org/doc/man/ssl.html#ssl_accept-1
-            %% The listen socket is to be in mode {active, false} before telling the client
-            %% that the server is ready to upgrade by calling this function, else the upgrade
-            %% succeeds or does not succeed depending on timing.
+            %% The listen socket is to be in mode {active, false} before
+            %% telling the client that the server is ready to upgrade by
+            %% calling this function, else the upgrade succeeds or does not
+            %% succeed depending on timing.
             inet:setopts(TCPSocket, [{active, false}]),
             {ok, TLSSocket} = ?ssl_accept(TCPSocket, TLSOpts),
             %% restore the expected active once setting
@@ -77,55 +95,82 @@ accept(TCPSocket) ->
             #connection{
                 socket = TLSSocket,
                 transport = ssl,
-                control = ssl,
-                monotonic = false
+                control = ssl
             };
         _ ->
             #connection{
                 socket = TCPSocket,
                 transport = gen_tcp,
-                control = inet,
-                monotonic = false
+                control = inet
             }
     end.
 
+
+%% -----------------------------------------------------------------------------
+%% @doc
 %% @see gen_tcp:send/2
 %% @see ssl:send/2
+%% @end
+%% -----------------------------------------------------------------------------
 -spec send(connection(), iodata()) -> ok | {error, reason()}.
-send(#connection{socket = Socket, transport = Transport, monotonic = true}, Data) ->
-    %% Get the current message queue length.
-    {message_queue_len, MessageQueueLen} = process_info(self(), message_queue_len),
 
-    %% Get last transmission time.
-    LastTransmissionTime = get(last_transmission_time),
+send(#connection{monotonic = true} = Conn, Data) ->
+    Socket = Conn#connection.socket,
+    Transport = Conn#connection.transport,
+
+    %% Get the current process message queue length.
+    {message_queue_len, MQLen} = process_info(self(), message_queue_len),
+
+    %% Get last transmission time from process dictionary
+    Time = get(last_transmission_time),
 
     %% Test for whether we should send or not.
-    case monotonic_should_send(MessageQueueLen, LastTransmissionTime) of
+    case monotonic_should_send(MQLen, Time) of
         false ->
             ok;
         true ->
-            %% Update last transmission time.
+            %% Update last transmission time on process dictionary
             put(last_transmission_time, monotonic_now()),
-
             send(Transport, Socket, Data)
     end;
-send(#connection{socket = Socket, transport = Transport, monotonic = false}, Data) ->
+
+send(#connection{monotonic = false} = Conn, Data) ->
+    Socket = Conn#connection.socket,
+    Transport = Conn#connection.transport,
     send(Transport, Socket, Data).
 
+
+%% -----------------------------------------------------------------------------
+%% @doc
 %% @see gen_tcp:recv/2
 %% @see ssl:recv/2
+%% @end
+%% -----------------------------------------------------------------------------
 -spec recv(connection(), integer()) -> {ok, iodata()} | {error, reason()}.
+
 recv(Conn, Length) ->
     recv(Conn, Length, infinity).
 
+
+%% -----------------------------------------------------------------------------
+%% @doc
 %% @see gen_tcp:recv/3
 %% @see ssl:recv/3
--spec recv(connection(), integer(), timeout()) -> {ok, iodata()} | {error, reason()}.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec recv(connection(), integer(), timeout()) ->
+    {ok, iodata()} | {error, reason()}.
+
 recv(#connection{socket = Socket, transport = Transport}, Length, Timeout) ->
     Transport:recv(Socket, Length, Timeout).
 
+
+%% -----------------------------------------------------------------------------
+%% @doc
 %% @see inet:setopts/2
 %% @see ssl:setopts/2
+%% @end
+%% -----------------------------------------------------------------------------
 -spec setopts(connection(), options()) -> ok | {error, inet:posix()}.
 
 setopts(#connection{} = Connection, Options) when is_map(Options) ->
@@ -134,25 +179,58 @@ setopts(#connection{} = Connection, Options) when is_map(Options) ->
 setopts(#connection{socket = Socket, control = Control}, Options) ->
     Control:setopts(Socket, Options).
 
+
+%% -----------------------------------------------------------------------------
+%% @doc
 %% @see gen_tcp:close/1
 %% @see ssl:close/1
+%% @end
+%% -----------------------------------------------------------------------------
 -spec close(connection()) -> ok.
+
 close(#connection{socket = Socket, transport = Transport}) ->
     Transport:close(Socket).
 
+
+%% -----------------------------------------------------------------------------
+%% @doc
 %% @see gen_tcp:connect/3
 %% @see ssl:connect/3
--spec connect(inet:socket_address() | inet:hostname(), inet:port_number(), options()) -> {ok, connection()} | {error, inet:posix()}.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec connect(
+    inet:socket_address() | inet:hostname(), inet:port_number(), options()) ->
+    {ok, connection()} | {error, inet:posix()}.
+
 connect(Address, Port, Options) ->
     connect(Address, Port, Options, infinity).
 
--spec connect(inet:socket_address() | inet:hostname(), inet:port_number(),  options(), timeout()) -> {ok, connection()} | {error, inet:posix()}.
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec connect(
+    inet:socket_address() | inet:hostname(),
+    inet:port_number(),
+    options(),
+    timeout()) ->
+    {ok, connection()} | {error, inet:posix()}.
+
 connect(Address, Port, Options, Timeout) ->
     connect(Address, Port, Options, Timeout, #{}).
 
 
--spec connect(inet:socket_address() | inet:hostname(), inet:port_number(),  options(), timeout(), map() | list()) ->
-    {ok, connection()} | {error, inet:posix()}.
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec connect(
+    inet:socket_address() | inet:hostname(),
+    inet:port_number(),
+    options(),
+    timeout(),
+    map() | list()) -> {ok, connection()} | {error, inet:posix()}.
 
 connect(Address, Port, Options, Timeout, PartisanOptions)
 when is_list(PartisanOptions) ->
@@ -165,15 +243,41 @@ when is_map(PartisanOptions) ->
     case tls_enabled() of
         true ->
             TLSOptions = partisan_config:get(tls_client_options),
-            do_connect(Address, Port, Options ++ TLSOptions, Timeout, ssl, ssl, PartisanOptions);
+            do_connect(
+                Address,
+                Port,
+                Options ++ TLSOptions,
+                Timeout,
+                ssl,
+                ssl,
+                PartisanOptions
+            );
         _ ->
-            do_connect(Address, Port, Options, Timeout, gen_tcp, inet, PartisanOptions)
+            do_connect(
+                Address,
+                Port,
+                Options,
+                Timeout,
+                gen_tcp,
+                inet,
+                PartisanOptions
+            )
     end.
 
+
+%% -----------------------------------------------------------------------------
 %% @doc Returns the wrapped socket from within the connection.
+%% @end
+%% -----------------------------------------------------------------------------
 -spec socket(connection()) -> gen_tcp:socket() | ssl:sslsocket().
 socket(Conn) ->
     Conn#connection.socket.
+
+
+
+%% =============================================================================
+%% PRIVATE
+%% =============================================================================
 
 
 
@@ -216,6 +320,7 @@ monotonic_now() ->
 send(Transport, Socket, Data) ->
     %% Transmit the data on the socket.
     Transport:send(Socket, Data).
+
 
 %% Determine if we should transmit:
 %%
