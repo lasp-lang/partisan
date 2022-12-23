@@ -64,11 +64,11 @@ kill:
 check: kill test xref dialyzer spellcheck
 
 spellcheck:
-	$(if $(CODESPELL), $(SPELLCHECK), $(error "Aborting codecheck, command codespell not found in PATH"))
+	$(if $(CODESPELL), $(SPELLCHECK), $(error "Aborting, command codespell not found in PATH"))
 
 
 spellfix:
-	$(if $(CODESPELL), $(SPELLFIX), $(error "Aborting codecheck, command codespell not found in PATH"))
+	$(if $(CODESPELL), $(SPELLFIX), $(error "Aborting, command codespell not found in PATH"))
 
 
 
