@@ -725,7 +725,7 @@ fold(Fun, Acc) ->
         [] ->
             ok;
         L ->
-            %% We asume we have at most a few hundreds of connections.
+            %% We assume we have at most a few hundreds of connections.
             %% An optimisation will be to use batches (limit + continuations).
             _ = lists:foldl(
                 fun(#partisan_peer_info{node = Node, node_spec = Spec}, IAcc) ->
@@ -757,7 +757,7 @@ foreach(Fun) ->
         [] ->
             ok;
         L ->
-            %% We asume we have at most a few hundreds connections max.
+            %% We assume we have at most a few hundreds connections max.
             %% An optimisation will be to use batches (limit + continuations).
             %% E.g. a 100 node full-mesh cluster with 4 channels and
             %% parallelism of 1 will have 800 connections
@@ -1436,7 +1436,7 @@ several_connections_test() ->
     ?assertEqual(
         1,
         connection_count(Spec1),
-        "eventhough the node has 2 connections, the spec matches 1, becuase the second connection has a diff IP"
+        "even though the node has 2 connections, the spec matches 1, because the second connection has a diff IP"
     ),
     ?assertEqual(
         1,
@@ -1449,7 +1449,7 @@ several_connections_test() ->
     ?assertEqual(
         1,
         connection_count(Spec1, undefined),
-        "eventhough the node has 2 connections, the spec matches 1, becuase the second connection has a diff IP"
+        "even though the node has 2 connections, the spec matches 1, because the second connection has a diff IP"
     ),
     ?assertEqual(
         0,

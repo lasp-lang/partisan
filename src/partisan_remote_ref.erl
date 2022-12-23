@@ -58,7 +58,7 @@
 %%
 %% For those cases where the resulting references are smaller than 64 bytes (
 %% and thus will be stored on the process heap) this module can pad the
-%% generated bianry URIs to 65 bytes, thus forcing them to be stored off-heap.
+%% generated binary URIs to 65 bytes, thus forcing them to be stored off-heap.
 %% This is controlled with the configuration option `remote_ref_binary_padding'.
 %%
 %% ```
@@ -375,7 +375,7 @@ is_name(_, _) ->
 %% @doc Checks two refs for identity. Two refs are identical if the are
 %% equal or if one is a process reference and the other one is a registered
 %% name reference of said process.
-%% In the latter case the funcion uses `erlang:whereis/1' which means the check
+%% In the latter case the function uses `erlang:whereis/1' which means the check
 %% can fail if the process has died (and thus is no longer registered).
 %% @end
 %% -----------------------------------------------------------------------------

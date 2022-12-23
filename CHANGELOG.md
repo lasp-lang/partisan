@@ -201,7 +201,7 @@ In general, the API was redesigned to concentrate all functions around two modul
 * `lager` dependency has been removed and all logging is done using the new Erlang `logger`
 * Most uses of the `orddict` module have been replaced by maps for extra performance and better usability
 * Most API options using `proplists` module have been replaced by maps for extra performance and better usability
-* In several functions the computation of options (merging user provided with defaults, validation, etc.) has been posponed until (and only if) it is needed for extra performance e.g. `partisan_pluggable_peer_servie_manager:forward_message`
+* In several functions the computation of options (merging user provided with defaults, validation, etc.) has been postponed until (and only if) it is needed for extra performance e.g. `partisan_pluggable_peer_servie_manager:forward_message`
 * More utils in `partisan_util`
 * Added `ex_doc` (Elixir documentation) rebar plugin
 * Upgraded the following dependencies:

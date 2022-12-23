@@ -389,7 +389,7 @@ trace(Message, Args) ->
 %% @end
 %% -----------------------------------------------------------------------------
 get(broadcast_start_exchange_limit = Key) ->
-    %% If there is no limit defined we asume a limit of 1 per module, as we
+    %% If there is no limit defined we assume a limit of 1 per module, as we
     %% This works because partisan_plumtree_broadcast will never run more than
     %% one exchange per module anyway.
     Default = length(get(broadcast_mods, [])),

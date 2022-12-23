@@ -131,7 +131,7 @@ handle_message({hello, Node},
     %% control messaging in the test suite execution.
     case maybe_connect_disterl(Node) of
         ok ->
-            %% Send our state to the remote service, incase they want
+            %% Send our state to the remote service, in case they want
             %% it to bootstrap.
             Manager = partisan_peer_service:manager(),
             {ok, LocalState} = Manager:get_local_state(),

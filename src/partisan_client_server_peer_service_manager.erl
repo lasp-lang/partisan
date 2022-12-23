@@ -32,7 +32,7 @@
 %% node.</li>
 %% <li>Server nodes communicate and maintain connections with all other server
 %% nodes.</li>
-%% <li>Nodes periodically send hearbeat messages. The service considers a node
+%% <li>Nodes periodically send heartbeat messages. The service considers a node
 %% "failed" when it misses X heartbeats.</li>
 %% <li>Point-to-point messaging through the server (server as relay).</li>
 %% <li>Eventually consistent membership maintained in a CRDT and replicated

@@ -34,7 +34,7 @@
 %% Lazy messages that have not been acked. Messages are added to
 %% this set when a node is sent a lazy message (or when it should be
 %% sent one sometime in the future). Messages are removed when the lazy
-%% pushes are acknowleged via graft or ignores. Entries are keyed by their
+%% pushes are acknowledged via graft or ignores. Entries are keyed by their
 %% destination
 %% These are stored in the ?PLUMTREE_OUTSTANDING ets table under using nodename
 %% as key.
@@ -64,7 +64,7 @@
     %% A mapping of sender node (root of each broadcast tree)
     %% to this node's portion of the tree. Elements are
     %% added to this structure as messages rooted at a node
-    %% propogate to this node. Nodes that are never the
+    %% propagate to this node. Nodes that are never the
     %% root of a message will never have a key added to
     %% `eager_sets'
     eager_sets    :: #{node() := nodeset()} | undefined,
@@ -72,7 +72,7 @@
     %% A Mapping of sender node (root of each spanning tree)
     %% to this node's set of lazy peers. Elements are added
     %% to this structure as messages rooted at a node
-    %% propogate to this node. Nodes that are never the root
+    %% propagate to this node. Nodes that are never the root
     %% of a message will never have a key added to `lazy_sets'
     lazy_sets     :: #{node() := nodeset()} | undefined,
 

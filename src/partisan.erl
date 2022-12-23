@@ -409,7 +409,7 @@ nodestring() ->
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the node where Arg originates. Arg can be a process identifier,
-%% a reference, a port or a partisan remote refererence.
+%% a reference, a port or a partisan remote reference.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec node(Term) -> Result when
@@ -551,7 +551,7 @@ node_spec() ->
 %% @doc Return the partisan node_spec() for node named `Node'.
 %%
 %% This function retrieves the `node_spec()' from the remote node using RPC and
-%% returns `{error, Reason}' if the RPC fails. Otherwise, asumes the node is
+%% returns `{error, Reason}' if the RPC fails. Otherwise, assumes the node is
 %% running on the same host and returns a `node_spec()' with with nodename
 %% `Name' and host 'Host' and same metadata as `myself/0'.
 %%
@@ -581,7 +581,7 @@ node_spec(Node) when is_atom(Node) ->
 %% the remote node. This later alternative requires the partisan configuration
 %% `forward_opts` to have `broadcast' and `transitive' enabled.
 %%
-%% NOTICE: At the moment partisan_rpc might not work corrently w/ a p2p
+%% NOTICE: At the moment partisan_rpc might not work correctly w/ a p2p
 %% topology.
 %% @end
 %% -----------------------------------------------------------------------------

@@ -24,7 +24,7 @@
 %% server.
 %%
 %% == Callbacks ==
-%% The behviour defines the following callbacks:
+%% The behaviour defines the following callbacks:
 %% <ul>
 %% <li>`broadcast_data/1' - must return a two-tuple of message id and payload
 %% from a given broadcast. Where the broadcasted message is

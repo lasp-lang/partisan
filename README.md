@@ -11,7 +11,7 @@ Erlang/OTP, specifically distributed erlang (a.k.a. `disterl`), uses a full-mesh
 
 **Failure detector**. These nodes send periodic heartbeat messages to their connected nodes and deem a node "failed" or "unreachable" when it misses a certain number of heartbeat messages i.e. `net_tick_time` setting in `disterl`.
 
-Due to this hearbeating and other issues in the way Erlang handles certain internal data structures, Erlang systems present a limit to the number of connected nodes that depending on the application goes between 60 and 200 nodes.
+Due to this heartbeating and other issues in the way Erlang handles certain internal data structures, Erlang systems present a limit to the number of connected nodes that depending on the application goes between 60 and 200 nodes.
 
 Also, Erlang conflates control plane messages with application messages on the same TCP/IP connection and uses a single TCP/IP connection between two nodes, making it liable to the [Head-of-line blocking](https://en.wikipedia.org/wiki/Head-of-line_blocking) issue. This also leads to congestion and contention that further affects latency.
 

@@ -747,7 +747,7 @@ process_candidate([OldNode | RestActiveNodes], CandidateNode, #state{myself=Init
 	IsBetter = is_better(?XPARAM, CandidateNode, OldNode),
 	if IsBetter ->
 		ok = partisan_peer_service_manager:connect(CandidateNode),
-		% if cadidate is better that first node in active view, send optimization message
+		% if candidate is better that first node in active view, send optimization message
 		_ = do_send_message(
             CandidateNode,
             {optimization, undefined, OldNode, InitiatorNode, CandidateNode, undefined}
@@ -1240,7 +1240,7 @@ handle_message({optimization_reply, true, _, InitiatorNode, CandidateNode, undef
 	#{name := InitiatorName} = InitiatorNode,
 	#{name := CandidateName} = CandidateNode,
 	?LOG_DEBUG("XBOT: Received optimization reply message at Node ~p from ~p", [InitiatorName, CandidateName]),
-	%% Revise this behaviour, when candidate accepts inmediatly because it has availability in his active view
+	%% Revise this behaviour, when candidate accepts immediately because it has availability in his active view
 	%% what to do with old node?? we cannot disconnect from it because maybe it will be isolated
 	%Check = is_in_active_view(OldNode, Active),
 	%if Check ->
