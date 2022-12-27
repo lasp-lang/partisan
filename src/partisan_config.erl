@@ -441,8 +441,9 @@ set(channels, Arg) when is_list(Arg) orelse is_map(Arg) ->
     Channels0 = to_channels_map(Arg),
 
     %% We set default channel, overriding any user input
+    DefaultChannel = maps:without([name], to_channel_spec(?DEFAULT_CHANNEL)),
     Channels = maps:put(
-        ?DEFAULT_CHANNEL, to_channel_spec(?DEFAULT_CHANNEL), Channels0
+        ?DEFAULT_CHANNEL, DefaultChannel, Channels0
     ),
 
     do_set(channels, Channels);
