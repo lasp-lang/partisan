@@ -6,18 +6,19 @@ The following cheatsheet assumes you have two nodes running: `foo@127.0.0.1` (fo
 
 ### Manually joining using Erlang's console
 
-#### Obtain bar's node specification
+#### 1. Obtain bar's node specification
 
 ```erlang
 (bar@127.0.0.1)1> NodeSpec = partisan:node_spec().
 ```
 
-#### Join foo to bar
+#### 2. Join foo with bar
 
 ```erlang
-(foo@127.0.0.1)1> NodeSpec = ... % paste NodeSpec obtained at 'bar@127.0.0.1'
+(foo@127.0.0.1)1> NodeSpec = ...
 (foo@127.0.0.1)2> partisan_peer_service:join(NodeSpec).
 ```
+`NodeSpec` is the value obtained at `bar` in the previous step.
 {: .wrap}
 
 ### Checking cluster membership view
@@ -45,21 +46,23 @@ Returns `[node()]` and should contain both nodes.
 
 ```erlang
 (bar@127.0.0.1)2> partisan:self().
-% <<"partisan:pid:plum_db1@127.0.0.1:0.813.0">>
+<<"partisan:pid:bar@127.0.0.1:0.813.0">>
 ```
 
-Returns `[partisan_remote_ref:t()]`
+Returns `[partisan_remote_ref:t()]`. Notice this can be a tuple or a binary (as in the second line of the snippet) depending on the configuration option `remote_ref_as_uri`.
 
-### Send message from foo
+### Send message from foo to bar
 
 ```erlang
-(foo@127.0.0.1)3> Ref = <<"partisan:pid:plum_db1@127.0.0.1:0.813.0">>.
+(foo@127.0.0.1)3> Ref = <<"partisan:pid:bar@127.0.0.1:0.813.0">>.
 (foo@127.0.0.1)4> partisan:forward_message(Ref, hello).
 ```
 {: .wrap}
 
+### Check the message arrived at bar
+
 ```erlang
 (bar@127.0.0.1)3> flush().
-% Shell got hello
-% ok
+Shell got hello
+ok
 ```
