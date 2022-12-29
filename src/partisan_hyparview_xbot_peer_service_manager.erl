@@ -45,7 +45,6 @@
 -export([leave/1]).
 -export([members/0]).
 -export([members_for_orchestration/0]).
--export([myself/0]).
 -export([on_down/2]).
 -export([on_up/2]).
 -export([partitions/0]).
@@ -117,10 +116,6 @@ members() ->
 %% @doc Return membership list.
 members_for_orchestration() ->
     gen_server:call(?MODULE, members_for_orchestration, infinity).
-
-%% @doc Return myself.
-myself() ->
-    partisan:node_spec().
 
 %% @doc Return local node's view of cluster membership.
 get_local_state() ->
@@ -307,11 +302,12 @@ init([]) ->
     %% Process connection exits.
     process_flag(trap_exit, true),
 
+    Myself = partisan:node_spec(),
     Epoch = maybe_load_epoch_from_disk(),
-    Active = sets:add_element(myself(), sets:new()),
+    Active = sets:add_element(Myself, sets:new()),
     Passive = sets:new(),
 
-    Myself = myself(),
+
 
     SentMessageMap = dict:new(),
     RecvMessageMap = dict:new(),

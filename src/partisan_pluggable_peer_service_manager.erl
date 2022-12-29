@@ -103,7 +103,6 @@
 -export([leave/1]).
 -export([members/0]).
 -export([members_for_orchestration/0]).
--export([myself/0]).
 -export([on_down/2]).
 -export([on_up/2]).
 -export([partitions/0]).
@@ -179,14 +178,6 @@ members() ->
 %% -----------------------------------------------------------------------------
 members_for_orchestration() ->
     gen_server:call(?MODULE, members_for_orchestration, infinity).
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Return partisan:node_spec().
-%% @end
-%% -----------------------------------------------------------------------------
-myself() ->
-    partisan:node_spec().
 
 
 %% -----------------------------------------------------------------------------

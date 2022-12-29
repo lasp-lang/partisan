@@ -42,7 +42,6 @@
 -export([leave/1]).
 -export([members/0]).
 -export([members_for_orchestration/0]).
--export([myself/0]).
 -export([on_down/2]).
 -export([on_up/2]).
 -export([partitions/0]).
@@ -91,10 +90,6 @@ members() ->
 %% @doc Return membership list.
 members_for_orchestration() ->
     gen_server:call(?MODULE, members_for_orchestration, infinity).
-
-%% @doc Return myself.
-myself() ->
-    partisan:node_spec().
 
 %% @doc Return local node's view of cluster membership.
 get_local_state() ->
@@ -258,7 +253,7 @@ init([]) ->
     process_flag(trap_exit, true),
 
     Membership = maybe_load_state_from_disk(),
-    Myself = myself(),
+    Myself = partisan:node_spec(),
 
     {ok, #state{
         myself = Myself,
@@ -391,7 +386,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private
 empty_membership() ->
-    LocalState = sets:add_element(myself(), sets:new()),
+    LocalState = sets:add_element(partisan:node_spec(), sets:new()),
     persist_state(LocalState),
     LocalState.
 

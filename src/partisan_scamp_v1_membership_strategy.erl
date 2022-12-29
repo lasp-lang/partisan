@@ -46,7 +46,7 @@
 %% @doc Initialize the strategy state.
 %%      Start with an empty state with only ourselves known.
 init(Identity) ->
-    Membership = sets:add_element(myself(), sets:new()),
+    Membership = sets:add_element(partisan:node_spec(), sets:new()),
     State = #scamp_v1{membership=Membership, actor=Identity},
     MembershipList = membership_list(State),
     {ok, MembershipList, State}.
@@ -122,7 +122,7 @@ prune(#scamp_v1{} = State, _Nodes) ->
 
 %% @doc Periodic protocol maintenance.
 periodic(#scamp_v1{last_message_time=LastMessageTime} = State) ->
-    SourceNode = myself(),
+    SourceNode = partisan:node_spec(),
     MembershipList = membership_list(State),
 
     %% Isolation detection:
@@ -148,7 +148,7 @@ periodic(#scamp_v1{last_message_time=LastMessageTime} = State) ->
             %% Node is isolated.
             ?LOG_TRACE("~p: Node is possibly isolated.", [node()]),
 
-            Myself = myself(),
+            Myself = partisan:node_spec(),
 
             lists:map(fun(N) ->
                 ?LOG_TRACE(
@@ -256,7 +256,3 @@ random_0_or_1() ->
         false ->
             0
     end.
-
-%% @private
-myself() ->
-    partisan:node_spec().

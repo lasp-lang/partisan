@@ -315,7 +315,7 @@ handle_info(?ARTIFACT_MESSAGE, State) ->
 
     %% Store membership.
     Node = prefix(atom_to_list(node())),
-    Payload = term_to_binary({myself(), Nodes}),
+    Payload = term_to_binary({partisan:node_spec(), Nodes}),
 
     ?LOG_TRACE("Uploading membership for node ~p: ~p", [Node, Nodes]),
 
@@ -611,9 +611,6 @@ upload_artifact(#orchestration_strategy_state{orchestration_strategy=Orchestrati
 download_artifact(#orchestration_strategy_state{orchestration_strategy=OrchestrationStrategy}=State, Node) ->
     OrchestrationStrategy:download_artifact(State, Node).
 
-%% @private
-myself() ->
-    partisan:node_spec().
 
 %% @private
 members_for_orchestration() ->
