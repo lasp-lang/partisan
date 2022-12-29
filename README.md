@@ -71,8 +71,8 @@ The resulting documentation will be found in the `docs` directory, just open the
 
 ## Who is using Partisan
 
-* [Erleans](https://github.com/erleans/erleans)
-* [PlumDB](https://github.com/Leapsight/plum_db)
 * [Bondy](https://github.com/bondy-io/bondy)
+* [Erleans](https://github.com/erleans/erleans)
 * [Leapsight](https://www.leapsight.com)
+* [PlumDB](https://github.com/Leapsight/plum_db)
 
