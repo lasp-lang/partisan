@@ -311,7 +311,7 @@ start(Case, Config, Options) ->
             case lists:member(Name, Servers) of
                 true ->
                     ok = rpc:call(Node, partisan_config, set, [tag, server]),
-                    ok = rpc:call(Node, partisan_config, set, [tls_server_opts, ?config(tls_server_opts, Config)]);
+                    ok = rpc:call(Node, partisan_config, set, [tls_server_options, ?config(tls_server_options, Config)]);
                 false ->
                     ok
             end,
@@ -320,7 +320,7 @@ start(Case, Config, Options) ->
             case lists:member(Name, Clients) of
                 true ->
                     ok = rpc:call(Node, partisan_config, set, [tag, client]),
-                    ok = rpc:call(Node, partisan_config, set, [tls_client_opts, ?config(tls_client_opts, Config)]);
+                    ok = rpc:call(Node, partisan_config, set, [tls_client_options, ?config(tls_client_options, Config)]);
                 false ->
                     ok
             end

@@ -2086,12 +2086,12 @@ make_certs(Config) ->
 
     make_certs:all(DataDir, PrivDir),
 
-    [{tls_server_opts,
+    [{tls_server_options,
       [
        {certfile, filename:join(PrivDir, "server/keycert.pem")},
        {cacertfile, filename:join(PrivDir, "server/cacerts.pem")}
       ]},
-     {tls_client_opts,
+     {tls_client_options,
       [
        {certfile, filename:join(PrivDir, "client/keycert.pem")},
        {cacertfile, filename:join(PrivDir, "client/cacerts.pem")}
