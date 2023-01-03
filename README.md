@@ -76,3 +76,14 @@ The resulting documentation will be found in the `docs` directory, just open the
 * [Leapsight](https://www.leapsight.com)
 * [PlumDB](https://github.com/Leapsight/plum_db)
 
+## Reference
+### Papers
+* [Partisan: Enabling Real-World Protocol Evaluation](https://dl.acm.org/doi/10.1145/3231104.3231106) - ApPLIED '18: Proceedings of the 2018 Workshop on Advanced Tools, Programming Languages, and PLatforms for Implementing and Evaluating Algorithms for Distributed systems, Christopher Meiklejohn
+* [Partisan: Enabling Cloud-Scale Erlang Applications](https://arxiv.org/abs/1802.02652), Christopher Meiklejohn, Heather Miller
+* [Partisan: Scaling the Distributed Actor Runtime](https://www.usenix.org/system/files/atc19-meiklejohn.pdf) - 2019 USENIX Annual Technical Conference,  Christopher S. Meiklejohn and Heather Miller, Carnegie Mellon University; Peter Alvaro, UC Santa Cruz
+
+### Presentations
+* [Rethinking the Language Runtime for Scale](http://www.erlang-factory.com/euc2016/christopher-meiklejohn) - Erlang User Conference 2016, Christopher S. Meiklejohn
+* [Partisan: Scaling the Distributed Actor Runtime](https://www.usenix.org/conference/atc19/presentation/meiklejohn) - 2019 USENIX Annual Technical Conference, Christopher S. Meiklejohn
+* [Partisan: testable, high performance, large scale distributed Erlang](https://codesync.global/media/partisan-testable-high-performance-large-scale-distributed-erlang/) - Code BEAM SF 2019, Christopher S. Meiklejohn
+* [Distributed Erlang: From Datacenter Applications to Planetary Scale Applications](https://www.youtube.com/watch?v=01vedKGBQkQ), Christopher Meiklejohn.
