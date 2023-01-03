@@ -4,6 +4,15 @@
 
 Partisan is a scalable and flexible, TCP-based membership system and distribution layer for the BEAM. It bypasses the use of Distributed Erlang for manual connection management via TCP, and has several pluggable backends for different deployment scenarios.
 
+Partisan is a runtime system that enables greater scalability and reduced latency for distributed actor applications.
+
+* Partisan improves scalability by allowing the application developer to specialize the overlay network to the application’s communication patterns.
+* Partisan achieves lower latency by leveraging several predominately automatic optimizations that result in the efficient scheduling of messages.
+* Bring Your Own Overlay - Partisan exposes an API for users to implement their own overlays; application developers must simply implement the `membership_strategy` interface for handling messages. Partisan automatically uses this membership strategy for processing incoming and outgoing messages to the system – the application developer only needs to handle internal state transitions and supplying the system with an updated list of members. Partisan automatically sets up required connections, serializes and deserializes messages, performs failure detection, and message forwarding. This makes it possible to implement protocols with very little code; our implementation of the full-mesh membership protocol is 152 LOC.
+* Partisan is the first distributed actor system to expose this level of control to the application developer, improving the performance of existing actor application and enabling new types of actor applications.
+
+
+
 
 ## Why do we need Partisan?
 
@@ -87,6 +96,8 @@ The resulting documentation will be found in the `docs` directory, just open the
 * [Partisan: Enabling Real-World Protocol Evaluation](https://dl.acm.org/doi/10.1145/3231104.3231106) - ApPLIED '18: Proceedings of the 2018 Workshop on Advanced Tools, Programming Languages, and PLatforms for Implementing and Evaluating Algorithms for Distributed systems, Christopher Meiklejohn
 * [Partisan: Enabling Cloud-Scale Erlang Applications](https://arxiv.org/abs/1802.02652), Christopher Meiklejohn, Heather Miller
 * [Partisan: Scaling the Distributed Actor Runtime](https://www.usenix.org/system/files/atc19-meiklejohn.pdf) - 2019 USENIX Annual Technical Conference,  Christopher S. Meiklejohn and Heather Miller, Carnegie Mellon University; Peter Alvaro, UC Santa Cruz
+* [HyParView: a membership protocol for reliable gossip-based broadcast](https://asc.di.fct.unl.pt/~jleitao/pdf/dsn07-leitao.pdf), Joao Leitao, Jose Pereira Luis Rodrigues.
+* [X-BOT: A Protocol for Resilient Optimization of Unstructured Overlay Networks](https://www.academia.edu/2901632/X_BOT_A_Protocol_for_Resilient_Optimization_of_Unstructured_Overlay_Networks), Joao Leitao, Jose Pereira Luis Rodrigues.
 
 ### Presentations
 * [Rethinking the Language Runtime for Scale](http://www.erlang-factory.com/euc2016/christopher-meiklejohn) - Erlang User Conference 2016, Christopher S. Meiklejohn
