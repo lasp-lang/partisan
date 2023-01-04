@@ -53,7 +53,7 @@
 
 -export([format_status_header/2]).
 
--export([get_channel/0]).
+-export([get_opts/0]).
 
 -define(default_timeout, 5000).
 
@@ -72,7 +72,8 @@
 -type option()     :: {'timeout', timeout()}
             | {'debug', [debug_flag()]}
             | {'hibernate_after', timeout()}
-            | {'spawn_opt', [proc_lib:spawn_option()]}.
+            | {'spawn_opt', [proc_lib:spawn_option()]}
+            | {'channel', partisan:channel()}.
 -type options()    :: [option()].
 
 -type server_ref() :: pid() | atom() | {atom(), node()}
@@ -221,7 +222,7 @@ init_it(GenMod, Starter, Parent, Name, Mod, Args, Options) ->
     end.
 
 init_it2(GenMod, Starter, Parent, Name, Mod, Args, Options) ->
-    set_channel(Options),
+    ok = set_opts(Options),
     GenMod:init_it(Starter, Parent, Name, Mod, Args, Options).
 
 %%-----------------------------------------------------------------
@@ -617,63 +618,74 @@ format_status_header(TagLine, Name) ->
 
 
 %% =============================================================================
-%% PARTISAN
+%% PARTISAN API
 %% =============================================================================
 
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns opts from the process dictionary.
+%% The returned map is guaranteed to have a value for key `channel'.
+%% @end
+%% -----------------------------------------------------------------------------
+get_opts() ->
+    erlang:get(partisan_gen_opts).
+
+
+
+%% =============================================================================
+%% PARTISAN PRIVATE
+%% =============================================================================
+
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc We set the options in the process dict
+%% @end
+%% -----------------------------------------------------------------------------
+set_opts(Options) when is_list(Options) ->
+    PartisanOpts =
+        case lists:keyfind(channel, 1, Options) of
+            {channel, _} = Opt ->
+                [Opt];
+            false ->
+                Channel = partisan_config:default_channel(),
+                [{channel, Channel}]
+        end,
+    _ = erlang:put(partisan_gen_opts, PartisanOpts),
+    ok.
 
 
 %% @private
 do_send_request(Process, Label, Request)
 when is_pid(Process) orelse is_atom(Process) ->
-    Mref = partisan:monitor(process, Process),
-    Message = {Label, {partisan:self(), Mref}, Request},
     Node = partisan:node(),
-    forward_message(Node, Process, Message),
-    Mref;
+    do_send_request({Process, Node}, Label, Request);
 
 do_send_request({ServerRef, Node} = Process, Label, Request) ->
-    Mref = partisan:monitor(process, Process),
+    %% Monitor request and message are delivered using the same channel
+    Opts = get_opts(),
+    Mref = partisan:monitor(process, Process, Opts),
     Message = {Label, {partisan:self(), Mref}, Request},
-    forward_message(Node, ServerRef, Message),
+    ?LOG_DEBUG(#{
+        description => "Sending message",
+        destination => Process,
+        message => Message
+    }),
+    partisan:forward_message(Node, ServerRef, Message, Opts),
     Mref;
 
 do_send_request(RemoteRef, Label, Request) ->
-    Mref = partisan:monitor(process, RemoteRef),
+    %% Monitor request and message are delivered using the same channel
+    Opts = get_opts(),
+    Mref = partisan:monitor(process, RemoteRef, Opts),
     Message = {Label, {partisan:self(), Mref}, Request},
     ?LOG_DEBUG(#{
         description => "Sending message",
-        remote_ref => RemoteRef,
+        destination => RemoteRef,
         message => Message
     }),
-    partisan:forward_message(RemoteRef, Message, #{channel => get_channel()}),
+    partisan:forward_message(RemoteRef, Message, Opts),
     Mref.
 
-
-%% @private
-forward_message(Node, ServerRef, Message) ->
-    ?LOG_DEBUG(#{
-        description => "Sending message",
-        peer_node => Node,
-        process => ServerRef,
-        message => Message
-    }),
-
-    partisan:forward_message(
-        Node, ServerRef, Message, #{channel => get_channel()}
-    ).
-
-
-%% @doc Returns channel from the process dictionary
-get_channel() ->
-    erlang:get(partisan_channel).
-
-
-set_channel(Options) ->
-    _ = case lists:keyfind(channel, 1, Options) of
-        {_, Channel} ->
-            erlang:put(partisan_channel, Channel);
-        false ->
-            erlang:put(partisan_channel, partisan:default_channel())
-    end,
-
-    ok.
