@@ -29,6 +29,7 @@
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
 
+
 %% common_test callbacks
 -export([%% suite/0,
          init_per_suite/1,
@@ -47,40 +48,64 @@
 -define(HIGH_CLIENT_NUMBER, 10).
 -define(PAUSE_FOR_CLUSTERING, timer:sleep(5000)).
 
-%% ==================================================================
-%% common_test callbacks
-%% ===================================================================
+-define(PUT_NODES(L), persistent_term:put({?FUNCTION_NAME, nodes}, L)).
+-define(TAKE_NODES(Case),
+    case persistent_term:get({Case, nodes}, undefined) of
+        undefined ->
+            ok;
+        Nodes ->
+            _ = persistent_term:erase({Case, nodes}),
+            Nodes
+    end
+).
 
-init_per_suite(_Config) ->
-    _Config.
 
-end_per_suite(_Config) ->
-    _Config.
+%% =============================================================================
+%% CT CALLBACKS
+%% =============================================================================
+
+
+
+init_per_suite(Config) ->
+    Config.
+
+
+end_per_suite(Config) ->
+    Config.
+
 
 init_per_testcase(Case, Config) ->
-    ct:pal("Beginning test case ~p", [Case]),
-
+    ct:pal("Beginning test case: ~p", [Case]),
     [{hash, erlang:phash2({Case, Config})}|Config].
 
-end_per_testcase(Case, _Config) ->
-    ct:pal("Ending test case ~p", [Case]),
 
-    _Config.
+end_per_testcase(Case, Config) ->
+    ct:pal("Ending test case: ~p", [Case]),
+    ?SUPPORT:stop(?TAKE_NODES(Case)),
+    Config.
+
 
 init_per_group(with_disterl, Config) ->
     [{connect_disterl, true}] ++ Config;
+
 init_per_group(with_scamp_v1_membership_strategy, Config) ->
     [{membership_strategy, partisan_scamp_v1_membership_strategy}] ++ Config;
+
 init_per_group(with_scamp_v2_membership_strategy, Config) ->
     [{membership_strategy, partisan_scamp_v2_membership_strategy}] ++ Config;
+
 init_per_group(with_broadcast, Config) ->
     [{broadcast, true}, {forward_options, [{transitive, true}]}] ++ Config;
+
 init_per_group(with_partition_key, Config) ->
     [{forward_options, [{partition_key, 1}]}] ++ Config;
+
 init_per_group(with_binary_padding, Config) ->
     [{binary_padding, true}] ++ Config;
+
 init_per_group(with_sync_join, Config) ->
     [{parallelism, 1}, {sync_join, true}] ++ Config;
+
 init_per_group(with_monotonic_channels, Config) ->
     Channels = #{
         ?DEFAULT_CHANNEL => #{
@@ -105,6 +130,7 @@ init_per_group(with_monotonic_channels, Config) ->
         }
     },
     [{parallelism, 1}, {channels, Channels}] ++ Config;
+
 init_per_group(with_channels, Config) ->
     Channels = #{
         ?DEFAULT_CHANNEL => #{
@@ -129,40 +155,57 @@ init_per_group(with_channels, Config) ->
         }
     },
     [{parallelism, 1}, {channels, Channels}] ++ Config;
+
 init_per_group(with_parallelism, Config) ->
     parallelism() ++ [{channels, ?CHANNELS}] ++ Config;
+
 init_per_group(with_parallelism_bypass_pid_encoding, Config) ->
     parallelism() ++ [{channels, ?CHANNELS}, {pid_encoding, false}] ++ Config;
+
 init_per_group(with_partisan_bypass_pid_encoding, Config) ->
     [{pid_encoding, false}] ++ Config;
+
 init_per_group(with_no_channels, Config) ->
     [{parallelism, 1}, {channels, #{}}] ++ Config;
+
 init_per_group(with_causal_labels, Config) ->
     [{causal_labels, [default]}] ++ Config;
+
 init_per_group(with_causal_send, Config) ->
     [{causal_labels, [default]}, {forward_options, [{causal_label, default}]}] ++ Config;
+
 init_per_group(with_causal_send_and_ack, Config) ->
     [{causal_labels, [default]}, {forward_options, [{causal_label, default}, {ack, true}]}] ++ Config;
+
 init_per_group(with_forward_delay_interposition, Config) ->
     [{disable_fast_forward, true}] ++ Config;
+
 init_per_group(with_forward_interposition, Config) ->
     [{disable_fast_forward, true}] ++ Config;
+
 init_per_group(with_receive_interposition, Config) ->
     [{disable_fast_receive, true}] ++ Config;
+
 init_per_group(with_ack, Config) ->
     [{disable_fast_forward, true}, {forward_options, [{ack, true}]}] ++ Config;
+
 init_per_group(with_tls, Config) ->
     TLSOpts = make_certs(Config),
     [{parallelism, 1}, {tls, true}] ++ TLSOpts ++ Config;
+
 init_per_group(with_egress_delay, Config) ->
     [{egress_delay, 100}] ++ Config;
+
 init_per_group(with_ingress_delay, Config) ->
     [{ingress_delay, 100}] ++ Config;
+
 init_per_group(_, Config) ->
     [{parallelism, 1}] ++ Config.
 
+
 end_per_group(_, _Config) ->
     ok.
+
 
 all() ->
     [
@@ -234,6 +277,7 @@ all() ->
 
      {group, with_egress_delay, [parallel]}
     ].
+
 
 groups() ->
     [
@@ -355,9 +399,13 @@ groups() ->
 
     ].
 
-%% ===================================================================
-%% Tests.
-%% ===================================================================
+
+
+%% =============================================================================
+%% TESTS
+%% =============================================================================
+
+
 
 transform_test(Config) ->
     %% Use the default peer service manager.
@@ -374,6 +422,8 @@ transform_test(Config) ->
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
+
+    ?PUT_NODES(Nodes),
 
     ?PAUSE_FOR_CLUSTERING,
 
@@ -456,8 +506,7 @@ transform_test(Config) ->
     end,
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
-
+    %% ?SUPPORT:stop(Nodes),
     ok.
 
 causal_test(Config) ->
@@ -475,6 +524,10 @@ causal_test(Config) ->
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
+
+
+    ?PUT_NODES(Nodes),
+
 
     ?PAUSE_FOR_CLUSTERING,
 
@@ -541,7 +594,7 @@ causal_test(Config) ->
     end,
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -560,6 +613,9 @@ receive_interposition_test(Config) ->
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
+
+
+    ?PUT_NODES(Nodes),
 
     ?PAUSE_FOR_CLUSTERING,
 
@@ -635,7 +691,7 @@ receive_interposition_test(Config) ->
     end,
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -654,6 +710,8 @@ ack_test(Config) ->
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
+
+    ?PUT_NODES(Nodes),
 
     ?PAUSE_FOR_CLUSTERING,
 
@@ -726,7 +784,7 @@ ack_test(Config) ->
     timer:sleep(5000),
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -745,6 +803,8 @@ forward_interposition_test(Config) ->
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
+
+    ?PUT_NODES(Nodes),
 
     ?PAUSE_FOR_CLUSTERING,
 
@@ -820,7 +880,7 @@ forward_interposition_test(Config) ->
     end,
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -839,6 +899,8 @@ pid_test(Config) ->
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
+
+    ?PUT_NODES(Nodes),
 
     ?PAUSE_FOR_CLUSTERING,
 
@@ -894,7 +956,7 @@ pid_test(Config) ->
     end,
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -914,6 +976,8 @@ rpc_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
+    ?PUT_NODES(Nodes),
+
     ?PAUSE_FOR_CLUSTERING,
 
     %% Select two of the nodes.
@@ -924,7 +988,7 @@ rpc_test(Config) ->
     {_, _, _} = rpc:call(Node3, partisan_rpc, call, [Node4, erlang, now, [], infinity]),
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -943,6 +1007,8 @@ on_down_test(Config) ->
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
+
+    ?PUT_NODES(Nodes),
 
     ?PAUSE_FOR_CLUSTERING,
 
@@ -970,7 +1036,7 @@ on_down_test(Config) ->
     end,
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -991,6 +1057,8 @@ rejoin_test(Config) ->
                         [{partisan_peer_service_manager, Manager},
                         {servers, Servers},
                         {clients, Clients}]),
+
+            ?PUT_NODES(Nodes),
 
             ct:pal("Starting with servers ~p", [Servers]),
             ct:pal("and clients ~p", [Clients]),
@@ -1059,66 +1127,66 @@ rejoin_test(Config) ->
 self_leave_test(Config) ->
     case os:getenv("TRAVIS") of
         false ->
-        %% Use the default peer service manager.
-        Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
+            %% Use the default peer service manager.
+            Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
-        %% Specify servers.
-        Servers = ?SUPPORT:node_list(1, "server", Config),
+            %% Specify servers.
+            Servers = ?SUPPORT:node_list(1, "server", Config),
 
-        %% Specify clients.
-        Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
+            %% Specify clients.
+            Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
 
-        %% Start nodes.
-        Nodes = ?SUPPORT:start(leave_test, Config,
-                    [{partisan_peer_service_manager, Manager},
-                    {servers, Servers},
-                    {clients, Clients}]),
+            %% Start nodes.
+            Nodes = ?SUPPORT:start(leave_test, Config,
+                        [{partisan_peer_service_manager, Manager},
+                        {servers, Servers},
+                        {clients, Clients}]),
 
-        NodeToLeave = lists:nth(2, Nodes),
-        ct:pal("Verifying leave for ~p", [NodeToLeave]),
-        verify_leave(NodeToLeave, Nodes, Manager),
+            NodeToLeave = lists:nth(2, Nodes),
+            ct:pal("Verifying leave for ~p", [NodeToLeave]),
+            verify_leave(NodeToLeave, Nodes, Manager),
 
-        %% Stop nodes.
-        ?SUPPORT:stop(Nodes);
+            %% Stop nodes.
+            ?SUPPORT:stop(Nodes);
 
-    _ ->
-        ok
+        _ ->
+            ok
 
-    end,
+    end.
 
-    ok.
 
 leave_test(Config) ->
     case os:getenv("TRAVIS") of
         false ->
-        %% Use the default peer service manager.
-        Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
+            %% Use the default peer service manager.
+            Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
-        %% Specify servers.
-        Servers = ?SUPPORT:node_list(1, "server", Config),
+            %% Specify servers.
+            Servers = ?SUPPORT:node_list(1, "server", Config),
 
-        %% Specify clients.
-        Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
+            %% Specify clients.
+            Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
 
-        %% Start nodes.
-        Nodes = ?SUPPORT:start(leave_test, Config,
-                    [{partisan_peer_service_manager, Manager},
-                    {servers, Servers},
-                    {clients, Clients}]),
+            %% Start nodes.
+            Nodes = ?SUPPORT:start(leave_test, Config,
+                        [{partisan_peer_service_manager, Manager},
+                        {servers, Servers},
+                        {clients, Clients}]),
 
-        NodeToLeave = lists:nth(length(Nodes), Nodes),
-        ct:pal("Verifying leave for ~p", [NodeToLeave]),
-        verify_leave(NodeToLeave, Nodes, Manager),
+                ?PUT_NODES(Nodes),
 
-        %% Stop nodes.
-        ?SUPPORT:stop(Nodes);
+            NodeToLeave = lists:nth(length(Nodes), Nodes),
+            ct:pal("Verifying leave for ~p", [NodeToLeave]),
+            verify_leave(NodeToLeave, Nodes, Manager),
 
-    _ ->
-        ok
+            %% Stop nodes.
+            ?SUPPORT:stop(Nodes);
 
-    end,
+        _ ->
+            ok
 
-    ok.
+    end.
+
 
 performance_test(Config) ->
     %% Use the default peer service manager.
@@ -1135,6 +1203,8 @@ performance_test(Config) ->
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
+
+    ?PUT_NODES(Nodes),
 
     ?PAUSE_FOR_CLUSTERING,
 
@@ -1224,7 +1294,7 @@ performance_test(Config) ->
     ct:pal("Time: ~p", [Time]),
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -1253,6 +1323,8 @@ gossip_test(Config) ->
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
+
+    ?PUT_NODES(Nodes),
 
     ?PAUSE_FOR_CLUSTERING,
 
@@ -1299,7 +1371,7 @@ gossip_test(Config) ->
     end,
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -1329,6 +1401,8 @@ connectivity_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
+    ?PUT_NODES(Nodes),
+
     ?PAUSE_FOR_CLUSTERING,
 
     %% Verify forward message functionality.
@@ -1345,7 +1419,7 @@ connectivity_test(Config) ->
                   end, Nodes),
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -1368,6 +1442,8 @@ otp_test(Config) ->
             {clients, Clients}
         ]
     ),
+
+    ?PUT_NODES(Nodes),
 
     ?PAUSE_FOR_CLUSTERING,
 
@@ -1455,7 +1531,7 @@ otp_test(Config) ->
     end,
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -1475,6 +1551,8 @@ forward_delay_interposition_test(Config) ->
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
+
+    ?PUT_NODES(Nodes),
 
     ?PAUSE_FOR_CLUSTERING,
 
@@ -1528,7 +1606,7 @@ forward_delay_interposition_test(Config) ->
     end,
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -1547,6 +1625,8 @@ basic_test(Config) ->
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
+
+    ?PUT_NODES(Nodes),
 
     ?PAUSE_FOR_CLUSTERING,
 
@@ -1661,7 +1741,7 @@ basic_test(Config) ->
     ),
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -1681,8 +1761,10 @@ client_server_manager_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
+    ?PUT_NODES(Nodes),
+
     %% Pause for clustering.
-    timer:sleep(10000),
+    ?PAUSE_FOR_CLUSTERING,
 
     %% Verify membership.
     %%
@@ -1726,7 +1808,7 @@ client_server_manager_test(Config) ->
                   end, Nodes),
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -1746,6 +1828,8 @@ hyparview_manager_partition_test(Config) ->
                    {max_active_size, 5},
                    {servers, Servers},
                    {clients, Clients}]),
+
+    ?PUT_NODES(Nodes),
 
     CheckStartedFun = fun() ->
                         case hyparview_membership_check(Nodes) of
@@ -1845,7 +1929,7 @@ hyparview_manager_partition_test(Config) ->
     end,
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -1866,6 +1950,8 @@ hyparview_manager_high_active_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
+    ?PUT_NODES(Nodes),
+
     CheckStartedFun = fun() ->
                         case hyparview_membership_check(Nodes) of
                             {[], []} -> true;
@@ -1919,7 +2005,7 @@ hyparview_manager_high_active_test(Config) ->
     end,
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -1940,6 +2026,8 @@ hyparview_manager_low_active_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
+    ?PUT_NODES(Nodes),
+
     CheckStartedFun = fun() ->
                         case hyparview_membership_check(Nodes) of
                             {[], []} -> true;
@@ -1993,7 +2081,7 @@ hyparview_manager_low_active_test(Config) ->
     end,
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -2011,6 +2099,8 @@ hyparview_manager_high_client_test(Config) ->
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
+
+    ?PUT_NODES(Nodes),
 
     CheckStartedFun = fun() ->
                         case hyparview_membership_check(Nodes) of
@@ -2065,7 +2155,7 @@ hyparview_manager_high_client_test(Config) ->
     end,
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -2524,6 +2614,9 @@ hyparview_xbot_manager_high_active_test(Config) ->
                    {servers, Servers},
                    {clients, Clients}]),
 
+
+    ?PUT_NODES(Nodes),
+
     %%timer:sleep(20000),
 
     CheckStartedFun = fun() ->
@@ -2580,7 +2673,7 @@ hyparview_xbot_manager_high_active_test(Config) ->
     end,
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -2600,6 +2693,8 @@ hyparview_xbot_manager_low_active_test(Config) ->
                    {max_active_size, MaxActiveSize},
                    {servers, Servers},
                    {clients, Clients}]),
+
+    ?PUT_NODES(Nodes),
 
 	timer:sleep(60000),
 
@@ -2656,7 +2751,7 @@ hyparview_xbot_manager_low_active_test(Config) ->
     end,
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
@@ -2674,6 +2769,8 @@ hyparview_xbot_manager_high_client_test(Config) ->
                   [{partisan_peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
+
+    ?PUT_NODES(Nodes),
 
     CheckStartedFun = fun() ->
                         case hyparview_xbot_membership_check(Nodes) of
@@ -2728,7 +2825,7 @@ hyparview_xbot_manager_high_client_test(Config) ->
     end,
 
     %% Stop nodes.
-    ?SUPPORT:stop(Nodes),
+    %% ?SUPPORT:stop(Nodes),
 
     ok.
 
