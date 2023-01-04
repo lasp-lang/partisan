@@ -31,7 +31,8 @@
 %% The set is implemented as a CRDT set of `partisan:node_spec()' objects. More
 %% specifically a state_orset.
 %%
-%% Notice that because the set stores `partisan:node_spec()' objects and not `node()',
+%% Notice that because the set stores `partisan:node_spec()' objects and not
+%% `node()',
 %% the set can have multiple `partisan:node_spec()' objects for the same node.
 %%
 %% This can occur when the set contains one or more
@@ -81,6 +82,7 @@
 -export([new/0]).
 -export([remove/3]).
 -export([to_list/1]).
+-export([to_peer_list/1]).
 
 
 
@@ -150,6 +152,29 @@ equal(T1, T2) ->
 
 to_list(T) ->
     lists:sort(sets:to_list(state_orset:query(T))).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns a list of node specifications but omitting the specification
+%% for the local node.
+%% No sorting is applied, so the sorting is undefined.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec to_peer_list(t()) -> [partisan:node_spec()].
+
+to_peer_list(T) ->
+    Myself = partisan:node(),
+    Peers = sets:fold(
+        fun
+            (#{name := Node} = Spec, Acc) when Node =/= Myself ->
+                [Spec | Acc];
+            (_, Acc) ->
+                Acc
+        end,
+        [],
+        state_orset:query(T)
+    ),
+    lists:reverse(Peers).
 
 
 %% -----------------------------------------------------------------------------
