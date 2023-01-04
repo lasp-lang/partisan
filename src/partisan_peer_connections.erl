@@ -93,6 +93,7 @@
 -export([is_connected/1]).
 -export([is_connected/2]).
 -export([is_fully_connected/1]).
+-export([kill_all/0]).
 -export([listen_addr/1]).
 -export([node/1]).
 -export([node_spec/1]).
@@ -109,6 +110,7 @@
 
 -compile({no_auto_import, [nodes/1]}).
 -compile({no_auto_import, [erase/1]}).
+-compile({no_auto_import, [pid/1]}).
 
 
 %% =============================================================================
@@ -702,6 +704,26 @@ erase(Node) when is_atom(Node) ->
 
 erase(#{name := Node}) ->
     erase(Node).
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec kill_all() -> ok.
+
+kill_all() ->
+    Fun = fun(_NodeInfo, Connections) ->
+        lists:foreach(
+            fun(C) ->
+                Pid = pid(C),
+                catch gen_server:stop(Pid, normal, infinity),
+                ok
+            end,
+            Connections
+        )
+    end,
+    ok = foreach(Fun).
+
 
 
 %% -----------------------------------------------------------------------------
