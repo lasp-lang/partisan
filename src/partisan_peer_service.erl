@@ -61,7 +61,9 @@
 -export([members/0]).
 -export([members_for_orchestration/0]).
 -export([on_down/2]).
+-export([on_down/3]).
 -export([on_up/2]).
+-export([on_up/3]).
 -export([partitions/0]).
 -export([reserve/1]).
 -export([resolve_partition/1]).
@@ -186,11 +188,33 @@ leave(#{name := Node} = NodeSpec) ->
 %% `partisan_static_peer_service_manager'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec on_up(node() | partisan:node_spec() | any | '_', function()) ->
+-spec on_up(
+    node() | partisan:node_spec() | any | '_',
+    partisan_peer_service_manager:on_event_fun()) ->
     ok | {error, not_implemented}.
 
 on_up(Node, Function) ->
     (?PEER_SERVICE_MANAGER):on_up(Node, Function).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Trigger function on connection open for a given node.
+%% `Function' is a function object taking zero or a single argument, where the
+%% argument is the Node name.
+%%
+%% At the moment, this only works when using a full-mesh topology i.e.
+%% `partisan_pluggable_peer_service_manager' or
+%% `partisan_static_peer_service_manager'.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec on_up(
+    node() | partisan:node_spec() | any | '_',
+    partisan_peer_service_manager:on_event_fun(),
+    Opts :: #{channel => partisan:channel()}) ->
+    ok | {error, not_implemented}.
+
+on_up(Node, Function, Opts) ->
+    (?PEER_SERVICE_MANAGER):on_up(Node, Function, Opts).
 
 
 %% -----------------------------------------------------------------------------
@@ -208,6 +232,26 @@ on_up(Node, Function) ->
 
 on_down(Node, Function) ->
     (?PEER_SERVICE_MANAGER):on_down(Node, Function).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Trigger function on connection close for a given node.
+%% `Function' is a function object taking zero or a single argument, where the
+%% argument is the Node name.
+%%
+%% At the moment, this only works when using a full-mesh topology i.e.
+%% `partisan_pluggable_peer_service_manager' or
+%% `partisan_static_peer_service_manager'.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec on_down(
+    node() | partisan:node_spec() | any | '_',
+    partisan_peer_service_manager:on_event_fun(),
+    Opts :: #{channel => partisan:channel()}) ->
+    ok | {error, not_implemented}.
+
+on_down(Node, Function, Opts) ->
+    (?PEER_SERVICE_MANAGER):on_down(Node, Function, Opts).
 
 
 %% -----------------------------------------------------------------------------
