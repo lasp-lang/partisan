@@ -692,6 +692,28 @@ is_process_alive(RemoteRef) ->
 
 
 %% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec exit(Pid :: pid() | partisan_remote_ref:p(), Reason :: term()) -> true.
+
+exit(Pid, Reason) when erlang:is_pid(Pid) ->
+    erlang:exit(Pid, Reason);
+
+exit(RemoteRef, Reason) ->
+    case partisan_remote_ref:is_local(RemoteRef) of
+        true ->
+            erlang:exit(partisan_remote_ref:to_term(RemoteRef), Reason);
+        false ->
+            Node = node(RemoteRef),
+            partisan_rpc:call(
+                Node, ?MODULE, exit, [RemoteRef], 5000
+            )
+    end.
+
+
+
+%% -----------------------------------------------------------------------------
 %% @doc Cast message to a remote ref
 %% @end
 %% -----------------------------------------------------------------------------
