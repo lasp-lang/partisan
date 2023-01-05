@@ -67,7 +67,9 @@ start(Case, Config, Options) ->
         NodeConfig = [
             {boot_timeout, 10}, % seconds
             {monitor_master, true},
-            {startup_functions, [{code, set_path, [codepath()]}]}
+            {startup_functions, [
+                {code, set_path, [codepath()]}
+            ]}
         ],
 
         case ct_slave:start(Name, NodeConfig) of
@@ -329,17 +331,21 @@ start(Case, Config, Options) ->
         ok = rpc:call(Node, application, start, [sasl]),
 
         LoggerConf = [
-            {handler, default, logger_disk_log_h,
+            {handler, default, logger_std_h,
             #{config => #{
                 file => filename:join(NodeDir, "log/partisan.log"),
                 max_no_files => 4,
-                filesync_repeat_interval => 60000,
                 max_no_bytes => 1048576
             }}}
         ],
         ok = rpc:call(
             Node, application, set_env,
             [kernel, logger, LoggerConf]
+        ),
+
+        ok = rpc:call(
+            Node, application, set_env,
+            [kernel, logger_level, debug]
         ),
 
         %% Set Partisan Env
@@ -406,68 +412,64 @@ cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
     AmIServer = lists:member(Name, Servers),
     AmIClient = lists:member(Name, Clients),
 
-    OtherNodes = case Manager of
-                     ?DEFAULT_PEER_SERVICE_MANAGER ->
-                         %% We are all peers, I connect to everyone (but myself)
-                         omit([Name], Nodes);
-                     partisan_client_server_peer_service_manager ->
-                         case {AmIServer, AmIClient} of
-                             {true, false} ->
-                                %% If I'm a server, I connect to both
-                                %% clients and servers!
-                                omit([Name], Nodes);
-                             {false, true} ->
-                                %% I'm a client, pick servers.
-                                omit(Clients, Nodes);
-                             {_, _} ->
-                                %% I assume I'm a server, I connect to both
-                                %% clients and servers!
-                                omit([Name], Nodes)
-                         end;
-                     partisan_hyparview_peer_service_manager ->
-                        case {AmIServer, AmIClient} of
-                            {true, false} ->
-                               %% If I'm a server, I connect to both
-                               %% clients and servers!
-                               omit([Name], Nodes);
-                            {false, true} ->
-                               %% I'm a client, pick servers.
-                               omit(Clients, Nodes);
-                            {_, _} ->
-                               omit([Name], Nodes)
-                        end;
-                     %same as hyparview but for hyparview with xbot integration
-                     partisan_hyparview_xbot_peer_service_manager ->
-                        case {AmIServer, AmIClient} of
-                            {true, false} ->
-                               %% If I'm a server, I connect to both
-                               %% clients and servers!
-                               omit([Name], Nodes);
-                            {false, true} ->
-                               %% I'm a client, pick servers.
-                               omit(Clients, Nodes);
-                            {_, _} ->
-                               omit([Name], Nodes)
-                        end
-                 end,
-    lists:map(fun(OtherNode) -> cluster(Myself, OtherNode, Config) end, OtherNodes).
+    OtherNodes =
+        case {Manager, AmIServer, AmIClient} of
+            {?DEFAULT_PEER_SERVICE_MANAGER, _, _} ->
+                %% We are all peers, I connect to everyone (but myself)
+                omit([Name], Nodes);
+            {partisan_client_server_peer_service_manager, true, false} ->
+                %% If I'm a server, I connect to both
+                %% clients and servers!
+                omit([Name], Nodes);
+            {partisan_client_server_peer_service_manager, false, true} ->
+                %% I'm a client, pick servers.
+                omit(Clients, Nodes);
+            {partisan_client_server_peer_service_manager, _, _} ->
+                %% I assume I'm a server, I connect to both
+                %% clients and servers!
+                omit([Name], Nodes);
+            {partisan_hyparview_peer_service_manager, true, false} ->
+                %% If I'm a server, I connect to both
+                %% clients and servers!
+                omit([Name], Nodes);
+            {partisan_hyparview_peer_service_manager, false, true} ->
+                %% I'm a client, pick servers.
+                omit(Clients, Nodes);
+            {partisan_hyparview_peer_service_manager, _, _} ->
+                omit([Name], Nodes);
+            {partisan_hyparview_xbot_peer_service_manager, true, false} ->
+                %% If I'm a server, I connect to both
+                %% clients and servers!
+                omit([Name], Nodes);
+            {partisan_hyparview_xbot_peer_service_manager, false, true} ->
+                %% I'm a client, pick servers.
+                omit(Clients, Nodes);
+            {partisan_hyparview_xbot_peer_service_manager, _, _} ->
+                omit([Name], Nodes)
+        end,
+
+    lists:map(
+        fun(OtherNode) -> cluster(Myself, OtherNode, Config) end,
+        OtherNodes
+    ).
 
 
 cluster({_, Node}, {_, OtherNode}, Config) ->
     NodeSpec = rpc:call(OtherNode, partisan, node_spec, []),
 
-    JoinMethod = case ?config(sync_join, Config) of
-                    undefined ->
-                        join;
-                    true ->
-                        sync_join;
-                    false ->
-                        join
-                  end,
-    debug("Joining node with spec: ~p", [NodeSpec]),
+    JoinMethod =
+        case ?config(sync_join, Config) of
+            undefined ->
+                join;
+            true ->
+                sync_join;
+            false ->
+                join
+        end,
 
-    ok = rpc:call(Node, partisan_peer_service, JoinMethod, [NodeSpec]),
-    ok.
+    debug("Joining node: ~p with: ~p", [Node, NodeSpec]),
+
+    ok = rpc:call(Node, partisan_peer_service, JoinMethod, [NodeSpec]).
 
 
 %% @private
