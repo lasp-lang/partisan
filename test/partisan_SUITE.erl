@@ -1329,15 +1329,32 @@ gossip_test(Config) ->
     ?PAUSE_FOR_CLUSTERING,
 
     %% Verify forward message functionality.
-    lists:foreach(fun({_Name, Node}) ->
-                    ok = check_forward_message(Node, Manager, Nodes)
-                  end, Nodes),
+    lists:foreach(
+        fun({_Name, Node}) ->
+            ok = check_forward_message(Node, Manager, Nodes)
+        end,
+        Nodes
+    ),
 
     %% Start gossip backend on all nodes.
-    lists:foreach(fun({_Name, Node}) ->
-        ct:pal("Starting gossip backend on node ~p", [Node]),
-        {ok, _Pid} = rpc:call(Node, demers_direct_mail, start_link, [])
-    end, Nodes),
+    lists:foreach(
+        fun({_Name, Node}) ->
+
+            case rpc:call(Node, demers_direct_mail, start_link, []) of
+                {ok, Pid} ->
+                    ct:pal(
+                        "Started gossip backend on node ~p (~p)",
+                        [Node, Pid]
+                    );
+                {error, Reason} ->
+                    ct:pal(
+                        "Couldn't start gossip backend on node ~p. Reason: ~p",
+                        [Node, Reason]
+                    )
+            end
+        end,
+        Nodes
+    ),
 
     %% Pause for protocol delay and periodic intervals to fire.
     timer:sleep(10000),
@@ -2179,12 +2196,16 @@ make_certs(Config) ->
     [{tls_server_options,
       [
        {certfile, filename:join(PrivDir, "server/keycert.pem")},
-       {cacertfile, filename:join(PrivDir, "server/cacerts.pem")}
+       {cacertfile, filename:join(PrivDir, "server/cacerts.pem")},
+       {keyfile, filename:join(PrivDir, "server/key.pem")},
+       {verify, verify_none}
       ]},
      {tls_client_options,
       [
        {certfile, filename:join(PrivDir, "client/keycert.pem")},
-       {cacertfile, filename:join(PrivDir, "client/cacerts.pem")}
+       {cacertfile, filename:join(PrivDir, "client/cacerts.pem")},
+       {keyfile, filename:join(PrivDir, "client/key.pem")},
+       {verify, verify_none}
       ]}].
 
 %% @private
