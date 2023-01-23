@@ -184,8 +184,8 @@ members_for_orchestration() ->
 %% @doc Update membership.
 %% @end
 %% -----------------------------------------------------------------------------
-update_members(Nodes) ->
-    gen_server:call(?MODULE, {update_members, Nodes}, infinity).
+update_members(NodeSpecs) ->
+    gen_server:call(?MODULE, {update_members, NodeSpecs}, infinity).
 
 
 %% -----------------------------------------------------------------------------
@@ -713,78 +713,40 @@ handle_call({remove_post_interposition_fun, Name}, _From, #state{post_interposit
     PostInterpositionFuns = maps:remove(Name, PostInterpositionFuns0),
     {reply, ok, State#state{post_interposition_funs=PostInterpositionFuns}};
 
-handle_call({update_members, L}, _From, #state{} = State) ->
+handle_call({update_members, Members}, _From, #state{} = State0) ->
     %% For compatibility with external membership services.
-    Membership = State#state.membership,
+    MState = State0#state.membership_strategy_state,
 
-    %% Get the current membership.
-    CurrentMembership = [Node || #{name := Node} <- Membership],
-
-    %% need to support Nodes as a list of maps or atoms
-    %% TODO: require each node to be a map
-    Nodes = lists:map(
-        fun
-            (#{name := Node}) ->
-                Node;
-            (Node) when is_atom(Node) ->
-                Node
-        end,
-        L
-    ),
-
-    %% Compute leaving list.
-    LeavingNodes = lists:filter(
-        fun(Node) -> not lists:member(Node, Nodes) end,
-        CurrentMembership
-    ),
+    {Joiners, Leavers} = partisan_membership_set:compare(Members, MState),
 
     %% Issue leaves.
     State1 = lists:foldl(
-        fun(Term, S) ->
-            case Term of
-                NodeSpec when is_map(NodeSpec) ->
-                    internal_leave(NodeSpec, S);
-
-                Node when is_atom(Node) ->
-                    %% find map based on name
-                    [Map] = lists:filter(
-                        fun(M) -> maps:get(name, M) == Node end,
-                        Membership
-                    ),
-                    internal_leave(Map, S)
-            end
-        end,
-        State,
-        LeavingNodes
+        fun(NodeSpec , S) -> internal_leave(NodeSpec, S) end,
+        State0,
+        Leavers
     ),
-
-    %% Compute joining list.
-    JoiningNodes = lists:filter(
-        fun(Node) when is_atom(Node) ->
-            not lists:member(Node, CurrentMembership)
-        end,
-        Nodes
-    ),
-
     %% Issue joins.
-    State2=#state{pending=Pending} = lists:foldl(
-        fun(Node, S) -> internal_join(Node, undefined, S) end,
+    State2 = lists:foldl(
+        fun(NodeSpec, S) -> internal_join(NodeSpec, undefined, S) end,
         State1,
-        JoiningNodes
+        Joiners
     ),
 
     %% Compute current pending list.
     Pending1 = lists:filter(
-        fun(#{name := Node}) -> lists:member(Node, Nodes) end,
-        Pending
+        fun(NodeSpec) -> lists:member(NodeSpec, State0#state.membership) end,
+        State2#state.pending
     ),
+
+    State = State2#state{pending = Pending1},
 
     %% Finally schedule the removal of connections
     %% We do this async because internal_leave will schedule the sending of
     %% membership update messages
+    LeavingNodes = [Node || #{name := Node} <- Leavers],
     gen_server:cast(?MODULE, {kill_connections, LeavingNodes}),
 
-    {reply, ok, State2#state{pending=Pending1}};
+    {reply, ok, State};
 
 handle_call({leave, #{name := Node} = NodeSpec}, From, State0) ->
     %% Perform leave.

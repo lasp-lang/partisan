@@ -267,6 +267,7 @@ node_begin_case() ->
         wait_stable(?NAME(FirstName), root),
 
         %% Add member to root ensemble.
+        %% TODO update_members now receives Nodespecs only
         ok = rpc:call(?NAME(FirstName), riak_ensemble_peer, update_members, [RootLeader, [{add, {root, ?NAME(ShortName)}}], 10000]),
 
         %% Wait until stable.

@@ -75,6 +75,7 @@
 
 %% API
 -export([add/3]).
+-export([compare/2]).
 -export([decode/1]).
 -export([encode/1]).
 -export([equal/2]).
@@ -122,6 +123,28 @@ add(#{name := _} = NodeSpec, Actor, T0) ->
 remove(#{name := _} = NodeSpec, Actor, T) ->
     {ok, T1} = state_orset:mutate({rmv, NodeSpec}, Actor, T),
     T1.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns the tuple `{Joiners, Leavers}' where `Joiners' is the list of
+%% node specifications that are elements of `List' but are not in the
+%% membership set, and `Leavers' are the node specifications for the current
+%% members that are not elements in `List'.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec compare([partisan:node_spec()], t()) ->
+    {Joiners :: [partisan:node_spec()], Leavers :: [partisan:node_spec()]}.
+
+compare([], _) ->
+    {[], []};
+
+compare(List, T) when is_list(List) ->
+    Set = sets:from_list(List),
+    Members = state_orset:query(T),
+    Intersection = sets:intersection(Set, Members),
+    Joiners = sets:to_list(sets:subtract(Set, Intersection)),
+    Leavers = sets:to_list(sets:subtract(Members, Intersection)),
+    {Joiners, Leavers}.
 
 
 %% -----------------------------------------------------------------------------
@@ -294,6 +317,20 @@ concurrent_updates_test() ->
     ?assertEqual(
         [Node1, Node2],
         to_list(merge(A1, B1))
+    ).
+
+compare_test() ->
+    Node1 = node_spec('node1@127.0.0.1', {192, 168, 0, 1}),
+    Node2 = node_spec('node2@127.0.0.1', {192, 168, 0, 2}),
+    Node3 = node_spec('node3@127.0.0.1', {192, 168, 0, 3}),
+
+    S0 = new(),
+    S1 = add(Node1, a, S0),
+    S2 = add(Node2, a, S1),
+
+    ?assertEqual(
+        {[Node3], [Node2]},
+        compare([Node1, Node3], S2)
     ).
 
 
