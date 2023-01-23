@@ -96,10 +96,10 @@ start(Case, Config, Options) ->
             [partisan_peer_service_manager, PeerService]
         ),
 
-         ok = rpc:call(
-            Node, application, set_env,
-            [partisan, hyparview, ?HYPARVIEW_DEFAULTS]
-        ),
+        %%  ok = rpc:call(
+        %%     Node, application, set_env,
+        %%     [partisan, hyparview, ?HYPARVIEW_DEFAULTS]
+        %% ),
 
         ok = rpc:call(
             Node, application, set_env, [partisan, peer_ip, ?PEER_IP]
