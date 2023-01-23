@@ -86,6 +86,7 @@ init([]) ->
         ?WORKER(partisan_acknowledgement_backend, [], permanent, 5000),
         ?WORKER(partisan_orchestration_backend, [], permanent, 5000),
         ?SUPERVISOR(partisan_peer_service_sup, [], permanent, infinity),
+        %% THe peer service needs started before Plumtree servers
         ?WORKER(partisan_plumtree_backend, [], permanent, 5000),
         ?WORKER(partisan_plumtree_broadcast, [], permanent, 5000)
     ]),
@@ -100,12 +101,6 @@ init([]) ->
     end,
 
     CausalBackends = lists:map(CausalBackendFun, CausalLabels),
-    ?LOG_INFO(#{
-        description => "Partisan listening",
-        ip_address => partisan_config:get(peer_ip),
-        port_number => partisan_config:get(peer_port),
-        listen_addr => partisan_config:get(listen_addrs)
-    }),
 
     %% Initialize the plumtree outstanding messages table
     %% supervised by the supervisor.
@@ -118,7 +113,7 @@ init([]) ->
     ),
 
     %% Open connection pool.
-    %% This MUST be there last children to be started
+    %% This MUST be the last children to be started
     PoolSup = {
         partisan_acceptor_socket_pool_sup,
         {partisan_acceptor_socket_pool_sup, start_link, []},
