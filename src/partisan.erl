@@ -75,6 +75,7 @@
 -export([demonitor/1]).
 -export([demonitor/2]).
 -export([disconnect_node/1]).
+-export([exit/2]).
 -export([forward_message/2]).
 -export([forward_message/3]).
 -export([forward_message/4]).
