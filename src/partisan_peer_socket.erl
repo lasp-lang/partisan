@@ -114,6 +114,11 @@ accept(TCPSocket) ->
 %% -----------------------------------------------------------------------------
 -spec send(connection(), iodata()) -> ok | {error, reason()}.
 
+send(#connection{monotonic = false} = Conn, Data) ->
+    Socket = Conn#connection.socket,
+    Transport = Conn#connection.transport,
+    send(Transport, Socket, Data);
+
 send(#connection{monotonic = true} = Conn, Data) ->
     Socket = Conn#connection.socket,
     Transport = Conn#connection.transport,
@@ -132,12 +137,7 @@ send(#connection{monotonic = true} = Conn, Data) ->
             %% Update last transmission time on process dictionary
             put(last_transmission_time, monotonic_now()),
             send(Transport, Socket, Data)
-    end;
-
-send(#connection{monotonic = false} = Conn, Data) ->
-    Socket = Conn#connection.socket,
-    Transport = Conn#connection.transport,
-    send(Transport, Socket, Data).
+    end.
 
 
 %% -----------------------------------------------------------------------------
