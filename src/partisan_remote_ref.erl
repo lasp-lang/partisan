@@ -298,7 +298,7 @@ is_type(Term) ->
 is_pid(<<"partisan:pid:", _/binary>>) ->
     true;
 
-is_pid({partisan_remote_ref, _, Term}) ->
+is_pid({partisan_remote_ref, _Node, Term}) ->
     is_pid(Term);
 
 is_pid({encoded_pid, _}) ->
@@ -605,6 +605,17 @@ tag(String) when is_list(String) ->
 
 %% @private
 maybe_pad(Bin) when byte_size(Bin) < 65 ->
+    %% Erlang Heap binaries are small binaries, up to 64 bytes, and are stored
+    %% directly on the process heap. They are copied when the process is
+    %% garbage-collected and when they are sent as a message.
+    %% Erlang Refc binaries (short for reference-counted binaries) - they
+    %% consist of a ProcBin (stored on the process heap) and the binary object
+    %% itself stored on the VM outside of all processes.
+    %% TODO we need to support additional components so that apps can add
+    %% metadata
+    %% So, use $\31 as separator between URI and padding and pad with zeros
+    %% string:pad(<<Bin/binary, $\31>>, 65, trailing, $0)
+    %% when decoding, first split by $\31, dropping padding, then split by $:
     case partisan_config:get(remote_ref_binary_padding, false) of
         true ->
             iolist_to_binary(
