@@ -16,13 +16,16 @@ SPELLCHECK 	    = $(CODESPELL) -S _build -S doc -S .git -L applys,nd,accout,matt
 SPELLFIX      	= $(SPELLCHECK) -i 3 -w
 
 .PHONY: compile-no-deps test docs xref dialyzer-run dialyzer-quick dialyzer \
-		cleanplt upload-docs rel deps test plots spellcheck spellfix
+		cleanplt upload-docs rel deps test plots spellcheck spellfix certs
 
 all: compile
 
 ##
 ## Compilation targets
 ##
+
+certs:
+	cd config && ./make_certs
 
 compile-no-deps:
 	${REBAR} compile skip_deps=true
