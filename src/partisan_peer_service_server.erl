@@ -42,9 +42,9 @@
          code_change/3]).
 
 -record(state, {
-          socket :: partisan_peer_socket:connection(),
-          ref :: reference()
-         }).
+    socket :: partisan_peer_socket:connection(),
+    ref :: reference()
+}).
 
 -type state_t() :: #state{}.
 
@@ -64,19 +64,28 @@ acceptor_terminate(Reason, _) ->
     %% or the accept failed.
     exit(Reason).
 
-%% gen_server api
+
+
+%% =============================================================================
+%% GEN_SERVER CALLBACKS
+%% =============================================================================
+
+
 
 init(_) ->
     {stop, acceptor}.
 
+
 handle_call(Req, _, State) ->
     {stop, {bad_call, Req}, State}.
+
 
 handle_cast(Req, State) ->
     {stop, {bad_cast, Req}, State}.
 
+
 handle_info({Tag, _RawSocket, Data}, State=#state{socket=Socket}) when ?DATA_MSG(Tag) ->
-    Decoded = decode(Data),
+    Decoded = binary_to_term(Data),
     ?LOG_TRACE("Received data from socket: ~p", [Decoded]),
 
     case get({?MODULE, ingress_delay}) of
@@ -85,9 +94,10 @@ handle_info({Tag, _RawSocket, Data}, State=#state{socket=Socket}) when ?DATA_MSG
         Other ->
             timer:sleep(Other)
     end,
-    handle_message(decode(Data), State),
+    handle_message(binary_to_term(Data), State),
     ok = partisan_peer_socket:setopts(Socket, [{active, once}]),
     {noreply, State};
+
 handle_info({Tag, _RawSocket, Reason}, State=#state{socket=Socket}) when ?ERROR_MSG(Tag) ->
     ?LOG_ERROR(#{
         description => "Connection socket error, closing",
@@ -95,32 +105,44 @@ handle_info({Tag, _RawSocket, Reason}, State=#state{socket=Socket}) when ?ERROR_
         reason => Reason
     }),
     {stop, Reason, State};
-handle_info({Tag, _RawSocket}, State=#state{socket=Socket}) when ?CLOSED_MSG(Tag) ->
-    ?LOG_TRACE("Connection socket ~p has been remotely closed", [Socket]),
+
+handle_info({Tag, _RawSocket}, State) when ?CLOSED_MSG(Tag) ->
+    ?LOG_TRACE(
+        "Connection socket ~p has been remotely closed",
+        [State#state.socket]
+    ),
 
     {stop, normal, State};
-handle_info({'DOWN', MRef, port, _, _}, State=#state{ref=MRef}) ->
+
+handle_info({'DOWN', MRef, port, _, _}, #state{ref=MRef} = State) ->
     %% Listen socket closed
     {stop, normal, State};
+
 handle_info(_, State) ->
     {noreply, State}.
 
-terminate(_, #state{socket=Socket}) ->
-    ok = partisan_peer_socket:close(Socket),
+
+terminate(_, State) ->
+    ok = partisan_peer_socket:close(State#state.socket),
     ok.
 
-%% @private
+
 -spec code_change(term() | {down, term()}, state_t(), term()) ->
-                         {ok, state_t()}.
+    {ok, state_t()}.
+
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-%%%===================================================================
-%%% Internal functions
-%%%===================================================================
 
-handle_message({hello, Node},
-               #state{socket=Socket}) ->
+
+
+%% =============================================================================
+%% PRIVATE
+%% =============================================================================
+
+
+
+handle_message({hello, Node}, #state{socket=Socket}) ->
     %% Get our tag, if set.
     Tag = partisan_config:get(tag, undefined),
 
@@ -142,6 +164,7 @@ handle_message({hello, Node},
             send_message(Socket, {hello, {error, pang}}),
             ok
     end;
+
 handle_message(Message, _State) ->
     Peer = get({?MODULE, peer}),
 
@@ -156,16 +179,9 @@ handle_message(Message, _State) ->
 
 %% @private
 send_message(Socket, Message) ->
-    EncodedMessage = encode(Message),
+    EncodedMessage = erlang:term_to_binary(Message),
     partisan_peer_socket:send(Socket, EncodedMessage).
 
-%% @private
-encode(Message) ->
-    term_to_binary(Message).
-
-%% @private
-decode(Message) ->
-    binary_to_term(Message).
 
 %% @private
 maybe_connect_disterl(Node) ->

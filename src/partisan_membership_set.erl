@@ -207,15 +207,7 @@ to_peer_list(T) ->
 -spec encode(t()) -> binary().
 
 encode(T) ->
-    Opts = case partisan_config:get(membership_binary_compression, 1) of
-        true ->
-            [compressed];
-        N when N >= 0, N =< 9 ->
-            [{compressed, N}];
-        _ ->
-            []
-    end,
-
+    Opts = partisan_config:get('$membership_encoding_opts', [compressed]),
     erlang:term_to_binary(T, Opts).
 
 

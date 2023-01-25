@@ -98,6 +98,11 @@
 %% <dt>`lazy_tick_period'</dt><dd>TBD</dd>
 %% <dt>`max_active_size'</dt><dd>TBD</dd>
 %% <dt>`max_passive_size'</dt><dd>TBD</dd>
+%% <dt>`membership_binary_compression'</dt><dd>A boolean value or an integer in
+%% the range from `0..9' to be used with {@link erlang:term_to_binary/2} when
+%% encoding the membership set for broadcast. A value of `true' is equivalent
+%% to integer `6'. A value of false is equivalent to `0' (no compression).
+%% Default is `true'.</dd>
 %% <dt>`membership_strategy'</dt><dd>TBD</dd>
 %% <dt>`membership_strategy_tracing'</dt><dd>TBD</dd>
 %% <dt>`min_active_size'</dt><dd>TBD</dd>
@@ -302,6 +307,7 @@ init() ->
             {name, Name},
             {passive_view_shuffle_period, 10000},
             {parallelism, ?PARALLELISM},
+            {membership_binary_compression, 1},
             {membership_strategy, ?DEFAULT_MEMBERSHIP_STRATEGY},
             {partisan_peer_service_manager, PeerService},
             {peer_host, undefined},
@@ -450,6 +456,18 @@ set(channels, Arg) when is_list(Arg) orelse is_map(Arg) ->
 
 set(broadcast_mods, Value) ->
     do_set(broadcast_mods, lists:usort(Value ++ ?BROADCAST_MODS));
+
+set(membership_binary_compression, true) ->
+    do_set(membership_binary_compression, true),
+    do_set('$membership_encoding_opts', [compressed]);
+
+set(membership_binary_compression, N) when is_integer(N), N >= 0, N =< 9 ->
+    do_set(membership_binary_compression, N),
+    do_set('$membership_encoding_opts', [{compressed, N}]);
+
+set(membership_binary_compression, Val) ->
+    do_set(membership_binary_compression, Val),
+    do_set('$membership_encoding_opts', []);
 
 set(Key, Value) ->
     do_set(Key, Value).
@@ -657,7 +675,8 @@ to_channels_map(M) when is_map(M) ->
 init_channel_opts() ->
     #{
         parallelism => get(parallelism, ?PARALLELISM),
-        monotonic => false
+        monotonic => false,
+        compression => false
     }.
 
 

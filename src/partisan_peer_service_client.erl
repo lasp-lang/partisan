@@ -37,6 +37,7 @@
     listen_addr     ::  partisan:listen_addr(),
     channel         ::  partisan:channel(),
     channel_opts    ::  partisan:channel_opts(),
+    encoding_opts   ::  list(),
     from            ::  pid(),
     peer            ::  partisan:node_spec()
 }).
@@ -106,11 +107,22 @@ init([Peer, ListenAddr, Channel, ChannelOpts, From]) ->
             put({?MODULE, peer}, Peer),
             put({?MODULE, egress_delay}, partisan_config:get(egress_delay, 0)),
 
+            EncodeOpts =
+                case maps:get(compression, ChannelOpts, false) of
+                    true ->
+                        [compressed];
+                    N when N >= 0, N =< 9 ->
+                        [{compressed, N}];
+                    _ ->
+                        []
+                end,
+
             State = #state{
                 from = From,
                 listen_addr = ListenAddr,
                 channel = Channel,
                 channel_opts = ChannelOpts,
+                encoding_opts = EncodeOpts,
                 socket = Socket,
                 peer = Peer
             },
@@ -137,7 +149,9 @@ handle_call({send_message, Message}, _From, #state{} = State) ->
             timer:sleep(Other)
     end,
 
-    case partisan_peer_socket:send(State#state.socket, encode(Message)) of
+    Data = partisan_util:encode(Message, State#state.encoding_opts),
+
+    case partisan_peer_socket:send(State#state.socket, Data) of
         ok ->
             ?LOG_TRACE("Dispatched message: ~p", [Message]),
             {reply, ok, State};
@@ -163,7 +177,9 @@ handle_cast({send_message, Message}, #state{} = State) ->
             timer:sleep(Other)
     end,
 
-    case partisan_peer_socket:send(State#state.socket, encode(Message)) of
+    Data = partisan_util:encode(Message, State#state.encoding_opts),
+
+    case partisan_peer_socket:send(State#state.socket, Data) of
         ok ->
             ?LOG_TRACE("Dispatched message: ~p", [Message]),
             ok;
@@ -184,8 +200,11 @@ handle_cast(Event, State) ->
 -spec handle_info(term(), state()) -> {noreply, state()}.
 
 handle_info({Tag, _Socket, Data}, State0) when ?DATA_MSG(Tag) ->
-    ?LOG_TRACE("Received info message at ~p: ~p", [self(), decode(Data)]),
-    handle_message(decode(Data), State0);
+    Msg = binary_to_term(Data),
+
+    ?LOG_TRACE("Received info message at ~p: ~p", [self(), Msg]),
+
+    handle_message(Msg, State0);
 
 handle_info({Tag, _Socket}, #state{} = State) when ?CLOSED_MSG(Tag) ->
     ?LOG_TRACE(
@@ -272,11 +291,6 @@ when is_atom(Channel), is_map(ChannelOpts) ->
 
 
 %% @private
-decode(Message) ->
-    binary_to_term(Message).
-
-
-%% @private
 handle_message({state, Tag, LocalState}, #state{} = State) ->
     #state{
         peer = Peer,
@@ -298,7 +312,7 @@ handle_message({state, Tag, LocalState}, #state{} = State) ->
 
 handle_message({hello, Node}, #state{peer = #{name := Node}} = State) ->
     Socket = State#state.socket,
-    Message = default_encode({hello, partisan:node()}),
+    Message = term_to_binary({hello, partisan:node()}),
 
     case partisan_peer_socket:send(Socket, Message) of
         ok ->
@@ -330,11 +344,3 @@ handle_message(Message, State) ->
     {stop, normal, State}.
 
 
-%% @private
-encode(Message) ->
-    partisan_util:term_to_iolist(Message).
-
-
-%% @private
-default_encode(Message) ->
-    term_to_binary(Message).
