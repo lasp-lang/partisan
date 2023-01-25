@@ -172,10 +172,16 @@ init_per_group(with_causal_labels, Config) ->
     [{causal_labels, [default]}] ++ Config;
 
 init_per_group(with_causal_send, Config) ->
-    [{causal_labels, [default]}, {forward_options, [{causal_label, default}]}] ++ Config;
+    [
+        {causal_labels, [default]},
+        {forward_options, [{causal_label, default}]}
+    ] ++ Config;
 
 init_per_group(with_causal_send_and_ack, Config) ->
-    [{causal_labels, [default]}, {forward_options, [{causal_label, default}, {ack, true}]}] ++ Config;
+    [
+        {causal_labels, [default]},
+        {forward_options, [{causal_label, default}, {ack, true}]}
+    ] ++ Config;
 
 init_per_group(with_forward_delay_interposition, Config) ->
     [{disable_fast_forward, true}] ++ Config;
@@ -210,9 +216,9 @@ end_per_group(_, _Config) ->
 all() ->
     [
      {group, default, [parallel],[
-        {simple, [shuffle]},
-        {hyparview, [shuffle]}
-        %% {hyparview_xbot, [shuffle]}
+        {simple, [shuffle]}
+        ,{hyparview, [shuffle]}
+        %% ,{hyparview_xbot, [shuffle]}
      ]},
 
      %% Full.
@@ -253,7 +259,7 @@ all() ->
 
      {group, with_broadcast, [parallel]},
 
-      %% Channels.
+    %% Channels.
 
      {group, with_channels, [parallel]},
 
@@ -285,20 +291,20 @@ groups() ->
       [
         {group, simple}
         ,{group, hyparview}
-        ,{group, hyparview_xbot}
+        %% ,{group, hyparview_xbot}
       ]},
 
      {simple, [],
       [
+        %% transform_test, % disabled till we fix the test
+        client_server_manager_test,
         basic_test,
         leave_test,
         self_leave_test,
         on_down_test,
         rpc_test,
-        client_server_manager_test,
         pid_test,
         rejoin_test,
-        %% transform_test, % disabled till we fix the test
         otp_test
     ]},
 
@@ -319,15 +325,15 @@ groups() ->
 
      {with_full_membership_strategy, [],
       [connectivity_test,
-       gossip_test]},
+       gossip_demers_direct_mail_test]},
 
      {with_scamp_v1_membership_strategy, [],
       [connectivity_test,
-       gossip_test]},
+       gossip_demers_direct_mail_test]},
 
      {with_scamp_v2_membership_strategy, [],
       [connectivity_test,
-       gossip_test]},
+       gossip_demers_direct_mail_test]},
 
      {with_ack, [],
       [basic_test,
@@ -394,8 +400,8 @@ groups() ->
 
      {with_broadcast, [],
       [
-    %    hyparview_manager_low_active_test,
-       hyparview_manager_high_active_test
+        %% hyparview_manager_low_active_test,
+        hyparview_manager_high_active_test
       ]}
 
     ].
@@ -506,8 +512,7 @@ transform_test(Config) ->
             ct:fail("Never received a response.")
     end,
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
     ok.
 
 causal_test(Config) ->
@@ -594,8 +599,7 @@ causal_test(Config) ->
             ct:fail("Didn't receive message 2!")
     end,
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
@@ -691,8 +695,7 @@ receive_interposition_test(Config) ->
             ct:fail("Didn't receive message we should have!")
     end,
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
@@ -784,8 +787,7 @@ ack_test(Config) ->
     %% Pause for acknowledgement.
     timer:sleep(5000),
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
@@ -880,8 +882,7 @@ forward_interposition_test(Config) ->
             ct:fail("Didn't receive message we should have!")
     end,
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
@@ -938,9 +939,11 @@ pid_test(Config) ->
     receive
         {message, Pid} when is_pid(Pid) ->
             ct:fail("Received incorrect message!");
-        {message, GenSym} = Message ->
+        {message, PartisanRef} = Message ->
             ?LOG_DEBUG("Received correct message: ~p", [Message]),
-            ok = rpc:call(Node4, Manager, forward_message, [GenSym, Message]),
+            ok = rpc:call(
+                Node4, Manager, forward_message, [PartisanRef, Message]
+            ),
             ok
     after
         1000 ->
@@ -956,8 +959,7 @@ pid_test(Config) ->
             ct:fail("Didn't receive respoonse.")
     end,
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
@@ -988,8 +990,7 @@ rpc_test(Config) ->
     ct:pal("Issuing RPC to remote node: ~p", [Node4]),
     {_, _, _} = rpc:call(Node3, partisan_rpc, call, [Node4, erlang, now, [], infinity]),
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
@@ -1036,8 +1037,7 @@ on_down_test(Config) ->
             ct:fail("Didn't receive down callback.")
     end,
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
@@ -1115,8 +1115,7 @@ rejoin_test(Config) ->
                                 end
                         end, Nodes),
 
-            %% Stop nodes.
-            ?SUPPORT:stop(Nodes);
+            ok;
 
         _ ->
             ok
@@ -1147,8 +1146,7 @@ self_leave_test(Config) ->
             ct:pal("Verifying leave for ~p", [NodeToLeave]),
             verify_leave(NodeToLeave, Nodes, Manager),
 
-            %% Stop nodes.
-            ?SUPPORT:stop(Nodes);
+            ok;
 
         _ ->
             ok
@@ -1169,19 +1167,20 @@ leave_test(Config) ->
             Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
 
             %% Start nodes.
-            Nodes = ?SUPPORT:start(leave_test, Config,
-                        [{partisan_peer_service_manager, Manager},
-                        {servers, Servers},
-                        {clients, Clients}]),
+            Nodes = ?SUPPORT:start(
+                leave_test, Config,
+                [{partisan_peer_service_manager, Manager},
+                {servers, Servers},
+                {clients, Clients}]
+            ),
 
-                ?PUT_NODES(Nodes),
+            ?PUT_NODES(Nodes),
 
             NodeToLeave = lists:nth(length(Nodes), Nodes),
             ct:pal("Verifying leave for ~p", [NodeToLeave]),
             verify_leave(NodeToLeave, Nodes, Manager),
 
-            %% Stop nodes.
-            ?SUPPORT:stop(Nodes);
+            ok;
 
         _ ->
             ok
@@ -1294,12 +1293,11 @@ performance_test(Config) ->
 
     ct:pal("Time: ~p", [Time]),
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
-gossip_test(Config) ->
+gossip_demers_direct_mail_test(Config) ->
     %% Use the default peer service manager.
     Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
@@ -1320,13 +1318,17 @@ gossip_test(Config) ->
     end,
 
     %% Start nodes.
-    Nodes = ?SUPPORT:start(gossip_test, Config,
-                  [{partisan_peer_service_manager, Manager},
-                   {servers, Servers},
-                   {clients, Clients}]),
+    Nodes = ?SUPPORT:start(
+        gossip_demers_direct_mail_test,
+        Config,
+        [
+            {partisan_peer_service_manager, Manager},
+            {servers, Servers},
+            {clients, Clients}
+        ]
+    ),
 
     ?PUT_NODES(Nodes),
-
     ?PAUSE_FOR_CLUSTERING,
 
     %% Verify forward message functionality.
@@ -1388,9 +1390,6 @@ gossip_test(Config) ->
             ct:fail("Didn't receive message!")
     end,
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
-
     ok.
 
 connectivity_test(Config) ->
@@ -1436,8 +1435,7 @@ connectivity_test(Config) ->
                     ok = check_forward_message(Node, Manager, Nodes)
                   end, Nodes),
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
@@ -1547,8 +1545,7 @@ otp_test(Config) ->
             ct:fail({error, no_message})
     end,
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
@@ -1622,8 +1619,7 @@ forward_delay_interposition_test(Config) ->
             ok
     end,
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
@@ -1757,8 +1753,7 @@ basic_test(Config) ->
         Nodes
     ),
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
@@ -1824,8 +1819,7 @@ client_server_manager_test(Config) ->
                     ok = check_forward_message(Node, Manager, Nodes)
                   end, Nodes),
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
@@ -1945,8 +1939,7 @@ hyparview_manager_partition_test(Config) ->
                     [KilledNode, FailedNodes])
     end,
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
@@ -2021,8 +2014,7 @@ hyparview_manager_high_active_test(Config) ->
                     [KilledNode, FailedNodes])
     end,
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
@@ -2097,8 +2089,7 @@ hyparview_manager_low_active_test(Config) ->
                     [KilledNode, FailedNodes])
     end,
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
@@ -2171,8 +2162,7 @@ hyparview_manager_high_client_test(Config) ->
                     [KilledNode, FailedNodes])
     end,
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
@@ -2208,12 +2198,13 @@ make_certs(Config) ->
        {verify, verify_none}
       ]}].
 
+
 %% @private
 check_forward_message(Node, Manager, Nodes) ->
     Members = ideally_connected_members(Node, Nodes),
 
     ForwardOptions = rpc:call(
-        Node, partisan_config, get, [forward_options, []]
+        Node, partisan_config, get, [forward_options, #{}]
     ),
 
     ct:pal("Using forward options: ~p", [ForwardOptions]),
@@ -2693,8 +2684,7 @@ hyparview_xbot_manager_high_active_test(Config) ->
                     [KilledNode, FailedNodes])
     end,
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
@@ -2771,8 +2761,7 @@ hyparview_xbot_manager_low_active_test(Config) ->
                     [KilledNode, FailedNodes])
     end,
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
@@ -2845,8 +2834,7 @@ hyparview_xbot_manager_high_client_test(Config) ->
                     [KilledNode, FailedNodes])
     end,
 
-    %% Stop nodes.
-    %% ?SUPPORT:stop(Nodes),
+
 
     ok.
 
