@@ -473,21 +473,21 @@ cluster({_, Node}, {_, OtherNode}, Config) ->
 
 %% @private
 stop(Nodes) ->
-    StopFun = fun({Name, _Node}) ->
-        case ?CT_PEER:stop(Name) of
+    StopFun = fun({_, Node}) ->
+        case ?CT_PEER:stop(Node) of
             {ok, _} ->
                 ok;
             {error, stop_timeout, _} ->
-                debug("Failed to stop node ~p: stop_timeout!", [Name]),
-                stop(Nodes),
+                debug("Failed to stop node ~p: stop_timeout!", [Node]),
                 ok;
             {error, not_started, _} ->
                 ok;
             Error ->
-                ct:fail(Error)
+                ct:pal("Error while stopping CT_PEER ~p", [Error])
         end
     end,
-    lists:map(StopFun, Nodes),
+
+    _ = catch lists:foreach(StopFun, Nodes),
     ok.
 
 %% @private
