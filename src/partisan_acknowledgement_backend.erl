@@ -65,7 +65,7 @@ outstanding() ->
 %% @private
 init([]) ->
     Storage = ets:new(?MODULE, [named_table]),
-    logger:set_process_metadata(#{node => node()}),
+    logger:set_process_metadata(#{node => partisan:node()}),
     {ok, #state{storage=Storage}}.
 
 %% @private

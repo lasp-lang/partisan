@@ -72,7 +72,7 @@ send_to_pid(Pid, Message) when is_pid(Pid) ->
 send_to_pid(Ref, Message) ->
     Node = partisan_remote_ref:node(Ref),
 
-    case Node == node() of
+    case Node == partisan:node() of
         true ->
             {encoded_pid, List} = partisan_remote_ref:target(Ref),
             send_to_pid(list_to_pid(List), Message);

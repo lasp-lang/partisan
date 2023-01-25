@@ -113,6 +113,9 @@
 -export([is_identical/2]).
 -export([is_local/1]).
 -export([is_local/2]).
+-export([is_local_name/1]).
+-export([is_local_pid/1]).
+-export([is_local_reference/1]).
 -export([is_name/1]).
 -export([is_name/2]).
 -export([is_pid/1]).
@@ -250,8 +253,56 @@ is_local(<<"partisan:name:", Rest/binary>>) ->
 is_local({partisan_remote_ref, Node, _}) ->
     Node =:= partisan:node();
 
-is_local(_) ->
-    error(badarg).
+is_local(Arg) ->
+    error({badarg, Arg}).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_local_pid(Ref :: t()) -> boolean() | no_return().
+
+is_local_pid(<<"partisan:pid:", Rest/binary>>) ->
+    do_is_local(Rest);
+
+is_local_pid({partisan_remote_ref, Node, {encoded_pid, _}}) ->
+    Node =:= partisan:node();
+
+is_local_pid(_) ->
+    false.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_local_reference(Ref :: t()) -> boolean() | no_return().
+
+is_local_reference(<<"partisan:ref:", Rest/binary>>) ->
+    do_is_local(Rest);
+
+is_local_reference({partisan_remote_ref, Node, {encoded_ref, _}}) ->
+    Node =:= partisan:node();
+
+is_local_reference(_) ->
+    false.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_local_name(Ref :: t()) -> boolean() | no_return().
+
+is_local_name(<<"partisan:name:", Rest/binary>>) ->
+    do_is_local(Rest);
+
+is_local_name({partisan_remote_ref, Node, {encoded_name, _}}) ->
+    Node =:= partisan:node();
+
+is_local_name(_) ->
+    false.
 
 
 %% -----------------------------------------------------------------------------

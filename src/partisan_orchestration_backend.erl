@@ -314,7 +314,7 @@ handle_info(?ARTIFACT_MESSAGE, State) ->
     Nodes = members_for_orchestration(),
 
     %% Store membership.
-    Node = prefix(atom_to_list(node())),
+    Node = prefix(atom_to_list(partisan:node())),
     Payload = term_to_binary({partisan:node_spec(), Nodes}),
 
     ?LOG_TRACE("Uploading membership for node ~p: ~p", [Node, Nodes]),
@@ -363,7 +363,7 @@ handle_info(?BUILD_GRAPH_MESSAGE, #orchestration_strategy_state{
     Graph = digraph:new(),
     Orphaned = populate_graph(State, Nodes, Graph),
 
-    {SymmetricViews, VisitedNames} = breadth_first(node(), Graph, ordsets:new()),
+    {SymmetricViews, VisitedNames} = breadth_first(partisan:node(), Graph, ordsets:new()),
     AllNodesVisited = length(Nodes) == length(VisitedNames),
 
     Connected = SymmetricViews andalso AllNodesVisited,
@@ -379,7 +379,7 @@ handle_info(?BUILD_GRAPH_MESSAGE, #orchestration_strategy_state{
                 membership => ServerMembership,
                 member_count => length(ServerMembership),
                 visited_count => length(VisitedNames),
-                node => node(),
+                node => partisan:node(),
                 visited => VisitedNames
             }),
             ok
@@ -431,7 +431,7 @@ maybe_connect(PeerService, Nodes, SeenNodes) ->
     %% migrated to a passive view of the membership.
     %% If the node is isolated always try to connect.
     Membership0 = members_for_orchestration(),
-    Membership1 = Membership0 -- [node()],
+    Membership1 = Membership0 -- [partisan:node()],
     Isolated = length(Membership1) == 0,
 
     ToConnect = case Isolated of

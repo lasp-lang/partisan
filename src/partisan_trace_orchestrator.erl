@@ -112,7 +112,7 @@ perform_preloads(Nodes) ->
 %% @private
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
-    debug("test orchestrator started on node: ~p", [node()]),
+    debug("test orchestrator started on node: ~p", [partisan:node()]),
     State = initialize_state(),
     {ok, State}.
 
@@ -579,25 +579,25 @@ preload_omissions(Nodes) ->
                                     OriginNode ->
                                         case M of
                                             MessagePayload ->
-                                                ?LOG_INFO("~p: dropping packet from ~p to ~p due to preload interposition.", [node(), TracingNode, OriginNode]),
+                                                ?LOG_INFO("~p: dropping packet from ~p to ~p due to preload interposition.", [partisan:node(), TracingNode, OriginNode]),
 
                                                 case partisan_config:get(fauled_for_background) of
                                                     true ->
                                                         ok;
                                                     _ ->
-                                                        ?LOG_INFO("~p: setting node ~p to faulted due to preload interposition hit on message: ~p", [node(), TracingNode, Message]),
+                                                        ?LOG_INFO("~p: setting node ~p to faulted due to preload interposition hit on message: ~p", [partisan:node(), TracingNode, Message]),
                                                         partisan_config:set(fauled_for_background, true)
                                                 end,
 
                                                 undefined;
                                             Other ->
-                                                ?LOG_INFO("~p: allowing message, doesn't match interposition payload while node matches", [node()]),
-                                                ?LOG_INFO("~p: => expecting: ~p", [node(), MessagePayload]),
-                                                ?LOG_INFO("~p: => got: ~p", [node(), Other]),
+                                                ?LOG_INFO("~p: allowing message, doesn't match interposition payload while node matches", [partisan:node()]),
+                                                ?LOG_INFO("~p: => expecting: ~p", [partisan:node(), MessagePayload]),
+                                                ?LOG_INFO("~p: => got: ~p", [partisan:node(), Other]),
                                                 M
                                         end;
                                     OtherNode ->
-                                        ?LOG_INFO("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), TracingNode, OtherNode]),
+                                        ?LOG_INFO("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [partisan:node(), TracingNode, OtherNode]),
                                         M
                                 end;
                             ({receive_message, _N, M}) ->
@@ -628,7 +628,7 @@ preload_omissions(Nodes) ->
                         undefined ->
                             undefined;
                         _ ->
-                            replay_debug("~p: faulted during forward_message of background message, message ~p should be dropped.", [node(), M]),
+                            replay_debug("~p: faulted during forward_message of background message, message ~p should be dropped.", [partisan:node(), M]),
                             undefined
                     end;
                 _ ->
@@ -641,7 +641,7 @@ preload_omissions(Nodes) ->
                             undefined ->
                                 undefined;
                             _ ->
-                                replay_debug("~p: faulted during receive_message of background message, message ~p should be dropped.", [node(), M]),
+                                replay_debug("~p: faulted during receive_message of background message, message ~p should be dropped.", [partisan:node(), M]),
                                 undefined
                         end;
                     _ ->
@@ -657,7 +657,7 @@ preload_omissions(Nodes) ->
     %% Install faulted_for_background tracing interposition function.
     lists:foreach(fun({_, Node}) ->
         InterpositionFun = fun({forward_message, _N, M}) ->
-            replay_debug("~p: interposition called for message: ~p", [node(), M]),
+            replay_debug("~p: interposition called for message: ~p", [partisan:node(), M]),
 
             case partisan_config:get(faulted_for_background) of
                 true ->
@@ -669,10 +669,10 @@ preload_omissions(Nodes) ->
 
                             case lists:member(element(2, MessageType), BackgroundAnnotations) of
                                 true ->
-                                    ?LOG_INFO("~p: faulted_for_background during forward_message of background message, message ~p should be dropped.", [node(), M]),
+                                    ?LOG_INFO("~p: faulted_for_background during forward_message of background message, message ~p should be dropped.", [partisan:node(), M]),
                                     undefined;
                                 false ->
-                                    ?LOG_INFO("~p: faulted_for_background, but forward_message payload is not background message: ~p, message_type: ~p", [node(), M, MessageType]),
+                                    ?LOG_INFO("~p: faulted_for_background, but forward_message payload is not background message: ~p, message_type: ~p", [partisan:node(), M, MessageType]),
                                     M
                             end
                     end;
@@ -690,10 +690,10 @@ preload_omissions(Nodes) ->
 
                                 case lists:member(element(2, MessageType), BackgroundAnnotations) of
                                     true ->
-                                        ?LOG_INFO("~p: faulted_for_background during receive_message of background message, message ~p should be dropped.", [node(), M]),
+                                        ?LOG_INFO("~p: faulted_for_background during receive_message of background message, message ~p should be dropped.", [partisan:node(), M]),
                                         undefined;
                                     false ->
-                                        ?LOG_INFO("~p: faulted_for_background, but receive_message payload is not background message: ~p, message_type: ~p", [node(), M, MessageType]),
+                                        ?LOG_INFO("~p: faulted_for_background, but receive_message payload is not background message: ~p, message_type: ~p", [partisan:node(), M, MessageType]),
                                         M
                                 end
                         end;

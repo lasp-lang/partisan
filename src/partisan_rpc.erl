@@ -63,7 +63,7 @@ call(Node, Module, Function, Arguments) ->
     Timeout :: timeout()) -> Reply :: any() | {badrpc, error_reason()}.
 
 call(Node, Module, Function, Arguments, Timeout) ->
-    Self = self(),
+    Self = partisan:self(),
     MyNode = partisan:node(),
     Opts = prepare_opts(partisan_config:get(forward_options, [])),
     Msg = {call, Module, Function, Arguments, Timeout, {origin, MyNode, Self}},

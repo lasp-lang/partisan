@@ -45,7 +45,9 @@ upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Payload) ->
     Myself = partisan:node_spec(),
     MyselfPayload = term_to_binary(Myself),
     Tag = partisan_config:get(tag, client),
-    TaggedNode = prefix(atom_to_list(Tag) ++ "/" ++ atom_to_list(node())),
+    TaggedNode = prefix(
+        atom_to_list(Tag) ++ "/" ++ atom_to_list(partisan:node())
+    ),
     {ok, <<"OK">>} = eredis:q(Eredis, ["SET", TaggedNode, MyselfPayload]),
 
     ?LOG_TRACE(#{
