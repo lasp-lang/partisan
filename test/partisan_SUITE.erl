@@ -282,21 +282,22 @@ all() ->
 groups() ->
     [
      {default, [],
-      [{group, simple},
-       {group, hyparview}
-       %% {group, hyparview_xbot}
+      [
+        {group, simple}
+        ,{group, hyparview}
+        ,{group, hyparview_xbot}
       ]},
 
      {simple, [],
       [
-        %% basic_test,
-        %% leave_test,
-        %% self_leave_test,
-        %% on_down_test,
-        %% rpc_test,
-        %% client_server_manager_test,
-        %% pid_test,
-        %% rejoin_test,
+        basic_test,
+        leave_test,
+        self_leave_test,
+        on_down_test,
+        rpc_test,
+        client_server_manager_test,
+        pid_test,
+        rejoin_test,
         %% transform_test, % disabled till we fix the test
         otp_test
     ]},
@@ -319,7 +320,6 @@ groups() ->
      {with_full_membership_strategy, [],
       [connectivity_test,
        gossip_test]},
-
      {with_scamp_v1_membership_strategy, [],
       [connectivity_test,
        gossip_test]},
