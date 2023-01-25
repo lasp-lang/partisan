@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(partisan_plumtree_broadcast).
 
--behaviour(gen_server).
+-behaviour(partisan_gen_server).
 
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
@@ -135,8 +135,9 @@
 
 %% -----------------------------------------------------------------------------
 %% @doc Starts the broadcast server on this node. The initial membership list is
-%% fetched from the ring. If the node is a singleton then the initial eager and
-%% lazy sets are empty. If there are two nodes, each will be in the others
+%% fetched from the peer service.
+%% If the node is a singleton then the initial eager and lazy sets are empty.
+%% If there are two nodes, each will be in the others
 %% eager set and the lazy sets will be empty. When number of members is less
 %% than 5, each node will initially have one other node in its eager set and
 %% lazy set. If there are more than five nodes each node will have at most two
@@ -216,7 +217,7 @@ start_link(InitMembers, InitEagers, InitLazys, Mods, Opts) when is_map(Opts) ->
     StartOpts = [
         {spawn_opt, ?PARALLEL_SIGNAL_OPTIMISATION([])}
     ],
-    gen_server:start_link({local, ?SERVER}, ?MODULE, Args, StartOpts).
+    partisan_gen_server:start_link({local, ?SERVER}, ?MODULE, Args, StartOpts).
 
 
 %% -----------------------------------------------------------------------------
@@ -235,7 +236,7 @@ start_link(InitMembers, InitEagers, InitLazys, Mods, Opts) when is_map(Opts) ->
 
 broadcast(Broadcast, Mod) ->
     {MessageId, Payload} = Mod:broadcast_data(Broadcast),
-    gen_server:cast(?SERVER, {broadcast, MessageId, Payload, Mod}).
+    partisan_gen_server:cast(?SERVER, {broadcast, MessageId, Payload, Mod}).
 
 
 %% -----------------------------------------------------------------------------
@@ -266,7 +267,7 @@ broadcast_channel(Mod) ->
 
 update(LocalState0) ->
     LocalState = partisan_peer_service:decode(LocalState0),
-    gen_server:cast(?SERVER, {update, LocalState}).
+    partisan_gen_server:cast(?SERVER, {update, LocalState}).
 
 
 %% -----------------------------------------------------------------------------
@@ -288,7 +289,7 @@ broadcast_members() ->
 -spec broadcast_members(infinity | pos_integer()) -> nodeset().
 
 broadcast_members(Timeout) ->
-    gen_server:call(?SERVER, broadcast_members, Timeout).
+    partisan_gen_server:call(?SERVER, broadcast_members, Timeout).
 
 
 %% -----------------------------------------------------------------------------
@@ -309,7 +310,7 @@ exchanges() ->
 -spec exchanges(node()) -> partisan_plumtree_broadcast:exchanges().
 
 exchanges(Node) ->
-    gen_server:call({?SERVER, Node}, exchanges, infinity).
+    partisan_gen_server:call({?SERVER, Node}, exchanges, infinity).
 
 
 %% -----------------------------------------------------------------------------
@@ -319,7 +320,7 @@ exchanges(Node) ->
 -spec cancel_exchanges(selector()) -> exchanges().
 
 cancel_exchanges(Selector) ->
-    gen_server:call(?SERVER, {cancel_exchanges, Selector}, infinity).
+    partisan_gen_server:call(?SERVER, {cancel_exchanges, Selector}, infinity).
 
 
 %% =============================================================================
@@ -531,7 +532,7 @@ debug_get_peers(Node, Root) ->
     {nodeset(), nodeset()}.
 
 debug_get_peers(Node, Root, Timeout) ->
-    gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
+    partisan_gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
 
 
 %% @doc return peers for all `Nodes' for tree rooted at `Root'
