@@ -30,7 +30,15 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 
+-if(?OTP_RELEASE >= 25).
+    %% already defined by OTP
+-else.
+    -define(CT_PEER, ct_slave).
+-endif.
+
 -compile([nowarn_export_all, export_all]).
+
+
 
 %% @private
 start(Case, Config, Options) ->
@@ -67,12 +75,19 @@ start(Case, Config, Options) ->
         NodeConfig = [
             {boot_timeout, 10}, % seconds
             {monitor_master, true},
+            {kill_if_fail, true},
             {startup_functions, [
-                {code, set_path, [codepath()]}
+                {code, set_path, [codepath()]},
+                {logger, set_handler_config, [
+                    default, config, #{file => "log/ct_console.log"}
+                ]},
+                {logger, set_handler_config, [
+                    default, formatter, {logger_formatter, #{}}
+                ]}
             ]}
         ],
 
-        case ct_slave:start(Name, NodeConfig) of
+        case ?CT_PEER:start(Name, NodeConfig) of
             {ok, Node} ->
                 {Name, Node};
             Error ->
@@ -96,10 +111,10 @@ start(Case, Config, Options) ->
             [partisan_peer_service_manager, PeerService]
         ),
 
-        %%  ok = rpc:call(
-        %%     Node, application, set_env,
-        %%     [partisan, hyparview, ?HYPARVIEW_DEFAULTS]
-        %% ),
+         ok = rpc:call(
+            Node, application, set_env,
+            [partisan, hyparview, ?HYPARVIEW_DEFAULTS]
+        ),
 
         ok = rpc:call(
             Node, application, set_env, [partisan, peer_ip, ?PEER_IP]
@@ -319,9 +334,6 @@ start(Case, Config, Options) ->
     LoaderFun = fun({_Name, Node} = NameNode) ->
         debug("Loading applications on node: ~p", [Node]),
 
-        PrivDir = code:priv_dir(?APP),
-        NodeDir = filename:join([PrivDir, "logger", Node]),
-
         %% Manually force sasl loading, and disable the logger.
         ok = rpc:call(Node, application, load, [sasl]),
         ok = rpc:call(
@@ -329,19 +341,6 @@ start(Case, Config, Options) ->
             [sasl, sasl_error_logger, false]
         ),
         ok = rpc:call(Node, application, start, [sasl]),
-
-        LoggerConf = [
-            {handler, default, logger_std_h,
-            #{config => #{
-                file => filename:join(NodeDir, "log/partisan.log"),
-                max_no_files => 4,
-                max_no_bytes => 1048576
-            }}}
-        ],
-        ok = rpc:call(
-            Node, application, set_env,
-            [kernel, logger, LoggerConf]
-        ),
 
         ok = rpc:call(
             Node, application, set_env,
@@ -475,7 +474,7 @@ cluster({_, Node}, {_, OtherNode}, Config) ->
 %% @private
 stop(Nodes) ->
     StopFun = fun({Name, _Node}) ->
-        case ct_slave:stop(Name) of
+        case ?CT_PEER:stop(Name) of
             {ok, _} ->
                 ok;
             {error, stop_timeout, _} ->
