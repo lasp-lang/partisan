@@ -19,6 +19,7 @@
 %% -------------------------------------------------------------------
 
 -module(demers_direct_mail).
+-behaviour(partisan_gen_server).
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
@@ -46,19 +47,19 @@
 %%%===================================================================
 
 start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+    partisan_gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 stop() ->
-    gen_server:stop(?MODULE).
+    partisan_gen_server:stop(?MODULE).
 
 %% @doc Broadcast.
 broadcast(ServerRef, Message) ->
-    gen_server:cast(?MODULE, {broadcast, ServerRef, Message}).
+    partisan_gen_server:cast(?MODULE, {broadcast, ServerRef, Message}).
 
 %% @doc Membership update.
 update(LocalState0) ->
     LocalState = partisan_peer_service:decode(LocalState0),
-    gen_server:cast(?MODULE, {update, LocalState}).
+    partisan_gen_server:cast(?MODULE, {update, LocalState}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -99,20 +100,28 @@ handle_cast({broadcast, ServerRef, Message}, #state{next_id=NextId, membership=M
     true = ets:insert(?MODULE, {Id, Message}),
 
     %% Forward message.
-    lists:foreach(fun(N) ->
-        ?LOG_INFO("~p: sending broadcast message to node ~p: ~p", [node(), N, Message]),
-        partisan:forward_message(
-            N,
-            ?MODULE,
-            {broadcast, Id, ServerRef, Message},
-            #{channel => ?DEFAULT_CHANNEL}
-        )
-    end, membership(Membership) -- [MyNode]),
+    lists:foreach(
+        fun(N) ->
+            ?LOG_INFO(
+                "~p: sending broadcast message to node ~p: ~p",
+                [node(), N, Message]
+            ),
+            partisan:forward_message(
+                N,
+                ?MODULE,
+                {broadcast, Id, ServerRef, Message},
+                #{channel => ?DEFAULT_CHANNEL}
+            )
+        end,
+        membership(Membership) -- [MyNode]
+    ),
 
     {noreply, State#state{next_id=NextId + 1}};
+
 handle_cast({update, Membership0}, State) ->
     Membership = membership(Membership0),
     {noreply, State#state{membership=Membership}};
+
 handle_cast(Msg, State) ->
     ?LOG_WARNING("Unhandled cast messages at module ~p: ~p", [?MODULE, Msg]),
     {noreply, State}.
