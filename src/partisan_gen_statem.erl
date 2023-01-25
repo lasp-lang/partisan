@@ -23,6 +23,20 @@
 %% It replaces all instances of `erlang:send/2' and `erlang:monitor/2' with
 %% their Partisan counterparts.
 %%
+%% It maintains the `gen_statem' API with the following exceptions:
+%%
+%% <ul>
+%% <li>`call/3` - overrides the 3rd to accept not only a timeout value but also
+%% a list of options containing any of the following: `{timeout, timeout()}' |
+%% `{channel, partisan:channel()}'.</li>
+%% <li>`cast/3` - identical to `cast/2' with the 3th argument is a list of
+%% options containing any of the following: `{channel,
+%% partisan:channel()}'.</li>
+%% <li>`send_request/4` - identical to `send_request/3' with the 4th argument
+%% is a list of options containing any of the following: `{channel,
+%% partisan:channel()}'.</li>
+%% </ul>
+%%
 %% <blockquote class="warning">
 %% <h4 class="warning">NOTICE</h4>
 %% <p>At the moment this only works for
@@ -35,6 +49,11 @@
 
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
+
+
+%% PARTISAN EXTENSIONS
+-export([cast/3]).
+-export([send_request/3]).
 
 %%%
 %%% NOTE: If init_ack() return values are modified, see comment
@@ -591,6 +610,16 @@ cast({Name,Node} = ServerRef, Msg) when is_atom(Name), is_atom(Node) ->
 cast({partisan_remote_ref, _, _} = Dest, Msg) ->
     send(Dest, wrap_cast(Msg)).
 
+%% Partisan addition
+cast(ServerRef, Request, Opts) ->
+    %% Set opts will set the default channel is non is defined, so there is no
+    %% need to cleanup the calling process dict.
+    %% We do this to avoid changing this code too much, but we might need to do
+    %% it in the end.
+    partisan_gen:set_opts(Opts),
+    cast(ServerRef, Request).
+
+
 %% Call a state machine (synchronous; a reply is expected) that
 %% arrives with type {call,From}
 -spec call(ServerRef :: server_ref(), Request :: term()) -> Reply :: term().
@@ -603,8 +632,15 @@ call(ServerRef, Request) ->
 	Timeout ::
 	  timeout() |
 	  {'clean_timeout',T :: timeout()} |
-	  {'dirty_timeout',T :: timeout()}) ->
-		  Reply :: term().
+	  {'dirty_timeout',T :: timeout()} |
+      %% Partisan addition
+      [
+        {timeout, timeout()} |
+        {'clean_timeout',T :: timeout()} |
+        {'dirty_timeout',T :: timeout()} |
+        {any(), term()}
+      ]
+    ) ->Reply :: term().
 call(ServerRef, Request, infinity = T = Timeout) ->
     call_dirty(ServerRef, Request, Timeout, T);
 call(ServerRef, Request, {dirty_timeout, T} = Timeout) ->
@@ -613,13 +649,38 @@ call(ServerRef, Request, {clean_timeout, T} = Timeout) ->
     call_clean(ServerRef, Request, Timeout, T);
 call(ServerRef, Request, {_, _} = Timeout) ->
     erlang:error(badarg, [ServerRef,Request,Timeout]);
+%% Partisan addition
+call(ServerRef, Request, Opts) when is_list(Opts) ->
+    Timeout = get_timeout(Opts),
+    partisan_gen:set_opts(Opts),
+    call(ServerRef, Request, Timeout);
 call(ServerRef, Request, Timeout) ->
     call_clean(ServerRef, Request, Timeout, Timeout).
+
+
+get_timeout([{timeout, infinity = Val}|_]) ->
+    Val;
+get_timeout([{dirty_timeout, _} = Val|_]) ->
+    Val;
+get_timeout([{clean_timeout, _} = Val|_]) ->
+    Val;
+get_timeout([{_, _}|T]) ->
+    get_timeout(T);
+
+get_timeout([]) ->
+    infinity.
+
 
 -spec send_request(ServerRef::server_ref(), Request::term()) ->
         RequestId::request_id().
 send_request(Name, Request) ->
     partisan_gen:send_request(Name, '$gen_call', Request).
+
+%% Partisan addition
+-spec send_request(Name::server_ref(), Request::term(), Opts :: list()) -> RequestId::request_id().
+send_request(Name, Request, Opts) ->
+    partisan_gen:send_request(Name, '$gen_call', Request, Opts).
+
 
 -spec wait_response(RequestId::request_id()) ->
         {reply, Reply::term()} | {error, {term(), server_ref()}}.
@@ -744,6 +805,8 @@ do_call_clean(ServerRef, Request, Timeout, T) ->
     %% Probably in OTP 26.
     Ref = partisan:make_ref(),
     Self = self(),
+    Opts = partisan_gen:get_opts(),
+
     Pid = spawn(
             fun () ->
                     Self !
@@ -755,7 +818,7 @@ do_call_clean(ServerRef, Request, Timeout, T) ->
                                 {Ref,Class,Reason,Stacktrace}
                         end
             end),
-    Mref = partisan:monitor(process, Pid),
+    Mref = partisan:monitor(process, Pid, Opts),
     receive
         {Ref,Result} ->
             partisan:demonitor(Mref, [flush]),
@@ -796,9 +859,7 @@ send(Dest, Msg) ->
         _ ->
             {partisan:node(), Dest}
     end,
-    partisan:forward_message(
-        Node, Process, Msg, #{channel => partisan_gen:get_channel()}
-    ).
+    partisan:forward_message(Node, Process, Msg, partisan_gen:get_opts()).
 
 
 %% Here the init_it/6 and enter_loop/5,6,7 functions converge

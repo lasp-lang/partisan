@@ -25,6 +25,17 @@
 %% It replaces all instances of `erlang:send/2` and `erlang:monitor/2` with
 %% their Partisan counterparts.
 %%
+%% It maintains the `gen' API with the following exceptions:
+%%
+%% <ul>
+%% <li>`call/3` - the 3th argument accepts a timeout value but also a list of
+%% options containing any of the following: `{timeout, timeout()}' | `{channel,
+%% partisan:channel()}'.</li>
+%% <li>`send_request/4` - the 4th argument is a list of
+%% options containing any of the following: `{channel,
+%% partisan:channel()}'.</li>
+%% </ul>
+%%
 %% <strong>NOTICE:</strong>
 %% At the moment this only works for `partisan_pluggable_peer_service_manager'.
 %% @end
@@ -34,6 +45,12 @@
 -include("partisan_logger.hrl").
 
 % -compile({inline,[get_node/1]}).
+
+%% PARTISAN EXTENSIONS
+-export([send_request/4]).
+-export([erase_opts/0]).
+-export([get_opts/0]).
+-export([set_opts/1]).
 
 
 %%%-----------------------------------------------------------------
@@ -52,8 +69,6 @@
 -export([init_it/6, init_it/7]).
 
 -export([format_status_header/2]).
-
--export([get_opts/0]).
 
 -define(default_timeout, 5000).
 
@@ -237,14 +252,31 @@ init_it2(GenMod, Starter, Parent, Name, Mod, Args, Options) ->
 call(Process, Label, Request) ->
     call(Process, Label, Request, ?default_timeout).
 
+%% Partisan extension
+call(Process, Label, Request, Opts0) when is_list(Opts0) ->
+    case lists:keytake(timeout, 1, Opts0) of
+        {value, {timeout, Timeout}, Opts} ->
+            set_opts(Opts),
+            call(Process, Label, Request, Timeout);
+        false ->
+            set_opts(Opts0),
+            call(Process, Label, Request, ?default_timeout)
+    end;
 %% Optimize a common case.
 call(Process, Label, Request, Timeout) when is_pid(Process),
   Timeout =:= infinity orelse is_integer(Timeout) andalso Timeout >= 0 ->
     do_call(Process, Label, Request, Timeout);
 call(Process, Label, Request, Timeout)
   when Timeout =:= infinity; is_integer(Timeout), Timeout >= 0 ->
-    Fun = fun(Arg) -> do_call(Arg, Label, Request, Timeout) end,
-    do_for_proc(Process, Fun).
+    case partisan_remote_ref:is_local_pid(Process) of
+        true ->
+            %% Optimisation
+            Pid = partisan_remote_ref:to_term(Process),
+            do_call(Pid, Label, Request, Timeout);
+        false ->
+            Fun = fun(Arg) -> do_call(Arg, Label, Request, Timeout) end,
+            do_for_proc(Process, Fun)
+    end.
 
 -dialyzer({no_improper_lists, do_call/4}).
 
@@ -334,6 +366,13 @@ send_request(Process, Label, Request) ->
             self() ! {'DOWN', Ref, process, Process, Reason},
             Ref
     end.
+
+%% Partisan addition
+
+-spec send_request(Name::server_ref(), Label::term(), Request::term(), Opts :: list()) -> request_id().
+send_request(Process, Label, Request, Opts) ->
+    set_opts(Opts),
+    send_request(Process, Label, Request).
 
 % -dialyzer({no_improper_lists, do_send_request/3}).
 
@@ -617,33 +656,40 @@ format_status_header(TagLine, Name) ->
     {TagLine, Name}.
 
 
-%% =============================================================================
-%% PARTISAN API
-%% =============================================================================
 
+
+
+
+%% =============================================================================
+%% PARTISAN PUBLIC
+%% =============================================================================
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Returns opts from the process dictionary.
-%% The returned map is guaranteed to have a value for key `channel'.
+%% @doc Returns opts from the calling process' dictionary.
+%% The returned list is guaranteed to have a value for key `channel'.
 %% @end
 %% -----------------------------------------------------------------------------
+-spec get_opts() -> [{atom(), any()}].
+
 get_opts() ->
-    erlang:get(partisan_gen_opts).
-
-
-
-%% =============================================================================
-%% PARTISAN PRIVATE
-%% =============================================================================
+    case erlang:get(partisan_gen_opts) of
+        undefined ->
+            Channel = partisan_config:default_channel(),
+            [{channel, Channel}];
+        Opts ->
+            Opts
+    end.
 
 
 
 %% -----------------------------------------------------------------------------
-%% @private
-%% @doc We set the options in the process dict
+%% @doc Set partisan options in the process dictionary of the calling process. These options are used by the partisan OTP behaviour either to set the options during init or when sending a request to a process implementing the behaviours.
+%% This library uses these approach to
 %% @end
 %% -----------------------------------------------------------------------------
+-spec set_opts([{atom(), any()}]) -> ok.
+
 set_opts(Options) when is_list(Options) ->
     PartisanOpts =
         case lists:keyfind(channel, 1, Options) of
@@ -657,11 +703,37 @@ set_opts(Options) when is_list(Options) ->
     ok.
 
 
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec erase_opts() -> ok.
+
+erase_opts() ->
+    _ = erlang:erase(partisan_gen_opts),
+    ok.
+
+
+
+%% =============================================================================
+%% PARTISAN PRIVATE
+%% =============================================================================
+
+
+
 %% @private
 do_send_request(Process, Label, Request)
 when is_pid(Process) orelse is_atom(Process) ->
-    Node = partisan:node(),
-    do_send_request({Process, Node}, Label, Request);
+    Opts = [], % we do not need channel opt
+    Mref = partisan:monitor(process, Process, Opts),
+    Message = {Label, {partisan:self(), Mref}, Request},
+    ?LOG_DEBUG(#{
+        description => "Sending message",
+        destination => Process,
+        message => Message
+    }),
+    partisan:forward_message(Process, Message, Opts),
+    Mref;
 
 do_send_request({ServerRef, Node} = Process, Label, Request) ->
     %% Monitor request and message are delivered using the same channel

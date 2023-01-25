@@ -23,6 +23,21 @@
 %% It replaces all instances of `erlang:send/2' and `erlang:monitor/2' with
 %% their Partisan counterparts.
 %%
+%% It maintains the `gen_server' API with the following exceptions:
+%%
+%% <ul>
+%% <li>`call/3` and `multi_call/4` - override the 3rd and 4th arguments
+%% respectively to accept not only a timeout value but also a
+%% list of options containing any of the following: `{timeout, timeout()}' |
+%% `{channel, partisan:channel()}'.</li>
+%% <li>`cast/3` - identical to `cast/2' with the 3th argument is a list of
+%% options containing any of the following: `{channel,
+%% partisan:channel()}'.</li>
+%% <li>`send_request/4` - identical to `send_request/3' with the 4th argument
+%% is a list of options containing any of the following: `{channel,
+%% partisan:channel()}'.</li>
+%% </ul>
+%%
 %% <blockquote class="warning">
 %% <h4 class="warning">NOTICE</h4>
 %% <p>At the moment this only works for
@@ -107,6 +122,11 @@
 %%%
 %%% ---------------------------------------------------
 
+
+%% PARTISAN EXTENSIONS
+-export([cast/3]).
+-export([send_request/3]).
+
 %% API
 -export([start/3, start/4,
      start_link/3, start_link/4,
@@ -146,6 +166,7 @@
 
 -type server_ref() ::
     pid()
+  | partisan_remote_ref:p()
   | (LocalName :: atom())
   | {Name :: atom(), Node :: atom()}
   | {'global', GlobalName :: term()}
@@ -258,16 +279,17 @@ call(Name, Request) ->
         exit({Reason, {?MODULE, call, [Name, Request]}})
     end.
 
-call(Name, Request, Timeout) ->
+call(Name, Request, TimeoutOrOpts) ->
     ?LOG_DEBUG(#{
         description => "Making call",
-        to => Name
+        to => Name,
+        timeout_ir_opts => TimeoutOrOpts
     }),
-    case catch partisan_gen:call(Name, '$gen_call', Request, Timeout) of
+    case catch partisan_gen:call(Name, '$gen_call', Request, TimeoutOrOpts) of
     {ok,Res} ->
         Res;
     {'EXIT',Reason} ->
-        exit({Reason, {?MODULE, call, [Name, Request, Timeout]}})
+        exit({Reason, {?MODULE, call, [Name, Request, TimeoutOrOpts]}})
     end.
 
 %% -----------------------------------------------------------------
@@ -278,6 +300,11 @@ call(Name, Request, Timeout) ->
 -spec send_request(Name::server_ref(), Request::term()) -> request_id().
 send_request(Name, Request) ->
     partisan_gen:send_request(Name, '$gen_call', Request).
+
+%% Partisan addition
+-spec send_request(Name::server_ref(), Request::term(), Opts :: list()) -> request_id().
+send_request(Name, Request, Opts) ->
+    partisan_gen:send_request(Name, '$gen_call', Request, Opts).
 
 -spec wait_response(RequestId::request_id(), timeout()) ->
         {reply, Reply::term()} | 'timeout' | {error, {Reason::term(), server_ref()}}.
@@ -311,6 +338,17 @@ cast(Dest, Request) when is_pid(Dest) ->
     do_cast(Dest, Request);
 cast(EncodedRef, Request) ->
     do_cast(EncodedRef, Request).
+
+
+%% Partisan addition
+cast(ServerRef, Request, Opts) ->
+    %% Set opts will set the default channel is non is defined, so there is no
+    %% need to cleanup the calling process dict.
+    %% We do this to avoid changing this code too much, but we might need to do
+    %% it in the end.
+    partisan_gen:set_opts(Opts),
+    cast(ServerRef, Request).
+
 
 do_cast(Dest, Request) ->
     do_send(Dest, cast_msg(Request)),
@@ -365,7 +403,18 @@ multi_call(Nodes, Name, Req, infinity) ->
     do_multi_call(Nodes, Name, Req, infinity);
 multi_call(Nodes, Name, Req, Timeout)
   when is_list(Nodes), is_atom(Name), is_integer(Timeout), Timeout >= 0 ->
-    do_multi_call(Nodes, Name, Req, Timeout).
+    do_multi_call(Nodes, Name, Req, Timeout);
+%% Partisan addition
+multi_call(Nodes, Name, Req, Opts0)
+  when is_list(Nodes), is_atom(Name), is_list(Opts0) ->
+    case lists:keytake(timeout, 1, Opts0) of
+        {value, {timeout, Timeout}, Opts} ->
+            partisan_gen:set_opts(Opts),
+            multi_call(Nodes, Name, Req, Timeout);
+        false ->
+            partisan_gen:set_opts(Opts0),
+            multi_call(Nodes, Name, Req)
+    end.
 
 
 %%-----------------------------------------------------------------
@@ -533,9 +582,7 @@ do_send(Dest, Msg) ->
         _ ->
             {partisan:node(), Dest}
     end,
-    partisan:forward_message(
-        Node, Process, Msg, #{channel => partisan_gen:get_channel()}
-    ).
+    partisan:forward_message(Node, Process, Msg, partisan_gen:get_opts()).
 
 do_multi_call(Nodes, Name, Req, infinity) ->
     Node = partisan:node(),
@@ -559,6 +606,8 @@ do_multi_call(Nodes, Name, Req, infinity) ->
 do_multi_call(Nodes, Name, Req, Timeout) ->
     Tag = partisan:make_ref(),
     Caller = self(),
+    Opts = partisan_gen:get_opts(),
+
     Receiver =
     spawn(
       fun() ->
@@ -567,7 +616,7 @@ do_multi_call(Nodes, Name, Req, Timeout) ->
           %% the receiver would exit before the caller started
           %% the monitor.
           process_flag(trap_exit, true),
-          Mref = partisan:monitor(process, Caller),
+          Mref = partisan:monitor(process, Caller, Opts),
           receive
               {Caller,Tag} ->
               Monitors = send_nodes(Nodes, Name, Tag, Req),
@@ -580,7 +629,7 @@ do_multi_call(Nodes, Name, Req, Timeout) ->
               exit(normal)
           end
       end),
-    Mref = partisan:monitor(process, Receiver),
+    Mref = partisan:monitor(process, Receiver, Opts),
     Receiver ! {self(), Tag},
     receive
     {'DOWN',Mref,_,_,{Receiver,Tag,Result}} ->
@@ -602,7 +651,7 @@ send_nodes([Node|Tail], Name, Tag, Req, Monitors)
         Node,
         Name,
         {'$gen_call', {self(), {Tag, Node}}, Req},
-        #{channel => partisan_gen:get_channel()}
+        partisan_gen:get_opts()
     ),
     % catch {Name, Node} ! {'$gen_call', {self(), {Tag, Node}}, Req},
     send_nodes(Tail, Name, Tag, Req, [Monitor | Monitors]);
@@ -712,6 +761,8 @@ rec_nodes_rest(_Tag, [], _Name, Badnodes, Replies) ->
 %%% ---------------------------------------------------
 
 start_monitor(Node, Name) when is_atom(Node), is_atom(Name) ->
+    %% Disterl = partisan_config:get(connect_disterl),
+    %% TODO FIx this for partisan
     if node() =:= nonode@nohost, Node =/= nonode@nohost ->
         Ref = partisan:make_ref(),
         self() ! {'DOWN', Ref, process, {Name, Node}, noconnection},
