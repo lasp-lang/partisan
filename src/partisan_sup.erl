@@ -30,6 +30,12 @@
 
 -export([init/1]).
 
+-ifdef(TEST).
+-define(CHILDREN, [?WORKER(partisan_test_server, [], permanent, 5000)]).
+-else.
+-define(CHILDREN, []).
+-endif.
+
 -define(SUPERVISOR(Id, Args, Restart, Timeout), #{
     id => Id,
     start => {Id, start_link, Args},
@@ -89,6 +95,7 @@ init([]) ->
         %% THe peer service needs started before Plumtree servers
         ?WORKER(partisan_plumtree_backend, [], permanent, 5000),
         ?WORKER(partisan_plumtree_broadcast, [], permanent, 5000)
+        | ?CHILDREN
     ]),
 
     %% Run a single backend for each label.

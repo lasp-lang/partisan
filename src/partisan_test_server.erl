@@ -27,11 +27,16 @@
 
 
 %% API
--export([start_link/0,
-         call/0,
-         cast/1,
-         delayed_reply_call/0
-        ]).
+-export([start_link/0]).
+-export([call/0]).
+-export([call/1]).
+-export([cast/1]).
+-export([cast/2]).
+-export([crash/0]).
+-export([delayed_reply_call/0]).
+-export([delayed_reply_call/1]).
+-export([is_alive/1]).
+-export([reply_crash/0]).
 
 %% partisan_gen_server callbacks
 -export([init/1,
@@ -51,13 +56,38 @@ start_link() ->
     partisan_gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 call() ->
-    partisan_gen_server:call(?MODULE, call, infinity).
+    call(?MODULE).
+
+call(ServerRef) ->
+    partisan_gen_server:call(ServerRef, call, infinity).
 
 delayed_reply_call() ->
-    partisan_gen_server:call(?MODULE, delay_reply_call, infinity).
+    delayed_reply_call(?MODULE).
 
-cast(ServerRef) ->
-    partisan_gen_server:cast(?MODULE, {cast, ServerRef}).
+delayed_reply_call(ServerRef) ->
+    partisan_gen_server:call(ServerRef, delay_reply_call, infinity).
+
+cast(ReplyTo) ->
+    cast(?MODULE, ReplyTo).
+
+cast(ServerRef, ReplyTo) ->
+    partisan_gen_server:cast(ServerRef, {cast, ReplyTo}).
+
+
+is_alive(Pid) ->
+    Pid == whereis(?MODULE)
+        orelse error({badarg, pid_to_list(Pid), whereis(?MODULE)}),
+    erlang:is_process_alive(Pid).
+
+crash() ->
+    partisan_gen_server:cast(?MODULE, crash).
+
+reply_crash() ->
+    partisan_gen_server:cast(?MODULE, reply_crash).
+
+
+
+
 
 %%%===================================================================
 %%% partisan_gen_server callbacks
@@ -65,6 +95,7 @@ cast(ServerRef) ->
 
 %% @private
 init([]) ->
+    catch erlang:register(?MODULE, self()),
     ?LOG_INFO("Initialised server on node ~p.", [partisan:node()]),
     {ok, #state{}}.
 
@@ -92,7 +123,8 @@ handle_info(_Msg, State) ->
     {noreply, State}.
 
 %% @private
-terminate(_Reason, _State) ->
+terminate(Reason, _State) ->
+    ?LOG_INFO("Terminating, reason:~p", [Reason]),
     ok.
 
 %% @private

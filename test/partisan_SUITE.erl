@@ -1472,8 +1472,9 @@ otp_test(Config) ->
     %% Start the test backend on all the nodes.
     lists:foreach(
         fun({_, Node}) ->
-            {ok, Pid} = rpc:call(Node, partisan_test_server, start_link, []),
-            ct:pal("partisan_test_server ~p started on node ~p", [Pid, Node])
+            Pid = rpc:call(Node, erlang, whereis, [partisan_test_server]),
+            true = rpc:call(Node, erlang, is_process_alive, [Pid]),
+            ct:pal("partisan_test_server ~p is alive on node ~p", [Pid, Node])
         end,
         Nodes
     ),
@@ -1517,8 +1518,7 @@ otp_test(Config) ->
     CastReceiverFun = fun() ->
         receive
             ok ->
-                Self ! ok
-        end
+                Self ! ok        end
     end,
 
     CastReceiverPid = rpc:call(Node2, erlang, spawn, [CastReceiverFun]),
