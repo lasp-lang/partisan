@@ -320,6 +320,7 @@ groups() ->
      {with_full_membership_strategy, [],
       [connectivity_test,
        gossip_test]},
+
      {with_scamp_v1_membership_strategy, [],
       [connectivity_test,
        gossip_test]},
@@ -1485,31 +1486,29 @@ otp_test(Config) ->
         "Runner is connected via disterl to ~p", [erlang:nodes()]
     ),
 
-    Result = rpc:call(
+
+    CallResult = rpc:call(
         Node1,
         partisan_gen_server, call,
         [{partisan_test_server, Node2}, call, 5000]
     ),
 
-    receive
-        {on_down, N} ->
-            ct:fail("Node ~p crashed", [N])
-    after 2000 ->
-        ok
-    end,
-
     ?assertEqual(
         ok,
-        Result,
+        CallResult,
         "Ensure that a regular call works."
     ),
 
-    %% Ensure that a regular call with delayed response works.
-    ok = rpc:call(
+    DelayedCallResult = rpc:call(
         Node1,
-        partisan_gen_server,
-        call,
+        partisan_gen_server, call,
         [{partisan_test_server, Node2}, delayed_reply_call, 5000]
+    ),
+
+    ?assertEqual(
+        ok,
+        DelayedCallResult,
+        "Ensure that a regular call with delayed response works."
     ),
 
     %% Ensure that a cast works.
@@ -1518,7 +1517,8 @@ otp_test(Config) ->
     CastReceiverFun = fun() ->
         receive
             ok ->
-                Self ! ok        end
+                Self ! ok
+        end
     end,
 
     CastReceiverPid = rpc:call(Node2, erlang, spawn, [CastReceiverFun]),
