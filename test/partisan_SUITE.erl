@@ -1065,14 +1065,15 @@ rejoin_test(Config) ->
             ct:pal("and clients ~p", [Clients]),
             ct:pal("Nodes ~p", [Nodes]),
 
-            NodeToLeave = lists:nth(length(Nodes), Nodes),
+            {_, Left} = NodeToLeave = lists:nth(length(Nodes), Nodes),
             ct:pal("Verifying leave for ~p", [NodeToLeave]),
             verify_leave(NodeToLeave, Nodes, Manager),
 
             %% Join a node from the cluster.
-            [{_, _}, {_, Node2}, {_, _}, {_, Node4}] = Nodes,
-            ct:pal("Joining node ~p to the cluster.", [Node4]),
-            ok = rpc:call(Node2, partisan_peer_service, join, [Node4]),
+            ct:pal("Re-joining node ~p to the cluster.", [Left]),
+            {_, Node1} = hd(Nodes),
+            Node1Spec = rpc:call(Node1, partisan, node_spec, []),
+            ok = rpc:call(Left, partisan_peer_service, join, [Node1Spec]),
 
             %% Pause for gossip interval * node exchanges + gossip interval
             %% for full convergence.
@@ -1089,31 +1090,41 @@ rejoin_test(Config) ->
             %% Every node should know about every other node in this topology.
             %%
             VerifyJoinFun = fun({_, Node}) ->
-                    {ok, Members} = rpc:call(Node, Manager, members, []),
-                    SortedNodes = lists:usort([N || {_, N} <- Nodes]),
-                    SortedMembers = lists:usort(Members),
-                    case SortedMembers =:= SortedNodes of
-                        true ->
-                            true;
-                        false ->
-                            ct:pal("Membership incorrect; node ~p should have ~p ~nbut has ~p",
-                                [Node, SortedNodes, SortedMembers]),
-                            {false, {Node, SortedNodes, SortedMembers}}
-                    end
+                {ok, Members} = rpc:call(Node, Manager, members, []),
+                SortedNodes = lists:usort([N || {_, N} <- Nodes]),
+                SortedMembers = lists:usort(Members),
+
+                case SortedMembers =:= SortedNodes of
+                    true ->
+                        true;
+                    false ->
+                        ct:pal(
+                            "Membership incorrect; node ~p should have"
+                            " ~p ~nbut has ~p",
+                            [Node, SortedNodes, SortedMembers]
+                        ),
+                        {false, {Node, SortedNodes, SortedMembers}}
+                end
             end,
 
             %% Verify the membership is correct.
-            lists:foreach(fun(Node) ->
-                                VerifyNodeFun = fun() -> VerifyJoinFun(Node) end,
+            lists:foreach(
+                fun(Node) ->
+                    VerifyNodeFun = fun() -> VerifyJoinFun(Node) end,
 
-                                case wait_until(VerifyNodeFun, 60 * 2, 100) of
-                                    ok ->
-                                        ok;
-                                    {fail, {false, {IncorrectNode, Expected, Contains}}} ->
-                                        ct:fail("Membership incorrect; node ~p should have ~p ~nbut has ~p",
-                                                [IncorrectNode, Expected, Contains])
-                                end
-                        end, Nodes),
+                    case wait_until(VerifyNodeFun, 60 * 2, 100) of
+                        ok ->
+                            ok;
+                        {fail, {false, {IncorrectNode, Expected, Contains}}} ->
+                            ct:fail(
+                                "Membership incorrect; node ~p "
+                                "should have ~p ~nbut has ~p",
+                                [IncorrectNode, Expected, Contains]
+                            )
+                    end
+                end,
+                Nodes
+            ),
 
             ok;
 
