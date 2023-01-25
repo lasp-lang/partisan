@@ -19,37 +19,71 @@
 %% -------------------------------------------------------------------
 
 -module(partisan_acceptor_socket_pool_sup).
--author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
-
 -behaviour(supervisor).
 
-%% public api
+-author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
+-include("partisan_logger.hrl").
+
+%% API
 -export([start_link/0]).
 
-%% supervisor api
-
+%% Supervisor Callbacks
 -export([init/1]).
 
-%% public api
+
+
+%% =============================================================================
+%% API
+%% =============================================================================
+
+
 
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-%% supervisor api
+
+
+%% =============================================================================
+%% SUPERVISOR CALLBACKS
+%% =============================================================================
+
+
 
 init([]) ->
     Flags = #{strategy => rest_for_one},
     Pool = pool(),
-    Sockets = [socket(ListenAddr) || ListenAddr <- partisan_config:listen_addrs()],
+    ListenAddrs = partisan_config:listen_addrs(),
+
+
+    ?LOG_INFO(#{
+        description => "Starting Partisan listener.",
+        listen_addrs => ListenAddrs
+    }),
+
+    Sockets = [
+        socket(ListenAddr) || ListenAddr <- ListenAddrs
+    ],
+
     {ok, {Flags, lists:flatten([Pool, Sockets])}}.
+
+
+
+%% =============================================================================
+%% PRIVATE
+%% =============================================================================
+
 
 %% @private
 socket(#{ip := IP, port := Port}) ->
-    #{id => {partisan_acceptor_socket, IP, Port},
-      start => {partisan_acceptor_socket, start_link, [IP, Port]}}.
+    #{
+        id => {partisan_acceptor_socket, IP, Port},
+        start => {partisan_acceptor_socket, start_link, [IP, Port]}
+    }.
 
 %% @private
 pool() ->
-    #{id => partisan_acceptor_pool,
-      start => {partisan_acceptor_pool, start_link, []}}.
+    #{
+        id => partisan_acceptor_pool,
+        start => {partisan_acceptor_pool, start_link, []}
+    }.
