@@ -320,6 +320,22 @@ compare_test() ->
     S1 = add(Node1, a, S0),
     S2 = add(Node2, a, S1),
 
+
+    ?assertEqual(
+        {[], []},
+        compare([], S2)
+    ),
+
+    ?assertEqual(
+        {[], []},
+        compare([Node1, Node2], S2)
+    ),
+
+    ?assertEqual(
+        {[Node3], []},
+        compare([Node1, Node2, Node3], S2)
+    ),
+
     ?assertEqual(
         {[Node3], [Node2]},
         compare([Node1, Node3], S2)
