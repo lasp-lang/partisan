@@ -39,3 +39,4 @@ _checkouts.old/
 /.vscode
 /erlang_ls.config
 /doc
+/rebar3.crashdump
