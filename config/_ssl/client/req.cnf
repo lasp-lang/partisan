@@ -1,0 +1,28 @@
+# Purpose: Configuration for requests (end users and CAs).
+ROOTDIR           = $ENV::ROOTDIR
+
+[req]
+input_password    = secret
+output_password   = secret
+default_bits  = 1024
+RANDFILE      = $ROOTDIR/RAND
+encrypt_key   = no
+default_md    = sha1
+#string_mask  = pkix
+x509_extensions   = ca_ext
+prompt        = no
+distinguished_name= name
+
+[name]
+commonName        = client
+organizationalUnitName    = Partisan
+organizationName          = Partisan
+localityName      = London
+countryName       = UK
+emailAddress      = cert@partisan.com
+
+[ca_ext]
+basicConstraints  = critical, CA:true
+keyUsage      = cRLSign, keyCertSign
+subjectKeyIdentifier = hash
+subjectAltName    = email:copy

@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(partisan_plumtree_broadcast).
 
--behaviour(partisan_gen_server).
+-behaviour(gen_server).
 
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
@@ -217,7 +217,7 @@ start_link(InitMembers, InitEagers, InitLazys, Mods, Opts) when is_map(Opts) ->
     StartOpts = [
         {spawn_opt, ?PARALLEL_SIGNAL_OPTIMISATION([])}
     ],
-    partisan_gen_server:start_link({local, ?SERVER}, ?MODULE, Args, StartOpts).
+    gen_server:start_link({local, ?SERVER}, ?MODULE, Args, StartOpts).
 
 
 %% -----------------------------------------------------------------------------
@@ -236,7 +236,7 @@ start_link(InitMembers, InitEagers, InitLazys, Mods, Opts) when is_map(Opts) ->
 
 broadcast(Broadcast, Mod) ->
     {MessageId, Payload} = Mod:broadcast_data(Broadcast),
-    partisan_gen_server:cast(?SERVER, {broadcast, MessageId, Payload, Mod}).
+    gen_server:cast(?SERVER, {broadcast, MessageId, Payload, Mod}).
 
 
 %% -----------------------------------------------------------------------------
@@ -267,7 +267,7 @@ broadcast_channel(Mod) ->
 
 update(LocalState0) ->
     LocalState = partisan_peer_service:decode(LocalState0),
-    partisan_gen_server:cast(?SERVER, {update, LocalState}).
+    gen_server:cast(?SERVER, {update, LocalState}).
 
 
 %% -----------------------------------------------------------------------------
@@ -289,7 +289,7 @@ broadcast_members() ->
 -spec broadcast_members(infinity | pos_integer()) -> nodeset().
 
 broadcast_members(Timeout) ->
-    partisan_gen_server:call(?SERVER, broadcast_members, Timeout).
+    gen_server:call(?SERVER, broadcast_members, Timeout).
 
 
 %% -----------------------------------------------------------------------------
@@ -310,7 +310,7 @@ exchanges() ->
 -spec exchanges(node()) -> partisan_plumtree_broadcast:exchanges().
 
 exchanges(Node) ->
-    partisan_gen_server:call({?SERVER, Node}, exchanges, infinity).
+    gen_server:call({?SERVER, Node}, exchanges, infinity).
 
 
 %% -----------------------------------------------------------------------------
@@ -320,7 +320,7 @@ exchanges(Node) ->
 -spec cancel_exchanges(selector()) -> exchanges().
 
 cancel_exchanges(Selector) ->
-    partisan_gen_server:call(?SERVER, {cancel_exchanges, Selector}, infinity).
+    gen_server:call(?SERVER, {cancel_exchanges, Selector}, infinity).
 
 
 %% =============================================================================
@@ -532,7 +532,7 @@ debug_get_peers(Node, Root) ->
     {nodeset(), nodeset()}.
 
 debug_get_peers(Node, Root, Timeout) ->
-    partisan_gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
+    gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
 
 
 %% @doc return peers for all `Nodes' for tree rooted at `Root'
