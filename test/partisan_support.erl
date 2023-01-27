@@ -100,7 +100,7 @@ start(Case, Config, Options) ->
     ConfigureFun = fun({Name, Node}) ->
         %% Configure the peer service.
         PeerService = proplists:get_value(
-            partisan_peer_service_manager, Options
+            peer_service_manager, Options
             ),
         debug(
             "Setting peer service manager on node ~p to ~p",
@@ -108,20 +108,26 @@ start(Case, Config, Options) ->
         ),
         ok = rpc:call(
             Node, partisan_config, set,
-            [partisan_peer_service_manager, PeerService]
+            [peer_service_manager, PeerService],
+            5000
         ),
 
          ok = rpc:call(
             Node, application, set_env,
-            [partisan, hyparview, ?HYPARVIEW_DEFAULTS]
+            [partisan, hyparview, ?HYPARVIEW_DEFAULTS],
+            5000
         ),
 
         ok = rpc:call(
-            Node, application, set_env, [partisan, peer_ip, ?PEER_IP]
+            Node, application, set_env, [partisan, peer_ip, ?PEER_IP],
+            5000
         ),
 
-        ok = rpc:call(Node, partisan_config, set,
-                      [periodic_interval, ?OVERRIDE_PERIODIC_INTERVAL]),
+        ok = rpc:call(
+            Node, partisan_config, set,
+            [periodic_interval, ?OVERRIDE_PERIODIC_INTERVAL],
+            5000
+        ),
 
 
 
@@ -133,7 +139,8 @@ start(Case, Config, Options) ->
                       end,
         debug("Setting distance_enabled to: ~p", [DistanceEnabled]),
         ok = rpc:call(
-            Node, partisan_config, set, [distance_enabled, DistanceEnabled]
+            Node, partisan_config, set, [distance_enabled, DistanceEnabled],
+            5000
         ),
 
         PeriodicEnabled =
@@ -146,7 +153,8 @@ start(Case, Config, Options) ->
 
         debug("Setting periodic_enabled to: ~p", [PeriodicEnabled]),
         ok = rpc:call(
-            Node, partisan_config, set, [periodic_enabled, PeriodicEnabled]
+            Node, partisan_config, set, [periodic_enabled, PeriodicEnabled],
+            5000
         ),
 
         MembershipStrategyTracing = case ?config(membership_strategy_tracing, Config) of
@@ -156,7 +164,13 @@ start(Case, Config, Options) ->
                               MST
                       end,
         debug("Setting membership_strategy_tracing to: ~p", [MembershipStrategyTracing]),
-        ok = rpc:call(Node, partisan_config, set, [membership_strategy_tracing, MembershipStrategyTracing]),
+        ok = rpc:call(
+            Node,
+            partisan_config,
+            set,
+            [membership_strategy_tracing, MembershipStrategyTracing],
+            5000
+        ),
 
         ForwardOptions = case ?config(forward_options, Config) of
                           undefined ->
@@ -165,14 +179,20 @@ start(Case, Config, Options) ->
                               FO
                       end,
         debug("Setting forward_options to: ~p", [ForwardOptions]),
-        ok = rpc:call(Node, partisan_config, set, [forward_options, ForwardOptions]),
+        ok = rpc:call(
+            Node, partisan_config, set, [forward_options, ForwardOptions],
+            5000
+        ),
 
         %% Configure random seed on the runner.
         ok = partisan_config:set(random_seed, {1, 1, 1}),
 
         %% Configure random seed on the nodes.
         PHashNode = erlang:phash2([Node]),
-        ok = rpc:call(Node, partisan_config, set, [random_seed, {PHashNode, 1, 1}]),
+        ok = rpc:call(
+            Node, partisan_config, set, [random_seed, {PHashNode, 1, 1}],
+            5000
+        ),
 
         Replaying = case ?config(replaying, Config) of
                           undefined ->
@@ -403,7 +423,7 @@ codepath() ->
 %% node to correctly compute the overlay.
 %%
 cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
-    Manager = proplists:get_value(partisan_peer_service_manager, Options),
+    Manager = proplists:get_value(peer_service_manager, Options),
 
     Servers = proplists:get_value(servers, Options, []),
     Clients = proplists:get_value(clients, Options, []),
@@ -453,8 +473,8 @@ cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
     ).
 
 
-cluster({_, Node}, {_, OtherNode}, Config) ->
-    NodeSpec = rpc:call(OtherNode, partisan, node_spec, []),
+cluster({_, Node}, {_, Peer}, Config) ->
+    PeerSpec = rpc:call(Peer, partisan, node_spec, [], 5000),
 
     JoinMethod =
         case ?config(sync_join, Config) of
@@ -466,9 +486,11 @@ cluster({_, Node}, {_, OtherNode}, Config) ->
                 join
         end,
 
-    debug("Joining node: ~p with: ~p", [Node, NodeSpec]),
+    debug("Joining node: ~p with: ~p", [Node, Peer]),
 
-    ok = rpc:call(Node, partisan_peer_service, JoinMethod, [NodeSpec]).
+    ok = rpc:call(
+        Node, partisan_peer_service, JoinMethod, [PeerSpec], 60000
+    ).
 
 
 %% @private

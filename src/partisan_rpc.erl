@@ -30,11 +30,15 @@
 -export([call/5]).
 -export([prepare_opts/1]).
 
+-dialyzer([{nowarn_function, call/4}, no_return]).
+-dialyzer([{nowarn_function, call/5}, no_return]).
+
 
 
 %% =============================================================================
 %% API
 %% =============================================================================
+
 
 
 %% -----------------------------------------------------------------------------
@@ -60,18 +64,28 @@ call(Node, Module, Function, Arguments) ->
     Module :: module(),
     Function :: atom(),
     Arguments :: [any()],
-    Timeout :: timeout()) -> Reply :: any() | {badrpc, error_reason()}.
+    Timeout :: timeout() | partisan_peer_service_manager:forward_opts()) ->
+    Reply :: any() | {badrpc, error_reason()}.
 
-call(Node, Module, Function, Arguments, Timeout) ->
+call(Node, Module, Function, Arguments, Timeout) when ?IS_VALID_TMO(Timeout) ->
+    call(Node, Module, Function, Arguments, #{timeout => Timeout});
+
+call(Node, Module, Function, Arguments, Opts0) ->
     Self = partisan:self(),
-    MyNode = partisan:node(),
-    Opts = prepare_opts(partisan_config:get(forward_options, [])),
-    Msg = {call, Module, Function, Arguments, Timeout, {origin, MyNode, Self}},
+    Timeout = maps:get(timeout, Opts0, ?DEFAULT_TIMEOUT),
+
+    ?IS_VALID_TMO(Timeout) orelse error({?MODULE, badarg}),
+
+    Opts = prepare_opts(
+        partisan_config:get(forward_options, maps:without([timeout], Opts0))
+    ),
+
+    Msg = {call, Module, Function, Arguments, Timeout, {origin, Self}},
 
     partisan:forward_message(Node, partisan_rpc_backend, Msg, Opts),
 
     receive
-        {response, Response} ->
+        {rpc_response, Response} ->
             Response
     after
         Timeout ->
@@ -88,8 +102,11 @@ call(Node, Module, Function, Arguments, Timeout) ->
 prepare_opts(L) when is_list(L) ->
     prepare_opts(maps:from_list(L));
 
+prepare_opts(#{channel := _} = Opts) ->
+    Opts;
+
 prepare_opts(Opts) when is_map(Opts) ->
-    maps:merge(#{channel => rpc_channel()}, Opts).
+    Opts#{channel => rpc_channel()}.
 
 
 

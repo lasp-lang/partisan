@@ -122,7 +122,7 @@ join(#{name := Node} = NodeSpec) ->
         Node ->
             {error, self_join};
         _ ->
-            (?PEER_SERVICE_MANAGER):join(NodeSpec)
+            ?PEER_SERVICE_MANAGER:join(NodeSpec)
     end;
 
 join(Node) ->
@@ -146,7 +146,7 @@ sync_join(#{name := Node} = NodeSpec) ->
         Node ->
             {error, self_join};
         _ ->
-            (?PEER_SERVICE_MANAGER):sync_join(NodeSpec)
+            ?PEER_SERVICE_MANAGER:sync_join(NodeSpec)
     end.
 
 
@@ -158,7 +158,7 @@ sync_join(#{name := Node} = NodeSpec) ->
 -spec leave() -> ok.
 
 leave() ->
-    (?PEER_SERVICE_MANAGER):leave().
+    ?PEER_SERVICE_MANAGER:leave().
 
 
 %% -----------------------------------------------------------------------------
@@ -172,9 +172,9 @@ leave() ->
 leave(#{name := Node} = NodeSpec) ->
     case partisan:node() of
         Node ->
-            (?PEER_SERVICE_MANAGER):leave();
+            ?PEER_SERVICE_MANAGER:leave();
         _ ->
-            (?PEER_SERVICE_MANAGER):leave(NodeSpec)
+            ?PEER_SERVICE_MANAGER:leave(NodeSpec)
     end.
 
 
@@ -194,7 +194,7 @@ leave(#{name := Node} = NodeSpec) ->
     ok | {error, not_implemented}.
 
 on_up(Node, Function) ->
-    (?PEER_SERVICE_MANAGER):on_up(Node, Function).
+    ?PEER_SERVICE_MANAGER:on_up(Node, Function).
 
 
 %% -----------------------------------------------------------------------------
@@ -214,7 +214,7 @@ on_up(Node, Function) ->
     ok | {error, not_implemented}.
 
 on_up(Node, Function, Opts) ->
-    (?PEER_SERVICE_MANAGER):on_up(Node, Function, Opts).
+    ?PEER_SERVICE_MANAGER:on_up(Node, Function, Opts).
 
 
 %% -----------------------------------------------------------------------------
@@ -231,7 +231,7 @@ on_up(Node, Function, Opts) ->
     ok | {error, not_implemented}.
 
 on_down(Node, Function) ->
-    (?PEER_SERVICE_MANAGER):on_down(Node, Function).
+    ?PEER_SERVICE_MANAGER:on_down(Node, Function).
 
 
 %% -----------------------------------------------------------------------------
@@ -251,7 +251,7 @@ on_down(Node, Function) ->
     ok | {error, not_implemented}.
 
 on_down(Node, Function, Opts) ->
-    (?PEER_SERVICE_MANAGER):on_down(Node, Function, Opts).
+    ?PEER_SERVICE_MANAGER:on_down(Node, Function, Opts).
 
 
 %% -----------------------------------------------------------------------------
@@ -266,7 +266,7 @@ on_down(Node, Function, Opts) ->
 -spec member(Node :: node() | partisan:node_spec()) -> boolean().
 
 member(Node) ->
-    (?PEER_SERVICE_MANAGER):member(Node).
+    ?PEER_SERVICE_MANAGER:member(Node).
 
 
 
@@ -277,7 +277,7 @@ member(Node) ->
 -spec members() -> {ok, [node()]}.
 
 members() ->
-    (?PEER_SERVICE_MANAGER):members().
+    ?PEER_SERVICE_MANAGER:members().
 
 
 %% -----------------------------------------------------------------------------
@@ -287,7 +287,7 @@ members() ->
 -spec members_for_orchestration() -> [partisan:node_spec()].
 
 members_for_orchestration() ->
-    (?PEER_SERVICE_MANAGER):members_for_orchestration().
+    ?PEER_SERVICE_MANAGER:members_for_orchestration().
 
 
 %% -----------------------------------------------------------------------------
@@ -305,7 +305,7 @@ connections() ->
 -spec update_members([partisan:node_spec()]) -> ok | {error, not_implemented}.
 
 update_members(NodeSpecs) ->
-    (?PEER_SERVICE_MANAGER):update_members(NodeSpecs).
+    ?PEER_SERVICE_MANAGER:update_members(NodeSpecs).
 
 
 %% -----------------------------------------------------------------------------
@@ -326,7 +326,7 @@ decode(State) ->
 -spec reserve(atom()) -> ok | {error, no_available_slots}.
 
 reserve(Tag) ->
-    (?PEER_SERVICE_MANAGER):reserve(Tag).
+    ?PEER_SERVICE_MANAGER:reserve(Tag).
 
 
 %% -----------------------------------------------------------------------------
@@ -336,7 +336,7 @@ reserve(Tag) ->
 -spec partitions() -> {ok, partisan_peer_service_manager:partitions()} | {error, not_implemented}.
 
 partitions() ->
-    (?PEER_SERVICE_MANAGER):partitions().
+    ?PEER_SERVICE_MANAGER:partitions().
 
 
 
@@ -348,7 +348,7 @@ partitions() ->
     {ok, reference()} | {error, not_implemented}.
 
 inject_partition(Origin, TTL) ->
-    (?PEER_SERVICE_MANAGER):inject_partition(Origin, TTL).
+    ?PEER_SERVICE_MANAGER:inject_partition(Origin, TTL).
 
 
 %% -----------------------------------------------------------------------------
@@ -359,7 +359,7 @@ inject_partition(Origin, TTL) ->
     ok | {error, not_implemented}.
 
 resolve_partition(Reference) ->
-    (?PEER_SERVICE_MANAGER):resolve_partition(Reference).
+    ?PEER_SERVICE_MANAGER:resolve_partition(Reference).
 
 
 %% -----------------------------------------------------------------------------
@@ -369,7 +369,7 @@ resolve_partition(Reference) ->
 -spec get_local_state() -> term().
 
 get_local_state() ->
-    (?PEER_SERVICE_MANAGER):get_local_state().
+    ?PEER_SERVICE_MANAGER:get_local_state().
 
 
 

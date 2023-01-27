@@ -859,12 +859,12 @@ dispatch_pid(#{name := Node}, Channel, PartitionKey) ->
 %% -----------------------------------------------------------------------------
 -spec dispatch(any()) -> ok | {error, disconnected | not_yet_connected}.
 
-dispatch({forward_message, Node, ServerRef, Message, _Options}) ->
-    DefaultChannel = ?DEFAULT_CHANNEL,
-    do_dispatch(Node, ServerRef, Message, DefaultChannel, undefined);
+dispatch({forward_message, Node, ServerRef, Message, Opts}) ->
+    Channel = maps:get(channel, Opts, ?DEFAULT_CHANNEL),
+    do_dispatch(Node, ServerRef, Message, Channel, undefined);
 
-dispatch(
-    {forward_message, Node, Channel, _Clock, PartKey, ServerRef, Msg, _Opts}) ->
+dispatch({forward_message, Node, _Clock, PartKey, ServerRef, Msg, Opts}) ->
+    Channel = maps:get(channel, Opts, ?DEFAULT_CHANNEL),
     do_dispatch(Node, ServerRef, Msg, Channel, PartKey).
 
 

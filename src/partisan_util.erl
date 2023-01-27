@@ -28,12 +28,50 @@
 -export([maps_append/3]).
 -export([encode/1]).
 -export([encode/2]).
+-export([maybe_connect_disterl/1]).
+-export([maybe_pad_term/1]).
 
 
 
 %% =============================================================================
 %% API
 %% =============================================================================
+
+
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec maybe_connect_disterl(Node :: atom()) -> ok.
+
+maybe_connect_disterl(Node ) ->
+    case partisan_config:get(connect_disterl, false) of
+        true ->
+            _ = net_kernel:connect_node(Node),
+            ok;
+        false ->
+            ok
+    end.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec maybe_pad_term(Term :: term()) ->
+    term() | {'$partisan_padded', Padding :: term(), Term :: term()}.
+
+maybe_pad_term(Term) ->
+    case partisan_config:get(binary_padding, false) of
+        true ->
+            Padding = partisan_config:get(binary_padding_term, undefined),
+            {'$partisan_padded', Padding, Term};
+        false ->
+            Term
+    end.
+
 
 
 %% -----------------------------------------------------------------------------

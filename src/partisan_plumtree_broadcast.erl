@@ -108,11 +108,13 @@
 -export([cancel_exchanges/1]).
 -export([exchanges/0]).
 -export([exchanges/1]).
+-export([exchanges/2]).
 -export([start_link/0]).
 -export([start_link/5]).
 -export([update/1]).
 
 %% Debug API
+-export([get_peers/1]).
 -export([debug_get_peers/2]).
 -export([debug_get_peers/3]).
 -export([debug_get_tree/2]).
@@ -293,14 +295,14 @@ broadcast_members(Timeout) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc return a list of exchanges, started by broadcast on thisnode, that are
+%% @doc return a list of exchanges, started by broadcast on this node, that are
 %% running.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec exchanges() -> exchanges().
 
 exchanges() ->
-    exchanges(partisan:node()).
+    gen_server:call(?SERVER, exchanges, infinity).
 
 
 %% -----------------------------------------------------------------------------
@@ -310,7 +312,20 @@ exchanges() ->
 -spec exchanges(node()) -> partisan_plumtree_broadcast:exchanges().
 
 exchanges(Node) ->
-    gen_server:call({?SERVER, Node}, exchanges, infinity).
+    exchanges(Node, infinity).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns a list of running exchanges, started on `Node'.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec exchanges(node(), timeout()) -> partisan_plumtree_broadcast:exchanges().
+
+exchanges(Node, Timeout) ->
+    %% This will not work becuase gen_server uses disterl
+    %% TODO reconsider turning this server into a partisan_gen_serv
+    %% gen_server:call({?SERVER, Node}, exchanges, infinity).
+    partisan_rpc:call(Node, ?SERVER, exchanges, [], Timeout).
 
 
 %% -----------------------------------------------------------------------------
@@ -321,6 +336,17 @@ exchanges(Node) ->
 
 cancel_exchanges(Selector) ->
     gen_server:call(?SERVER, {cancel_exchanges, Selector}, infinity).
+
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec get_peers(Root :: node()) -> list().
+
+get_peers(Root) ->
+    gen_server:call(?SERVER, {get_peers, Root}).
 
 
 %% =============================================================================
@@ -532,7 +558,11 @@ debug_get_peers(Node, Root) ->
     {nodeset(), nodeset()}.
 
 debug_get_peers(Node, Root, Timeout) ->
-    gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
+    %% This will not work becuase gen_server uses disterl
+    %% gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
+    %% TODO reconsider turning this server into a partisan_gen_serv
+    partisan_rpc:call(Node, ?MODULE, get_peers, [Root], Timeout).
+
 
 
 %% @doc return peers for all `Nodes' for tree rooted at `Root'

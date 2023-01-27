@@ -312,7 +312,7 @@ handle_message({state, Tag, LocalState}, #state{} = State) ->
 
 handle_message({hello, Node}, #state{peer = #{name := Node}} = State) ->
     Socket = State#state.socket,
-    Message = term_to_binary({hello, partisan:node()}),
+    Message = term_to_binary({hello, partisan:node(), State#state.channel}),
 
     case partisan_peer_socket:send(Socket, Message) of
         ok ->

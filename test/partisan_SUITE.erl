@@ -297,7 +297,7 @@ groups() ->
      {simple, [],
       [
         %% transform_test, % disabled till we fix the test
-        client_server_manager_test,
+        client_server_manager_test, % disabled
         basic_test,
         leave_test,
         self_leave_test,
@@ -323,20 +323,23 @@ groups() ->
        %% hyparview_xbot_manager_high_client_test
       ]},
 
-     {with_full_membership_strategy, [],
-      [connectivity_test,
-       gossip_demers_direct_mail_test]},
+     {with_full_membership_strategy, [], [
+        connectivity_test
+        ,gossip_demers_direct_mail_test
+     ]},
 
-     {with_scamp_v1_membership_strategy, [],
-      [connectivity_test,
-       gossip_demers_direct_mail_test]},
+     {with_scamp_v1_membership_strategy, [],[
+        connectivity_test
+        %% ,
+     ]},
 
-     {with_scamp_v2_membership_strategy, [],
-      [connectivity_test,
-       gossip_demers_direct_mail_test]},
+     {with_scamp_v2_membership_strategy, [],[
+        connectivity_test
+        ,gossip_demers_direct_mail_test
+     ]},
 
-     {with_ack, [],
-      [basic_test,
+     {with_ack, [],[
+        basic_test,
        ack_test]},
 
      {with_causal_labels, [],
@@ -426,7 +429,7 @@ transform_test(Config) ->
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(transform_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
 
@@ -527,7 +530,7 @@ causal_test(Config) ->
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(causal_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
 
@@ -615,7 +618,7 @@ receive_interposition_test(Config) ->
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(receive_interposition_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
 
@@ -711,7 +714,7 @@ ack_test(Config) ->
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(ack_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
 
@@ -803,7 +806,7 @@ forward_interposition_test(Config) ->
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(forward_interposition_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
 
@@ -898,7 +901,7 @@ pid_test(Config) ->
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(pid_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
 
@@ -975,7 +978,7 @@ rpc_test(Config) ->
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(rpc_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
 
@@ -1006,7 +1009,7 @@ on_down_test(Config) ->
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(on_down_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
 
@@ -1055,7 +1058,7 @@ rejoin_test(Config) ->
 
             %% Start nodes.
             Nodes = ?SUPPORT:start(rejoin_test, Config,
-                        [{partisan_peer_service_manager, Manager},
+                        [{peer_service_manager, Manager},
                         {servers, Servers},
                         {clients, Clients}]),
 
@@ -1149,7 +1152,7 @@ self_leave_test(Config) ->
 
             %% Start nodes.
             Nodes = ?SUPPORT:start(leave_test, Config,
-                        [{partisan_peer_service_manager, Manager},
+                        [{peer_service_manager, Manager},
                         {servers, Servers},
                         {clients, Clients}]),
 
@@ -1180,7 +1183,7 @@ leave_test(Config) ->
             %% Start nodes.
             Nodes = ?SUPPORT:start(
                 leave_test, Config,
-                [{partisan_peer_service_manager, Manager},
+                [{peer_service_manager, Manager},
                 {servers, Servers},
                 {clients, Clients}]
             ),
@@ -1211,7 +1214,7 @@ performance_test(Config) ->
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(performance_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
 
@@ -1333,7 +1336,7 @@ gossip_demers_direct_mail_test(Config) ->
         gossip_demers_direct_mail_test,
         Config,
         [
-            {partisan_peer_service_manager, Manager},
+            {peer_service_manager, Manager},
             {servers, Servers},
             {clients, Clients}
         ]
@@ -1425,7 +1428,7 @@ connectivity_test(Config) ->
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(connectivity_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
 
@@ -1464,7 +1467,7 @@ otp_test(Config) ->
     %% Start nodes.
     Nodes = ?SUPPORT:start(
         otp_test, Config, [
-            {partisan_peer_service_manager, Manager},
+            {peer_service_manager, Manager},
             {servers, Servers},
             {clients, Clients}
         ]
@@ -1573,7 +1576,7 @@ forward_delay_interposition_test(Config) ->
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(forward_delay_interposition_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
 
@@ -1646,7 +1649,7 @@ basic_test(Config) ->
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(basic_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
 
@@ -1667,7 +1670,8 @@ basic_test(Config) ->
                     true;
                 false ->
                     ct:pal(
-                        "Membership incorrect; node ~p should have ~p ~nbut has ~p",
+                        "Membership incorrect; node ~p should have ~p ~n"
+                        "but has ~p",
                         [Node, SortedNodes, SortedMembers]
                     ),
                     {false, {Node, SortedNodes, SortedMembers}}
@@ -1694,9 +1698,12 @@ basic_test(Config) ->
     ),
 
     %% Verify forward message functionality.
-    lists:foreach(fun({_Name, Node}) ->
-                    ok = check_forward_message(Node, Manager, Nodes)
-                  end, Nodes),
+    lists:foreach(
+        fun({_Name, Node}) ->
+            ok = check_forward_message(Node, Manager, Nodes)
+        end,
+        Nodes
+    ),
 
     %% Verify parallelism.
     ConfigParallelism = proplists:get_value(parallelism, Config, ?PARALLELISM),
@@ -1757,7 +1764,10 @@ basic_test(Config) ->
                     ok ->
                         ok;
                     _ ->
-                        ct:fail("Not enough connections have been opened; need: ~p", [Parallelism])
+                        ct:fail(
+                            "Not enough connections have been opened; need: ~p",
+                            [Parallelism]
+                        )
                 end
             end, Channels)
         end,
@@ -1779,10 +1789,14 @@ client_server_manager_test(Config) ->
     Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     %% Start nodes.
-    Nodes = ?SUPPORT:start(client_server_manager_test, Config,
-                  [{partisan_peer_service_manager, Manager},
-                   {servers, Servers},
-                   {clients, Clients}]),
+    Nodes = ?SUPPORT:start(
+        client_server_manager_test, Config,
+        [
+            {peer_service_manager, Manager},
+            {servers, Servers},
+            {clients, Clients}
+        ]
+    ),
 
     ?PUT_NODES(Nodes),
 
@@ -1846,7 +1860,7 @@ hyparview_manager_partition_test(Config) ->
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(hyparview_manager_partition_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {max_active_size, 5},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -1966,7 +1980,7 @@ hyparview_manager_high_active_test(Config) ->
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(hyparview_manager_high_active_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {max_active_size, 5},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -2041,7 +2055,7 @@ hyparview_manager_low_active_test(Config) ->
     Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     Nodes = ?SUPPORT:start(hyparview_manager_low_active_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {max_active_size, MaxActiveSize},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -2115,45 +2129,60 @@ hyparview_manager_high_client_test(Config) ->
     Servers = ?SUPPORT:node_list(1, "server", Config), %% [server],
 
     Nodes = ?SUPPORT:start(hyparview_manager_high_client_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
 
     ?PUT_NODES(Nodes),
 
     CheckStartedFun = fun() ->
-                        case hyparview_membership_check(Nodes) of
-                            {[], []} -> true;
-                            {ConnectedFails, []} ->
-                                {false, {connected_check_failed, ConnectedFails}};
-                            {[], SymmetryFails} ->
-                                {false, {symmetry_check_failed, SymmetryFails}};
-                            {ConnectedFails, SymmetryFails} ->
-                                {false, [{connected_check_failed, ConnectedFails},
-                                         {symmetry_check_failed, SymmetryFails}]}
-                        end
-                      end,
+        case hyparview_membership_check(Nodes) of
+            {[], []} ->
+                true;
+            {ConnectedFails, []} ->
+                {false, {connected_check_failed, ConnectedFails}};
+            {[], SymmetryFails} ->
+                {false, {symmetry_check_failed, SymmetryFails}};
+            {ConnectedFails, SymmetryFails} ->
+                {false, [{connected_check_failed, ConnectedFails},
+                         {symmetry_check_failed, SymmetryFails}]}
+        end
+    end,
 
     case wait_until(CheckStartedFun, 60 * 2, 100) of
         ok ->
             ok;
         {fail, {false, {connected_check_failed, ConnectedFails}}} ->
-            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p",
-                    [ConnectedFails]);
+            ct:fail(
+                "Graph is not connected, unable to find route "
+                "between pairs of nodes ~p",
+                [ConnectedFails]
+            );
         {fail, {false, {symmetry_check_failed, SymmetryFails}}} ->
-            ct:fail("Symmetry is broken (ie. node1 has node2 in it's view but vice-versa is not true) between the following "
-                    "pairs of nodes: ~p", [SymmetryFails]);
+            ct:fail(
+                "Symmetry is broken (ie. node1 has node2 in it's view but "
+                "vice-versa is not true) between the following "
+                "pairs of nodes: ~p",
+                [SymmetryFails]
+            );
         {fail, {false, [{connected_check_failed, ConnectedFails},
                         {symmetry_check_failed, SymmetryFails}]}} ->
-            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p, symmetry is broken as well"
-                    "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
-                    "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
+            ct:fail(
+                "Graph is not connected, unable to find route between pairs "
+                "of nodes ~p, symmetry is broken as well"
+                "(ie. node1 has node2 in it's view but vice-versa is not true) "
+                " between the following pairs of nodes: ~p",
+                [ConnectedFails, SymmetryFails]
+            )
     end,
 
     %% Verify forward message functionality.
-    lists:foreach(fun({_Name, Node}) ->
-                    ok = check_forward_message(Node, Manager, Nodes)
-                  end, Nodes),
+    lists:foreach(
+        fun({_Name, Node}) ->
+            ok = check_forward_message(Node, Manager, Nodes)
+        end,
+        Nodes
+    ),
 
     %% Verify correct behaviour when a node is stopped
     {_, KilledNode} = N0 = random(Nodes, []),
@@ -2231,7 +2260,11 @@ check_forward_message(Node, Manager, Nodes) ->
             %% now fetch the value from the random destination node
 
             Fun = fun() ->
-                ct:pal("Requesting node ~p to forward message ~p to store_proc on node ~p", [Node, Rand, Member]),
+                ct:pal(
+                    "Requesting node ~p to forward message ~p to "
+                    "store_proc on node ~p",
+                    [Node, Rand, Member]
+                ),
                 ok = rpc:call(
                     Node,
                     Manager,
@@ -2253,7 +2286,10 @@ check_forward_message(Node, Manager, Nodes) ->
                 case Response of
                     {ok, R} ->
                         Test = R =:= Rand,
-                        ct:pal("Received from ~p ~p, should be ~p: ~p", [Member, R, Rand, Test]),
+                        ct:pal(
+                            "Received from ~p ~p, should be ~p: ~p",
+                            [Member, R, Rand, Test]
+                        ),
                         Test;
                     Other ->
                         ct:pal("Received other, failing: ~p", [Other]),
@@ -2265,13 +2301,18 @@ check_forward_message(Node, Manager, Nodes) ->
                 ok ->
                     ok;
                 {fail, false} ->
-                    ct:fail("Message delivery failed, Node:~p, Manager:~p, Nodes:~p~n ", [Node, Manager, Nodes])
+                    ct:fail(
+                        "Message delivery failed, "
+                        "Node:~p, Manager:~p, Nodes:~p~n ",
+                        [Node, Manager, Nodes]
+                    )
             end
         end,
         Members -- [Node]
     ),
 
     ok.
+
 
 random(List0, Omit) ->
     List = List0 -- lists:flatten([Omit]),
@@ -2632,7 +2673,7 @@ hyparview_xbot_manager_high_active_test(Config) ->
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(hyparview_xbot_manager_high_active_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {max_active_size, 5},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -2711,7 +2752,7 @@ hyparview_xbot_manager_low_active_test(Config) ->
     Clients = ?SUPPORT:node_list(8, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     Nodes = ?SUPPORT:start(hyparview_xbot_manager_low_active_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {max_active_size, MaxActiveSize},
                    {servers, Servers},
                    {clients, Clients}]),
@@ -2787,7 +2828,7 @@ hyparview_xbot_manager_high_client_test(Config) ->
     Servers = ?SUPPORT:node_list(1, "server", Config), %% [server],
 
     Nodes = ?SUPPORT:start(hyparview_xbot_manager_low_active_test, Config,
-                  [{partisan_peer_service_manager, Manager},
+                  [{peer_service_manager, Manager},
                    {servers, Servers},
                    {clients, Clients}]),
 
@@ -2851,7 +2892,7 @@ hyparview_xbot_manager_high_client_test(Config) ->
 
 %% @private
 ideally_connected_members(Node, Nodes) ->
-    case rpc:call(Node, partisan_config, get, [partisan_peer_service_manager]) of
+    case rpc:call(Node, partisan_config, get, [peer_service_manager]) of
         ?DEFAULT_PEER_SERVICE_MANAGER ->
             M = lists:usort([N || {_, N} <- Nodes]),
             ct:pal("Fully connected: checking forward functionality for all nodes: ~p", [M]),

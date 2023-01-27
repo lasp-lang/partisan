@@ -2504,7 +2504,7 @@ error_info(
      timers = Timers} = S,
   Q) ->
     Log = sys:get_log(Debug),
-    ?LOG_ERROR(#{label=>{gen_statem,terminate},
+    ?LOG_ERROR(#{label=>{partisan_gen_statem,terminate},
                  name=>Name,
                  queue=>Q,
                  postponed=>Postponed,
@@ -2517,10 +2517,10 @@ error_info(
                  reason=>{Class,Reason,Stacktrace},
                  client_info=>client_stacktrace(Q)},
                #{domain=>[otp],
-                 report_cb=>fun gen_statem:format_log/2,
+                 report_cb=>fun partisan_gen_statem:format_log/2,
                  error_logger=>
                      #{tag=>error,
-                       report_cb=>fun gen_statem:format_log/1}}).
+                       report_cb=>fun partisan_gen_statem:format_log/1}}).
 
 client_stacktrace([]) ->
     undefined;
@@ -2562,7 +2562,7 @@ format_log(Report) ->
 
 limit_report(Report, unlimited) ->
     Report;
-limit_report(#{label:={gen_statem,terminate},
+limit_report(#{label:={partisan_gen_statem,terminate},
                queue:=Q,
                postponed:=Postponed,
                modules:=Modules,
@@ -2626,7 +2626,7 @@ format_log(Report, FormatOpts0) ->
     {Format,Args} = format_log_single(Report, FormatOpts),
     io_lib:format(Format, Args, IoOpts).
 
-format_log_single(#{label:={gen_statem,terminate},
+format_log_single(#{label:={partisan_gen_statem,terminate},
                     name:=Name,
                     queue:=Q,
                     %% postponed
@@ -2683,7 +2683,7 @@ format_log_single(#{label:={gen_statem,terminate},
 format_log_single(Report, FormatOpts) ->
     format_log_multi(Report, FormatOpts).
 
-format_log_multi(#{label:={gen_statem,terminate},
+format_log_multi(#{label:={partisan_gen_statem,terminate},
                    name:=Name,
                    queue:=Q,
                    postponed:=Postponed,

@@ -42,8 +42,9 @@
          code_change/3]).
 
 -record(state, {
-    socket :: partisan_peer_socket:connection(),
-    ref :: reference()
+    socket      ::  partisan_peer_socket:connection(),
+    channel     ::  partisan:channel() | undefined,
+    ref         ::  reference()
 }).
 
 -type state_t() :: #state{}.
@@ -57,7 +58,7 @@ acceptor_continue(_PeerName, Socket0, MRef) ->
     put({?MODULE, ingress_delay}, partisan_config:get(ingress_delay, 0)),
     Socket = partisan_peer_socket:accept(Socket0),
     send_message(Socket, {hello, partisan:node()}),
-    gen_server:enter_loop(?MODULE, [], #state{socket=Socket, ref=MRef}).
+    gen_server:enter_loop(?MODULE, [], #state{socket = Socket, ref = MRef}).
 
 acceptor_terminate(Reason, _) ->
     %% Something went wrong. Either the acceptor_pool is terminating
@@ -84,8 +85,10 @@ handle_cast(Req, State) ->
     {stop, {bad_cast, Req}, State}.
 
 
-handle_info({Tag, _RawSocket, Data}, State=#state{socket=Socket}) when ?DATA_MSG(Tag) ->
+handle_info({Tag, _RawSocket, Data}, State=#state{socket = Socket})
+when ?DATA_MSG(Tag) ->
     Decoded = binary_to_term(Data),
+
     ?LOG_TRACE("Received data from socket: ~p", [Decoded]),
 
     case get({?MODULE, ingress_delay}) of
@@ -94,11 +97,13 @@ handle_info({Tag, _RawSocket, Data}, State=#state{socket=Socket}) when ?DATA_MSG
         Other ->
             timer:sleep(Other)
     end,
+
     handle_message(binary_to_term(Data), State),
     ok = partisan_peer_socket:setopts(Socket, [{active, once}]),
     {noreply, State};
 
-handle_info({Tag, _RawSocket, Reason}, State=#state{socket=Socket}) when ?ERROR_MSG(Tag) ->
+handle_info({Tag, _RawSocket, Reason}, State=#state{socket=Socket})
+when ?ERROR_MSG(Tag) ->
     ?LOG_ERROR(#{
         description => "Connection socket error, closing",
         socket => Socket,
@@ -142,12 +147,13 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 
-handle_message({hello, Node}, #state{socket=Socket}) ->
+handle_message({hello, Node, Channel}, #state{socket = Socket}) ->
     %% Get our tag, if set.
     Tag = partisan_config:get(tag, undefined),
 
-    %% Store node in the process dictionary.
+    %% Store node and channel in the process dictionary.
     put({?MODULE, peer}, Node),
+    put({?MODULE, channel}, Channel),
 
     %% Connect the node with Distributed Erlang, just for now for
     %% control messaging in the test suite execution.
@@ -167,11 +173,12 @@ handle_message({hello, Node}, #state{socket=Socket}) ->
 
 handle_message(Message, _State) ->
     Peer = get({?MODULE, peer}),
+    Channel = get({?MODULE, channel}),
 
     ?LOG_TRACE("Received message from peer ~p: ~p", [Peer, Message]),
 
     Manager = partisan_peer_service:manager(),
-    Manager:receive_message(Peer, Message),
+    Manager:receive_message(Peer, Channel, Message),
 
     ?LOG_TRACE("Dispatched ~p to manager.", [Message]),
 

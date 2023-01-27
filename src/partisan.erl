@@ -24,8 +24,13 @@
 
 -include("partisan.hrl").
 
+-type monitor_opt()         ::  erlang:monitor_option()
+                                | {channel, partisan:channel()}.
+-type demonitor_opt()       ::  flush | info.
 -type monitor_nodes_opt()   ::  nodedown_reason
-                                | {node_type, visible | hidden | all}.
+                                | {node_type, visible | hidden | all}
+                                | {channel, channel()}
+                                | {channel_fallback, boolean()}.
 -type monitor_process_id()  ::  erlang:monitor_process_identifier()
                                 | partisan_remote_ref:p()
                                 | partisan_remote_ref:n().
@@ -37,7 +42,8 @@
 -type channel()             ::  atom().
 -type channel_opts()        ::  #{
                                     parallelism := non_neg_integer(),
-                                    monotonic => boolean()
+                                    monotonic => boolean(),
+                                    compression => boolean() | 0..9
                                 }.
 -type actor()               ::  binary().
 -type listen_addr()         ::  #{
@@ -50,19 +56,25 @@
                                     channels := #{channel() => channel_opts()}
                                 }.
 -type message()             ::  term().
+-type dst()                 ::  server_ref()
+                                | reference()
+                                | port().
 
 
 -export_type([actor/0]).
 -export_type([channel/0]).
 -export_type([channel_opts/0]).
+-export_type([demonitor_opt/0]).
 -export_type([forward_opts/0]).
 -export_type([listen_addr/0]).
 -export_type([message/0]).
 -export_type([monitor_nodes_opt/0]).
+-export_type([monitor_opt/0]).
 -export_type([node_spec/0]).
 -export_type([node_type/0]).
 -export_type([server_ref/0]).
 
+%% API
 -export([start/0]).
 -export([stop/0]).
 
@@ -103,6 +115,10 @@
 -export([nodes/1]).
 -export([nodestring/0]).
 -export([self/0]).
+-export([send/2]).
+-export([send/3]).
+-export([send_after/3]).
+-export([send_after/4]).
 
 -compile({no_auto_import, [demonitor/2]}).
 -compile({no_auto_import, [is_pid/0]}).
@@ -227,31 +243,38 @@ monitor(Type, Item) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec monitor
-    (process, monitor_process_id(), [erlang:monitor_option()]) ->
+    (process, monitor_process_id(), [monitor_opt()]) ->
         reference() | partisan_remote_ref:r() | no_return();
     (port, erlang:monitor_port_identifier(), [erlang:monitor_option()]) ->
         reference() |  no_return();
     (time_offset, clock_service, [erlang:monitor_option()]) ->
         reference() | no_return().
 
-monitor(process, {RegisteredName, Node} = RegPid, Opts) ->
+monitor(process, RegisteredName, Opts) when is_atom(RegisteredName) ->
+    erlang:monitor(process, RegisteredName, to_erl_monitor_opts(Opts));
+
+monitor(process, Pid, Opts) when erlang:is_pid(Pid) ->
+    erlang:monitor(process, Pid, to_erl_monitor_opts(Opts));
+
+monitor(process, {RegisteredName, Node}, Opts)
+when is_atom(RegisteredName) ->
     case partisan_config:get(connect_disterl) orelse partisan:node() == Node of
         true ->
-            erlang:monitor(process, RegPid, Opts);
+            erlang:monitor(process, RegisteredName, to_erl_monitor_opts(Opts));
         false ->
             Ref = partisan_remote_ref:from_term(RegisteredName, Node),
             partisan_monitor:monitor(Ref, Opts)
     end;
 
 monitor(process, Term, Opts) when erlang:is_pid(Term) orelse is_atom(Term) ->
-    erlang:monitor(process, Term, Opts);
+    erlang:monitor(process, Term, to_erl_monitor_opts(Opts));
 
 monitor(process, RemoteRef, Opts)
 when is_tuple(RemoteRef) orelse is_binary(RemoteRef) ->
     partisan_monitor:monitor(RemoteRef, Opts);
 
 monitor(Type, Term, Opts) when Type == port orelse Type == time_offset ->
-    erlang:monitor(Type, Term, Opts).
+    erlang:monitor(Type, Term, to_erl_monitor_opts(Opts)).
 
 
 %% -----------------------------------------------------------------------------
@@ -270,7 +293,7 @@ demonitor(Ref) ->
 %% -----------------------------------------------------------------------------
 -spec demonitor(
     MonitorRef :: reference() | partisan_remote_ref:r(),
-    OptionList :: partisan_monitor:demonitor_opts()) -> boolean().
+    OptionList :: [demonitor_opt()]) -> boolean().
 
 demonitor(Ref, Opts) when erlang:is_reference(Ref) ->
     erlang:demonitor(Ref, Opts);
@@ -520,7 +543,7 @@ disconnect_node(Node) ->
 -spec is_alive() -> boolean().
 
 is_alive() ->
-    undefined =/= whereis(?PEER_SERVICE_MANAGER).
+    undefined =/= erlang:whereis(?PEER_SERVICE_MANAGER).
 
 
 %% -----------------------------------------------------------------------------
@@ -713,6 +736,62 @@ exit(RemoteRef, Reason) ->
     end.
 
 
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec send(Dest, Msg) -> Msg when
+      Dest :: dst(),
+      Msg :: term().
+
+send(_Dest,_Msg) ->
+    error(not_implemented).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec send(Dest, Msg, Options) -> Res when
+      Dest :: dst(),
+      Msg :: term(),
+      Options :: [nosuspend | noconnect],
+      Res :: ok | nosuspend | noconnect.
+
+send(_Dest,_Msg,_Options) ->
+    error(not_implemented).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec send_after(Time, Dest, Msg) -> TimerRef when
+      Time :: non_neg_integer(),
+      Dest :: pid() | atom(),
+      Msg :: term(),
+      TimerRef :: reference().
+
+send_after(_Time, _Dest, _Msg) ->
+    error(not_implemented).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec send_after(Time, Dest, Msg, Options) -> TimerRef when
+      Time :: integer(),
+      Dest :: pid() | atom(),
+      Msg :: term(),
+      Options :: [Option],
+      Abs :: boolean(),
+      Option :: {abs, Abs},
+      TimerRef :: reference().
+
+send_after(_Time, _Dest, _Msg, _Options) ->
+    error(not_implemented).
+
 
 %% -----------------------------------------------------------------------------
 %% @doc Cast message to a remote ref
@@ -723,7 +802,7 @@ exit(RemoteRef, Reason) ->
     Msg :: message()) -> ok.
 
 cast_message(Term, Message) ->
-    (?PEER_SERVICE_MANAGER):cast_message(Term, Message).
+    ?PEER_SERVICE_MANAGER:cast_message(Term, Message).
 
 
 %% -----------------------------------------------------------------------------
@@ -736,7 +815,7 @@ cast_message(Term, Message) ->
     Opts :: forward_opts()) -> ok.
 
 cast_message(ServerRef, Msg, Opts) ->
-    (?PEER_SERVICE_MANAGER):cast_message(ServerRef, Msg, Opts).
+    ?PEER_SERVICE_MANAGER:cast_message(ServerRef, Msg, Opts).
 
 
 %% -----------------------------------------------------------------------------
@@ -750,7 +829,7 @@ cast_message(ServerRef, Msg, Opts) ->
     Opts :: forward_opts()) -> ok.
 
 cast_message(Node, ServerRef, Message, Options) ->
-    (?PEER_SERVICE_MANAGER):cast_message(Node, ServerRef, Message, Options).
+    ?PEER_SERVICE_MANAGER:cast_message(Node, ServerRef, Message, Options).
 
 
 %% -----------------------------------------------------------------------------
@@ -762,7 +841,7 @@ cast_message(Node, ServerRef, Message, Options) ->
     Msg :: message()) -> ok.
 
 forward_message(ServerRef, Message) ->
-    (?PEER_SERVICE_MANAGER):forward_message(ServerRef, Message).
+    ?PEER_SERVICE_MANAGER:forward_message(ServerRef, Message).
 
 
 %% -----------------------------------------------------------------------------
@@ -775,7 +854,7 @@ forward_message(ServerRef, Message) ->
     Opts :: forward_opts()) -> ok.
 
 forward_message(ServerRef, Message, Opts) ->
-    (?PEER_SERVICE_MANAGER):forward_message(ServerRef, Message, Opts).
+    ?PEER_SERVICE_MANAGER:forward_message(ServerRef, Message, Opts).
 
 
 %% -----------------------------------------------------------------------------
@@ -789,7 +868,7 @@ forward_message(ServerRef, Message, Opts) ->
     Opts :: forward_opts()) -> ok.
 
 forward_message(Node, ServerRef, Message, Opts) ->
-    (?PEER_SERVICE_MANAGER):forward_message(Node, ServerRef, Message, Opts).
+    ?PEER_SERVICE_MANAGER:forward_message(Node, ServerRef, Message, Opts).
 
 
 %% -----------------------------------------------------------------------------
@@ -808,6 +887,7 @@ broadcast(Broadcast, Mod) ->
     partisan_plumtree_broadcast:broadcast(Broadcast, Mod).
 
 
+
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
@@ -817,4 +897,14 @@ broadcast(Broadcast, Mod) ->
 %% @private
 list_to_node(NodeStr) ->
     erlang:list_to_atom(lists:flatten(NodeStr)).
+
+
+%% @private
+to_erl_monitor_opts(Opts0) when is_list(Opts0) ->
+    case lists:keytake(channel, 1, Opts0) of
+        {value, _, Opts} ->
+            Opts;
+        false ->
+            Opts0
+    end.
 

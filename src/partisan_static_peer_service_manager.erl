@@ -45,7 +45,7 @@
 -export([on_down/2]).
 -export([on_up/2]).
 -export([partitions/0]).
--export([receive_message/2]).
+-export([receive_message/3]).
 -export([reserve/1]).
 -export([resolve_partition/1]).
 -export([send_message/2]).
@@ -184,8 +184,8 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
     ).
 
 %% @doc Receive message from a remote manager.
-receive_message(_Peer, Message) ->
-    gen_server:call(?MODULE, {receive_message, Message}, infinity).
+receive_message(_Peer, Channel, Message) ->
+    gen_server:call(?MODULE, {receive_message, Channel, Message}, infinity).
 
 %% @doc Attempt to join a remote node.
 join(Node) ->
@@ -271,19 +271,17 @@ handle_call({reserve, _Tag}, _From, State) ->
 handle_call({leave, _Node}, _From, State) ->
     {reply, error, State};
 
-handle_call(
-    {join, #{name := Name}=Node}, _From, #state{pending=Pending0}=State) ->
-    %% Attempt to join via disterl for control messages during testing.
-    _ = net_kernel:connect_node(Name),
+handle_call({join, #{name := Node} = Spec}, _From, #state{} = State) ->
+    ok = partisan_util:maybe_connect_disterl(Node),
 
     %% Add to list of pending connections.
-    Pending = [Node|Pending0],
+    Pending = [Spec | State#state.pending],
 
     %% Trigger connection.
-    ok = partisan_peer_service_manager:connect(Node),
+    ok = partisan_peer_service_manager:connect(Spec),
 
     %% Return.
-    {reply, ok, State#state{pending=Pending}};
+    {reply, ok, State#state{pending = Pending}};
 
 handle_call({send_message, Name, Message}, _From, #state{} = State) ->
     Result = do_send_message(Name, Message),
@@ -296,8 +294,8 @@ handle_call(
     Result = do_send_message(Name, {forward_message, ServerRef, Message}),
     {reply, Result, State};
 
-handle_call({receive_message, Message}, _From, State) ->
-    handle_message(Message, State);
+handle_call({receive_message, Channel, Message}, _From, State) ->
+    handle_message(Message, Channel, State);
 
 handle_call(members, _From, #state{membership=Membership}=State) ->
     Members = [P || #{name := P} <- members(Membership)],
@@ -445,7 +443,7 @@ establish_connections(Pending, Membership) ->
     ok.
 
 
-handle_message({forward_message, ServerRef, Message}, State) ->
+handle_message({forward_message, ServerRef, Message}, _Channel, State) ->
     partisan_peer_service_manager:process_forward(ServerRef, Message),
     {reply, ok, State}.
 

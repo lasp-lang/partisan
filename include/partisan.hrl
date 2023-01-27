@@ -1,15 +1,34 @@
 -define(APP, partisan).
 -define(PEER_IP, {127, 0, 0, 1}).
 -define(PEER_PORT, 9090).
+-define(DEFAULT_TIMEOUT, 5000). % Same as OTP
+%% Idea from erpc.erl
+-define(MAX_INT_TIMEOUT, 4294967295).
+-define(TIMEOUT_TYPE, 0..?MAX_INT_TIMEOUT | 'infinity').
+-define(IS_VALID_TMO_INT(TI_), (is_integer(TI_)
+                                andalso (0 =< TI_)
+                                andalso (TI_ =< ?MAX_INT_TIMEOUT))).
+-define(IS_VALID_TMO(T_), ((T_ == infinity) orelse ?IS_VALID_TMO_INT(T_))).
 
 
 
+%% =============================================================================
 %% PLUMTREE
+%% =============================================================================
+
+
+
 -define(PLUMTREE_OUTSTANDING, partisan_plumtree_broadcast).
 -define(BROADCAST_MODS, [partisan_plumtree_backend]).
 
 
+
+%% =============================================================================
 %% CHANNELS
+%% =============================================================================
+
+
+
 -define(DEFAULT_CHANNEL, undefined).
 -define(MEMBERSHIP_CHANNEL, partisan_membership).
 -define(RPC_CHANNEL, rpc).
@@ -33,10 +52,7 @@
 -define(PERIODIC_INTERVAL, 10000).
 
 -define(PEER_SERVICE_MANAGER,
-    partisan_config:get(
-        partisan_peer_service_manager,
-        ?DEFAULT_PEER_SERVICE_MANAGER
-    )
+    (partisan_config:get(peer_service_manager, ?DEFAULT_PEER_SERVICE_MANAGER))
 ).
 
 -define(MEMBERSHIP_STRATEGY,
@@ -75,8 +91,54 @@
 
 
 
+
 %% =============================================================================
-%% PROTOCOLS
+%% PROTOCOLS: HYPARVIEW
+%% =============================================================================
+
+-define(XBOT_MIN_INTERVAL, 5000).
+-define(XBOT_RANGE_INTERVAL, 60000).
+% parameter used for xbot optimization
+% - latency (uses ping to check better nodes)
+% - true (always returns true when checking better)
+-define(HYPARVIEW_XBOT_ORACLE, latency).
+-define(HYPARVIEW_XBOT_INTERVAL,
+    rand:uniform(?XBOT_RANGE_INTERVAL) + ?XBOT_MIN_INTERVAL
+).
+
+-define(HYPARVIEW_DEFAULTS, #{
+    active_max_size => 6,
+    active_min_size => 3,
+    active_rwl => 6,
+    passive_max_size => 30,
+    passive_rwl => 6,
+    random_promotion => true,
+    random_promotion_interval => 5000,
+    shuffle_interval => 10000,
+    shuffle_k_active => 3,
+    shuffle_k_passive => 4,
+    xbot_enabled => false,
+    xbot_interval => ?HYPARVIEW_XBOT_INTERVAL
+}).
+
+
+-type config()              ::  #{
+                                active_max_size := non_neg_integer(),
+                                active_min_size := non_neg_integer(),
+                                active_rwl := non_neg_integer(),
+                                passive_max_size := non_neg_integer(),
+                                passive_rwl := non_neg_integer(),
+                                random_promotion := boolean(),
+                                random_promotion_interval := non_neg_integer(),
+                                shuffle_interval := non_neg_integer(),
+                                shuffle_k_active := non_neg_integer(),
+                                shuffle_k_passive := non_neg_integer(),
+                                xbot_enabled := boolean(),
+                                xbot_interval := non_neg_integer()
+                            }.
+
+%% =============================================================================
+%% PROTOCOLS: SCAMP
 %% =============================================================================
 
 %% Scamp protocol.
@@ -115,8 +177,6 @@
 -define(DEFAULT_LAZY_TICK_PERIOD, 1000).
 -define(DEFAULT_EXCHANGE_TICK_PERIOD, 10000).
 
--define(XBOT_MIN_INTERVAL, 5000).
--define(XBOT_RANGE_INTERVAL, 60000).
 
 -if(?OTP_RELEASE >= 25).
     -define(PARALLEL_SIGNAL_OPTIMISATION(L),
@@ -128,7 +188,3 @@
     -define(PARALLEL_SIGNAL_OPTIMISATION(L), L).
 -endif.
 
-% parameter used for xbot optimization
-% - latency (uses ping to check better nodes)
-% - true (always returns true when checking better)
--define(XPARAM, latency).

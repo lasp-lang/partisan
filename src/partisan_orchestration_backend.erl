@@ -109,7 +109,7 @@ nodes() ->
 -spec init([]) -> {ok, #orchestration_strategy_state{}}.
 init([]) ->
     OrchestrationStrategy = partisan_config:get(orchestration_strategy, ?DEFAULT_ORCHESTRATION_STRATEGY),
-    PeerService = partisan_config:get(peer_service_manager, ?DEFAULT_PEER_SERVICE_MANAGER),
+    PeerService = ?PEER_SERVICE_MANAGER,
 
     case OrchestrationStrategy of
         undefined ->
@@ -242,7 +242,7 @@ handle_info(?REFRESH_MESSAGE, #orchestration_strategy_state{orchestration_strate
                                      peer_service=PeerService,
                                      attempted_nodes=SeenNodes}=State) ->
     Tag = partisan_config:get(tag, client),
-    PeerServiceManager = partisan_config:get(peer_service_manager, ?DEFAULT_PEER_SERVICE_MANAGER),
+    PeerServiceManager = ?PEER_SERVICE_MANAGER,
 
     Servers = OrchestrationStrategy:servers(State),
 
@@ -616,8 +616,7 @@ download_artifact(#orchestration_strategy_state{orchestration_strategy=Orchestra
 members_for_orchestration() ->
     try
         %% Assumes full membership.
-        PeerServiceManager = partisan_config:get(peer_service_manager, ?DEFAULT_PEER_SERVICE_MANAGER),
-        {ok, Members} = PeerServiceManager:members_for_orchestration(),
+        {ok, Members} = ?PEER_SERVICE_MANAGER:members_for_orchestration(),
         Members
     catch
         _:_ ->

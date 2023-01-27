@@ -30,11 +30,12 @@
                             | partisan_remote_ref:encoded_pid()
                             | partisan_remote_ref:n()
                             | partisan_remote_ref:encoded_name()
-                            | Name :: atom()
-                            | {Name :: atom(), node()}
+                            | pid()
+                            | (RegName :: atom())
+                            | {RegName :: atom(), node()}
                             | {global, atom()}
-                            | {via, module(), ViaName :: atom()}
-                            | pid().
+                            | {via, module(), ViaName :: atom()}.
+
 
 -type forward_opts()    ::  #{
                                 ack => boolean(),
@@ -53,13 +54,15 @@
                                 | {transitive, boolean()}
                             ].
 
--type connect_opts()    ::  #{prune => boolean()}.
--type partitions()      ::  [{reference(), partisan:node_spec()}].
--type on_change_fun()   ::  fun(() -> ok) | fun((node()) -> ok).
+-type connect_opts()        ::  #{prune => boolean()}.
+-type partitions()          ::  [{reference(), partisan:node_spec()}].
+-type on_event_fun()        ::  fun(() -> ok)
+                                | fun((node()) -> ok)
+                                | fun((node(), partisan:channel()) -> ok).
 
 -export_type([connect_opts/0]).
 -export_type([forward_opts/0]).
--export_type([on_change_fun/0]).
+-export_type([on_event_fun/0]).
 -export_type([partitions/0]).
 -export_type([server_ref/0]).
 
@@ -92,9 +95,15 @@
 
 -callback get_local_state() -> term().
 
--callback on_down(node(), on_change_fun()) -> ok | {error, not_implemented}.
+-callback on_down(node(), on_event_fun()) -> ok | {error, not_implemented}.
 
--callback on_up(node(), on_change_fun()) -> ok | {error, not_implemented}.
+-callback on_down(node(), on_event_fun(), #{channel => partisan:channel()}) ->
+    ok | {error, not_implemented}.
+
+-callback on_up(node(), on_event_fun()) -> ok | {error, not_implemented}.
+
+-callback on_up(node(), on_event_fun(), #{channel => partisan:channel()}) ->
+    ok | {error, not_implemented}.
 
 -callback join(partisan:node_spec()) -> ok.
 
@@ -106,7 +115,7 @@
 
 -callback send_message(node(), partisan:message()) -> ok.
 
--callback receive_message(node(), partisan:message()) -> ok.
+-callback receive_message(node(), partisan:channel(), partisan:message()) -> ok.
 
 -callback cast_message(
     ServerRef :: server_ref(),
@@ -143,6 +152,8 @@
 
 -callback reserve(atom()) -> ok | {error, no_available_slots}.
 
+-callback supports_capability(Arg :: atom()) -> boolean().
+
 -callback partitions() -> {ok, partitions()} | {error, not_implemented}.
 
 -callback inject_partition(partisan:node_spec(), ttl()) ->
@@ -150,9 +161,9 @@
 
 -callback resolve_partition(reference()) -> ok | {error, not_implemented}.
 
--callback supports_capability(Arg :: atom()) -> boolean().
-
 -optional_callbacks([supports_capability/1]).
+-optional_callbacks([on_up/3]).
+-optional_callbacks([on_down/3]).
 
 
 
@@ -266,7 +277,6 @@ disconnect(Nodes, Fun) when is_list(Nodes), is_function(Fun, 1) ->
     ok.
 
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Send a message to a remote peer_service_manager.
 %% @end
@@ -274,12 +284,12 @@ disconnect(Nodes, Fun) when is_list(Nodes), is_function(Fun, 1) ->
 -spec send_message(node(), partisan:message()) -> ok.
 
 send_message(Node, Message) ->
-    (?PEER_SERVICE_MANAGER):send_message(Node, Message).
+    ?PEER_SERVICE_MANAGER:send_message(Node, Message).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc Internal function used by peer_service manager implementations to
-%% forward a message to a  process identified by `ServerRef' that is either
+%% forward a message to a process identified by `ServerRef' that is either
 %% local or located at remote process when the remote node is connected via
 %% disterl.
 %% Trying to send a message to a remote server reference when the process is

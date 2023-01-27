@@ -50,16 +50,20 @@
 -include("partisan_logger.hrl").
 -include("partisan.hrl").
 
+-define(IS_ON_EVENT_FUN(X), (
+    is_function(X, 0) orelse is_function(X, 1) orelse is_function(X, 2)
+)).
+
 -record(state, {
     tag                     ::  tag(),
     pending                 ::  pending(),
     membership              ::  membership(),
-    down_functions = #{}    ::  #{'_' | node() => on_change_fun()},
-    up_functions = #{}      ::  #{'_' | node() => on_change_fun()}
+    down_functions = #{}    ::  #{'_' | node() => on_event_fun()},
+    up_functions = #{}      ::  #{'_' | node() => on_event_fun()}
 }).
 
 
--type on_change_fun()       ::  partisan_peer_service_manager:on_change_fun().
+-type on_event_fun()        ::  partisan_peer_service_manager:on_event_fun().
 -type pending()             ::  sets:set(partisan:node_spec()).
 -type membership()          ::  sets:set(partisan:node_spec()).
 -type tag()                 ::  atom().
@@ -84,8 +88,10 @@
 -export([members_for_orchestration/0]).
 -export([on_down/2]).
 -export([on_up/2]).
+-export([on_down/3]).
+-export([on_up/3]).
 -export([partitions/0]).
--export([receive_message/2]).
+-export([receive_message/3]).
 -export([reserve/1]).
 -export([resolve_partition/1]).
 -export([send_message/2]).
@@ -152,47 +158,44 @@ get_local_state() ->
     gen_server:call(?MODULE, get_local_state, infinity).
 
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Trigger function on connection close for a given node.
-%% `Function' is a function object taking zero or a single argument, where the
+%% `Fun' is a function object taking zero or a single argument, where the
 %% argument is the Node name.
 %% @end
 %% -----------------------------------------------------------------------------
-on_down(#{name := Node}, Function) ->
-    on_down(Node, Function);
+on_down(Arg, Fun) ->
+    on_down(Arg, Fun, #{}).
 
-on_down(any, Function) ->
-    on_down('_', Function);
 
-on_down(Node, Function)
-when is_atom(Node) andalso (
-    is_function(Function, 0) orelse is_function(Function, 1)
-) ->
-    gen_server:call(?MODULE, {on_down, Node, Function}, infinity).
+%% -----------------------------------------------------------------------------
+%% @doc Trigger function on connection close for a given node.
+%% `Fun' is a function object taking zero or a single argument, where the
+%% argument is the Node name.
+%% @end
+%% -----------------------------------------------------------------------------
+on_down(_Node, _Fun, _Opts) ->
+    {error, not_implemented}.
 
 
 %% -----------------------------------------------------------------------------
 %% @doc Trigger function on connection open for a given node.
-%% `Function' is a function object taking zero or a single argument, where the
+%% `Fun' is a function object taking zero or a single argument, where the
 %% argument is the Node name.
 %% @end
 %% -----------------------------------------------------------------------------
-on_up(#{name := Node}, Function) ->
-    on_up(Node, Function);
-
-on_up(any, Function) ->
-    on_up('_', Function);
-
-on_up(Node, Function)
-when is_atom(Node) andalso (
-    is_function(Function, 0) orelse
-    is_function(Function, 1) orelse
-    is_function(Function, 2)
-) ->
-    gen_server:call(?MODULE, {on_up, Node, Function}, infinity).
+on_up(Arg, Fun) ->
+    on_up(Arg, Fun, #{}).
 
 
+%% -----------------------------------------------------------------------------
+%% @doc Trigger function on connection open for a given node.
+%% `Fun' is a function object taking zero or a single argument, where the
+%% argument is the Node name.
+%% @end
+%% -----------------------------------------------------------------------------
+on_up(_Node, _Fun, _O_pts) ->
+    {error, not_implemented}.
 
 
 %% -----------------------------------------------------------------------------
@@ -257,7 +260,6 @@ forward_message(RemoteRef, Message, Opts) ->
 
     Node = partisan_remote_ref:node(RemoteRef),
     Target = partisan_remote_ref:target(RemoteRef),
-
     forward_message(Node, Target, Message, Opts).
 
 
@@ -281,8 +283,8 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
 %% @doc Receive message from a remote manager.
 %% @end
 %% -----------------------------------------------------------------------------
-receive_message(_Peer, Message) ->
-    gen_server:call(?MODULE, {receive_message, Message}, infinity).
+receive_message(_Peer, Channel, Message) ->
+    gen_server:call(?MODULE, {receive_message, Channel, Message}, infinity).
 
 
 %% -----------------------------------------------------------------------------
@@ -418,19 +420,19 @@ handle_call(
     _From,
     #state{up_functions = UpFunctions0} = State) ->
     UpFunctions = partisan_util:maps_append(Name, Function, UpFunctions0),
-    {reply, ok, State#state{up_functions=UpFunctions}};
+    {reply, ok, State#state{up_functions = UpFunctions}};
 
 handle_call(
     {on_down, Name, Function},
     _From,
     #state{down_functions = DownFunctions0} = State) ->
     DownFunctions = partisan_util:maps_append(Name, Function, DownFunctions0),
-    {reply, ok, State#state{down_functions=DownFunctions}};
+    {reply, ok, State#state{down_functions = DownFunctions}};
 
 handle_call({reserve, _Tag}, _From, State) ->
     {reply, {error, no_available_slots}, State};
 
-handle_call({leave, #{name := LeavingNode}}, _From, #state{} = State0) ->
+handle_call({leave, #{name := Peer}}, _From, #state{} = State0) ->
 
     Membership0 = State0#state.membership,
     Pending = State0#state.pending,
@@ -439,13 +441,17 @@ handle_call({leave, #{name := LeavingNode}}, _From, #state{} = State0) ->
     %% remove all.
     Membership = sets:fold(
         fun
-            (#{name := Node} = NodeSpec, Acc) when Node == LeavingNode ->
+            (#{name := Node} = NodeSpec, Acc) when Node == Peer ->
                 sets:del_element(NodeSpec, Acc);
 
             (#{name := Node}, Acc) ->
                 %% call the net_kernel:disconnect(Node) function to leave
                 %% erlang network explicitly
-                _ = rpc:call(LeavingNode, net_kernel, disconnect, [Node]),
+                %% TODO why do we do this here? If Node is myself then I would
+                %% not be able to call the subsequent peers, also, shouldn't be
+                %% enough to disconnect myself from Peer (every other peer will
+                %% do the same)?
+                _ = rpc:call(Peer, net_kernel, disconnect, [Node]),
                 Acc
         end,
         Membership0,
@@ -454,17 +460,19 @@ handle_call({leave, #{name := LeavingNode}}, _From, #state{} = State0) ->
 
     %% Remove state and shutdown if we are removing ourselves.
     case partisan:node() of
-        LeavingNode ->
+        Peer ->
             delete_state_from_disk(),
 
             %% Shutdown; connections terminated on shutdown.
             State = State0#state{membership = Membership},
             {stop, normal, State};
         _ ->
-            ok = partisan_peer_service_manager:disconnect(LeavingNode),
+            %% TODO maybe we need to do the following here (see prev TODO)
+            %% _ = net_kernel:disconnect(Peer),
+            ok = partisan_peer_service_manager:disconnect(Peer),
 
             NewPending = sets:filter(
-                fun(#{name := Node}) -> Node =/= LeavingNode end,
+                fun(#{name := Node}) -> Node =/= Peer end,
                 Pending
             ),
 
@@ -475,46 +483,29 @@ handle_call({leave, #{name := LeavingNode}}, _From, #state{} = State0) ->
             {reply, ok, State}
     end;
 
-handle_call({join, #{name := Node} = Spec}, _From, #state{} = State) ->
-    %% Attempt to join via disterl for control messages during testing.
-    case partisan_config:get(connect_disterl, false) of
-        true ->
-            _ = net_kernel:connect_node(Node);
-        false ->
-            ok
-    end,
+handle_call({join, #{name := _} = Spec}, _From, State) ->
+    gen_server:cast(?MODULE, {join, Spec}),
+    {reply, ok, State};
 
-    %% Add to list of pending connections.
-    Pending = sets:add_element(Spec, State#state.pending),
-
-    %% Trigger connection.
-    ok = partisan_peer_service_manager:connect(Spec),
-
-    {reply, ok, State#state{pending = Pending}};
-
-
-handle_call({send_message, Name, Message}, _From, #state{}=State) ->
-    Result = do_send_message(Name, Message),
+handle_call({send_message, Name, Msg}, _From, State) ->
+    Result = do_send_message(Name, Msg),
     {reply, Result, State};
 
-handle_call(
-    {forward_message, Name, ServerRef, Message, _Opts},
-    _From,
-    #state{} = State) ->
-    Result = do_send_message(Name,{forward_message, ServerRef, Message}),
+handle_call({forward_message, Name, ServerRef, Msg, _Opts}, _From, State) ->
+    Result = do_send_message(Name, {forward_message, ServerRef, Msg}),
     {reply, Result, State};
 
-handle_call({receive_message, Message}, _From, State) ->
-    handle_message(Message, State);
+handle_call({receive_message, Channel, Msg}, _From, State) ->
+    handle_message(Msg, Channel, State);
 
-handle_call(members, _From, #state{} = State) ->
+handle_call(members, _From, State) ->
     Members = [Node || #{name := Node} <- members(State#state.membership)],
     {reply, {ok, Members}, State};
 
-handle_call(members_for_orchestration, _From, #state{}=State) ->
+handle_call(members_for_orchestration, _From, State) ->
     {reply, {ok, members(State#state.membership)}, State};
 
-handle_call(get_local_state, _From, #state{} = State) ->
+handle_call(get_local_state, _From, State) ->
     {reply, {ok, State#state.membership}, State};
 
 handle_call(Msg, _From, State) ->
@@ -526,8 +517,20 @@ handle_call(Msg, _From, State) ->
     {reply, ok, State}.
 
 
-
 -spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
+
+handle_cast({join, #{name := Node} = Spec}, #state{} = State) ->
+    %% Attempt to join via disterl for control messages during testing.
+    ok = partisan_util:maybe_connect_disterl(Node),
+
+    %% Trigger connection.
+    ok = partisan_peer_service_manager:connect(Spec),
+
+    %% Add to set of pending connections as we will get a 'connected'
+    %% message asynchronously (see handle_info)
+    Pending = sets:add_element(Spec, State#state.pending),
+
+    {noreply, State#state{pending = Pending}};
 
 handle_cast({kill_connections, Nodes}, State) ->
     ok = kill_connections(Nodes, State),
@@ -542,7 +545,7 @@ handle_cast(Msg, State) ->
     {noreply, State}.
 
 
-handle_info({'EXIT', From, Reason}, #state{} = State0) ->
+handle_info({'EXIT', From, Reason}, State0) ->
     ?LOG_DEBUG(#{
         description => "Connection closed",
         reason => Reason
@@ -599,9 +602,17 @@ handle_info(
                             partisan_peer_service_events:update(Membership)
                     end,
 
+                    ?LOG_DEBUG(#{
+                        description => ">>>>>>>>>>>>>>> Notify subscribers."
+                    }),
+
                     %% notify subscribers
                     up(NodeSpec, State0),
 
+
+                    ?LOG_DEBUG(#{
+                        description => ">>>>>>>>>>>>>>> Establish more conns."
+                    }),
                     %% Establish any new connections.
                     ok = establish_connections(Pending, Membership),
 
@@ -828,7 +839,7 @@ kill_connections(Nodes, State) ->
 
 
 %% @private
-handle_message({forward_message, ServerRef, Message}, State) ->
+handle_message({forward_message, ServerRef, Message}, _Channel, State) ->
     partisan_peer_service_manager:process_forward(ServerRef, Message),
     {reply, ok, State}.
 
@@ -849,30 +860,18 @@ do_send_message(Node, Message) ->
 
 
 %% @private
-accept_join_with_tag(OurTag, TheirTag) ->
-    case OurTag of
-        server ->
-            case TheirTag of
-                client ->
-                    true;
-                server ->
-                    true
-            end;
-        client ->
-            case TheirTag of
-                server ->
-                    true;
-                client ->
-                    false
-            end;
-        undefined ->
-            case TheirTag of
-                undefined ->
-                    true;
-                _ ->
-                    false
-            end
-    end.
+accept_join_with_tag(server, server) ->
+    true;
+accept_join_with_tag(server, client) ->
+    true;
+accept_join_with_tag(client, server) ->
+    true;
+accept_join_with_tag(client, client) ->
+    false;
+accept_join_with_tag(undefined, undefined) ->
+    true;
+accept_join_with_tag(undefined, _) ->
+    false.
 
 
 %% @private

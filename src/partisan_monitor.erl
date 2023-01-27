@@ -20,9 +20,11 @@
 %% -------------------------------------------------------------------
 
 %% -----------------------------------------------------------------------------
-%% @doc This module is responsible for monitoring processes on remote nodes.
+%% @doc This module is responsible for monitoring processes on remote nodes and
+%% implementing the monitoring API provided by the `partisan' module which
+%% follows the API provided by the Erlang modules `erlang' and `net_kernel'.
 %%
-%% <strong>YOU SHOULD NEVER USE the functions in this module.</strong>
+%% <strong>YOU SHOULD NEVER USE the functions in this module directly.</strong>
 %% Use the related functions in {@link partisan} instead.
 %%
 %% <blockquote class="warning">
@@ -39,7 +41,6 @@
 %% </p>
 %% </blockquote>
 %%
-
 %%
 %% @end
 %% -----------------------------------------------------------------------------
@@ -70,17 +71,18 @@
 -define(NODES_MON_TAB, partisan_monitor_nodes_mon).
 
 -record(state, {
-    %% whether monitoring is enabled, depends on partisan_peer_service_manager
-    %% being used
+    %% whether monitoring is enabled,
+    %% depends on partisan_peer_service_manager offering support for on_up/down
     enabled                     ::  boolean(),
     %% We cache a snapshot of the nodes, so that if we are terminated we can
-    %% notify the subscriptions
+    %% notify the subscriptions. This is the set of nodes we are currently
+    %% connected to. Also this might be a partial view of the whole cluster,
+    %% dependending on the peer_service_manager backend topology.
     nodes                       ::  sets:set(node())
 }).
 
 
--type monitor_opts()            ::  list().
--type demonitor_opts()          ::  [flush | info].
+%% TODO add channel
 -type process_monitor()         ::  {
                                         Mref :: reference(),
                                         MPid :: pid(),
@@ -108,10 +110,6 @@
                                         Type :: all | visible | hidden,
                                         InclReason :: boolean()
                                     }.
-
-
--export_type([monitor_opts/0]).
--export_type([demonitor_opts/0]).
 
 
 % API
@@ -142,7 +140,9 @@
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Starts the partisan monitor server.
+%% @doc Starts the `partisan_monitor' server.
+%%
+%% There is one `partisan_monitor' server instance per node.
 %% @end
 %% -----------------------------------------------------------------------------
 start_link() ->
@@ -160,51 +160,83 @@ start_link() ->
 %% The monitor options `Opts' are currently ignored.
 %%
 %% Failure:
-%% <ul>
-%% <li>`notalive' if the partisan_monitor process is not alive.</li>
-%% <li>`not_implemented' if the partisan peer service manager does not support
-%% the required capabilities required for monitoring.</li>
-%% <li>`badarg' if any of the arguments is invalid.</li>
-%% </ul>
+%% <dl>
+%% <dt>`notalive'</dt><dd>If the partisan_monitor server process is not
+%% alive.</dd>
+%% <dt>`not_implemented'</dt><dd>If the partisan peer service manager in use
+%% doesn't support the capabilities required for monitoring.</dd>
+%% <dt>`badarg'</dt><dd>If any of the arguments are invalid.</dd>
+%% </dl>
 %% @end
 %% -----------------------------------------------------------------------------
 -spec monitor(
     RemoteRef :: partisan_remote_ref:p() | partisan_remote_ref:n(),
-    Opts :: monitor_opts()) -> partisan_remote_ref:r() | no_return().
+    Opts :: partisan:monitor_opts()) -> partisan_remote_ref:r() | no_return().
 
-monitor(RemoteRef, Opts) ->
+monitor(RemoteRef, Opts) when is_list(Opts) ->
     partisan_remote_ref:is_pid(RemoteRef)
         orelse partisan_remote_ref:is_name(RemoteRef)
         orelse error(badarg),
 
-    %% We might be calling ourselves, in whicn case we need to skip monitoring
-    %% This occurs because we are a partisan_gen_server ourselves and
-    %% partisan_gen calls for monitoring.
-    %% We return the static ref so that we can recognise when demonitor
+    %% This might be a circular call, in which case we need to skip the
+    %% monitoring request. This occurs because this server implements the
+    %% partisan_gen_server behaviour and both partisan_gen_server and
+    %% partisan_gen use this server for monitoring.
+    %% To solve the issue, we return a static dummy reference,
+    %% We also need to skip the request when somebody else is trying to monitor
+    %% this server or a remote partisan_monitor server (saving the roundtrip).
     Skip =
         %% Is this a circular call?
         {registered_name, ?MODULE} ==
             erlang:process_info(self(), registered_name)
         %% Is this a remote partisan_monitor server?
         orelse partisan_remote_ref:is_name(RemoteRef, ?MODULE)
-        %% Is someone trying to monitor us
+        %% Is somebody else trying to monitor us?
         orelse is_self(RemoteRef),
 
 
     case Skip of
         true ->
+            %% Return a static dummy reference and ignore the request
             persistent_term:get(?DUMMY_MREF_KEY);
 
         false ->
+            Channel = get_option(channel, Opts, nochannel),
+            %% Wethere we fallback to the default channel if the requested
+            %% channel is not connected
+            Fallback = get_option(channel_fallback, Opts, true),
+
             case partisan_remote_ref:is_local(RemoteRef) of
                 true ->
-                    Term = partisan_remote_ref:to_term(RemoteRef),
-                    erlang:monitor(process, Term, Opts);
+                    PidOrRegName = partisan_remote_ref:to_term(RemoteRef),
+                    %% partisan:monitor while coerce Opts to erlang monitor opts
+                    partisan:monitor(process, PidOrRegName, Opts);
 
                 false ->
                     Node = partisan_remote_ref:node(RemoteRef),
-                    IsConnected = partisan_peer_connections:is_connected(Node),
+                    Channel = get_option(channel, Opts, ?DEFAULT_CHANNEL),
+                    Fallback = get_option(channel_fallback, Opts, true),
+
+                    IsConnected =
+                        case Channel of
+                            ?DEFAULT_CHANNEL ->
+                                partisan_peer_connections:is_connected(Node);
+                            _ ->
+                                %% channel is connected orelse
+                                %% falling back to the default channel is
+                                %% enabled and default channel is connected
+                                partisan_peer_connections:is_connected(
+                                    Node, Channel
+                                ) orelse (
+                                    Fallback == true andalso
+                                    partisan_peer_connections:is_connected(
+                                        Node
+                                    )
+                                )
+                        end,
+
                     monitor(RemoteRef, Opts, {connection, IsConnected})
+
             end
     end.
 
@@ -221,14 +253,14 @@ monitor(RemoteRef, Opts) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec demonitor(
-    RemoteRef :: partisan_remote_ref:r(), Opts :: demonitor_opts()) ->
+    RemoteRef :: partisan_remote_ref:r(), Opts :: partisan:demonitor_opts()) ->
     boolean() | no_return().
 
 demonitor(RemoteRef, Opts) ->
     partisan_remote_ref:is_reference(RemoteRef) orelse error(badarg),
 
     Skip =
-        %% Is this a circular call?
+        %% Is this a dummy reference or a cicular call?
         RemoteRef == persistent_term:get(?DUMMY_MREF_KEY)
         orelse {registered_name, ?MODULE} ==
             erlang:process_info(self(), registered_name),
@@ -365,20 +397,22 @@ monitor_nodes(Flag, Opts0) when is_boolean(Flag), is_list(Opts0) ->
 
 init([]) ->
     %% We trap exists so that we get a call to terminate w/reason shutdown when
-    %% the supervisor terminates us when partisan_peer_service:manager() is
-    %% terminated.
+    %% the supervisor terminates us. This happens when
+    %% partisan_peer_service:manager() is terminated.
     erlang:process_flag(trap_exit, true),
 
-    %% We subscribe to node status to implement node monitoring
+    %% We subscribe to node status to implement node monitoring.
     %% Certain partisan_peer_service_manager implementations might not support
     %% the on_up and on_down events which we need for node monitoring, so in
     %% those cases this module will not work.
     Enabled = subscribe_to_node_status(),
     _ = persistent_term:put({?MODULE, enabled}, Enabled),
 
-    %% gen behaviours call monitor/2 and demonitor/1 so being ourselves a
-    %% gen_server that would create a deadlock due to a circular call.
-    %% We use static refs for those calls to avoid calling ourselves.
+    _ = subscribe_to_channel_status(),
+
+    %% partisan_gen behaviours call monitor/2 and demonitor/1 so being
+    %% this server one, that would create a deadlock due to a circular call.
+    %% We use a static dummy ref for those calls to avoid calling ourselves.
     _ = persistent_term:put(?REF_KEY, partisan_remote_ref:from_term(?MODULE)),
     _ = persistent_term:put(?DUMMY_MREF_KEY, partisan:make_ref()),
 
@@ -390,14 +424,31 @@ init([]) ->
         {read_concurrency, true}
     ],
 
+    %% Table to record remote processes monitoring a local processes
+    %% contains process_monitor() records
     ?PROC_MON_TAB = ets:new(?PROC_MON_TAB, [set | TabOpts]),
+
+    %% An index over ?PROC_MON_TAB
+    %% contains process_monitor_idx() records
     ?PROC_MON_NODE_IDX_TAB = ets:new(?PROC_MON_NODE_IDX_TAB, [bag | TabOpts]),
+
+    %% Table to record local processes monitoring a remote processes
+    %% For every record in ?PROC_MON_TAB we a companion record in this table,
+    %% this is to be able to send a signal to the local monitoring process a
+    %% remote process when the remote node crashes.
+    %% contains process_monitor_cache() records
     ?PROC_MON_CACHE_TAB = ets:new(?PROC_MON_CACHE_TAB, [bag | TabOpts]),
+
+    %% Table to record local processes monitoring nodes
+    %% contains node_monitor() records
     ?NODE_MON_TAB = ets:new(?NODE_MON_TAB, [duplicate_bag | TabOpts]),
+
+    %% contains nodes_monitor() records
     ?NODES_MON_TAB = ets:new(?NODES_MON_TAB, [set | TabOpts]),
 
     State = #state{
         enabled = Enabled,
+        %% A snapshot of the membership view
         nodes = sets:new([{version, 2}])
     },
 
@@ -405,10 +456,10 @@ init([]) ->
 
 
 handle_call(_, _, #state{enabled = false} = State) ->
-    %% Functionality disabled
-    %% The peer service manager does not implement on_up/down calls which we
-    %% require to implement monitors
-    {reply, {error, disabled}, State};
+    %% The peer service manager does not implement support for remote monitoring
+    %% Instead of failing we return the dummy ref
+    Reply = {ok, persistent_term:get(?DUMMY_MREF_KEY)},
+    {reply, Reply, State};
 
 handle_call({monitor, RemoteRef, _}, {RemoteRef, _}, State) ->
     %% A circular call (partisan_gen)
@@ -430,22 +481,26 @@ handle_call({monitor, RemoteRef, _Opts}, {RemotePid, _}, State) ->
                 {ok, persistent_term:get(?DUMMY_MREF_KEY)};
 
             false ->
-                %% TODO Implement {tag, UserDefinedTag} option
+                %% TODO Implement options
+                %%  {tag, UserDefinedTag} option
                 try
                     Node = partisan_remote_ref:node(RemotePid),
 
-                    %% Can be a pid or registered name
-                    LocalProcess = partisan_remote_ref:to_term(RemoteRef),
+                    %% RemoteRef can be a pid or registered name for a local
+                    %% process
+                    PidOrRegName = partisan_remote_ref:to_term(RemoteRef),
 
-                    %% We monitor the process on behalf of the remote caller
-                    Mref = erlang:monitor(process, LocalProcess),
+                    %% We monitor the process on behalf of the remote caller.
+                    %% We will handle the EXIT signal and forward it to
+                    %% RemotePid when it occurs.
+                    Mref = partisan:monitor(process, PidOrRegName),
 
-                    %% We track the ref to match the 'DOWN' signal
+                    %% We track the Mref to match the 'DOWN' signal
                     ok = add_process_monitor(
-                        Node, Mref, LocalProcess, RemotePid
+                        Node, Mref, PidOrRegName, RemotePid
                     ),
 
-                    %% We reply the encoded monitor reference
+                    %% We reply with the encoded monitor reference
                     {ok, partisan_remote_ref:from_term(Mref)}
 
                 catch
@@ -461,7 +516,7 @@ handle_call({demonitor, RemoteRef, _}, {RemoteRef, _}, State) ->
     {reply, true, State};
 
 handle_call({demonitor, RemoteRef, Opts}, {_RemotePid, _}, State) ->
-    %% Remote process is requesting a demonitor
+    %% A remote process is requesting a demonitor
     case RemoteRef == persistent_term:get(?DUMMY_MREF_KEY) of
         true ->
             %% We skip.
@@ -491,7 +546,7 @@ handle_info({'DOWN', Mref, process, _ServerRef, Reason}, State) ->
             %% Local process down signal
             Node = partisan:node(OwnerRef),
             del_process_monitor_idx(Node, Mref),
-            ok = send_process_down(OwnerRef, Mref, PidOrName, Reason);
+            ok = send_process_down(OwnerRef, 'DOWN', Mref, PidOrName, Reason);
         error ->
             ok
     end,
@@ -508,6 +563,7 @@ handle_info({nodeup, Node}, State0) ->
 
     ok = send_nodeup(Node),
 
+    %% We update the node list cache
     State = State0#state{
         nodes = sets:add_element(Node, State0#state.nodes)
     },
@@ -542,7 +598,6 @@ terminate(_Reason, _State) ->
     ok.
 
 
-
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
@@ -552,6 +607,13 @@ code_change(_OldVsn, State, _Extra) ->
 %% PRIVATE
 %% =============================================================================
 
+
+%% @private
+get_option(Key, L, Default) ->
+    case lists:keyfind(Key, 1, L) of
+        {Key, Value} -> Value;
+        false -> Default
+    end.
 
 
 %% -----------------------------------------------------------------------------
@@ -575,11 +637,50 @@ subscribe_to_node_status() ->
         false ->
             Me = self(),
 
-            OnUp = fun(Node) -> Me ! {nodeup, Node} end,
-            Res1 = partisan_peer_service:on_up('_', OnUp),
+            %% We subscribe to the nodeup event for all nodes
+            Res1 = partisan_peer_service:on_up(
+                '_',
+                fun(Node) -> Me ! {nodeup, Node} end
+            ),
 
-            OnDown = fun(Node) -> Me ! {nodedown, Node} end,
-            Res2 = partisan_peer_service:on_down('_', OnDown),
+            %% We subscribe to the nodedown event for all nodes
+            Res2 = partisan_peer_service:on_down(
+                '_',
+                fun(Node) -> Me ! {nodedown, Node} end
+            ),
+
+            %% Not all service managers implement this capability so the result
+            %% can be an error.
+            Res1 =:= ok andalso Res2 =:= ok
+    end.
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+subscribe_to_channel_status() ->
+    case partisan_config:get(connect_disterl, false) of
+        true ->
+            true;
+
+        false ->
+            Me = self(),
+
+            %% We subscribe to the channelup event for all nodes
+            Res1 = partisan_peer_service:on_up(
+                '_',
+                fun(Node, Channel) -> Me ! {channelup, Node, Channel} end,
+                #{channel => '_'}
+            ),
+
+            %% We subscribe to the channeldown event for all nodes
+            Res2 = partisan_peer_service:on_down(
+                '_',
+                fun(Node, Channel) -> Me ! {channeldown, Node, Channel} end,
+                #{channel => '_'}
+            ),
 
             %% Not all service managers implement this capability so the result
             %% can be an error.
@@ -594,7 +695,7 @@ subscribe_to_node_status() ->
 %% -----------------------------------------------------------------------------
 -spec monitor(
     RemoteRef :: partisan_remote_ref:p() | partisan_remote_ref:n(),
-    Opts :: monitor_opts(),
+    Opts :: [partisan:monitor_opt()],
     Reason :: atom() | {connection, boolean()}) ->
     partisan_remote_ref:r() | no_return().
 
@@ -630,11 +731,10 @@ monitor(RemoteRef, Opts, {connection, false}) ->
     monitor(RemoteRef, Opts, noconnection);
 
 monitor(RemoteRef, _, Reason) ->
-    %% We reply a transient ref but we do not record the
-    %% request as we are immediately sending a DOWN
-    %% signal
+    %% We reply a transient ref but we do not store the request as we are
+    %% immediately sending a DOWN signal
     Mref = partisan:make_ref(),
-    ok = send_process_down(self(), Mref, {ref, RemoteRef}, Reason),
+    ok = send_process_down(self(), 'DOWN', Mref, {ref, RemoteRef}, Reason),
     Mref.
 
 
@@ -717,18 +817,20 @@ decode_ref(RemoteRef) ->
 %% -----------------------------------------------------------------------------
 -spec send_process_down(
     Dest :: partisan_remote_ref:p() | partisan_remote_ref:n() | pid() | atom(),
+    Tag  :: term(),
     Mref :: reference() | partisan_remote_ref:r(),
     Term :: {ref, partisan_remote_ref:p() | partisan_remote_ref:n()}
     | pid() | atom(),
     Reason :: any()) -> ok.
 
-send_process_down(Dest, Mref0, {ref, PRef}, Reason) when is_reference(Mref0) ->
+send_process_down(Dest, Tag, Mref0, {ref, PRef}, Reason)
+when is_reference(Mref0) ->
     Mref = partisan_remote_ref:from_term(Mref0),
-    send_process_down(Dest, Mref, {ref, PRef}, Reason);
+    send_process_down(Dest, Tag, Mref, {ref, PRef}, Reason);
 
-send_process_down(Dest, Mref, {ref, PRef}, Reason) ->
+send_process_down(Dest, Tag, Mref, {ref, PRef}, Reason) ->
     Down = {
-        'DOWN',
+        Tag,
         Mref,
         process,
         PRef,
@@ -736,15 +838,15 @@ send_process_down(Dest, Mref, {ref, PRef}, Reason) ->
     },
     partisan:forward_message(Dest, Down);
 
-send_process_down(Dest, Mref, Term, Reason)
+send_process_down(Dest, Tag, Mref, Term, Reason)
 when is_pid(Term) orelse is_atom(Term) ->
     Ref = partisan_remote_ref:from_term(Term),
-    send_process_down(Dest, Mref, {ref, Ref}, Reason);
+    send_process_down(Dest, Tag, Mref, {ref, Ref}, Reason);
 
-send_process_down(Dest, Mref, {Name, Node}, Reason)
+send_process_down(Dest, Tag, Mref, {Name, Node}, Reason)
 when is_atom(Name), is_atom(Node) ->
     Ref = partisan_remote_ref:from_term(Name, Node),
-    send_process_down(Dest, Mref, {ref, Ref}, Reason).
+    send_process_down(Dest, Tag, Mref, {ref, Ref}, Reason).
 
 
 %% -----------------------------------------------------------------------------
@@ -783,7 +885,9 @@ send_nodedown(Node, Reason) when is_atom(Node) ->
             ({_, Mref, MPid, Owner}) ->
                 %% A local index to a remote monitor
                 ok = del_process_monitor_cache(Mref),
-                send_process_down(Owner, Mref, {ref, MPid}, noconnection)
+                send_process_down(
+                    Owner, 'DOWN', Mref, {ref, MPid}, noconnection
+                )
         end,
         process_monitor_caches(Node)
     ),
@@ -832,7 +936,9 @@ send_self_down(Reason, State) ->
         fun
             ({_, Mref, MPid, Owner}, ok) ->
                 %% A local index to a remote monitor
-                send_process_down(Owner, Mref, {ref, MPid}, noconnection)
+                send_process_down(
+                    Owner, 'DOWN', Mref, {ref, MPid}, noconnection
+                )
         end,
         ok,
         ?PROC_MON_CACHE_TAB

@@ -49,6 +49,7 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 
+
 %% =============================================================================
 %% GEN_SERVER_CALLBACKS
 %% =============================================================================
@@ -59,29 +60,27 @@ init([]) ->
     {ok, #state{}}.
 
 
-
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
-
 
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
 
-handle_info({call, M, F, A, _Timeout, {origin, Name, Self}}, State) ->
+handle_info({call, M, F, A, _Timeout, {origin, Caller}}, State) ->
     %% Execute function.
-    Response = try
-        erlang:apply(M, F, A)
-    catch
-         Error ->
-             {badrpc, Error}
-    end,
+    Response =
+        try
+            erlang:apply(M, F, A)
+        catch
+            _:Reason ->
+                 {badrpc, Reason}
+        end,
 
     %% Send the response to execution.
     Opts = partisan_rpc:prepare_opts(partisan_config:get(forward_options, [])),
-
-    ok = partisan:forward_message(Name, Self, {response, Response}, Opts),
+    ok = partisan:forward_message(Caller, {rpc_response, Response}, Opts),
 
     {noreply, State};
 

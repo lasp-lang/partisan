@@ -109,7 +109,7 @@
 %% <dt>`name'</dt><dd>TBD</dd>
 %% <dt>`orchestration_strategy'</dt><dd>TBD</dd>
 %% <dt>`parallelism'</dt><dd>TBD</dd>
-%% <dt>`partisan_peer_service_manager'</dt><dd>TBD</dd>
+%% <dt>`peer_service_manager'</dt><dd>TBD</dd>
 %% <dt>`passive_view_shuffle_period'</dt><dd>TBD</dd>
 %% <dt>`peer_host'</dt><dd>TBD</dd>
 %% <dt>`peer_ip'</dt><dd>TBD</dd>
@@ -169,7 +169,6 @@
 -include("partisan_logger.hrl").
 -include("partisan.hrl").
 
-
 -export([channel_opts/1]).
 -export([channels/0]).
 -export([default_channel/0]).
@@ -199,14 +198,15 @@
 %% -----------------------------------------------------------------------------
 %% @doc Initialises the configuration from the application environment.
 %%
-%% <strong>You should never call this function</strong>. This is used by Partisan itself
-%% during startup.
+%% <strong>You should never call this function</strong>. This is used by
+%% Partisan itself during startup.
+%% The function is (and should be) idempotent, which is required for testing.
 %% @end
 %% -----------------------------------------------------------------------------
 init() ->
     DefaultPeerService = application:get_env(
         partisan,
-        partisan_peer_service_manager,
+        peer_service_manager,
         ?DEFAULT_PEER_SERVICE_MANAGER
     ),
 
@@ -219,27 +219,8 @@ init() ->
         end,
 
     %% Configure the partisan node name.
-    Name = case node() of
-        nonode@nohost ->
-            NodeName = gen_node_name(),
-            ?LOG_INFO(#{
-                description => "Partisan node name configured",
-                name => NodeName,
-                disterl_enabled => false
-            }),
-            NodeName;
-        Other ->
-            ?LOG_INFO(#{
-                description => "Partisan node name configured",
-                name => Other,
-                disterl_enabled => true
-            }),
-            Other
-    end,
-
     %% Must be done here, before the resolution call is made.
-    partisan_config:set(name, Name),
-    partisan_config:set(nodestring, atom_to_binary(Name, utf8)),
+    ok = maybe_set_node_name(),
 
     DefaultTag =
         case os:getenv("TAG", "false") of
@@ -273,18 +254,13 @@ init() ->
     DefaultPeerIP = try_get_node_address(),
     DefaultPeerPort = random_port(),
 
-    %% Configure X-BOT interval.
-    XbotInterval = rand:uniform(?XBOT_RANGE_INTERVAL) + ?XBOT_MIN_INTERVAL,
-
     [env_or_default(Key, Default) ||
         {Key, Default} <- [
             %% WARNING:
-            %% This list show be exhaustive, anything key missing from this list
-            %% will not be read from the application environment
-            %% The following keys are missing as we need to process them after:
-            %% [channels].
-            {arwl, 5},
-            {prwl, 30},
+            %% This list should be exhaustive, anything key missing from this
+            %% list will not be read from the application environment.
+            %% The following keys are missing on purpose
+            %% as we need to process them after: [channels].
             {binary_padding, false},
             {broadcast, false},
             {broadcast_mods, [partisan_plumtree_backend]},
@@ -299,40 +275,35 @@ init() ->
             {exchange_tick_period, ?DEFAULT_EXCHANGE_TICK_PERIOD},
             {fanout, ?FANOUT},
             {gossip, true},
+            {hyparview, ?HYPARVIEW_DEFAULTS},
             {ingress_delay, 0},
             {lazy_tick_period, ?DEFAULT_LAZY_TICK_PERIOD},
-            {max_active_size, 6},
-            {max_passive_size, 30},
-            {min_active_size, 3},
-            {name, Name},
-            {passive_view_shuffle_period, 10000},
-            {parallelism, ?PARALLELISM},
             {membership_binary_compression, 1},
             {membership_strategy, ?DEFAULT_MEMBERSHIP_STRATEGY},
-            {partisan_peer_service_manager, PeerService},
+            {membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING},
+            %% {name, Name},
+            {orchestration_strategy, ?DEFAULT_ORCHESTRATION_STRATEGY},
+            {parallelism, ?PARALLELISM},
+            {peer_service_manager, PeerService},
             {peer_host, undefined},
             {peer_ip, DefaultPeerIP},
             {peer_port, DefaultPeerPort},
             {periodic_enabled, ?PERIODIC_ENABLED},
             {periodic_interval, 10000},
-            {remote_ref_uri_padding, false},
-            {remote_ref_as_uri, false},
             {pid_encoding, true},
-            {ref_encoding, true},
-            {membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING},
-            {orchestration_strategy, ?DEFAULT_ORCHESTRATION_STRATEGY},
             {random_seed, random_seed()},
-            {random_promotion, true},
+            {ref_encoding, true},
             {register_pid_for_encoding, false},
+            {remote_ref_as_uri, false},
+            {remote_ref_uri_padding, false},
             {replaying, false},
             {reservations, []},
             {shrinking, false},
-            {tracing, false},
-            {tls, false},
-            {tls_server_options, []},
-            {tls_client_options, []},
             {tag, DefaultTag},
-            {xbot_interval, XbotInterval}
+            {tls, false},
+            {tls_client_options, []},
+            {tls_server_options, []},
+            {tracing, false}
        ]
     ],
 
@@ -355,8 +326,8 @@ init() ->
     %% We make sure they are sorted so that we can compare them (specially when
     %% part of the node_spec()).
     ok = env_or_default(listen_addrs, [DefaultAddr]),
-    ListenAddrs = lists:usort(partisan_config:get(listen_addrs)),
-    ok = partisan_config:set(listen_addrs, ListenAddrs).
+    ListenAddrs = lists:usort(get(listen_addrs)),
+    ok = set(listen_addrs, ListenAddrs).
 
 
 %% Seed the process.
@@ -368,14 +339,14 @@ seed() ->
     RandomSeed = random_seed(),
     ?LOG_DEBUG(#{
         description => "Chossing random seed",
-        node => node(),
+        node => partisan:node(),
         seed => RandomSeed
     }),
     rand:seed(exsplus, RandomSeed).
 
 %% Return a random seed, either from the environment or one that's generated for the run.
 random_seed() ->
-    case partisan_config:get(random_seed, undefined) of
+    case get(random_seed, undefined) of
         undefined ->
             {erlang:phash2([partisan:node()]), erlang:monotonic_time(), erlang:unique_integer()};
         Other ->
@@ -402,10 +373,10 @@ get(broadcast_start_exchange_limit = Key) ->
     get(Key, Default);
 
 get(Key) ->
-    persistent_term:get(Key).
+    persistent_term:get(maybe_rename(Key)).
 
 get(Key, Default) ->
-    persistent_term:get(Key, Default).
+    persistent_term:get(maybe_rename(Key), Default).
 
 
 %% -----------------------------------------------------------------------------
@@ -438,7 +409,7 @@ get_with_opts(Key, Opts, Default) when is_map(Opts); is_list(Opts) ->
 %% -----------------------------------------------------------------------------
 set(peer_ip, Value) when is_list(Value) ->
     {ok, ParsedIP} = inet_parse:address(Value),
-    set(peer_ip, ParsedIP);
+    do_set(peer_ip, ParsedIP);
 
 set(channels, Arg) when is_list(Arg) orelse is_map(Arg) ->
     %% We coerse any defined channel to channel spec map representations and
@@ -451,11 +422,13 @@ set(channels, Arg) when is_list(Arg) orelse is_map(Arg) ->
     Channels = maps:put(
         ?DEFAULT_CHANNEL, DefaultChannel, Channels0
     ),
-
     do_set(channels, Channels);
 
 set(broadcast_mods, Value) ->
     do_set(broadcast_mods, lists:usort(Value ++ ?BROADCAST_MODS));
+
+set(hyparview, Value) ->
+    set_hyparview_config(Value);
 
 set(membership_binary_compression, true) ->
     do_set(membership_binary_compression, true),
@@ -470,7 +443,7 @@ set(membership_binary_compression, Val) ->
     do_set('$membership_encoding_opts', []);
 
 set(Key, Value) ->
-    do_set(Key, Value).
+    do_set(maybe_rename(Key), Value).
 
 
 %% -----------------------------------------------------------------------------
@@ -478,7 +451,7 @@ set(Key, Value) ->
 %% @end
 %% -----------------------------------------------------------------------------
 listen_addrs() ->
-    partisan_config:get(listen_addrs).
+    get(listen_addrs).
 
 
 %% -----------------------------------------------------------------------------
@@ -524,7 +497,7 @@ default_channel() ->
 -spec channels() -> #{partisan:channel() => partisan:channel_opts()}.
 
 channels() ->
-    partisan_config:get(channels).
+    get(channels).
 
 
 %% -----------------------------------------------------------------------------
@@ -532,7 +505,7 @@ channels() ->
 %% @end
 %% -----------------------------------------------------------------------------
 parallelism() ->
-    partisan_config:get(parallelism, ?PARALLELISM).
+    get(parallelism, ?PARALLELISM).
 
 
 
@@ -540,6 +513,46 @@ parallelism() ->
 %% PRIVATE
 %% =============================================================================
 
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc This call is idempotent
+%% @end
+%% -----------------------------------------------------------------------------
+maybe_set_node_name() ->
+    case get(name, undefined) of
+        undefined ->
+            set_node_name();
+        _ ->
+            %% Name already set
+            ok
+    end.
+
+
+%% @private
+set_node_name() ->
+    Name =
+        case node() of
+            nonode@nohost ->
+                Generated = gen_node_name(),
+                ?LOG_INFO(#{
+                    description =>
+                        "Partisan node name generated and configured",
+                    name => Generated,
+                    disterl_enabled => false
+                }),
+                Generated;
+            Other ->
+                ?LOG_INFO(#{
+                    description => "Partisan node name configured",
+                    name => Other,
+                    disterl_enabled => true
+                }),
+                Other
+        end,
+    set(name, Name),
+    set(nodestring, atom_to_binary(Name, utf8)).
 
 
 
@@ -561,6 +574,60 @@ do_set(Key, MergeFun) when is_function(MergeFun, 1) ->
 do_set(Key, Value) ->
     application:set_env(?APP, Key, Value),
     persistent_term:put(Key, Value).
+
+
+%% @private
+set_hyparview_config(Config) when is_map(Config) ->
+    set_hyparview_config(maps:to_list(Config));
+
+set_hyparview_config(Config) when is_list(Config) ->
+    %% We rename keys
+    M = lists:foldl(
+        fun({Key, Val}, Acc) ->
+            maps:put(maybe_rename(Key), Val, Acc)
+        end,
+        maps:new(),
+        Config
+    ),
+    %% We merge with defaults
+    do_set(hyparview, maps:merge(get(hyparview, ?HYPARVIEW_DEFAULTS), M)).
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc Rename keys
+%% @end
+%% -----------------------------------------------------------------------------
+maybe_rename(arwl) ->
+    % hyparview
+    active_rwl;
+
+maybe_rename(prwl) ->
+    % hyparview
+    passive_rwl;
+
+maybe_rename(max_active_size) ->
+    % hyparview
+    active_max_size;
+
+maybe_rename(min_active_size) ->
+    % hyparview
+    active_min_size;
+
+maybe_rename(max_passive_size) ->
+    % hyparview
+    passive_max_size;
+
+maybe_rename(passive_view_shuffle_period) ->
+    % hyparview
+    shuffle_interval;
+
+maybe_rename(random_promotion_period) ->
+    % hyparview
+    random_promotion_interval;
+
+maybe_rename(Key) ->
+    Key.
 
 
 %% @private

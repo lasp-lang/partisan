@@ -237,7 +237,7 @@ init_it(GenMod, Starter, Parent, Name, Mod, Args, Options) ->
     end.
 
 init_it2(GenMod, Starter, Parent, Name, Mod, Args, Options) ->
-    ok = set_opts(Options),
+    ok = set_opts(Options), % partisan addition
     GenMod:init_it(Starter, Parent, Name, Mod, Args, Options).
 
 %%-----------------------------------------------------------------
@@ -280,37 +280,55 @@ call(Process, Label, Request, Timeout)
 
 -dialyzer({no_improper_lists, do_call/4}).
 
-% do_call(Process, Label, Request, Timeout) when is_atom(Process) =:= false ->
-%     Mref = erlang:monitor(process, Process, [{alias,demonitor}]),
-
-%     Tag = [alias | Mref],
-
-%     %% OTP-24:
-%     %% Using alias to prevent responses after 'noconnection' and timeouts.
-%     %% We however still may call nodes responding via process identifier, so
-%     %% we still use 'noconnect' on send in order to try to send on the
-%     %% monitored connection, and not trigger a new auto-connect.
-%     %%
-%     erlang:send(Process, {Label, {self(), Tag}, Request}, [noconnect]),
-
-%     receive
-%         {[alias | Mref], Reply} ->
-%             erlang:demonitor(Mref, [flush]),
-%             {ok, Reply};
-%         {'DOWN', Mref, _, _, noconnection} ->
-%             Node = get_node(Process),
-%             exit({nodedown, Node});
-%         {'DOWN', Mref, _, _, Reason} ->
-%             exit(Reason)
-%     after Timeout ->
-%             erlang:demonitor(Mref, [flush]),
-%             receive
-%                 {[alias | Mref], Reply} ->
-%                     {ok, Reply}
-%             after 0 ->
-%                     exit(timeout)
-%             end
-%     end.
+%% do_call(Process, Label, Request, infinity)
+%%   when (is_pid(Process)
+%%         andalso (node(Process) == node()))
+%%        orelse (element(2, Process) == node()
+%%                andalso is_atom(element(1, Process))
+%%                andalso (tuple_size(Process) =:= 2)) ->
+%%     Mref = erlang:monitor(process, Process),
+%%     %% Local without timeout; no need to use alias since we unconditionally
+%%     %% will wait for either a reply or a down message which corresponds to
+%%     %% the process being terminated (as opposed to 'noconnection')...
+%%     Process ! {Label, {self(), Mref}, Request},
+%%     receive
+%%         {Mref, Reply} ->
+%%             erlang:demonitor(Mref, [flush]),
+%%             {ok, Reply};
+%%         {'DOWN', Mref, _, _, Reason} ->
+%%             exit(Reason)
+%%     end;
+%% do_call(Process, Label, Request, Timeout) when is_atom(Process) =:= false ->
+%%     Mref = erlang:monitor(process, Process, [{alias,demonitor}]),
+%%
+%%     Tag = [alias | Mref],
+%%
+%%     %% OTP-24:
+%%     %% Using alias to prevent responses after 'noconnection' and timeouts.
+%%     %% We however still may call nodes responding via process identifier, so
+%%     %% we still use 'noconnect' on send in order to try to send on the
+%%     %% monitored connection, and not trigger a new auto-connect.
+%%     %%
+%%     erlang:send(Process, {Label, {self(), Tag}, Request}, [noconnect]),
+%%
+%%     receive
+%%         {[alias | Mref], Reply} ->
+%%             erlang:demonitor(Mref, [flush]),
+%%             {ok, Reply};
+%%        {'DOWN', Mref, _, _, noconnection} ->
+%%            Node = get_node(Process),
+%%            exit({nodedown, Node});
+%%        {'DOWN', Mref, _, _, Reason} ->
+%%            exit(Reason)
+%%    after Timeout ->
+%%            erlang:demonitor(Mref, [flush]),
+%%            receive
+%%                {[alias | Mref], Reply} ->
+%%                    {ok, Reply}
+%%            after 0 ->
+%%                    exit(timeout)
+%%            end
+%%    end.
 do_call(Process, Label, Request, Timeout) ->
     %% For remote calls we use Partisan
     Mref = do_send_request(Process, Label, Request),
@@ -368,18 +386,62 @@ send_request(Process, Label, Request) ->
     end.
 
 %% Partisan addition
-
 -spec send_request(Name::server_ref(), Label::term(), Request::term(), Opts :: list()) -> request_id().
 send_request(Process, Label, Request, Opts) ->
     set_opts(Opts),
     send_request(Process, Label, Request).
 
-% -dialyzer({no_improper_lists, do_send_request/3}).
 
-% do_send_request(Process, Label, Request) ->
-%     Mref = erlang:monitor(process, Process, [{alias, demonitor}]),
-%     erlang:send(Process, {Label, {self(), [alias|Mref]}, Request}, [noconnect]),
-%     Mref.
+-dialyzer({no_improper_lists, do_send_request/3}).
+
+%% do_send_request(Process, Label, Request) ->
+%%     Mref = erlang:monitor(process, Process, [{alias, demonitor}]),
+%%     erlang:send(Process, {Label, {self(), [alias|Mref]}, Request}, [noconnect]),
+%%     Mref.
+
+
+%% @private Partisan replacement
+do_send_request(Process, Label, Request)
+when is_pid(Process) orelse is_atom(Process) ->
+    Opts = [], % we do not need channel opt
+    Mref = partisan:monitor(process, Process, Opts),
+    Message = {Label, {partisan:self(), Mref}, Request},
+    ?LOG_DEBUG(#{
+        description => "Sending message",
+        destination => Process,
+        message => Message
+    }),
+    partisan:forward_message(Process, Message, Opts),
+    Mref;
+
+do_send_request({ServerRef, Node} = Process, Label, Request) ->
+    %% Monitor request and message are delivered using the same channel
+    Opts = get_opts(),
+    Mref = partisan:monitor(process, Process, Opts),
+    Message = {Label, {partisan:self(), Mref}, Request},
+    ?LOG_DEBUG(#{
+        description => "Sending message",
+        destination => Process,
+        message => Message
+    }),
+    partisan:forward_message(Node, ServerRef, Message, Opts),
+    Mref;
+
+do_send_request(RemoteRef, Label, Request) ->
+    %% Monitor request and message are delivered using the same channel
+    Opts = get_opts(),
+    Mref = partisan:monitor(process, RemoteRef, Opts),
+    Message = {Label, {partisan:self(), Mref}, Request},
+    ?LOG_DEBUG(#{
+        description => "Sending message",
+        destination => RemoteRef,
+        message => Message
+    }),
+    partisan:forward_message(RemoteRef, Message, Opts),
+    Mref.
+
+
+
 
 % %%
 % %% Wait for a reply to the client.
@@ -712,52 +774,3 @@ set_opts(Options) when is_list(Options) ->
 erase_opts() ->
     _ = erlang:erase(partisan_gen_opts),
     ok.
-
-
-
-%% =============================================================================
-%% PARTISAN PRIVATE
-%% =============================================================================
-
-
-
-%% @private
-do_send_request(Process, Label, Request)
-when is_pid(Process) orelse is_atom(Process) ->
-    Opts = [], % we do not need channel opt
-    Mref = partisan:monitor(process, Process, Opts),
-    Message = {Label, {partisan:self(), Mref}, Request},
-    ?LOG_DEBUG(#{
-        description => "Sending message",
-        destination => Process,
-        message => Message
-    }),
-    partisan:forward_message(Process, Message, Opts),
-    Mref;
-
-do_send_request({ServerRef, Node} = Process, Label, Request) ->
-    %% Monitor request and message are delivered using the same channel
-    Opts = get_opts(),
-    Mref = partisan:monitor(process, Process, Opts),
-    Message = {Label, {partisan:self(), Mref}, Request},
-    ?LOG_DEBUG(#{
-        description => "Sending message",
-        destination => Process,
-        message => Message
-    }),
-    partisan:forward_message(Node, ServerRef, Message, Opts),
-    Mref;
-
-do_send_request(RemoteRef, Label, Request) ->
-    %% Monitor request and message are delivered using the same channel
-    Opts = get_opts(),
-    Mref = partisan:monitor(process, RemoteRef, Opts),
-    Message = {Label, {partisan:self(), Mref}, Request},
-    ?LOG_DEBUG(#{
-        description => "Sending message",
-        destination => RemoteRef,
-        message => Message
-    }),
-    partisan:forward_message(RemoteRef, Message, Opts),
-    Mref.
-

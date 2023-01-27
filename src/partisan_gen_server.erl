@@ -804,14 +804,14 @@ try_dispatch(Mod, Func, Msg, State) ->
             case erlang:function_exported(Mod, handle_info, 2) of
                 false ->
                     ?LOG_WARNING(
-                       #{label=>{gen_server,no_handle_info},
+                       #{label=>{partisan_gen_server,no_handle_info},
                          module=>Mod,
                          message=>Msg},
                        #{domain=>[otp],
-                         report_cb=>fun gen_server:format_log/2,
+                         report_cb=>fun partisan_gen_server:format_log/2,
                          error_logger=>
                              #{tag=>warning_msg,
-                               report_cb=>fun gen_server:format_log/1}}),
+                               report_cb=>fun partisan_gen_server:format_log/1}}),
                     {ok, {noreply, State}};
                 true ->
                     {'EXIT', error, R, Stacktrace}
@@ -1050,7 +1050,7 @@ error_info(_Reason, application_controller, _From, _Msg, _Mod, _State, _Debug) -
     ok;
 error_info(Reason, Name, From, Msg, Mod, State, Debug) ->
     Log = sys:get_log(Debug),
-    ?LOG_ERROR(#{label=>{gen_server,terminate},
+    ?LOG_ERROR(#{label=>{partisan_gen_server,terminate},
                  name=>Name,
                  last_message=>Msg,
                  state=>format_status(terminate, Mod, get(), State),
@@ -1058,9 +1058,9 @@ error_info(Reason, Name, From, Msg, Mod, State, Debug) ->
                  reason=>Reason,
                  client_info=>client_stacktrace(From)},
                #{domain=>[otp],
-                 report_cb=>fun gen_server:format_log/2,
+                 report_cb=>fun partisan_gen_server:format_log/2,
                  error_logger=>#{tag=>error,
-                                 report_cb=>fun gen_server:format_log/1}}),
+                                 report_cb=>fun partisan_gen_server:format_log/1}}),
     ok.
 
 client_stacktrace(undefined) ->
@@ -1100,7 +1100,7 @@ format_log(Report) ->
 
 limit_report(Report,unlimited) ->
     Report;
-limit_report(#{label:={gen_server,terminate},
+limit_report(#{label:={partisan_gen_server,terminate},
                last_message:=Msg,
                state:=State,
                log:=Log,
@@ -1112,7 +1112,7 @@ limit_report(#{label:={gen_server,terminate},
             log=>[io_lib:limit_term(L,Depth)||L<-Log],
             reason=>io_lib:limit_term(Reason,Depth),
             client_info=>limit_client_report(Client,Depth)};
-limit_report(#{label:={gen_server,no_handle_info},
+limit_report(#{label:={partisan_gen_server,no_handle_info},
                message:=Msg}=Report,Depth) ->
     Report#{message=>io_lib:limit_term(Msg,Depth)}.
 
@@ -1139,7 +1139,7 @@ format_log(Report, FormatOpts0) ->
     {Format,Args} = format_log_single(Report, FormatOpts),
     io_lib:format(Format, Args, IoOpts).
 
-format_log_single(#{label:={gen_server,terminate},
+format_log_single(#{label:={partisan_gen_server,terminate},
                     name:=Name,
                     last_message:=Msg,
                     state:=State,
@@ -1162,7 +1162,7 @@ format_log_single(#{label:={gen_server,terminate},
         end,
     {Format1++ServerLogFormat++ClientLogFormat,
      Args1++ServerLogArgs++ClientLogArgs};
-format_log_single(#{label:={gen_server,no_handle_info},
+format_log_single(#{label:={partisan_gen_server,no_handle_info},
                     module:=Mod,
                     message:=Msg},
                   #{single_line:=true,depth:=Depth}=FormatOpts) ->
@@ -1180,7 +1180,7 @@ format_log_single(#{label:={gen_server,no_handle_info},
 format_log_single(Report,FormatOpts) ->
     format_log_multi(Report,FormatOpts).
 
-format_log_multi(#{label:={gen_server,terminate},
+format_log_multi(#{label:={partisan_gen_server,terminate},
                    name:=Name,
                    last_message:=Msg,
                    state:=State,
@@ -1215,7 +1215,7 @@ format_log_multi(#{label:={gen_server,terminate},
                     end ++ ClientArgs
         end,
     {Format,Args};
-format_log_multi(#{label:={gen_server,no_handle_info},
+format_log_multi(#{label:={partisan_gen_server,no_handle_info},
                    module:=Mod,
                    message:=Msg},
                  #{depth:=Depth}=FormatOpts) ->
