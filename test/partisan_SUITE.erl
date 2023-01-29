@@ -221,6 +221,8 @@ all() ->
         %% ,{hyparview_xbot, [shuffle]}
      ]},
 
+     {group, otp, []},
+
      %% Full.
 
      {group, with_full_membership_strategy, []},
@@ -305,6 +307,11 @@ groups() ->
         rpc_test,
         pid_test,
         rejoin_test,
+        otp_test
+    ]},
+
+    {otp, [],
+      [
         otp_test
     ]},
 
