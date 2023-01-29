@@ -55,20 +55,25 @@
 -define(DUMMY_MREF_KEY, {?MODULE, monitor_ref}).
 -define(IS_ENABLED, persistent_term:get({?MODULE, enabled})).
 
-%% stores process_monitor()
-%% local process mrefs held on behalf of remote processes
+%% Table to record remote processes monitoring a local processes
+%% stores process_monitor() records
 -define(PROC_MON_TAB, partisan_monitor_process_mon).
+%% An index over ?PROC_MON_TAB
 %% refs grouped by node, used to notify/cleanup on a nodedown signal
 %% stores process_monitor_idx()
 -define(PROC_MON_NODE_IDX_TAB, partisan_monitor_process_mon_node_idx).
-%% local cache for a remote process monitor
+%% Table to record local processes monitoring a remote processes
+%% For every record in ?PROC_MON_TAB we a companion record in this table,
+%% this is to be able to send a signal to the local monitoring process a
+%% remote process when the remote node crashes.
+%% contains process_monitor_cache() records
 -define(PROC_MON_CACHE_TAB, partisan_monitor_process_mon_cache).
-%% Local pids that are monitoring individual node
-%% stores node_monitor()
+%% Table to record local processes monitoring nodes
+%% contains node_monitor() records
 -define(NODE_MON_TAB, partisan_monitor_node_mon).
-%% Local pids that are monitoring all nodes
-%% stores nodes_monitor()
--define(NODES_MON_TAB, partisan_monitor_nodes_mon).
+%% Local pids that are monitoring all nodes of a certain type
+%% stores node_type_monitor()
+-define(NODE_TYPE_MON_TAB, partisan_monitor_node_type_mon).
 
 -record(state, {
     %% whether monitoring is enabled,
@@ -82,31 +87,42 @@
 }).
 
 
-%% TODO add channel
--type process_monitor()         ::  {
-                                        Mref :: reference(),
-                                        MPid :: pid(),
-                                        Owner :: partisan_remote_ref:p()
-                                                | partisan_remote_ref:n()
-                                    }.
--type process_monitor_idx()     ::  {node(), reference()}.
--type process_monitor_cache()   ::  {
-                                        Node :: node(),
-                                        Mref :: reference(),
-                                        MPid :: partisan_remote_ref:p()
-                                                | partisan_remote_ref:n(),
-                                        Owner :: pid()
+-record(process_monitor, {
+    ref                         ::  reference(),
+    monitor                     ::  partisan_remote_ref:p()
+                                    | partisan_remote_ref:n(),
+    monitored                   ::  pid() | atom(),
+    channel                     ::  partisan:channel()
+}).
 
-                                    }.
+-record(process_monitor_cache, {
+    node                        ::  node(),
+    ref                         ::  reference(),
+    monitor                     ::  pid() | atom(),
+    monitored                   ::  partisan_remote_ref:p()
+                                    | partisan_remote_ref:n()
+}).
+
+-record(node_type_monitor, {
+    key                         ::  {Monitor :: pid(), Hash :: integer()},
+    node_type                   ::  all | visible | hidden,
+    nodedown_reason             ::  boolean()
+}).
+
+
+%% TODO add channel
+-type process_monitor()         ::  #process_monitor{}.
+-type process_monitor_idx()     ::  {node(), reference()}.
+-type process_monitor_cache()   ::  #process_monitor_cache{}.
 -type node_monitor()            ::  {node(), pid()}.
--type nodes_monitor()           ::  {
+-type node_type_monitor()       ::  {
                                         {
-                                            Owner :: pid(),
+                                            Monitor :: pid(),
                                             Hash :: integer()
                                         },
-                                        nodes_monitor_opts()
+                                        node_type_monitor_opts()
                                     }.
--type nodes_monitor_opts()      ::  {
+-type node_type_monitor_opts()  ::  {
                                         Type :: all | visible | hidden,
                                         InclReason :: boolean()
                                     }.
@@ -155,8 +171,7 @@ start_link() ->
 %% -----------------------------------------------------------------------------
 %% @doc When you attempt to monitor a remote process, it is not
 %% guaranteed that you will receive the DOWN message. A few reasons for not
-%% receiving the message are message loss, tree reconfiguration and the node
-%% is no longer reachable.
+%% receiving the message are message loss and tree reconfiguration.
 %% The monitor options `Opts' are currently ignored.
 %%
 %% Failure:
@@ -170,12 +185,12 @@ start_link() ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec monitor(
-    RemoteRef :: partisan_remote_ref:p() | partisan_remote_ref:n(),
+    Target :: partisan_remote_ref:p() | partisan_remote_ref:n(),
     Opts :: partisan:monitor_opts()) -> partisan_remote_ref:r() | no_return().
 
-monitor(RemoteRef, Opts) when is_list(Opts) ->
-    partisan_remote_ref:is_pid(RemoteRef)
-        orelse partisan_remote_ref:is_name(RemoteRef)
+monitor(Target, Opts) when is_list(Opts) ->
+    partisan_remote_ref:is_pid(Target)
+        orelse partisan_remote_ref:is_name(Target)
         orelse error(badarg),
 
     %% This might be a circular call, in which case we need to skip the
@@ -190,9 +205,9 @@ monitor(RemoteRef, Opts) when is_list(Opts) ->
         {registered_name, ?MODULE} ==
             erlang:process_info(self(), registered_name)
         %% Is this a remote partisan_monitor server?
-        orelse partisan_remote_ref:is_name(RemoteRef, ?MODULE)
+        orelse partisan_remote_ref:is_name(Target, ?MODULE)
         %% Is somebody else trying to monitor us?
-        orelse is_self(RemoteRef),
+        orelse is_self(Target),
 
 
     case Skip of
@@ -206,14 +221,14 @@ monitor(RemoteRef, Opts) when is_list(Opts) ->
             %% channel is not connected
             Fallback = get_option(channel_fallback, Opts, true),
 
-            case partisan_remote_ref:is_local(RemoteRef) of
+            case partisan_remote_ref:is_local(Target) of
                 true ->
-                    PidOrRegName = partisan_remote_ref:to_term(RemoteRef),
+                    PidOrRegName = partisan_remote_ref:to_term(Target),
                     %% partisan:monitor while coerce Opts to erlang monitor opts
                     partisan:monitor(process, PidOrRegName, Opts);
 
                 false ->
-                    Node = partisan_remote_ref:node(RemoteRef),
+                    Node = partisan_remote_ref:node(Target),
                     Channel = get_option(channel, Opts, ?DEFAULT_CHANNEL),
                     Fallback = get_option(channel_fallback, Opts, true),
 
@@ -235,7 +250,8 @@ monitor(RemoteRef, Opts) when is_list(Opts) ->
                                 )
                         end,
 
-                    monitor(RemoteRef, Opts, {connection, IsConnected})
+                    Status = {connected, IsConnected},
+                    monitor(Target, Opts, Status)
 
             end
     end.
@@ -253,15 +269,15 @@ monitor(RemoteRef, Opts) when is_list(Opts) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec demonitor(
-    RemoteRef :: partisan_remote_ref:r(), Opts :: partisan:demonitor_opts()) ->
+    MonitoredRef :: partisan_remote_ref:r(), Opts :: partisan:demonitor_opts()) ->
     boolean() | no_return().
 
-demonitor(RemoteRef, Opts) ->
-    partisan_remote_ref:is_reference(RemoteRef) orelse error(badarg),
+demonitor(MPRef, Opts) ->
+    partisan_remote_ref:is_reference(MPRef) orelse error(badarg),
 
     Skip =
-        %% Is this a dummy reference or a cicular call?
-        RemoteRef == persistent_term:get(?DUMMY_MREF_KEY)
+        %% Is this a dummy reference or a circular call?
+        MPRef == persistent_term:get(?DUMMY_MREF_KEY)
         orelse {registered_name, ?MODULE} ==
             erlang:process_info(self(), registered_name),
 
@@ -271,18 +287,18 @@ demonitor(RemoteRef, Opts) ->
 
         false ->
             %% We remove the local cache
-            ok = del_process_monitor_cache(RemoteRef),
+            ok = del_process_monitor_cache(MPRef),
 
             %% We call the remote node to demonitor
-            Node = partisan_remote_ref:node(RemoteRef),
-            Cmd = {demonitor, RemoteRef, Opts},
+            Node = partisan_remote_ref:node(MPRef),
+            Cmd = {demonitor, MPRef, Opts},
 
             case call({?MODULE, Node}, Cmd) of
                 {ok, Bool} ->
                     case lists:member(flush, Opts) of
                         true ->
                             receive
-                                {_, RemoteRef, _, _, _} ->
+                                {_, MPRef, _, _, _} ->
                                     Bool
                             after
                                 0 ->
@@ -419,36 +435,18 @@ init([]) ->
     TabOpts = [
         named_table,
         public,
-        {keypos, 1},
         {write_concurrency, true},
         {read_concurrency, true}
     ],
 
-    %% Table to record remote processes monitoring a local processes
-    %% contains process_monitor() records
-    ?PROC_MON_TAB = ets:new(?PROC_MON_TAB, [set | TabOpts]),
-
-    %% An index over ?PROC_MON_TAB
-    %% contains process_monitor_idx() records
-    ?PROC_MON_NODE_IDX_TAB = ets:new(?PROC_MON_NODE_IDX_TAB, [bag | TabOpts]),
-
-    %% Table to record local processes monitoring a remote processes
-    %% For every record in ?PROC_MON_TAB we a companion record in this table,
-    %% this is to be able to send a signal to the local monitoring process a
-    %% remote process when the remote node crashes.
-    %% contains process_monitor_cache() records
-    ?PROC_MON_CACHE_TAB = ets:new(?PROC_MON_CACHE_TAB, [bag | TabOpts]),
-
-    %% Table to record local processes monitoring nodes
-    %% contains node_monitor() records
-    ?NODE_MON_TAB = ets:new(?NODE_MON_TAB, [duplicate_bag | TabOpts]),
-
-    %% contains nodes_monitor() records
-    ?NODES_MON_TAB = ets:new(?NODES_MON_TAB, [set | TabOpts]),
+    _ = ets:new(?PROC_MON_TAB, [set, {keypos, 2} | TabOpts]),
+    _ = ets:new(?PROC_MON_NODE_IDX_TAB, [bag, {keypos, 1} | TabOpts]),
+    _ = ets:new(?PROC_MON_CACHE_TAB, [bag, {keypos, 2} | TabOpts]),
+    _ = ets:new(?NODE_MON_TAB, [duplicate_bag, {keypos, 1} | TabOpts]),
+    _ = ets:new(?NODE_TYPE_MON_TAB, [set, {keypos, 2} | TabOpts]),
 
     State = #state{
         enabled = Enabled,
-        %% A snapshot of the membership view
         nodes = sets:new([{version, 2}])
     },
 
@@ -461,19 +459,19 @@ handle_call(_, _, #state{enabled = false} = State) ->
     Reply = {ok, persistent_term:get(?DUMMY_MREF_KEY)},
     {reply, Reply, State};
 
-handle_call({monitor, RemoteRef, _}, {RemoteRef, _}, State) ->
+handle_call({monitor, Monitor, _}, {Monitor, _}, State) ->
     %% A circular call (partisan_gen)
     Reply = {ok, persistent_term:get(?DUMMY_MREF_KEY)},
     {reply, Reply, State};
 
-handle_call({monitor, RemoteRef, _Opts}, {RemotePid, _}, State) ->
-    %% A remote process (RemotePid) wants to monitor a process (RemoteRef) on
+handle_call({monitor, Target, Opts}, {Monitor, _}, State) ->
+    %% A remote process (Monitor) wants to monitor a process (Target) on
     %% this node.
 
     %% We did this check in monitor/2, but we double check again in case
     %% someone is calling partisan_gen_server:call directly.
     Reply =
-        case is_self(RemoteRef) of
+        case is_self(Target) of
             true ->
                 %% The case for a process monitoring this server, this server
                 %% monitoring itself or another node's monitor server monitoring
@@ -484,20 +482,22 @@ handle_call({monitor, RemoteRef, _Opts}, {RemotePid, _}, State) ->
                 %% TODO Implement options
                 %%  {tag, UserDefinedTag} option
                 try
-                    Node = partisan_remote_ref:node(RemotePid),
+                    Node = partisan_remote_ref:node(Monitor),
 
-                    %% RemoteRef can be a pid or registered name for a local
+                    %% Target can be a pid or registered name for a local
                     %% process
-                    PidOrRegName = partisan_remote_ref:to_term(RemoteRef),
+                    PidOrRegName = partisan_remote_ref:to_term(Target),
 
                     %% We monitor the process on behalf of the remote caller.
                     %% We will handle the EXIT signal and forward it to
-                    %% RemotePid when it occurs.
+                    %% Monitor when it occurs.
                     Mref = partisan:monitor(process, PidOrRegName),
+
+                    Channel = get_option(channel, Opts, ?DEFAULT_CHANNEL),
 
                     %% We track the Mref to match the 'DOWN' signal
                     ok = add_process_monitor(
-                        Node, Mref, PidOrRegName, RemotePid
+                        Node, Channel, Mref, PidOrRegName, Monitor
                     ),
 
                     %% We reply with the encoded monitor reference
@@ -511,11 +511,11 @@ handle_call({monitor, RemoteRef, _Opts}, {RemotePid, _}, State) ->
 
     {reply, Reply, State};
 
-handle_call({demonitor, RemoteRef, _}, {RemoteRef, _}, State) ->
-    %% A circular call: this server monitoring itself (partisan_gen)
-    {reply, true, State};
+%% handle_call({demonitor, RemoteRef, _}, {RemoteRef, _}, State) ->
+%%     %% A circular call: this server monitoring itself (partisan_gen)
+%%     {reply, true, State};
 
-handle_call({demonitor, RemoteRef, Opts}, {_RemotePid, _}, State) ->
+handle_call({demonitor, RemoteRef, Opts}, {_Monitor, _}, State) ->
     %% A remote process is requesting a demonitor
     case RemoteRef == persistent_term:get(?DUMMY_MREF_KEY) of
         true ->
@@ -542,11 +542,17 @@ handle_info(_, #state{enabled = false} = State) ->
 
 handle_info({'DOWN', Mref, process, _ServerRef, Reason}, State) ->
     case take_process_mon(Mref) of
-        {Mref, PidOrName, OwnerRef} ->
+        #process_monitor{} = M ->
+            Mref = M#process_monitor.ref,
+            Monitored = M#process_monitor.monitored,
+            Monitor = M#process_monitor.monitor,
+            Channel = M#process_monitor.channel,
             %% Local process down signal
-            Node = partisan:node(OwnerRef),
+            Node = partisan:node(Monitor),
             del_process_monitor_idx(Node, Mref),
-            ok = send_process_down(OwnerRef, 'DOWN', Mref, PidOrName, Reason);
+            ok = send_process_down(
+                Monitor, 'DOWN', Mref, Monitored, Reason, #{channel => Channel}
+            );
         error ->
             ok
     end,
@@ -696,14 +702,15 @@ subscribe_to_channel_status() ->
 -spec monitor(
     RemoteRef :: partisan_remote_ref:p() | partisan_remote_ref:n(),
     Opts :: [partisan:monitor_opt()],
-    Reason :: atom() | {connection, boolean()}) ->
+    Status :: {connected, boolean()} | noconnection | timeout | noproc) ->
     partisan_remote_ref:r() | no_return().
 
-monitor(RemoteRef, Opts, {connection, true}) ->
+monitor(RemoteRef, Opts, {connected, true}) ->
     %% We call the remote partisan_monitor process to
     %% request a monitor
     Node = partisan_remote_ref:node(RemoteRef),
     Cmd = {monitor, RemoteRef, Opts},
+
     case call({?MODULE, Node}, Cmd) of
         {ok, Mref} ->
             %% We add a local reference to the remote Mref so that we can
@@ -727,14 +734,17 @@ monitor(RemoteRef, Opts, {connection, true}) ->
             erlang:error(Reason, [RemoteRef, Opts], ErrOpts)
     end;
 
-monitor(RemoteRef, Opts, {connection, false}) ->
+monitor(RemoteRef, Opts, {connected, false}) ->
     monitor(RemoteRef, Opts, noconnection);
 
-monitor(RemoteRef, _, Reason) ->
+monitor(RemoteRef, Opts, Reason) ->
     %% We reply a transient ref but we do not store the request as we are
     %% immediately sending a DOWN signal
     Mref = partisan:make_ref(),
-    ok = send_process_down(self(), 'DOWN', Mref, {ref, RemoteRef}, Reason),
+    SendOpts = #{channel => get_option(channel, Opts, ?DEFAULT_CHANNEL)},
+    ok = send_process_down(
+        self(), 'DOWN', Mref, {ref, RemoteRef}, Reason, SendOpts
+    ),
     Mref.
 
 
@@ -758,8 +768,10 @@ do_demonitor(Term, Opts) ->
         Bool = erlang:demonitor(Mref, Opts),
 
         case take_process_mon(Mref) of
-            {Mref, _, OwnerRef} ->
-                del_process_monitor_idx(partisan:node(OwnerRef), Mref);
+            #process_monitor{} = M ->
+                Mref = M#process_monitor.ref,
+                Monitor = M#process_monitor.monitor,
+                del_process_monitor_idx(partisan:node(Monitor), Mref);
             error ->
                 ok
         end,
@@ -809,6 +821,25 @@ decode_ref(RemoteRef) ->
 %% =============================================================================
 
 
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec send_process_down(
+    Dest :: partisan_remote_ref:p() | partisan_remote_ref:n() | pid() | atom(),
+    Tag  :: term(),
+    Mref :: reference() | partisan_remote_ref:r(),
+    Term :: {ref, partisan_remote_ref:p() | partisan_remote_ref:n()}
+    | pid() | atom(),
+    Reason :: any()
+    ) -> ok.
+
+send_process_down(Dest, Tag, Mref, Term, Reason) ->
+    send_process_down(
+        Dest, Tag, Mref, Term, Reason, #{channel => ?DEFAULT_CHANNEL}
+    ).
+
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -821,14 +852,16 @@ decode_ref(RemoteRef) ->
     Mref :: reference() | partisan_remote_ref:r(),
     Term :: {ref, partisan_remote_ref:p() | partisan_remote_ref:n()}
     | pid() | atom(),
-    Reason :: any()) -> ok.
+    Reason :: any(),
+    Opts :: map()
+    ) -> ok.
 
-send_process_down(Dest, Tag, Mref0, {ref, PRef}, Reason)
+send_process_down(Dest, Tag, Mref0, {ref, PRef}, Reason, Opts)
 when is_reference(Mref0) ->
     Mref = partisan_remote_ref:from_term(Mref0),
-    send_process_down(Dest, Tag, Mref, {ref, PRef}, Reason);
+    send_process_down(Dest, Tag, Mref, {ref, PRef}, Reason, Opts);
 
-send_process_down(Dest, Tag, Mref, {ref, PRef}, Reason) ->
+send_process_down(Dest, Tag, Mref, {ref, PRef}, Reason, Opts) ->
     Down = {
         Tag,
         Mref,
@@ -836,17 +869,18 @@ send_process_down(Dest, Tag, Mref, {ref, PRef}, Reason) ->
         PRef,
         Reason
     },
-    partisan:forward_message(Dest, Down);
 
-send_process_down(Dest, Tag, Mref, Term, Reason)
+    partisan:forward_message(Dest, Down, Opts);
+
+send_process_down(Dest, Tag, Mref, Term, Reason, Opts)
 when is_pid(Term) orelse is_atom(Term) ->
     Ref = partisan_remote_ref:from_term(Term),
-    send_process_down(Dest, Tag, Mref, {ref, Ref}, Reason);
+    send_process_down(Dest, Tag, Mref, {ref, Ref}, Reason, Opts);
 
-send_process_down(Dest, Tag, Mref, {Name, Node}, Reason)
+send_process_down(Dest, Tag, Mref, {Name, Node}, Reason, Opts)
 when is_atom(Name), is_atom(Node) ->
     Ref = partisan_remote_ref:from_term(Name, Node),
-    send_process_down(Dest, Tag, Mref, {ref, Ref}, Reason).
+    send_process_down(Dest, Tag, Mref, {ref, Ref}, Reason, Opts).
 
 
 %% -----------------------------------------------------------------------------
@@ -860,13 +894,13 @@ send_nodeup(Node) when is_atom(Node) ->
 
     ets:foldl(
         fun
-            ({{Pid, _Hash}, {_Type, true}}, ok) ->
+            (#node_type_monitor{key = {Pid, _}, nodedown_reason = true}, ok) ->
                 partisan:forward_message(Pid, ExtMsg);
-            ({{Pid, _Hash}, {_Type, false}}, ok) ->
+            (#node_type_monitor{key = {Pid, _}, nodedown_reason = false}, ok) ->
                 partisan:forward_message(Pid, Msg)
         end,
         ok,
-        ?NODES_MON_TAB
+        ?NODE_TYPE_MON_TAB
     ).
 
 
@@ -882,11 +916,18 @@ send_nodedown(Node, Reason) when is_atom(Node) ->
     %% remote processes on Node and remove the cache.
     lists:foreach(
         fun
-            ({_, Mref, MPid, Owner}) ->
+            (#process_monitor{} = M) ->
+                Mref = M#process_monitor.ref,
+                Monitored = M#process_monitor.monitored,
+                Monitor = M#process_monitor.monitor,
+                Channel = M#process_monitor.channel,
+
                 %% A local index to a remote monitor
                 ok = del_process_monitor_cache(Mref),
+
+                Opts = #{channel => Channel},
                 send_process_down(
-                    Owner, 'DOWN', Mref, {ref, MPid}, noconnection
+                    Monitor, 'DOWN', Mref, {ref, Monitored}, noconnection, Opts
                 )
         end,
         process_monitor_caches(Node)
@@ -911,13 +952,13 @@ send_nodedown(Node, Reason) when is_atom(Node) ->
     %% 4. We send the nodedown signal to all processes monitoring ALL nodes
     ets:foldl(
         fun
-            ({{Pid, _Hash}, {_Type, true}}, ok) ->
+            (#node_type_monitor{key = {Pid, _}, nodedown_reason = true}, ok) ->
                 partisan:forward_message(Pid, ExtMsg);
-            ({{Pid, _Hash}, {_Type, false}}, ok) ->
+            (#node_type_monitor{key = {Pid, _}, nodedown_reason = false}, ok) ->
                 partisan:forward_message(Pid, Msg)
         end,
         ok,
-        ?NODES_MON_TAB
+        ?NODE_TYPE_MON_TAB
     ).
 
 
@@ -934,10 +975,13 @@ send_self_down(Reason, State) ->
     %% remote processes on remote nodes.
     ets:foldl(
         fun
-            ({_, Mref, MPid, Owner}, ok) ->
-                %% A local index to a remote monitor
+            (#process_monitor_cache{} = Cache, ok) ->
+                Mref = Cache#process_monitor_cache.ref,
+                Monitored = Cache#process_monitor_cache.monitored,
+                Monitor = Cache#process_monitor_cache.monitor,
+
                 send_process_down(
-                    Owner, 'DOWN', Mref, {ref, MPid}, noconnection
+                    Monitor, 'DOWN', Mref, {ref, Monitored}, noconnection
                 )
         end,
         ok,
@@ -962,7 +1006,8 @@ send_self_down(Reason, State) ->
 
     ets:foldl(
         fun
-            ({{Pid, _Hash}, {_Type, true}}, Acc) ->
+            (#node_type_monitor{key = Key, nodedown_reason = true}, Acc) ->
+                {Pid, _} = Key,
                 sets:fold(
                     fun(N, IAcc) ->
                         partisan:forward_message(Pid, {nodedown, N, ExtReason}),
@@ -972,7 +1017,8 @@ send_self_down(Reason, State) ->
                     State#state.nodes
                 );
 
-            ({{Pid, _Hash}, {_Type, false}}, Acc) ->
+            (#node_type_monitor{key = Key, nodedown_reason = false}, Acc) ->
+                {Pid, _} = Key,
                 sets:fold(
                     fun(N, IAcc) ->
                         partisan:forward_message(Pid, {nodedown, N}),
@@ -983,7 +1029,7 @@ send_self_down(Reason, State) ->
                 )
         end,
         Acc0,
-        ?NODES_MON_TAB
+        ?NODE_TYPE_MON_TAB
     ).
 
 
@@ -1000,17 +1046,21 @@ send_self_down(Reason, State) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec new_process_mon
-    (reference(), pid(), partisan_remote_ref:p()) ->
+    (reference(), pid(), partisan_remote_ref:p(), partisan:channel()) ->
         process_monitor();
-    (reference(), partisan_remote_ref:p(), pid()) ->
+    (reference(), partisan_remote_ref:p(), pid(), partisan:channel()) ->
         process_monitor().
 
-new_process_mon(Mref, MPid, Owner) when is_pid(MPid) orelse is_atom(MPid) ->
-    {Mref, MPid, Owner};
-
-new_process_mon(Mref, MPid, Owner) when is_pid(Owner) orelse is_atom(MPid) ->
-    {Mref, MPid, Owner}.
-
+new_process_mon(Mref, Monitored, Monitor, Channel)
+when is_reference(Mref) andalso
+(is_pid(Monitored) orelse is_atom(Monitored)) andalso
+is_atom(Channel) ->
+    #process_monitor{
+        ref = Mref,
+        monitor = Monitor,
+        channel = Channel,
+        monitored = Monitored
+    }.
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -1029,24 +1079,6 @@ new_process_monitor_idx(Node, Mref) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec new_process_monitor_cache(
-    Node :: node(),
-    Mref :: partisan_remote_ref:r(),
-    RPid :: partisan_remote_ref:p() | partisan_remote_ref:n(),
-    Owner :: pid()) -> process_monitor_cache().
-
-new_process_monitor_cache(Node, Mref, RPid, Owner)
-when (is_pid(Owner) orelse is_atom(Owner)) ->
-    %% This for tracking a remote monitor locally, so that if node goes down we
-    %% have a way to send a process DOWN signal
-    {Node, Mref, RPid, Owner}.
-
-
-%% -----------------------------------------------------------------------------
-%% @private
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
 -spec new_node_monitor(node(), pid()) -> node_monitor().
 
 new_node_monitor(Node, Pid) ->
@@ -1058,10 +1090,14 @@ new_node_monitor(Node, Pid) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec new_nodes_mon(pid(), nodes_monitor_opts()) -> nodes_monitor().
+-spec new_nodes_mon(pid(), node_type_monitor_opts()) -> node_type_monitor().
 
-new_nodes_mon(Pid, Opts) when is_tuple(Opts) ->
-    {{Pid, erlang:phash2(Opts)}, Opts}.
+new_nodes_mon(Pid, {Type, Reason} = Opts) ->
+    #node_type_monitor{
+        key = {Pid, erlang:phash2(Opts)},
+        node_type = Type,
+        nodedown_reason = Reason
+    }.
 
 
 %% -----------------------------------------------------------------------------
@@ -1070,7 +1106,7 @@ new_nodes_mon(Pid, Opts) when is_tuple(Opts) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec parse_nodemon_opts([partisan:monitor_nodes_opt()]) ->
-    nodes_monitor_opts().
+    node_type_monitor_opts().
 
 parse_nodemon_opts(Opts0) ->
     Type = case lists:keyfind(node_type, 1, Opts0) of
@@ -1095,13 +1131,12 @@ parse_nodemon_opts(Opts0) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
-add_process_monitor(Node, Mref, LocalProcess, RemoteOwner) ->
-    %% 1. monitor ref -> {monitored pid, caller}
-    _ = ets:insert_new(
-        ?PROC_MON_TAB, new_process_mon(Mref, LocalProcess, RemoteOwner)
-    ),
+add_process_monitor(Node, Channel, Mref, Monitored, Monitor) ->
+    Obj = new_process_mon(Mref, Monitored, Monitor, Channel),
+    _ = ets:insert_new(?PROC_MON_TAB, Obj),
 
-    %% 2. an index to fetch all refs associated with a remote node
+    %% We create an index so that we can locate all process_monitor() objects
+    %% associated with a node
     add_process_monitor_idx(Node, Mref).
 
 
@@ -1112,8 +1147,8 @@ add_process_monitor(Node, Mref, LocalProcess, RemoteOwner) ->
 %% -----------------------------------------------------------------------------
 take_process_mon(Mref) ->
     case ets:take(?PROC_MON_TAB, Mref) of
-        [{Mref, _, _} = Existing] ->
-            Existing;
+        [#process_monitor{ref = Mref} = M] ->
+            M;
         [] ->
             error
     end.
@@ -1159,8 +1194,21 @@ process_monitor_indices(Node) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
-add_process_monitor_cache(Node, Mref, RPid, Owner) ->
-    Obj = new_process_monitor_cache(Node, Mref, RPid, Owner),
+-spec add_process_monitor_cache(
+    Node :: node(),
+    Mref :: partisan_remote_ref:r(),
+    Monitored :: partisan_remote_ref:p() | partisan_remote_ref:n(),
+    Monitor :: pid()
+ ) -> process_monitor_cache().
+
+add_process_monitor_cache(Node, Mref, Monitored, Monitor)
+when is_pid(Monitor); is_atom(Monitor) ->
+    Obj = #process_monitor_cache{
+        node = Node,
+        ref = Mref,
+        monitored = Monitored,
+        monitor = Monitor
+    },
     _ = ets:insert_new(?PROC_MON_CACHE_TAB, Obj),
     ok.
 
@@ -1174,7 +1222,12 @@ add_process_monitor_cache(Node, Mref, RPid, Owner) ->
 
 del_process_monitor_cache(Mref) ->
     Node = partisan_remote_ref:node(Mref),
-    Pattern = {Node, Mref, '_', '_'},
+    Pattern = #process_monitor_cache{
+        node = Node,
+        ref = Mref,
+        monitor = '_',
+        monitored = '_'
+    },
     true = ets:match_delete(?PROC_MON_CACHE_TAB, Pattern),
     ok.
 
@@ -1230,11 +1283,11 @@ take_node_monitors(Node) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec add_nodes_mon(pid(), nodes_monitor_opts()) -> ok.
+-spec add_nodes_mon(pid(), node_type_monitor_opts()) -> ok.
 
 add_nodes_mon(Pid, Opts) ->
     Obj = new_nodes_mon(Pid, Opts),
-    _ = ets:insert_new(?NODES_MON_TAB, Obj),
+    _ = ets:insert_new(?NODE_TYPE_MON_TAB, Obj),
     ok.
 
 
@@ -1243,9 +1296,9 @@ add_nodes_mon(Pid, Opts) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec del_nodes_mon(pid(), nodes_monitor_opts()) -> ok.
+-spec del_nodes_mon(pid(), node_type_monitor_opts()) -> ok.
 
 del_nodes_mon(Pid, Opts) ->
     Obj = new_nodes_mon(Pid, Opts),
-    _ = ets:delete_object(?NODES_MON_TAB, Obj),
+    _ = ets:delete_object(?NODE_TYPE_MON_TAB, Obj),
     ok.
