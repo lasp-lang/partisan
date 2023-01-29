@@ -322,7 +322,7 @@ exchanges(Node) ->
 -spec exchanges(node(), timeout()) -> partisan_plumtree_broadcast:exchanges().
 
 exchanges(Node, Timeout) ->
-    %% This will not work becuase gen_server uses disterl
+    %% This will not work because gen_server uses disterl
     %% TODO reconsider turning this server into a partisan_gen_serv
     %% gen_server:call({?SERVER, Node}, exchanges, infinity).
     partisan_rpc:call(Node, ?SERVER, exchanges, [], Timeout).
@@ -558,7 +558,7 @@ debug_get_peers(Node, Root) ->
     {nodeset(), nodeset()}.
 
 debug_get_peers(Node, Root, Timeout) ->
-    %% This will not work becuase gen_server uses disterl
+    %% This will not work because gen_server uses disterl
     %% gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
     %% TODO reconsider turning this server into a partisan_gen_serv
     partisan_rpc:call(Node, ?MODULE, get_peers, [Root], Timeout).
