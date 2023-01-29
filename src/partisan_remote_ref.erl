@@ -80,6 +80,11 @@
 %%    {partisan_process_reference,"<0.1062.0>"}}
 %% '''
 %%
+%% == Issues and TODOs ==
+%% As opposed to erlang pid encodintg (`NEW_PID_EXT`) our current
+%% representation cannot distinguished between identifiers from old (crashed)
+%% nodes from a new one. So maybe we need to adopt the `NEW_PID_EXT`'s
+%% `Creation` attribute.
 %% @end
 %% -----------------------------------------------------------------------------
 -module(partisan_remote_ref).
