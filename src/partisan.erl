@@ -31,6 +31,7 @@
                                 | {node_type, visible | hidden | all}
                                 | {channel, channel()}
                                 | {channel_fallback, boolean()}.
+-type send_dst()            ::  server_ref() | reference() | port().
 -type monitor_process_id()  ::  erlang:monitor_process_identifier()
                                 | partisan_remote_ref:p()
                                 | partisan_remote_ref:n().
@@ -55,10 +56,17 @@
                                     listen_addrs := [listen_addr()],
                                     channels := #{channel() => channel_opts()}
                                 }.
+
 -type message()             ::  term().
--type dst()                 ::  server_ref()
-                                | reference()
-                                | port().
+-type time()                ::  non_neg_integer().
+-type send_after_dst()      ::  pid()
+                                | (RegName :: atom())
+                                | (Pid :: partisan_remote_ref:p())
+                                | (RegName :: partisan_remote_ref:n())
+                                | {RegName :: atom(), Node :: node()}.
+-type send_after_opts()     ::  forward_opts() | [{abs, boolean()}].
+-opaque tref()              ::  reference() | {tref_type(), reference()}.
+-type tref_type()           ::  'once' | 'interval' | 'instant' | 'send_local'.
 
 
 -export_type([actor/0]).
@@ -73,12 +81,16 @@
 -export_type([node_spec/0]).
 -export_type([node_type/0]).
 -export_type([server_ref/0]).
+-export_type([tref/0]).
+
 
 %% API
 -export([start/0]).
 -export([stop/0]).
 
 -export([broadcast/2]).
+-export([cancel_timer/1]).
+-export([cancel_timer/2]).
 -export([cast_message/2]).
 -export([cast_message/3]).
 -export([cast_message/4]).
@@ -740,57 +752,185 @@ exit(RemoteRef, Reason) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec send(Dest, Msg) -> Msg when
-      Dest :: dst(),
-      Msg :: term().
+-spec send(Dest :: send_dst(), Msg :: message()) -> ok.
 
-send(_Dest,_Msg) ->
-    error(not_implemented).
+send(Dest, Msg) ->
+    send(Dest, Msg, []).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec send(Dest, Msg, Options) -> Res when
-      Dest :: dst(),
-      Msg :: term(),
-      Options :: [nosuspend | noconnect],
-      Res :: ok | nosuspend | noconnect.
-
-send(_Dest,_Msg,_Options) ->
-    error(not_implemented).
+-spec send(Dest :: send_dst(), Msg :: message(), Opts :: forward_opts()) -> ok.
 
 
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
--spec send_after(Time, Dest, Msg) -> TimerRef when
-      Time :: non_neg_integer(),
-      Dest :: pid() | atom(),
-      Msg :: term(),
-      TimerRef :: reference().
+send(Dest, Msg, Opts)
+when (erlang:is_pid(Dest) andalso erlang:node(Dest) == erlang:node())
+orelse is_atom(Dest) ->
+    %% Local send
+    erlang:send(Dest, Msg, Opts);
 
-send_after(_Time, _Dest, _Msg) ->
-    error(not_implemented).
+send({RegName, Node} = Dest, Msg, Opts)
+when is_atom(RegName), is_atom(Node), Node == erlang:node() ->
+    %% Local send
+    erlang:send(Dest, Msg, Opts);
+
+send(Dest, Msg, Opts) ->
+    forward_message(Dest, Msg, Opts).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec send_after(Time, Dest, Msg, Options) -> TimerRef when
-      Time :: integer(),
-      Dest :: pid() | atom(),
-      Msg :: term(),
-      Options :: [Option],
-      Abs :: boolean(),
-      Option :: {abs, Abs},
-      TimerRef :: reference().
+-spec send_after(
+    Time :: time(),
+    Destination :: send_after_dst(),
+    Msg :: message()) -> TRef :: reference().
 
-send_after(_Time, _Dest, _Msg, _Options) ->
-    error(not_implemented).
+send_after(Time, Dest, Msg) ->
+    send_after(Time, Dest, Msg, []).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec send_after(
+    Time :: time(),
+    Destination :: send_after_dst(),
+    Message :: message(),
+    Opts :: send_after_opts()) -> TRef :: reference().
+
+send_after(Time, Dest, Msg, Opts)
+when ?IS_VALID_TIME(Time) andalso is_list(Opts) andalso
+(
+    (erlang:is_pid(Dest) andalso erlang:node(Dest) == erlang:node())
+    orelse is_atom(Dest)
+) ->
+    %% Local send
+    erlang:send_after(Time, Dest, Msg, Opts);
+
+
+send_after(Time, {RegName, Node} = Dest, Msg, Opts)
+when ?IS_VALID_TIME(Time) andalso
+is_list(Opts) andalso
+is_atom(RegName) andalso
+is_atom(Node) andalso
+Node == erlang:node() ->
+    %% Local send
+    erlang:send_after(Time, Dest, Msg, Opts);
+
+send_after(Time, Dest, Msg, Opts)
+when ?IS_VALID_TIME(Time) andalso is_list(Opts) ->
+    case partisan_remote_ref:is_type(Dest) of
+        true ->
+            Caller = erlang:self(),
+            Pid = spawn(
+                fun() ->
+                    %% Setup an alias which the receiver can use to send us an
+                    %% cancel message
+                    Alias = alias(),
+                    Me = erlang:self(),
+
+                    Caller ! {send_after_init, Me, Alias},
+
+                    %% Set the timer and wait for the timeout or cancel message
+                    TimerRef = erlang:start_timer(Time, Me, send),
+
+                    try
+                        receive
+                            {timeout, TimerRef, send} ->
+                                catch partisan:send(Dest, Msg, Opts),
+                                ok;
+
+                            {cancel, Alias, Pid, Info} ->
+                                CancelOpts = [{info, Info}],
+                                Result = erlang:cancel_timer(
+                                    TimerRef, CancelOpts
+                                ),
+                                case partisan_util:get(info, Opts, true) of
+                                    true ->
+                                        Canceled = {
+                                            send_after_canceled, Alias, Result
+                                        },
+                                        Pid ! Canceled;
+                                    false ->
+                                        ok
+                                end
+                        end
+                    catch
+                        _:_ ->
+                            ok
+                    after
+                        unalias(Alias)
+                    end
+
+                end
+            ),
+
+            receive
+                {send_after_init, Pid, Ref} ->
+                    Ref
+            after
+                3000 ->
+                    error(timeout)
+            end;
+
+        false ->
+            Info = #{
+                cause => #{
+                    2 =>
+                        "should be a local pid, local registered name, "
+                        "a tuple containing registered name and node, "
+                        "or a partisan_remote_ref for a remote pid or "
+                        "registered name."
+                }
+            },
+            erlang:error(
+                badarg, [Time, Dest, Msg, Opts], [{error_info, Info}]
+            )
+    end;
+
+send_after(Time, Dest, Msg, Opts) when not ?IS_VALID_TIME(Time) ->
+    Info = #{cause => #{1 => "should be a pos_integer"}},
+    erlang:error(
+        badarg, [Time, Dest, Msg, Opts], [{error_info, Info}]
+    );
+
+send_after(Time, Dest, Msg, Opts) when not is_list(Opts) ->
+    Info = #{cause => #{4 => "should be a list"}},
+    erlang:error(
+        badarg, [Time, Dest, Msg, Opts], [{error_info, Info}]
+    ).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec cancel_timer(TRef :: tref()) ->
+    ok | time() | false.
+
+cancel_timer(TRef) ->
+    cancel_timer(TRef, []).
+
+
+-spec cancel_timer(Ref :: reference(), Opts :: list()) ->
+    ok | time() | false.
+
+cancel_timer(Ref, Opts) when erlang:is_reference(Ref), is_list(Opts) ->
+    Me = erlang:self(),
+
+    case partisan_util:get(async, Opts, false) of
+        true ->
+            _ = spawn(fun() -> do_cancel_timer(Ref, Opts, Me) end),
+            ok;
+
+        false ->
+            do_cancel_timer(Ref, Opts, Me)
+    end.
 
 
 %% -----------------------------------------------------------------------------
@@ -907,4 +1047,63 @@ to_erl_monitor_opts(Opts0) when is_list(Opts0) ->
         false ->
             Opts0
     end.
+
+
+%% @private
+maybe_wait_for_cancel_timer_result(Ref, Info, undefined) ->
+    maybe_wait_for_cancel_timer_result(Ref, Info, erlang:self());
+
+maybe_wait_for_cancel_timer_result(Ref, Info, Pid) when erlang:is_pid(Pid) ->
+    maybe_wait_for_cancel_timer_result(Ref, Info, Pid, Pid == erlang:self()).
+
+
+%% @private
+maybe_wait_for_cancel_timer_result(_, false, _, _) ->
+    ok;
+
+maybe_wait_for_cancel_timer_result(Ref, true, _, true) ->
+    receive
+        {send_after_canceled, Ref, Result} ->
+            Result
+    after
+        500 ->
+            false
+    end;
+
+maybe_wait_for_cancel_timer_result(Ref, true, Pid, _) ->
+    receive
+        {send_after_canceled, Ref, Result} ->
+            Pid ! {cancel_timer, Ref, Result}
+    after
+        500 ->
+            Pid ! {cancel_timer, Ref, false}
+    end.
+
+
+%% @private
+do_cancel_timer(Ref, Opts, Pid) ->
+    Me = erlang:self(),
+    Info = partisan_util:get(info, Opts, true),
+
+    case erlang:cancel_timer(Ref) of
+        false ->
+            %% Timer not found, maybe is our custom solution for send_after
+            Info = partisan_util:get(info, Opts, true),
+            Ref ! {cancel, Ref, Me, Info},
+            maybe_wait_for_cancel_timer_result(Ref, Info, Pid);
+
+        Result when Info == true, erlang:is_pid(Pid) ->
+            Pid ! {cancel_timer, Ref, Result};
+
+        Result when Info == true ->
+            Result;
+
+        _ ->
+            ok
+    end.
+
+
+
+
+
 

@@ -9,7 +9,10 @@
                                 andalso (0 =< TI_)
                                 andalso (TI_ =< ?MAX_INT_TIMEOUT))).
 -define(IS_VALID_TMO(T_), ((T_ == infinity) orelse ?IS_VALID_TMO_INT(T_))).
-
+-define(IS_VALID_TIME(T), (is_integer(T) andalso T >= 0)).
+-define(IS_VALID_MFA(M, F, A),
+    (is_atom(M) andalso is_atom(F) andalso is_list(A))
+).
 
 
 %% =============================================================================

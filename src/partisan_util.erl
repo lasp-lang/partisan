@@ -30,6 +30,8 @@
 -export([encode/2]).
 -export([maybe_connect_disterl/1]).
 -export([maybe_pad_term/1]).
+-export([get/2]).
+-export([get/3]).
 
 
 
@@ -37,6 +39,44 @@
 %% API
 %% =============================================================================
 
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec get(Key :: term(), Arg :: list() | map()) -> Value :: any() | no_return().
+
+get(Key, Arg) when is_list(Arg) ->
+    case lists:keyfind(Key, 1, Arg) of
+        {Key, Value} ->
+            Value;
+        false ->
+            error(badkey)
+    end;
+
+get(Key, Arg) when is_map(Arg) ->
+    maps:get(Key, Arg).
+
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec get(Key :: term(), Arg :: list() | map(), Default :: any()) ->
+    Value :: any().
+
+get(Key, Arg, Default) when is_list(Arg) ->
+    case lists:keyfind(Key, 1, Arg) of
+        {Key, Value} ->
+            Value;
+        false ->
+            Default
+    end;
+
+get(Key, Arg, Default) when is_map(Arg) ->
+    maps:get(Key, Arg, Default).
 
 
 
