@@ -1,0 +1,35 @@
+name: Common Test
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build_and_test:
+    name: Build and test on Erlang/OTP ${{matrix.otp}} and rebar3 ${{matrix.rebar3}}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        otp: ['24.3']
+        rebar3: ['3.20']
+    steps:
+      
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Install OTP and rebar3
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{matrix.otp}}
+          rebar3-version: ${{matrix.rebar3}}
+
+      - name: Install build dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install libssl-dev
+
+      - name: Start epmd
+        run: epmd -daemon
+
+      - name: Build and test bondy
+        run: make test
