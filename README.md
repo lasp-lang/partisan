@@ -11,7 +11,11 @@ Partisan is a runtime system that enables greater scalability and reduced latenc
 * Bring Your Own Overlay - Partisan exposes an API for users to implement their own overlays; application developers must simply implement the `membership_strategy` interface for handling messages. Partisan automatically uses this membership strategy for processing incoming and outgoing messages to the system – the application developer only needs to handle internal state transitions and supplying the system with an updated list of members. Partisan automatically sets up required connections, serializes and deserializes messages, performs failure detection, and message forwarding. This makes it possible to implement protocols with very little code; our implementation of the full-mesh membership protocol is 152 LOC.
 * Partisan is the first distributed actor system to expose this level of control to the application developer, improving the performance of existing actor application and enabling new types of actor applications.
 
+## Getting started
+See the documentation for Partisan at [hex.pm](https://hexdocs.pm/partisan/partisan.html).
 
+Alternatively you can build the documentation yourself locally using `make docs`.
+The resulting documentation will be found in the `docs` directory, just open the `index.html` file with your preferred web browser.
 
 
 ## Why do we need Partisan?
@@ -71,11 +75,6 @@ Partisan was designed to increase scalability, reduce latency and improve failur
 * Erlang/OTP 24+
 
 
-## Documentation
-Find the documentation for Partisan releases at [hex.pm](https://hex.pm).
-
-Alternatively you can build it yourself locally using `make docs`.
-The resulting documentation will be found in the `docs` directory, just open the `index.html` file with your preferred Web Browser.
 
 
 ## Who is using Partisan
