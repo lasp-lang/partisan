@@ -781,7 +781,7 @@ send(Dest, Msg, Opts) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc
+%% @doc Equivalent to calling `send_after(Time, Dest, Msg, [])`.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec send_after(
@@ -794,7 +794,11 @@ send_after(Time, Dest, Msg) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc
+%% @doc Equivaonlent to the native `erlang:send_after/4`.
+%% It calls the native implementation for local destinations. For remote
+%% destinations it spawns a process that uses a timer and accepts cancelation (
+%% via `cancel_timer/1,2`), so this is less efficient than the native
+%% implementation.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec send_after(
