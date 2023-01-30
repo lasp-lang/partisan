@@ -84,6 +84,7 @@ eunit:
 	${REBAR} as test eunit
 
 ct:
+	mkdir -p test/partisan_SUITE_data/
 	openssl rand -out test/partisan_SUITE_data/RAND 4096
 	${REBAR} ct -v --readable=false --suite=partisan_SUITE
 
