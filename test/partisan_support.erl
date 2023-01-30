@@ -319,6 +319,16 @@ start(Case, Config, Options) ->
         ok = rpc:call(Node, partisan_config, set, [pid_encoding, PidEncoding]),
 
         ok = rpc:call(Node, partisan_config, set, [tls, ?config(tls, Config)]),
+
+        ok = rpc:call(
+            Node, partisan_config, set,
+            [tls_client_options, ?config(tls_client_options, Config)]
+        ),
+        ok = rpc:call(
+            Node, partisan_config, set,
+            [tls_server_options, ?config(tls_server_options, Config)]
+        ),
+
         Parallelism = case ?config(parallelism, Config) of
                           undefined ->
                               ?PARALLELISM;
@@ -334,8 +344,8 @@ start(Case, Config, Options) ->
         %% Configure servers.
         case lists:member(Name, Servers) of
             true ->
-                ok = rpc:call(Node, partisan_config, set, [tag, server]),
-                ok = rpc:call(Node, partisan_config, set, [tls_server_options, ?config(tls_server_options, Config)]);
+                ok = rpc:call(Node, partisan_config, set, [tag, server]);
+
             false ->
                 ok
         end,
@@ -343,8 +353,7 @@ start(Case, Config, Options) ->
         %% Configure clients.
         case lists:member(Name, Clients) of
             true ->
-                ok = rpc:call(Node, partisan_config, set, [tag, client]),
-                ok = rpc:call(Node, partisan_config, set, [tls_client_options, ?config(tls_client_options, Config)]);
+                ok = rpc:call(Node, partisan_config, set, [tag, client]);
             false ->
                 ok
         end

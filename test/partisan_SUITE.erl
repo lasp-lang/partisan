@@ -28,6 +28,7 @@
 -include_lib("kernel/include/inet.hrl").
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
+-include("partisan_test.hrl").
 
 
 %% common_test callbacks
@@ -43,21 +44,6 @@
 %% tests
 -compile([export_all]).
 
--define(TIMEOUT, 10000).
--define(CLIENT_NUMBER, 3).
--define(HIGH_CLIENT_NUMBER, 10).
--define(PAUSE_FOR_CLUSTERING, timer:sleep(5000)).
-
--define(PUT_NODES(L), persistent_term:put({?FUNCTION_NAME, nodes}, L)).
--define(TAKE_NODES(Case),
-    case persistent_term:get({Case, nodes}, undefined) of
-        undefined ->
-            ok;
-        Nodes ->
-            _ = persistent_term:erase({Case, nodes}),
-            Nodes
-    end
-).
 
 
 %% =============================================================================
@@ -221,19 +207,9 @@ all() ->
         %% ,{hyparview_xbot, [shuffle]}
      ]},
 
-     {group, otp, []},
-
      %% Full.
 
      {group, with_full_membership_strategy, []},
-
-     %% Scamp v1.
-
-     {group, with_scamp_v1_membership_strategy, []},
-
-     %% Scamp v2.
-
-     {group, with_scamp_v2_membership_strategy, []},
 
      %% Features.
 
@@ -299,7 +275,7 @@ groups() ->
      {simple, [],
       [
         %% transform_test, % disabled till we fix the test
-        client_server_manager_test, % disabled
+        client_server_manager_test,
         basic_test,
         leave_test,
         self_leave_test,
@@ -307,11 +283,6 @@ groups() ->
         rpc_test,
         pid_test,
         rejoin_test,
-        otp_test
-    ]},
-
-    {otp, [],
-      [
         otp_test
     ]},
 
@@ -332,17 +303,6 @@ groups() ->
 
      {with_full_membership_strategy, [], [
         connectivity_test
-        ,gossip_demers_direct_mail_test
-     ]},
-
-     {with_scamp_v1_membership_strategy, [],[
-        connectivity_test
-        %% ,
-     ]},
-
-     {with_scamp_v2_membership_strategy, [],[
-        connectivity_test
-        ,gossip_demers_direct_mail_test
      ]},
 
      {with_ack, [],[
@@ -1318,100 +1278,6 @@ performance_test(Config) ->
 
     ok.
 
-gossip_demers_direct_mail_test(Config) ->
-    %% Use the default peer service manager.
-    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
-
-    %% Specify servers.
-    Servers = case ?config(servers, Config) of
-        undefined ->
-            ?SUPPORT:node_list(1, "server", Config);
-        NumServers ->
-            ?SUPPORT:node_list(NumServers, "server", Config)
-    end,
-
-    %% Specify clients.
-    Clients = case ?config(clients, Config) of
-        undefined ->
-            ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config);
-        NumClients ->
-            ?SUPPORT:node_list(NumClients, "client", Config)
-    end,
-
-    %% Start nodes.
-    Nodes = ?SUPPORT:start(
-        gossip_demers_direct_mail_test,
-        Config,
-        [
-            {peer_service_manager, Manager},
-            {servers, Servers},
-            {clients, Clients}
-        ]
-    ),
-
-    ?PUT_NODES(Nodes),
-    ?PAUSE_FOR_CLUSTERING,
-
-    %% Verify forward message functionality.
-    lists:foreach(
-        fun({_Name, Node}) ->
-            ok = check_forward_message(Node, Manager, Nodes)
-        end,
-        Nodes
-    ),
-
-    %% Start gossip backend on all nodes.
-    lists:foreach(
-        fun({_Name, Node}) ->
-
-            case rpc:call(Node, demers_direct_mail, start_link, []) of
-                {ok, Pid} ->
-                    ct:pal(
-                        "Started gossip backend on node ~p (~p)",
-                        [Node, Pid]
-                    );
-                {error, Reason} ->
-                    ct:pal(
-                        "Couldn't start gossip backend on node ~p. Reason: ~p",
-                        [Node, Reason]
-                    )
-            end
-        end,
-        Nodes
-    ),
-
-    %% Pause for protocol delay and periodic intervals to fire.
-    timer:sleep(10000),
-
-    %% Gossip.
-    [{_, _}, {_, Node2}, {_, _}, {_, Node4}] = Nodes,
-    Self = self(),
-
-    ReceiverFun = fun() ->
-        receive
-            hello ->
-                ?LOG_DEBUG("received value from gossip receiver", []),
-                Self ! hello
-        end
-    end,
-    ReceiverPid = rpc:call(Node4, erlang, spawn, [ReceiverFun]),
-
-    %% Register, to bypass pid encoding nonsense.
-    true = rpc:call(Node4, erlang, register, [receiver, ReceiverPid]),
-
-    %% Gossip.
-    ct:pal("Broadcasting hello from node ~p", [Node2]),
-    ok = rpc:call(Node2, demers_direct_mail, broadcast, [receiver, hello]),
-
-    receive
-        hello ->
-            ok
-    after
-        10000 ->
-            ct:fail("Didn't receive message!")
-    end,
-
-    ok.
 
 connectivity_test(Config) ->
     %% Use the default peer service manager.
@@ -1649,16 +1515,27 @@ basic_test(Config) ->
     Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
 
     %% Specify servers.
-    Servers = ?SUPPORT:node_list(1, "server", Config),
+    Servers = ?SUPPORT:node_list(3, "server", Config),
+
+    ct:pal("Servers ~p", [Servers]),
 
     %% Specify clients.
     Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
 
+    ct:pal("Clients ~p", [Clients]),
+
     %% Start nodes.
-    Nodes = ?SUPPORT:start(basic_test, Config,
-                  [{peer_service_manager, Manager},
-                   {servers, Servers},
-                   {clients, Clients}]),
+    Nodes = ?SUPPORT:start(
+        basic_test,
+        Config,
+        [
+            {peer_service_manager, Manager},
+            {servers, Servers},
+            {clients, Clients}
+        ]
+    ),
+
+    ct:pal("Nodes ~p", [Servers]),
 
     ?PUT_NODES(Nodes),
 
@@ -2223,10 +2100,6 @@ make_certs(Config) ->
     DataDir = ?config(data_dir, Config),
     PrivDir = ?config(priv_dir, Config),
     ct:pal("Generating TLS certificates into ~s", [PrivDir]),
-    % MakeCertsFile = filename:join(DataDir, "make_certs.erl"),
-    % {ok, make_certs, ModBin} = compile:file(MakeCertsFile,
-    %     [binary, debug_info, report_errors, report_warnings]),
-    % {module, make_certs} = code:load_binary(make_certs, MakeCertsFile, ModBin),
 
     make_certs:all(DataDir, PrivDir),
 
