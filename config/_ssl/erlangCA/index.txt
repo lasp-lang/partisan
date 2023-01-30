@@ -1,1 +1,0 @@
-V	321204173346Z		01	unknown	/CN=otpCA/OU=Partisan/O=Partisan/C=UK/L=London/emailAddress=cert@partisan.com
