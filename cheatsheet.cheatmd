@@ -1,24 +1,24 @@
 # Partisan Cheatsheet
-The following cheatsheet assumes you have two nodes running: `foo@127.0.0.1` (foo) and `bar@127.0.0.1` (bar).
+The following cheatsheet assumes you have two nodes running: `ruby` (`ruby@127.0.0.1`) and `max` (`max@127.0.0.1`).
 
 ## Connecting to other peers
 {: .col-2}
 
 ### Manually joining using Erlang's console
 
-#### 1. Obtain bar's node specification
+#### 1. Obtain max's node specification
 
 ```erlang
-(bar@127.0.0.1)1> NodeSpec = partisan:node_spec().
+(max@127.0.0.1)1> NodeSpec = partisan:node_spec().
 ```
 
-#### 2. Join foo with bar
+#### 2. Join ruby with max
 
 ```erlang
-(foo@127.0.0.1)1> NodeSpec = ...
-(foo@127.0.0.1)2> partisan_peer_service:join(NodeSpec).
+(ruby@127.0.0.1)1> NodeSpec = ...
+(ruby@127.0.0.1)2> partisan_peer_service:join(NodeSpec).
 ```
-`NodeSpec` is the value obtained at `bar` in the previous step.
+`NodeSpec` is the value obtained at `max` in the previous step.
 {: .wrap}
 
 ### Checking cluster membership view
@@ -26,7 +26,7 @@ The following cheatsheet assumes you have two nodes running: `foo@127.0.0.1` (fo
 #### Obtain members
 
 ```erlang
-(bar@127.0.0.1)1> partisan_peer_service:members().
+(max@127.0.0.1)1> partisan_peer_service:members().
 ```
 
 Returns `[node_spec()]` and should contain both node specifications.
@@ -34,7 +34,7 @@ Returns `[node_spec()]` and should contain both node specifications.
 #### Obtain nodes
 
 ```erlang
-(bar@127.0.0.1)1> partisan:nodes().
+(max@127.0.0.1)1> partisan:nodes().
 ```
 
 Returns `[node()]` and should contain both nodes.
@@ -42,27 +42,27 @@ Returns `[node()]` and should contain both nodes.
 ## Sending messages
 {: .col-2}
 
-### Obtain bar's shell pid
+### Obtain max's shell pid
 
 ```erlang
-(bar@127.0.0.1)2> partisan:self().
-<<"partisan:pid:bar@127.0.0.1:0.813.0">>
+(max@127.0.0.1)2> partisan:self().
+<<"partisan:pid:max@127.0.0.1:0.813.0">>
 ```
 
 Returns `[partisan_remote_ref:t()]`. Notice this can be a tuple or a binary (as in the second line of the snippet) depending on the configuration option `remote_ref_as_uri`.
 
-### Send message from foo to bar
+### Send message from ruby to max
 
 ```erlang
-(foo@127.0.0.1)3> Ref = <<"partisan:pid:bar@127.0.0.1:0.813.0">>.
-(foo@127.0.0.1)4> partisan:forward_message(Ref, hello).
+(ruby@127.0.0.1)3> Ref = <<"partisan:pid:max@127.0.0.1:0.813.0">>.
+(ruby@127.0.0.1)4> partisan:forward_message(Ref, hello).
 ```
 {: .wrap}
 
-### Check the message arrived at bar
+### Check the message arrived at max
 
 ```erlang
-(bar@127.0.0.1)3> flush().
+(max@127.0.0.1)3> flush().
 Shell got hello
 ok
 ```
