@@ -15,7 +15,7 @@ CODESPELL 		= $(shell which codespell)
 SPELLCHECK 	    = $(CODESPELL) -S _build -S doc -S .git -L applys,nd,accout,mattern,pres,fo
 SPELLFIX      	= $(SPELLCHECK) -i 3 -w
 
-.PHONY: compile-no-deps test docs xref dialyzer-run dialyzer-quick dialyzer \
+.PHONY: compile-no-deps alt-test test docs xref dialyzer-run dialyzer-quick dialyzer \
 		cleanplt upload-docs rel deps test plots spellcheck spellfix certs
 
 all: compile
@@ -74,8 +74,12 @@ spellfix:
 	$(if $(CODESPELL), $(SPELLFIX), $(error "Aborting, command codespell not found in PATH"))
 
 
+test: enuit ct cover
 
-test: eunit ct cover
+alt-test:
+	mkdir -p test/partisan_alt_SUITE_data/
+	openssl rand -out test/partisan_alt_SUITE_data/RAND 4096
+	${REBAR} ct -v --readable=false --suite=partisan_alt_SUITE
 
 lint:
 	${REBAR} as lint lint
