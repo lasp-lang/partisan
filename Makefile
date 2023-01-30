@@ -74,7 +74,7 @@ spellfix:
 	$(if $(CODESPELL), $(SPELLFIX), $(error "Aborting, command codespell not found in PATH"))
 
 
-test: enuit ct cover
+test: eunit ct cover
 
 alt-test:
 	mkdir -p test/partisan_alt_SUITE_data/
