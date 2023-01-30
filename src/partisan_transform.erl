@@ -103,7 +103,7 @@ transform_statement(
         Line,
         {remote, Line,
             {atom, Line, partisan},
-            {atom, Line, forward_message}
+            {atom, Line, send}
         },
         [{var, Line, RemotePid}, {Type, Line, Message}]
     };
@@ -116,6 +116,13 @@ transform_statement({call, Line, {atom, Line, self}, []}) ->
     {call,
         Line,
         {remote, Line, {atom, Line, partisan}, {atom, Line, self}},
+        []
+    };
+
+transform_statement({call, Line, {atom, Line, node}, []}) ->
+    {call,
+        Line,
+        {remote, Line, {atom, Line, partisan}, {atom, Line, node}},
         []
     };
 

@@ -1,6 +1,7 @@
 # Partisan
 
-[![Build Status](https://travis-ci.org/lasp-lang/partisan.svg?branch=master)](https://travis-ci.org/lasp-lang/partisan)
+![Version](https://img.shields.io/badge/version-5.0.0--beta.14-blue?style=for-the-badge)<br>
+![Build Status](https://img.shields.io/github/actions/workflow/status/lasp-lang/partisan/build_and_test.yaml?&branch=master&label=build-status&style=for-the-badge)
 
 Partisan is a scalable and flexible, TCP-based membership system and distribution layer for the BEAM. It bypasses the use of Distributed Erlang for manual connection management via TCP, and has several pluggable backends for different deployment scenarios.
 
@@ -22,7 +23,7 @@ The resulting documentation will be found in the `docs` directory, just open the
 
 Erlang/OTP, specifically distributed erlang (a.k.a. `disterl`), uses a full-mesh overlay network. This means that in the worst case scenario all nodes are connected-to and communicate-with all other nodes in the system.
 
-**Failure detector**. These nodes send periodic heartbeat messages to their connected nodes and deem a node "failed" or "unreachable" when it misses a certain number of heartbeat messages i.e. `net_tick_time` setting in `disterl`.
+**Failure detector**. These nodes send periodic heartbeat messages to their connected nodes and deem a node "failed" or "unreachable" when it misses a certain number of heartbeat messages i.e. the `net_tick_time` setting in `disterl`.
 
 Due to this heartbeating and other issues in the way Erlang handles certain internal data structures, Erlang systems present a limit to the number of connected nodes that depending on the application goes between 60 and 200 nodes.
 
@@ -67,15 +68,12 @@ Partisan was designed to increase scalability, reduce latency and improve failur
     * Monitoring: Partisan offers an API similar to the modules `erlang` and `net_kernel` for monitoring nodes and remote processes. Notice this currently only works for `partisan_pluggable_peer_service_manager` backend.
 * Other
     * On join, gossip is performed immediately, instead of having to wait for the next gossip round.
-    * Single node testing, facilitated by a disterl control channel for figuring out which ports the peer service is operating at.
+    * Single node testing, facilitated by a `disterl` control channel for figuring out which ports the peer service is operating at.
 
 
 ## Requirements
 
 * Erlang/OTP 24+
-
-
-
 
 ## Who is using Partisan
 
@@ -91,7 +89,9 @@ Partisan was designed to increase scalability, reduce latency and improve failur
 
 
 ## Reference
-### Papers
+
+### Academic Papers
+
 * [Partisan: Enabling Real-World Protocol Evaluation](https://dl.acm.org/doi/10.1145/3231104.3231106) - ApPLIED '18: Proceedings of the 2018 Workshop on Advanced Tools, Programming Languages, and PLatforms for Implementing and Evaluating Algorithms for Distributed systems, Christopher Meiklejohn
 * [Partisan: Enabling Cloud-Scale Erlang Applications](https://arxiv.org/abs/1802.02652), Christopher Meiklejohn, Heather Miller
 * [Partisan: Scaling the Distributed Actor Runtime](https://www.usenix.org/system/files/atc19-meiklejohn.pdf) - 2019 USENIX Annual Technical Conference,  Christopher S. Meiklejohn and Heather Miller, Carnegie Mellon University; Peter Alvaro, UC Santa Cruz
@@ -99,6 +99,7 @@ Partisan was designed to increase scalability, reduce latency and improve failur
 * [X-BOT: A Protocol for Resilient Optimization of Unstructured Overlay Networks](https://www.academia.edu/2901632/X_BOT_A_Protocol_for_Resilient_Optimization_of_Unstructured_Overlay_Networks), Joao Leitao, Jose Pereira Luis Rodrigues.
 
 ### Presentations
+
 * [Rethinking the Language Runtime for Scale](http://www.erlang-factory.com/euc2016/christopher-meiklejohn) - Erlang User Conference 2016, Christopher S. Meiklejohn
 * [Partisan: Scaling the Distributed Actor Runtime](https://www.usenix.org/conference/atc19/presentation/meiklejohn) - 2019 USENIX Annual Technical Conference, Christopher S. Meiklejohn
 * [Partisan: testable, high performance, large scale distributed Erlang](https://codesync.global/media/partisan-testable-high-performance-large-scale-distributed-erlang/) - Code BEAM SF 2019, Christopher S. Meiklejohn
