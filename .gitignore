@@ -40,3 +40,4 @@ _checkouts.old/
 /erlang_ls.config
 /doc
 /rebar3.crashdump
+/config/_ssl
