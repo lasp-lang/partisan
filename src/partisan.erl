@@ -184,14 +184,25 @@ make_ref() ->
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the partisan encoded pid for the calling process.
-%% This is the same as calling
-%% `partisan_remote_ref:from_term(erlang:self())'.
+%% This is functionally the same as calling
+%% `partisan_remote_ref:from_term(erlang:self())'. However, this call
+%% implements an optimisation, it caches the result of calling said function in
+%% the process dictionary avoiding calling it again in subsequent calls.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec self() -> partisan_remote_ref:p().
 
 self() ->
-    partisan_remote_ref:from_term(erlang:self()).
+    Key = {?MODULE, ?FUNCTION_NAME},
+
+    case get(Key) of
+        undefined ->
+            Ref = partisan_remote_ref:from_term(erlang:self()),
+            _ = put(Key, Ref),
+            Ref;
+        Ref ->
+            Ref
+    end.
 
 
 %% -----------------------------------------------------------------------------
