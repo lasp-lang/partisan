@@ -65,6 +65,11 @@ init_per_testcase(Case, Config) ->
     [{hash, erlang:phash2({Case, Config})}|Config].
 
 
+end_per_testcase(hyparview_manager_high_active_test, Config) ->
+    ct:pal("Ending test case: ~p", [Case]),
+    %% ?SUPPORT:stop(?TAKE_NODES(Case)),
+    Config.
+
 end_per_testcase(Case, Config) ->
     ct:pal("Ending test case: ~p", [Case]),
     ?SUPPORT:stop(?TAKE_NODES(Case)),
