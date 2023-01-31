@@ -22,7 +22,7 @@
 %% -----------------------------------------------------------------------------
 %% @doc This modules implements the Peer Service API.
 %% All functions in this module forward the invocation to the configured
-%% peer service manager (option `partisan_peer_service_manager') which must be
+%% peer service manager (option `peer_service_manager') which must be
 %% one of the Partisan's managers implementing
 %% {@link partisan_peer_service_manager}, i.e. one of:
 %% <ul>

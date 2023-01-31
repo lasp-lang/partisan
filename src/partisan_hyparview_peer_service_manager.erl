@@ -189,16 +189,8 @@
 %% shuffle exchange. Defaults to 3.</dd>
 %% <dt>`shuffle_k_passive'</dt><dd>Number of peers to include in the
 %% shuffle exchange. Defaults to 4.</dd>
-%% <dt>`arwl'</dt><dd>Deprecated name for `active_view_rwl'.</dd>
-%% <dt>`prwl'</dt><dd>Deprecated name for `passive_rwl'.</dd>
-%% <dt>`max_active_size'</dt><dd>Deprecated name for
-%% `active_view_max_size'</dd>
-%% <dt>`min_active_size'</dt><dd>Deprecated name for
-%% `active_view_min_size'</dd>
-%% <dt>`max_passive_size'</dt><dd>Deprecated name for
-%% `passive_view_max_size'</dd>
-%% <dt>`passive_view_shuffle_period'</dt><dd>Deprecated name for
-%% `shuffle_interval'.</dd>
+%% </dl>
+%%
 %% @end
 %% -----------------------------------------------------------------------------
 -module(partisan_hyparview_peer_service_manager).

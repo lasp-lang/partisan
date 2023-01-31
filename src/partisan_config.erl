@@ -32,27 +32,37 @@
 %% The following is the list of all the options you can read using {@link get/
 %% 1} and {@link get/2}, and modify using the `sys.config' file and {@link set/
 %% 2}.
+%%
+%% See {@section Deprecated Options} below.
+%%
 %% <dl>
-%% <dt>`arwl'</dt><dd>TBD</dd>
-%% <dt>`binary_padding'</dt><dd>TBD</dd>
-%% <dt>`broadcast'</dt><dd>TBD</dd>
-%% <dt>`broadcast_mods'</dt><dd>TBD</dd>
-%% <dt>`causal_labels'</dt><dd>TBD</dd>
-%% <dt>`channels'</dt><dd>Defines the channels to be used by Partisan. The
+%% <dt>`binary_padding'</dt>
+%% <dd>A boolean value indicating whether to pad
+%% encoded messages whose external binary representation consumes less than 65
+%% bytes.</dd>
+%% <dt>`broadcast'</dt>
+%% <dd>TBD</dd>
+%% <dt>`broadcast_mods'</dt>
+%% <dd>TBD</dd>
+%% <dt>`causal_labels'</dt>
+%% <dd>TBD</dd>
+%% <dt>`channels'</dt>
+%% <dd>Defines the channels to be used by Partisan. The
 %% option takes either a channels map where keys are channel names
-%% (`channel()') and values are channel options (`channel_opts()'), or a list
-%% of values where each value can be any of the following types:
+%% ({@link partisan:channel()}) and values are channel options ({@link
+%% partisan:channel_opts()}), or a list of values where each value can be any
+%% of the following types:
 %% <ul>
-%% <li>a channel name (`channel()') e.g. the atom `foo'</li>
+%% <li>a channel name ({@link partisan:channel()}) e.g. the atom `foo'</li>
 %% <li>a channel with options: `{channel(), channel_opts()}'</li>
 %% <li>a monotonic channel using the tuple `{monotonic, Name :: channel()}' e.g.
 %% `{monotonic, bar}'. This is a legacy representation, the same can be
 %% achieved with `{bar, #{monotonic => true}}'</li>
 %% </ul>
 %% The list can habe a mix of types and during startup they are all coerced to
-%% channels map. Coercion works by defaulting `parallelism' to the
-%% value of the global option `parallelism' which itself defaults to `1', and
-%% `monotonic' to `false'.
+%% channels map. Coercion works by defaulting the channel's `parallelism' to the
+%% value of the global option `parallelism' (which itself defaults to `1'), and
+%% the channel's `monotonic' to `false'.
 %%
 %% Finally the list is transformed to a map where keys are channel names and
 %% values are channel map representation.
@@ -77,54 +87,107 @@
 %% }
 %% '''
 %% </dd>
-%% <dt>`connect_disterl'</dt><dd>Whether to use distributed erlang in addition
-%% to Partisan channels. This is used for testing and only works for `partisan_full_membership_strategy' (See `membership_strategy')</dd>
-%% <dt>`connection_jitter'</dt><dd>TBD</dd>
-%% <dt>`default_channel'</dt><dd>The name of the default channel. This
-%% should be the name of one of the channels defined in `channels'. If not
-%% defined, an `undefined' channel will be created as the default channel. The
-%% default channel is used when a specific channel hasn't been defined for
-%% messaging operations.</dd>
-%% <dt>`disable_fast_forward'</dt><dd>TBD</dd>
-%% <dt>`disable_fast_receive'</dt><dd>TBD</dd>
-%% <dt>`distance_enabled'</dt><dd>TBD</dd>
-%% <dt>`egress_delay'</dt><dd>TBD</dd>
-%% <dt>`exchange_selection'</dt><dd>TBD</dd>
-%% <dt>`exchange_tick_period'</dt><dd>TBD</dd>
-%% <dt>`fanout'</dt><dd>The number of nodes that are contacted at each gossip interval. DEPRECATED?</dd>
-%% <dt>`gossip'</dt><dd>If `true' gossip is used to disseminate membership
+%% <dt>`connect_disterl'</dt>
+%% <dd>Whether to use distributed erlang in addition to Partisan channels. This
+%% is used for testing and only works for {@link
+%% partisan_full_membership_strategy} (See `membership_strategy')</dd>
+%% <dt>`connection_jitter'</dt>
+%% <dd>TBD</dd>
+%% <dt>`disable_fast_forward'</dt>
+%% <dd>TBD</dd>
+%% <dt>`disable_fast_receive'</dt>
+%% <dd>TBD</dd>
+%% <dt>`distance_enabled'</dt>
+%% <dd>TBD</dd>
+%% <dt>`egress_delay'</dt>
+%% <dd>TBD</dd>
+%% <dt>`exchange_selection'</dt>
+%% <dd>TBD</dd>
+%% <dt>`exchange_tick_period'</dt>
+%% <dd>TBD</dd>
+%% <dt>`gossip'</dt>
+%% <dd>If `true' gossip is used to disseminate membership
 %% state.</dd>
-%% <dt>`ingress_delay'</dt><dd>TBD</dd>
-%% <dt>`lazy_tick_period'</dt><dd>TBD</dd>
-%% <dt>`max_active_size'</dt><dd>TBD</dd>
-%% <dt>`max_passive_size'</dt><dd>TBD</dd>
-%% <dt>`membership_binary_compression'</dt><dd>A boolean value or an integer in
-%% the range from `0..9' to be used with {@link erlang:term_to_binary/2} when
-%% encoding the membership set for broadcast. A value of `true' is equivalent
-%% to integer `6'. A value of false is equivalent to `0' (no compression).
-%% Default is `true'.</dd>
-%% <dt>`membership_strategy'</dt><dd>TBD</dd>
-%% <dt>`membership_strategy_tracing'</dt><dd>TBD</dd>
-%% <dt>`min_active_size'</dt><dd>TBD</dd>
-%% <dt>`name'</dt><dd>TBD</dd>
-%% <dt>`orchestration_strategy'</dt><dd>TBD</dd>
-%% <dt>`parallelism'</dt><dd>TBD</dd>
-%% <dt>`peer_service_manager'</dt><dd>TBD</dd>
-%% <dt>`passive_view_shuffle_period'</dt><dd>TBD</dd>
-%% <dt>`peer_host'</dt><dd>TBD</dd>
-%% <dt>`peer_ip'</dt><dd>TBD</dd>
-%% <dt>`peer_port'</dt><dd>TBD</dd>
-%% <dt>`periodic_enabled'</dt><dd>TBD</dd>
-%% <dt>`periodic_interval'</dt><dd>TBD</dd>
-%% <dt>`pid_encoding'</dt><dd>TBD</dd>
-%% <dt>`prwl'</dt><dd>TBD</dd>
-%% <dt>`random_promotion'</dt><dd>TBD</dd>
-%% <dt>`random_seed'</dt><dd>TBD</dd>
-%% <dt>`ref_encoding'</dt><dd>TBD</dd>
-%% <dt>`register_pid_for_encoding'</dt><dd>TBD</dd>
-%% <dt>`remote_ref_as_uri'</dt><dd>If `true' partisan remote references (see
-%% module {@link partisan_remote_ref}) will be encoded as a URI binary.
-%% Otherwise it will be encoded as a tuple. The default is `false'.
+%% <dt>`hyparview'</dt>
+%% <dd> The configuration for the {@link
+%% partisan_hyparview_peer_service_manager}. A list with the following
+%% properties:
+%%
+%% <dl>
+%% <dt>`active_max_size'</dt>
+%% <dd>Defaults to `6'.</dd>
+%% <dt>`active_min_size'</dt>
+%% <dd>Defaults to `3'.</dd>
+%% <dt>`active_rwl'</dt>
+%% <dd>Active View Random Walk Length. Defaults to `6'.</dd>
+%% <dt>`passive_max_size'</dt>
+%% <dd>Defaults to `30'.</dd>
+%% <dt>`passive_rwl'</dt>
+%% <dd>Passive View Random Walk Length. Defaults to `6'.</dd>
+%% <dt>`random_promotion'</dt>
+%% <dd>A boolean indicating if random promotion is enabled. Defaults
+%% `true'.</dd>
+%% <dt>`random_promotion_interval'</dt>
+%% <dd>Time after which the protocol attempts to promote a node in the passive
+%% view to the active view. Defaults to `5000'.</dd>
+%% <dt>`shuffle_interval'</dt>
+%% <dd>Defaults to `10000'.</dd>
+%% <dt>`shuffle_k_active'</dt>
+%% <dd>Number of peers to include in the shuffle exchange. Defaults to `3'.</dd>
+%% <dt>`shuffle_k_passive'</dt>
+%% <dd>Number of peers to include in the shuffle exchange. Defaults to `4'.</dd>
+%% </dl>
+%%
+%% </dd>
+%% <dt>`ingress_delay'</dt>
+%% <dd>TBD</dd>
+%% <dt>`lazy_tick_period'</dt>
+%% <dd>TBD</dd>
+%% <dt>`membership_binary_compression'</dt>
+%% <dd>A boolean value or an integer in the range from `0..9' to be used with
+%% {@link erlang:term_to_binary/2} when encoding the membership set for
+%% broadcast. A value of `true' is equivalent to integer `6' (equivalent to
+%% option `compressed' in {@link erlang:term_to_binary/2}). A value of `false'
+%% is equivalent to `0' (no compression). Default is `true'.</dd>
+%% <dt>`membership_strategy'</dt>
+%% <dd>The membership strategy to be used with {@link
+%% partisan_pluggable_peer_service_manager}. Default is {@link
+%% partisan_full_membership_strategy}</dd>
+%% <dt>`membership_strategy_tracing'</dt>
+%% <dd>TBD</dd>
+%% <dt>`name'</dt>
+%% <dd>TBD</dd>
+%% <dt>`orchestration_strategy'</dt>
+%% <dd>TBD</dd>
+%% <dt>`parallelism'</dt>
+%% <dd>TBD</dd>
+%% <dt>`peer_service_manager'</dt>
+%% <dd>The peer service manager to be used. An implementation of the {@link
+%% partisan_peer_service_manager} behaviour which defines the overlay network
+%% topology and the membership view maintenance strategy. Default is {@link
+%% partisan_pluggable_peer_service_manager}.</dd>
+%% <dt>`peer_host'</dt>
+%% <dd>TBD</dd>
+%% <dt>`peer_ip'</dt>
+%% <dd>TBD</dd>
+%% <dt>`peer_port'</dt>
+%% <dd>TBD</dd>
+%% <dt>`periodic_enabled'</dt>
+%% <dd>TBD</dd>
+%% <dt>`periodic_interval'</dt>
+%% <dd>TBD</dd>
+%% <dt>`pid_encoding'</dt>
+%% <dd>TBD</dd>
+%% <dt>`random_seed'</dt>
+%% <dd>TBD</dd>
+%% <dt>`ref_encoding'</dt>
+%% <dd>TBD</dd>
+%% <dt>`register_pid_for_encoding'</dt>
+%% <dd>TBD</dd>
+%% <dt>`remote_ref_as_uri'</dt>
+%% <dd>If `true' partisan remote references (see module {@link
+%% partisan_remote_ref}) will be encoded as a URI binary. Otherwise it will be
+%% encoded as a tuple. The default is `false'.
 %%
 %% ```
 %% 1> partisan_config:set(remote_ref_as_uri, true).
@@ -138,7 +201,8 @@
 %%    {partisan_process_reference,"<0.1062.0>"}}
 %% '''
 %% </dd>
-%% <dt>`remote_ref_uri_padding'</dt><dd>If `true' and the URI encoding of a
+%% <dt>`remote_ref_uri_padding'</dt>
+%% <dd>If `true' and the URI encoding of a
 %% remote reference results in a binary smaller than 65 bytes, the URI will be
 %% padded. The default is `false'.
 %% %% ```
@@ -151,16 +215,63 @@
 %% <<"partisan:pid:nonode@nohost:0.1062.0:"...>>
 %% '''
 %% </dd>
-%% <dt>`replaying'</dt><dd>TBD</dd>
-%% <dt>`reservations'</dt><dd>TBD</dd>
-%% <dt>`shrinking'</dt><dd>TBD</dd>
-%% <dt>`tag'</dt><dd>TBD</dd>
-%% <dt>`tls'</dt><dd>TBD</dd>
-%% <dt>`tls_client_options'</dt><dd>TBD</dd>
-%% <dt>`tls_server_options'</dt><dd>TBD</dd>
-%% <dt>`tracing'</dt><dd>TBD</dd>
-%% <dt>`xbot_interval'</dt><dd>TBD</dd>
+%% <dt>`replaying'</dt>
+%% <dd>TBD</dd>
+%% <dt>`reservations'</dt>
+%% <dd>TBD</dd>
+%% <dt>`shrinking'</dt>
+%% <dd>TBD</dd>
+%% <dt>`tag'</dt>
+%% <dd>The role of this node when using
+%% `partisan_client_server_peer_manager'. Values can be`client' or `server'.
+%% Use `undefined' when using a different peer service manager.</dd>
+%% <dt>`tls'</dt>
+%% <dd>a boolean value indicating wether channel connections should use TLS. If
+%% enabled, you have to provide a value for `tls_client_options' and
+%% `tls_server_options'. The default is `false'.</dd>
+%% <dt>`tls_client_options'</dt>
+%% <dd>The default is `[]'.</dd>
+%% <dt>`tls_server_options'</dt>
+%% <dd>The default is `[]'.</dd>
+%% <dt>`tracing'</dt>
+%% <dd>a boolean value. The default is `false'.</dd>
+%% <dt>`xbot_interval'</dt>
+%% <dd>TBD</dd>
 %% </dl>
+%%
+%% == Deprecated Options ==
+%% The following is the list of options have been deprecated. Some of them have
+%% been renamed and/or moved down a level in the configuration tree.
+%%
+%% <dl>
+%% <dt>`arwl'</dt>
+%% <dd>HyParView's Active View Random Walk Length. Defaults to
+%% `6'. Use `active_rwl' in the `hyparview' option instead.</dd>
+%% <dt>`fanout'</dt>
+%% <dd>The number of nodes that are contacted at each gossip
+%% interval.</dd>
+%% <dt>`max_active_size'</dt>
+%% <dd>HyParView's Active View Random Walk Length. Defaults to `6'.
+%% Use `active_max_size' in the `hyparview' option instead.</dd>
+%% <dt>`max_passive_size'</dt>
+%% <dd>HyParView's Active View Random Walk Length. Defaults to `30'.
+%% Use `passive_max_size' in the `hyparview' option instead.</dd>
+%% <dt>`mix_active_size'</dt>
+%% <dd>HyParView's Active View Random Walk Length. Defaults to `3'.
+%% Use `active_min_size' in the `hyparview' option instead.</dd>
+%% <dt>`passive_view_shuffle_period'</dt>
+%% <dd>Use `shuffle_interval' in the `hyparview' option instead.</dd>
+%% <dt>`partisan_peer_service_manager'</dt>
+%% <dd>Use `peer_service_manager' instead.</dd>
+%% <dt>`prwl'</dt>
+%% <dd>HyParView's Passive View Random Walk Length. Defaults to
+%% `6'. Use `passive_rwl' in the `hyparview' option instead.</dd>
+%% <dt>`random_promotion'</dt>
+%% <dd>Use `random_promotion' in the `hyparview' option instead.</dd>
+%% <dt>`random_promotion_period'</dt>
+%% <dd>Use `random_promotion_interval' in the `hyparview' option instead.</dd>
+%% </dl>
+%%
 %% @end
 %% -----------------------------------------------------------------------------
 -module(partisan_config).
@@ -278,7 +389,7 @@ init() ->
             {hyparview, ?HYPARVIEW_DEFAULTS},
             {ingress_delay, 0},
             {lazy_tick_period, ?DEFAULT_LAZY_TICK_PERIOD},
-            {membership_binary_compression, 1},
+            {membership_binary_compression, true},
             {membership_strategy, ?DEFAULT_MEMBERSHIP_STRATEGY},
             {membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING},
             %% {name, Name},
