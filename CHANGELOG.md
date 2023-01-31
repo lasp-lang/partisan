@@ -1,5 +1,50 @@
 # CHANGELOG
 
+# v5.0.0-beta.15
+
+### Bug Fixes
+* General bug fixes including:
+    * #121 updated_members should only accept a list of maps (an never a list of nodes)
+    * fix wrong calls to `self()` and `node()` as opposed to their partisan counterparts
+* Fixed bugs in `partisan_monitor`
+* Several bug fixes in the OTP implementation
+* Several bug fixes in the CT suite
+
+### Changes
+* Changed signature of partisan_membership_strategy and the implementing modules; added API e.g.  `join(state(), partisan:node_spec(), state())`  is now ` join(partisan:node_spec(), state(), state())` which is more natural.
+* Added partisan_membership_strategy API functions, so that pluggable manager can call these functions
+* Some other naming changes to disambiguate e.g. membership -> members
+* moved some opt types from partisan_monitor to partisan module
+* Fixed mising of gen_ and partisan_gen function calls.
+* Made `channel` options to be respected across the stack
+    * Added channel configuration to `partisan_monitor` calls.
+    * Added channel to OTP behaviours.
+        * The messages and the monitor signals will be sent using the configured channel.
+        * overloaded gen_server/statem functions to accept options including channel so that we do not add another function to the API
+        * store the Partisan opts in the process dict (again to avoid modifying our changed versions of the behaviours)
+        *
+* Configuration parameters renaming. Several configuration parameters were renamed. Check `partisan_config` module description. The old parameters are still accepted but are renamed during startup.
+* Deprecated the `partisan_peer_service_manager:myself` callback
+* Fix `partisan_util` term encoding and renamed function; added compression option for encoding and for memberhip payload
+
+
+
+### Additions
+* Added the following modules:
+    * `partisan_supervisor` behaviour
+* Added the following functions:
+    * `partisan:exit/2`
+    * `partisan:send/2`
+    * `partisan:send/3`
+    * `partisan:send_after/3`
+    * `partisan:send_after/4`
+    * `partisan:cancel_timer/1`
+    * `partisan:cancel_timer/2`
+ * Peer Service manager now allows subscribing to events per channel
+    * `partisan_peer_service_manager:on_up/3` accepting a channel
+    * `partisan_peer_service_manager:on_down/3` accepting a channel
+
+
 # v5.0.0-beta.14
 
 ## API
