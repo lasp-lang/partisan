@@ -776,6 +776,10 @@ when is_atom(RegName), is_atom(Node), Node == erlang:node() ->
     %% Local send
     erlang:send(Dest, Msg, Opts);
 
+send({RegName, Node}, Msg, Opts)
+when is_atom(RegName), is_atom(Node) ->
+    forward_message(Node, RegName, Msg, Opts);
+
 send(Dest, Msg, Opts) ->
     forward_message(Dest, Msg, Opts).
 

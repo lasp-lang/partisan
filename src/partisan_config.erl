@@ -530,9 +530,24 @@ set(channels, Arg) when is_list(Arg) orelse is_map(Arg) ->
 
     %% We set default channel, overriding any user input
     DefaultChannel = maps:without([name], to_channel_spec(?DEFAULT_CHANNEL)),
-    Channels = maps:put(
-        ?DEFAULT_CHANNEL, DefaultChannel, Channels0
-    ),
+    Channels1 = Channels0#{?DEFAULT_CHANNEL => DefaultChannel},
+
+    Channels =
+        case maps:find(?MEMBERSHIP_CHANNEL, Channels1) of
+            {ok, MChannel0} when is_map(MChannel0) ->
+                %% Make sure membership channel is not monotonic
+                MChannel = maps:merge(MChannel0, #{monotonic => false}),
+                Channels1#{?MEMBERSHIP_CHANNEL => MChannel};
+            error ->
+                Channels1#{
+                    ?MEMBERSHIP_CHANNEL => #{
+                        parallelism => 1,
+                        monotonic => false,
+                        compression => true
+                    }
+                }
+        end,
+
     do_set(channels, Channels);
 
 set(broadcast_mods, Value) ->
@@ -736,6 +751,9 @@ maybe_rename(passive_view_shuffle_period) ->
 maybe_rename(random_promotion_period) ->
     % hyparview
     random_promotion_interval;
+
+maybe_rename(partisan_peer_service_manager) ->
+    peer_service_manager;
 
 maybe_rename(Key) ->
     Key.
