@@ -1,5 +1,13 @@
 # CHANGELOG
 
+# v5.0.0-beta.16
+
+### Bug Fixes
+* Fix a bug in `partisan:send/2,3`
+
+### Chanes
+* Ensure the membership channel (`partisan_membership`) exits and is properly configured.
+
 # v5.0.0-beta.15
 
 ### Bug Fixes
