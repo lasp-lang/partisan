@@ -414,7 +414,8 @@ init() ->
             {tls, false},
             {tls_client_options, []},
             {tls_server_options, []},
-            {tracing, false}
+            {tracing, false},
+            {transmission_logging_mfa, undefined}
        ]
     ],
 
