@@ -129,6 +129,7 @@
 -export([process_info/1]).
 -export([process_info/2]).
 -export([self/0]).
+-export([self/1]).
 -export([send/2]).
 -export([send/3]).
 -export([send_after/3]).
@@ -187,15 +188,47 @@ make_ref() ->
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the partisan encoded pid for the calling process.
-%% This is functionally the same as calling
-%% `partisan_remote_ref:from_term(erlang:self())'. However, this call
-%% implements an optimisation, it caches the result of calling said function in
-%% the process dictionary avoiding calling it again in subsequent calls.
+%% This is equivalent to calling `partisan_remote_ref:from_term(self())'.
+%%
+%% Notice that this call is more expensive than its erlang counterpart. So you
+%% might want to cache the result in your process state.
+%% See function {@link self/1} which allows you to cache the result in the
+%% process dictionary and take notice of the warning related to doing this on
+%% an Erlang Shell process.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec self() -> partisan_remote_ref:p().
 
 self() ->
+    partisan_remote_ref:from_term(erlang:self()).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns the partisan encoded pid for the calling process.
+%%
+%% If `Opts' is the empty list, this is equivalent to calling
+%% `partisan_remote_ref:from_term(self())'.
+%%
+%% Otherwise, if the option `cache' is present in `Opts' the function lazily
+%% caches the result of calling {@link partisan_remote_ref:from_term/1} in
+%% the process dictionary the first time and retrieves the value in subsequent
+%% calls.
+%% <blockquote class="warning">
+%% <h4 class="warning">NOTICE</h4>
+%% <p>You SHOULD avoid using this function in the Erlang Shell. This is because
+%% when an Erlang Shell process crashes it will copy the contents of its
+%% dictionary to the new shell process and thus you will end up with the wrong
+%% partisan remote reference.
+%% </p>
+%% </blockquote>
+%% @end
+%% -----------------------------------------------------------------------------
+-spec self(Opts :: [cache]) -> partisan_remote_ref:p().
+
+self([]) ->
+    partisan_remote_ref:from_term(erlang:self());
+
+self([cache]) ->
     Key = {?MODULE, ?FUNCTION_NAME},
 
     case get(Key) of
