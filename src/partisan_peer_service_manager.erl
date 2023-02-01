@@ -343,7 +343,11 @@ mynode() ->
 %% @end
 %% -----------------------------------------------------------------------------
 maybe_connect(#{name := Node} = NodeSpec, ListenAddr, Acc) ->
-    Channels = maps:get(channels, NodeSpec),
+    Channels =
+        case maps:find(channels, NodeSpec) of
+            {ok, Value} -> Value;
+            error -> partisan_config:channels()
+        end,
 
     %% We check count using Node and not NodeSpec cause it is much faster and
     %% we are only interested in knowing if we have at least one connection
