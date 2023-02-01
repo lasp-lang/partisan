@@ -612,7 +612,10 @@ decode({encoded_name, Value}, term) ->
 %% @private
 get_node(Bin) ->
     Nodestring = get_nodestring(Bin),
-    binary_to_existing_atom(Nodestring, utf8).
+    %% Using binary_to_existing_atom/2 is ideal but assumes all nodes know all
+    %% other nodes, definitively not the case with partial views, so we need to
+    %% take the risk.
+    binary_to_atom(Nodestring, utf8).
 
 
 %% @private
