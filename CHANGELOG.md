@@ -1,5 +1,17 @@
 # CHANGELOG
 
+# v5.0.0-beta.18
+
+### Bug Fixes
+* Remove optimisation from `partisan:self/0` and add `partisan:self/1` which accepts the `cache` option making the use of th optimization to be explicit. Check the docs for the explanation.
+* Fixed bug in `partisan:monitor/2` introduced in previous version.
+
+
+# v5.0.0-beta.16
+
+### Bug Fixes
+* Fix bugs in `partisan_gen_statem` and `partisan_gen`
+
 # v5.0.0-beta.16
 
 ### Bug Fixes
