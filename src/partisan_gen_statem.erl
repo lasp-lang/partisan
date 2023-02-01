@@ -515,7 +515,9 @@ timeout_event_type(Type) ->
       | (LocalName :: atom())
       | {Name :: atom(), Node :: atom()}
       | {'global', GlobalName :: term()}
-      | {'via', RegMod :: module(), ViaName :: term()}.
+      | {'via', RegMod :: module(), ViaName :: term()}
+      | partisan_remote_ref:p()
+      | partisan_remote_ref:n().
 -type start_opt() ::
         {'timeout', Time :: timeout()}
       | {'spawn_opt', [proc_lib:start_spawn_option()]}
@@ -531,7 +533,6 @@ timeout_event_type(Type) ->
 -type enter_loop_opt() ::
 	{'hibernate_after', HibernateAfterTimeout :: timeout()}
       | {'debug', Dbgs :: [sys:debug_option()]}.
-
 
 
 %% Start a state machine
@@ -606,8 +607,14 @@ cast({via,RegMod,Name}, Msg) ->
     catch
 	_:_ -> ok
     end;
-cast({Name,Node} = ServerRef, Msg) when is_atom(Name), is_atom(Node) ->
-    partisan_send(ServerRef, wrap_cast(Msg));
+cast({Name, Node} = ServerRef, Msg) when is_atom(Name), is_atom(Node) ->
+    case Node == partisan:node() of
+        true ->
+            %% Optimisation
+            send(Name, Msg);
+        false ->
+            partisan_send(ServerRef, wrap_cast(Msg))
+    end;
 cast(Dest, Msg) ->
     %% Maybe partisan_remote_ref
     partisan_send(Dest, wrap_cast(Msg)).
@@ -781,15 +788,21 @@ call_dirty(ServerRef, Request, Timeout, T) ->
               Stacktrace)
     end.
 
+call_clean({Name, Node} = ServerRef, Request, Timeout, T)
+when is_atom(Name), is_atom(Node) ->
+    case Node == partisan:node() of
+        true ->
+            call_dirty(ServerRef, Request, Timeout, T);
+        false ->
+            do_call_clean(ServerRef, Request, Timeout, T)
+    end;
+
 call_clean(ServerRef, Request, Timeout, T) ->
-    Node = partisan:node(),
-    Res =
-        (partisan:is_pid(ServerRef) andalso (partisan:node(ServerRef) == Node))
-        orelse (
-            element(2, ServerRef) == Node andalso is_atom(element(1, ServerRef)
-        )
-        andalso (tuple_size(ServerRef) =:= 2)),
-    case Res of
+    IsLocalPid =
+        (is_pid(ServerRef) andalso node(ServerRef) == partisan:node())
+        orelse partisan_remote_ref:is_local_pid(ServerRef),
+
+    case IsLocalPid of
         true ->
             %% No need to use a proxy locally since we know alias will be
             %% used as of OTP 24 which will prevent garbage responses...
@@ -807,7 +820,6 @@ do_call_clean(ServerRef, Request, Timeout, T) ->
     %% Probably in OTP 26.
     Ref = partisan:make_ref(),
     Self = self(),
-    Opts = partisan_gen:get_opts(),
 
     Pid = spawn(
             fun () ->
@@ -820,16 +832,16 @@ do_call_clean(ServerRef, Request, Timeout, T) ->
                                 {Ref,Class,Reason,Stacktrace}
                         end
             end),
-    Mref = partisan:monitor(process, Pid, Opts),
+    Mref = erlang:monitor(process, Pid),
     receive
         {Ref,Result} ->
-            partisan:demonitor(Mref, [flush]),
+            erlang:demonitor(Mref, [flush]),
             case Result of
                 {ok,Reply} ->
                     Reply
             end;
         {Ref,Class,Reason,Stacktrace} ->
-            partisan:demonitor(Mref, [flush]),
+            erlang:demonitor(Mref, [flush]),
             erlang:raise(
               Class,
               {Reason,{?MODULE,call,[ServerRef,Request,Timeout]}},

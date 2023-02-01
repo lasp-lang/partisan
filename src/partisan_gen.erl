@@ -568,7 +568,11 @@ do_for_proc({Name, Node} = Process, Fun) when is_atom(Node) ->
             exit({nodedown, Node});
         _ ->
             Fun(Process)
-    end.
+    end;
+
+do_for_proc(Ref, Fun) ->
+    partisan_remote_ref:is_type(Ref) orelse error(function_clause),
+    Fun(Ref).
 
 
 %%%-----------------------------------------------------------------
