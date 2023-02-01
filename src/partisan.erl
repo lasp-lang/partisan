@@ -126,6 +126,8 @@
 -export([nodes/0]).
 -export([nodes/1]).
 -export([nodestring/0]).
+-export([process_info/1]).
+-export([process_info/2]).
 -export([self/0]).
 -export([send/2]).
 -export([send/3]).
@@ -143,6 +145,7 @@
 -compile({no_auto_import, [node/0]}).
 -compile({no_auto_import, [node/1]}).
 -compile({no_auto_import, [nodes/1]}).
+-compile({no_auto_import, [process_info/2]}).
 -compile({no_auto_import, [self/0]}).
 
 
@@ -567,6 +570,52 @@ disconnect_node(Node) ->
 
 is_alive() ->
     undefined =/= erlang:whereis(?PEER_SERVICE_MANAGER).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec process_info(Arg :: pid() | partisan_remote_ref:p()) ->
+    [tuple()] | undefined.
+
+process_info(Arg) when erlang:is_pid(Arg) ->
+    erlang:process_info(Arg);
+
+process_info(Arg) ->
+    try partisan_remote_ref:to_term(Arg) of
+        Term when erlang:is_pid(Term) ->
+            erlang:process_info(Arg);
+        _ ->
+            throw(badarg)
+    catch
+        _:_ ->
+            error(badarg)
+    end.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%%
+%% -----------------------------------------------------------------------------
+-spec process_info(
+    Arg :: pid() | partisan_remote_ref:p(),
+    Item :: atom() | [atom()]) -> [tuple()] | undefined.
+
+process_info(Arg, ItemOrItems) when erlang:is_pid(Arg) ->
+    erlang:process_info(Arg, ItemOrItems);
+
+process_info(Arg, ItemOrItems) ->
+    try partisan_remote_ref:to_term(Arg) of
+        Term when erlang:is_pid(Term) ->
+            erlang:process_info(Arg, ItemOrItems);
+        _ ->
+            throw(badarg)
+    catch
+        _:_ ->
+            error(badarg)
+    end.
 
 
 %% -----------------------------------------------------------------------------
