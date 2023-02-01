@@ -225,7 +225,7 @@ monitor(Target, Opts) when is_list(Opts) ->
                 false ->
                     Node = partisan_remote_ref:node(Target),
                     Channel = get_option(channel, Opts, ?DEFAULT_CHANNEL),
-                    %% Wether we fallback to the default channel if the
+                    %% Whether we fallback to the default channel if the
                     %% requested channel is not connected
                     Fallback = get_option(channel_fallback, Opts, true),
 
@@ -266,8 +266,9 @@ monitor(Target, Opts) when is_list(Opts) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec demonitor(
-    MonitoredRef :: partisan_remote_ref:r(), Opts :: partisan:demonitor_opts()) ->
-    boolean() | no_return().
+    MonitoredRef :: partisan_remote_ref:r(),
+    Opts :: partisan:demonitor_opts()
+    ) -> boolean() | no_return().
 
 demonitor(MPRef, Opts) ->
     partisan_remote_ref:is_reference(MPRef) orelse error(badarg),
