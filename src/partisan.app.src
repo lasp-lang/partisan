@@ -2,7 +2,7 @@
     {description,
         "Partisan is a scalable and flexible, TCP-based membership system and distribution layer for the BEAM."
     },
-    {vsn, "5.0.0-beta.16"},
+    {vsn, "5.0.0-beta.17"},
     {registered, []},
     {applications, [
         kernel,
