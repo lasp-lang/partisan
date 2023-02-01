@@ -216,11 +216,6 @@ monitor(Target, Opts) when is_list(Opts) ->
             persistent_term:get(?DUMMY_MREF_KEY);
 
         false ->
-            Channel = get_option(channel, Opts, nochannel),
-            %% Wethere we fallback to the default channel if the requested
-            %% channel is not connected
-            Fallback = get_option(channel_fallback, Opts, true),
-
             case partisan_remote_ref:is_local(Target) of
                 true ->
                     PidOrRegName = partisan_remote_ref:to_term(Target),
@@ -230,6 +225,8 @@ monitor(Target, Opts) when is_list(Opts) ->
                 false ->
                     Node = partisan_remote_ref:node(Target),
                     Channel = get_option(channel, Opts, ?DEFAULT_CHANNEL),
+                    %% Wether we fallback to the default channel if the
+                    %% requested channel is not connected
                     Fallback = get_option(channel_fallback, Opts, true),
 
                     IsConnected =
