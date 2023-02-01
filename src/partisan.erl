@@ -585,7 +585,7 @@ process_info(Arg) when erlang:is_pid(Arg) ->
 process_info(Arg) ->
     try partisan_remote_ref:to_term(Arg) of
         Term when erlang:is_pid(Term) ->
-            erlang:process_info(Arg);
+            erlang:process_info(Term);
         _ ->
             throw(badarg)
     catch
