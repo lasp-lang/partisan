@@ -127,7 +127,7 @@
 %%%==========================================================================
 
 -type from() ::
-	{To :: pid(), Tag :: term()}. % Reply-to specifier for call
+	{To :: pid() | partisan_remote_ref:p(), Tag :: term()}. % Reply-to specifier for call
 
 -type state() ::
 	state_name() | % For StateName/3 callback functions
@@ -437,7 +437,8 @@ event_type(Type) ->
         _ -> timeout_event_type(Type)
     end.
 %%
-from({Pid,_}) when is_pid(Pid) -> true;
+from({Pid, _}) when is_pid(Pid) -> true;
+from({Term, _}) -> partisan_remote_ref:is_pid(Term);
 from(_) -> false.
 %%
 timeout_event_type(Type) ->
@@ -606,9 +607,10 @@ cast({via,RegMod,Name}, Msg) ->
 	_:_ -> ok
     end;
 cast({Name,Node} = ServerRef, Msg) when is_atom(Name), is_atom(Node) ->
-    send(ServerRef, wrap_cast(Msg));
-cast({partisan_remote_ref, _, _} = Dest, Msg) ->
-    send(Dest, wrap_cast(Msg)).
+    partisan_send(ServerRef, wrap_cast(Msg));
+cast(Dest, Msg) ->
+    %% Maybe partisan_remote_ref
+    partisan_send(Dest, wrap_cast(Msg)).
 
 %% Partisan addition
 cast(ServerRef, Request, Opts) ->
@@ -846,20 +848,22 @@ replies([]) ->
     ok.
 
 %% Might actually not send the message in case of caught exception
-send(Dest, Msg) ->
-    % try erlang:send(Proc, Msg)
-    % catch
-    %     error:_ -> ok
-    % end,
-    % ok.
-
-    {Node, Process} = case Dest of
-        {RemoteProcess, RemoteNode} ->
-            {RemoteNode, RemoteProcess};
-        _ ->
-            {partisan:node(), Dest}
+send(Proc, Msg) ->
+    try erlang:send(Proc, Msg)
+    catch
+     error:_ -> ok
     end,
-    partisan:forward_message(Node, Process, Msg, partisan_gen:get_opts()).
+    ok.
+
+
+partisan_send({Name, Node}, Msg) ->
+    partisan:forward_message(Node, Name, Msg, partisan_gen:get_opts());
+
+partisan_send(Dest, Msg) ->
+    %% Simulate the error we would have gotten in cast/2
+    partisan_remote_ref:is_type(Dest) orelse error(function_clause),
+    partisan:forward_message(Dest, Msg, partisan_gen:get_opts()).
+
 
 
 %% Here the init_it/6 and enter_loop/5,6,7 functions converge
@@ -2524,11 +2528,17 @@ error_info(
 
 client_stacktrace([]) ->
     undefined;
-client_stacktrace([{{call,{Pid,_Tag}},_Req}|_]) when is_pid(Pid) ->
-    case partisan:is_local(Pid) of
-        true ->
+client_stacktrace([{{call,{Term,_Tag}},_Req}|_]) ->
+    is_pid(Term)
+        orelse partisan_remote_ref:is_pid(Term)
+        orelse error(function_clause),
+
+    try partisan_remote_ref:to_term(Term) of
+        Pid ->
             case
-                process_info(Pid, [current_stacktrace, registered_name])
+                process_info(
+                    Pid, [current_stacktrace, registered_name]
+                )
             of
                 undefined ->
                     {Pid,dead};
@@ -2538,9 +2548,10 @@ client_stacktrace([{{call,{Pid,_Tag}},_Req}|_]) when is_pid(Pid) ->
                 [{current_stacktrace, Stacktrace},
                  {registered_name, Name}] ->
                     {Pid,{Name,Stacktrace}}
-            end;
-        false ->
-            {Pid,remote}
+            end
+    catch
+        error:badarg ->
+            {Term, remote}
     end;
 
 client_stacktrace([_|_]) ->
