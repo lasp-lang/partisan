@@ -860,7 +860,7 @@ send_after(Time, Dest, Msg) ->
 %% -----------------------------------------------------------------------------
 %% @doc Equivalent to the native `erlang:send_after/4'.
 %% It calls the native implementation for local destinations. For remote
-%% destinations it spawns a process that uses a timer and accepts cancelation (
+%% destinations it spawns a process that uses a timer and accepts cancellation (
 %% via `cancel_timer/1,2'), so this is less efficient than the native
 %% implementation.
 %% @end

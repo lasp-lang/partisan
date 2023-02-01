@@ -226,7 +226,7 @@
 %% `partisan_client_server_peer_manager'. Values can be`client' or `server'.
 %% Use `undefined' when using a different peer service manager.</dd>
 %% <dt>`tls'</dt>
-%% <dd>a boolean value indicating wether channel connections should use TLS. If
+%% <dd>a boolean value indicating whether channel connections should use TLS. If
 %% enabled, you have to provide a value for `tls_client_options' and
 %% `tls_server_options'. The default is `false'.</dd>
 %% <dt>`tls_client_options'</dt>
