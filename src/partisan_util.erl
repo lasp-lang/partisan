@@ -340,7 +340,9 @@ pid(Pid, Node, true) ->
                         [Pid, Name, Node]
                     ),
                     %% TODO: Race here unless we wait.
-                    _ = rpc:call(Node, erlang, spawn, [RegisterFun]),
+                    _ = partisan_rpc:call(
+                        Node, erlang, spawn, [RegisterFun], 5000
+                    ),
                     partisan_remote_ref:from_term(Name, Node);
                 false ->
                     [_, B, C] = string:split(pid_to_list(Pid), ".", all),

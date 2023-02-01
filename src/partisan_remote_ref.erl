@@ -776,7 +776,7 @@ register_remote_pid(Pid, Node) ->
     end,
 
     %% TODO: Race here unless we wait.
-    _ = rpc:call(Node, erlang, spawn, [Register]),
+    _ = partisan_rpc:call(Node, erlang, spawn, [Register], 5000),
     true.
 
 
