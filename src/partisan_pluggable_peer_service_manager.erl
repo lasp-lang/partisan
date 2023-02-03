@@ -61,7 +61,7 @@
     membership_strategy         ::  atom(),
     membership_strategy_state   ::  term(),
     distance_metrics            ::  map(),
-    sync_joins                  ::  [{partisan:node_spec(), from()}],
+    sync_joins                  ::  #{partisan:node_spec() => sets:set(from())},
     out_links                   ::  [term()],
     down_funs                   ::  node_subs(),
     channel_down_funs           ::  channel_subs(),
@@ -656,7 +656,7 @@ init([]) ->
         interposition_funs =  #{},
         post_interposition_funs =  #{},
         distance_metrics = #{},
-        sync_joins = [],
+        sync_joins = #{},
         up_funs = #{},
         channel_up_funs = #{},
         down_funs = #{},
@@ -805,14 +805,14 @@ handle_call({sync_join, #{name := N}}, _From, #state{name = N} = State0) ->
     %% Ignoring self join.
     {reply, ok, State0};
 
-handle_call({sync_join, NodeSpec}, _From, State0) ->
+handle_call({sync_join, NodeSpec}, From, State0) ->
     ?LOG_DEBUG(#{
         description => "Starting synchronous join with peer",
         node => State0#state.name,
         peer => NodeSpec
     }),
-    State = internal_join(NodeSpec, undefined, State0),
-    {reply, ok, State};
+    State = internal_join(NodeSpec, From, State0),
+    {no_reply, State};
 
 handle_call({send_message, Node, Message}, _From, State) ->
 
@@ -1368,28 +1368,8 @@ handle_info(connections, State0) ->
     %% channel or channel connection.
     State1 = establish_connections(State0),
 
-    SyncJoins0 = State1#state.sync_joins,
-
     %% Advance sync_join's if we have enough open connections to remote host.
-    SyncJoins = lists:foldl(
-        fun({#{name := Node} = NodeSpec, FromPid}, Joins) ->
-            case partisan:is_fully_connected(NodeSpec) of
-                true ->
-                    ?LOG_DEBUG("Node ~p is now fully connected.", [Node]),
-
-                    gen_server:reply(FromPid, ok),
-
-                    Joins;
-
-                false ->
-                    Joins ++ [{NodeSpec, FromPid}]
-            end
-        end,
-        [],
-        SyncJoins0
-    ),
-
-    State = State1#state{sync_joins = SyncJoins},
+    State = maybe_reply_sync_joins(State1),
 
     schedule_connections(),
 
@@ -1441,7 +1421,6 @@ handle_info(
     {connected, NodeSpec, _Channel, _Tag, RemoteState}, State0) ->
     #state{
         pending = Pending0,
-        sync_joins = SyncJoins0,
         members = Members0,
         membership_strategy = MStrategy,
         membership_strategy_state = MState0,
@@ -1455,7 +1434,7 @@ handle_info(
         membership => State0#state.members
     }),
 
-    State = case lists:member(NodeSpec, Pending0) of
+    State1 = case lists:member(NodeSpec, Pending0) of
         true ->
             %% Move out of pending.
             Pending = Pending0 -- [NodeSpec],
@@ -1502,20 +1481,9 @@ handle_info(
     end,
 
     %% Notify for sync join.
-    SyncJoins = case lists:keyfind(NodeSpec, 1, SyncJoins0) of
-        {PeerNodeSpec, FromPid} ->
-            case partisan:is_fully_connected(PeerNodeSpec) of
-                true ->
-                    gen_server:reply(FromPid, ok),
-                    lists:keydelete(FromPid, 2, SyncJoins0);
-                false ->
-                    SyncJoins0
-            end;
-        false ->
-            SyncJoins0
-    end,
+    State = maybe_reply_sync_joins(State1),
 
-    {noreply, State#state{sync_joins = SyncJoins}};
+    {noreply, State};
 
 handle_info(Msg, State) ->
     handle_message(Msg, undefined, ?DEFAULT_CHANNEL, State).
@@ -2038,35 +2006,65 @@ internal_leave(#{name := Name} = Node, State0) ->
 
 %% @private
 internal_join(#{name := Node} = NodeSpec, From, #state{} = State0) ->
-
-    #state{
-        pending = Pending0,
-        sync_joins = SyncJoins0
-    } = State0,
-
     ok = partisan_util:maybe_connect_disterl(Node),
-
-    %% Add to list of pending connections.
-    Pending = Pending0 ++ [NodeSpec],
 
     %% Sleep before connecting, to avoid a rush on connections.
     avoid_rush(),
 
-    %% Add to sync joins list.
-    SyncJoins = case From of
-        undefined ->
-            SyncJoins0;
-        _ ->
-            SyncJoins0 ++ [{NodeSpec, From}]
-    end,
 
-    State = State0#state{
-        pending = Pending,
-        sync_joins = SyncJoins
-    },
+    %% Add to list of pending connections.
+    Pending0 = State0#state.pending,
+    Pending = Pending0 ++ [NodeSpec],
+    State = maybe_add_sync_join(
+        NodeSpec, From, State0#state{pending = Pending}
+    ),
 
     %% Establish any new connections.
     establish_connections(State).
+
+
+%% @private
+maybe_add_sync_join(_, undefined, State) ->
+    State;
+
+maybe_add_sync_join(NodeSpec, From, State) ->
+    SyncJoins0 = State#state.sync_joins,
+    SyncJoins =
+        try
+            Fun = fun(Value) -> sets:add_element(From, Value) end,
+            maps:update_with(NodeSpec, Fun, SyncJoins0)
+        catch
+            error:{badkey, NodeSpec} ->
+                maps:put(
+                    NodeSpec,
+                    sets:from_list([From], [{version, 2}]),
+                    SyncJoins0
+                )
+        end,
+
+    State#state{sync_joins = SyncJoins}.
+
+
+maybe_reply_sync_joins(State) ->
+    Fun = fun(#{name := Node} = NodeSpec, Set, Acc) ->
+        case partisan:is_fully_connected(NodeSpec) of
+            true ->
+                ?LOG_DEBUG("Node ~p is now fully connected.", [Node]),
+                [
+                    gen_server:reply(FromPid, ok)
+                    || FromPid <- sets:to_list(Set)
+                ],
+                %% We remove the entry from map
+                Acc;
+
+            false ->
+                maps:put(NodeSpec, Set)
+        end
+    end,
+
+    SyncJoins = maps:fold(Fun, maps:new(), State#state.sync_joins),
+
+    State#state{sync_joins = SyncJoins}.
 
 
 %% @private

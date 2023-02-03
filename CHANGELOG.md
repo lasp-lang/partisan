@@ -1,5 +1,12 @@
 # CHANGELOG
 
+# v5.0.0-beta.19
+
+### Bug Fixes
+* Fix implementation of `partisan_pluggable_peer_service_manager:sync_join/1`.
+
+
+
 # v5.0.0-beta.18
 
 ### Bug Fixes
@@ -7,7 +14,7 @@
 * Fixed bug in `partisan:monitor/2` introduced in previous version.
 
 
-# v5.0.0-beta.16
+# v5.0.0-beta.17
 
 ### Bug Fixes
 * Fix bugs in `partisan_gen_statem` and `partisan_gen`
