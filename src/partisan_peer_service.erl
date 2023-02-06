@@ -1,4 +1,4 @@
-%% -------------------------------------------------------------------
+%% -----------------------------------------------------------------------------
 %%
 %% Copyright (c) 2014 Helium Systems, Inc.  All Rights Reserved.
 %% Copyright (c) 2016 Christopher Meiklejohn.  All Rights Reserved.
@@ -17,7 +17,7 @@
 %% specific language governing permissions and limitations
 %% under the License.
 %%
-%% -------------------------------------------------------------------
+%% -----------------------------------------------------------------------------
 
 %% -----------------------------------------------------------------------------
 %% @doc This modules implements the Peer Service API.
