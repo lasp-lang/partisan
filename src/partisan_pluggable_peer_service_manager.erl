@@ -60,6 +60,7 @@
     pending                     ::  [partisan:node_spec()],
     membership_strategy         ::  atom(),
     membership_strategy_state   ::  term(),
+    leaving = false             ::  boolean(),
     distance_metrics            ::  map(),
     sync_joins                  ::  #{partisan:node_spec() => sets:set(from())},
     out_links                   ::  [term()],
@@ -738,6 +739,10 @@ handle_call({remove_post_interposition_fun, Name}, _From, #state{post_interposit
     PostInterpositionFuns = maps:remove(Name, PostInterpositionFuns0),
     {reply, ok, State#state{post_interposition_funs=PostInterpositionFuns}};
 
+handle_call({update_members, _}, _, #state{leaving = true} = State) ->
+    %% We are leaving so do nothing
+    {reply, ok, State};
+
 handle_call({update_members, Members}, _From, #state{} = State0) ->
     %% For compatibility with external membership services.
     MState = State0#state.membership_strategy_state,
@@ -779,6 +784,7 @@ handle_call({leave, #{name := Name} = NodeSpec}, From, State0) ->
 
     case Name == State0#state.name of
         true ->
+            %% Self leave
             gen_server:reply(From, ok),
 
             %% We need to stop (to cleanup all connections and state) or do it
@@ -786,7 +792,7 @@ handle_call({leave, #{name := Name} = NodeSpec}, From, State0) ->
             %% internal_leave/2 has send some async messages we need to process
             %% (casts to ourself) so we cast ourselves a shutdown message.
             gen_server:cast(?MODULE, stop),
-            {noreply, State};
+            {noreply, State#state{leaving = true}};
 
         false ->
             gen_server:cast(?MODULE, {kill_connections, [NodeSpec]}),
