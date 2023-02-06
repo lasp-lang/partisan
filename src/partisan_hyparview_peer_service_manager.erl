@@ -2213,7 +2213,8 @@ merge_exchange(Exchange, #state{} = State) ->
 
 %% @private
 notify(#state{active = Active}) ->
-    catch partisan_peer_service_events:update(Active).
+    _ = catch partisan_peer_service_events:update(Active),
+    ok.
 
 
 %% @private
