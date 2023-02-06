@@ -263,6 +263,8 @@ broadcast_channel(Mod) ->
 
 %% -----------------------------------------------------------------------------
 %% @doc Notifies broadcast server of membership update
+%% This is the function is added to partisan_peer_service_events using
+%% partisan_peer_service:add_sup_callback(fun ?MODULE:update/1),
 %% @end
 %% -----------------------------------------------------------------------------
 -spec update([node()]) -> ok.
