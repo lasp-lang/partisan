@@ -670,7 +670,7 @@ process_info(Arg, ItemOrItems) ->
 node_spec() ->
     %% Channels and ListenAddrs are sorted already
     #{
-        name => partisan_config:get(name),
+        name => node(),
         listen_addrs => partisan_config:get(listen_addrs),
         channels => partisan_config:get(channels)
     }.
