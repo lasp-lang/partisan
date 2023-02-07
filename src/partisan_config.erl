@@ -392,7 +392,6 @@ init() ->
             {membership_binary_compression, true},
             {membership_strategy, ?DEFAULT_MEMBERSHIP_STRATEGY},
             {membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING},
-            %% {name, Name},
             {orchestration_strategy, ?DEFAULT_ORCHESTRATION_STRATEGY},
             {parallelism, ?PARALLELISM},
             {peer_service_manager, PeerService},
@@ -650,7 +649,9 @@ parallelism() ->
 maybe_set_node_name() ->
     case get(name, undefined) of
         undefined ->
-            set_node_name();
+            %% We read directly from the env (not our cache)
+            UserDefined = application:get_env(partisan, name, undefined),
+            set_node_name(UserDefined);
         _ ->
             %% Name already set
             ok
@@ -658,10 +659,10 @@ maybe_set_node_name() ->
 
 
 %% @private
-set_node_name() ->
+set_node_name(UserDefined) ->
     Name =
         case node() of
-            nonode@nohost ->
+            nonode@nohost when UserDefined == undefined ->
                 Generated = gen_node_name(),
                 ?LOG_INFO(#{
                     description =>
@@ -670,6 +671,10 @@ set_node_name() ->
                     disterl_enabled => false
                 }),
                 Generated;
+
+            nonode@nohost when UserDefined =/= undefined ->
+                UserDefined;
+
             Other ->
                 ?LOG_INFO(#{
                     description => "Partisan node name configured",
@@ -678,8 +683,19 @@ set_node_name() ->
                 }),
                 Other
         end,
+
     set(name, Name),
     set(nodestring, atom_to_binary(Name, utf8)).
+
+
+
+%% @private
+gen_node_name() ->
+    UUIDState = uuid:new(self()),
+    {UUID, _UUIDState1} = uuid:get_v1(UUIDState),
+    StringUUID = uuid:uuid_to_string(UUID),
+    list_to_atom(StringUUID ++ "@127.0.0.1").
+
 
 
 
@@ -831,14 +847,6 @@ get_node_address() ->
             }),
             ?PEER_IP
     end.
-
-
-%% @private
-gen_node_name() ->
-    UUIDState = uuid:new(self()),
-    {UUID, _UUIDState1} = uuid:get_v1(UUIDState),
-    StringUUID = uuid:uuid_to_string(UUID),
-    list_to_atom(StringUUID ++ "@127.0.0.1").
 
 
 %% -----------------------------------------------------------------------------
