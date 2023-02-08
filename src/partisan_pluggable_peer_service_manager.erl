@@ -1531,7 +1531,6 @@ gen_actor(Name) ->
 -spec establish_connections(t()) -> t().
 
 establish_connections(State) ->
-    Name = State#state.name,
     Pending = State#state.pending,
     Members = State#state.members,
 
@@ -1541,7 +1540,10 @@ establish_connections(State) ->
     %% Reconnect disconnected members and members waiting to join.
     LoL = lists:foldl(
         fun
-            (Node, Acc) when Node =/= Name ->
+            (#{name := Name}, Acc) when Name == State#state.name ->
+                %% We exclude ourselves
+                Acc;
+            (#{name := _} = Node, Acc) ->
                 %% TODO this should be a fold that will return the invalid
                 %% NodeSpecs (nodes that have an invalid IP address because we
                 %% already have a connection to NodeSpec.node on another IP
@@ -1552,11 +1554,7 @@ establish_connections(State) ->
                 {ok, L} = partisan_peer_service_manager:connect(
                     Node, #{prune => true}
                 ),
-                [L | Acc];
-
-            (_, Acc) ->
-                %% We exclude ourselves
-                Acc
+                [L | Acc]
         end,
         [],
         Nodes
