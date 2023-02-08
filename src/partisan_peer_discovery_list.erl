@@ -1,5 +1,5 @@
 %% =============================================================================
-%%  partisan_peer_discovery_seed.erl -
+%%  partisan_peer_discovery_list.erl -
 %%
 %%  Copyright (c) 2022 Alejandro M. Ramallo. All rights reserved.
 %%
@@ -37,7 +37,6 @@
 %%     ]}
 %% ]}
 %% '''
-%% Where HOSTNAME is the name of a bondy node.
 %%
 %% @end
 %% -----------------------------------------------------------------------------
