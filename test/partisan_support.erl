@@ -504,18 +504,21 @@ cluster({_, Node}, {_, Peer}, Config) ->
 
 %% @private
 stop(Nodes) ->
-    StopFun = fun({_, Node}) ->
-        case ?CT_PEER:stop(Node) of
-            {ok, _} ->
-                ok;
-            {error, stop_timeout, _} ->
-                debug("Failed to stop node ~p: stop_timeout!", [Node]),
-                ok;
-            {error, not_started, _} ->
-                ok;
-            Error ->
-                ct:pal("Error while stopping CT_PEER ~p", [Error])
-        end
+    StopFun = fun
+        Stop({_, Node}) ->
+            Stop(Node);
+        Stop(Node) ->
+            case ?CT_PEER:stop(Node) of
+                {ok, _} ->
+                    ok;
+                {error, stop_timeout, _} ->
+                    debug("Failed to stop node ~p: stop_timeout!", [Node]),
+                    ok;
+                {error, not_started, _} ->
+                    ok;
+                Error ->
+                    ct:pal("Error while stopping CT_PEER ~p", [Error])
+            end
     end,
 
     _ = catch lists:foreach(StopFun, Nodes),

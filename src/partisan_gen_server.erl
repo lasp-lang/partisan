@@ -53,8 +53,6 @@
 %%%       above monitor_return() in gen.erl!
 %%%
 
--include("partisan_logger.hrl").
-
 %%% ---------------------------------------------------
 %%%
 %%% The idea behind THIS server is that the user module
@@ -133,8 +131,8 @@
     start_monitor/3, start_monitor/4,
      stop/1, stop/3,
      call/2, call/3,
-         send_request/2, wait_response/2,
-         receive_response/2, check_response/2,
+     send_request/2, wait_response/2,
+     receive_response/2, check_response/2,
      cast/2, reply/2,
      abcast/2, abcast/3,
      multi_call/2, multi_call/3, multi_call/4,
@@ -153,6 +151,8 @@
 
 %% Internal exports
 -export([init_it/6]).
+
+-include("partisan_logger.hrl").
 
 -define(
    STACKTRACE(),
@@ -763,7 +763,9 @@ rec_nodes_rest(_Tag, [], _Name, Badnodes, Replies) ->
 start_monitor(Node, Name) when is_atom(Node), is_atom(Name) ->
     %% Disterl = partisan_config:get(connect_disterl),
     %% TODO FIx this for partisan
-    if node() =:= nonode@nohost, Node =/= nonode@nohost ->
+    Myself = partisan:node(),
+
+    if Myself =:= nonode@nohost, Node =/= nonode@nohost ->
         Ref = partisan:make_ref(),
         self() ! {'DOWN', Ref, process, {Name, Node}, noconnection},
         {Node, Ref};
@@ -1264,7 +1266,7 @@ format_client_log_single(undefined,_) ->
 format_client_log_single({From,dead},_) ->
     {" Client ~0p is dead.",[From]};
 format_client_log_single({From,remote},_) ->
-    {" Client ~0p is remote on node ~0p.", [From, node(From)]};
+    {" Client ~0p is remote on node ~0p.", [From, partisan:node(From)]};
 format_client_log_single({_From,{Name,Stacktrace0}},FormatOpts) ->
     P = p(FormatOpts),
     %% Minimize the stacktrace a bit for single line reports. This is
@@ -1284,7 +1286,7 @@ format_client_log(undefined,_) ->
 format_client_log({From,dead},_) ->
     {"** Client ~p is dead~n", [From]};
 format_client_log({From,remote},_) ->
-    {"** Client ~p is remote on node ~p~n", [From, node(From)]};
+    {"** Client ~p is remote on node ~p~n", [From, partisan:node(From)]};
 format_client_log({_From,{Name,Stacktrace}},FormatOpts) ->
     P = p(FormatOpts),
     Format = lists:append(["** Client ",P," stacktrace~n",
