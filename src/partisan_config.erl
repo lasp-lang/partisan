@@ -280,6 +280,9 @@
 -include("partisan_logger.hrl").
 -include("partisan.hrl").
 
+
+-define(KEY(Arg), {?MODULE, Arg}).
+
 -export([channel_opts/1]).
 -export([channels/0]).
 -export([default_channel/0]).
@@ -485,10 +488,10 @@ get(broadcast_start_exchange_limit = Key) ->
     get(Key, Default);
 
 get(Key) ->
-    persistent_term:get(maybe_rename(Key)).
+    persistent_term:get(?KEY(maybe_rename(Key))).
 
 get(Key, Default) ->
-    persistent_term:get(maybe_rename(Key), Default).
+    persistent_term:get(?KEY(maybe_rename(Key)), Default).
 
 
 %% -----------------------------------------------------------------------------
@@ -712,12 +715,12 @@ env_or_default(Key, Default) ->
 
 %% @private
 do_set(Key, MergeFun) when is_function(MergeFun, 1) ->
-    OldValue = persistent_term:get(Key, undefined),
+    OldValue = persistent_term:get(?KEY(Key), undefined),
     do_set(Key, MergeFun(OldValue));
 
 do_set(Key, Value) ->
     application:set_env(?APP, Key, Value),
-    persistent_term:put(Key, Value).
+    persistent_term:put(?KEY(Key), Value).
 
 
 %% @private
