@@ -394,6 +394,7 @@ init() ->
             {membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING},
             {orchestration_strategy, ?DEFAULT_ORCHESTRATION_STRATEGY},
             {parallelism, ?PARALLELISM},
+            {peer_discovery, #{enabled => false}},
             {peer_service_manager, PeerService},
             {peer_host, undefined},
             {peer_ip, DefaultPeerIP},
