@@ -17,16 +17,23 @@
 %% =============================================================================
 
 %% -----------------------------------------------------------------------------
-%% @doc An implementation of the {@link bondy_peer_discovery_agent} behaviour
+%% @doc An implementation of the {@link partisan_peer_discovery_agent} behaviour
 %% that uses DNS for service discovery.
 %%
-%% It is enabled by using the following options in the bondy.conf file
+%% It is enabled by using the following options in the sys.conf file
 %%
 %% ```bash
-%% cluster.peer_discovery_agent.type = partisan_peer_discovery_dnt
-%% cluster.peer_discovery_agent.config.service_name = my-service-name
+%% {partisan, [
+%%     {peer_discovery, [
+%%          {type, partisan_peer_discovery_dns},
+%%          {config, #{
+%%              type => fqdns,
+%%              name => "theDNSSearchName",
+%%              nodename => "foo"
+%%          }}
+%%     ]}
+%% ]}
 %% '''
-%% Where service_name is the service to be used by the DNS lookup.
 %%
 %% @end
 %% -----------------------------------------------------------------------------
