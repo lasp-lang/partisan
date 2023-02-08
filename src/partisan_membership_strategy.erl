@@ -64,6 +64,9 @@
 -callback periodic(State :: any()) ->
     {ok, membership_list(), outgoing_messages(), NewState :: any()}.
 
+-callback compare(Members :: membership_list(),  State :: any()) ->
+    {Joiners :: membership_list(), Leavers :: membership_list()}.
+
 -callback handle_message(partisan:message(), State :: any()) ->
     {ok, membership_list(), outgoing_messages(), NewState :: any()}.
 

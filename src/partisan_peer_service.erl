@@ -302,10 +302,11 @@ connections() ->
 %% @doc Update cluster members with a list of node specifications.
 %% @end
 %% -----------------------------------------------------------------------------
--spec update_members([partisan:node_spec()]) -> ok | {error, not_implemented}.
+-spec update_members(Members :: [partisan:node_spec()]) ->
+    ok | {error, not_implemented}.
 
-update_members(NodeSpecs) ->
-    ?PEER_SERVICE_MANAGER:update_members(NodeSpecs).
+update_members(Members) ->
+    ?PEER_SERVICE_MANAGER:update_members(Members).
 
 
 %% -----------------------------------------------------------------------------

@@ -37,13 +37,16 @@
     membership      ::  partisan_membership_set:t()
 }).
 
+-type t()                   :: #full_v1{}.
 -type membership_list()     :: partisan_membership_strategy:membership_list().
 -type outgoing_messages()   :: partisan_membership_strategy:outgoing_messages().
+
 
 %% PARTISAN_MEMBERSHIP_STRATEGY CALLBACKS
 -export([init/1]).
 -export([join/3]).
 -export([leave/2]).
+-export([compare/2]).
 -export([periodic/1]).
 -export([prune/2]).
 -export([handle_message/2]).
@@ -105,6 +108,20 @@ periodic(State) ->
     persist_state(State),
 
     {ok, Members, OutgoingMessages, State}.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns the tuple `{Joiners, Leavers}' where `Joiners' is the list of
+%% node specifications that are elements of `List' but are not in the
+%% membership set, and `Leavers' are the node specifications for the current
+%% members that are not elements in `List'.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec compare(Members :: [partisan:node_spec()], t()) ->
+    {Joiners :: [partisan:node_spec()], Leavers :: [partisan:node_spec()]}.
+
+compare(Members, State) ->
+    partisan_membership_set:compare(Members, State#full_v1.membership).
 
 
 %% -----------------------------------------------------------------------------

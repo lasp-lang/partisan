@@ -52,11 +52,14 @@
 }).
 
 
+-type t()               ::  #scamp_v2{}.
+
 -export([init/1]).
 -export([join/3]).
 -export([leave/2]).
--export([prune/2]).
+-export([compare/2]).
 -export([periodic/1]).
+-export([prune/2]).
 -export([handle_message/2]).
 
 
@@ -141,6 +144,27 @@ leave(Node, #scamp_v2{partial_view=PartialView}=State0) ->
     Message = {bootstrap_remove_subscription, Node},
     OutgoingMessages = lists:map(fun(Peer) -> {Peer, {membership_strategy, Message}} end, PartialView),
     {ok, PartialView, OutgoingMessages, State0}.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns the tuple `{Joiners, Leavers}' where `Joiners' is the list of
+%% node specifications that are elements of `List' but are not in the
+%% membership set, and `Leavers' are the node specifications for the current
+%% members that are not elements in `List'.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec compare(Members :: [partisan:node_spec()], t()) ->
+    {Joiners :: [partisan:node_spec()], Leavers :: [partisan:node_spec()]}.
+
+compare(_Members, #scamp_v2{}) ->
+    %% TODO at the momebr this is called only whn peer_service:jupdate_members
+    %% is called. We need to define what happens in this case as we maintain a
+    %% partial view of the cluster and Members could be the complete cluster
+    %% view as discovered by partisan_peer_discovery_agent or manually by the
+    %% user.
+    {[], []}.
+
+
 
 
 %% -----------------------------------------------------------------------------

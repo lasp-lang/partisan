@@ -194,8 +194,8 @@ members_for_orchestration() ->
 %% @doc Update membership.
 %% @end
 %% -----------------------------------------------------------------------------
-update_members(NodeSpecs) ->
-    gen_server:call(?MODULE, {update_members, NodeSpecs}, infinity).
+update_members(Members) ->
+    gen_server:call(?MODULE, {update_members, Members}, infinity).
 
 
 %% -----------------------------------------------------------------------------
@@ -745,9 +745,10 @@ handle_call({update_members, _}, _, #state{leaving = true} = State) ->
 
 handle_call({update_members, Members}, _From, #state{} = State0) ->
     %% For compatibility with external membership services.
+    Mod = State0#state.membership_strategy,
     MState = State0#state.membership_strategy_state,
 
-    {Joiners, Leavers} = partisan_membership_set:compare(Members, MState),
+    {Joiners, Leavers} = Mod:compare(Members, MState),
 
     %% Issue leaves.
     State1 = lists:foldl(
@@ -756,19 +757,11 @@ handle_call({update_members, Members}, _From, #state{} = State0) ->
         Leavers
     ),
     %% Issue joins.
-    State2 = lists:foldl(
+    State = lists:foldl(
         fun(NodeSpec, S) -> internal_join(NodeSpec, undefined, S) end,
         State1,
         Joiners
     ),
-
-    %% Compute current pending list.
-    Pending1 = lists:filter(
-        fun(NodeSpec) -> lists:member(NodeSpec, State0#state.members) end,
-        State2#state.pending
-    ),
-
-    State = State2#state{pending = Pending1},
 
     %% Finally schedule the removal of connections
     %% We do this async because internal_leave will schedule the sending of
@@ -2015,10 +2008,10 @@ internal_join(#{name := Node} = NodeSpec, From, #state{} = State0) ->
     %% Sleep before connecting, to avoid a rush on connections.
     avoid_rush(),
 
-
     %% Add to list of pending connections.
     Pending0 = State0#state.pending,
     Pending = Pending0 ++ [NodeSpec],
+
     State = maybe_add_sync_join(
         NodeSpec, From, State0#state{pending = Pending}
     ),
