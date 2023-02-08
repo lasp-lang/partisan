@@ -162,12 +162,6 @@ to_peer({Node, Port}, Channels) when is_list(Node), ?IS_PORT_NBR(Port) ->
                 throw(badarg)
         end,
 
-    %% case partisan:node() of
-    %%     Node ->
-    %%         %% Self, do nothing
-    %%         skip;
-
-
     #{
         name => list_to_atom(Node),
         listen_addrs => [#{ip => IPAddr, port => Port}],
