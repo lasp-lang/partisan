@@ -811,7 +811,7 @@ handle_call({sync_join, NodeSpec}, From, State0) ->
         peer => NodeSpec
     }),
     State = internal_join(NodeSpec, From, State0),
-    {no_reply, State};
+    {noreply, State};
 
 handle_call({send_message, Node, Message}, _From, State) ->
 
