@@ -108,9 +108,16 @@
 -export([is_connected/2]).
 -export([is_fully_connected/1]).
 -export([is_local/1]).
+-export([is_local_name/1]).
+-export([is_local_name/2]).
+-export([is_local_pid/1]).
+-export([is_local_pid/2]).
+-export([is_local_reference/1]).
+-export([is_local_reference/2]).
 -export([is_pid/1]).
 -export([is_process_alive/1]).
 -export([is_reference/1]).
+-export([is_self/1]).
 -export([make_ref/0]).
 -export([monitor/1]).
 -export([monitor/2]).
@@ -134,9 +141,10 @@
 -export([send/3]).
 -export([send_after/3]).
 -export([send_after/4]).
+-export([whereis/1]).
 
 -compile({no_auto_import, [demonitor/2]}).
--compile({no_auto_import, [is_pid/0]}).
+-compile({no_auto_import, [is_pid/1]}).
 -compile({no_auto_import, [is_process_alive/1]}).
 -compile({no_auto_import, [is_reference/0]}).
 -compile({no_auto_import, [make_ref/0]}).
@@ -148,6 +156,7 @@
 -compile({no_auto_import, [nodes/1]}).
 -compile({no_auto_import, [process_info/2]}).
 -compile({no_auto_import, [self/0]}).
+-compile({no_auto_import, [whereis/1]}).
 
 
 
@@ -460,14 +469,118 @@ monitor_nodes(Flag, Opts) ->
 %% @doc Returns the name of the local node.
 %% @end
 %% -----------------------------------------------------------------------------
--spec is_local(Term) -> Result when
-    Term :: pid() | port() | reference()
+-spec is_local(Arg) -> Result when
+    Arg :: pid() | port() | reference()
             | partisan_remote_ref:p()
             | partisan_remote_ref:r(),
     Result :: boolean().
 
-is_local(Term) ->
-    node(Term) =:= node().
+is_local(Arg) ->
+    Node = node(Arg),
+    Node == 'nonode@nohost' orelse Node =:= node().
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_local_name(Arg :: atom() | partisan_remote_ref:n()) ->
+    boolean() | no_return().
+
+is_local_name(Arg) when is_atom(Arg) ->
+    true;
+
+is_local_name(Arg) ->
+    partisan_remote_ref:is_local_name(Arg).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_local_name(
+    Arg :: atom() | partisan_remote_ref:n(), Name :: atom()) ->
+    boolean() | no_return().
+
+is_local_name(Name, Name) when is_atom(Name) ->
+    true;
+
+is_local_name(Arg, Name) when is_atom(Name) ->
+    partisan_remote_ref:is_local_name(Arg, Name).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_local_pid(Arg :: pid() | partisan_remote_ref:p()) ->
+    boolean() | no_return().
+
+
+is_local_pid(Pid) when erlang:is_pid(Pid) ->
+    is_local(Pid);
+
+is_local_pid(Arg) ->
+    partisan_remote_ref:is_local_pid(Arg).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_local_pid(
+    Arg :: pid() | partisan_remote_ref:p(), Pid :: pid()) ->
+    boolean() | no_return().
+
+is_local_pid(Pid, Pid) when erlang:is_pid(Pid) ->
+    is_local(Pid);
+
+is_local_pid(Arg, Pid) when erlang:is_pid(Pid) ->
+    partisan_remote_ref:is_local_pid(Arg, Pid).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_local_reference(Arg :: reference() | partisan_remote_ref:r()) ->
+    boolean() | no_return().
+
+is_local_reference(Ref) when erlang:is_reference(Ref) ->
+    is_local(Ref);
+
+is_local_reference(Arg) ->
+    partisan_remote_ref:is_local_reference(Arg).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_local_reference(
+    Arg :: reference() | partisan_remote_ref:r(), LocalRef :: reference()) ->
+    boolean() | no_return().
+
+is_local_reference(Ref, Ref) when erlang:is_reference(Ref) ->
+    is_local(Ref);
+
+is_local_reference(Arg, Ref) when erlang:is_reference(Ref) ->
+    partisan_remote_ref:is_local_reference(Arg, Ref).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns treu if `Arg' is the caller's process identifier.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_self(Arg) -> Result when
+    Arg :: pid() | partisan_remote_ref:p(),
+    Result :: boolean().
+
+is_self(Arg) when erlang:is_pid(Arg) ->
+    Arg == self();
+
+is_self(Arg) ->
+    partisan_remote_ref:is_local_pid(Arg, self()).
 
 
 %% -----------------------------------------------------------------------------
@@ -607,6 +720,25 @@ is_alive() ->
 
 %% -----------------------------------------------------------------------------
 %% @doc
+%% Failes with `badarg' if `Arg' is a remote reference for another node.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec whereis(Arg :: atom() | partisan_remote_ref:n()) -> pid().
+
+whereis(Arg) when is_atom(Arg) ->
+    erlang:whereis(Arg);
+
+whereis(Arg) ->
+    case partisan_remote_ref:to_term(Arg) of
+        Ref when is_atom(Ref) ->
+            erlang:whereis(Ref);
+        _ ->
+            error(badarg)
+    end.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
 %% @end
 %% -----------------------------------------------------------------------------
 -spec process_info(Arg :: pid() | partisan_remote_ref:p()) ->
@@ -642,7 +774,7 @@ process_info(Arg, ItemOrItems) when erlang:is_pid(Arg) ->
 process_info(Arg, ItemOrItems) ->
     try partisan_remote_ref:to_term(Arg) of
         Term when erlang:is_pid(Term) ->
-            erlang:process_info(Arg, ItemOrItems);
+            erlang:process_info(Term, ItemOrItems);
         _ ->
             throw(badarg)
     catch
