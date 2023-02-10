@@ -616,7 +616,25 @@ nodestring() ->
 
 node(Arg)
 when erlang:is_pid(Arg) orelse erlang:is_reference(Arg) orelse is_port(Arg) ->
-    erlang:node(Arg);
+    Node = erlang:node(Arg),
+
+    case partisan_config:get(connect_disterl) of
+        true ->
+            %% If node is down we will get 'nonode@nohost' and we should return
+            %% this value, even if partisan:node() has been set
+            Node;
+        false ->
+            case Node of
+                'nonode@nohost' ->
+                    %% Return the partisan node
+                    node();
+                Other ->
+                    %% This is the case when the use has assigned a nodename
+                    %% via vm.args but disabled erlang distribution
+                    %% In this case erlang:node() == partisan:node()
+                    Other
+            end
+    end;
 
 node({partisan_remote_ref, Node, _}) ->
     Node;
