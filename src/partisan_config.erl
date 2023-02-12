@@ -184,21 +184,30 @@
 %% <dd>TBD</dd>
 %% <dt>`register_pid_for_encoding'</dt>
 %% <dd>TBD</dd>
-%% <dt>`remote_ref_as_uri'</dt>
-%% <dd>If `true' partisan remote references (see module {@link
-%% partisan_remote_ref}) will be encoded as a URI binary. Otherwise it will be
-%% encoded as a tuple. The default is `false'.
+%% <dt>`remote_ref_format'</dt>
+%% <dd>If `uri' partisan remote references (see module {@link
+%% partisan_remote_ref}) will be encoded as a URI binary, if `tuple' it will be
+%% encoded as a tuple (the format used by Partisan v1 to v4). Otherwise, if
+%% `improper_list' it will be encoded as an improper list, similar to how
+%% aliases are encoded by the OTP modules. This option exists to allow the user
+%% to tradeoff between memory and latency. In terms of memory `uri' is the
+%% cheapest, followed by `improper_list'. In terms of latency `tuple' is the
+%% fastest followed by `improper_list'. The default is `improper_list' a if
+%% offers a good balance between memory and latency.
 %%
 %% ```
-%% 1> partisan_config:set(remote_ref_as_uri, true).
+%% 1> partisan_config:set(remote_ref_format, uri).
 %% ok
 %% 2> partisan_remote_ref:from_term(self()).
 %% <<"partisan:pid:nonode@nohost:0.1062.0">>
-%% 3> partisan_config:set(remote_ref_as_uri, false).
+%% 3> partisan_config:set(remote_ref_format, tuple).
 %% 4> partisan_remote_ref:from_term(self()).
 %% {partisan_remote_reference,
 %%    nonode@nohost,
 %%    {partisan_process_reference,"<0.1062.0>"}}
+%% 5> partisan_config:set(remote_ref_format, improper_list).
+%% 6> partisan_remote_ref:from_term(self()).
+%% [nonode@nohost|<<"Pid#<0.1062.0>">>]
 %% '''
 %% </dd>
 %% <dt>`remote_ref_uri_padding'</dt>
@@ -270,6 +279,8 @@
 %% <dd>Use `random_promotion' in the `hyparview' option instead.</dd>
 %% <dt>`random_promotion_period'</dt>
 %% <dd>Use `random_promotion_interval' in the `hyparview' option instead.</dd>
+%% <dt>`remote_ref_as_uri'</dt>
+%% <dd>Use `{remote_ref_format, uri}' instead</dd>
 %% </dl>
 %%
 %% @end
@@ -301,6 +312,13 @@
 
 -compile({no_auto_import, [get/1]}).
 -compile({no_auto_import, [set/2]}).
+-compile({inline,[{channel_opts,1}]}).
+-compile({inline,[{channels,0}]}).
+-compile({inline,[{default_channel,0}]}).
+-compile({inline,[{get,1}]}).
+-compile({inline,[{get,2}]}).
+-compile({inline,[{get_with_opts,2}]}).
+-compile({inline,[{get_with_opts,3}]}).
 
 
 %% =============================================================================
@@ -408,7 +426,7 @@ init() ->
             {random_seed, random_seed()},
             {ref_encoding, true},
             {register_pid_for_encoding, false},
-            {remote_ref_as_uri, false},
+            {remote_ref_format, improper_list},
             {remote_ref_uri_padding, false},
             {replaying, false},
             {reservations, []},

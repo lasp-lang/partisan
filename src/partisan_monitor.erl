@@ -800,7 +800,7 @@ call(ServerRef, Message) ->
 is_self(Pid) when is_pid(Pid) ->
     Pid == self();
 
-is_self(RemoteRef) when is_tuple(RemoteRef); is_binary(RemoteRef) ->
+is_self(RemoteRef) ->
     SelfRef = persistent_term:get(?REF_KEY),
     partisan_remote_ref:is_identical(RemoteRef, SelfRef).
 

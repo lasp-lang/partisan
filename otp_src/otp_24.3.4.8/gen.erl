@@ -16,42 +16,9 @@
 %% limitations under the License.
 %%
 %% %CopyrightEnd%
-
-%% -----------------------------------------------------------------------------
-%% @doc This module is an adaptation of Erlang's `gen' module which
-%% implements the really generic stuff of the generic standard behaviours (e.g.
-%% gen_server, gen_fsm).
 %%
-%% It replaces all instances of `erlang:send/2` and `erlang:monitor/2` with
-%% their Partisan counterparts.
-%%
-%% It maintains the `gen' API with the following exceptions:
-%%
-%% <ul>
-%% <li>`call/3` - the 3th argument accepts a timeout value but also a list of
-%% options containing any of the following: `{timeout, timeout()}' | `{channel,
-%% partisan:channel()}'.</li>
-%% <li>`send_request/4` - the 4th argument is a list of
-%% options containing any of the following: `{channel,
-%% partisan:channel()}'.</li>
-%% </ul>
-%%
-%% <strong>NOTICE:</strong>
-%% At the moment this only works for `partisan_pluggable_peer_service_manager'.
-%% @end
-%% -----------------------------------------------------------------------------
--module(partisan_gen).
-
--include("partisan_logger.hrl").
-
-% -compile({inline,[get_node/1]}).
-
-%% PARTISAN EXTENSIONS
--export([send_request/4]).
--export([erase_opts/0]).
--export([get_opts/0]).
--export([set_opts/1]).
-
+-module(gen).
+-compile({inline,[get_node/1]}).
 
 %%%-----------------------------------------------------------------
 %%% This module implements the really generic stuff of the generic
@@ -86,8 +53,7 @@
 -type option()     :: {'timeout', timeout()}
             | {'debug', [debug_flag()]}
             | {'hibernate_after', timeout()}
-            | {'spawn_opt', [partisan_proc_lib:spawn_option()]}
-            | {'channel', partisan:channel()}.
+            | {'spawn_opt', [proc_lib:spawn_option()]}.
 -type options()    :: [option()].
 
 -type server_ref() :: pid() | atom() | {atom(), node()}
@@ -106,9 +72,9 @@
 %%    Options = [{timeout, Timeout} | {debug, [Flag]} | {spawn_opt, OptionList}]
 %%      Flag = trace | log | {logfile, File} | statistics | debug
 %%          (debug == log && statistics)
-%% Returns: {ok, Pid} | ignore |{error, Reason} |
+%% Returns: {ok, Pid} | {ok, Pid, Reference} | ignore |{error, Reason} |
 %%          {error, {already_started, Pid}} |
-%%    The 'already_started' is returned only if Name is given
+%%    The 'already_started' is returned only if Name is given 
 %%-----------------------------------------------------------------
 
 -spec start(module(), linkage(), emgr_name(), module(), term(), options()) ->
@@ -133,40 +99,40 @@ start(GenMod, LinkP, Mod, Args, Options) ->
 %%-----------------------------------------------------------------
 do_spawn(GenMod, link, Mod, Args, Options) ->
     Time = timeout(Options),
-    partisan_proc_lib:start_link(?MODULE, init_it,
-            [GenMod, self(), self(), Mod, Args, Options],
+    proc_lib:start_link(?MODULE, init_it,
+            [GenMod, self(), self(), Mod, Args, Options], 
             Time,
             spawn_opts(Options));
 do_spawn(GenMod, monitor, Mod, Args, Options) ->
     Time = timeout(Options),
-    Ret = partisan_proc_lib:start_monitor(?MODULE, init_it,
-                                 [GenMod, self(), self(), Mod, Args, Options],
+    Ret = proc_lib:start_monitor(?MODULE, init_it,
+                                 [GenMod, self(), self(), Mod, Args, Options], 
                                  Time,
                                  spawn_opts(Options)),
-   monitor_return(Ret);
+    monitor_return(Ret);
 do_spawn(GenMod, _, Mod, Args, Options) ->
     Time = timeout(Options),
-    partisan_proc_lib:start(?MODULE, init_it,
+    proc_lib:start(?MODULE, init_it,
            [GenMod, self(), 'self', Mod, Args, Options],
            Time,
            spawn_opts(Options)).
 
 do_spawn(GenMod, link, Name, Mod, Args, Options) ->
     Time = timeout(Options),
-    partisan_proc_lib:start_link(?MODULE, init_it,
+    proc_lib:start_link(?MODULE, init_it,
             [GenMod, self(), self(), Name, Mod, Args, Options],
             Time,
             spawn_opts(Options));
 do_spawn(GenMod, monitor, Name, Mod, Args, Options) ->
     Time = timeout(Options),
-    Ret = partisan_proc_lib:start_monitor(?MODULE, init_it,
+    Ret = proc_lib:start_monitor(?MODULE, init_it,
                                  [GenMod, self(), self(), Name, Mod, Args, Options],
                                  Time,
                                  spawn_opts(Options)),
     monitor_return(Ret);
 do_spawn(GenMod, _, Name, Mod, Args, Options) ->
     Time = timeout(Options),
-    partisan_proc_lib:start(?MODULE, init_it,
+    proc_lib:start(?MODULE, init_it,
            [GenMod, self(), 'self', Name, Mod, Args, Options],
            Time,
            spawn_opts(Options)).
@@ -182,15 +148,6 @@ do_spawn(GenMod, _, Name, Mod, Args, Options) ->
 monitor_return({{ok, Pid}, Mon}) when is_pid(Pid), is_reference(Mon) ->
     %% Successful start_monitor()...
     {ok, {Pid, Mon}};
-monitor_return({{ok, Pid}, Mon}) ->
-    %% Partisan pid case of the previous clause
-    case partisan:is_pid(Pid) andalso partisan:is_reference(Mon) of
-        true ->
-            {ok, {Pid, Mon}};
-        false ->
-            %% Simulate same error we would have if this the previous clause
-            error(function_clause)
-    end;
 monitor_return({Error, Mon}) when is_reference(Mon) ->
     %% Failure; wait for spawned process to terminate
     %% and release resources, then return the error...
@@ -198,20 +155,7 @@ monitor_return({Error, Mon}) when is_reference(Mon) ->
         {'DOWN', Mon, process, _Pid, _Reason} ->
             ok
     end,
-    Error;
-monitor_return({Error, Mon}) ->
-    %% Partisan reference case of the previous clause
-    case partisan:is_reference(Mon) of
-        true ->
-            receive
-                {'DOWN', Mon, process, _Pid, _Reason} ->
-                    ok
-            end,
-            Error;
-        false ->
-            %% Simulate same error we would have if this the previous clause
-            error(function_clause)
-    end.
+    Error.
 
 %%-----------------------------------------------------------------
 %% Initiate the new process.
@@ -228,11 +172,10 @@ init_it(GenMod, Starter, Parent, Name, Mod, Args, Options) ->
     true ->
         init_it2(GenMod, Starter, Parent, Name, Mod, Args, Options);
     {false, Pid} ->
-        partisan_proc_lib:init_ack(Starter, {error, {already_started, Pid}})
+        proc_lib:init_ack(Starter, {error, {already_started, Pid}})
     end.
 
 init_it2(GenMod, Starter, Parent, Name, Mod, Args, Options) ->
-    ok = set_opts(Options), % partisan addition
     GenMod:init_it(Starter, Parent, Name, Mod, Args, Options).
 
 %%-----------------------------------------------------------------
@@ -244,34 +187,17 @@ init_it2(GenMod, Starter, Parent, Name, Mod, Args, Options) ->
 %%% New call function which uses the new monitor BIF
 %%% call(ServerId, Label, Request)
 
-call(Process, Label, Request) ->
+call(Process, Label, Request) -> 
     call(Process, Label, Request, ?default_timeout).
 
-%% Partisan extension
-call(Process, Label, Request, Opts0) when is_list(Opts0) ->
-    case lists:keytake(timeout, 1, Opts0) of
-        {value, {timeout, Timeout}, Opts} ->
-            set_opts(Opts),
-            call(Process, Label, Request, Timeout);
-        false ->
-            set_opts(Opts0),
-            call(Process, Label, Request, ?default_timeout)
-    end;
 %% Optimize a common case.
 call(Process, Label, Request, Timeout) when is_pid(Process),
   Timeout =:= infinity orelse is_integer(Timeout) andalso Timeout >= 0 ->
     do_call(Process, Label, Request, Timeout);
 call(Process, Label, Request, Timeout)
   when Timeout =:= infinity; is_integer(Timeout), Timeout >= 0 ->
-    case partisan_remote_ref:is_local_pid(Process) of
-        true ->
-            %% Optimisation
-            Pid = partisan_remote_ref:to_term(Process),
-            do_call(Pid, Label, Request, Timeout);
-        false ->
-            Fun = fun(Arg) -> do_call(Arg, Label, Request, Timeout) end,
-            do_for_proc(Process, Fun)
-    end.
+    Fun = fun(Pid) -> do_call(Pid, Label, Request, Timeout) end,
+    do_for_proc(Process, Fun).
 
 -dialyzer({no_improper_lists, do_call/4}).
 
@@ -293,8 +219,7 @@ do_call(Process, Label, Request, infinity)
         {'DOWN', Mref, _, _, Reason} ->
             exit(Reason)
     end;
-do_call(Process, Label, Request, Timeout)
-when is_reference(Process) andalso node(Process) == node() ->
+do_call(Process, Label, Request, Timeout) when is_atom(Process) =:= false ->
     Mref = erlang:monitor(process, Process, [{alias,demonitor}]),
 
     Tag = [alias | Mref],
@@ -324,36 +249,6 @@ when is_reference(Process) andalso node(Process) == node() ->
             after 0 ->
                     exit(timeout)
             end
-    end;
-
-do_call(Process, Label, Request, Timeout) ->
-    %% Partisan case
-    %% For remote process do_send_request will use Tag = [alias | Mref]
-    %% to comply with OTP although we do not support remote aliases
-    Mref = do_send_request(Process, Label, Request),
-
-    %% Wait for reply.
-    receive
-        {[alias | Mref], Reply} ->
-            partisan:demonitor(Mref, [flush]),
-            {ok, Reply};
-        {'DOWN', Mref, _, _, noconnection} ->
-            Node = get_node(Process),
-            exit({nodedown, Node});
-        {'DOWN', Mref, _, _, Reason} ->
-            exit(Reason)
-    after Timeout ->
-        partisan:demonitor(Mref, [flush]),
-        ?LOG_DEBUG(#{
-            description => "Timed out at while waiting for response to message",
-            message => Request
-        }),
-        receive
-            {[alias | Mref], Reply} ->
-                {ok, Reply}
-        after 0 ->
-                exit(timeout)
-        end
     end.
 
 get_node(Process) ->
@@ -365,12 +260,8 @@ get_node(Process) ->
     {_S, N} when is_atom(N) ->
         N;
     _ when is_pid(Process) ->
-        node(Process);
-    _ ->
-        %% We asume process is partisan_remote_ref
-        partisan:node(Process)
+        node(Process)
     end.
-
 
 -spec send_request(Name::server_ref(), Label::term(), Request::term()) -> request_id().
 send_request(Process, Label, Request) when is_pid(Process) ->
@@ -380,64 +271,17 @@ send_request(Process, Label, Request) ->
     try do_for_proc(Process, Fun)
     catch exit:Reason ->
             %% Make send_request async and fake a down message
-            Ref = partisan:make_ref(),
-            self() ! {'DOWN', Ref, process, Process, Reason},
-            Ref
+            Mref = erlang:make_ref(),
+            self() ! {'DOWN', Mref, process, Process, Reason},
+            Mref
     end.
-
-%% Partisan addition
--spec send_request(Name::server_ref(), Label::term(), Request::term(), Opts :: list()) -> request_id().
-send_request(Process, Label, Request, Opts) ->
-    set_opts(Opts),
-    send_request(Process, Label, Request).
 
 -dialyzer({no_improper_lists, do_send_request/3}).
 
-do_send_request(Process, Label, Request)
-when is_pid(Process) orelse is_atom(Process) ->
+do_send_request(Process, Label, Request) ->
     Mref = erlang:monitor(process, Process, [{alias, demonitor}]),
     erlang:send(Process, {Label, {self(), [alias|Mref]}, Request}, [noconnect]),
-    Mref;
-do_send_request({ServerRef, Node} = Process, Label, Request) ->
-    case Node == partisan:node() of
-        true ->
-            do_send_request(ServerRef, Label, Request);
-        false ->
-            %% Monitor request and message are delivered using the same channel
-            Opts = get_opts(),
-            Mref = partisan:monitor(process, Process, Opts),
-            Message = {Label, {partisan:self(), [alias|Mref]}, Request},
-            ?LOG_DEBUG(#{
-                description => "Sending message",
-                destination => Process,
-                message => Message
-            }),
-            partisan:forward_message(Node, ServerRef, Message, Opts),
-            Mref
-    end;
-do_send_request(Process, Label, Request) ->
-    %% Process is a partisan remote pid or name
-    case partisan:is_local(Process) of
-        true ->
-            %% Local process
-            LocalProcess = partisan_remote_ref:to_term(Process),
-            do_send_request(LocalProcess, Label, Request);
-        false ->
-            %% Monitor request and message are delivered using the same channel
-            Opts = get_opts(),
-            Mref = partisan:monitor(process, Process, Opts),
-            Message = {Label, {partisan:self(), [alias|Mref]}, Request},
-            ?LOG_DEBUG(#{
-                description => "Sending message",
-                destination => Process,
-                message => Message
-            }),
-            partisan:forward_message(Process, Message, Opts),
-            Mref
-    end.
-
-
-
+    Mref.
 
 %%
 %% Wait for a reply to the client.
@@ -454,30 +298,19 @@ wait_response(Mref, Timeout) when is_reference(Mref) ->
             {error, {Reason, Object}}
     after Timeout ->
             timeout
-    end;
-wait_response(Mref, Timeout) ->
-    %% MRef is a partisan ref
-    receive
-        {[alias|Mref], Reply} ->
-            partisan:demonitor(Mref, [flush]),
-            {reply, Reply};
-        {'DOWN', Mref, _, Object, Reason} ->
-            {error, {Reason, Object}}
-    after Timeout ->
-            timeout
     end.
 
 -spec receive_response(RequestId::request_id(), timeout()) ->
-    {reply, Reply::term()} | 'timeout' | {error, {term(), server_ref()}}.
+        {reply, Reply::term()} | 'timeout' | {error, {term(), server_ref()}}.
 receive_response(Mref, Timeout) when is_reference(Mref) ->
     receive
         {[alias|Mref], Reply} ->
-            partisan:demonitor(Mref, [flush]),
+            erlang:demonitor(Mref, [flush]),
             {reply, Reply};
         {'DOWN', Mref, _, Object, Reason} ->
             {error, {Reason, Object}}
     after Timeout ->
-            partisan:demonitor(Mref, [flush]),
+            erlang:demonitor(Mref, [flush]),
             receive
                 {[alias|Mref], Reply} ->
                     {reply, Reply}
@@ -487,14 +320,14 @@ receive_response(Mref, Timeout) when is_reference(Mref) ->
     end.
 
 -spec check_response(RequestId::term(), Key::request_id()) ->
-    {reply, Reply::term()} | 'no_reply' | {error, {term(), server_ref()}}.
-check_response(Msg, Mref) ->
-case Msg of
-    {[alias|Mref], Reply} ->
-        partisan:demonitor(Mref, [flush]),
-        {reply, Reply};
-    {'DOWN', Mref, _, Object, Reason} ->
-        {error, {Reason, Object}};
+        {reply, Reply::term()} | 'no_reply' | {error, {term(), server_ref()}}.
+check_response(Msg, Mref) when is_reference(Mref) ->
+    case Msg of
+        {[alias|Mref], Reply} ->
+            erlang:demonitor(Mref, [flush]),
+            {reply, Reply};
+        {'DOWN', Mref, _, Object, Reason} ->
+            {error, {Reason, Object}};
         _ ->
             no_reply
     end.
@@ -506,21 +339,18 @@ reply({_To, [alias|Alias] = Tag}, Reply) when is_reference(Alias) ->
     Alias ! {Tag, Reply}, ok;
 reply({_To, [[alias|Alias] | _] = Tag}, Reply) when is_reference(Alias) ->
     Alias ! {Tag, Reply}, ok;
-%% reply({To, Tag}, Reply) ->
-%%     try To ! {Tag, Reply}, ok catch _:_ -> ok end.
 reply({To, Tag}, Reply) ->
-    try partisan:forward_message(To, {Tag, Reply}) catch _:_ -> ok end.
-
+    try To ! {Tag, Reply}, ok catch _:_ -> ok end.
 
 %%-----------------------------------------------------------------
-%% Synchronously stop a generic process
+%% Syncronously stop a generic process
 %%-----------------------------------------------------------------
 stop(Process) ->
     stop(Process, normal, infinity).
 
 stop(Process, Reason, Timeout)
   when Timeout =:= infinity; is_integer(Timeout), Timeout >= 0 ->
-    Fun = fun(Pid) -> partisan_proc_lib:stop(Pid, Reason, Timeout) end,
+    Fun = fun(Pid) -> proc_lib:stop(Pid, Reason, Timeout) end,
     do_for_proc(Process, Fun).
 
 %%-----------------------------------------------------------------
@@ -559,24 +389,16 @@ do_for_proc(Process, Fun)
         exit(noproc)
     end;
 %% Local by name in disguise
-%% do_for_proc({Name, Node}, Fun) when Node =:= node() ->
-%%     do_for_proc(Name, Fun);
+do_for_proc({Name, Node}, Fun) when Node =:= node() ->
+    do_for_proc(Name, Fun);
 %% Remote by name
-do_for_proc({Name, Node} = Process, Fun) when is_atom(Node) ->
-
-    case partisan:node() of
-        Node ->
-            %% Local by name in disguise
-            do_for_proc(Name, Fun);
-        nonode@nohost ->
-            exit({nodedown, Node});
-        _ ->
-            Fun(Process)
-    end;
-
-do_for_proc(Process, Fun) ->
-    partisan_remote_ref:is_pid(Process) orelse error(function_clause),
-    Fun(Process).
+do_for_proc({_Name, Node} = Process, Fun) when is_atom(Node) ->
+    if
+    node() =:= nonode@nohost ->
+        exit({nodedown, Node});
+    true ->
+        Fun(Process)
+    end.
 
 
 %%%-----------------------------------------------------------------
@@ -663,7 +485,7 @@ get_parent() ->
     [Parent | _] when is_atom(Parent) ->
         name_to_pid(Parent);
     _ ->
-        exit(process_was_not_started_by_partisan_proc_lib)
+        exit(process_was_not_started_by_proc_lib)
     end.
 
 name_to_pid(Name) ->
@@ -707,7 +529,7 @@ hibernate_after(Options) ->
 debug_options(Name, Opts) ->
     case lists:keyfind(debug, 1, Opts) of
     {_,Options} ->
-        try partisan_sys:debug_options(Options)
+        try sys:debug_options(Options)
         catch _:_ ->
             error_logger:format(
               "~tp: ignoring erroneous debug options - ~tp~n",
@@ -724,61 +546,3 @@ format_status_header(TagLine, RegName) when is_atom(RegName) ->
     lists:concat([TagLine, " ", RegName]);
 format_status_header(TagLine, Name) ->
     {TagLine, Name}.
-
-
-
-
-
-
-%% =============================================================================
-%% PARTISAN PUBLIC
-%% =============================================================================
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Returns opts from the calling process' dictionary.
-%% The returned list is guaranteed to have a value for key `channel'.
-%% @end
-%% -----------------------------------------------------------------------------
--spec get_opts() -> [{atom(), any()}].
-
-get_opts() ->
-    case erlang:get(partisan_gen_opts) of
-        undefined ->
-            Channel = partisan_config:default_channel(),
-            [{channel, Channel}];
-        Opts ->
-            Opts
-    end.
-
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Set partisan options in the process dictionary of the calling process. These options are used by the partisan OTP behaviour either to set the options during init or when sending a request to a process implementing the behaviours.
-%% This library uses these approach to
-%% @end
-%% -----------------------------------------------------------------------------
--spec set_opts([{atom(), any()}]) -> ok.
-
-set_opts(Options) when is_list(Options) ->
-    PartisanOpts =
-        case lists:keyfind(channel, 1, Options) of
-            {channel, _} = Opt ->
-                [Opt];
-            false ->
-                Channel = partisan_config:default_channel(),
-                [{channel, Channel}]
-        end,
-    _ = erlang:put(partisan_gen_opts, PartisanOpts),
-    ok.
-
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
--spec erase_opts() -> ok.
-
-erase_opts() ->
-    _ = erlang:erase(partisan_gen_opts),
-    ok.

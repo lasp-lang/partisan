@@ -180,17 +180,8 @@ encode_({}) ->
     [104, 0];
 
 encode_(T) when is_atom(T) ->
-    L = atom_to_list(T),
-    Len = length(L),
-    %% TODO this function uses a DEPRECATED FORMAT!
-    %% https://www.erlang.org/doc/apps/erts/erl_ext_dist.html#map_ext
-    %% TODO utf-8 atoms
-    case Len > 256 of
-        false ->
-            [115, Len, L];
-        true->
-            [100, <<Len:16/integer-big>>, L]
-    end;
+    <<131, Rest/binary>> = term_to_binary(T),
+    [Rest];
 
 encode_(T) when is_binary(T) ->
     Len = byte_size(T),
@@ -204,6 +195,14 @@ encode_(T) when is_tuple(T) ->
         true ->
             [104, <<Len:32/integer-big>>, [encode_(E) || E <- tuple_to_list(T)]]
     end;
+
+encode_([alias|Ref]) ->
+    %% Improper list with 2 elements to support partisan_remote_ref format
+    [108, <<1:32/integer-big>>, [encode_(alias), encode_(Ref)]];
+
+encode_([Node|Bin]) when is_atom(Node), is_binary(Bin) ->
+    %% Improper list with 2 elements to support partisan_remote_ref format
+    [108, <<1:32/integer-big>>, [encode_(Node), encode_(Bin)]];
 
 encode_(T) when is_list(T) ->
     %% TODO improper lists

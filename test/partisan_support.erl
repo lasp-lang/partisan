@@ -40,10 +40,7 @@
 
 
 
-%% @private
-start(Case, Config, Options) ->
-    debug("Beginning test case: ~p", [Case]),
-
+start_disterl() ->
     {ok, Hostname} = inet:gethostname(),
     os:cmd(os:find_executable("epmd") ++ " -daemon"),
     case net_kernel:start([list_to_atom("runner@" ++ Hostname), shortnames]) of
@@ -51,7 +48,14 @@ start(Case, Config, Options) ->
             ok;
         {error, {already_started, _}} ->
             ok
-    end,
+    end.
+
+
+%% @private
+start(Case, Config, Options) ->
+    debug("Beginning test case: ~p", [Case]),
+
+    ok = start_disterl(),
 
     %% Load sasl.
     application:load(sasl),
@@ -89,8 +93,19 @@ start(Case, Config, Options) ->
 
         case ?CT_PEER:start(Name, NodeConfig) of
             {ok, Node} ->
+                %% After starting a slave, it takes a little while until global
+                %% knows about it, even if nodes() includes it, so we make sure
+                %% that  global knows about it before registering something on
+                %% all nodes.
+                ok = global:sync(),
                 {Name, Node};
+            {error, started_not_connected, Node} = Error ->
+                net_kernel:connect_node(Node) orelse
+                    ct:pal("Couldn't connect to peer. Reason: ~p", [Error]),
+                    ct:fail(Error),
+                ok;
             Error ->
+                ct:pal("Couldn't start peer. Reason: ~p", [Error]),
                 ct:fail(Error)
         end
     end,
@@ -482,7 +497,18 @@ cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
     ).
 
 
+cluster(Peer) ->
+    cluster(partisan:node(), Peer, [{sync_join, false}]).
+
+
+cluster(A, B) ->
+    cluster(A, B, [{sync_join, false}]).
+
+
 cluster({_, Node}, {_, Peer}, Config) ->
+    cluster(Node, Peer, Config);
+
+cluster(Node, Peer, Config) ->
     PeerSpec = rpc:call(Peer, partisan, node_spec, [], 5000),
 
     JoinMethod =

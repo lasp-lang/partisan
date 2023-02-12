@@ -16,37 +16,8 @@
 %% limitations under the License.
 %%
 %% %CopyrightEnd%
-
-%% -----------------------------------------------------------------------------
-%% @doc This module is an adaptation of Erlang's `gen_server' module.
 %%
-%% It replaces all instances of `erlang:send/2' and `erlang:monitor/2' with
-%% their Partisan counterparts.
-%%
-%% It maintains the `gen_server' API with the following exceptions:
-%%
-%% <ul>
-%% <li>`call/3` and `multi_call/4` - override the 3rd and 4th arguments
-%% respectively to accept not only a timeout value but also a
-%% list of options containing any of the following: `{timeout, timeout()}' |
-%% `{channel, partisan:channel()}'.</li>
-%% <li>`cast/3` - identical to `cast/2' with the 3th argument is a list of
-%% options containing any of the following: `{channel,
-%% partisan:channel()}'.</li>
-%% <li>`send_request/4` - identical to `send_request/3' with the 4th argument
-%% is a list of options containing any of the following: `{channel,
-%% partisan:channel()}'.</li>
-%% </ul>
-%%
-%% <blockquote class="warning">
-%% <h4 class="warning">NOTICE</h4>
-%% <p>At the moment this only works for
-%% <code class="inline">partisan_pluggable_peer_service_manager</code> backend.
-%% </p>
-%% </blockquote>
-%% @end
-%% -----------------------------------------------------------------------------
--module(partisan_gen_server).
+-module(gen_server).
 
 %%%
 %%% NOTE: If init_ack() return values are modified, see comment
@@ -57,13 +28,13 @@
 %%%
 %%% The idea behind THIS server is that the user module
 %%% provides (different) functions to handle different
-%%% kind of inputs.
+%%% kind of inputs. 
 %%% If the Parent process terminates the Module:terminate/2
 %%% function is called.
 %%%
 %%% The user module should export:
 %%%
-%%%   init(Args)
+%%%   init(Args)  
 %%%     ==> {ok, State}
 %%%         {ok, State, Timeout}
 %%%         ignore
@@ -75,21 +46,21 @@
 %%%        {reply, Reply, State, Timeout}
 %%%        {noreply, State}
 %%%        {noreply, State, Timeout}
-%%%        {stop, Reason, Reply, State}
+%%%        {stop, Reason, Reply, State}  
 %%%              Reason = normal | shutdown | Term terminate(State) is called
 %%%
 %%%   handle_cast(Msg, State)
 %%%
 %%%    ==> {noreply, State}
 %%%        {noreply, State, Timeout}
-%%%        {stop, Reason, State}
+%%%        {stop, Reason, State} 
 %%%              Reason = normal | shutdown | Term terminate(State) is called
 %%%
 %%%   handle_info(Info, State) Info is e.g. {'EXIT', P, R}, {nodedown, N}, ...
 %%%
 %%%    ==> {noreply, State}
 %%%        {noreply, State, Timeout}
-%%%        {stop, Reason, State}
+%%%        {stop, Reason, State} 
 %%%              Reason = normal | shutdown | Term, terminate(State) is called
 %%%
 %%%   terminate(Reason, State) Let the user module clean up
@@ -120,11 +91,6 @@
 %%%
 %%% ---------------------------------------------------
 
-
-%% PARTISAN EXTENSIONS
--export([cast/3]).
--export([send_request/3]).
-
 %% API
 -export([start/3, start/4,
      start_link/3, start_link/4,
@@ -152,7 +118,7 @@
 %% Internal exports
 -export([init_it/6]).
 
--include("partisan_logger.hrl").
+-include("logger.hrl").
 
 -define(
    STACKTRACE(),
@@ -161,7 +127,6 @@
 
 -type server_ref() ::
         pid()
-      | partisan_remote_ref:p()
       | (LocalName :: atom())
       | {Name :: atom(), Node :: atom()}
       | {'global', GlobalName :: term()}
@@ -222,7 +187,7 @@
 %%%    Name ::= {local, atom()} | {global, term()} | {via, atom(), term()}
 %%%    Mod  ::= atom(), callback module implementing the 'real' server
 %%%    Args ::= term(), init arguments (to Mod:init/1)
-%%%    Options ::= [{timeout, Timeout} | {debug, [Flag]} |{channel, Channel}]
+%%%    Options ::= [{timeout, Timeout} | {debug, [Flag]}]
 %%%      Flag ::= trace | log | {logfile, File} | statistics | debug
 %%%          (debug == log && statistics)
 %%% Returns: {ok, Pid} |
@@ -230,22 +195,22 @@
 %%%          {error, Reason}
 %%% -----------------------------------------------------------------
 start(Mod, Args, Options) ->
-    partisan_gen:start(?MODULE, nolink, Mod, Args, Options).
+    gen:start(?MODULE, nolink, Mod, Args, Options).
 
 start(Name, Mod, Args, Options) ->
-    partisan_gen:start(?MODULE, nolink, Name, Mod, Args, Options).
+    gen:start(?MODULE, nolink, Name, Mod, Args, Options).
 
 start_link(Mod, Args, Options) ->
-    partisan_gen:start(?MODULE, link, Mod, Args, Options).
+    gen:start(?MODULE, link, Mod, Args, Options).
 
 start_link(Name, Mod, Args, Options) ->
-    partisan_gen:start(?MODULE, link, Name, Mod, Args, Options).
+    gen:start(?MODULE, link, Name, Mod, Args, Options).
 
 start_monitor(Mod, Args, Options) ->
-    partisan_gen:start(?MODULE, monitor, Mod, Args, Options).
+    gen:start(?MODULE, monitor, Mod, Args, Options).
 
 start_monitor(Name, Mod, Args, Options) ->
-    partisan_gen:start(?MODULE, monitor, Name, Mod, Args, Options).
+    gen:start(?MODULE, monitor, Name, Mod, Args, Options).
 
 
 %% -----------------------------------------------------------------
@@ -254,10 +219,10 @@ start_monitor(Name, Mod, Args, Options) ->
 %% be monitored.
 %% -----------------------------------------------------------------
 stop(Name) ->
-    partisan_gen:stop(Name).
+    gen:stop(Name).
 
 stop(Name, Reason, Timeout) ->
-    partisan_gen:stop(Name, Reason, Timeout).
+    gen:stop(Name, Reason, Timeout).
 
 %% -----------------------------------------------------------------
 %% Make a call to a generic server.
@@ -265,30 +230,21 @@ stop(Name, Reason, Timeout) ->
 %% be monitored.
 %% If the client is trapping exits and is linked server termination
 %% is handled here (? Shall we do that here (or rely on timeouts) ?).
-%% -----------------------------------------------------------------
+%% ----------------------------------------------------------------- 
 call(Name, Request) ->
-    ?LOG_DEBUG(#{
-        description => "Making call",
-        to => Name
-    }),
-    case catch partisan_gen:call(Name, '$gen_call', Request) of
+    case catch gen:call(Name, '$gen_call', Request) of
     {ok,Res} ->
         Res;
     {'EXIT',Reason} ->
         exit({Reason, {?MODULE, call, [Name, Request]}})
     end.
 
-call(Name, Request, TimeoutOrOpts) ->
-    ?LOG_DEBUG(#{
-        description => "Making call",
-        to => Name,
-        timeout_ir_opts => TimeoutOrOpts
-    }),
-    case catch partisan_gen:call(Name, '$gen_call', Request, TimeoutOrOpts) of
+call(Name, Request, Timeout) ->
+    case catch gen:call(Name, '$gen_call', Request, Timeout) of
     {ok,Res} ->
         Res;
     {'EXIT',Reason} ->
-        exit({Reason, {?MODULE, call, [Name, Request, TimeoutOrOpts]}})
+        exit({Reason, {?MODULE, call, [Name, Request, Timeout]}})
     end.
 
 %% -----------------------------------------------------------------
@@ -298,27 +254,22 @@ call(Name, Request, TimeoutOrOpts) ->
 
 -spec send_request(Name::server_ref(), Request::term()) -> request_id().
 send_request(Name, Request) ->
-    partisan_gen:send_request(Name, '$gen_call', Request).
-
-%% Partisan addition
--spec send_request(Name::server_ref(), Request::term(), Opts :: list()) -> request_id().
-send_request(Name, Request, Opts) ->
-    partisan_gen:send_request(Name, '$gen_call', Request, Opts).
+    gen:send_request(Name, '$gen_call', Request).
 
 -spec wait_response(RequestId::request_id(), timeout()) ->
         {reply, Reply::term()} | 'timeout' | {error, {Reason::term(), server_ref()}}.
 wait_response(RequestId, Timeout) ->
-    partisan_gen:wait_response(RequestId, Timeout).
+    gen:wait_response(RequestId, Timeout).
 
 -spec receive_response(RequestId::request_id(), timeout()) ->
         {reply, Reply::term()} | 'timeout' | {error, {Reason::term(), server_ref()}}.
 receive_response(RequestId, Timeout) ->
-    partisan_gen:receive_response(RequestId, Timeout).
+    gen:receive_response(RequestId, Timeout).
 
 -spec check_response(Msg::term(), RequestId::request_id()) ->
         {reply, Reply::term()} | 'no_reply' | {error, {Reason::term(), server_ref()}}.
 check_response(Msg, RequestId) ->
-    partisan_gen:check_response(Msg, RequestId).
+    gen:check_response(Msg, RequestId).
 
 %% -----------------------------------------------------------------
 %% Make a cast to a generic server.
@@ -329,48 +280,30 @@ cast({global,Name}, Request) ->
 cast({via, Mod, Name}, Request) ->
     catch Mod:send(Name, cast_msg(Request)),
     ok;
-cast({Name,Node}=Dest, Request) when is_atom(Name), is_atom(Node) ->
+cast({Name,Node}=Dest, Request) when is_atom(Name), is_atom(Node) -> 
     do_cast(Dest, Request);
 cast(Dest, Request) when is_atom(Dest) ->
     do_cast(Dest, Request);
 cast(Dest, Request) when is_pid(Dest) ->
-    do_cast(Dest, Request);
-cast(PartisanDest, Request) ->
-    do_cast(PartisanDest, Request).
+    do_cast(Dest, Request).
 
-
-%% Partisan addition
-cast(ServerRef, Request, Opts) ->
-    %% Set opts will set the default channel is non is defined, so there is no
-    %% need to cleanup the calling process dict.
-    %% We do this to avoid changing this code too much, but we might need to do
-    %% it in the end.
-    partisan_gen:set_opts(Opts),
-    cast(ServerRef, Request).
-
-
-do_cast(Dest, Request) ->
+do_cast(Dest, Request) -> 
     do_send(Dest, cast_msg(Request)),
     ok.
-
+    
 cast_msg(Request) -> {'$gen_cast',Request}.
 
 %% -----------------------------------------------------------------
 %% Send a reply to the client.
 %% -----------------------------------------------------------------
 reply(From, Reply) ->
-    ?LOG_DEBUG(#{
-        description => "Reply called",
-        to => From,
-        reply => Reply
-    }),
-    partisan_gen:reply(From, Reply).
+    gen:reply(From, Reply).
 
-%% -----------------------------------------------------------------
+%% ----------------------------------------------------------------- 
 %% Asynchronous broadcast, returns nothing, it's just send 'n' pray
-%%-----------------------------------------------------------------
+%%-----------------------------------------------------------------  
 abcast(Name, Request) when is_atom(Name) ->
-    do_abcast([partisan:node() | partisan:nodes()], Name, cast_msg(Request)).
+    do_abcast([node() | nodes()], Name, cast_msg(Request)).
 
 abcast(Nodes, Name, Request) when is_list(Nodes), is_atom(Name) ->
     do_abcast(Nodes, Name, cast_msg(Request)).
@@ -384,47 +317,36 @@ do_abcast([], _,_) -> abcast.
 %%% Make a call to servers at several nodes.
 %%% Returns: {[Replies],[BadNodes]}
 %%% A Timeout can be given
-%%%
+%%% 
 %%% A middleman process is used in case late answers arrives after
 %%% the timeout. If they would be allowed to glog the callers message
-%%% queue, it would probably become confused. Late answers will
+%%% queue, it would probably become confused. Late answers will 
 %%% now arrive to the terminated middleman and so be discarded.
 %%% -----------------------------------------------------------------
 multi_call(Name, Req)
   when is_atom(Name) ->
-    do_multi_call([partisan:node() | partisan:nodes()], Name, Req, infinity).
+    do_multi_call([node() | nodes()], Name, Req, infinity).
 
-multi_call(Nodes, Name, Req)
+multi_call(Nodes, Name, Req) 
   when is_list(Nodes), is_atom(Name) ->
     do_multi_call(Nodes, Name, Req, infinity).
 
 multi_call(Nodes, Name, Req, infinity) ->
     do_multi_call(Nodes, Name, Req, infinity);
-multi_call(Nodes, Name, Req, Timeout)
+multi_call(Nodes, Name, Req, Timeout) 
   when is_list(Nodes), is_atom(Name), is_integer(Timeout), Timeout >= 0 ->
-    do_multi_call(Nodes, Name, Req, Timeout);
-%% Partisan addition
-multi_call(Nodes, Name, Req, Opts0)
-  when is_list(Nodes), is_atom(Name), is_list(Opts0) ->
-    case lists:keytake(timeout, 1, Opts0) of
-        {value, {timeout, Timeout}, Opts} ->
-            partisan_gen:set_opts(Opts),
-            multi_call(Nodes, Name, Req, Timeout);
-        false ->
-            partisan_gen:set_opts(Opts0),
-            multi_call(Nodes, Name, Req)
-    end.
+    do_multi_call(Nodes, Name, Req, Timeout).
 
 
 %%-----------------------------------------------------------------
-%% enter_loop(Mod, Options, State, <ServerName>, <TimeOut>) ->_
-%%
-%% Description: Makes an existing process into a partisan_gen_server.
-%%              The calling process will enter the partisan_gen_server receive
-%%              loop and become a partisan_gen_server process.
-%%              The process *must* have been started using one of the
-%%              start functions in partisan_proc_lib, see partisan_proc_lib(3).
-%%              The user is responsible for any initialization of the
+%% enter_loop(Mod, Options, State, <ServerName>, <TimeOut>) ->_ 
+%%   
+%% Description: Makes an existing process into a gen_server. 
+%%              The calling process will enter the gen_server receive 
+%%              loop and become a gen_server process.
+%%              The process *must* have been started using one of the 
+%%              start functions in proc_lib, see proc_lib(3). 
+%%              The user is responsible for any initialization of the 
 %%              process, including registering a name for it.
 %%-----------------------------------------------------------------
 enter_loop(Mod, Options, State) ->
@@ -441,10 +363,10 @@ enter_loop(Mod, Options, State, Timeout) ->
     enter_loop(Mod, Options, State, self(), Timeout).
 
 enter_loop(Mod, Options, State, ServerName, Timeout) ->
-    Name = partisan_gen:get_proc_name(ServerName),
-    Parent = partisan_gen:get_parent(),
-    Debug = partisan_gen:debug_options(Name, Options),
-    HibernateAfterTimeout = partisan_gen:hibernate_after(Options),
+    Name = gen:get_proc_name(ServerName),
+    Parent = gen:get_parent(),
+    Debug = gen:debug_options(Name, Options),
+    HibernateAfterTimeout = gen:hibernate_after(Options),
     loop(Parent, Name, State, Mod, Timeout, HibernateAfterTimeout, Debug).
 
 %%%========================================================================
@@ -461,16 +383,16 @@ enter_loop(Mod, Options, State, ServerName, Timeout) ->
 init_it(Starter, self, Name, Mod, Args, Options) ->
     init_it(Starter, self(), Name, Mod, Args, Options);
 init_it(Starter, Parent, Name0, Mod, Args, Options) ->
-    Name = partisan_gen:name(Name0),
-    Debug = partisan_gen:debug_options(Name, Options),
-    HibernateAfterTimeout = partisan_gen:hibernate_after(Options),
+    Name = gen:name(Name0),
+    Debug = gen:debug_options(Name, Options),
+    HibernateAfterTimeout = gen:hibernate_after(Options),
 
     case init_it(Mod, Args) of
     {ok, {ok, State}} ->
-        partisan_proc_lib:init_ack(Starter, {ok, self()}),
+        proc_lib:init_ack(Starter, {ok, self()}),       
         loop(Parent, Name, State, Mod, infinity, HibernateAfterTimeout, Debug);
     {ok, {ok, State, TimeoutHibernateOrContinue}} ->
-        partisan_proc_lib:init_ack(Starter, {ok, self()}),
+        proc_lib:init_ack(Starter, {ok, self()}),       
         loop(Parent, Name, State, Mod, TimeoutHibernateOrContinue,
              HibernateAfterTimeout, Debug);
     {ok, {stop, Reason}} ->
@@ -480,20 +402,20 @@ init_it(Starter, Parent, Name0, Mod, Args, Options) ->
         %% (Otherwise, the parent process could get
         %% an 'already_started' error if it immediately
         %% tried starting the process again.)
-        partisan_gen:unregister_name(Name0),
-        partisan_proc_lib:init_ack(Starter, {error, Reason}),
+        gen:unregister_name(Name0),
+        proc_lib:init_ack(Starter, {error, Reason}),
         exit(Reason);
     {ok, ignore} ->
-        partisan_gen:unregister_name(Name0),
-        partisan_proc_lib:init_ack(Starter, ignore),
+        gen:unregister_name(Name0),
+        proc_lib:init_ack(Starter, ignore),
         exit(normal);
     {ok, Else} ->
         Error = {bad_return_value, Else},
-        partisan_proc_lib:init_ack(Starter, {error, Error}),
+        proc_lib:init_ack(Starter, {error, Error}),
         exit(Error);
     {'EXIT', Class, Reason, Stacktrace} ->
-        partisan_gen:unregister_name(Name0),
-        partisan_proc_lib:init_ack(Starter, {error, terminate_reason(Class, Reason, Stacktrace)}),
+        gen:unregister_name(Name0),
+        proc_lib:init_ack(Starter, {error, terminate_reason(Class, Reason, Stacktrace)}),
         erlang:raise(Class, Reason, Stacktrace)
     end.
 init_it(Mod, Args) ->
@@ -518,13 +440,13 @@ loop(Parent, Name, State, Mod, {continue, Continue} = Msg, HibernateAfterTimeout
         handle_common_reply(Reply, Parent, Name, undefined, Msg, Mod,
                 HibernateAfterTimeout, State);
     _ ->
-        Debug1 = partisan_sys:handle_debug(Debug, fun print_event/3, Name, Msg),
+        Debug1 = sys:handle_debug(Debug, fun print_event/3, Name, Msg),
         handle_common_reply(Reply, Parent, Name, undefined, Msg, Mod,
                 HibernateAfterTimeout, State, Debug1)
     end;
 
 loop(Parent, Name, State, Mod, hibernate, HibernateAfterTimeout, Debug) ->
-    partisan_proc_lib:hibernate(?MODULE,wake_hib,[Parent, Name, State, Mod, HibernateAfterTimeout, Debug]);
+    proc_lib:hibernate(?MODULE,wake_hib,[Parent, Name, State, Mod, HibernateAfterTimeout, Debug]);
 
 loop(Parent, Name, State, Mod, infinity, HibernateAfterTimeout, Debug) ->
     receive
@@ -553,14 +475,14 @@ wake_hib(Parent, Name, State, Mod, HibernateAfterTimeout, Debug) ->
 decode_msg(Msg, Parent, Name, State, Mod, Time, HibernateAfterTimeout, Debug, Hib) ->
     case Msg of
     {system, From, Req} ->
-        partisan_sys:handle_system_msg(Req, From, Parent, ?MODULE, Debug,
+        sys:handle_system_msg(Req, From, Parent, ?MODULE, Debug,
                   [Name, State, Mod, Time, HibernateAfterTimeout], Hib);
     {'EXIT', Parent, Reason} ->
         terminate(Reason, ?STACKTRACE(), Name, undefined, Msg, Mod, State, Debug);
     _Msg when Debug =:= [] ->
         handle_msg(Msg, Parent, Name, State, Mod, HibernateAfterTimeout);
     _Msg ->
-        Debug1 = partisan_sys:handle_debug(Debug, fun print_event/3,
+        Debug1 = sys:handle_debug(Debug, fun print_event/3,
                       Name, {in, Msg}),
         handle_msg(Msg, Parent, Name, State, Mod, HibernateAfterTimeout, Debug1)
     end.
@@ -568,50 +490,34 @@ decode_msg(Msg, Parent, Name, State, Mod, Time, HibernateAfterTimeout, Debug, Hi
 %%% ---------------------------------------------------
 %%% Send/receive functions
 %%% ---------------------------------------------------
-do_send(Dest, Msg) when is_pid(Dest) orelse is_reference(Dest) ->
+do_send(Dest, Msg) ->
     try erlang:send(Dest, Msg)
     catch
         error:_ -> ok
     end,
-    ok;
-do_send({Name, Node}, Msg) ->
-    case partisan:node() of
-        Node ->
-            do_send(Name, Msg);
-        Peer ->
-            partisan:forward_message(Peer, Name, Msg, partisan_gen:get_opts())
-    end;
-do_send(Dest, Msg) ->
-    %% A partisan pid
-    partisan:send(Dest, Msg, partisan_gen:get_opts()).
+    ok.
 
+do_multi_call([Node], Name, Req, infinity) when Node =:= node() ->
+    % Special case when multi_call is used with local node only.
+    % In that case we can leverage the benefit of recv_mark optimisation
+    % existing in simple gen:call.
+    try gen:call(Name, '$gen_call', Req, infinity) of
+        {ok, Res} -> {[{Node, Res}],[]}
+    catch exit:_ ->
+        {[], [Node]}
+    end;
 do_multi_call(Nodes, Name, Req, infinity) ->
-    Node = partisan:node(),
-
-    case Nodes of
-        [Node] ->
-            % Special case when multi_call is used with local node only.
-            % In that case we can leverage the benefit of recv_mark optimisation
-            % existing in simple partisan_gen:call.
-            try partisan_gen:call(Name, '$gen_call', Req, infinity) of
-                {ok, Res} -> {[{Node, Res}],[]}
-            catch exit:_ ->
-                {[], [Node]}
-            end;
-        Nodes ->
-            Tag = partisan:make_ref(),
-            Monitors = send_nodes(Nodes, Name, Tag, Req),
-            rec_nodes(Tag, Monitors, Name, undefined)
-    end;
-
+    Tag = make_ref(),
+    Monitors = send_nodes(Nodes, Name, Tag, Req),
+    rec_nodes(Tag, Monitors, Name, undefined);
 do_multi_call(Nodes, Name, Req, Timeout) ->
-    Tag = partisan:make_ref(),
+    Tag = make_ref(),
     Caller = self(),
     Receiver =
     spawn(
       fun() ->
           %% Middleman process. Should be unsensitive to regular
-          %% exit signals. The synchronization is needed in case
+          %% exit signals. The sychronization is needed in case
           %% the receiver would exit before the caller started
           %% the monitor.
           process_flag(trap_exit, true),
@@ -634,7 +540,7 @@ do_multi_call(Nodes, Name, Req, Timeout) ->
     {'DOWN',Mref,_,_,{Receiver,Tag,Result}} ->
         Result;
     {'DOWN',Mref,_,_,Reason} ->
-        %% The middleman code failed. Or someone did
+        %% The middleman code failed. Or someone did 
         %% exit(_, kill) on the middleman process => Reason==killed
         exit(Reason)
     end.
@@ -646,18 +552,12 @@ send_nodes([Node|Tail], Name, Tag, Req, Monitors)
   when is_atom(Node) ->
     Monitor = start_monitor(Node, Name),
     %% Handle non-existing names in rec_nodes.
-    partisan:forward_message(
-        Node,
-        Name,
-        {'$gen_call', {partisan:self(), {Tag, Node}}, Req},
-        partisan_gen:get_opts()
-    ),
-    % catch {Name, Node} ! {'$gen_call', {self(), {Tag, Node}}, Req},
+    catch {Name, Node} ! {'$gen_call', {self(), {Tag, Node}}, Req},
     send_nodes(Tail, Name, Tag, Req, [Monitor | Monitors]);
 send_nodes([_Node|Tail], Name, Tag, Req, Monitors) ->
     %% Skip non-atom Node
     send_nodes(Tail, Name, Tag, Req, Monitors);
-send_nodes([], _Name, _Tag, _Req, Monitors) ->
+send_nodes([], _Name, _Tag, _Req, Monitors) -> 
     Monitors.
 
 %% Against old nodes:
@@ -667,19 +567,19 @@ send_nodes([], _Name, _Tag, _Req, Monitors) ->
 %% Against contemporary nodes:
 %% Wait for reply, server 'DOWN', or timeout from TimerId.
 
-rec_nodes(Tag, Nodes, Name, TimerId) ->
+rec_nodes(Tag, Nodes, Name, TimerId) -> 
     rec_nodes(Tag, Nodes, Name, [], [], 2000, TimerId).
 
-rec_nodes(Tag, [{N,R}|Tail], Name, Badnodes, Replies, Time, TimerId) ->
+rec_nodes(Tag, [{N,R}|Tail], Name, Badnodes, Replies, Time, TimerId ) ->
     receive
     {'DOWN', R, _, _, _} ->
         rec_nodes(Tag, Tail, Name, [N|Badnodes], Replies, Time, TimerId);
     {{Tag, N}, Reply} ->  %% Tag is bound !!!
-        partisan:demonitor(R, [flush]),
-        rec_nodes(Tag, Tail, Name, Badnodes,
+        erlang:demonitor(R, [flush]),
+        rec_nodes(Tag, Tail, Name, Badnodes, 
               [{N,Reply}|Replies], Time, TimerId);
-    {timeout, TimerId, _} ->
-        partisan:demonitor(R, [flush]),
+    {timeout, TimerId, _} ->    
+        erlang:demonitor(R, [flush]),
         %% Collect all replies that already have arrived
         rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies)
     end;
@@ -687,26 +587,26 @@ rec_nodes(Tag, [N|Tail], Name, Badnodes, Replies, Time, TimerId) ->
     %% R6 node
     receive
     {nodedown, N} ->
-        partisan:monitor_node(N, false),
+        monitor_node(N, false),
         rec_nodes(Tag, Tail, Name, [N|Badnodes], Replies, 2000, TimerId);
     {{Tag, N}, Reply} ->  %% Tag is bound !!!
         receive {nodedown, N} -> ok after 0 -> ok end,
-        partisan:monitor_node(N, false),
+        monitor_node(N, false),
         rec_nodes(Tag, Tail, Name, Badnodes,
               [{N,Reply}|Replies], 2000, TimerId);
-    {timeout, TimerId, _} ->
+    {timeout, TimerId, _} ->    
         receive {nodedown, N} -> ok after 0 -> ok end,
-        partisan:monitor_node(N, false),
+        monitor_node(N, false),
         %% Collect all replies that already have arrived
         rec_nodes_rest(Tag, Tail, Name, [N | Badnodes], Replies)
     after Time ->
-        case partisan_rpc:call(N, partisan, whereis, [Name]) of
+        case rpc:call(N, erlang, whereis, [Name]) of
         Pid when is_pid(Pid) -> % It exists try again.
             rec_nodes(Tag, [N|Tail], Name, Badnodes,
                   Replies, infinity, TimerId);
         _ -> % badnode
             receive {nodedown, N} -> ok after 0 -> ok end,
-            partisan:monitor_node(N, false),
+            monitor_node(N, false),
             rec_nodes(Tag, Tail, Name, [N|Badnodes],
                   Replies, 2000, TimerId)
         end
@@ -730,25 +630,25 @@ rec_nodes_rest(Tag, [{N,R}|Tail], Name, Badnodes, Replies) ->
     {'DOWN', R, _, _, _} ->
         rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies);
     {{Tag, N}, Reply} -> %% Tag is bound !!!
-        partisan:demonitor(R, [flush]),
+        erlang:demonitor(R, [flush]),
         rec_nodes_rest(Tag, Tail, Name, Badnodes, [{N,Reply}|Replies])
     after 0 ->
-        partisan:demonitor(R, [flush]),
+        erlang:demonitor(R, [flush]),
         rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies)
     end;
 rec_nodes_rest(Tag, [N|Tail], Name, Badnodes, Replies) ->
     %% R6 node
     receive
     {nodedown, N} ->
-        partisan:monitor_node(N, false),
+        monitor_node(N, false),
         rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies);
     {{Tag, N}, Reply} ->  %% Tag is bound !!!
         receive {nodedown, N} -> ok after 0 -> ok end,
-        partisan:monitor_node(N, false),
+        monitor_node(N, false),
         rec_nodes_rest(Tag, Tail, Name, Badnodes, [{N,Reply}|Replies])
     after 0 ->
         receive {nodedown, N} -> ok after 0 -> ok end,
-        partisan:monitor_node(N, false),
+        monitor_node(N, false),
         rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies)
     end;
 rec_nodes_rest(_Tag, [], _Name, Badnodes, Replies) ->
@@ -760,24 +660,17 @@ rec_nodes_rest(_Tag, [], _Name, Badnodes, Replies) ->
 %%% ---------------------------------------------------
 
 start_monitor(Node, Name) when is_atom(Node), is_atom(Name) ->
-    %% Disterl = partisan_config:get(connect_disterl),
-    %% TODO FIx this for partisan
-    Myself = partisan:node(),
-
-    if Myself =:= nonode@nohost, Node =/= nonode@nohost ->
+    if node() =:= nonode@nohost, Node =/= nonode@nohost ->
         Ref = make_ref(),
         self() ! {'DOWN', Ref, process, {Name, Node}, noconnection},
         {Node, Ref};
        true ->
-        case catch partisan:monitor(process, {Name, Node}) of
+        case catch erlang:monitor(process, {Name, Node}) of
         {'EXIT', _} ->
             %% Remote node is R6
-            partisan:monitor_node(Node, true),
+            monitor_node(Node, true),
             Node;
         Ref when is_reference(Ref) ->
-            {Node, Ref};
-        Ref ->
-            %% partisan_remote_ref:r()
             {Node, Ref}
         end
     end.
@@ -788,7 +681,7 @@ start_monitor(Node, Name) when is_atom(Node), is_atom(Name) ->
 %% {'EXIT', Class, Reason, Stack} (if an exception occurs)
 %%
 %% The Class, Reason and Stack are given to erlang:raise/3
-%% to make sure partisan_proc_lib receives the proper reasons and
+%% to make sure proc_lib receives the proper reasons and
 %% stacktraces.
 %% ---------------------------------------------------
 
@@ -803,18 +696,18 @@ try_dispatch(Mod, Func, Msg, State) ->
     catch
     throw:R ->
         {ok, R};
-    error:undef = R:Stacktrace when Func == handle_info ->
+        error:undef = R:Stacktrace when Func == handle_info ->
             case erlang:function_exported(Mod, handle_info, 2) of
                 false ->
                     ?LOG_WARNING(
-                       #{label=>{partisan_gen_server,no_handle_info},
+                       #{label=>{gen_server,no_handle_info},
                          module=>Mod,
                          message=>Msg},
                        #{domain=>[otp],
-                         report_cb=>fun partisan_gen_server:format_log/2,
+                         report_cb=>fun gen_server:format_log/2,
                          error_logger=>
                              #{tag=>warning_msg,
-                               report_cb=>fun partisan_gen_server:format_log/1}}),
+                               report_cb=>fun gen_server:format_log/1}}),
                     {ok, {noreply, State}};
                 true ->
                     {'EXIT', error, R, Stacktrace}
@@ -888,11 +781,11 @@ handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, HibernateAfterTim
         Debug1 = reply(Name, From, Reply, NState, Debug),
         loop(Parent, Name, NState, Mod, Time1, HibernateAfterTimeout, Debug1);
     {ok, {noreply, NState}} ->
-        Debug1 = partisan_sys:handle_debug(Debug, fun print_event/3, Name,
+        Debug1 = sys:handle_debug(Debug, fun print_event/3, Name,
                       {noreply, NState}),
         loop(Parent, Name, NState, Mod, infinity, HibernateAfterTimeout, Debug1);
     {ok, {noreply, NState, Time1}} ->
-        Debug1 = partisan_sys:handle_debug(Debug, fun print_event/3, Name,
+        Debug1 = sys:handle_debug(Debug, fun print_event/3, Name,
                       {noreply, NState}),
         loop(Parent, Name, NState, Mod, Time1, HibernateAfterTimeout, Debug1);
     {ok, {stop, Reason, Reply, NState}} ->
@@ -925,11 +818,11 @@ handle_common_reply(Reply, Parent, Name, From, Msg, Mod, HibernateAfterTimeout, 
 handle_common_reply(Reply, Parent, Name, From, Msg, Mod, HibernateAfterTimeout, State, Debug) ->
     case Reply of
     {ok, {noreply, NState}} ->
-        Debug1 = partisan_sys:handle_debug(Debug, fun print_event/3, Name,
+        Debug1 = sys:handle_debug(Debug, fun print_event/3, Name,
                       {noreply, NState}),
         loop(Parent, Name, NState, Mod, infinity, HibernateAfterTimeout, Debug1);
     {ok, {noreply, NState, Time1}} ->
-        Debug1 = partisan_sys:handle_debug(Debug, fun print_event/3, Name,
+        Debug1 = sys:handle_debug(Debug, fun print_event/3, Name,
                       {noreply, NState}),
         loop(Parent, Name, NState, Mod, Time1, HibernateAfterTimeout, Debug1);
     {ok, {stop, Reason, NState}} ->
@@ -942,7 +835,7 @@ handle_common_reply(Reply, Parent, Name, From, Msg, Mod, HibernateAfterTimeout, 
 
 reply(Name, From, Reply, State, Debug) ->
     reply(From, Reply),
-    partisan_sys:handle_debug(Debug, fun print_event/3, Name,
+    sys:handle_debug(Debug, fun print_event/3, Name,
              {out, Reply, From, State} ).
 
 
@@ -1052,8 +945,8 @@ error_info(_Reason, application_controller, _From, _Msg, _Mod, _State, _Debug) -
     %% of it instead
     ok;
 error_info(Reason, Name, From, Msg, Mod, State, Debug) ->
-    Log = partisan_sys:get_log(Debug),
-    ?LOG_ERROR(#{label=>{partisan_gen_server,terminate},
+    Log = sys:get_log(Debug),
+    ?LOG_ERROR(#{label=>{gen_server,terminate},
                  name=>Name,
                  last_message=>Msg,
                  state=>format_status(terminate, Mod, get(), State),
@@ -1061,9 +954,9 @@ error_info(Reason, Name, From, Msg, Mod, State, Debug) ->
                  reason=>Reason,
                  client_info=>client_stacktrace(From)},
                #{domain=>[otp],
-                 report_cb=>fun partisan_gen_server:format_log/2,
+                 report_cb=>fun gen_server:format_log/2,
                  error_logger=>#{tag=>error,
-                                 report_cb=>fun partisan_gen_server:format_log/1}}),
+                                 report_cb=>fun gen_server:format_log/1}}),
     ok.
 
 client_stacktrace(undefined) ->
@@ -1080,16 +973,7 @@ client_stacktrace(From) when is_pid(From), node(From) =:= node() ->
             {From,{Name,Stacktrace}}
     end;
 client_stacktrace(From) when is_pid(From) ->
-    {From,remote};
-client_stacktrace(From)  ->
-    %% A partisan_remote_ref
-    try
-        client_stacktrace(partisan_remote_ref:to_term(From))
-    catch
-        error:badarg ->
-            %% Not a local term
-            {From, remote}
-    end.
+    {From,remote}.
 
 
 %% format_log/1 is the report callback used by Logger handler
@@ -1107,7 +991,7 @@ format_log(Report) ->
 
 limit_report(Report,unlimited) ->
     Report;
-limit_report(#{label:={partisan_gen_server,terminate},
+limit_report(#{label:={gen_server,terminate},
                last_message:=Msg,
                state:=State,
                log:=Log,
@@ -1119,7 +1003,7 @@ limit_report(#{label:={partisan_gen_server,terminate},
             log=>[io_lib:limit_term(L,Depth)||L<-Log],
             reason=>io_lib:limit_term(Reason,Depth),
             client_info=>limit_client_report(Client,Depth)};
-limit_report(#{label:={partisan_gen_server,no_handle_info},
+limit_report(#{label:={gen_server,no_handle_info},
                message:=Msg}=Report,Depth) ->
     Report#{message=>io_lib:limit_term(Msg,Depth)}.
 
@@ -1146,7 +1030,7 @@ format_log(Report, FormatOpts0) ->
     {Format,Args} = format_log_single(Report, FormatOpts),
     io_lib:format(Format, Args, IoOpts).
 
-format_log_single(#{label:={partisan_gen_server,terminate},
+format_log_single(#{label:={gen_server,terminate},
                     name:=Name,
                     last_message:=Msg,
                     state:=State,
@@ -1169,7 +1053,7 @@ format_log_single(#{label:={partisan_gen_server,terminate},
         end,
     {Format1++ServerLogFormat++ClientLogFormat,
      Args1++ServerLogArgs++ClientLogArgs};
-format_log_single(#{label:={partisan_gen_server,no_handle_info},
+format_log_single(#{label:={gen_server,no_handle_info},
                     module:=Mod,
                     message:=Msg},
                   #{single_line:=true,depth:=Depth}=FormatOpts) ->
@@ -1187,7 +1071,7 @@ format_log_single(#{label:={partisan_gen_server,no_handle_info},
 format_log_single(Report,FormatOpts) ->
     format_log_multi(Report,FormatOpts).
 
-format_log_multi(#{label:={partisan_gen_server,terminate},
+format_log_multi(#{label:={gen_server,terminate},
                    name:=Name,
                    last_message:=Msg,
                    state:=State,
@@ -1222,7 +1106,7 @@ format_log_multi(#{label:={partisan_gen_server,terminate},
                     end ++ ClientArgs
         end,
     {Format,Args};
-format_log_multi(#{label:={partisan_gen_server,no_handle_info},
+format_log_multi(#{label:={gen_server,no_handle_info},
                    module:=Mod,
                    message:=Msg},
                  #{depth:=Depth}=FormatOpts) ->
@@ -1271,7 +1155,7 @@ format_client_log_single(undefined,_) ->
 format_client_log_single({From,dead},_) ->
     {" Client ~0p is dead.",[From]};
 format_client_log_single({From,remote},_) ->
-    {" Client ~0p is remote on node ~0p.", [From, partisan:node(From)]};
+    {" Client ~0p is remote on node ~0p.", [From, node(From)]};
 format_client_log_single({_From,{Name,Stacktrace0}},FormatOpts) ->
     P = p(FormatOpts),
     %% Minimize the stacktrace a bit for single line reports. This is
@@ -1291,7 +1175,7 @@ format_client_log(undefined,_) ->
 format_client_log({From,dead},_) ->
     {"** Client ~p is dead~n", [From]};
 format_client_log({From,remote},_) ->
-    {"** Client ~p is remote on node ~p~n", [From, partisan:node(From)]};
+    {"** Client ~p is remote on node ~p~n", [From, node(From)]};
 format_client_log({_From,{Name,Stacktrace}},FormatOpts) ->
     P = p(FormatOpts),
     Format = lists:append(["** Client ",P," stacktrace~n",
@@ -1323,8 +1207,8 @@ mod(_) -> "t".
 %%-----------------------------------------------------------------
 format_status(Opt, StatusData) ->
     [PDict, SysState, Parent, Debug, [Name, State, Mod, _Time, _HibernateAfterTimeout]] = StatusData,
-    Header = partisan_gen:format_status_header("Status for generic server", Name),
-    Log = partisan_sys:get_log(Debug),
+    Header = gen:format_status_header("Status for generic server", Name),
+    Log = sys:get_log(Debug),
     Specific = case format_status(Opt, Mod, PDict, State) of
           S when is_list(S) -> S;
           S -> [S]

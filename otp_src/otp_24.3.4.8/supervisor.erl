@@ -16,21 +16,10 @@
 %% limitations under the License.
 %%
 %% %CopyrightEnd%
-
-%% -----------------------------------------------------------------------------
-%% @doc This module is an adaptation of Erlang's `supervisor' module.
 %%
-%% The only use case in need of this module instead of OTP's `supervisor' is
-%% when you need to supervise remote processes i.e. if you just need to
-%% supervise local `partisan_gen_server' or
-%% `partisan_gen_statem' processes you can still use OTP's `supervisor'.
-%% It replaces all the usage of modules `gen_server' and functions
-%% `erlang:is_pid/0' and `erlang:monitor/2' with their Partisan counterparts.
-%% @end
-%% -----------------------------------------------------------------------------
--module(partisan_gen_supervisor).
+-module(supervisor).
 
--behaviour(partisan_gen_server).
+-behaviour(gen_server).
 
 %% External exports
 -export([start_link/2, start_link/3,
@@ -50,7 +39,7 @@
 %% For release_handler only
 -export([get_callback_module/1]).
 
--include("partisan_logger.hrl").
+-include("logger.hrl").
 
 -define(report_error(Error, Reason, Child, SupName),
         ?LOG_ERROR(#{label=>{supervisor,Error},
@@ -72,9 +61,9 @@
               startlink_ret/0, startlink_err/0]).
 
 %%--------------------------------------------------------------------------
--type pid2()          :: pid() | partisan_remote_ref:p().
+
 -type auto_shutdown() :: 'never' | 'any_significant' | 'all_significant'.
--type child()         :: 'undefined' | pid2().
+-type child()         :: 'undefined' | pid().
 -type child_id()      :: term().
 -type mfargs()        :: {M :: module(), F :: atom(), A :: [term()] | undefined}.
 -type modules()       :: [module()] | 'dynamic'.
@@ -83,13 +72,13 @@
 -type shutdown()      :: 'brutal_kill' | timeout().
 -type worker()        :: 'worker' | 'supervisor'.
 -type sup_name()      :: {'local', Name :: atom()}
-                       | {'global', Name :: term()}
+                       | {'global', Name :: atom()}
                        | {'via', Module :: module(), Name :: any()}.
 -type sup_ref()       :: (Name :: atom())
                        | {Name :: atom(), Node :: node()}
-                       | {'global', Name :: term()}
+                       | {'global', Name :: atom()}
                        | {'via', Module :: module(), Name :: any()}
-                       | pid2().
+                       | pid().
 -type child_spec()    :: #{id := child_id(),             % mandatory
                start := mfargs(),            % mandatory
                restart => restart(),         % optional
@@ -130,9 +119,9 @@
 %%--------------------------------------------------------------------------
 
 -record(child, {% pid is undefined when child is not running
-        pid = undefined :: child()
-                         | {restarting, pid2() | undefined}
-                         | [pid2()],
+            pid = undefined :: child()
+                             | {restarting, pid() | undefined}
+                             | [pid()],
         id              :: child_id(),
         mfargs          :: mfargs(),
         restart_type    :: restart(),
@@ -145,8 +134,8 @@
 -record(state, {name,
         strategy               :: strategy() | 'undefined',
         children = {[],#{}}    :: children(), % Ids in start order
-                dynamics               :: {'maps', #{pid2() => list()}}
-                                        | {'mapsets', #{pid2() => []}}
+                dynamics               :: {'maps', #{pid() => list()}}
+                                        | {'mapsets', #{pid() => []}}
                                         | 'undefined',
         intensity              :: non_neg_integer() | 'undefined',
         period                 :: pos_integer() | 'undefined',
@@ -172,26 +161,26 @@
 %%% ---------------------------------------------------
 %%% This is a general process supervisor built upon gen_server.erl.
 %%% Servers/processes should/could also be built using gen_server.erl.
-%%% SupName = {local, atom()} | {global, term()}.
+%%% SupName = {local, atom()} | {global, atom()}.
 %%% ---------------------------------------------------
 
--type startlink_err() :: {'already_started', pid2()}
+-type startlink_err() :: {'already_started', pid()}
                          | {'shutdown', term()}
                          | term().
--type startlink_ret() :: {'ok', pid2()} | 'ignore' | {'error', startlink_err()}.
+-type startlink_ret() :: {'ok', pid()} | 'ignore' | {'error', startlink_err()}.
 
 -spec start_link(Module, Args) -> startlink_ret() when
       Module :: module(),
       Args :: term().
 start_link(Mod, Args) ->
-    partisan_gen_server:start_link(supervisor, {self, Mod, Args}, []).
+    gen_server:start_link(supervisor, {self, Mod, Args}, []).
  
 -spec start_link(SupName, Module, Args) -> startlink_ret() when
       SupName :: sup_name(),
       Module :: module(),
       Args :: term().
 start_link(SupName, Mod, Args) ->
-    partisan_gen_server:start_link(SupName, supervisor, {SupName, Mod, Args}, []).
+    gen_server:start_link(SupName, supervisor, {SupName, Mod, Args}, []).
  
 %%% ---------------------------------------------------
 %%% Interface functions.
@@ -237,7 +226,7 @@ delete_child(Supervisor, Id) ->
 
 -spec terminate_child(SupRef, Id) -> Result when
       SupRef :: sup_ref(),
-      Id :: pid2() | child_id(),
+      Id :: pid() | child_id(),
       Result :: 'ok' | {'error', Error},
       Error :: 'not_found' | 'simple_one_for_one'.
 terminate_child(Supervisor, Id) ->
@@ -245,7 +234,7 @@ terminate_child(Supervisor, Id) ->
 
 -spec get_childspec(SupRef, Id) -> Result when
       SupRef :: sup_ref(),
-      Id :: pid2() | child_id(),
+      Id :: pid() | child_id(),
       Result :: {'ok', child_spec()} | {'error', Error},
       Error :: 'not_found'.
 get_childspec(Supervisor, Id) ->
@@ -266,12 +255,12 @@ which_children(Supervisor) ->
       Count :: {specs, ChildSpecCount :: non_neg_integer()}
              | {active, ActiveProcessCount :: non_neg_integer()}
              | {supervisors, ChildSupervisorCount :: non_neg_integer()}
-             | {workers, ChildWorkerCount :: non_neg_integer()}.
+             |{workers, ChildWorkerCount :: non_neg_integer()}.
 count_children(Supervisor) ->
     call(Supervisor, count_children).
 
 call(Supervisor, Req) ->
-    partisan_gen_server:call(Supervisor, Req, infinity).
+    gen_server:call(Supervisor, Req, infinity).
 
 -spec check_childspecs(ChildSpecs) -> Result when
       ChildSpecs :: [child_spec()],
@@ -310,7 +299,7 @@ check_childspecs2(ChildSpecs, AutoShutdown) ->
       Module :: atom().
 get_callback_module(Pid) ->
     {status, _Pid, {module, _Mod},
-     [_PDict, _SysState, _Parent, _Dbg, Misc]} = partisan_sys:get_status(Pid),
+     [_PDict, _SysState, _Parent, _Dbg, Misc]} = sys:get_status(Pid),
     case lists:keyfind(supervisor, 1, Misc) of
     {supervisor, [{"Callback", Mod}]} ->
         Mod;
@@ -382,7 +371,7 @@ init_dynamic(_State, StartSpec) ->
 %%-----------------------------------------------------------------
 %% Func: start_children/2
 %% Args: Children = children() % Ids in start order
-%%       SupName = {local, atom()} | {global, term()} | {pid2(), Mod}
+%%       SupName = {local, atom()} | {global, atom()} | {pid(), Mod}
 %% Purpose: Start all children.  The new map contains #child's
 %%          with pids.
 %% Returns: {ok, NChildren} | {error, NChildren, Reason}
@@ -409,23 +398,13 @@ start_children(Children, SupName) ->
 do_start_child(SupName, Child) ->
     #child{mfargs = {M, F, Args}} = Child,
     case do_start_child_i(M, F, Args) of
-    {ok, Pid} ->
-        case partisan:is_pid(Pid) of
-            true ->
-                NChild = Child#child{pid = Pid},
-                report_progress(NChild, SupName);
-            false ->
-                ok
-        end,
+    {ok, Pid} when is_pid(Pid) ->
+        NChild = Child#child{pid = Pid},
+        report_progress(NChild, SupName),
         {ok, Pid};
-    {ok, Pid, Extra} ->
-        case partisan:is_pid(Pid) of
-            true ->
-                NChild = Child#child{pid = Pid},
-                report_progress(NChild, SupName);
-            false ->
-                ok
-        end,
+    {ok, Pid, Extra} when is_pid(Pid) ->
+        NChild = Child#child{pid = Pid},
+        report_progress(NChild, SupName),
         {ok, Pid, Extra};
         Other ->
             Other
@@ -433,16 +412,10 @@ do_start_child(SupName, Child) ->
 
 do_start_child_i(M, F, A) ->
     case catch apply(M, F, A) of
-    {ok, Pid} = R ->
-        case partisan:is_pid(Pid) of
-            true -> R;
-            false -> {error, R}
-        end;
-    {ok, Pid, _} = R ->
-        case partisan:is_pid(Pid) of
-            true -> R;
-            false -> {error, R}
-        end;
+    {ok, Pid} when is_pid(Pid) ->
+        {ok, Pid};
+    {ok, Pid, Extra} when is_pid(Pid) ->
+        {ok, Pid, Extra};
     ignore ->
         {ok, undefined};
     {error, Error} ->
@@ -485,19 +458,18 @@ handle_call({start_child, ChildSpec}, _From, State) ->
         {reply, {error, What}, State}
     end;
 
+%% terminate_child for simple_one_for_one can only be done with pid
+handle_call({terminate_child, Id}, _From, State) when not is_pid(Id),
+                                                      ?is_simple(State) ->
+    {reply, {error, simple_one_for_one}, State};
+
 handle_call({terminate_child, Id}, _From, State) ->
-    case partisan:is_pid(Id) of
-        false when ?is_simple(State) ->
-            %% terminate_child for simple_one_for_one can only be done with pid
-            {reply, {error, simple_one_for_one}, State};
-        _ ->
-            case find_child(Id, State) of
-            {ok, Child} ->
-                do_terminate(Child, State#state.name),
-                    {reply, ok, del_child(Child, State)};
-            error ->
-                {reply, {error, not_found}, State}
-            end
+    case find_child(Id, State) of
+    {ok, Child} ->
+        do_terminate(Child, State#state.name),
+            {reply, ok, del_child(Child, State)};
+    error ->
+        {reply, {error, not_found}, State}
     end;
 
 %% restart_child request is invalid for simple_one_for_one supervisors
@@ -597,13 +569,13 @@ handle_call(count_children, _From, State) ->
 
 count_child(#child{pid = Pid, child_type = worker},
         {Specs, Active, Supers, Workers}) ->
-    case partisan:is_pid(Pid) andalso partisan:is_process_alive(Pid) of
+    case is_pid(Pid) andalso is_process_alive(Pid) of
     true ->  {Specs+1, Active+1, Supers, Workers+1};
     false -> {Specs+1, Active, Supers, Workers+1}
     end;
 count_child(#child{pid = Pid, child_type = supervisor},
         {Specs, Active, Supers, Workers}) ->
-    case partisan:is_pid(Pid) andalso partisan:is_process_alive(Pid) of
+    case is_pid(Pid) andalso is_process_alive(Pid) of
     true ->  {Specs+1, Active+1, Supers+1, Workers};
     false -> {Specs+1, Active, Supers+1, Workers}
     end.
@@ -611,7 +583,7 @@ count_child(#child{pid = Pid, child_type = supervisor},
 %%% If a restart attempt failed, this message is cast
 %%% from restart/2 in order to give gen_server the chance to
 %%% check it's inbox before trying again.
--spec handle_cast({try_again_restart, child_id() | {'restarting',pid2()}}, state()) ->
+-spec handle_cast({try_again_restart, child_id() | {'restarting',pid()}}, state()) ->
              {'noreply', state()} | {stop, shutdown, state()}.
 
 handle_cast({try_again_restart,TryAgainId}, State) ->
@@ -741,13 +713,10 @@ handle_start_child(Child, State) ->
         {error, What} ->
             {{error, {What, Child}}, State}
         end;
-    {ok, OldChild} ->
-        case partisan:is_pid(OldChild#child.pid) of
-            true ->
-                {{error, {already_started, OldChild#child.pid}}, State};
-            false ->
-                {{error, already_present}, State}
-        end
+    {ok, OldChild} when is_pid(OldChild#child.pid) ->
+        {{error, {already_started, OldChild#child.pid}}, State};
+    {ok, _OldChild} ->
+        {{error, already_present}, State}
     end.
 
 %%% ---------------------------------------------------
@@ -900,20 +869,17 @@ restart_multiple_children(Child, Children, SupName) ->
         {{try_again, FailedId}, set_pid(NewPid,FailedId,NChildren)}
     end.
 
-restarting(Pid) ->
-    case partisan:is_pid(Pid) of
-        true -> ?restarting(Pid);
-        false -> Pid
-    end.
+restarting(Pid) when is_pid(Pid) -> ?restarting(Pid);
+restarting(RPid) -> RPid.
 
--spec try_again_restart(child_id() | {'restarting',pid2()}) -> 'ok'.
+-spec try_again_restart(child_id() | {'restarting',pid()}) -> 'ok'.
 try_again_restart(TryAgainId) ->
-    partisan_gen_server:cast(self(), {try_again_restart, TryAgainId}).
+    gen_server:cast(self(), {try_again_restart, TryAgainId}).
 
 %%-----------------------------------------------------------------
 %% Func: terminate_children/2
 %% Args: Children = children() % Ids in termination order
-%%       SupName = {local, atom()} | {global, term()} | {pid2(),Mod}
+%%       SupName = {local, atom()} | {global, atom()} | {pid(),Mod}
 %% Returns: NChildren = children() % Ids in startup order
 %%                                 % (reversed termination order)
 %%-----------------------------------------------------------------
@@ -931,15 +897,16 @@ terminate_children(Children, SupName) ->
     {ok,NChildren} = children_map(Terminate, Children),
     NChildren.
 
-do_terminate(Child, SupName) ->
-    case partisan:is_pid(Child#child.pid) andalso shutdown(Child) of
+do_terminate(Child, SupName) when is_pid(Child#child.pid) ->
+    case shutdown(Child) of
         ok ->
-            ok;
-        false ->
             ok;
         {error, OtherReason} ->
             ?report_error(shutdown_error, OtherReason, Child, SupName)
-    end.
+    end,
+    ok;
+do_terminate(_Child, _SupName) ->
+    ok.
 
 %%-----------------------------------------------------------------
 %% Shutdowns a child. We must check the EXIT value 
@@ -952,7 +919,7 @@ do_terminate(Child, SupName) ->
 %% Returns: ok | {error, OtherReason}  (this should be reported)
 %%-----------------------------------------------------------------
 shutdown(#child{pid=Pid, shutdown=brutal_kill} = Child) ->
-    Mon = partisan:monitor(process, Pid),
+    Mon = monitor(process, Pid),
     exit(Pid, kill),
     receive
         {'DOWN', Mon, process, Pid, Reason0} ->
@@ -970,7 +937,7 @@ shutdown(#child{pid=Pid, shutdown=brutal_kill} = Child) ->
             end
     end;
 shutdown(#child{pid=Pid, shutdown=Time} = Child) ->
-    Mon = partisan:monitor(process, Pid),
+    Mon = monitor(process, Pid),
     exit(Pid, shutdown),
     receive
         {'DOWN', Mon, process, Pid, Reason0} ->
@@ -1024,18 +991,16 @@ unlink_flush(Pid, DefaultReason) ->
 terminate_dynamic_children(State) ->
     Child = get_dynamic_child(State),
     Pids = dyn_fold(
-        fun(P, Acc) ->
-            case partisan:is_pid(P) of
-                true ->
-                    Mon = partisan:monitor(process, P),
-                    case Child#child.shutdown of
-                        brutal_kill -> exit(P, kill);
-                        _ -> exit(P, shutdown)
-                    end,
-                    Acc#{{P, Mon} => true};
-                false when ?restarting(P)->
-                    Acc
-            end
+        fun
+            (P, Acc) when is_pid(P) ->
+                Mon = monitor(process, P),
+                case Child#child.shutdown of
+                    brutal_kill -> exit(P, kill);
+                    _ -> exit(P, shutdown)
+                end,
+                Acc#{{P, Mon} => true};
+            (?restarting(_), Acc) ->
+                Acc
         end,
         #{},
         State
@@ -1182,29 +1147,24 @@ split_ids(Id, [Other|Ids], After) ->
 
 %% Find the child record for a given Pid (dynamic child) or Id
 %% (non-dynamic child). This is called from the API functions.
--spec find_child(pid2() | child_id(), state()) -> {ok,child_rec()} | error.
-find_child(Arg, State) when ?is_simple(State) ->
-
-    case partisan:is_pid(Arg) of
-        true ->
-            case find_dynamic_child(Arg, State) of
+-spec find_child(pid() | child_id(), state()) -> {ok,child_rec()} | error.
+find_child(Pid, State) when is_pid(Pid), ?is_simple(State) ->
+    case find_dynamic_child(Pid, State) of
+        error ->
+            case find_dynamic_child(restarting(Pid), State) of
                 error ->
-                    case find_dynamic_child(restarting(Arg), State) of
-                        error ->
-                    case partisan:is_process_alive(Arg) of
-                    true -> error;
-                    false -> {ok, get_dynamic_child(State)}
-                    end;
-                        Other ->
-                            Other
-                    end;
+            case erlang:is_process_alive(Pid) of
+            true -> error;
+            false -> {ok, get_dynamic_child(State)}
+            end;
                 Other ->
                     Other
             end;
-        false ->
-            {_Ids,Db} = State#state.children,
-            maps:find(Arg, Db)
-    end.
+        Other ->
+            Other
+    end;
+find_child(Id, #state{children = {_Ids,Db}}) ->
+    maps:find(Id, Db).
 
 %% Get the child record - either by child id or by pid.  If
 %% simple_one_for_one, then insert the pid and args into the returned
@@ -1219,16 +1179,10 @@ find_child_and_args(Pid, State) when ?is_simple(State) ->
         error ->
             error
     end;
-find_child_and_args(Arg, State) ->
-    case partisan:is_pid(Arg) of
-        true ->
-            find_child_by_pid(Arg, State);
-        false ->
-            {_Ids,Db} = State#state.children,
-            maps:find(Arg, Db)
-    end.
-
-
+find_child_and_args(Pid, State) when is_pid(Pid) ->
+    find_child_by_pid(Pid, State);
+find_child_and_args(Id, #state{children={_Ids,Db}})  ->
+    maps:find(Id, Db).
 
 %% Given the pid, find the child record for a dynamic child, and
 %% include the pid in the returned record.
@@ -1342,7 +1296,7 @@ append({Ids1,Db1},{Ids2,Db2}) ->
 
 %%-----------------------------------------------------------------
 %% Func: init_state/4
-%% Args: SupName = {local, atom()} | {global, term()} | self
+%% Args: SupName = {local, atom()} | {global, atom()} | self
 %%       Type = {Strategy, MaxIntensity, Period}
 %%         Strategy = one_for_one | one_for_all | simple_one_for_one |
 %%                    rest_for_one
@@ -1562,7 +1516,7 @@ add_restart(State) ->
     P = State#state.period,
     R = State#state.restarts,
     Now = erlang:monotonic_time(1),
-    R1 = add_restart(R, Now, P),
+    R1 = add_restart([Now|R], Now, P),
     State1 = State#state{restarts = R1},
     case length(R1) of
     CurI when CurI  =< I ->
@@ -1571,13 +1525,18 @@ add_restart(State) ->
         {terminate, State1}
     end.
 
-add_restart(Restarts0, Now, Period) ->
-    Treshold = Now - Period,
-    Restarts1 = lists:takewhile(
-                  fun (R) -> R >= Treshold end,
-                  Restarts0
-                 ),
-    [Now | Restarts1].
+add_restart([R|Restarts], Now, Period) ->
+    case inPeriod(R, Now, Period) of
+    true ->
+        [R|add_restart(Restarts, Now, Period)];
+    _ ->
+        []
+    end;
+add_restart([], _, _) ->
+    [].
+
+inPeriod(Then, Now, Period) ->
+    Now =< Then + Period.
 
 %%% ------------------------------------------------------
 %%% Error and progress reporting.

@@ -319,30 +319,29 @@ monitor(Type, Item) ->
         reference() | no_return().
 
 monitor(process, RegisteredName, Opts) when is_atom(RegisteredName) ->
-    erlang:monitor(process, RegisteredName, to_erl_monitor_opts(Opts));
+    erlang:monitor(process, RegisteredName, to_erl_opts(Opts));
 
 monitor(process, Pid, Opts) when erlang:is_pid(Pid) ->
-    erlang:monitor(process, Pid, to_erl_monitor_opts(Opts));
+    erlang:monitor(process, Pid, to_erl_opts(Opts));
 
 monitor(process, {RegisteredName, Node}, Opts)
 when is_atom(RegisteredName) ->
     case partisan_config:get(connect_disterl) orelse partisan:node() == Node of
         true ->
-            erlang:monitor(process, RegisteredName, to_erl_monitor_opts(Opts));
+            erlang:monitor(process, RegisteredName, to_erl_opts(Opts));
         false ->
             Ref = partisan_remote_ref:from_term(RegisteredName, Node),
             partisan_monitor:monitor(Ref, Opts)
     end;
 
 monitor(process, Term, Opts) when erlang:is_pid(Term) orelse is_atom(Term) ->
-    erlang:monitor(process, Term, to_erl_monitor_opts(Opts));
+    erlang:monitor(process, Term, to_erl_opts(Opts));
 
-monitor(process, RemoteRef, Opts)
-when is_tuple(RemoteRef) orelse is_binary(RemoteRef) ->
+monitor(process, RemoteRef, Opts) ->
     partisan_monitor:monitor(RemoteRef, Opts);
 
 monitor(Type, Term, Opts) when Type == port orelse Type == time_offset ->
-    erlang:monitor(Type, Term, to_erl_monitor_opts(Opts)).
+    erlang:monitor(Type, Term, to_erl_opts(Opts)).
 
 
 %% -----------------------------------------------------------------------------
@@ -636,11 +635,8 @@ when erlang:is_pid(Arg) orelse erlang:is_reference(Arg) orelse is_port(Arg) ->
             end
     end;
 
-node({partisan_remote_ref, Node, _}) ->
-    Node;
-
-node(Encoded) when is_binary(Encoded) ->
-    partisan_remote_ref:node(Encoded).
+node(RemoteRef) ->
+    partisan_remote_ref:node(RemoteRef).
 
 
 %% -----------------------------------------------------------------------------
@@ -667,7 +663,12 @@ nodes() ->
 -spec nodes(Arg :: node_type()) -> [node()].
 
 nodes(Arg) ->
-    partisan_peer_connections:nodes(Arg).
+    case partisan_config:get(connect_disterl) of
+        true ->
+            erlang:nodes(Arg);
+        false ->
+            partisan_peer_connections:nodes(Arg)
+    end.
 
 
 %% -----------------------------------------------------------------------------
@@ -980,14 +981,16 @@ exit(Pid, Reason) when erlang:is_pid(Pid) ->
     erlang:exit(Pid, Reason);
 
 exit(RemoteRef, Reason) ->
-    case partisan_remote_ref:is_local(RemoteRef) of
-        true ->
-            erlang:exit(partisan_remote_ref:to_term(RemoteRef), Reason);
-        false ->
+    try partisan_remote_ref:to_term(RemoteRef) of
+        Pid when erlang:is_pid(Pid) ->
+            erlang:exit(Pid, Reason);
+        Name when is_atom(Name) ->
+            erlang:exit(whereis(Name), Reason)
+    catch
+        error:badarg ->
+            %% Not local
             Node = node(RemoteRef),
-            partisan_rpc:call(
-                Node, ?MODULE, exit, [RemoteRef], 5000
-            )
+            partisan_rpc:call(Node, ?MODULE, exit, [RemoteRef, Reason], 5000)
     end.
 
 
@@ -1012,12 +1015,12 @@ send(Dest, Msg, Opts)
 when (erlang:is_pid(Dest) andalso erlang:node(Dest) == erlang:node())
 orelse is_atom(Dest) ->
     %% Local send
-    erlang:send(Dest, Msg, Opts);
+    erlang:send(Dest, Msg, to_erl_opts(Opts));
 
 send({RegName, Node} = Dest, Msg, Opts)
 when is_atom(RegName), is_atom(Node), Node == erlang:node() ->
     %% Local send
-    erlang:send(Dest, Msg, Opts);
+    erlang:send(Dest, Msg, to_erl_opts(Opts));
 
 send({RegName, Node}, Msg, Opts)
 when is_atom(RegName), is_atom(Node) ->
@@ -1291,7 +1294,7 @@ list_to_node(NodeStr) ->
 
 
 %% @private
-to_erl_monitor_opts(Opts0) when is_list(Opts0) ->
+to_erl_opts(Opts0) when is_list(Opts0) ->
     case lists:keytake(channel, 1, Opts0) of
         {value, _, Opts} ->
             Opts;

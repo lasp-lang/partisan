@@ -1,5 +1,20 @@
 # CHANGELOG
 
+# v5.0.0-beta.20
+
+### Bug Fixes
+
+* Continued adding support for OTP.
+    * The OTP modules `sys`, `proc_lib` where patched (`partisan_sys`, `partisan_proc_lib`) so that they support the `partisan_remote_ref:t()` type and use the `partisan` module functions for finding, monitoring and sending messages instead of the native Erlang counterparts.
+    * Patched the CT suites (`gen_server_SUITE`, `gen_statem_SUITE`, `gen_event_SUITE`) to test the partisan OTP modules. All tests passing.
+    * Notice `global` is not yet supported by Partisan.
+
+### Additions
+
+* New improper list format for `partisan_remote_ref`. This deprecates the config option `remote_ref_as_uri` and adds `remote_ref_format` instead which accepts `improper_list` (the new default), `tuple` (the legacy format) and `uri` (also introduced in v5).
+* Addes `partisan_erpc`. The patched version of the Erlang's `erpc` module.
+
+
 # v5.0.0-beta.19
 
 ### Bug Fixes
@@ -24,7 +39,7 @@
 ### Bug Fixes
 * Fix a bug in `partisan:send/2,3`
 
-### Chanes
+### Changes
 * Ensure the membership channel (`partisan_membership`) exits and is properly configured.
 
 # v5.0.0-beta.15

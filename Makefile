@@ -79,7 +79,7 @@ test: eunit ct cover
 alt-test:
 	mkdir -p test/partisan_alt_SUITE_data/
 	openssl rand -out test/partisan_alt_SUITE_data/RAND 4096
-	${REBAR} ct -v --readable=false --suite=partisan_alt_SUITE
+	${REBAR} as test ct -v --readable=false --suite=partisan_alt_SUITE
 
 lint:
 	${REBAR} as lint lint
@@ -90,7 +90,7 @@ eunit:
 ct:
 	mkdir -p test/partisan_SUITE_data/
 	openssl rand -out test/partisan_SUITE_data/RAND 4096
-	${REBAR} ct -v --readable=false --suite=partisan_SUITE
+	${REBAR} as test ct -v --readable=false --suite=partisan_SUITE,partisan_gen_server_SUITE,partisan_gen_event_SUITE
 
 cover:
 	${REBAR} cover
