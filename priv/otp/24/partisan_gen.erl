@@ -42,7 +42,7 @@
 %% -----------------------------------------------------------------------------
 -module(partisan_gen).
 
--include("partisan_logger.hrl").
+-include_lib("partisan/include/partisan_logger.hrl").
 
 % -compile({inline,[get_node/1]}).
 

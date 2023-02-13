@@ -152,7 +152,7 @@
 %% Internal exports
 -export([init_it/6]).
 
--include("partisan_logger.hrl").
+-include_lib("partisan/include/partisan_logger.hrl").
 
 -define(
    STACKTRACE(),

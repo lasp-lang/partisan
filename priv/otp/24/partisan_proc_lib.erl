@@ -67,7 +67,7 @@
 -export_type([spawn_option/0]).
 -export_type([start_spawn_option/0]).
 
--include("partisan_logger.hrl").
+-include_lib("partisan/include/partisan_logger.hrl").
 
 %%-----------------------------------------------------------------------------
 

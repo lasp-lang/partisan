@@ -50,7 +50,7 @@
 %% For release_handler only
 -export([get_callback_module/1]).
 
--include("partisan_logger.hrl").
+-include_lib("partisan/include/partisan_logger.hrl").
 
 -define(report_error(Error, Reason, Child, SupName),
         ?LOG_ERROR(#{label=>{supervisor,Error},

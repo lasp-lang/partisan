@@ -6,7 +6,8 @@
 
 * Continued adding support for OTP.
     * The OTP modules `sys`, `proc_lib` where patched (`partisan_sys`, `partisan_proc_lib`) so that they support the `partisan_remote_ref:t()` type and use the `partisan` module functions for finding, monitoring and sending messages instead of the native Erlang counterparts.
-    * Patched the CT suites (`gen_server_SUITE`, `gen_statem_SUITE`, `gen_event_SUITE`) to test the partisan OTP modules. All tests passing.
+    * OTP patched files are located in the priv directory and loaded dynamically by `rebar.config.script` based on the Erlang/OTP version being used.
+    * Patched the CT suites (`gen_server_SUITE`, `gen_statem_SUITE`, `gen_event_SUITE`) to test the partisan OTP modules. All tests passing except for some test cases that require not-yet implemented features like global and some `rpc` functions.
     * Notice `global` is not yet supported by Partisan.
 
 ### Additions
