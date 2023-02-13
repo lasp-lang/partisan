@@ -271,7 +271,8 @@ monitor(Target, Opts) when is_list(Opts) ->
     ) -> boolean() | no_return().
 
 demonitor(MPRef, Opts) ->
-    partisan_remote_ref:is_reference(MPRef) orelse error(badarg),
+    partisan_remote_ref:is_reference(MPRef)
+        orelse error({badarg, [MPRef, Opts]}),
 
     Skip =
         %% Is this a dummy reference or a circular call?
@@ -914,19 +915,23 @@ send_nodedown(Node, Reason) when is_atom(Node) ->
     %% remote processes on Node and remove the cache.
     lists:foreach(
         fun
-            (#process_monitor{} = M) ->
-                Mref = M#process_monitor.ref,
-                Monitored = M#process_monitor.monitored,
-                Monitor = M#process_monitor.monitor,
-                Channel = M#process_monitor.channel,
+            (#process_monitor_cache{} = M) ->
+                Mref = M#process_monitor_cache.ref,
+                Monitored = M#process_monitor_cache.monitored,
+                Monitor = M#process_monitor_cache.monitor,
 
                 %% A local index to a remote monitor
                 ok = del_process_monitor_cache(Mref),
 
-                Opts = #{channel => Channel},
-                send_process_down(
-                    Monitor, 'DOWN', Mref, {ref, Monitored}, noconnection, Opts
-                )
+                Down = {
+                    'DOWN',
+                    Mref,
+                    process,
+                    Monitored,
+                    noconnection
+                },
+
+                Monitor ! Down
         end,
         process_monitor_caches(Node)
     ),
