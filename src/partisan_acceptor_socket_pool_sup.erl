@@ -57,7 +57,7 @@ init([]) ->
 
 
     ?LOG_INFO(#{
-        description => "Starting Partisan listener.",
+        description => "Starting Partisan listener",
         listen_addrs => ListenAddrs
     }),
 
