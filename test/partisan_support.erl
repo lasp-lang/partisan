@@ -72,6 +72,8 @@ start(Case, Config, Options) ->
             node_list(NumNodes, "node", Config)
     end,
 
+    NodeConfig0 = proplists:get_value(node_config, Options, []),
+
     %% Start all nodes.
     InitializerFun = fun(Name) ->
         debug("Starting node: ~p", [Name]),
@@ -89,6 +91,7 @@ start(Case, Config, Options) ->
                     default, formatter, {logger_formatter, #{}}
                 ]}
             ]}
+            | NodeConfig0
         ],
 
         case ?CT_PEER:start(Name, NodeConfig) of

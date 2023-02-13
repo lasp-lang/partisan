@@ -21,56 +21,10 @@
 
 -include_lib("common_test/include/ct.hrl").
 
+
 -compile([export_all, nowarn_export_all]).
 -behaviour(partisan_gen_statem).
 
-
-
--define(PARTISAN_CT_PEER(),
-    ?PARTISAN_CT_PEER(?FUNCTION_NAME)
-).
-
--define(PARTISAN_CT_PEER(Case),
-    begin
-        Prefix = string:join([atom_to_list(Case), "server"], "_"),
-        Result = partisan_support:start(Case, [], [
-            {peer_service_manager, partisan_pluggable_peer_service_manager},
-            {servers, partisan_support:node_list(1, Prefix, [])},
-            {clients, []}
-        ]),
-        case Result of
-            [] ->
-                ct:fail("Couldn't start peer");
-            [{_, PeerNode}] ->
-                _ = put({?MODULE, nodes}, [PeerNode]),
-                {ok, PeerNode}
-        end
-    end
-).
--define(PARTISAN_CT_PEER_STOP(),
-    case get({?MODULE, nodes}) of
-        undefined ->
-            ok;
-        Nodes ->
-            partisan_support:stop(Nodes),
-            _ = erase({?MODULE, nodes}),
-            ok
-    end
-).
-
--define(PARTISAN_CT_PEER_STOP(ToStop),
-    begin
-        case get({?MODULE, nodes}) of
-            undefined ->
-                ok;
-            Nodes ->
-                Remaining = lists:subtract(Nodes, [ToStop]),
-                _ = put({?MODULE, nodes}, Remaining),
-                partisan_support:stop(Nodes),
-                ok
-        end
-    end
-).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -516,7 +470,7 @@ stop7(Config) ->
 %% Anonymous on remote node
 stop8(Config) ->
     %% Node = partisan_gen_statem_stop8,
-    {ok,NodeName} = ?PARTISAN_CT_PEER(),
+    {ok,NodeName} = partisan_support_otp:start_node(?FUNCTION_NAME),
     ok = partisan_support:cluster(NodeName),
     timer:sleep(2000),
     Statem =
@@ -534,7 +488,7 @@ stop8(Config) ->
             Pid
         after
             %% {ok,NodeName} = ct_slave:stop(Node)
-            ?PARTISAN_CT_PEER_STOP()
+            partisan_support_otp:stop_all_nodes()
         end,
     {{nodedown,NodeName},{partisan_sys,terminate,_}} =
     ?EXPECT_FAILURE(partisan_gen_statem:stop(Statem), Reason2),
@@ -546,7 +500,7 @@ stop9(Config) ->
     LocalSTM = {local,Name},
     %% Node = partisan_gen_statem__stop9,
     %% {ok,NodeName} = ct_slave:start(Node),
-    {ok,NodeName} = ?PARTISAN_CT_PEER(),
+    {ok,NodeName} = partisan_support_otp:start_node(?FUNCTION_NAME),
     ok = partisan_support:cluster(NodeName),
     timer:sleep(2000),
     Statem =
@@ -566,7 +520,7 @@ stop9(Config) ->
             STM
         after
             %% {ok,NodeName} = ct_slave:stop(Node)
-            ?PARTISAN_CT_PEER_STOP()
+            partisan_support_otp:stop_all_nodes()
         end,
     {{nodedown,NodeName},{partisan_sys,terminate,_}} =
     ?EXPECT_FAILURE(partisan_gen_statem:stop(Statem), Reason2),
@@ -577,7 +531,7 @@ stop10(Config) ->
     %% Node = partisan_gen_statem_stop10,
     STM = {global,to_stop},
     %% {ok,NodeName} = ct_slave:start(Node),
-    {ok,NodeName} = ?PARTISAN_CT_PEER(),
+    {ok,NodeName} = partisan_support_otp:start_node(?FUNCTION_NAME),
     ok = partisan_support:cluster(NodeName),
     timer:sleep(2000),
     try
@@ -594,7 +548,7 @@ stop10(Config) ->
             ?EXPECT_FAILURE(partisan_gen_statem:stop(STM), Reason1)
     after
         %% {ok,NodeName} = ct_slave:stop(Node)
-        ?PARTISAN_CT_PEER_STOP()
+        partisan_support_otp:stop_all_nodes()
     end,
     noproc =
     ?EXPECT_FAILURE(partisan_gen_statem:stop(STM), Reason2),

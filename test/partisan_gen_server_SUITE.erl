@@ -21,54 +21,10 @@
 
 -compile([{parse_transform, partisan_transform}]).
 
--define(PARTISAN_CT_PEER(),
-    ?PARTISAN_CT_PEER(?FUNCTION_NAME)
-).
-
--define(PARTISAN_CT_PEER(Case),
-    begin
-        Prefix = string:join([atom_to_list(Case), "server"], "_"),
-        Result = partisan_support:start(Case, [], [
-            {peer_service_manager, partisan_pluggable_peer_service_manager},
-            {servers, partisan_support:node_list(1, Prefix, [])},
-            {clients, []}
-        ]),
-        case Result of
-            [] ->
-                ct:fail("Couldn't start peer");
-            [{_, PeerNode}] ->
-                _ = put({?MODULE, nodes}, [PeerNode]),
-                {ok, PeerNode}
-        end
-    end
-).
--define(PARTISAN_CT_PEER_STOP(),
-    case get({?MODULE, nodes}) of
-        undefined ->
-            ok;
-        Nodes ->
-            partisan_support:stop(Nodes),
-            _ = erase({?MODULE, nodes}),
-            ok
-    end
-).
-
--define(PARTISAN_CT_PEER_STOP(ToStop),
-    begin
-        case get({?MODULE, nodes}) of
-            undefined ->
-                ok;
-            Nodes ->
-                Remaining = lists:subtract(Nodes, [ToStop]),
-                _ = put({?MODULE, nodes}, Remaining),
-                partisan_support:stop(Nodes),
-                ok
-        end
-    end
-).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("kernel/include/inet.hrl").
+
 
 -export([init_per_testcase/2, end_per_testcase/2]).
 
@@ -142,6 +98,7 @@ init_per_suite(Config) ->
     Config.
 
 end_per_suite(_Config) ->
+    partisan_support_otp:stop_all_nodes(),
     ok.
 
 init_per_group(undef_callbacks, Config) ->
@@ -153,6 +110,7 @@ init_per_group(_GroupName, Config) ->
     Config.
 
 end_per_group(_GroupName, Config) ->
+    partisan_support_otp:stop_all_nodes(),
     Config.
 
 
@@ -165,10 +123,12 @@ init_per_testcase(Case, Config) when Case == call_remote1;
                      %% Case == send_request ->
     partisan_support:start_disterl(),
     erlang:is_alive() orelse ct:fail("Runner not in distribution mode"),
-    {ok,Node} = ?PARTISAN_CT_PEER(Case),
     application:ensure_all_started(partisan),
+
+    {ok,Node} = partisan_support_otp:start_node(Case),
     ok = partisan_support:cluster(Node),
     timer:sleep(2000),
+
     [{node,Node} | Config];
 
 init_per_testcase(_Case, Config) ->
@@ -186,7 +146,7 @@ end_per_testcase(_Case, _Config) ->
     %%     test_server:stop_node(N)
     %% end,
     %% ok.
-    ?PARTISAN_CT_PEER_STOP(), % stop all peers
+    partisan_support_otp:stop_all_nodes(), % stop all peers
     application:stop(partisan), % stop partisan at runner
     ok.
 
@@ -433,7 +393,7 @@ stop7(_Config) ->
 
 %% Anonymous on remote node
 stop8(_Config) ->
-    {ok,Node} = ?PARTISAN_CT_PEER(),
+    {ok,Node} = partisan_support_otp:start_node(?FUNCTION_NAME),
     ok = partisan_support:cluster(Node),
     timer:sleep(2000),
 
@@ -443,13 +403,13 @@ stop8(_Config) ->
     ok = partisan_gen_server:stop(Pid),
     false = partisan_rpc:call(Node,partisan,is_process_alive,[Pid]),
     {'EXIT',noproc} = (catch partisan_gen_server:stop(Pid)),
-    ?PARTISAN_CT_PEER_STOP(Node),
+    partisan_support_otp:stop_node(Node),
     {'EXIT',{{nodedown,Node},_}} = (catch partisan_gen_server:stop(Pid)),
     ok.
 
 %% Registered name on remote node
 stop9(_Config) ->
-    {ok,Node} = ?PARTISAN_CT_PEER(),
+    {ok,Node} = partisan_support_otp:start_node(?FUNCTION_NAME),
     partisan_support:cluster(Node),
     timer:sleep(2000),
 
@@ -460,13 +420,13 @@ stop9(_Config) ->
     undefined = partisan_rpc:call(Node,erlang,whereis,[to_stop]),
     false = partisan_rpc:call(Node,partisan,is_process_alive,[Pid]),
     {'EXIT',noproc} = (catch partisan_gen_server:stop({to_stop,Node})),
-    ?PARTISAN_CT_PEER_STOP(Node),
+    partisan_support_otp:stop_node(Node),
     {'EXIT',{{nodedown,Node},_}} = (catch partisan_gen_server:stop({to_stop,Node})),
     ok.
 
 %% Globally registered name on remote node
 stop10(_Config) ->
-    {ok,Node} = ?PARTISAN_CT_PEER(),
+    {ok,Node} = partisan_support_otp:start_node(?FUNCTION_NAME),
     partisan_support:cluster(Node),
     timer:sleep(2000),
 
@@ -478,7 +438,7 @@ stop10(_Config) ->
     false = partisan_rpc:call(Node,partisan,is_process_alive,[Pid]),
     {'EXIT',noproc} = (catch partisan_gen_server:stop({global,to_stop})),
     %% peer:stop(Peer),
-    ?PARTISAN_CT_PEER_STOP(Node),
+    partisan_support_otp:stop_node(Node),
     {'EXIT',noproc} = (catch partisan_gen_server:stop({global,to_stop})),
     ok.
 
@@ -776,7 +736,7 @@ call_remote_n1(Config) when is_list(Config) ->
     {ok, _Pid} = partisan_rpc:call(Node, partisan_gen_server, start,
               [{global, N}, ?MODULE, [], []]),
     %% peer:stop(proplists:get_value(peer,Config)),
-    ?PARTISAN_CT_PEER_STOP(proplists:get_value(node,Config)),
+    partisan_support_otp:stop_node(proplists:get_value(node,Config)),
     {'EXIT', {noproc, _}} =
     (catch partisan_gen_server:call({global, N}, started_p, infinity)),
 
@@ -789,7 +749,7 @@ call_remote_n2(Config) when is_list(Config) ->
     {ok, Pid} = partisan_rpc:call(Node, partisan_gen_server, start,
              [{global, N}, ?MODULE, [], []]),
     %% peer:stop(proplists:get_value(peer,Config)),
-    ?PARTISAN_CT_PEER_STOP(proplists:get_value(node,Config)),
+    partisan_support_otp:stop_node(proplists:get_value(node,Config)),
     {'EXIT', {{nodedown, Node}, _}} = (catch partisan_gen_server:call(Pid,
                                  started_p, infinity)),
 
@@ -801,7 +761,7 @@ call_remote_n3(Config) when is_list(Config) ->
     {ok, _Pid} = partisan_rpc:call(Node, partisan_gen_server, start,
               [{local, piller}, ?MODULE, [], []]),
     %% peer:stop(proplists:get_value(peer,Config)),
-    ?PARTISAN_CT_PEER_STOP(proplists:get_value(node,Config)),
+    partisan_support_otp:stop_node(proplists:get_value(node,Config)),
     {'EXIT', {{nodedown, Node}, _}} = (catch partisan_gen_server:call({piller, Node},
                                  started_p, infinity)),
 
@@ -856,7 +816,7 @@ cast(Config) when is_list(Config) ->
 
 %% Test that cast really return immediately.
 cast_fast(Config) when is_list(Config) ->
-    {ok,Node} = ?PARTISAN_CT_PEER(),
+    {ok,Node} = partisan_support_otp:start_node(?FUNCTION_NAME),
     ok = partisan_support:cluster(Node),
     timer:sleep(2000),
 
@@ -866,12 +826,12 @@ cast_fast(Config) when is_list(Config) ->
     %% true = partisan_rpc:cast(Node, ?MODULE, cast_fast_messup, []),
     ok = partisan_erpc:cast(Node, ?MODULE, cast_fast_messup, []),
     ct:sleep(1000),
-    [Node] = nodes(),
+    [Node] = partisan:nodes(),
     {Time,ok} = timer:tc(fun() ->
                  partisan_gen_server:cast({hopp,FalseNode}, hopp)
              end),
     %% peer:stop(Peer),
-    ?PARTISAN_CT_PEER_STOP(Node),
+    partisan_support_otp:stop_node(Node),
     if Time > 1000000 ->       % Default listen timeout is about 7.0 s
         ct:fail(hanging_cast);
        true ->
@@ -1157,7 +1117,7 @@ multicall(Config) when is_list(Config) ->
                   partisan_gen_server_SUITE, [], []),
 
     ok = partisan_gen_server:call(my_test_name, started_p),
-    Nodes = nodes(),
+    Nodes = partisan:nodes(),
     Node = partisan:node(),
     {[{Node,delayed}],Nodes} =
     partisan_gen_server:multi_call(my_test_name, {delayed_answer,1}),
