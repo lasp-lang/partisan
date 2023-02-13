@@ -336,7 +336,7 @@
 %% @end
 %% -----------------------------------------------------------------------------
 init() ->
-    DefaultPeerService = application:get_env(
+    PeerService0 = application:get_env(
         partisan,
         peer_service_manager,
         ?DEFAULT_PEER_SERVICE_MANAGER
@@ -345,9 +345,9 @@ init() ->
     PeerService =
         case os:getenv("PEER_SERVICE", "false") of
             "false" ->
-                DefaultPeerService;
-            PeerServiceList ->
-                list_to_atom(PeerServiceList)
+                PeerService0;
+            String ->
+                list_to_atom(String)
         end,
 
     %% Configure the partisan node name.
@@ -838,7 +838,8 @@ get_node_address() ->
                 Me ! {ok, Address};
             {error, Reason} ->
                 ?LOG_INFO(#{
-                    description => "Cannot resolve local name, resulting to 127.0.0.1",
+                    description =>
+                        "Cannot resolve local name, resulting to 127.0.0.1",
                     fqdn => FQDN,
                     reason => Reason
                 }),
@@ -850,7 +851,7 @@ get_node_address() ->
     ResolverPid = spawn(ResolverFun),
 
     %% Exit the resolver after a limited amount of time.
-    timer:exit_after(1000, ResolverPid, normal),
+    timer:exit_after(3000, ResolverPid, normal),
 
     %% Wait for response, either answer or exit.
     receive
