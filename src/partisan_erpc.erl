@@ -21,7 +21,7 @@
 %%
 
 %% -----------------------------------------------------------------------------
-%% @doc This module is an adaptation of Erlang's `erpc' module.
+%% @doc This module is an adaptation of Erlang `erpc' module.
 %%
 %% It replaces all instances of `erlang:send/2` and `erlang:monitor/2` with
 %% their Partisan counterparts.
@@ -29,7 +29,6 @@
 %% It maintains the `erpc' API with the following exceptions:
 %%
 %% <ul>
-
 %% </ul>
 %%
 %% TODO
