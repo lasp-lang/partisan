@@ -183,11 +183,14 @@ when is_atom(Term); erlang:is_pid(Term); erlang:is_reference(Term) ->
 %% The function does not check `Name' is an actual registered name,
 %% @end
 %% -----------------------------------------------------------------------------
--spec from_term(Name :: atom(), Node :: node()) ->
+-spec from_term(Term :: pid() | reference() | atom(), Node :: node()) ->
     n() | no_return().
 
-from_term(Name, Node) when is_atom(Name), is_atom(Node) ->
-    encode(Name, Node);
+from_term(Term, Node)
+when is_atom(Node) andalso (
+    erlang:is_pid(Term)
+    orelse erlang:is_reference(Term) orelse is_atom(Term)) ->
+    encode(Term, Node);
 
 from_term(_, _) ->
     error(badarg).
@@ -360,8 +363,19 @@ is_local_pid({?MODULE, Node, {encoded_pid, PidAsList}}, Pid)
 when erlang:is_pid(Pid) ->
     PidAsList =:= pid_to_list(Pid) andalso Node =:= partisan:node();
 
-is_local_pid(_, _) ->
-    false.
+is_local_pid(Process, Pid) when erlang:is_pid(Pid) ->
+    Node = partisan:node(),
+
+    try to_term(Process) of
+        Name when is_atom(Name) ->
+            Pid =:= whereis(Name);
+        _ ->
+            false
+    catch
+        error:badarg ->
+            false
+    end.
+
 
 
 %% -----------------------------------------------------------------------------
