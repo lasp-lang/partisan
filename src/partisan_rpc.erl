@@ -106,7 +106,7 @@ prepare_opts(#{channel := _} = Opts) ->
     Opts;
 
 prepare_opts(Opts) when is_map(Opts) ->
-    Opts#{channel => rpc_channel()}.
+    Opts#{channel => ?DEFAULT_CHANNEL}.
 
 
 
@@ -114,12 +114,3 @@ prepare_opts(Opts) when is_map(Opts) ->
 %% PRIVATE
 %% =============================================================================
 
-
-
-rpc_channel() ->
-    case maps:find(?RPC_CHANNEL, partisan_config:get(channels)) of
-        {ok, _} ->
-            ?RPC_CHANNEL;
-        error ->
-            ?DEFAULT_CHANNEL
-    end.
