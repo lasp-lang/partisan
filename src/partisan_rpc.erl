@@ -82,14 +82,17 @@ call(Node, Module, Function, Arguments, Opts0) ->
 
     Msg = {call, Module, Function, Arguments, Timeout, {origin, Self}},
 
-    partisan:forward_message(Node, partisan_rpc_backend, Msg, Opts),
-
-    receive
-        {rpc_response, Response} ->
-            Response
-    after
-        Timeout ->
-            {badrpc, timeout}
+    case partisan:forward_message(Node, partisan_rpc_backend, Msg, Opts) of
+        ok ->
+            receive
+                {rpc_response, Response} ->
+                    Response
+            after
+                Timeout ->
+                    {badrpc, timeout}
+            end;
+        {error, Reason} ->
+            {badrpc, Reason}
     end.
 
 

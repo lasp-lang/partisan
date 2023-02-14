@@ -15,7 +15,7 @@ CODESPELL 		= $(shell which codespell)
 SPELLCHECK 	    = $(CODESPELL) -S _build -S doc -S .git -L applys,nd,accout,mattern,pres,fo
 SPELLFIX      	= $(SPELLCHECK) -i 3 -w
 
-.PHONY: compile-no-deps alt-test test docs xref dialyzer-run dialyzer-quick dialyzer \
+.PHONY: compile-no-deps alt-test core-test otp-test test docs xref dialyzer-run dialyzer-quick dialyzer \
 		cleanplt upload-docs rel deps test plots spellcheck spellfix certs
 
 all: compile
@@ -74,12 +74,22 @@ spellfix:
 	$(if $(CODESPELL), $(SPELLFIX), $(error "Aborting, command codespell not found in PATH"))
 
 
-test: eunit ct cover
+test: eunit core-test otp-test cover
 
-alt-test:
+core-test: setup-tls
+	${REBAR} as test ct -v --readable=false --suite=partisan_SUITE
+
+otp-test: setup-tls
+	${REBAR} as test ct -v --readable=false --suite=partisan_gen_server_SUITE,partisan_gen_event_SUITE,partisan_gen_statem_SUITE
+
+alt-test: setup-tls
 	mkdir -p test/partisan_alt_SUITE_data/
 	openssl rand -out test/partisan_alt_SUITE_data/RAND 4096
 	${REBAR} as test ct -v --readable=false --suite=partisan_alt_SUITE
+
+setup-tls:
+	mkdir -p test/partisan_SUITE_data/
+	openssl rand -out test/partisan_SUITE_data/RAND 4096
 
 lint:
 	${REBAR} as lint lint
@@ -87,10 +97,6 @@ lint:
 eunit:
 	${REBAR} as test eunit
 
-ct:
-	mkdir -p test/partisan_SUITE_data/
-	openssl rand -out test/partisan_SUITE_data/RAND 4096
-	${REBAR} as test ct -v --readable=false --suite=partisan_SUITE,partisan_gen_server_SUITE,partisan_gen_event_SUITE
 
 cover:
 	${REBAR} cover

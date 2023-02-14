@@ -23,6 +23,7 @@
 -module(partisan).
 
 -include("partisan.hrl").
+-include("partisan_logger.hrl").
 
 -type monitor_opt()         ::  erlang:monitor_option()
                                 | {channel, partisan:channel()}.
@@ -143,6 +144,13 @@
 -export([send_after/4]).
 -export([whereis/1]).
 
+
+-export([spawn/2]).
+-export([spawn/4]).
+-export([spawn_monitor/2]).
+-export([spawn_monitor/4]).
+
+
 -compile({no_auto_import, [demonitor/2]}).
 -compile({no_auto_import, [is_pid/1]}).
 -compile({no_auto_import, [is_process_alive/1]}).
@@ -157,6 +165,10 @@
 -compile({no_auto_import, [process_info/2]}).
 -compile({no_auto_import, [self/0]}).
 -compile({no_auto_import, [whereis/1]}).
+-compile({no_auto_import, [spawn/2]}).
+-compile({no_auto_import, [spawn/4]}).
+-compile({no_auto_import, [spawn_monitor/2]}).
+-compile({no_auto_import, [spawn_monitor/4]}).
 
 
 
@@ -291,10 +303,22 @@ monitor(Type, Item) ->
 %%
 %% `{Tag, MonitorRef, Type, Object, Info}'
 %%
+%% where it differs from the message sent by {@link erlang:monitor/3} only when
+%% the item being monitored is a remote process identifier
+%% {@link erlang:monitor/3} in which case:
+%% <ul>
+%% <li>`MonitorRef' is a {@link partisan_remote_ref:r()}</li>
+%% <li>`Object' is a {@link partisan_remote_ref:p()} or {@link
+%% partisan_remote_ref:n()}</li>
+%% </ul>
+%%
 %% This is the Partisan's equivalent to {@link erlang:monitor/2}. It differs
 %% from the Erlang implementation only when monitoring a `process'. For all
 %% other cases (monitoring a `port' or `time_offset') this function calls
 %% `erlang:monitor/2'.
+%%
+%% As opposed to {@link erlang:monitor/2} this function does not support
+%% aliases.
 %%
 %% === Monitoring a `process` ===
 %% Creates monitor between the current process and another process identified
@@ -307,16 +331,17 @@ monitor(Type, Item) ->
 %% `port()' only once at the moment of monitor instantiation, later changes to
 %% the name registration will not affect the existing monitor.
 %%
-%% Failure: `notalive' if the `partisan_monitor' server is not alive.
+%% Failure: if the `partisan_monitor' server is not alive, a reference will be
+%% returned with an immediate 'DOWN' signal with reason `notalive'.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec monitor
     (process, monitor_process_id(), [monitor_opt()]) ->
-        reference() | partisan_remote_ref:r() | no_return();
+        reference() | partisan_remote_ref:r();
     (port, erlang:monitor_port_identifier(), [erlang:monitor_option()]) ->
-        reference() |  no_return();
+        reference();
     (time_offset, clock_service, [erlang:monitor_option()]) ->
-        reference() | no_return().
+        reference().
 
 monitor(process, RegisteredName, Opts) when is_atom(RegisteredName) ->
     erlang:monitor(process, RegisteredName, to_erl_opts(Opts));
@@ -505,7 +530,11 @@ is_local_name(Name, Name) when is_atom(Name) ->
     true;
 
 is_local_name(Arg, Name) when is_atom(Name) ->
-    partisan_remote_ref:is_local_name(Arg, Name).
+    partisan_remote_ref:is_local_name(Arg, Name);
+
+is_local_name(Arg, _) ->
+    is_local_name(Arg) orelse error(badarg),
+    false.
 
 
 %% -----------------------------------------------------------------------------
@@ -535,7 +564,11 @@ is_local_pid(Pid, Pid) when erlang:is_pid(Pid) ->
     is_local(Pid);
 
 is_local_pid(Arg, Pid) when erlang:is_pid(Pid) ->
-    partisan_remote_ref:is_local_pid(Arg, Pid).
+    partisan_remote_ref:is_local_pid(Arg, Pid);
+
+is_local_pid(Arg, _) ->
+    is_local_pid(Arg) orelse error(badarg),
+    false.
 
 
 %% -----------------------------------------------------------------------------
@@ -564,11 +597,15 @@ is_local_reference(Ref, Ref) when erlang:is_reference(Ref) ->
     is_local(Ref);
 
 is_local_reference(Arg, Ref) when erlang:is_reference(Ref) ->
-    partisan_remote_ref:is_local_reference(Arg, Ref).
+    partisan_remote_ref:is_local_reference(Arg, Ref);
+
+is_local_reference(Arg, _) ->
+    is_local_reference(Arg) orelse error(badarg),
+    false.
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Returns treu if `Arg' is the caller's process identifier.
+%% @doc Returns true if `Arg' is the caller's process identifier.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec is_self(Arg) -> Result when
@@ -576,10 +613,10 @@ is_local_reference(Arg, Ref) when erlang:is_reference(Ref) ->
     Result :: boolean().
 
 is_self(Arg) when erlang:is_pid(Arg) ->
-    Arg == self();
+    Arg =:= erlang:self();
 
 is_self(Arg) ->
-    partisan_remote_ref:is_local_pid(Arg, self()).
+    partisan_remote_ref:is_local_pid(Arg, erlang:self()).
 
 
 %% -----------------------------------------------------------------------------
@@ -1188,6 +1225,109 @@ cancel_timer(Ref, Opts) when erlang:is_reference(Ref), is_list(Opts) ->
 
 
 %% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec spawn(Node :: node(), Fun :: fun(() -> any())) -> partisan_remote_ref:p().
+
+spawn(Node, Fun) ->
+    case Node == node() of
+        true ->
+            Pid = erlang:spawn(Fun),
+            partisan_remote_ref:from_term(Pid);
+        false ->
+            case partisan_rpc:call(Node, erlang, spawn, [Fun], 5000) of
+                {badrpc, Reason} ->
+                    ?LOG_WARNING(#{
+                        description =>
+                            "Can not start erlang:apply/1 on remote node",
+                        node => Node
+                    }),
+                    Pid = erlang:spawn(
+                        fun() ->
+                            exit(process_exit_reason(Reason))
+                        end
+                    ),
+                    partisan_remote_ref:from_term(Pid);
+
+                Pid when erlang:is_pid(Pid) ->
+                    partisan_remote_ref:from_term(Pid, Node);
+
+                Encoded ->
+                    %% We assume it is a partisan_remote_ref, this is the case
+                    %% when pid_encoding is enabled
+                    Encoded
+            end
+    end.
+
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec spawn(
+    Node :: node(), Mod :: module(), Function :: atom(), Args :: [term()]) -> partisan_remote_ref:p().
+
+spawn(Node, Module, Function, Args) ->
+    case Node == node() of
+        true ->
+            Pid = erlang:spawn(Module, Function, Args),
+            partisan_remote_ref:from_term(Pid);
+        false ->
+            SpawnArgs = [Module, Function, Args],
+            case partisan_rpc:call(Node, erlang, spawn, SpawnArgs, 5000) of
+                {badrpc, Reason} ->
+                    ?LOG_WARNING(#{
+                        description =>
+                            "Can not start erlang:apply/1 on remote node",
+                        node => Node
+                    }),
+                    Pid = erlang:spawn(
+                        fun() ->
+                            exit(process_exit_reason(Reason))
+                        end
+                    ),
+                    partisan_remote_ref:from_term(Pid);
+
+                Pid when erlang:is_pid(Pid) ->
+                    partisan_remote_ref:from_term(Pid, Node);
+
+                Encoded ->
+                    %% We assume it is a partisan_remote_ref, this is the case
+                    %% when pid_encoding is enabled
+                    Encoded
+            end
+    end.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec spawn_monitor(Node :: node(), Fun :: fun(() -> any())) ->
+    partisan_remote_ref:p().
+
+spawn_monitor(Node, Fun) ->
+    Pid = spawn(Node, Fun),
+    monitor(process, Pid).
+
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec spawn_monitor(
+    Node :: node(), Mod :: module(), Function :: atom(), Args :: [term()]) -> partisan_remote_ref:p().
+
+spawn_monitor(Node, Module, Function, Args) ->
+    Pid = spawn(Node, Module, Function, Args),
+    monitor(process, Pid).
+
+
+
+%% -----------------------------------------------------------------------------
 %% @doc Cast message to a remote ref
 %% @end
 %% -----------------------------------------------------------------------------
@@ -1357,7 +1497,13 @@ do_cancel_timer(Ref, Opts, Pid) ->
     end.
 
 
-
+%% @private
+process_exit_reason(disconnected) ->
+    noconnection;
+process_exit_reason(not_yet_connected) ->
+    noconnection;
+process_exit_reason(_) ->
+    noproc.
 
 
 

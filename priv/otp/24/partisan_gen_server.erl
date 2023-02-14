@@ -575,11 +575,11 @@ do_send(Dest, Msg) when is_pid(Dest) orelse is_reference(Dest) ->
     end,
     ok;
 do_send({Name, Node}, Msg) ->
-    case partisan:node() of
-        Node ->
+    case Node =:= partisan:node() of
+        true ->
             do_send(Name, Msg);
-        Peer ->
-            partisan:forward_message(Peer, Name, Msg, partisan_gen:get_opts())
+        false ->
+            partisan:forward_message(Node, Name, Msg, partisan_gen:get_opts())
     end;
 do_send(Dest, Msg) ->
     %% A partisan pid
