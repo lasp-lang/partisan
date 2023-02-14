@@ -1895,7 +1895,7 @@ down(NodeOrSpec, State) ->
 %% @private
 down(NodeOrSpec, _Channel, State) ->
     %% TODO use Channel
-    apply_funs(NodeOrSpec, State#state.down_funs).
+    apply_funs(NodeOrSpec, State#state.channel_down_funs).
 
 
 %% @private
