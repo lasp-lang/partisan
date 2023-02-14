@@ -364,8 +364,6 @@ when erlang:is_pid(Pid) ->
     PidAsList =:= pid_to_list(Pid) andalso Node =:= partisan:node();
 
 is_local_pid(Process, Pid) when erlang:is_pid(Pid) ->
-    Node = partisan:node(),
-
     try to_term(Process) of
         Name when is_atom(Name) ->
             Pid =:= whereis(Name);
