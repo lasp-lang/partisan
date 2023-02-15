@@ -1245,7 +1245,7 @@ spawn(Node, Fun) ->
                     }),
                     Pid = erlang:spawn(
                         fun() ->
-                            exit(process_exit_reason(Reason))
+                            erlang:exit(process_exit_reason(Reason))
                         end
                     ),
                     partisan_remote_ref:from_term(Pid);
@@ -1285,7 +1285,7 @@ spawn(Node, Module, Function, Args) ->
                     }),
                     Pid = erlang:spawn(
                         fun() ->
-                            exit(process_exit_reason(Reason))
+                            erlang:exit(process_exit_reason(Reason))
                         end
                     ),
                     partisan_remote_ref:from_term(Pid);

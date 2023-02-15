@@ -107,6 +107,10 @@ handle_call(delayed_reply_call, From, State) ->
 handle_call(call, From, State) ->
     ?LOG_INFO("Received call message from ~p in the handle_call handler.", [From]),
     {reply, ok, State};
+handle_call({sleep, T}, From, State) ->
+    ?LOG_INFO("Received call message from ~p in the handle_call handler.", [From]),
+    timer:sleep(T),
+    {reply, ok, State};
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 

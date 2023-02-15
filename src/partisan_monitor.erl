@@ -281,7 +281,11 @@ monitor(Process, Opts) when is_list(Opts) ->
 
 demonitor(MPRef, Opts) ->
     partisan_remote_ref:is_reference(MPRef)
-        orelse error(badarg, [MPRef, Opts]),
+        orelse erlang:error(badarg, [MPRef, Opts], [
+            {error_info, #{
+                1 => "not a partisan remote reference"
+            }}
+        ]),
 
     Skip =
         %% Is this a dummy reference or a circular call?
@@ -300,7 +304,7 @@ demonitor(MPRef, Opts) ->
             ok = del_proc_mon_out_idx(Node, MPRef),
 
             %% We call the remote node to demonitor
-            case call({?MODULE, Node}, {demonitor, MPRef, Opts}) of
+            case call({?MODULE, Node}, {demonitor, MPRef, Opts}, 3000) of
                 {ok, Bool} ->
                     case lists:member(flush, Opts) of
                         true ->
@@ -314,14 +318,17 @@ demonitor(MPRef, Opts) ->
                         false ->
                             Bool
                     end;
+                {error, noconnection} ->
+                    true;
                 {error, timeout} ->
                     true;
                 {error, noproc} ->
                     true;
                 {error, {nodedown, _}} ->
                     true;
-                {error, badarg} ->
-                    error(badarg, [MPRef, Opts])
+                {error, Reason} ->
+                    ErrOpts = [{error_info, #{cause => Reason}}],
+                    erlang:error(Reason, [MPRef, Opts], ErrOpts)
             end
     end.
 
@@ -543,7 +550,7 @@ handle_call({demonitor, RemoteRef, Opts}, {_Monitor, _}, State) ->
             %% We skip.
             %% The case for a process monitoring this server or another node's
             %% monitor server monitoring this one.
-            {reply, true, State};
+            {reply, {ok, true}, State};
         false ->
             Reply = do_demonitor(RemoteRef, Opts),
             {reply, Reply, State}
@@ -799,13 +806,7 @@ monitor(Process, Opts, {connected, true}) ->
         {error, {nodedown, _}} ->
             monitor(Process, Opts, noconnection);
         {error, Reason} ->
-            ErrOpts = [
-                {error_info, #{
-                    cause => Reason,
-                    module => ?MODULE,
-                    function => monitor
-                }}
-            ],
+            ErrOpts = [{error_info, #{cause => Reason}}],
             erlang:error(Reason, [Process, Opts], ErrOpts)
     end;
 
@@ -866,11 +867,22 @@ do_demonitor(Term, Opts) ->
 %% @end
 %% -----------------------------------------------------------------------------
 call(ServerRef, Message) ->
+    call(ServerRef, Message, 5000).
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+call(ServerRef, Message, Timeout) ->
     try
-        partisan_gen_server:call(ServerRef, Message, 15000)
+        partisan_gen_server:call(ServerRef, Message, Timeout)
     catch
-        exit:noproc ->
-            exit(notalive)
+        exit:{timeout, _} ->
+            {error, timeout};
+        exit:{noproc, _} ->
+            {error, notalive}
     end.
 
 
