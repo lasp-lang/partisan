@@ -41,7 +41,12 @@
 %% </p>
 %% </blockquote>
 %%
-%%
+%% @TODO on a monitor request this server should monitor the caller so that we
+%% can GC its references locally. This not only for monitor/2 but for
+%% monitor_node/2 and monitor_nodes/2 (which means all or part of their logic
+%% should run on the server.
+%% @TODO to improve on concurrency/latency we will need to have a shard of
+%% servers
 %% @end
 %% -----------------------------------------------------------------------------
 -module(partisan_monitor).
@@ -299,11 +304,13 @@ demonitor(MPRef, Opts) ->
         false ->
             Node = partisan_remote_ref:node(MPRef),
 
-            %% We remove the local record
+            %% We remove the local references.
             ok = del_proc_mon_out(MPRef),
             ok = del_proc_mon_out_idx(Node, MPRef),
 
-            %% We call the remote node to demonitor
+            %% We call the remote node to demonitor.
+            %% If the remote server is unreachable we assume we lost connection
+            %% and thus it must have cleaned up our references.
             case call({?MODULE, Node}, {demonitor, MPRef, Opts}, 3000) of
                 {ok, Bool} ->
                     case lists:member(flush, Opts) of
