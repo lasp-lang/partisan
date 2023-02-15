@@ -1,4 +1,4 @@
-name: Core Test Suites
+name: Alt Test Suites
 
 on:
   workflow_dispatch:
@@ -31,4 +31,4 @@ jobs:
         run: epmd -daemon
 
       - name: Build and test
-        run: make core-test
+        run: make alt-test
