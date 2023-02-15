@@ -286,7 +286,7 @@ demonitor(MPRef, Opts) ->
     Skip =
         %% Is this a dummy reference or a circular call?
         MPRef == persistent_term:get(?DUMMY_MREF_KEY)
-        orelse is_monitor_server(self()),
+        orelse is_monitor_server(),
 
     case Skip of
         true ->
@@ -360,6 +360,8 @@ monitor_node(#{name := Node}, Flag) ->
     monitor_node(Node, Flag);
 
 monitor_node(Node, Flag) when is_atom(Node) ->
+    %% TODO WE need the server to monitor the caller, so that we can cleanup if
+    %% caller crashes!! Or store them in process dictionary
     case partisan_peer_connections:is_connected(Node) of
         true when Flag == true ->
             add_node_monitor(Node, self());
@@ -878,10 +880,22 @@ call(ServerRef, Message) ->
 %% node.
 %% @end
 %% -----------------------------------------------------------------------------
+is_monitor_server() ->
+    {registered_name, ?MODULE} == erlang:process_info(self(), registered_name).
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc This functions assumes we have a singleton partisan_monitor server per
+%% node.
+%% @end
+%% -----------------------------------------------------------------------------
+is_monitor_server(Process) when is_pid(Process), Process == self() ->
+    true;
+
 is_monitor_server(Process) when is_pid(Process) ->
     %% Validate. In principle this could not happen now that partisan:monitor
     %% only send us remote pids
-    Process =:= self() orelse
     {registered_name, ?MODULE} == erlang:process_info(self(), registered_name);
 
 is_monitor_server(Process) ->
