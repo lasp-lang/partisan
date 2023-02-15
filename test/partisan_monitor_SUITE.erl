@@ -310,9 +310,6 @@ demon_2(Config) when is_list(Config) ->
 
 %% Distributed case for demonitor/1 (OTP-3499)
 demon_3(Config) when is_list(Config) ->
-    dbg:tracer(), dbg:p(all,c),
-    dbg:tpl(partisan_monitor,'_',x),
-
     {ok, N} = partisan_support_otp:start_node(hej),
     partisan_support:cluster(N),
     timer:sleep(2000),
