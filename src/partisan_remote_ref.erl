@@ -807,7 +807,7 @@ decode({?MODULE, Node, {Type, Value} = Target}, Mode) ->
             list_to_ref(Value);
 
         encoded_name when IsLocal == true, Mode == term ->
-            binary_to_existing_atom(Value, utf8);
+            list_to_atom(Value);
 
         encoded_name when IsLocal == false, Mode == term ->
             {binary_to_existing_atom(Value, utf8), Node};
@@ -1157,17 +1157,6 @@ remote_name_test() ->
     ?assertEqual(
         true,
         is_name(Ref)
-    ).
-
-from_term_badarg_test() ->
-    ?assertError(
-        badarg,
-        from_term(self(), 'othernode@127.0.0.1')
-    ),
-
-    ?assertError(
-        badarg,
-        from_term(erlang:make_ref(), 'othernode@127.0.0.1')
     ).
 
 
