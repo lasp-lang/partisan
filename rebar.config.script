@@ -2,7 +2,6 @@
 %% ex: ts=4 sw=4 ft=erlang et
 %%
 
-
 %% We will add the location of the OTP patched modules based on the
 %% OTP version
 OTPVersion = erlang:system_info(otp_release),
@@ -19,15 +18,8 @@ SrcDirs0 =
 
 FindDir = fun
     FindDir(V) when V >= "24" ->
-        OTPDir = filename:join(["priv", "otp", OTPVersion]),
-        case filelib:is_dir(OTPDir) of
-            true ->
-                SrcDirs = SrcDirs0 ++ [OTPDir],
-                lists:keystore(src_dirs, 1, CONFIG, {src_dirs, SrcDirs});
-            false ->
-                %% We try with a version below
-                FindDir(integer_to_list(list_to_integer(OTPVersion) - 1))
-        end;
+        SrcDirs = SrcDirs0 ++ ["priv/otp/24"],
+        lists:keystore(src_dirs, 1, CONFIG, {src_dirs, SrcDirs});
     FindDir(V) ->
         exit("OTP version " ++ V ++ " not supported by partisan")
 end,
