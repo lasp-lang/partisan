@@ -105,7 +105,7 @@ g1() ->
 
 g(Parent) ->
     receive ok -> ok end,
-    exit(Parent, foo),
+    partisan:exit(Parent, foo),
     ok.
 
 
@@ -303,7 +303,7 @@ demon_2(Config) when is_list(Config) ->
     P4 = spawn(timer, sleep, [100000]),
     R4 = partisan:monitor(process, P4),
     partisan:demonitor(R4),
-    exit(P4, frop),
+    partisan:exit(P4, frop),
     expect_no_msg(),
 
     ok.
@@ -351,7 +351,7 @@ demonitor_flush_test(Node) ->
     M3 = partisan:monitor(process, P),
     M4 = partisan:monitor(process, P),
     true = partisan:demonitor(M1, [flush, flush]),
-    exit(P, bang),
+    partisan:exit(P, bang),
     receive {'DOWN', M2, process, P, bang} -> ok end,
     receive after 100 -> ok end,
     true = partisan:demonitor(M3, [flush]),
@@ -474,10 +474,10 @@ mon_1(Config) when is_list(Config) ->
     %% 'DOWN' with other reason
     P3 = spawn(timer, sleep, [100000]),
     R3 = partisan:monitor(process, P3),
-    exit(P3, frop),
+    partisan:exit(P3, frop),
     expect_down(R3, P3, frop),
     {P3A,R3A} = spawn_monitor(timer, sleep, [100000]),
-    exit(P3A, frop),
+    partisan:exit(P3A, frop),
     expect_down(R3A, P3A, frop),
 
     %% Monitor fails because process is dead
@@ -836,7 +836,7 @@ named_down(Config) when is_list(Config) ->
     ?assertEqual(true, register(Name, NamedProc)),
     unlink(NamedProc),
     Mon = partisan:monitor(process, Name),
-    exit(NamedProc, bang),
+    partisan:exit(NamedProc, bang),
     receive {'DOWN',Mon, _, _, bang} -> ok
     after 3000 -> ?assert(false) end,
     ?assertEqual(true, register(Name, self())),
@@ -1005,7 +1005,7 @@ monitor_tag_storage_test(MQD) ->
                                       id(Msgs)
                               end, [link, monitor, {message_queue_data, MQD}]),
     receive {ready, Recvr} -> ok end,
-    lists:foreach(fun (P) -> unlink(P), exit(P, bang) end, Ps),
+    lists:foreach(fun (P) -> unlink(P), partisan:exit(P, bang) end, Ps),
     wait_until(fun () ->
                        {message_queue_len, Len} == process_info(Recvr,
                                                                 message_queue_len)
