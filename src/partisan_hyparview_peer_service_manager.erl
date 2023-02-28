@@ -288,7 +288,7 @@
 %% new node to its active view, even if it has to drop a random node from it (
 %% `disconnect'). Then it will send to all other nodes in its active view a
 %% `forward_join' request containing the new node identifier
-%% <- `forward_join' - A message send by a node  to all its active view members
+%% <- `forward_join' - A message send by a node to all its active view members
 %% when it accepts a join request by another node. This message will be
 %% propagated in the overlay using a random walk. Associated to the join
 %% procedure, there are two configuration parameters, named Active Random Walk
@@ -299,7 +299,7 @@
 %% that is initially set to ARWL and decreased at every hop.
 %% <- `disconnect' - a Disconnect notification is sent to the node that has been
 %% dropped from the active view. This happens when another node joins the
-%% active view taking th place of the dropped one (see join).
+%% active view taking the place of the dropped one (see join).
 %% <- `neighbor'
 %% <- `neighbor_request'
 %% <- `neighbor_rejected'
@@ -404,8 +404,8 @@ on_up(_Name, _Function, _Opts) ->
 %% @doc Update membership.
 %% @end
 %% -----------------------------------------------------------------------------
-update_members(_Nodes) ->
-    {error, not_implemented}.
+update_members(Members) ->
+    gen_server:call(?MODULE, {update_members, Members}, infinity).
 
 
 %% -----------------------------------------------------------------------------
@@ -740,6 +740,10 @@ handle_call({leave, _Node}, _From, State) ->
 
 handle_call({join, #{name := _Name} = Node}, _From, State) ->
     gen_server:cast(?MODULE, {join, Node}),
+    {reply, ok, State};
+
+handle_call({update_members, Members}, _, #state{} = State0) ->
+    State = handle_update_members(Members, State0),
     {reply, ok, State};
 
 handle_call({resolve_partition, Reference}, _From, State) ->
@@ -1856,7 +1860,8 @@ do_send_message(Node, Message) ->
     ok | {error, disconnected} | {error, not_yet_connected} | {error, term()}.
 
 do_send_message(Node, Message, Options) when is_atom(Node) ->
-    %% TODO Shouldn't the defaults be true, otherwise we will only forward to
+    %% TODO Shouldn't broadcast default to true?
+    %% otherwise we will only forward to
     %% nodes in the active view that are connected.
     %% Also why do we have 2 options
     Broadcast = partisan_config:get(broadcast, false),
@@ -1904,16 +1909,14 @@ do_send_message(Node, Message, Options) when is_atom(Node) ->
                     })
             end,
 
+
+            %% TODO use retransmission and acks
             case {Broadcast, Transitive} of
                 {true, true} ->
                     TTL = partisan_config:get(relay_ttl, ?RELAY_TTL),
                     do_tree_forward(Node, Message, Options, TTL);
 
-                {true, false} ->
-                    %% TODO: This doesn't make any sense
-                    ok;
-
-                {false, _} ->
+                {_, _} ->
                     {error, Reason}
             end
     end;
@@ -2212,6 +2215,11 @@ merge_exchange(Exchange, #state{} = State) ->
 
 
 %% @private
+handle_update_members(Members, State) ->
+    merge_exchange(Members, State).
+
+
+%% @private
 notify(#state{active = Active}) ->
     _ = catch partisan_peer_service_events:update(Active),
     ok.
@@ -2454,8 +2462,8 @@ do_tree_forward(Node, Message, Options, TTL) ->
     _ = lists:foreach(
         fun(N) ->
             ?LOG_TRACE(
-                "Forwarding relay message ~p to node ~p for node ~p "
-                "from node ~p",
+                "Forwarding relay message ~p to node ~p "
+                "for node ~p from node ~p",
                 [Message, N, Node, MyNode]
             ),
 
