@@ -1,8 +1,46 @@
 # Partisan Cheatsheet
-The following cheatsheet assumes you have two nodes running: `ruby` (`ruby@127.0.0.1`) and `max` (`max@127.0.0.1`).
 
-## Connecting to other peers
-{: .col-2}
+## Migrating from Distributed Erlang
+
+Several Erlang BIFs (a.k.a "native implementation") won't work when using Partisan so you will need to use the Partisan API instead. The Partisan API  tries to be a dropin replacement to Erlang's as much as possible. It tries comply with Erlang's in terms of naming, function signature and behaviour, so in most cases migrating to Partisan is as easy as replacing the module name from `erlang` to `partisan`.
+
+|Erlang|Partisan|Description|
+|---|---|---|
+|`erlang:cancel_timer/1`|`partisan:cancel_timer/1`| |
+|`erlang:cancel_timer/2`|`partisan:cancel_timer/2`| |
+|`erlang:demonitor/1`|`partisan:demonitor/1`| |
+|`erlang:demonitor/2`|`partisan:demonitor/2`| |
+|`erlang:disconnect_node/1`|`partisan:disconnect_node/1`| |
+|`erlang:exit/2`|`partisan:exit/2`| |
+|`erlang:is_alive/0`|`partisan:is_alive/0`| |
+|`erlang:is_pid/1`|`partisan:is_pid/1`| |
+|`erlang:is_process_alive/1`|`partisan:is_process_alive/1`| |
+|`erlang:is_reference/1`|`partisan:is_reference/1`| |
+|`erlang:make_ref/0`|`partisan:make_ref/0`| |
+|`erlang:monitor/1`|`partisan:monitor/1`| |
+|`erlang:monitor/2`|`partisan:monitor/2`| |
+|`erlang:monitor/3`|`partisan:monitor/3`| |
+|`erlang:node/0`|`partisan:node/0`| |
+|`erlang:node/1`|`partisan:node/1`| |
+|`erlang:process_info/1`|`partisan:process_info/1`| |
+|`erlang:process_info/2`|`partisan:process_info/2`| |
+|`erlang:self/0`|`partisan:self/0`| |
+|`erlang:send/2`|`partisan:send/2`| |
+|`erlang:send/3`|`partisan:send/3`| |
+|`erlang:send_after/3`|`partisan:send_after/3`|Accepts a `partisan_remote_ref:t()` as destination. When destination is a local pid, it reverts to the native implementation.|
+|`erlang:send_after/4`|`partisan:send_after/4`|Accepts a `partisan_remote_ref:t()` as destination. When destination is a local pid, it reverts to the native implementation.|
+|`erlang:spawn/2`|`partisan:spawn/2`| |
+|`erlang:spawn/4`|`partisan:spawn/4`| |
+|`erlang:spawn_monitor/2`|`partisan:spawn_monitor/2`| |
+|`erlang:spawn_monitor/4`|`partisan:spawn_monitor/4`| |
+|`erlang:whereis/1`|`partisan:whereis/1`| |
+|`net_kernel:monitor_node/2`|`partisan:monitor_node/2`| |
+|`net_kernel:monitor_nodes/1`|`partisan:monitor_nodes/1`| |
+|`net_kernel:monitor_nodes/2`|`partisan:monitor_nodes/2`| |
+
+## Connecting to other peers and sending messages
+
+The following sections assumes you have two nodes running: `ruby` (`ruby@127.0.0.1`) and `max` (`max@127.0.0.1`).
 
 ### Manually joining using Erlang's console
 
@@ -39,22 +77,19 @@ Returns `[node_spec()]` and should contain both node specifications.
 
 Returns `[node()]` and should contain both nodes.
 
-## Sending messages
-{: .col-2}
-
 ### Obtain max's shell pid
 
 ```erlang
 (max@127.0.0.1)2> partisan:self().
-<<"partisan:pid:max@127.0.0.1:0.813.0">>
+['max@127.0.0.1'|<<"#Pid<0.813.0>">>]
 ```
 
-Returns `[partisan_remote_ref:t()]`. Notice this can be a tuple or a binary (as in the second line of the snippet) depending on the configuration option `remote_ref_as_uri`.
+Returns `partisan_remote_ref:t()`. Notice this can be a tuple and improper list or a URI binary depending on the configuration option `remote_ref_format` which defaults to `improper_list`.
 
 ### Send message from ruby to max
 
 ```erlang
-(ruby@127.0.0.1)3> Ref = <<"partisan:pid:max@127.0.0.1:0.813.0">>.
+(ruby@127.0.0.1)3> Ref = ['max@127.0.0.1'|<<"#Pid<0.813.0>">>].
 (ruby@127.0.0.1)4> partisan:forward_message(Ref, hello).
 ```
 {: .wrap}
