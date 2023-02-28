@@ -702,7 +702,7 @@ get_initial_call(Pid) ->
 %%  neighbours(Pid) = list of Pids
 %%
 %%  Get the neighbours of Pid. A neighbour is a process which is 
-%%  linked to Pid and does not trap exit; or a neigbour of a 
+%%  linked to Pid and does not trap exit; or a neighbour of a 
 %%  neighbour etc.
 %% 
 %%  A breadth-first search is performed.

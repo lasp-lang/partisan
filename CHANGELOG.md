@@ -13,7 +13,7 @@
 ### Additions
 
 * New improper list format for `partisan_remote_ref`. This deprecates the config option `remote_ref_as_uri` and adds `remote_ref_format` instead which accepts `improper_list` (the new default), `tuple` (the legacy format) and `uri` (also introduced in v5).
-* Addes `partisan_erpc`. The patched version of the Erlang's `erpc` module.
+* Adds `partisan_erpc`. The patched version of the Erlang's `erpc` module.
 
 
 # v5.0.0-beta.19
@@ -58,7 +58,7 @@
 * Added partisan_membership_strategy API functions, so that pluggable manager can call these functions
 * Some other naming changes to disambiguate e.g. membership -> members
 * moved some opt types from partisan_monitor to partisan module
-* Fixed mising of gen_ and partisan_gen function calls.
+* Fixed missing of gen_ and partisan_gen function calls.
 * Made `channel` options to be respected across the stack
     * Added channel configuration to `partisan_monitor` calls.
     * Added channel to OTP behaviours.

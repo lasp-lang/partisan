@@ -1552,7 +1552,7 @@ child_to_spec(#child{id = Id,
 %%% Add a new restart and calculate if the max restart
 %%% intensity has been reached (in that case the supervisor
 %%% shall terminate).
-%%% All restarts accured inside the period amount of seconds
+%%% All restarts occurred inside the period amount of seconds
 %%% are kept in the #state.restarts list.
 %%% Returns: {ok, State'} | {terminate, State'}
 %%% ------------------------------------------------------
@@ -1572,9 +1572,9 @@ add_restart(State) ->
     end.
 
 add_restart(Restarts0, Now, Period) ->
-    Treshold = Now - Period,
+    Threshold = Now - Period,
     Restarts1 = lists:takewhile(
-                  fun (R) -> R >= Treshold end,
+                  fun (R) -> R >= Threshold end,
                   Restarts0
                  ),
     [Now | Restarts1].

@@ -157,7 +157,7 @@ leave(Node, #scamp_v2{partial_view=PartialView}=State0) ->
     {Joiners :: [partisan:node_spec()], Leavers :: [partisan:node_spec()]}.
 
 compare(_Members, #scamp_v2{}) ->
-    %% TODO at the momebr this is called only whn peer_service:jupdate_members
+    %% TODO at the momebr this is called only when peer_service:jupdate_members
     %% is called. We need to define what happens in this case as we maintain a
     %% partial view of the cluster and Members could be the complete cluster
     %% view as discovered by partisan_peer_discovery_agent or manually by the

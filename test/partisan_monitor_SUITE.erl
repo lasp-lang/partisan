@@ -1177,7 +1177,7 @@ monitor_3_noproc_gh6185_test(AliasTest, TagTest) ->
                      end
              end,
 
-    %% not registerd process...
+    %% not registered process...
     {Tag1, TagOpt1} = TagFun(),
     M1 = partisan:monitor(process, UN, AliasOpt ++ TagOpt1),
     receive
@@ -1286,7 +1286,7 @@ monitor_3_noproc_gh6185_exit_test(AliasTest, TagTest) ->
                  true -> [{tag, make_ref()}]
              end,
 
-    %% not registerd process...
+    %% not registered process...
     {P1, M1} = spawn_monitor(fun () ->
                                      erlang:yield(),
                                      _ = partisan:monitor(process, UN, AliasOpt ++ TagOpt),

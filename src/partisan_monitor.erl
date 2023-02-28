@@ -69,7 +69,7 @@
 -define(PROC_MON_IN_IDX, partisan_proc_mon_in_idx).
 
 %% Table to record local processes monitoring a remote processes.
-%% For every record in ?PROC_MON_IN we havea companion record in this table,
+%% For every record in ?PROC_MON_IN we have companion record in this table,
 %% This is to be able to send a signal to the local monitoring process
 %% when the remote node crashes or connection is lost.
 %% contains objects of type proc_mon_out()
@@ -111,7 +111,7 @@
     %% A remote process monitoring a local process (monitored)
     monitor                         ::  partisan_remote_ref:p()
                                         | partisan_remote_ref:n(),
-    %% The channel signales should be forwarded on
+    %% The channel signals should be forwarded on
     channel                         ::  partisan:channel()
 }).
 
@@ -504,7 +504,7 @@ handle_call({monitor, Process, Opts}, {Monitor, _}, State) ->
     %% this node.
 
     %% This must be sequential, because in case the process we want to monitor
-    %% is dead, we will get the reference and immediatelly the DOWN signal, so
+    %% is dead, we will get the reference and immediately the DOWN signal, so
     %% we need to return the reference to the user before the signal reaches it.
 
     %% We did this check in monitor/2, but we double check again in case
@@ -571,7 +571,7 @@ handle_cast({'DOWN', Mref, process, _Process, Reason}, State) ->
     %% A down signal for a remote process forwarded to us by a remote
     %% partisan_monitor server.
     %% We do this as ooposed to sending the signal to each process directly as
-    %% we neeed to cleanup the local state i.e. proc_mon_out() and
+    %% we need to cleanup the local state i.e. proc_mon_out() and
     %% proc_mon_out_idx().
     Fun = fun() ->
         case take_proc_mon_out(Mref) of
@@ -1016,7 +1016,7 @@ on_nodedown(Node, Reason) when is_atom(Node) ->
         proc_mon_in_indices(Node)
     ),
 
-    %% Finally we need to notify invidual and wilcard nodedown monitors
+    %% Finally we need to notify individual and wildcard nodedown monitors
     Msg = {nodedown, Node},
     ExtMsg = {nodedown, Node, [{nodedown_reason, Reason}]},
 

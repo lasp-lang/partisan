@@ -367,7 +367,7 @@ get_node(Process) ->
     _ when is_pid(Process) ->
         node(Process);
     _ ->
-        %% We asume process is partisan_remote_ref
+        %% We assume process is partisan_remote_ref
         partisan:node(Process)
     end.
 

@@ -776,7 +776,7 @@ is_alive() ->
 
 %% -----------------------------------------------------------------------------
 %% @doc
-%% Failes with `badarg' if `Arg' is a remote reference for another node.
+%% Fails with `badarg' if `Arg' is a remote reference for another node.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec whereis(Arg :: atom() | partisan_remote_ref:n()) -> pid().

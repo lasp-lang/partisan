@@ -763,7 +763,7 @@ decode(<<"partisan:", Rest0/binary>>, Mode) ->
         end,
 
     %% We ignore everything following the 3rd element.
-    %% More elements are allowed becuase we plan to allow
+    %% More elements are allowed because we plan to allow
     %% user-defined Uri schemes where the uri can have more elements
     %% e.g. to encode metadata (but we will provide functions to extract the
     %% metadata, here we don't need it)
