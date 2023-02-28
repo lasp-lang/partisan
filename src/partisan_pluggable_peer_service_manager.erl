@@ -1039,12 +1039,10 @@ handle_cast(
         undefined ->
             %% Store for reliability, if necessary.
             case maps:get(ack, Options, false) of
-                false ->
-                    ok;
                 true ->
                     %% Acknowledgements.
                     case maps:get(retransmission, Options, false) of
-                        false ->
+                        true ->
                             RescheduleableMessage = {
                                 forward_message,
                                 From,
@@ -1058,11 +1056,15 @@ handle_cast(
                             partisan_acknowledgement_backend:store(
                                 MsgClock, RescheduleableMessage
                             );
-                        true ->
+                        false ->
                             ok
-                    end
+                    end;
+                false ->
+                    ok
             end,
 
+            %% TODO use Erlang Preprocessor to conditionally remove this code
+            %% to enhance performance in production
             %% Fire post-interposition functions.
             PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
                 PostInterpositionFun(
@@ -2113,7 +2115,7 @@ do_tree_forward(Node, PartitionKey, Message, Opts, TTL, PreInterpositionFuns) ->
 
     %% Send messages, but don't attempt to forward again, if we aren't
     %% connected.
-    lists:foreach(
+    _ = lists:foreach(
         fun(Peer) ->
             ?LOG_TRACE(
                 "Forwarding relay message ~p to node ~p "
