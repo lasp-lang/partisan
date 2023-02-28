@@ -20,6 +20,12 @@
 %%
 %% -------------------------------------------------------------------
 
+%% -----------------------------------------------------------------------------
+%% @doc The Partisan API.
+%% The functions in this module are the Partisan counterparts of a subset of
+%% the functions found in the {@link erlang} and {@link net_kernel} modules.
+%%
+%% -----------------------------------------------------------------------------
 -module(partisan).
 
 -include("partisan.hrl").
@@ -89,22 +95,51 @@
 -export([start/0]).
 -export([stop/0]).
 
--export([broadcast/2]).
+%% Erlang API (erlang.erl counterparts)
 -export([cancel_timer/1]).
 -export([cancel_timer/2]).
+-export([demonitor/1]).
+-export([demonitor/2]).
+-export([disconnect_node/1]).
+-export([exit/2]).
+-export([is_alive/0]).
+-export([is_pid/1]).
+-export([is_process_alive/1]).
+-export([is_reference/1]).
+-export([make_ref/0]).
+-export([monitor/1]).
+-export([monitor/2]).
+-export([monitor/3]).
+-export([node/0]).
+-export([node/1]).
+-export([process_info/1]).
+-export([process_info/2]).
+-export([self/0]).
+-export([send/2]).
+-export([send/3]).
+-export([send_after/3]).
+-export([send_after/4]).
+-export([spawn/2]).
+-export([spawn/4]).
+-export([spawn_monitor/2]).
+-export([spawn_monitor/4]).
+-export([whereis/1]).
+
+%% Erlang API (net_kernel.erl counterparts)
+-export([monitor_node/2]).
+-export([monitor_nodes/1]).
+-export([monitor_nodes/2]).
+
+%% Partisan API
+-export([broadcast/2]).
 -export([cast_message/2]).
 -export([cast_message/3]).
 -export([cast_message/4]).
 -export([channel_opts/1]).
 -export([default_channel/0]).
--export([demonitor/1]).
--export([demonitor/2]).
--export([disconnect_node/1]).
--export([exit/2]).
 -export([forward_message/2]).
 -export([forward_message/3]).
 -export([forward_message/4]).
--export([is_alive/0]).
 -export([is_connected/1]).
 -export([is_connected/2]).
 -export([is_fully_connected/1]).
@@ -115,40 +150,14 @@
 -export([is_local_pid/2]).
 -export([is_local_reference/1]).
 -export([is_local_reference/2]).
--export([is_pid/1]).
--export([is_process_alive/1]).
--export([is_reference/1]).
 -export([is_self/1]).
--export([make_ref/0]).
--export([monitor/1]).
--export([monitor/2]).
--export([monitor/3]).
--export([monitor_node/2]).
--export([monitor_nodes/1]).
--export([monitor_nodes/2]).
--export([node/0]).
--export([node/1]).
 -export([node_spec/0]).
 -export([node_spec/1]).
 -export([node_spec/2]).
 -export([nodes/0]).
 -export([nodes/1]).
 -export([nodestring/0]).
--export([process_info/1]).
--export([process_info/2]).
--export([self/0]).
 -export([self/1]).
--export([send/2]).
--export([send/3]).
--export([send_after/3]).
--export([send_after/4]).
--export([whereis/1]).
-
-
--export([spawn/2]).
--export([spawn/4]).
--export([spawn_monitor/2]).
--export([spawn_monitor/4]).
 
 
 -compile({no_auto_import, [demonitor/2]}).
