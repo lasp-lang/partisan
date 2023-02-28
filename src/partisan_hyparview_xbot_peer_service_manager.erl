@@ -1952,11 +1952,7 @@ do_send_message(Node, Message, Options) when is_atom(Node) ->
                     TTL = partisan_config:get(relay_ttl, ?RELAY_TTL),
                     do_tree_forward(Node, Message, Options, TTL);
 
-                {true, false} ->
-                    %% TODO: This doesn't make any sense
-                    ok;
-
-                {false, _} ->
+                {_, _} ->
                     {error, Reason}
             end
     end;
