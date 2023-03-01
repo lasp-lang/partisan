@@ -293,6 +293,7 @@
 
 
 -define(KEY(Arg), {?MODULE, Arg}).
+-define(IS_KEY(Arg), is_tuple(Arg) andalso element(1, Arg) == ?MODULE).
 
 -export([channel_opts/1]).
 -export([channels/0]).
@@ -336,6 +337,7 @@
 %% @end
 %% -----------------------------------------------------------------------------
 init() ->
+    ok = cleanup(),
     PeerService0 = application:get_env(
         partisan,
         peer_service_manager,
@@ -463,11 +465,18 @@ init() ->
     ok = set(listen_addrs, ListenAddrs).
 
 
-%% Seed the process.
+%% -----------------------------------------------------------------------------
+%% @doc Seed the process.
+%% @end
+%% -----------------------------------------------------------------------------
 seed(Seed) ->
     rand:seed(exsplus, Seed).
 
-%% Seed the process.
+
+%% -----------------------------------------------------------------------------
+%% @doc Seed the process.
+%% @end
+%% -----------------------------------------------------------------------------
 seed() ->
     RandomSeed = random_seed(),
     ?LOG_DEBUG(#{
@@ -477,7 +486,12 @@ seed() ->
     }),
     rand:seed(exsplus, RandomSeed).
 
-%% Return a random seed, either from the environment or one that's generated for the run.
+
+%% -----------------------------------------------------------------------------
+%% @docReturn a random seed, either from the environment or one that's
+%% generated for the run.
+%% @end
+%% -----------------------------------------------------------------------------
 random_seed() ->
     case get(random_seed, undefined) of
         undefined ->
@@ -486,6 +500,11 @@ random_seed() ->
             Other
     end.
 
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 trace(Message, Args) ->
     ?LOG_TRACE(#{
         description => "Trace",
@@ -627,7 +646,6 @@ default_channel_opts() ->
     channel_opts(default_channel()).
 
 
-
 %% -----------------------------------------------------------------------------
 %% @doc The name of the default channel.
 %% @end
@@ -661,6 +679,19 @@ parallelism() ->
 %% PRIVATE
 %% =============================================================================
 
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+cleanup() ->
+    _ = [
+        persistent_term:erase(Key)
+        || {Key, _} <- persistent_term:get(), ?IS_KEY(Key)
+    ],
+    ok.
 
 
 %% -----------------------------------------------------------------------------
@@ -710,15 +741,12 @@ set_node_name(UserDefined) ->
     set(nodestring, atom_to_binary(Name, utf8)).
 
 
-
 %% @private
 gen_node_name() ->
     UUIDState = uuid:new(self()),
     {UUID, _UUIDState1} = uuid:get_v1(UUIDState),
     StringUUID = uuid:uuid_to_string(UUID),
     list_to_atom(StringUUID ++ "@127.0.0.1").
-
-
 
 
 %% -----------------------------------------------------------------------------
@@ -814,6 +842,7 @@ try_get_node_address() ->
         undefined ->
             get_node_address()
     end.
+
 
 %% @private
 get_node_address() ->
