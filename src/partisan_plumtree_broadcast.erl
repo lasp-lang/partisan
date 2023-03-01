@@ -1,4 +1,4 @@
-%% -------------------------------------------------------------------
+%% -----------------------------------------------------------------------------
 %%
 %% Copyright (c) 2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
@@ -16,7 +16,11 @@
 %% specific language governing permissions and limitations
 %% under the License.
 %%
-%% -------------------------------------------------------------------
+%% -----------------------------------------------------------------------------
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 -module(partisan_plumtree_broadcast).
 
 -behaviour(gen_server).
@@ -115,6 +119,8 @@
 
 %% Debug API
 -export([get_peers/1]).
+-export([get_eager_peers/1]).
+-export([get_lazy_peers/1]).
 -export([debug_get_peers/2]).
 -export([debug_get_peers/3]).
 -export([debug_get_tree/2]).
@@ -136,16 +142,26 @@
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Starts the broadcast server on this node. The initial membership list is
-%% fetched from the peer service.
+%% @doc Starts the broadcast server on this node.
+%%
+%% The initial membership list is fetched from the configured @{link
+%% partisan_peer_service}.
+%%
 %% If the node is a singleton then the initial eager and lazy sets are empty.
 %% If there are two nodes, each will be in the others
 %% eager set and the lazy sets will be empty. When number of members is less
 %% than 5, each node will initially have one other node in its eager set and
 %% lazy set. If there are more than five nodes each node will have at most two
 %% other nodes in its eager set and one in its lazy set, initially.
-%% In addition, after the broadcast server is started, a callback is registered
-%% with ring_events to generate membership updates as the ring changes.
+%%
+%% In addition, after the broadcast server is started, all callbacks defined in
+%% the configuration option `broadcast_mods' are registered.
+%% By default the list of callbacks includes the module
+%% {@link partisan_plumtree_backend} which is used by to generate membership
+%% updates as the ring changes.
+%%
+%% @TODO we should spawn 1 broadcast server per channel and or channel
+%% partition
 %% @end
 %% -----------------------------------------------------------------------------
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
@@ -340,7 +356,6 @@ cancel_exchanges(Selector) ->
     gen_server:call(?SERVER, {cancel_exchanges, Selector}, infinity).
 
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -349,6 +364,27 @@ cancel_exchanges(Selector) ->
 
 get_peers(Root) ->
     gen_server:call(?SERVER, {get_peers, Root}).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec get_eager_peers(Root :: node()) -> list().
+
+get_eager_peers(Root) ->
+    gen_server:call(?SERVER, {get_eager_peers, Root}).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec get_lazy_peers(Root :: node()) -> list().
+
+get_lazy_peers(Root) ->
+    gen_server:call(?SERVER, {get_lazy_peers, Root}).
+
 
 
 %% =============================================================================
@@ -393,6 +429,18 @@ handle_call({get_peers, Root}, _From, State) ->
         Root, State#state.lazy_sets, State#state.common_lazys
     ),
     {reply, {EagerPeers, LazyPeers}, State};
+
+handle_call({get_eager_peers, Root}, _From, State) ->
+    EagerPeers = all_peers(
+        Root, State#state.eager_sets, State#state.common_eagers
+    ),
+    {reply, EagerPeers, State};
+
+handle_call({get_lazy_peers, Root}, _From, State) ->
+    LazyPeers = all_peers(
+        Root, State#state.lazy_sets, State#state.common_lazys
+    ),
+    {reply, LazyPeers, State};
 
 handle_call(broadcast_members, _From, State=#state{all_members=AllMembers}) ->
     {reply, AllMembers, State};
@@ -562,7 +610,7 @@ debug_get_peers(Node, Root) ->
 debug_get_peers(Node, Root, Timeout) ->
     %% This will not work because gen_server uses disterl
     %% gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
-    %% TODO reconsider turning this server into a partisan_gen_serv
+    %% TODO reconsider turning this server into a partisan_gen_server
     partisan_rpc:call(Node, ?MODULE, get_peers, [Root], Timeout).
 
 
