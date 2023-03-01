@@ -194,8 +194,9 @@ on_up(_Name, _Function, _Opts) ->
 %% @doc Update membership.
 %% @end
 %% -----------------------------------------------------------------------------
-update_members(_Nodes) ->
-    {error, not_implemented}.
+update_members(Members) ->
+    gen_server:call(?MODULE, {update_members, Members}, infinity).
+
 
 
 %% -----------------------------------------------------------------------------
@@ -534,6 +535,10 @@ handle_call({leave, _Node}, _From, State) ->
 
 handle_call({join, #{name := _Name} = Node}, _From, State) ->
     gen_server:cast(?MODULE, {join, Node}),
+    {reply, ok, State};
+
+handle_call({update_members, Members}, _, #state{} = State0) ->
+    State = handle_update_members(Members, State0),
     {reply, ok, State};
 
 handle_call({resolve_partition, Reference}, _From, State) ->
@@ -2248,6 +2253,11 @@ merge_exchange(Exchange, #state{} = State) ->
 
     %% Add to passive view.
     lists:foldl(fun(X, P) -> add_to_passive_view(X, P) end, State, ToAdd).
+
+
+%% @private
+handle_update_members(Members, State) ->
+    merge_exchange(Members, State).
 
 
 %% @private
