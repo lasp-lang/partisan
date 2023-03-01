@@ -21,33 +21,52 @@
 %% -----------------------------------------------------------------------------
 %% @doc This module realises the {@link partisan_peer_service_manager}
 %% behaviour implementing a peer-to-peer partial mesh topology using the
-%% <a href="https://bit.ly/3Hy7bfi">HyParView membership protocol</a>.
+%% protocol described in the paper
+%% <a href="https://asc.di.fct.unl.pt/~jleitao/pdf/dsn07-leitao.pdf">HyParView:
+%% a membership protocol for reliable gossip-based broadcast</a>
+%% by João Leitão, José Pereira and Luís Rodrigues.
+%%
+%% The following content contains abstracts from the paper.
 %%
 %% == Characteristics ==
 %% <ul>
-%% <li>Uses TCP/IP as a failure detector.</li>
-%% <li>Nodes are considered "failed" when connection is dropped.</li>
+%% <li>Uses TCP/IP as an unreliable failure detector (unreliable because it can
+%% generate false positives e.g. when the network becomes suddenly
+%% congested).</li>
+%% <li>It can sustain high level of node failres while ensuring connectivity
+%% of the overlay. Nodes are considered "failed" when the TCP/IP connection is
+%% dropped.</li>
 %% <li>Nodes maintain partial views of the network. Every node will contain and
-%% active view that forms a connected grah, and a passive view of backup links
+%% <em>active view</em> that forms a connected grah, and a
+%% <em>passive view</em> of backup links that
 %% are used to repair graph connectivity under failure. Some links to passive
 %% nodes are kept open for fast replacement of failed nodes in the active
-%% view. So the view is probabilistic. </li>
-%% <li>The algorithm constantly works towards and ensures that eventually the
-%% membership is a fully-connected component. </li>
+%% view. So the view is probabilistic, meaning that the protocol doesn't
+%% prevent (nor detects) the cluter to be split into several subclusters with
+%% no connections to each other.</li>
+%% <li>HyParView sacrificies strong membership for high availability and
+%% connectivity: the algorithm constantly works towards and ensures that
+%% eventually the clsuter membership is a fully-connected component.
+%% However, at any point in time different nodes may have different,
+%% inconsistent views of the cluster membership. As a consequence, HyParView is
+%% not designed to work with systems that require strong membership properties,
+%% eg. consensus protocols like Paxos or Raft.</li>
 %% <li>Point-to-point messaging for connected nodes with a minimum of 1 hop via
 %% transitive message delivery (as not all nodes directly connected). Delivery
 %% is probabilistic.</li>
+%% <li>No explicit leave operation, becuase the overlay is able to react fast
+%% enough to node failures. Hence when a node wishes to leave the system it is
+%% simply treated as if hte node have failed.</li>
 %% <li>Scalability to up-to 2,000 nodes.</li>
 %% </ul>
 %%
 %% == HyParView Membership Protocol ==
-%% Content from https://asc.di.fct.unl.pt/~jleitao/pdf/dsn07-leitao.pdf.
 %%
 %% == Partial View ==
 %% A partial view is a small subset of the entire system (cluster) membership,
 %% a set of node specifications maintained locally at each node.
 %%
-%% A node specification i.e. (`partisan:node_spec()') allows a node to be
+%% A node specification i.e. `partisan:node_spec()' allows a node to be
 %% reached by other nodes.
 %%
 %% A membership protocol is in charge of initializing and maintaining the
@@ -75,8 +94,8 @@
 %%
 %% === Active View ===
 %% Each node maintains a small symmetric ctive view the size of fanout + 1.
-%% Being symmetric means means that if node q is in the active view of node p
-%% then node p is also in the active view of node q.
+%% Being symmetric means means that if node <b>q</b> is in the active view of
+%% node <b>p</b> then node <b>p</b> is also in the active view of node <b>q</b>.
 %%
 %% The active views af all cluster nodes create an overlay that is used for
 %% message dissemination. Each node keeps an open TCP connection to every other
@@ -92,12 +111,13 @@
 %% ==== Active View Management ====
 %% A reactive strategy is used to maintain the active view. Nodes can be added
 %% to the active view when they join the system. Also, nodes are removed from
-%% the active view when they fail. When a node p suspects that one of the nodes
-%% present in its active view has failed (by either disconnecting or blocking),
-%% it selects a random node q from its passive view and attempts to establish a
-%% TCP connection with q. If the connection fails to establish, node q is
-%% considered failed and removed from p’s passive view; another node q′ is
-%% selected at random and a new attempt is made.
+%% the active view when they fail. When a node <b>p</b> suspects that one of the
+%% nodes present in its active view has failed (by either disconnecting or
+%% blocking), it selects a random node <b>q</b> from its passive view and attempts
+%% to establish a TCP connection with <b>q</b>. If the connection fails to
+%% establish, node <b>q</b> is considered failed and removed from <b>p’s</b>
+%% passive view; another node <b>q′</b> is selected at random and a new attempt
+%% is made.
 %%
 %% When the connection is established with success, p sends to q a Neighbor
 %% request with its own identifier and a priority level. The priority level of
@@ -657,7 +677,7 @@ init([]) ->
     %% Seed the random number generator.
     partisan_config:seed(),
 
-    %% Process connection exits.
+    %% Trap connection process exits.
     process_flag(trap_exit, true),
 
     ok = partisan_peer_connections:init(),
@@ -851,7 +871,7 @@ handle_call({receive_message, _, _, _} = Cmd, _From, State) ->
     %% unblock the calling process (partisan_peer_service_server who manages
     %% the socket).
     %% TODO: We should consider rewriting receive_message/2 to use
-    %% partisan_gen_server:cast directly! Erlang guarantees the delivery
+    %% gen_server:cast directly! Erlang guarantees the delivery
     %% order
     %% See Issue #5
     gen_server:cast(?MODULE, Cmd),
@@ -1908,7 +1928,6 @@ do_send_message(Node, Message, Options) when is_atom(Node) ->
                         }
                     })
             end,
-
 
             %% TODO use retransmission and acks
             case {Broadcast, Transitive} of
