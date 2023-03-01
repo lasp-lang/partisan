@@ -2057,7 +2057,8 @@ maybe_reply_sync_joins(State) ->
                 Acc;
 
             false ->
-                maps:put(NodeSpec, Set)
+                %% We keep the Node in the sync_joins set
+                maps:put(NodeSpec, Set, Acc)
         end
     end,
 
