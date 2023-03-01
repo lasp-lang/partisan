@@ -29,7 +29,6 @@
 %% <li>`partisan_pluggable_peer_service_manager'</li>
 %% <li>`partisan_client_server_peer_service_manager'</li>
 %% <li>`partisan_hyparview_peer_service_manager'</li>
-%% <li>`partisan_hyparview_xbot_peer_service_manager'</li>
 %% <li>`partisan_static_peer_service_manager'</li>
 %% </ul>
 %%

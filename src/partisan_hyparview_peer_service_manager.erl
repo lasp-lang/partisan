@@ -18,7 +18,6 @@
 %%
 %% -------------------------------------------------------------------
 
-%% -----------------------------------------------------------------------------
 %% @doc This module realises the {@link partisan_peer_service_manager}
 %% behaviour implementing a peer-to-peer partial mesh topology using the
 %% protocol described in the paper
@@ -222,6 +221,7 @@
 -include("partisan.hrl").
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
+-author("Bruno Santiago Vazquez <brunosantiagovazquez@gmail.com>").
 
 %% Defaults
 -define(SHUFFLE_INTERVAL, 10000).
@@ -739,6 +739,10 @@ init([]) ->
             %% Schedule periodic maintenance of the passive view.
             schedule_passive_view_maintenance(State),
 
+            %% Schedule periodic execution of xbot algorithm (optimization)
+            %% when it is enabled
+            schedule_xbot_execution(State),
+
             %% Schedule tree peers refresh.
             schedule_tree_refresh(State),
 
@@ -756,7 +760,7 @@ handle_call(partitions, _From, State) ->
     {reply, {ok, State#state.partitions}, State};
 
 handle_call({leave, _Node}, _From, State) ->
-{reply, error, State};
+    {reply, error, State};
 
 handle_call({join, #{name := _Name} = Node}, _From, State) ->
     gen_server:cast(?MODULE, {join, Node}),
@@ -1036,6 +1040,28 @@ handle_info(passive_view_maintenance, State0) ->
     schedule_passive_view_maintenance(State),
 
     {noreply, State};
+
+% handle optimization using xbot algorithm
+handle_info(xbot_execution, #state{} = State) ->
+
+    Active = State#state.active,
+    Passive = State#state.passive,
+    Reserved = State#state.reserved,
+    ActiveMaxSize = config_get(active_max_size, State),
+
+	% check if active view is full
+	case is_full({active, Active, Reserved}, ActiveMaxSize) of
+		% if full, check for candidates and try to optimize
+		true ->
+			Candidates = pick_random(Passive, 2),
+			send_optimization_messages(members(Active), Candidates, State);
+		% in other case, do nothing
+		false -> ok
+	end,
+
+	%In any case, schedule periodic xbot execution algorithm (optimization)
+	ok = schedule_xbot_execution(State),
+	{noreply, State};
 
 handle_info({'EXIT', From, Reason}, State0) ->
     ?LOG_DEBUG(#{
@@ -1749,7 +1775,238 @@ handle_message({relay_message, NodeSpec, Message, TTL}, Channel, #state{} = Stat
 
 handle_message({forward_message, ServerRef, Message}, _Channel, State) ->
     partisan_peer_service_manager:process_forward(ServerRef, Message),
-    {noreply, State}.
+    {noreply, State};
+
+handle_message(
+    {optimization_reply, true, _, Initiator, Candidate, undefined},
+    _Channel,
+    State) ->
+	#{name := MyName} = Initiator,
+	#{name := CandidateName} = Candidate,
+	?LOG_DEBUG(
+        "XBOT: Received optimization reply message at Node ~p from ~p",
+        [MyName, CandidateName]
+    ),
+	%% Revise this behaviour, when candidate accepts immediately because it has
+    %% availability in his active view
+	%% what to do with old node?? we cannot disconnect from it because maybe it
+    %% will be isolated
+	%Check = is_in_active_view(OldNode, Active),
+	%if Check ->
+		%remove_from_active_view(OldNode, Active),
+		%add_to_passive_view(OldNode, State)
+	%	do_disconnect(OldNode, State)
+	%end,
+	%promote_peer(Candidate, State),
+	_ = send_join(Candidate, State),
+
+	?LOG_DEBUG(
+        "XBOT: Finished optimization round started by Node ~p ",
+        [MyName]
+    ),
+	{noreply, State};
+
+handle_message(
+    {optimization_reply, true, OldNode, Initiator, Candidate, _},
+    _Channel,
+    #state{} = State) ->
+    Active = State#state.active,
+	#{name := InitiatorName} = Initiator,
+	#{name := CandidateName} = Candidate,
+
+    ?LOG_DEBUG(
+        "XBOT: Received optimization reply message at Node ~p from ~p",
+        [InitiatorName, CandidateName]
+    ),
+
+	case is_in_active_view(OldNode, Active) of
+        true ->
+		  %remove_from_active_view(OldNode, Active);
+		  do_disconnect(OldNode, State);
+		false ->
+            ok
+	end,
+
+	%% promote_peer(Candidate, State),
+	_ = send_join(Candidate, State),
+
+    ?LOG_DEBUG(
+        "XBOT: Finished optimization round started by Node ~p ",
+        [InitiatorName]
+    ),
+	{noreply, State};
+
+handle_message({optimization_reply, false, _, _, _, _}, _Channel, State) ->
+	{noreply, State};
+
+handle_message(
+    {optimization, _, OldNode, Initiator, Candidate, undefined},
+    _Channel,
+    #state{} = State) ->
+    Active = State#state.active,
+    Reserved = State#state.reserved,
+    ActiveMaxSize = config_get(active_max_size, State),
+	#{name := CandidateName} = Candidate,
+	#{name := InitiatorName} = Initiator,
+	?LOG_DEBUG(
+        "XBOT: Received optimization message at Node ~p from ~p",
+        [CandidateName, InitiatorName]
+    ),
+
+	Check = is_full({active, Active, Reserved}, ActiveMaxSize),
+	if not Check ->
+			%add_to_active_view(Candidate, MyTag, State),
+			_ = send_join(Initiator, State),
+
+			ok = partisan_peer_service_manager:connect(Initiator),
+
+            Message = {
+                optimization_reply,
+                true,
+                OldNode,
+                Initiator,
+                Candidate,
+                undefined
+            },
+
+			_ = do_send_message(Initiator, Message),
+
+			?LOG_DEBUG(
+                "XBOT: Sending optimization reply message to Node ~p from ~p", [InitiatorName, CandidateName]
+            );
+
+		true ->
+			DisconnectNode = select_disconnect_node(sets:to_list(Active)),
+			#{name := DisconnectName} = DisconnectNode,
+
+			ok = partisan_peer_service_manager:connect(DisconnectNode),
+
+            Message = {
+                replace,
+                undefined,
+                OldNode,
+                Initiator,
+                Candidate,
+                DisconnectNode
+            },
+			_ = do_send_message(DisconnectNode, Message),
+			?LOG_DEBUG(
+                "XBOT: Sending replace message to Node ~p from ~p", [DisconnectName, CandidateName]
+            )
+	end,
+	{noreply, State};
+
+handle_message(
+    {replace_reply, true, OldNode, Initiator, Candidate, DisconnectNode},
+    _Channel,
+    #state{} = State) ->
+	#{name := InitiatorName} = Initiator,
+	#{name := DisconnectName} = DisconnectNode,
+	#{name := CandidateName} = Candidate,
+	?LOG_DEBUG("XBOT: Received replace reply message at Node ~p from ~p", [CandidateName, DisconnectName]),
+	%remove_from_active_view(DisconnectNode, Active),
+	do_disconnect(DisconnectNode, State),
+	%add_to_active_view(Initiator, MyTag, State),
+	_ = send_join(Initiator, State),
+	ok = partisan_peer_service_manager:connect(Initiator),
+	_ = do_send_message(Initiator,{optimization_reply, true, OldNode, Initiator, Candidate, DisconnectNode}),
+	?LOG_DEBUG("XBOT: Sending optimization reply to Node ~p from ~p", [InitiatorName, CandidateName]),
+	{noreply, State};
+
+handle_message(
+    {replace_reply, false, OldNode, Initiator, Candidate, DisconnectNode},_Channel,
+    #state{} = State) ->
+	#{name := InitiatorName} = Initiator,
+	#{name := DisconnectName} = DisconnectNode,
+	#{name := CandidateName} = Candidate,
+	?LOG_DEBUG("XBOT: Received replace reply message at Node ~p from ~p", [CandidateName, DisconnectName]),
+	ok = partisan_peer_service_manager:connect(Initiator),
+	_ = do_send_message(Initiator,{optimization_reply, false, OldNode, Initiator, Candidate, DisconnectNode}),
+	?LOG_DEBUG("XBOT: Sending optimization reply to Node ~p from ~p", [InitiatorName, CandidateName]),
+	{noreply, State};
+
+handle_message(
+    {replace, _, OldNode, Initiator, Candidate, DisconnectNode},
+    _Channel,
+    #state{} = State) ->
+	#{name := DisconnectName} = DisconnectNode,
+	#{name := CandidateName} = Candidate,
+	#{name := OldName} = OldNode,
+	?LOG_DEBUG("XBOT: Received replace message at Node ~p from ~p", [DisconnectName, CandidateName]),
+	Check = is_better(?HYPARVIEW_XBOT_ORACLE, OldNode, Candidate),
+	if not Check ->
+			ok = partisan_peer_service_manager:connect(Candidate),
+			_ = do_send_message(Candidate,{replace_reply, false, OldNode, Initiator, Candidate, DisconnectNode}),
+			?LOG_DEBUG("XBOT: Sending replace reply to Node ~p from ~p", [CandidateName, DisconnectName]);
+		true ->
+			ok = partisan_peer_service_manager:connect(OldNode),
+			_ = do_send_message(OldNode,{switch, undefined, OldNode, Initiator, Candidate, DisconnectNode}),
+			?LOG_DEBUG("XBOT: Sending switch to Node ~p from ~p", [OldName, DisconnectName])
+	end,
+	{noreply, State};
+
+handle_message(
+    {switch_reply, true, OldNode, Initiator, Candidate, DisconnectNode},
+    _Channel,
+    #state{} = State) ->
+	#{name := DisconnectName} = DisconnectNode,
+	#{name := CandidateName} = Candidate,
+	#{name := OldName} = OldNode,
+	?LOG_DEBUG("XBOT: Received switch reply message at Node ~p from ~p", [DisconnectName, OldName]),
+	%remove_from_active_view(Candidate, Active),
+	do_disconnect(Candidate, State),
+	%add_to_active_view(OldNode, MyTag, State),
+	_ = send_join(OldNode, State),
+	ok = partisan_peer_service_manager:connect(Candidate),
+	_ = do_send_message(Candidate,{replace_reply, true, OldNode, Initiator, Candidate, DisconnectNode}),
+	?LOG_DEBUG("XBOT: Sending replace reply to Node ~p from ~p", [CandidateName, DisconnectName]),
+	{noreply, State};
+
+handle_message(
+    {switch_reply, false, OldNode, Initiator, Candidate, DisconnectNode},
+    _Channel,
+    #state{} = State) ->
+	#{name := DisconnectName} = DisconnectNode,
+	#{name := CandidateName} = Candidate,
+	#{name := OldName} = OldNode,
+	?LOG_DEBUG("XBOT: Received switch reply message at Node ~p from ~p", [DisconnectName, OldName]),
+	ok = partisan_peer_service_manager:connect(Candidate),
+	_ = do_send_message(Candidate, {replace_reply, false, OldNode, Initiator, Candidate, DisconnectNode}),
+	?LOG_DEBUG("XBOT: Sending replace reply to Node ~p from ~p", [CandidateName, DisconnectName]),
+	{noreply, State};
+
+handle_message(
+    {switch, _, OldNode, Initiator, Candidate, DisconnectNode},
+    _Channel,
+	#state{active = Active} = State) ->
+	#{name := DisconnectName} = DisconnectNode,
+	#{name := OldName} = OldNode,
+	?LOG_DEBUG("XBOT: Received switch message at Node ~p from ~p", [OldName, DisconnectName]),
+	Check = is_in_active_view(Initiator, Active),
+	if Check ->
+			%remove_from_active_view(Initiator, Active),
+			do_disconnect(Initiator, State),
+			%add_to_active_view(DisconnectNode, MyTag, State),
+			_ = send_join(DisconnectNode, State),
+			ok = partisan_peer_service_manager:connect(DisconnectNode),
+			_ = do_send_message(DisconnectNode, {switch_reply, true, OldNode, Initiator, Candidate, DisconnectNode}),
+			?LOG_DEBUG("XBOT: Sending switch reply to Node ~p from ~p", [DisconnectName, OldName]);
+		true ->
+			ok = partisan_peer_service_manager:connect(DisconnectNode),
+			_ = do_send_message(DisconnectNode, {switch_reply, false, OldNode, Initiator, Candidate, DisconnectNode}),
+			?LOG_DEBUG("XBOT: Sending switch reply to Node ~p from ~p", [DisconnectName, OldName])
+	end,
+	{noreply, State}.
+
+%% @private
+send_join(Peer, #state{node_spec=Myself0, tag=Tag0, epoch=Epoch0}) ->
+    %% Trigger connection.
+    ok = partisan_peer_service_manager:connect(Peer),
+
+    ?LOG_DEBUG("Node ~p sends the JOIN message to ~p", [Myself0, Peer]),
+
+    %% Send the JOIN message to the peer.
+    do_send_message(Peer, {join, Myself0, Tag0, Epoch0}).
 
 
 %% @private
@@ -2564,6 +2821,127 @@ schedule_random_promotion(#state{config = #{random_promotion := true} = C}) ->
 
 schedule_random_promotion(_) ->
     ok.
+
+
+
+%% =============================================================================
+%% %% PRIVATE VIEW MAINTENANCE: X-BOT OPTIMIZATION
+%% =============================================================================
+
+
+
+%% @private
+schedule_xbot_execution(#state{config = #{xbot_enabled := true} = C}) ->
+    Time = maps:get(xbot_interval, C),
+    erlang:send_after(Time, ?MODULE, xbot_execution);
+
+schedule_xbot_execution(_) ->
+    ok.
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc Send optimization messages when apply
+%% @end
+%% -----------------------------------------------------------------------------
+send_optimization_messages(_, [], _) ->
+    ok;
+
+send_optimization_messages(Active, L, State) ->
+    % check each first candidate against every node in the active view
+    _ = [process_candidate(Active, X, State) || X <- L],
+    ok.
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc check if a candidate is valid and send message to try optimization
+%% we only send an optimization messages for one node in active view, once we
+%% have sent it we stop searching possibilities
+%% @end
+%% -----------------------------------------------------------------------------
+process_candidate([], _, _) ->
+    ok;
+
+process_candidate([H|T], Candidate, #state{} = State) ->
+    #{name := MyName} = Myself = State#state.node_spec,
+    #{name := CandidateName} = Candidate,
+
+    case is_better(?HYPARVIEW_XBOT_ORACLE, Candidate, H) of
+        true ->
+            ok = partisan_peer_service_manager:connect(Candidate),
+
+            %% if candidate is better that first node in active view,
+            %% send optimization message
+            Msg = {optimization, undefined, H, Myself, Candidate, undefined},
+            _ = do_send_message(Candidate, Msg),
+
+            ?LOG_DEBUG(
+                "XBOT: Optimization message sent to Node ~p from ~p",
+                [CandidateName, MyName]
+            );
+       false ->
+            process_candidate(T, Candidate, State)
+    end.
+
+
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc Determine if New node is better than Old node based on ping (latency)
+%% @end
+%% -----------------------------------------------------------------------------
+is_better(latency, #{name := NewNodeName}, #{name := OldNodeName}) ->
+    is_better_node_by_latency(timer:tc(net_adm, ping, [NewNodeName]), timer:tc(net_adm, ping, [OldNodeName]));
+
+is_better(_, _, _) ->
+    true.
+
+%% @private
+is_better_node_by_latency({_, pang}, {_, _}) ->
+    %% if we do not get ping response from new node
+    false;
+is_better_node_by_latency({_, pong}, {_, pang}) ->
+    %% if we cannot get response from old node but we got response from new (this should never happen, in general)
+    true;
+is_better_node_by_latency({NewTime, pong}, {OldTime, pong}) ->
+    ?LOG_DEBUG("XBOT: Checking is better - OldTime ~p - NewTime ~p", [OldTime, NewTime]),
+    %% otherwise check lower ping response
+    (OldTime-NewTime) > 0.
+
+%% @private
+select_disconnect_node([H | T]) ->
+    select_worst_in_active_view(T, H).
+
+%% @private
+select_worst_in_active_view([], Worst) ->
+    Worst;
+select_worst_in_active_view([H | T], Worst) ->
+    Check = is_better(?HYPARVIEW_XBOT_ORACLE, H, Worst),
+    if Check -> select_worst_in_active_view(T, Worst);
+        true -> select_worst_in_active_view(T, H)
+    end.
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc Send a disconnect message to a peer
+%% @end
+%% -----------------------------------------------------------------------------
+do_disconnect(Peer, #state{active=Active0}=State0) ->
+    case sets:is_element(Peer, Active0) of
+        true ->
+            %% If a member of the active view, remove it.
+            Active = sets:del_element(Peer, Active0),
+            State = add_to_passive_view(Peer, State0#state{active=Active}),
+            ok = disconnect(Peer),
+            {noreply, State};
+        false ->
+            {noreply, State0}
+    end.
+
+
 
 
 
