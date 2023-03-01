@@ -228,18 +228,18 @@
 -define(RANDOM_PROMOTION_INTERVAL, 5000).
 
 -record(state, {
-    name                        ::  node(),
-    node_spec                   ::  partisan:node_spec(),
-    config                      ::  config(),
-    active                      ::  active(),
-    passive                     ::  passive(),
-    reserved                    ::  reserved(),
-    out_links                   ::  list(),
-    tag                         ::  tag(),
-    epoch                       ::  epoch(),
-    sent_message_map            ::  message_id_store(),
-    recv_message_map            ::  message_id_store(),
-    partitions                  ::  partisan_peer_service_manager:partitions()
+    name                    ::  node(),
+    node_spec               ::  partisan:node_spec(),
+    config                  ::  config(),
+    active                  ::  active(),
+    passive                 ::  passive(),
+    reserved                ::  reserved(),
+    out_links               ::  list(),
+    tag                     ::  tag(),
+    epoch                   ::  epoch(),
+    sent_message_map        ::  message_id_store(),
+    recv_message_map        ::  message_id_store(),
+    partitions              ::  partisan_peer_service_manager:partitions()
 }).
 
 -type t()                   ::  #state{}.
