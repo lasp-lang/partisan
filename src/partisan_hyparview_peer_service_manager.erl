@@ -2457,20 +2457,20 @@ do_tree_forward(Node, Message, Options, TTL) ->
             OL -- [MyNode]
     end,
 
-    %% Send messages, but don't attempt to forward again, if we aren't
+    %% Send messages, but don't attempt to forward again if we aren't
     %% connected.
     _ = lists:foreach(
-        fun(N) ->
+        fun(Relay) ->
             ?LOG_TRACE(
                 "Forwarding relay message ~p to node ~p "
                 "for node ~p from node ~p",
-                [Message, N, Node, MyNode]
+                [Message, Relay, Node, MyNode]
             ),
 
             RelayMessage = {relay_message, Node, Message, TTL - 1},
 
             do_send_message(
-                N,
+                Relay,
                 RelayMessage,
                 maps:without([transitive], Options)
             )
