@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1996-2022. All Rights Reserved.
+%% Copyright Ericsson AB 1996-2021. All Rights Reserved.
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -20,7 +20,11 @@
 -module(partisan_rpc2).
 
 %%
-%% As of OTP 25 the rpc module require server side support for erpc.
+%% Implementations inside '-ifdef(SERVER_SIDE_ERPC_IS_MANDATORY).'
+%% below require 'partisan_erpc' support to be mandatory on server side.
+%% 'partisan_erpc' was introduced in OTP 23, so it should be possible to
+%% enable this as of OTP 25:
+%%   -define(SERVER_SIDE_ERPC_IS_MANDATORY, yes).
 %%
 
 %% General rpc, broadcast,multicall, promise and parallel evaluator
@@ -29,10 +33,10 @@
 %% This code used to reside in net.erl, but has now been moved to
 %% a separate module.
 
--define(NAME, partisan_rex).
--define(TAB_NAME, partisan_rex_nodes_observer).
+-define(NAME, rex).
+-define(TAB_NAME, rex_nodes_observer).
 
--behaviour(partisan_partisan_gen_server).
+-behaviour(partisan_gen_server).
 
 -export([start/0, start_link/0, stop/0,
      call/4, call/5,
@@ -63,6 +67,10 @@
 
 %% Internals
 -export([proxy_user_flush/0]).
+
+%% PARTISAN EXTENSIONS
+-export([start/2]).
+-export([start_link/2]).
 
 -export_type([key/0]).
 
@@ -117,15 +125,16 @@ stop(Rpc) ->
 
 init([]) ->
     process_flag(trap_exit, true),
-    {ok, #{nodes_observer => start_nodes_observer()}}.
+    {ok, #{nodes_observer => start_nodes_observer()}};
 
--spec handle_call(
-        term(),
-        partisan_gen_server:from() | {?NAME,term()},
-        state()) ->
-                         {'noreply', state()} |
-                         {'reply', term(), state()} |
-                         {'stop', 'normal', 'stopped', state()}.
+init([Channel]) ->
+    process_flag(trap_exit, true),
+    {ok, #{nodes_observer => start_nodes_observer(), channel => Channel}}.
+
+-spec handle_call(term(), term(), state()) ->
+        {'noreply', state()} |
+    {'reply', term(), state()} |
+    {'stop', 'normal', 'stopped', state()}.
 
 handle_call({call, Mod, Fun, Args, Gleader}, To, S) ->
     %% Spawn not to block the rex server.
@@ -145,7 +154,7 @@ handle_call({call, Mod, Fun, Args, Gleader}, To, S) ->
                                    Ref -> ok
                                end;
                            _ ->
-                               reply(To, Reply)
+                               partisan_gen_server:reply(To, Reply)
                        end
                end,
     try
@@ -193,7 +202,7 @@ handle_info({'DOWN', M, process, _, Reason}, S) ->
     undefined ->
         {noreply, S};
     {_, _} = To ->
-        reply(To, {badrpc, {'EXIT', Reason}}),
+        partisan_gen_server:reply(To, {badrpc, {'EXIT', Reason}}),
         {noreply, maps:remove(M, S)}
     end;
 handle_info({From, {sbcast, Name, Msg}}, S) ->
@@ -214,7 +223,7 @@ handle_info({From, {send, Name, Msg}}, S) ->
     {noreply, S};
 handle_info({From, {call, Mod, Fun, Args, Gleader}}, S) ->
     %% Special for hidden C node's, uugh ...
-    To = {?NAME, From},
+    To = {From, ?NAME},
     NewGleader =
         case Gleader of
             send_stdout_to_caller ->
@@ -227,11 +236,11 @@ handle_info({From, {call, Mod, Fun, Args, Gleader}}, S) ->
         {noreply, _NewS} = Return ->
             Return;
         {reply, Reply, NewS} ->
-            reply(To, Reply),
+            partisan_gen_server:reply(To, Reply),
             {noreply, NewS}
     end;
 handle_info({From, features_request}, S) ->
-    From ! {features_reply, node(), [erpc]},
+    From ! {features_reply, node(), [partisan_erpc]},
     {noreply, S};
 handle_info(_, S) ->
     {noreply, S}.
@@ -248,13 +257,6 @@ code_change(_, S, _) ->
 
 
 %% RPC aid functions ....
-
-reply({?NAME, From}, Reply) ->
-    From ! {?NAME, Reply},
-    ok;
-reply({From, _} = To, Reply) when is_pid(From) ->
-    partisan_gen_server:reply(To, Reply).
-
 
 execute_call(Mod, Fun, Args) ->
     try
@@ -275,11 +277,11 @@ execute_call(Mod, Fun, Args) ->
             end
     end.
 
-set_group_leader(Gleader) when is_pid(Gleader) -> 
+set_group_leader(Gleader) when is_pid(Gleader) ->
     group_leader(Gleader, self());
 set_group_leader({send_stdout_to_caller, CallerPid}) ->
     group_leader(cnode_call_group_leader_start(CallerPid), self());
-set_group_leader(user) -> 
+set_group_leader(user) ->
     %% For example, hidden C nodes doesn't want any I/O.
     Gleader = case whereis(user) of
           Pid when is_pid(Pid) -> Pid;
@@ -351,7 +353,7 @@ nodes_observer_loop(Tab) ->
             ets:delete(Tab, N);
         {features_reply, N, FeatureList} ->
             try
-                SpawnRpc = lists:member(erpc, FeatureList),
+                SpawnRpc = lists:member(partisan_erpc, FeatureList),
                 ets:insert(Tab, {N, SpawnRpc})
             catch
                 _:_ -> ets:insert(Tab, {N, false})
@@ -360,6 +362,32 @@ nodes_observer_loop(Tab) ->
             ignore
     end,
     nodes_observer_loop(Tab).
+
+-ifdef(SERVER_SIDE_ERPC_IS_MANDATORY).
+
+%% Currently node_has_feature() is only needed if
+%% it is unknown if 'partisan_erpc' is supported by server
+%% side or not...
+
+-else. %% ! define SERVER_SIDE_ERPC_IS_MANDATORY
+
+-dialyzer([{nowarn_function, node_has_feature/2}, no_match]).
+
+-spec node_has_feature(Node :: atom(), Feature :: term()) -> boolean().
+
+node_has_feature(N, partisan_erpc) when N == node() ->
+    true;
+node_has_feature(N, partisan_erpc) ->
+    try
+        Tab = persistent_term:get(?TAB_NAME),
+        ets:lookup_element(Tab, N, 2)
+    catch
+        _:_ -> false
+    end;
+node_has_feature(_N, _Feature) ->
+    false.
+
+-endif.
 
 %% THE rpc client interface
 
@@ -397,8 +425,33 @@ call(N,M,F,A) ->
       Reason :: term(),
       Timeout :: ?TIMEOUT_TYPE.
 
+-ifdef(SERVER_SIDE_ERPC_IS_MANDATORY).
+
 call(N,M,F,A,T) ->
     ?RPCIFY(partisan_erpc:call(N, M, F, A, T)).
+
+-else. %% ! defined SERVER_SIDE_ERPC_IS_MANDATORY
+
+call(N,M,F,A,T) ->
+    DL = try
+             deadline(T)
+         catch
+             error:_ ->
+                 error(badarg)
+         end,
+    case ?RPCIFY(partisan_erpc:call(N, M, F, A, T)) of
+        {badrpc, notsup} ->
+            case time_left(DL) of
+                0 ->
+                    {badrpc, timeout};
+                Timeout ->
+                    do_srv_call(N, {call,M,F,A,group_leader()}, Timeout)
+            end;
+        Res ->
+            Res
+    end.
+
+-endif. %% ! defined SERVER_SIDE_ERPC_IS_MANDATORY
 
 -spec block_call(Node, Module, Function, Args) -> Res | {badrpc, Reason} when
       Node :: node(),
@@ -426,7 +479,7 @@ block_call(N,M,F,A,Timeout) when is_atom(N),
                                  is_list(A),
                                  ?IS_VALID_TMO(Timeout) ->
     do_srv_call(N, {block_call,M,F,A,group_leader()}, Timeout).
-    
+
 
 %% call() implementation utilizing partisan_erpc:call()...
 
@@ -442,15 +495,15 @@ rpcify_exception(exit, Reason) ->
     exit(Reason);
 rpcify_exception(error, {exception, Error, Stack}) ->
     {badrpc, {'EXIT', {Error, Stack}}};
-rpcify_exception(error, {erpc, badarg}) ->
+rpcify_exception(error, {partisan_erpc, badarg}) ->
     error(badarg);
-rpcify_exception(error, {erpc, noconnection}) ->
+rpcify_exception(error, {partisan_erpc, noconnection}) ->
     {badrpc, nodedown};
-rpcify_exception(error, {erpc, timeout}) ->
+rpcify_exception(error, {partisan_erpc, timeout}) ->
     {badrpc, timeout};
-rpcify_exception(error, {erpc, notsup}) ->
+rpcify_exception(error, {partisan_erpc, notsup}) ->
     {badrpc, notsup};
-rpcify_exception(error, {erpc, Error}) ->
+rpcify_exception(error, {partisan_erpc, Error}) ->
     {badrpc, {'EXIT', Error}};
 rpcify_exception(error, Reason) ->
     error(Reason).
@@ -472,7 +525,7 @@ do_srv_call(Node, Request, Timeout) ->
     {'DOWN',Mref,_,_,{Receiver,Tag,Result}} ->
         rpc_check(Result);
     {'DOWN',Mref,_,_,Reason} ->
-        %% The middleman code failed. Or someone did 
+        %% The middleman code failed. Or someone did
         %% exit(_, kill) on the middleman process => Reason==killed
         rpc_check_t({'EXIT',Reason})
     end.
@@ -480,7 +533,7 @@ do_srv_call(Node, Request, Timeout) ->
 rpc_check_t({'EXIT', {timeout,_}}) -> {badrpc, timeout};
 rpc_check_t({'EXIT', {timeout_value,_}}) -> error(badarg);
 rpc_check_t(X) -> rpc_check(X).
-        
+
 rpc_check({'EXIT', {{nodedown,_},_}}) ->
     {badrpc, nodedown};
 rpc_check({'EXIT', _}=Exit) ->
@@ -495,7 +548,7 @@ rpc_check(X) -> X.
 %% Receives messages on the form {From, Request} and replies on the
 %% form From ! {ReplyWrapper, Node, Reply}.
 %% This function makes such a server call and ensures that that
-%% The entire call is packed into an atomic transaction which 
+%% The entire call is packed into an atomic transaction which
 %% either succeeds or fails, i.e. never hangs (unless the server itself hangs).
 
 -spec server_call(Node, Name, ReplyWrapper, Msg) -> Reply | {error, Reason} when
@@ -506,7 +559,7 @@ rpc_check(X) -> X.
       Reply :: term(),
       Reason :: nodedown.
 
-server_call(Node, Name, ReplyWrapper, Msg) 
+server_call(Node, Name, ReplyWrapper, Msg)
   when is_atom(Node), is_atom(Name) ->
     if node() =:= nonode@nohost, Node =/= nonode@nohost ->
         {error, nodedown};
@@ -528,14 +581,42 @@ server_call(Node, Name, ReplyWrapper, Msg)
       Function :: atom(),
       Args :: [term()].
 
+-ifdef(SERVER_SIDE_ERPC_IS_MANDATORY).
+
 cast(Node, Mod, Fun, Args) ->
     try
         ok = partisan_erpc:cast(Node, Mod, Fun, Args)
     catch
-        error:{erpc, badarg} ->
+        error:{partisan_erpc, badarg} ->
             error(badarg)
     end,
     true.
+
+-else.
+
+cast(Node, Mod, Fun, Args) when is_atom(Node),
+                                is_atom(Mod),
+                                is_atom(Fun),
+                                is_list(Args) ->
+    _ = case node_has_feature(Node, partisan_erpc) of
+            false ->
+                partisan_gen_server:cast({?NAME,Node},
+                                {cast,Mod,Fun,Args,group_leader()});
+            true ->
+                try
+                    ok = partisan_erpc:cast(Node, Mod, Fun, Args)
+                catch
+                    error:{partisan_erpc, badarg} ->
+                        error(badarg)
+                end
+        end,
+    true;
+cast(_, _, _, _) ->
+    error(badarg).
+
+
+-endif.
+
 
 %% Asynchronous broadcast, returns nothing, it's just send 'n' pray
 -spec abcast(Name, Msg) -> abcast when
@@ -612,7 +693,7 @@ send_nodes([Node|Tail], Name, Msg, Monitors) when is_atom(Node) ->
 send_nodes([_Node|Tail], Name, Msg, Monitors) ->
     %% Skip non-atom _Node
     send_nodes(Tail, Name, Msg, Monitors);
-send_nodes([], _Name,  _Req, Monitors) -> 
+send_nodes([], _Name,  _Req, Monitors) ->
     Monitors.
 
 %% Starts a monitor, either the new way, or the old.
@@ -634,7 +715,7 @@ start_monitor(Node, Name) ->
       ResL :: [Res :: term() | {'badrpc', Reason :: term()}],
       BadNodes :: [node()].
 
-multicall(M, F, A) -> 
+multicall(M, F, A) ->
     multicall(M, F, A, infinity).
 
 
@@ -668,22 +749,29 @@ multicall(M, F, A, Timeout) ->
       ResL :: [Res :: term() | {'badrpc', Reason :: term()}],
       BadNodes :: [node()].
 
+-ifdef(SERVER_SIDE_ERPC_IS_MANDATORY).
+
+%%
+%% Use this more efficient implementation of multicall()
+%% when 'partisan_erpc' support can be made mandatory for server
+%% side.
+%%
 multicall(Nodes, M, F, A, Timeout) ->
     %%
     %% We want to use partisan_erpc:multicall() and then convert the result
     %% instead of using partisan_erpc:send_request()/partisan_erpc:receive_response()
-    %% directly. This since partisan_erpc:multicall() is able to utilize the
-    %% selective receive optimization when all clauses match on the
-    %% same reference. partisan_erpc:send_request()/partisan_erpc:receive_response()
-    %% is not able to utilize such optimizations.
+    %% directly. This since it is expected that partisan_erpc:multicall()
+    %% will be able to utilize a future message queue optimization
+    %% that partisan_erpc:send_request()/partisan_erpc:receive_response() most likely
+    %% won't be able to (only the future will tell...).
     %%
-    ERpcRes = try
+    partisan_ERpcRes = try
                   partisan_erpc:multicall(Nodes, M, F, A, Timeout)
               catch
-                  error:{erpc, badarg} ->
+                  error:{partisan_erpc, badarg} ->
                       error(badarg)
               end,
-    rpcmulticallify(Nodes, ERpcRes, [], []).
+    rpcmulticallify(Nodes, partisan_ERpcRes, [], []).
 
 
 rpcmulticallify([], [], Ok, Err) ->
@@ -692,19 +780,269 @@ rpcmulticallify([_N|Ns], [{ok, {'EXIT', _} = Exit}|Rlts], Ok, Err) ->
     rpcmulticallify(Ns, Rlts, [{badrpc, Exit}|Ok], Err);
 rpcmulticallify([_N|Ns], [{ok, Return}|Rlts], Ok, Err) ->
     rpcmulticallify(Ns, Rlts, [Return|Ok], Err);
-rpcmulticallify([N|Ns], [{error, {erpc, Reason}}|Rlts], Ok, Err)
+rpcmulticallify([N|Ns], [{error, {partisan_erpc, Reason}}|Rlts], Ok, Err)
   when Reason == timeout; Reason == noconnection ->
     rpcmulticallify(Ns, Rlts, Ok, [N|Err]);
 rpcmulticallify([_N|Ns], [{Class, Reason}|Rlts], Ok, Err) ->
     rpcmulticallify(Ns, Rlts, [rpcify_exception(Class, Reason)|Ok], Err).
 
+-else. %% ! defined SERVER_SIDE_ERPC_IS_MANDATORY
+
+%%
+%% Currently used implementation for multicall(). When
+%% 'partisan_erpc' support can be required for server side,
+%% replace with the implementation above...
+%%
+
+multicall(Nodes, M, F, A, Timeout) ->
+    try
+        true = is_atom(M),
+        true = is_atom(F),
+        true = is_list(A),
+        Deadline = deadline(Timeout),
+        Res = make_ref(),
+        MFA = {M, F, A},
+        {NRs, ReqMap0} = mc_requests(Res, Nodes, M, F, A, [], #{}),
+        ReqMap1 = mc_spawn_replies(Res, maps:size(ReqMap0), ReqMap0,
+                                   MFA, Deadline),
+        mc_results(Res, NRs, [], [], ReqMap1, MFA, Deadline)
+    catch
+        error:NotIError when NotIError /= internal_error ->
+            error(badarg)
+    end.
+
+mc_requests(_Res, [], _M, _F, _A, NRs, ReqMap) ->
+    {NRs, ReqMap};
+mc_requests(Res, [N|Ns], M, F, A, NRs, ReqMap) ->
+    ReqId = try
+                spawn_request(N, partisan_erpc, execute_call,
+                              [Res, M, F, A],
+                              [{reply_tag, {spawn_reply, Res, N}},
+                               monitor])
+            catch
+                _:_ ->
+                    mc_fail_requests(Res, NRs)
+            end,
+    NR = {N, ReqId},
+    mc_requests(Res, Ns, M, F, A, [NR|NRs], ReqMap#{ReqId => spawn_request});
+mc_requests(Res, _Error, _M, _F, _A, NRs, _ReqMap) ->
+    mc_fail_requests(Res, NRs).
+
+%% Abandon any requests sent then fail...
+mc_fail_requests(_Res, []) ->
+    error(badarg);
+mc_fail_requests(Res, [{Node, ReqId} | NRs]) ->
+    case spawn_request_abandon(ReqId) of
+        true ->
+            ok;
+        false ->
+            receive
+                {{spawn_reply, Res, Node}, ReqId, error, _} ->
+                    ok;
+                {{spawn_reply, Res, Node}, ReqId, ok, Pid} ->
+                    case erlang:demonitor(ReqId, [info]) of
+                        true ->
+                            ok;
+                        false ->
+                            receive
+                                {'DOWN', ReqId, process, Pid, _} ->
+                                    ok
+                            after
+                                0 ->
+                                    error(internal_error)
+                            end
+                    end
+            after
+                0 ->
+                    error(internal_error)
+            end
+    end,
+    mc_fail_requests(Res, NRs).
+
+mc_spawn_replies(_Res, 0, ReqMap, _MFA, _Deadline) ->
+    ReqMap;
+mc_spawn_replies(Res, Outstanding, ReqMap, MFA, Deadline) ->
+    Timeout = time_left(Deadline),
+    receive
+        {{spawn_reply, Res, _}, _, _, _} = Reply ->
+            NewReqMap = mc_handle_spawn_reply(Reply, ReqMap, MFA, Deadline),
+            mc_spawn_replies(Res, Outstanding-1, NewReqMap, MFA, Deadline)
+    after
+        Timeout ->
+            ReqMap
+    end.
+
+mc_handle_spawn_reply({{spawn_reply, _Res, _Node}, ReqId, ok, Pid},
+                      ReqMap, _MFA, _Deadline) ->
+    ReqMap#{ReqId => {spawn, Pid}};
+mc_handle_spawn_reply({{spawn_reply, _Res, Node}, ReqId, error, notsup},
+                      ReqMap, MFA, infinity) ->
+    {M, F, A} = MFA,
+    SrvReqId = partisan_gen_server:send_request({?NAME, Node},
+                                       {call, M,F,A,
+                                        group_leader()}),
+    ReqMap#{ReqId => {server, SrvReqId}};
+mc_handle_spawn_reply({{spawn_reply, Res, Node}, ReqId, error, notsup},
+                      ReqMap, MFA, Deadline) ->
+    {M, F, A} = MFA,
+    try
+        {Pid, Mon} = spawn_monitor(fun () ->
+                                           process_flag(trap_exit, true),
+                                           Request = {call, M,F,A,
+                                                      group_leader()},
+                                           Timeout = time_left(Deadline),
+                                           Result = partisan_gen_server:call({?NAME,
+                                                                     Node},
+                                                                    Request,
+                                                                    Timeout),
+                                           exit({Res, Result})
+                                   end),
+        ReqMap#{ReqId => {spawn_server, Mon, Pid}}
+    catch
+        error:system_limit ->
+            ReqMap#{ReqId => {error, {badrpc, {'EXIT', system_limit}}}}
+    end;
+mc_handle_spawn_reply({{spawn_reply, _Res, _Node}, ReqId, error, noconnection},
+                      ReqMap, _MFA, _Deadline) ->
+    ReqMap#{ReqId => {error, badnode}};
+mc_handle_spawn_reply({{spawn_reply, _Res, _Node}, ReqId, error, Reason},
+                      ReqMap, _MFA, _Deadline) ->
+    ReqMap#{ReqId => {error, {badrpc, {'EXIT', Reason}}}}.
+
+mc_results(_Res, [], OkAcc, ErrAcc, _ReqMap, _MFA, _Deadline) ->
+    {OkAcc, ErrAcc};
+mc_results(Res, [{N,ReqId}|NRs] = OrigNRs, OkAcc, ErrAcc,
+           ReqMap, MFA, Deadline) ->
+    case maps:get(ReqId, ReqMap) of
+        {error, badnode} ->
+            mc_results(Res, NRs, OkAcc, [N|ErrAcc], ReqMap, MFA, Deadline);
+        {error, BadRpc} ->
+            mc_results(Res, NRs, [BadRpc|OkAcc], ErrAcc, ReqMap,
+                       MFA, Deadline);
+        spawn_request ->
+            %% We timed out waiting for spawn replies...
+            case spawn_request_abandon(ReqId) of
+                true ->
+                    %% Timed out request...
+                    mc_results(Res, NRs, OkAcc, [N|ErrAcc], ReqMap,
+                               MFA, Deadline);
+                false ->
+                    %% Reply has been delivered now; handle it...
+                    receive
+                        {{spawn_reply, Res, _}, ReqId, _, _} = Reply ->
+                            NewReqMap = mc_handle_spawn_reply(Reply, ReqMap,
+                                                              MFA, Deadline),
+                            mc_results(Res, OrigNRs, OkAcc, ErrAcc,
+                                       NewReqMap, MFA, Deadline)
+                    after 0 ->
+                            error(internal_error)
+                    end
+            end;
+        {spawn, Pid} ->
+            Timeout = time_left(Deadline),
+            receive
+                {'DOWN', ReqId, process, Pid, Reason} ->
+                    case ?RPCIFY(partisan_erpc:call_result(down, ReqId, Res, Reason)) of
+                        {badrpc, nodedown} ->
+                            mc_results(Res, NRs, OkAcc, [N|ErrAcc],
+                                       ReqMap, MFA, Deadline);
+                        CallRes ->
+                            mc_results(Res, NRs, [CallRes|OkAcc],
+                                       ErrAcc, ReqMap, MFA, Deadline)
+                    end
+            after
+                Timeout ->
+                    case erlang:demonitor(ReqId, [info]) of
+                        true ->
+                            mc_results(Res, NRs, OkAcc, [N|ErrAcc],
+                                       ReqMap, MFA, Deadline);
+                        false ->
+                            receive
+                                {'DOWN', ReqId, process, Pid, Reason} ->
+                                    case ?RPCIFY(partisan_erpc:call_result(down,
+                                                                  ReqId,
+                                                                  Res,
+                                                                  Reason)) of
+                                        {badrpc, nodedown} ->
+                                            mc_results(Res, NRs, OkAcc,
+                                                       [N|ErrAcc], ReqMap,
+                                                       MFA, Deadline);
+                                        CallRes ->
+                                            mc_results(Res, NRs,
+                                                       [CallRes|OkAcc],
+                                                       ErrAcc, ReqMap,
+                                                       MFA, Deadline)
+                                    end
+                            after 0 ->
+                                    error(internal_error)
+                            end
+                    end
+            end;
+        {spawn_server, Mon, Pid} ->
+            %% Old node with timeout on the call...
+            Result = receive
+                         {'DOWN', Mon, process, Pid, {Res, CallRes}} ->
+                             rpc_check(CallRes);
+                         {'DOWN', Mon, process, Pid, Reason} ->
+                             rpc_check_t({'EXIT',Reason})
+                     end,
+            case Result of
+                {badrpc, BadRpcReason} when BadRpcReason == timeout;
+                                            BadRpcReason == nodedown ->
+                    mc_results(Res, NRs, OkAcc, [N|ErrAcc],
+                               ReqMap, MFA, Deadline);
+                _ ->
+                    mc_results(Res, NRs, [Result|OkAcc], ErrAcc, ReqMap,
+                               MFA, Deadline)
+            end;
+        {server, SrvReqId} ->
+            %% Old node without timeout on the call...
+            case partisan_gen_server:wait_response(SrvReqId, infinity) of
+                {reply, Reply} ->
+                    Result = rpc_check(Reply),
+                    mc_results(Res, NRs, [Result|OkAcc], ErrAcc,
+                               ReqMap, MFA, Deadline);
+                {error, {noconnection, _}} ->
+                    mc_results(Res, NRs, OkAcc, [N|ErrAcc],
+                               ReqMap, MFA, Deadline);
+                {error, {Reason, _}} ->
+                    BadRpc = {badrpc, {'EXIT', Reason}},
+                    mc_results(Res, NRs, [BadRpc|OkAcc], ErrAcc,
+                               ReqMap, MFA, Deadline)
+            end
+    end.
+
+deadline(infinity) ->
+    infinity;
+deadline(?MAX_INT_TIMEOUT) ->
+    erlang:convert_time_unit(erlang:monotonic_time(millisecond)
+                             + ?MAX_INT_TIMEOUT,
+                             millisecond,
+                             native);
+deadline(T) when ?IS_VALID_TMO_INT(T) ->
+    Now = erlang:monotonic_time(),
+    NativeTmo = erlang:convert_time_unit(T, millisecond, native),
+    Now + NativeTmo.
+
+time_left(infinity) ->
+    infinity;
+time_left(Deadline) ->
+    case Deadline - erlang:monotonic_time() of
+        TimeLeft when TimeLeft =< 0 ->
+            0;
+        TimeLeft ->
+            erlang:convert_time_unit(TimeLeft-1, native, millisecond) + 1
+    end.
+
+-endif. %% ! defined SERVER_SIDE_ERPC_IS_MANDATORY
+
 %% Send Msg to Name on all nodes, and collect the answers.
 %% Return {Replies, Badnodes} where Badnodes is a list of the nodes
 %% that failed during the timespan of the call.
-%% This function assumes that if we send a request to a server 
+%% This function assumes that if we send a request to a server
 %% called Name, the server will reply with a reply
 %% on the form {Name, Node, Reply}, otherwise this function will
-%% hang forever. 
+%% hang forever.
 %% It also assumes that the server receives messages on the form
 %% {From, Msg} and then replies as From ! {Name, node(), Reply}.
 %%
@@ -726,13 +1064,13 @@ multi_server_call(Name, Msg) ->
       Replies :: [Reply :: term()],
       BadNodes :: [node()].
 
-multi_server_call(Nodes, Name, Msg) 
+multi_server_call(Nodes, Name, Msg)
   when is_list(Nodes), is_atom(Name) ->
     Monitors = send_nodes(Nodes, Name, Msg, []),
     rec_nodes(Name, Monitors).
 
 
-rec_nodes(Name, Nodes) -> 
+rec_nodes(Name, Nodes) ->
     rec_nodes(Name, Nodes, [], []).
 
 rec_nodes(_Name, [],  Badnodes, Replies) ->
@@ -741,7 +1079,7 @@ rec_nodes(Name, [{N,R} | Tail], Badnodes, Replies) ->
     receive
     {'DOWN', R, _, _, _} ->
         rec_nodes(Name, Tail, [N|Badnodes], Replies);
-    {?NAME, N, {nonexisting_name, _}} ->  
+    {?NAME, N, {nonexisting_name, _}} ->
         %% used by sbcast()
         erlang:demonitor(R, [flush]),
         rec_nodes(Name, Tail, [N|Badnodes], Replies);
@@ -752,8 +1090,16 @@ rec_nodes(Name, [{N,R} | Tail], Badnodes, Replies) ->
 
 %% Now for an asynchronous rpc.
 %% An asynchronous version of rpc that is faster for series of
-%% rpc's towards the same node. I.e. it returns immediately and 
+%% rpc's towards the same node. I.e. it returns immediately and
 %% it returns a Key that can be used in a subsequent yield(Key).
+
+-ifdef(SERVER_SIDE_ERPC_IS_MANDATORY).
+
+%%
+%% Use this more efficient implementation of async_call()
+%% when 'partisan_erpc' support can be made mandatory for server
+%% side.
+%%
 
 -opaque key() :: partisan_erpc:request_id().
 
@@ -768,7 +1114,7 @@ async_call(Node, Mod, Fun, Args) ->
     try
         partisan_erpc:send_request(Node, Mod, Fun, Args)
     catch
-        error:{erpc, badarg} ->
+        error:{partisan_erpc, badarg} ->
             error(badarg)
     end.
 
@@ -786,16 +1132,17 @@ yield(Key) ->
       Val :: (Res :: term()) | {badrpc, Reason :: term()}.
 
 nb_yield(Key, Tmo) ->
-    try partisan_erpc:wait_response(Key, Tmo) of
+    case ?RPCIFY(partisan_erpc:wait_response(Key, Tmo)) of
         no_response ->
             timeout;
         {response, {'EXIT', _} = BadRpc} ->
+            %% RPCIFY() cannot handle this case...
             {value, {badrpc, BadRpc}};
         {response, R} ->
-            {value, R}
-    catch
-        Class:Reason ->
-            {value, rpcify_exception(Class, Reason)}
+            {value, R};
+        BadRpc ->
+            %% An exception converted by RPCIFY()...
+            {value, BadRpc}
     end.
 
 -spec nb_yield(Key) -> {value, Val} | timeout when
@@ -805,9 +1152,81 @@ nb_yield(Key, Tmo) ->
 nb_yield(Key) ->
     nb_yield(Key, 0).
 
+-else. %% ! defined SERVER_SIDE_ERPC_IS_MANDATORY
+
+%%
+%% Currently used implementation for async_call(). When
+%% 'partisan_erpc' support can be required for server side,
+%% replace with the implementation above...
+%%
+
+-opaque key() :: {pid(), reference()}.
+
+-spec async_call(Node, Module, Function, Args) -> Key when
+      Node :: node(),
+      Module :: module(),
+      Function :: atom(),
+      Args :: [term()],
+      Key :: key().
+
+async_call(Node, Mod, Fun, Args) ->
+    try
+        true = is_atom(Node),
+        true = is_atom(Mod),
+        true = is_atom(Fun),
+        true = is_integer(length(Args))
+    catch
+        _:_ ->
+            error(badarg)
+    end,
+    Caller = self(),
+    spawn_monitor(fun() ->
+                          process_flag(trap_exit, true),
+                          R = call(Node, Mod, Fun, Args),
+                          exit({async_call_result, Caller, R})
+                  end).
+
+-spec yield(Key) -> Res | {badrpc, Reason} when
+      Key :: key(),
+      Res :: term(),
+      Reason :: term().
+
+yield({Pid, Ref} = Key) when is_pid(Pid),
+                             is_reference(Ref) ->
+    {value,R} = nb_yield(Key, infinity),
+    R.
+
+-spec nb_yield(Key) -> {value, Val} | timeout when
+      Key :: key(),
+      Val :: (Res :: term()) | {badrpc, Reason :: term()}.
+
+nb_yield({Pid, Ref} = Key) when is_pid(Pid),
+                                is_reference(Ref) ->
+    nb_yield(Key, 0).
+
+-spec nb_yield(Key, Timeout) -> {value, Val} | timeout when
+      Key :: key(),
+      Timeout :: ?TIMEOUT_TYPE,
+      Val :: (Res :: term()) | {badrpc, Reason :: term()}.
+
+nb_yield({Proxy, Mon}, Tmo) when is_pid(Proxy),
+                                 is_reference(Mon),
+                                 ?IS_VALID_TMO(Tmo) ->
+    Me = self(),
+    receive
+        {'DOWN', Mon, process, Proxy, {async_call_result, Me, R}} ->
+            {value,R};
+        {'DOWN', Mon, process, Proxy, Reason} ->
+            {value, {badrpc, {'EXIT', Reason}}}
+    after Tmo ->
+            timeout
+    end.
+
+-endif. %% ! defined SERVER_SIDE_ERPC_IS_MANDATORY
+
 %% A parallel network evaluator
 %% ArgL === [{M,F,Args},........]
-%% Returns a lists of the evaluations in the same order as 
+%% Returns a lists of the evaluations in the same order as
 %% given to ArgL
 -spec parallel_eval(FuncCalls) -> ResL when
       FuncCalls :: [{Module, Function, Args}],
@@ -823,12 +1242,12 @@ parallel_eval(ArgL) ->
 
 map_nodes([],_,_) -> [];
 map_nodes(ArgL,[],Original) ->
-    map_nodes(ArgL,Original,Original); 
+    map_nodes(ArgL,Original,Original);
 map_nodes([{M,F,A}|Tail],[Node|MoreNodes], Original) ->
-    [?MODULE:async_call(Node,M,F,A) | 
+    [?MODULE:async_call(Node,M,F,A) |
      map_nodes(Tail,MoreNodes,Original)].
 
-%% Parallel version of lists:map/3 with exactly the same 
+%% Parallel version of lists:map/3 with exactly the same
 %% arguments and return value as lists:map/3,
 %% except that it calls exit/1 if a network error occurs.
 -spec pmap(FuncSpec, ExtraArgs, List1) -> List2 when
@@ -904,7 +1323,7 @@ cnode_call_group_leader_loop(State) ->
             From ! {io_reply, ReplyAs, Reply},
             cnode_call_group_leader_loop(NewState);
         {stop, StopRequesterPid, Ref, To, Reply} ->
-            reply(To, Reply),
+            partisan_gen_server:reply(To, Reply),
             StopRequesterPid ! Ref,
             ok;
     _Unknown ->
@@ -989,3 +1408,28 @@ cnode_call_group_leader_init(CallerPid) ->
 
 cnode_call_group_leader_start(CallerPid) ->
     spawn_link(fun() -> cnode_call_group_leader_init(CallerPid) end).
+
+
+
+
+%% =============================================================================
+%% PARTISAN API
+%% =============================================================================
+
+
+
+-spec start(Channel :: partisan:channel(), N :: non_neg_integer()) ->
+    {'ok', pid()} | 'ignore' | {'error', term()}.
+
+start(Channel, N) when is_atom(Channel), is_integer(N), N > 0  ->
+    Name = "partisan_rpc_" ++ atom_to_list(Channel) ++ integer_to_list(N),
+    partisan_gen_server:start({local,Name}, ?MODULE, [Channel], ?SPAWN_OPTS).
+
+-spec start_link() -> {'ok', pid()} | 'ignore' | {'error', term()}.
+
+start_link() ->
+    %% The rex server process may receive a huge amount of
+    %% messages. Make sure that they are stored off heap to
+    %% avoid exessive GCs.
+    partisan_gen_server:start_link({local,?NAME}, ?MODULE, [], ?SPAWN_OPTS).
+
