@@ -27,7 +27,7 @@
 %%     {peer_discovery, [
 %%          {type, partisan_peer_discovery_dns},
 %%          {config, #{
-%%              type => fqdns,
+%%              record_type => fqdns,
 %%              name => "theDNSSearchName",
 %%              nodename => "foo"
 %%          }}
