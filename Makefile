@@ -16,7 +16,7 @@ SPELLCHECK 	    = $(CODESPELL) -S _build -S doc -S .git -L applys,nd,accout,matt
 SPELLFIX      	= $(SPELLCHECK) -i 3 -w
 
 .PHONY: compile-no-deps alt-test core-test otp-test test docs xref dialyzer-run dialyzer-quick dialyzer \
-		cleanplt upload-docs rel deps test plots spellcheck spellfix certs
+		cleanplt upload-docs rel deps test plots spellcheck spellfix certs node1 node2 node3 node
 
 all: compile
 
@@ -117,6 +117,30 @@ logs:
 ##
 ## Release targets
 ##
+
+
+
+node1: export ERL_NODE_NAME=node1@127.0.0.1
+node1: noderun
+
+node2: export ERL_NODE_NAME=node2@127.0.0.1
+node2: noderun
+
+node3: export ERL_NODE_NAME=node3@127.0.0.1
+node3: noderun
+
+# ERL_NODE_NAME=node4@127.0.0.1 make node
+node: noderun
+	ifndef ERL_NODE_NAME
+	    $(error ERL_NODE_NAME is undefined)
+	endif
+	${REBAR} as node release
+	RELX_REPLACE_OS_VARS=true _build/node/rel/partisan/bin/partisan console
+
+
+noderun:
+	${REBAR} as node release
+	RELX_REPLACE_OS_VARS=true _build/node/rel/partisan/bin/partisan console
 
 rel:
 	${REBAR} as test release

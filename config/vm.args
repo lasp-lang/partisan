@@ -1,17 +1,20 @@
 ## Name of the node
--name ${NODE_NAME}
+-name ${ERL_NODE_NAME}
 
 ## Cookie for distributed erlang
--setcookie ${COOKIE}
+-setcookie partisan
+
+## Explicit connections only (Deprecated in latest versions)
+-connect_all false
+-auto_connect never
+-hidden
+
+## Disable disterl
+-start_epmd false
+-erl_epmd_port 27781
 
 ## Increase distribution port buffer size.
-+zdbbl 32768
+## +zdbbl 32768
 
 ## Enable multi_time_warp
 +C multi_time_warp
-
-## Hidden nodes
--hidden
-
-## Explicit connections only.
--connect_all false
