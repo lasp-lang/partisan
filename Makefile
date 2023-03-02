@@ -120,19 +120,22 @@ logs:
 
 
 
-node1: export ERL_NODE_NAME=node1@127.0.0.1
+node1: export ERL_NODE_NAME=node1@127.0.0.1 export PARTISAN_PEER_PORT=10100
 node1: noderun
 
-node2: export ERL_NODE_NAME=node2@127.0.0.1
+node2: export ERL_NODE_NAME=node2@127.0.0.1 export PARTISAN_PEER_PORT=10200
 node2: noderun
 
-node3: export ERL_NODE_NAME=node3@127.0.0.1
+node3: export ERL_NODE_NAME=node3@127.0.0.1 export PARTISAN_PEER_PORT=10300
 node3: noderun
 
 # ERL_NODE_NAME=node4@127.0.0.1 make node
 node: noderun
 	ifndef ERL_NODE_NAME
 	    $(error ERL_NODE_NAME is undefined)
+	endif
+	ifndef PARTISAN_PEER_PORT
+	    $(error PARTISAN_PEER_PORT is undefined)
 	endif
 	${REBAR} as node release
 	RELX_REPLACE_OS_VARS=true _build/node/rel/partisan/bin/partisan console
