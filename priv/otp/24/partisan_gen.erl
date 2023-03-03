@@ -93,7 +93,7 @@
 -type server_ref() :: pid() | atom() | {atom(), node()}
                     | {global, term()} | {via, module(), term()}.
 
--type request_id() :: term().
+-type request_id() :: reference() | partisan_remote_ref:r().
 
 %%-----------------------------------------------------------------
 %% Starts a generic process.
@@ -469,7 +469,7 @@ wait_response(Mref, Timeout) ->
 
 -spec receive_response(RequestId::request_id(), timeout()) ->
     {reply, Reply::term()} | 'timeout' | {error, {term(), server_ref()}}.
-receive_response(Mref, Timeout) when is_reference(Mref) ->
+receive_response(Mref, Timeout) ->
     receive
         {[alias|Mref], Reply} ->
             partisan:demonitor(Mref, [flush]),
@@ -486,7 +486,7 @@ receive_response(Mref, Timeout) when is_reference(Mref) ->
             end
     end.
 
--spec check_response(RequestId::term(), Key::request_id()) ->
+-spec check_response(Msg::term(), Mref::request_id()) ->
     {reply, Reply::term()} | 'no_reply' | {error, {term(), server_ref()}}.
 check_response(Msg, Mref) ->
 case Msg of
@@ -740,7 +740,7 @@ format_status_header(TagLine, Name) ->
 %% The returned list is guaranteed to have a value for key `channel'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec get_opts() -> [{atom(), any()}].
+-spec get_opts() -> [{channel, partisan:channel()}].
 
 get_opts() ->
     case erlang:get(partisan_gen_opts) of

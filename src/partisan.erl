@@ -45,8 +45,7 @@
 
 -type server_ref()          ::  partisan_peer_service_manager:server_ref().
 -type forward_opts()        ::  partisan_peer_service_manager:forward_opts().
--type node_type()           ::  this | known | visible | connected | hidden
-                                | all.
+-type node_type()           ::  this | known | visible | connected | hidden.
 -type channel()             ::  atom().
 -type channel_opts()        ::  #{
                                     parallelism := non_neg_integer(),
@@ -702,18 +701,42 @@ nodes() ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Returns a list of all nodes connected to this node through normal
-%% connections (that is, hidden nodes are not listed). Same as nodes(visible).
+%% @doc Returns a list of nodes according to the argument specified. The
+%% returned result, when the argument is a list, is the list of nodes
+%% satisfying the disjunction(s) of the list elements.
+%%
+%% Differences with Erlang:
+%% <ul>
+%% <li>`hidden' - always returns the empty list (there is no concept of hidden
+%% nodes in Partisan).</li>
+%% <li>`this' - returns the list containing the result of calling
+%% {@link node/0}</li>
+%% <li>`known' - will return the nodes known by the {@link
+%% partisan_peer_service} i.e. {@link partisan_peer_service:members/0} but not
+%% the nodes referred to by process identifiers,
+%% port identifiers, and references located on this node.<li>
+%% <li>`visible' - equivalent to Erlang.</li>
+%% </ul>
 %% @end
 %% -----------------------------------------------------------------------------
--spec nodes(Arg :: node_type()) -> [node()].
+-spec nodes(Arg :: node_type() | [node_type()]) -> [node()].
 
 nodes(Arg) ->
     case partisan_config:get(connect_disterl) of
         true ->
             erlang:nodes(Arg);
-        false ->
-            partisan_peer_connections:nodes(Arg)
+        false when Arg == hidden ->
+            [];
+        false when Arg == this ->
+            [node()];
+        false when Arg == known ->
+            {ok, Nodes} = partisan_peer_service:members(),
+            Nodes;
+        false when Arg == visible ->
+            partisan_peer_connections:nodes();
+        false when is_list(Arg) ->
+            L = lists:foldl(fun(X, Acc) -> [nodes(X) | Acc] end, [], Arg),
+            lists:flatten(L)
     end.
 
 

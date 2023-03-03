@@ -26,6 +26,7 @@
 -module(partisan_peer_connections).
 
 -include("partisan.hrl").
+-include("partisan_util.hrl").
 -include("partisan_logger.hrl").
 
 -define(SELECT(Arg),
@@ -35,6 +36,22 @@
         error:badarg ->
             []
     end
+).
+
+-define(NOT_GROUND(Args),
+    erlang:error(
+        badarg,
+        Args,
+        [
+            {error_info, #{
+                cause => #{
+                    1 =>
+                        "term is not ground (term is a pattern containing "
+                        "one or more wildcards or variables)."
+                }
+            }}
+        ]
+    )
 ).
 
 
@@ -51,22 +68,19 @@
     pid                     ::  maybe_var(pid()),
     node                    ::  maybe_var(node()),
     channel                 ::  maybe_var(partisan:channel()),
-    listen_addr             ::  maybe_var(
-                                    partisan:listen_addr() | listen_addr_spec()
-                                ),
+    listen_addr             ::  maybe_var(partisan:listen_addr())
+                                | listen_addr_spec(),
     timestamp               ::  maybe_var(non_neg_integer())
 }).
 
 
 -type optional(T)           ::  T | undefined.
--type maybe_var(T)          ::  T | '_' | '$1' | '$2' | '$3'.
+-type maybe_var(T)          ::  T | var().
+-type var()                 ::  '_' | '$1' | '$2' | '$3'.
 -type info()                ::  #partisan_peer_info{}.
 -type connection()          ::  #partisan_peer_connection{}.
 -type connections()         ::  [connection()].
--type listen_addr_spec()    :: #{
-                                    ip := maybe_var(inet:ip_address()),
-                                    port := maybe_var(non_neg_integer())
-                                }.
+-type listen_addr_spec()    :: #{ip := var(), port := var()}.
 
 -export_type([connection/0]).
 -export_type([info/0]).
@@ -99,7 +113,6 @@
 -export([node_spec/1]).
 -export([node_specs/0]).
 -export([nodes/0]).
--export([nodes/1]).
 -export([pid/1]).
 -export([processes/1]).
 -export([processes/2]).
@@ -151,49 +164,22 @@ init() ->
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns a list of all nodes connected to this node through normal
-%% connections (that is, hidden nodes are not listed). Same as nodes(visible).
+%% connections (that is, hidden nodes are not listed).
 %% @end
 %% -----------------------------------------------------------------------------
 -spec nodes() -> [node()].
 
 nodes() ->
-    nodes(visible).
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Returns a list of all nodes connected to this node with connections of
-%% type `Arg'.
-%% @end
-%% -----------------------------------------------------------------------------
--spec nodes(Arg :: partisan:node_type()) -> [node()].
-
-nodes(Arg) ->
-    case partisan_config:get(connect_disterl, false) of
-        true ->
-            erlang:nodes(Arg);
-
-        false when Arg == visible orelse Arg == connected ->
-            %% We select the first element (nodename) of the tuple where the
-            %% second element (connection counter) is greater than zero.
-            MatchHead = #partisan_peer_info{
-                node = '$1',
-                node_spec = '_',
-                connection_count = '$2',
-                timestamp = '_'
-            },
-            MS = [{MatchHead, [{'>', '$2', 0}], ['$1']}],
-            ?SELECT(MS);
-
-        false when Arg == known ->
-            {ok, Members} = partisan_peer_service:members(),
-            Members;
-
-        false when Arg == this ->
-            partisan:node();
-
-        false when Arg == hidden ->
-            []
-    end.
+    %% We select the first element (nodename) of the tuple where the
+    %% second element (connection counter) is greater than zero.
+    MatchHead = #partisan_peer_info{
+        node = '$1',
+        node_spec = '_',
+        connection_count = '$2',
+        timestamp = '_'
+    },
+    MS = [{MatchHead, [{'>', '$2', 0}], ['$1']}],
+    ?SELECT(MS).
 
 
 %% -----------------------------------------------------------------------------
@@ -320,8 +306,12 @@ connection_count(Arg) when is_atom(Arg) ->
 connection_count(Arg) when is_map(Arg)->
     connection_count(Arg, '_');
 
-connection_count(#partisan_peer_info{connection_count = Val}) ->
-    Val.
+connection_count(#partisan_peer_info{connection_count = Val})
+when is_integer(Val) ->
+    Val;
+
+connection_count(#partisan_peer_info{} = T) ->
+    ?NOT_GROUND([T]).
 
 
 %% -----------------------------------------------------------------------------
@@ -486,8 +476,11 @@ info(#{name := Node}) ->
 %% -----------------------------------------------------------------------------
 -spec channel(connection()) -> partisan:channel().
 
-channel(#partisan_peer_connection{channel = Val}) ->
-    Val.
+channel(#partisan_peer_connection{channel = Val}) when is_atom(Val) ->
+    Val;
+
+channel(#partisan_peer_connection{} = T) ->
+    ?NOT_GROUND([T]).
 
 
 %% -----------------------------------------------------------------------------
@@ -496,31 +489,46 @@ channel(#partisan_peer_connection{channel = Val}) ->
 %% -----------------------------------------------------------------------------
 -spec pid(connection()) -> pid().
 
-pid(#partisan_peer_connection{pid = Val}) ->
-    Val.
-
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
--spec listen_addr(connection()) -> partisan:listen_addr().
-
-listen_addr(#partisan_peer_connection{listen_addr = Val}) ->
-    Val.
-
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
--spec node(info() | connection()) -> node().
-
-node(#partisan_peer_info{node = Val}) ->
+pid(#partisan_peer_connection{pid = Val}) when is_pid(Val) ->
     Val;
 
-node(#partisan_peer_connection{node = Val}) ->
-    Val.
+pid(#partisan_peer_connection{} = T) ->
+    ?NOT_GROUND([T]).
+
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec listen_addr(connection()) -> partisan:listen_addr() | no_return().
+
+listen_addr(
+    #partisan_peer_connection{listen_addr = #{ip := IP, port := Port} = Val}
+) when ?IS_IP(IP), is_integer(Port) ->
+    Val;
+
+listen_addr(#partisan_peer_connection{} = T) ->
+    ?NOT_GROUND([T]).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec node(info() | connection()) -> node() | no_return().
+
+node(#partisan_peer_info{node = Val}) when is_atom(Val) ->
+    Val;
+
+node(#partisan_peer_info{} = T) ->
+    ?NOT_GROUND([T]);
+
+node(#partisan_peer_connection{node = Val}) when is_atom(Val) ->
+    Val;
+
+node(#partisan_peer_info{} = T) ->
+    ?NOT_GROUND([T]).
 
 
 %% -----------------------------------------------------------------------------
@@ -529,29 +537,41 @@ node(#partisan_peer_connection{node = Val}) ->
 %% -----------------------------------------------------------------------------
 -spec node_spec(info() | connection()) -> partisan:node_spec() | no_return().
 
-node_spec(#partisan_peer_info{node_spec = Val}) ->
+node_spec(#partisan_peer_info{node_spec = Val}) when is_map(Val) ->
     Val;
 
-node_spec(#partisan_peer_connection{node = Node}) ->
-    case info(Node) of
+node_spec(#partisan_peer_info{} = T) ->
+    ?NOT_GROUND([T]);
+
+node_spec(#partisan_peer_connection{node = Val}) when is_atom(Val) ->
+    case info(Val) of
         {ok, Info} ->
             node_spec(Info);
         error ->
             error(badarg)
-    end.
+    end;
+
+node_spec(#partisan_peer_info{} = T) ->
+    ?NOT_GROUND([T]).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec timestamp(info() | connection()) -> non_neg_integer().
+-spec timestamp(info() | connection()) -> non_neg_integer() | no_return().
 
-timestamp(#partisan_peer_info{timestamp = Val}) ->
+timestamp(#partisan_peer_info{timestamp = Val}) when is_integer(Val) ->
     Val;
 
-timestamp(#partisan_peer_connection{timestamp = Val}) ->
-    Val.
+timestamp(#partisan_peer_info{} = T) ->
+    ?NOT_GROUND([T]);
+
+timestamp(#partisan_peer_connection{timestamp = Val}) when is_integer(Val) ->
+    Val;
+
+timestamp(#partisan_peer_connection{} = T) ->
+    ?NOT_GROUND([T]).
 
 
 %% -----------------------------------------------------------------------------
@@ -564,10 +584,14 @@ timestamp(#partisan_peer_connection{timestamp = Val}) ->
     Channel :: partisan:channel(),
     LitenAddr :: partisan:listen_addr()) -> ok | no_return().
 
-store(#{name := Node} = Spec, Pid, Channel, ListenAddr)
-when is_pid(Pid)
+store(
+    #{name := Node} = Spec,
+    Pid,
+    Channel,
+    #{ip := IP, port := Port} = ListenAddr
+) when is_pid(Pid)
 andalso is_atom(Channel) andalso Channel =/= '_'
-andalso is_map(ListenAddr) ->
+andalso ?IS_IP(IP) andalso is_integer(Port) andalso Port >= 0 ->
 
     %% We insert separately as we have N connections per node.
     Conn = #partisan_peer_connection{
@@ -621,7 +645,8 @@ andalso is_map(ListenAddr) ->
 %% pruned pid was found
 %% @end
 %% -----------------------------------------------------------------------------
--spec prune(pid() | partisan:node_spec()) -> {info(), connections()} | no_return().
+-spec prune(pid() | node() | partisan:node_spec()) ->
+    {info(), connections()} | no_return().
 
 prune(Node) when is_atom(Node) ->
     MatchHead = #partisan_peer_connection{
@@ -678,7 +703,7 @@ prune(#{name := Node}) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec erase(pid() | partisan:node_spec()) -> ok.
+-spec erase(pid() | node() | partisan:node_spec()) -> ok.
 
 erase(Pid) when is_pid(Pid) ->
     _ = prune(Pid),
@@ -750,7 +775,8 @@ fold(Fun, Acc) ->
             %% We assume we have at most a few hundreds of connections.
             %% An optimisation will be to use batches (limit + continuations).
             _ = lists:foldl(
-                fun(#partisan_peer_info{node = Node, node_spec = Spec}, IAcc) ->
+                fun(#partisan_peer_info{node = Node, node_spec = Spec}, IAcc)
+                when is_atom(Node), is_map(Spec) ->
                     Connections = connections(Node),
                     Fun(Spec, Connections, IAcc)
                 end,
@@ -814,7 +840,9 @@ dispatch_pid(Node) ->
 -spec dispatch_pid(
     Node :: node() | partisan:node_spec(),
     Channel :: partisan:channel()) ->
-    {ok, pid()} | {error, disconnected | not_yet_connected}.
+    {ok, pid()}
+    | {error, disconnected | not_yet_connected | notalive}
+    | no_return().
 
 dispatch_pid(Node, Channel) ->
     dispatch_pid(Node, Channel, undefined).
@@ -859,11 +887,13 @@ dispatch_pid(#{name := Node}, Channel, PartitionKey) ->
 %% -----------------------------------------------------------------------------
 -spec dispatch(any()) -> ok | {error, disconnected | not_yet_connected}.
 
-dispatch({forward_message, Node, ServerRef, Message, Opts}) ->
+dispatch({forward_message, Node, ServerRef, Message, Opts})
+when is_map(Opts) ->
     Channel = maps:get(channel, Opts, ?DEFAULT_CHANNEL),
     do_dispatch(Node, ServerRef, Message, Channel, undefined);
 
-dispatch({forward_message, Node, _Clock, PartKey, ServerRef, Msg, Opts}) ->
+dispatch({forward_message, Node, _Clock, PartKey, ServerRef, Msg, Opts})
+when is_map(Opts) ->
     Channel = maps:get(channel, Opts, ?DEFAULT_CHANNEL),
     do_dispatch(Node, ServerRef, Msg, Channel, PartKey).
 
@@ -1176,22 +1206,6 @@ no_connections_test() ->
         nodes()
     ),
     ?assertEqual(
-        [],
-        nodes(visible)
-    ),
-    ?assertEqual(
-        [],
-        nodes(connected)
-    ),
-    ?assertExit(
-        {noproc, _},
-        nodes(known)
-    ),
-    ?assertEqual(
-        [],
-        nodes(hidden)
-    ),
-    ?assertEqual(
         false,
         is_connected(node1)
     ),
@@ -1296,22 +1310,6 @@ one_connection_test() ->
         "store/4 is idempotent"
     ),
 
-    ?assertEqual(
-        [node1],
-        nodes(visible)
-    ),
-    ?assertEqual(
-        [node1],
-        nodes(connected)
-    ),
-    ?assertExit(
-        {noproc, _},
-        nodes(known) %% data from membership, not our table
-    ),
-    ?assertEqual(
-        [],
-        nodes(hidden)
-    ),
     ?assertEqual(
         1,
         connection_count(node1)
@@ -1419,22 +1417,6 @@ several_connections_test() ->
         "store/4 is idempotent"
     ),
 
-    ?assertEqual(
-        [node1],
-        nodes(visible)
-    ),
-    ?assertEqual(
-        [node1],
-        nodes(connected)
-    ),
-    ?assertExit(
-        {noproc, _},
-        nodes(known) %% data from membership, not our table
-    ),
-    ?assertEqual(
-        [],
-        nodes(hidden)
-    ),
     ?assertEqual(
         true,
         is_connected(node1)
@@ -1584,22 +1566,7 @@ several_nodes_undefined_test() ->
         "store/4 is idempotent"
     ),
 
-    ?assertEqual(
-        [node1, node2],
-        nodes(visible)
-    ),
-    ?assertEqual(
-        [node1, node2],
-        nodes(connected)
-    ),
-    ?assertExit(
-        {noproc, _},
-        nodes(known) %% data from membership, not our table
-    ),
-    ?assertEqual(
-        [],
-        nodes(hidden)
-    ),
+
     ?assertEqual(
         1,
         connection_count(node2)
@@ -1710,22 +1677,7 @@ several_nodes_foo_test() ->
         "store/4 is idempotent"
     ),
 
-    ?assertEqual(
-        [node1, node2],
-        nodes(visible)
-    ),
-    ?assertEqual(
-        [node1, node2],
-        nodes(connected)
-    ),
-    ?assertExit(
-        {noproc, _},
-        nodes(known) %% data from membership, not our table
-    ),
-    ?assertEqual(
-        [],
-        nodes(hidden)
-    ),
+
     ?assertEqual(
         2,
         connection_count(node2)
