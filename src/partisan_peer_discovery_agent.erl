@@ -38,13 +38,9 @@
     initial_delay                           ::  integer(),
     polling_interval                        ::  integer(),
     timeout                                 ::  integer(),
-    peers = []                              ::  [peer()]
+    peers = []                              ::  [partisan:node_spec()]
 }).
 
--type peer()                ::  partisan:node_spec().
-
-
--export_type([peer/0]).
 
 %% API
 -export([start/0]).
@@ -87,7 +83,7 @@
 %%
 %% -----------------------------------------------------------------------------
 -callback lookup(State :: any(), Timeout :: timeout()) ->
-    {ok, [peer()], NewState :: any()}
+    {ok, [partisan:node_spec()], NewState :: any()}
     | {error, Reason :: any(), NewState :: any()}.
 
 

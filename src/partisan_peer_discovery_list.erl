@@ -95,8 +95,8 @@ init(Opts) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec lookup(State :: map(), timeout()) ->
-    {ok, [partisan_peer_discovery_agent:peer()], NewState :: state()}
+-spec lookup(State :: state(), timeout()) ->
+    {ok, [partisan:node_spec()], NewState :: state()}
     | {error, Reason :: any(), NewState :: state()}.
 
 lookup(State, _Timeout) ->
