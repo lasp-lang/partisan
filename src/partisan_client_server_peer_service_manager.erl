@@ -819,7 +819,7 @@ peers(Set) ->
     sets:set(partisan:node_spec()).
 
 without_myself(Set) ->
-    Exclude = sets:from_list([partisan:node()]),
+    Exclude = sets:from_list([partisan:node_spec()]),
     sets:subtract(Set, Exclude).
 
 
