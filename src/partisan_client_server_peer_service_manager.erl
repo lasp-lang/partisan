@@ -67,9 +67,21 @@
 -type pending()             ::  sets:set(partisan:node_spec()).
 -type membership()          ::  sets:set(partisan:node_spec()).
 -type tag()                 ::  atom().
--type state_t()             ::  #state{}.
+-type state()               ::  #state{}.
+-type call()                ::  {on_up | on_down, node(), on_event_fun()}
+                                | {reserve, term()}
+                                | {leave, partisan:node_spec()}
+                                | {join, partisan:node_spec()}
+                                | {send_message, node(), term()}
+                                %% | {forward_message, node(), term(), ...}
+                                | {receive_message, partisan:channel(), term()}
+                                | members
+                                | members_for_orchestration
+                                | get_local_state.
 
 
+-type cast()                ::  {join, partisan:node_spec()}
+                                | {kill_connections, [node()]}.
 
 %% partisan_peer_service_manager callbacks
 -export([cast_message/2]).
@@ -382,7 +394,7 @@ partitions() ->
 
 
 
--spec init([]) -> {ok, state_t()}.
+-spec init([]) -> {ok, state()}.
 
 init([]) ->
     %% Seed the random number generator.
@@ -412,8 +424,16 @@ init([]) ->
     {ok, State}.
 
 
--spec handle_call(term(), {pid(), term()}, state_t()) ->
-    {reply, term(), state_t()}.
+-spec handle_call(call(), {pid(), term()}, state()) ->
+    {reply, term(), state()}
+    | {reply, term(), state(), timeout()}
+    | {reply, term(), state(), hibernate}
+    | {reply, term(), state(), {continue, term()}}
+    | {noreply, state()} | {noreply, state(), timeout()}
+    | {noreply, state(), hibernate}
+    | {noreply, state(), {continue, term()}}
+    | {stop, term(), term(), state()}
+    | {stop, term(), state()}.
 
 handle_call(
     {on_up, Name, Function},
@@ -517,7 +537,7 @@ handle_call(Msg, _From, State) ->
     {reply, ok, State}.
 
 
--spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
+-spec handle_cast(cast(), state()) -> {noreply, state()}.
 
 handle_cast({join, #{name := Node} = Spec}, #state{} = State) ->
     %% Attempt to join via disterl for control messages during testing.
@@ -656,7 +676,7 @@ handle_info(Event, State) ->
 
 
 %% @private
--spec terminate(term(), state_t()) -> term().
+-spec terminate(term(), state()) -> term().
 
 terminate(_Reason, #state{}) ->
     Fun = fun(_NodeInfo, Connections) ->
@@ -674,7 +694,7 @@ terminate(_Reason, #state{}) ->
 
 
 %% @private
--spec code_change(term() | {down, term()}, state_t(), term()) -> {ok, state_t()}.
+-spec code_change(term() | {down, term()}, state(), term()) -> {ok, state()}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
@@ -847,7 +867,7 @@ handle_message({forward_message, ServerRef, Message}, _Channel, State) ->
 %% @private
 -spec do_send_message(
     Node :: atom() | partisan:node_spec(), Message :: term())->
-    ok | {error, disconnected | not_yet_connected}.
+    ok | {error, disconnected | not_yet_connected | notalive}.
 
 do_send_message(Node, Message) ->
     %% Find a connection for the remote node, if we have one.

@@ -84,7 +84,7 @@ get(Key, Arg, Default) when is_map(Arg) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec maybe_connect_disterl(Node :: atom()) -> ok.
+-spec maybe_connect_disterl(Node :: node()) -> ok.
 
 maybe_connect_disterl(Node ) ->
     case partisan_config:get(connect_disterl, false) of

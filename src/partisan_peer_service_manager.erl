@@ -203,7 +203,7 @@ supports_capability(Mod, Arg) ->
 %% This function calls {@link connect/2} with options `#{prune => false}'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec connect(Node :: partisan:node_spec()) -> ok.
+-spec connect(NodeSpec :: partisan:node_spec()) -> ok.
 
 connect(NodeSpec) ->
     connect(NodeSpec, #{prune => false}).
@@ -230,7 +230,7 @@ connect(NodeSpec) ->
 %% See the section **Stale Specifications** in {@link partisan_membership_set}.
 %% @end
 %% -----------------------------------------------------------------------------
--spec connect(Node :: partisan:node_spec(), connect_opts()) ->
+-spec connect(NodeSpec :: partisan:node_spec(), connect_opts()) ->
     ok | {ok, StaleSpecs :: [partisan:node_spec()]}.
 
 connect(#{listen_addrs := ListenAddrs} = NodeSpec, #{prune := true}) ->

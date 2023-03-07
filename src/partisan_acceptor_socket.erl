@@ -53,10 +53,11 @@ init([PeerIP, PeerPort]) ->
             {reuseaddr, true}, {nodelay, true}, {keepalive, true}],
     case gen_tcp:listen(PeerPort, Opts) of
         {ok, Socket} ->
-            % if the port is to be system allocated we need to set
-            % it in the config
+            %% if the port is to be system allocated we need to set
+            %% it in the config
             ok = maybe_update_port_config(PeerIP, PeerPort, Socket),
-            % acceptor could close the socket if there is a problem
+            %% acceptor could close the socket if there is a problem
+            %% eqwalizer:ignore Socket
             MRef = monitor(port, Socket),
             partisan_acceptor_pool:accept_socket(Socket, AcceptorPoolSize),
             {ok, {Socket, MRef}};
