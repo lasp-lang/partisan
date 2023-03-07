@@ -19,7 +19,8 @@
 %% -------------------------------------------------------------------
 
 %% -----------------------------------------------------------------------------
-%% @doc This module implements the full-mesh membership strategy.
+%% @doc This module implements the full-mesh membership strategy to be used
+%% with {link partisan_pluggable_peer_service_manager}.
 %% @end
 %% -----------------------------------------------------------------------------
 -module(partisan_full_membership_strategy).
@@ -224,7 +225,7 @@ prune([H|T], #full_v1{membership = M0} = State0) ->
     Actor = State0#full_v1.actor,
     M = partisan_membership_set:remove(H, Actor, M0),
     State = State0#full_v1{membership = M},
-    prune(State, T);
+    prune(T, State);
 
 prune([], State) ->
     {ok, members(State), State}.
