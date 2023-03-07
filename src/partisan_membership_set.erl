@@ -86,6 +86,19 @@
 -export([to_peer_list/1]).
 
 
+-eqwalizer({nowarn_function, add_remove_test/0}).
+-eqwalizer({nowarn_function, one_side_updates_test/0}).
+-eqwalizer({nowarn_function, concurrent_updates_test/0}).
+-eqwalizer({nowarn_function, compare_test/0}).
+-eqwalizer({nowarn_function, concurrent_remove_update_test/0}).
+-eqwalizer({nowarn_function, assoc_test/0}).
+-eqwalizer({nowarn_function, clock_test/0}).
+-eqwalizer({nowarn_function, remfield_test/0}).
+-eqwalizer({nowarn_function, present_but_removed_test/0}).
+-eqwalizer({nowarn_function, no_dots_left_test/0}).
+-eqwalizer({nowarn_function, equals_test/0}).
+
+
 
 %% =============================================================================
 %% API
@@ -144,6 +157,7 @@ compare(List, T) when is_list(List) ->
     Intersection = sets:intersection(Set, Members),
     Joiners = sets:to_list(sets:subtract(Set, Intersection)),
     Leavers = sets:to_list(sets:subtract(Members, Intersection)),
+    %% eqwalizer:ignore these are [partisan:node_spec()]
     {Joiners, Leavers}.
 
 
@@ -174,6 +188,7 @@ equal(T1, T2) ->
 -spec to_list(t()) -> [partisan:node_spec()].
 
 to_list(T) ->
+    %% eqwalizer:ignore state_orset:query returns [partisan:node_spec()]
     lists:sort(sets:to_list(state_orset:query(T))).
 
 
@@ -197,6 +212,7 @@ to_peer_list(T) ->
         [],
         state_orset:query(T)
     ),
+    %% eqwalizer:ignore Peers :: [partisan:node_spec()]
     lists:reverse(Peers).
 
 
@@ -229,6 +245,9 @@ decode(Binary) ->
 
 
 -ifdef(TEST).
+
+
+
 
 node_spec(Nodename) ->
     node_spec(Nodename, {127,0,0,1}).
