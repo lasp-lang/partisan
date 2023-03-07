@@ -90,7 +90,7 @@ init(Opts) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec lookup(State :: any(), timeout()) ->
-    {ok, [bondy_peer_discovery_agent:peer()], NewState :: any()}
+    {ok, [partisan_peer_discovery_agent:peer()], NewState :: any()}
     | {error, Reason :: any(), NewState :: any()}.
 
 lookup(#{record_type := Type, name := Name} = S, Timeout) ->
