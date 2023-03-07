@@ -184,7 +184,7 @@ when is_atom(Term); erlang:is_pid(Term); erlang:is_reference(Term) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec from_term(Term :: pid() | reference() | atom(), Node :: node()) ->
-    n() | no_return().
+    t() | no_return().
 
 from_term(Term, Node)
 when is_atom(Node) andalso (

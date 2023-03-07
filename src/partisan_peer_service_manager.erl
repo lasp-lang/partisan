@@ -47,7 +47,8 @@
                                 channel => partisan:channel(),
                                 clock => any(),
                                 partition_key => non_neg_integer(),
-                                transitive => boolean()
+                                transitive => boolean(),
+                                atom() => any() %% To allow erlang opts
                             } |
                             [
                                 {ack, boolean()}
@@ -56,6 +57,7 @@
                                 | {clock, any()}
                                 | {partition_key, non_neg_integer()}
                                 | {transitive, boolean()}
+                                | {atom(), any()} %% To allow erlang opts
                             ].
 
 -type connect_opts()        ::  #{prune => boolean()}.

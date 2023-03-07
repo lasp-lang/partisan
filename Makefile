@@ -39,6 +39,9 @@ xref: compile
 dialyzer: compile
 	${REBAR} dialyzer
 
+eqwalizer:
+	elp eqwalize-all
+
 compile:
 	$(REBAR) compile
 
