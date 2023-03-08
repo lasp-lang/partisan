@@ -1000,7 +1000,7 @@ on_down_test(Config) ->
     ok = rpc:call(Node4, Manager, on_down, [Node3, Callback]),
 
     %% Shutdown, wait for shutdown...
-    {ok, Node3} = ct_slave:stop(Name3),
+    {ok, Node3} = ?CT_PEER:stop(Name3),
     timer:sleep(10000),
 
     %% Assert we receive the response.
