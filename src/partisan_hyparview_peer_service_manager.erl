@@ -253,7 +253,31 @@
 -type epoch_count()         ::  non_neg_integer().
 -type message_id()          ::  {epoch(), epoch_count()}.
 -type message_id_store()    ::  #{partisan:node_spec() := message_id()}.
-
+-type call()                ::  {join, partisan:node_spec()}
+                                | {leave, partisan:node_spec()}
+                                | {update_members, [partisan:node_spec()]}
+                                | {resolve_partition, reference()}
+                                | {inject_partition,
+                                    partisan:node_spec(),
+                                    integer()}
+                                | {reserve, tag()}
+                                | active
+                                | passive
+                                | {active, tag()}
+                                | {send_message, node(), term()}
+                                %% | {forward_message, node(), ...}
+                                %% | {receive_message, node(), ...}
+                                | members
+                                | members_for_orchestration
+                                | get_local_state
+                                | connections
+                                | partitions.
+-type cast()                ::  {join, partisan:node_spec()}
+                                | {receive_message,
+                                    partisan:node_spec(),
+                                    partisan:channel(),
+                                    term()}
+                                | {disconnect, partisan:node_spec()}.
 
 %% PARTISAN_PEER_SERVICE_MANAGER CALLBACKS
 -export([cast_message/2]).
@@ -671,7 +695,7 @@ passive() ->
 
 
 
--spec init([]) -> {ok, t()}.
+-spec init([]) -> {ok, t()} | {stop, reservation_limit_exceeded}.
 
 init([]) ->
     %% Seed the random number generator.
@@ -753,7 +777,7 @@ init([]) ->
     end.
 
 
--spec handle_call(term(), {pid(), term()}, t()) ->
+-spec handle_call(call(), {pid(), term()}, t()) ->
     {reply, term(), t()}.
 
 handle_call(partitions, _From, State) ->
@@ -925,7 +949,7 @@ handle_call(Event, _From, State) ->
     {reply, ok, State}.
 
 
--spec handle_cast(term(), t()) -> {noreply, t()}.
+-spec handle_cast(cast(), t()) -> {noreply, t()}.
 
 handle_cast({join, Peer}, State) ->
     Myself = State#state.node_spec,
@@ -1063,10 +1087,10 @@ handle_info(xbot_execution, #state{} = State) ->
 	ok = schedule_xbot_execution(State),
 	{noreply, State};
 
-handle_info({'EXIT', From, Reason}, State0) ->
+handle_info({'EXIT', Pid, Reason}, State0) when is_pid(Pid) ->
     ?LOG_DEBUG(#{
         description => "Active view connection process died.",
-        process => From,
+        process => Pid,
         reason => Reason
     }),
 
@@ -1075,7 +1099,7 @@ handle_info({'EXIT', From, Reason}, State0) ->
     Passive0 = State0#state.passive,
 
     %% Prune active connections from map.
-    try partisan_peer_connections:prune(From) of
+    try partisan_peer_connections:prune(Pid) of
         {Info, _Connections} ->
             Peer = partisan_peer_connections:node_spec(Info),
             %% If it was in the passive view and our connection attempt failed,
