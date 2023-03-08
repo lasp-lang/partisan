@@ -143,12 +143,19 @@
 -export([node/1]).
 -export([nodestring/1]).
 -export([target/1]).
+-export([to_name/1]).
+-export([to_pid/1]).
+-export([to_pid_or_name/1]).
 -export([to_term/1]).
+-export([to_term/1]).
+
 
 
 -compile({no_auto_import, [is_pid/1]}).
 -compile({no_auto_import, [is_reference/1]}).
 -compile({no_auto_import, [node/1]}).
+
+-eqwalizer({nowarn_function, register_local_pid/1}).
 
 
 
@@ -200,12 +207,11 @@ from_term(_, _) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec to_term(t()) ->
-    pid() | reference() | atom() | {atom(), node()} | no_return().
+-spec to_term(t()) -> pid() | reference() | atom() | no_return().
 
 to_term(Ref) ->
     try
-        decode(Ref, term)
+        decode_term(Ref)
     catch
         throw:badarg ->
             Info = #{
@@ -221,13 +227,85 @@ to_term(Ref) ->
 
 
 %% -----------------------------------------------------------------------------
+%% @doc Calls {@link to_term/1} and returns the result if it is a local pid().
+%% Otherwise fails with `badarg'
+%% @end
+%% -----------------------------------------------------------------------------
+-spec to_pid(Arg :: p()) -> pid() | no_return().
+
+to_pid(Arg) ->
+    case to_term(Arg) of
+        Term when erlang:is_pid(Term) ->
+            Term;
+        _ ->
+            Info = #{cause => #{1 => "not a partisan_remote_ref:p()."}},
+            erlang:error(badarg, [Arg], [{error_info, Info}])
+    end.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Calls {@link to_term/1} and returns the result if it is an local
+%% name i.e. atom(). Otherwise fails with `badarg'
+%% @end
+%% -----------------------------------------------------------------------------
+-spec to_name(Arg :: n()) -> atom() | no_return().
+
+to_name(Arg) ->
+    case to_term(Arg) of
+        Term when is_atom(Term) ->
+            Term;
+        _ ->
+            Info = #{cause => #{1 => "not a pid partisan_remote_ref:n()."}},
+            erlang:error(badarg, [Arg], [{error_info, Info}])
+    end.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Calls {@link to_term/1} and returns the result if it is an local
+%% name i.e. atom() or local pid(). Otherwise fails with `badarg'
+%% @end
+%% -----------------------------------------------------------------------------
+-spec to_pid_or_name(Arg :: p() | n()) -> atom() | pid() | no_return().
+
+to_pid_or_name(Arg) ->
+    case to_term(Arg) of
+        Term when is_atom(Term) ->
+            Term;
+        Term when erlang:is_pid(Term) ->
+            Term;
+        _ ->
+            Info = #{cause => #{
+                1 => "not a partisan_remote_ref:p() or partisan_remote_ref:n()."
+            }},
+            erlang:error(badarg, [Arg], [{error_info, Info}])
+    end.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Calls {@link to_term/1} and returns the result if it is a local
+%% reference(). Otherwise fails with `badarg'
+%% @end
+%% -----------------------------------------------------------------------------
+-spec to_reference(Arg :: r()) -> reference() | no_return().
+
+to_reference(Arg) ->
+    case to_term(Arg) of
+        Term when erlang:is_reference(Term) ->
+            Term;
+        _ ->
+            Info = #{cause => #{1 => "not a partisan_remote_ref:r()."}},
+            erlang:error(badarg, [Arg], [{error_info, Info}])
+    end.
+
+
+%% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
 -spec target(PRef :: t()) -> target() | no_return().
 
 target(Ref) ->
-    decode(Ref, target).
+    decode_target(Ref).
 
 
 %% -----------------------------------------------------------------------------
@@ -677,6 +755,7 @@ encode(Pid, Node, Format) when erlang:is_pid(Pid) ->
 
     case Format of
         improper_list ->
+            %% eqwalizer:ignore improper_list
             [Node|list_to_binary("#Pid" ++ PidStr)];
         uri ->
             PidBin = untag(PidStr),
@@ -689,6 +768,7 @@ encode(Pid, Node, Format) when erlang:is_pid(Pid) ->
 
 encode(Ref, Node, improper_list) when erlang:is_reference(Ref) ->
     Node =:= partisan:node() orelse error(badarg),
+    %% eqwalizer:ignore improper_list
     [Node|list_to_binary(ref_to_list(Ref))];
 
 encode(Ref, Node, uri) when erlang:is_reference(Ref) ->
@@ -705,6 +785,7 @@ encode(Ref, Node, tuple) when erlang:is_reference(Ref) ->
     {?MODULE, Node, Target};
 
 encode(Name, Node, improper_list) when is_atom(Name) ->
+    %% eqwalizer:ignore improper_list
     [Node|list_to_binary("#Name" ++ atom_to_list(Name))];
 
 encode(Name, Node, uri) when is_atom(Name) ->
@@ -717,40 +798,27 @@ encode(Name, Node, tuple) when is_atom(Name) ->
     {?MODULE, Node, Target}.
 
 
+
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec decode(t(), term | target) ->
-    pid() | reference() | atom() | target() | no_return().
+-spec decode_term(t() | target()) -> pid() | reference() | atom() | no_return().
 
-decode([Node|<<"#Pid", Rest/binary>>], target) when is_atom(Node) ->
-    {encoded_pid, binary_to_list(Rest)};
-
-decode([Node|<<"#Pid", Rest/binary>>], term) when is_atom(Node) ->
-    Node == partisan:node() orelse error(badarg),
+decode_term([Node|<<"#Pid", Rest/binary>>]) when is_atom(Node) ->
+    Node == partisan:node() orelse throw(badarg),
     to_local_pid(binary_to_list(Rest));
 
-decode([Node|<<"#Ref", _/binary>> = Bin], target) when is_atom(Node) ->
-    {encoded_ref, binary_to_list(Bin)};
-
-decode([Node|<<"#Ref", _/binary>> = Bin], term) when is_atom(Node) ->
-    Node == partisan:node() orelse error(badarg),
+decode_term([Node|<<"#Ref", _/binary>> = Bin]) when is_atom(Node) ->
+    Node == partisan:node() orelse throw(badarg),
     list_to_ref(binary_to_list(Bin));
 
-decode([Node|<<"#Name", Rest/binary>>], target) when is_atom(Node) ->
-    {encoded_name, binary_to_list(Rest)};
+decode_term([Node|<<"#Name", Rest/binary>>]) when is_atom(Node) ->
+    Node == partisan:node() orelse throw(badarg),
+    binary_to_existing_atom(Rest, utf8);
 
-decode([Node|<<"#Name", Rest/binary>>], term) when is_atom(Node) ->
-    case Node == partisan:node() of
-        true ->
-            binary_to_existing_atom(Rest, utf8);
-        false ->
-            {binary_to_existing_atom(Rest, utf8), Node}
-    end;
-
-decode(<<"partisan:", Rest0/binary>>, Mode) ->
+decode_term(<<"partisan:", Rest0/binary>>) ->
     ThisNode = partisan:nodestring(),
 
     %% We remove padding
@@ -769,73 +837,97 @@ decode(<<"partisan:", Rest0/binary>>, Mode) ->
     %% metadata, here we don't need it)
     case binary:split(Rest, <<?SEP>>, [global]) of
 
-        [<<"pid">>, _, Term | _] when Mode == target ->
-            {encoded_pid, tag(Term)};
-
-        [<<"ref">>, _, Term | _] when Mode == target ->
-            {encoded_ref, "#Ref" ++ tag(Term)};
-
-        [<<"name">>, _, Term | _] when Mode == target ->
-            {encoded_name, binary_to_list(Term)};
-
-        [<<"pid">>, Node, Term | _] when Node == ThisNode, Mode == term ->
+        [<<"pid">>, Node, Term | _] when Node == ThisNode ->
             to_local_pid(tag(Term));
 
-        [<<"ref">>, Node, Term | _] when Node == ThisNode, Mode == term ->
+        [<<"ref">>, Node, Term | _] when Node == ThisNode ->
             list_to_ref("#Ref" ++ tag(Term));
 
-        [<<"name">>, Node, Term | _] when Mode == term ->
-            case Node == ThisNode of
-                true ->
-                    binary_to_existing_atom(Term, utf8);
-                false ->
-                    {binary_to_existing_atom(Term, utf8), Node}
-            end;
+        [<<"name">>, Node, Term | _] when Node == ThisNode ->
+            binary_to_existing_atom(Term, utf8);
 
         _ ->
-            error(badarg)
+            throw(badarg)
     end;
 
-decode({?MODULE, Node, {Type, Value} = Target}, Mode) ->
-    IsLocal = Node =:= partisan:node(),
+decode_term({?MODULE, Node, Target}) ->
+    Node =:= partisan:node() orelse throw(badarg),
+    decode_term(Target);
 
-    case Type of
-        encoded_pid when IsLocal == true, Mode == term ->
-            to_local_pid(Value);
-
-        encoded_ref when IsLocal == true, Mode == term ->
-            list_to_ref(Value);
-
-        encoded_name when IsLocal == true, Mode == term ->
-            list_to_atom(Value);
-
-        encoded_name when IsLocal == false, Mode == term ->
-            {binary_to_existing_atom(Value, utf8), Node};
-
-        _ when Mode == term ->
-            throw(badarg);
-
-        _ when Mode == target ->
-            Target
-    end;
-
-decode({encoded_pid, _} = Target, target) ->
-    Target;
-
-decode({encoded_pid, Value}, term) ->
+decode_term({encoded_pid, Value}) ->
     list_to_pid(Value);
 
-decode({encoded_ref, _} = Target, target) ->
-    Target;
-
-decode({encoded_ref, Value}, term) ->
+decode_term({encoded_ref, Value}) ->
     list_to_ref(Value);
 
-decode({encoded_name, _} = Target, target) ->
+decode_term({encoded_name, Value}) ->
+    list_to_existing_atom(Value).
+
+
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec decode_target(t() | target()) -> target() | no_return().
+
+decode_target([Node|<<"#Pid", Rest/binary>>]) when is_atom(Node) ->
+    {encoded_pid, binary_to_list(Rest)};
+
+decode_target([Node|<<"#Ref", _/binary>> = Bin]) when is_atom(Node) ->
+    {encoded_ref, binary_to_list(Bin)};
+
+decode_target([Node|<<"#Name", Rest/binary>>]) when is_atom(Node) ->
+    {encoded_name, binary_to_list(Rest)};
+
+decode_target(<<"partisan:", Rest0/binary>>) ->
+    ThisNode = partisan:nodestring(),
+
+    %% We remove padding
+    Rest =
+        case binary:split(Rest0, <<?PADDING_START>>, [global]) of
+            [Rest0] ->
+                Rest0;
+            [Rest1 | _Padding] ->
+                Rest1
+        end,
+
+    %% We ignore everything following the 3rd element.
+    %% More elements are allowed because we plan to allow
+    %% user-defined Uri schemes where the uri can have more elements
+    %% e.g. to encode metadata (but we will provide functions to extract the
+    %% metadata, here we don't need it)
+    case binary:split(Rest, <<?SEP>>, [global]) of
+
+        [<<"pid">>, _, Term | _] ->
+            {encoded_pid, tag(Term)};
+
+        [<<"ref">>, _, Term | _] ->
+            {encoded_ref, "#Ref" ++ tag(Term)};
+
+        [<<"name">>, _, Term | _] ->
+            {encoded_name, binary_to_list(Term)};
+
+
+        _ ->
+            throw(badarg)
+    end;
+
+decode_target({?MODULE, Node, {_, _} = Target}) ->
+    Node =:= partisan:node() orelse throw(badarg),
+    decode_target(Target);
+
+decode_target({encoded_pid, _} = Target) ->
     Target;
 
-decode({encoded_name, Value}, term) ->
-    list_to_existing_atom(Value).
+decode_target({encoded_ref, _} = Target) ->
+    Target;
+
+
+decode_target({encoded_name, _} = Target) ->
+    Target.
 
 
 %% @private
@@ -896,10 +988,11 @@ do_is_local(Bin, Nodestring, TargetAsBin) ->
 
 
 %% @private
--spec untag(list()) -> binary().
+-spec untag(string()) -> binary().
 
 untag(String0) ->
     String1 = string:replace(String0, "<", ""),
+    %% eqwalizer:ignore String1
     iolist_to_binary(string:replace(String1, ">", "")).
 
 

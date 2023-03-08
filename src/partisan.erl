@@ -44,9 +44,6 @@
                                 | channel_opt().
 -type send_dst()            ::  erlang:send_destination()
                                 | server_ref().
--type monitor_process_id()  ::  erlang:monitor_process_identifier()
-                                | partisan_remote_ref:p()
-                                | partisan_remote_ref:n().
 
 -type server_ref()          ::  partisan_peer_service_manager:server_ref().
 -type forward_opts()        ::  partisan_peer_service_manager:forward_opts().
@@ -186,8 +183,6 @@
 -eqwalizer({nowarn_function, is_local_pid/2}).
 -eqwalizer({nowarn_function, is_local_reference/2}).
 -eqwalizer({nowarn_function, to_net_kernel_opts/1}).
--eqwalizer({nowarn_function, spawn_monitor/2}).
--eqwalizer({nowarn_function, spawn_monitor/4}).
 
 
 
@@ -303,8 +298,10 @@ monitor(Term) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec monitor
-    (process, monitor_process_id()) ->
-        reference() | partisan_remote_ref:r() | no_return();
+    (process, erlang:monitor_process_identifier()) ->
+        reference();
+    (process, partisan_remote_ref:p() | partisan_remote_ref:n()) ->
+        partisan_remote_ref:r() | no_return();
     (port, erlang:monitor_port_identifier()) ->
         reference() |  no_return();
     (time_offset, clock_service) ->
@@ -355,12 +352,18 @@ monitor(Type, Item) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec monitor
-    (process, monitor_process_id(), [monitor_opt()]) ->
-        reference() | partisan_remote_ref:r();
+    (process, pid() | atom(), [monitor_opt()]) ->
+        reference();
     (port, erlang:monitor_port_identifier(), [erlang:monitor_option()]) ->
         reference();
     (time_offset, clock_service, [erlang:monitor_option()]) ->
-        reference().
+        reference();
+    (process, {atom(), node()}, [monitor_opt()]) ->
+        reference() | partisan_remote_ref:r();
+    (process, partisan_remote_ref:p(), [monitor_opt()]) ->
+        partisan_remote_ref:r();
+    (process, partisan_remote_ref:n(), [monitor_opt()]) ->
+        partisan_remote_ref:r().
 
 monitor(process, RegisteredName, Opts) when is_atom(RegisteredName) ->
     erlang:monitor(process, RegisteredName, to_erl_monitor_opts(Opts));
@@ -382,6 +385,7 @@ monitor(process, Term, Opts) when erlang:is_pid(Term) orelse is_atom(Term) ->
     erlang:monitor(process, Term, to_erl_monitor_opts(Opts));
 
 monitor(process, RemoteRef, Opts) ->
+    %% eqwalizer:ignore RemoteRef
     partisan_monitor:monitor(RemoteRef, Opts);
 
 monitor(Type, Term, Opts) when Type == port orelse Type == time_offset ->
@@ -667,11 +671,9 @@ nodestring() ->
 %% a reference, a port or a partisan remote reference.
 %% @end
 %% -----------------------------------------------------------------------------
--spec node(Term) -> Result when
-    Term :: pid() | port() | reference()
-            | partisan_remote_ref:p()
-            | partisan_remote_ref:r(),
-    Result :: node() | no_return().
+-spec node
+    (pid() | port() | reference()) -> node();
+    (partisan_remote_ref:t()) -> node() | no_return().
 
 node(Arg)
 when erlang:is_pid(Arg) orelse erlang:is_reference(Arg) orelse is_port(Arg) ->

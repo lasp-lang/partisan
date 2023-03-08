@@ -139,13 +139,7 @@
 -type proc_mon_out()                ::  #partisan_proc_mon_out{}.
 -type proc_mon_out_idx()            ::  {node(), partisan_remote_ref:r()}.
 -type node_mon()                    ::  {node(), pid()}.
--type node_type_mon()               ::  {
-                                            {
-                                                Monitor :: pid(),
-                                                Hash :: integer()
-                                            },
-                                            node_type_mon_opts()
-                                        }.
+-type node_type_mon()               ::  #partisan_node_type_mon{}.
 -type node_type_mon_opts()          ::  {
                                             Type :: all | visible | hidden,
                                             InclReason :: boolean()
@@ -211,7 +205,7 @@ start_link() ->
 %% -----------------------------------------------------------------------------
 -spec monitor(
     Process :: partisan_remote_ref:p() | partisan_remote_ref:n(),
-    Opts :: partisan:monitor_opts()) -> partisan_remote_ref:r() | no_return().
+    Opts :: [partisan:monitor_opt()]) -> partisan_remote_ref:r() | no_return().
 
 monitor(Process, Opts) when is_list(Opts) ->
     partisan_remote_ref:is_pid(Process)
@@ -233,7 +227,7 @@ monitor(Process, Opts) when is_list(Opts) ->
         false ->
             case partisan_remote_ref:is_local(Process) of
                 true ->
-                    PidOrName = partisan_remote_ref:to_term(Process),
+                    PidOrName = partisan_remote_ref:to_pid_or_name(Process),
                     %% partisan:monitor will coerce Opts to erlang monitor opts
                     partisan:monitor(process, PidOrName, Opts);
 
@@ -281,14 +275,14 @@ monitor(Process, Opts) when is_list(Opts) ->
 %% -----------------------------------------------------------------------------
 -spec demonitor(
     MonitoredRef :: partisan_remote_ref:r(),
-    Opts :: partisan:demonitor_opts()
+    Opts :: [partisan:demonitor_opt()]
     ) -> boolean() | no_return().
 
 demonitor(MPRef, Opts) ->
     partisan_remote_ref:is_reference(MPRef)
         orelse erlang:error(badarg, [MPRef, Opts], [
             {error_info, #{
-                1 => "not a partisan remote reference"
+                cause => #{1 => "not a partisan remote reference"}
             }}
         ]),
 
@@ -525,7 +519,7 @@ handle_call({monitor, Process, Opts}, {Monitor, _}, State) ->
 
                     %% Process can be a pid or registered name for a local
                     %% process
-                    PidOrName = partisan_remote_ref:to_term(Process),
+                    PidOrName = partisan_remote_ref:to_pid_or_name(Process),
 
                     %% We monitor the process on behalf of the remote caller.
                     %% We will handle the EXIT signal and forward it to
@@ -633,8 +627,10 @@ handle_info({'DOWN', Mref, process, _Process, Reason}, State) ->
                     Monitor,
                     'DOWN',
                     Mref,
+                    %% eqwalizer:ignore Monitored
                     Monitored,
                     Reason,
+                    %% eqwalizer:ignore Opts
                     [{channel, Channel}]
                 );
             error ->
@@ -947,7 +943,7 @@ decode_ref(RemoteRef) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec cast_signal(
-    Dest :: partisan_remote_ref:p() | partisan_remote_ref:n() | pid() | atom(),
+    Dest :: partisan_remote_ref:p() | partisan_remote_ref:n(),
     Tag  :: term(),
     Mref :: reference() | partisan_remote_ref:r(),
     Monitored :: partisan_remote_ref:p() | partisan_remote_ref:n(),
@@ -958,11 +954,13 @@ decode_ref(RemoteRef) ->
 cast_signal(Dest, Tag, Mref0, Monitored, Reason, Opts)
 when is_reference(Mref0) ->
     Mref = partisan_remote_ref:from_term(Mref0),
+    %% eqwalizer:ignore Mref
     cast_signal(Dest, Tag, Mref, Monitored, Reason, Opts);
 
 cast_signal(Dest, Tag, Mref, {Name, Node}, Reason, Opts)
 when is_atom(Name), is_atom(Node) ->
     Ref = partisan_remote_ref:from_term(Name, Node),
+    %% eqwalizer:ignore Ref
     cast_signal(Dest, Tag, Mref, Ref, Reason, Opts);
 
 cast_signal(Dest, Tag, Mref, Monitored, Reason, Opts) ->
@@ -1228,7 +1226,7 @@ proc_mon_in_indices(Node) ->
     Mref :: partisan_remote_ref:r(),
     Monitored :: partisan_remote_ref:p() | partisan_remote_ref:n(),
     Monitor :: pid()
- ) -> proc_mon_out().
+ ) -> ok.
 
 add_proc_mon_out(Mref, Monitored, Monitor)
 when is_pid(Monitor); is_atom(Monitor) ->
@@ -1260,7 +1258,7 @@ take_proc_mon_out(Mref) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec del_proc_mon_out(proc_mon_out()) -> ok.
+-spec del_proc_mon_out(proc_mon_out() | partisan_remote_ref:r()) -> ok.
 
 del_proc_mon_out(#partisan_proc_mon_out{} = Obj) ->
     true = ets:delete_object(?PROC_MON_OUT, Obj),
