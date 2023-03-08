@@ -35,9 +35,9 @@
     callback_mod                            ::  module() | undefined,
     callback_config                         ::  map() | undefined,
     callback_state                          ::  any() | undefined,
-    initial_delay                           ::  integer(),
-    polling_interval                        ::  integer(),
-    timeout                                 ::  integer(),
+    initial_delay                           ::  integer() | undefined,
+    polling_interval                        ::  integer() | undefined,
+    timeout                                 ::  integer() | undefined,
     peers = []                              ::  [partisan:node_spec()]
 }).
 
@@ -62,7 +62,9 @@
 -export([disabled/3]).
 
 
-
+-eqwalizer({nowarn_function, enable/0}).
+-eqwalizer({nowarn_function, disable/0}).
+-eqwalizer({nowarn_function, status/0}).
 
 
 %% =============================================================================
@@ -130,7 +132,7 @@ lookup() ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec enable() -> boolean().
+-spec enable() -> ok.
 
 enable() ->
     gen_statem:call(?MODULE, enable, 5000).
@@ -140,7 +142,7 @@ enable() ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec disable() -> boolean().
+-spec disable() -> ok.
 
 disable() ->
     gen_statem:call(?MODULE, disable, 5000).
