@@ -154,6 +154,13 @@
 %% USED IN TESTING
 %% =============================================================================
 
+-if(?OTP_RELEASE >= 25).
+    %% already defined by OTP
+-else.
+    -define(CT_PEER, ct_slave).
+-endif.
+
+-compile([nowarn_export_all, export_all]).
 
 
 -define(CHANNELS, ?CHANNELS(?PARALLELISM)).

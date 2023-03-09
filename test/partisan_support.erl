@@ -30,15 +30,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 
--if(?OTP_RELEASE >= 25).
-    %% already defined by OTP
--else.
-    -define(CT_PEER, ct_slave).
--endif.
-
--compile([nowarn_export_all, export_all]).
-
-
 
 start_disterl() ->
     {ok, Hostname} = inet:gethostname(),
