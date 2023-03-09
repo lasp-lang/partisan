@@ -506,6 +506,12 @@ forward_message(Term, Message) ->
 forward_message(Pid, Message, Opts) when is_pid(Pid) ->
     forward_message(partisan:node(), Pid, Message, Opts);
 
+forward_message(Name, Message, Opts) when is_atom(Name) ->
+    forward_message(partisan:node(), Name, Message, Opts);
+
+forward_message({Name, Node}, Message, Opts) ->
+    forward_message(Node, Name, Message, Opts);
+
 forward_message(RemoteRef, Message, Opts) ->
     partisan_remote_ref:is_pid(RemoteRef)
         orelse partisan_remote_ref:is_name(RemoteRef)
