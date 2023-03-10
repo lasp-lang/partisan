@@ -93,7 +93,7 @@
 -type server_ref() :: pid() | atom() | {atom(), node()}
                     | {global, term()} | {via, module(), term()}.
 
--type request_id() :: reference() | partisan_remote_ref:r().
+-type request_id() :: reference() | partisan:remote_reference().
 
 %%-----------------------------------------------------------------
 %% Starts a generic process.

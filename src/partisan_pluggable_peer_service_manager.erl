@@ -306,7 +306,7 @@ send_message(Node, Message) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec cast_message(
-    Term :: partisan_remote_ref:p() | partisan_remote_ref:n() | pid(),
+    Term :: partisan:any_pid() | partisan:any_name(),
     Message :: partisan:message()) -> ok.
 
 cast_message(Term, Message) ->

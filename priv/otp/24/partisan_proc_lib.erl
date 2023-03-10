@@ -84,10 +84,10 @@
 -type dict_or_pid()    :: pid()
                         | (ProcInfo :: [_])
                         | {X :: integer(), Y :: integer(), Z :: integer()}
-                        | partisan_remote_ref:p().
+                        | partisan:remote_pid().
 
--type pid2()           :: pid() | partisan_remote_ref:p().
--type reference2()           :: reference() | partisan_remote_ref:r().
+-type pid2()           :: pid() | partisan:remote_pid().
+-type reference2()           :: reference() | partisan:remote_reference().
 
 %%-----------------------------------------------------------------------------
 

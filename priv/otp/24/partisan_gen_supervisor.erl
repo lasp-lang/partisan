@@ -72,7 +72,7 @@
               startlink_ret/0, startlink_err/0]).
 
 %%--------------------------------------------------------------------------
--type pid2()          :: pid() | partisan_remote_ref:p().
+-type pid2()          :: pid() | partisan:remote_pid().
 -type auto_shutdown() :: 'never' | 'any_significant' | 'all_significant'.
 -type child()         :: 'undefined' | pid2().
 -type child_id()      :: term().

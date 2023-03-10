@@ -256,7 +256,7 @@ encode_(T) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec pid(pid()) -> partisan_remote_ref:p().
+-spec pid(pid()) -> partisan:remote_pid().
 
 pid(Pid) when is_pid(Pid) ->
     Node = erlang:node(Pid),

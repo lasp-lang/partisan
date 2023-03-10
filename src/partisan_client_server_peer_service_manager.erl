@@ -223,7 +223,7 @@ send_message(Name, Message) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec cast_message(
-    Term :: partisan_remote_ref:p() | partisan_remote_ref:n() | pid(),
+    Term :: partisan:any_pid() | partisan:any_name(),
     MEssage :: partisan:message()) -> ok.
 
 cast_message(Term, Message) ->

@@ -466,8 +466,8 @@ send_message(Name, Message) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec cast_message(
-    Term :: partisan_remote_ref:p() | partisan_remote_ref:n() | pid(),
-    MEssage :: partisan:message()) -> ok.
+    Term :: partisan:any_pid() | partisan:any_name(),
+    Message :: partisan:message()) -> ok.
 
 cast_message(Term, Message) ->
     FullMessage = {'$gen_cast', Message},

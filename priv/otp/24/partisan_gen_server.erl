@@ -161,7 +161,7 @@
 
 -type server_ref() ::
         pid()
-      | partisan_remote_ref:p()
+      | partisan:remote_pid()
       | (LocalName :: atom())
       | {Name :: atom(), Node :: atom()}
       | {'global', GlobalName :: term()}
@@ -777,7 +777,7 @@ start_monitor(Node, Name) when is_atom(Node), is_atom(Name) ->
         Ref when is_reference(Ref) ->
             {Node, Ref};
         Ref ->
-            %% partisan_remote_ref:r()
+            %% partisan:remote_reference()
             {Node, Ref}
         end
     end.

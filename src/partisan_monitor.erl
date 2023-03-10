@@ -109,18 +109,18 @@
     %% The local process that is being monitored
     monitored                       ::  pid() | atom(),
     %% A remote process monitoring a local process (monitored)
-    monitor                         ::  partisan_remote_ref:p()
-                                        | partisan_remote_ref:n(),
+    monitor                         ::  partisan:remote_pid()
+                                        | partisan:remote_name(),
     %% The channel signals should be forwarded on
     channel                         ::  partisan:channel()
 }).
 
 -record(partisan_proc_mon_out, {
     %% The remote monitor reference
-    ref                             ::  partisan_remote_ref:r(),
+    ref                             ::  partisan:remote_reference(),
     %% The remote process being monitored
-    monitored                       ::  partisan_remote_ref:p()
-                                        | partisan_remote_ref:n(),
+    monitored                       ::  partisan:remote_pid()
+                                        | partisan:remote_name(),
     %% A local process monitoring the remote process
     monitor                         ::  pid() | atom()
 }).
@@ -137,7 +137,7 @@
 -type proc_mon_in()                 ::  #partisan_proc_mon_in{}.
 -type proc_mon_in_idx()             ::  {node(), reference()}.
 -type proc_mon_out()                ::  #partisan_proc_mon_out{}.
--type proc_mon_out_idx()            ::  {node(), partisan_remote_ref:r()}.
+-type proc_mon_out_idx()            ::  {node(), partisan:remote_reference()}.
 -type node_mon()                    ::  {node(), pid()}.
 -type node_type_mon()               ::  #partisan_node_type_mon{}.
 -type node_type_mon_opts()          ::  {
@@ -204,8 +204,8 @@ start_link() ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec monitor(
-    Process :: partisan_remote_ref:p() | partisan_remote_ref:n(),
-    Opts :: [partisan:monitor_opt()]) -> partisan_remote_ref:r() | no_return().
+    Process :: partisan:remote_pid() | partisan:remote_name(),
+    Opts :: [partisan:monitor_opt()]) -> partisan:remote_reference() | no_return().
 
 monitor(Process, Opts) when is_list(Opts) ->
     partisan_remote_ref:is_pid(Process)
@@ -274,7 +274,7 @@ monitor(Process, Opts) when is_list(Opts) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec demonitor(
-    MonitoredRef :: partisan_remote_ref:r(),
+    MonitoredRef :: partisan:remote_reference(),
     Opts :: [partisan:demonitor_opt()]
     ) -> boolean() | no_return().
 
@@ -784,10 +784,10 @@ subscribe_to_channel_status() ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec monitor(
-    RemoteRef :: partisan_remote_ref:p() | partisan_remote_ref:n(),
+    RemoteRef :: partisan:remote_pid() | partisan:remote_name(),
     Opts :: [partisan:monitor_opt()],
     Status :: {connected, boolean()} | noconnection | timeout | noproc) ->
-    partisan_remote_ref:r() | no_return().
+    partisan:remote_reference() | no_return().
 
 monitor(Process, Opts, {connected, true}) ->
     %% We call the remote partisan_monitor process to
@@ -943,10 +943,10 @@ decode_ref(RemoteRef) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec cast_signal(
-    Dest :: partisan_remote_ref:p() | partisan_remote_ref:n(),
+    Dest :: partisan:remote_pid() | partisan:remote_name(),
     Tag  :: term(),
-    Mref :: reference() | partisan_remote_ref:r(),
-    Monitored :: partisan_remote_ref:p() | partisan_remote_ref:n(),
+    Mref :: reference() | partisan:remote_reference(),
+    Monitored :: partisan:remote_pid() | partisan:remote_name(),
     Reason :: any(),
     Opts :: map()
     ) -> ok.
@@ -1127,9 +1127,9 @@ parse_nodemon_opts(Opts0) when is_list(Opts0) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec new_process_mon
-    (reference(), pid(), partisan_remote_ref:p(), partisan:channel()) ->
+    (reference(), pid(), partisan:remote_pid(), partisan:channel()) ->
         proc_mon_in();
-    (reference(), partisan_remote_ref:p(), pid(), partisan:channel()) ->
+    (reference(), partisan:remote_pid(), pid(), partisan:channel()) ->
         proc_mon_in().
 
 new_process_mon(Mref, Monitored, Monitor, Channel)
@@ -1223,8 +1223,8 @@ proc_mon_in_indices(Node) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec add_proc_mon_out(
-    Mref :: partisan_remote_ref:r(),
-    Monitored :: partisan_remote_ref:p() | partisan_remote_ref:n(),
+    Mref :: partisan:remote_reference(),
+    Monitored :: partisan:remote_pid() | partisan:remote_name(),
     Monitor :: pid()
  ) -> ok.
 
@@ -1258,7 +1258,7 @@ take_proc_mon_out(Mref) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec del_proc_mon_out(proc_mon_out() | partisan_remote_ref:r()) -> ok.
+-spec del_proc_mon_out(proc_mon_out() | partisan:remote_reference()) -> ok.
 
 del_proc_mon_out(#partisan_proc_mon_out{} = Obj) ->
     true = ets:delete_object(?PROC_MON_OUT, Obj),
@@ -1274,7 +1274,7 @@ del_proc_mon_out(Mref) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec proc_mon_out(partisan_remote_ref:r()) -> [proc_mon_out()].
+-spec proc_mon_out(partisan:remote_reference()) -> [proc_mon_out()].
 
 proc_mon_out(Ref) ->
     ets:lookup(?PROC_MON_OUT, Ref).
@@ -1285,7 +1285,7 @@ proc_mon_out(Ref) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec add_proc_mon_out_idx(node(), partisan_remote_ref:r()) -> ok.
+-spec add_proc_mon_out_idx(node(), partisan:remote_reference()) -> ok.
 
 add_proc_mon_out_idx(Node, Mref) when is_atom(Node), not is_reference(Mref) ->
     _ = ets:insert(?PROC_MON_OUT_IDX, {Node, Mref}),
@@ -1297,7 +1297,7 @@ add_proc_mon_out_idx(Node, Mref) when is_atom(Node), not is_reference(Mref) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec del_proc_mon_out_idx(node(), partisan_remote_ref:r()) -> ok.
+-spec del_proc_mon_out_idx(node(), partisan:remote_reference()) -> ok.
 
 del_proc_mon_out_idx(Node, Mref) when is_atom(Node), not is_reference(Mref) ->
     _ = ets:delete_object(?PROC_MON_OUT_IDX, {Node, Mref}),

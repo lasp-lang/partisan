@@ -30,14 +30,12 @@
 -include("partisan.hrl").
 
 
--type server_ref()      ::  partisan_remote_ref:p()
+-type server_ref()      ::  partisan:any_pid()
+                            | partisan:any_name()
                             | partisan_remote_ref:encoded_pid()
-                            | partisan_remote_ref:n()
                             | partisan_remote_ref:encoded_name()
-                            | pid()
-                            | (RegName :: atom())
                             | {RegName :: atom(), node()}
-                            | {global, atom()}
+                            | {global, RegName :: atom()}
                             | {via, module(), ViaName :: atom()}.
 
 

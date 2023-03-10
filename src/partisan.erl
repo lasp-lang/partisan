@@ -31,9 +31,9 @@
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
 
--type pid()                 ::  remote_pid() | pid().
--type reference()           ::  remote_reference() | reference().
--type name()                ::  remote_name() | atom().
+-type any_pid()             ::  remote_pid() | pid().
+-type any_reference()       ::  remote_reference() | reference().
+-type any_name()            ::  remote_name() | atom().
 -type remote_pid()          ::  partisan_remote_ref:p().
 -type remote_reference()    ::  partisan_remote_ref:r().
 -type remote_name()         ::  partisan_remote_ref:n().
@@ -92,9 +92,9 @@
 -export_type([monitor_opt/0]).
 -export_type([node_spec/0]).
 -export_type([node_type/0]).
--export_type([pid/0]).
--export_type([reference/0]).
--export_type([name/0]).
+-export_type([any_pid/0]).
+-export_type([any_reference/0]).
+-export_type([any_name/0]).
 -export_type([remote_pid/0]).
 -export_type([remote_reference/0]).
 -export_type([remote_name/0]).

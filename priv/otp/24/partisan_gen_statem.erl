@@ -127,7 +127,7 @@
 %%%==========================================================================
 
 -type from() ::
-	{To :: pid() | partisan_remote_ref:p(), Tag :: term()}. % Reply-to specifier for call
+	{To :: pid() | partisan:remote_pid(), Tag :: term()}. % Reply-to specifier for call
 
 -type state() ::
 	state_name() | % For StateName/3 callback functions
@@ -516,8 +516,8 @@ timeout_event_type(Type) ->
       | {Name :: atom(), Node :: atom()}
       | {'global', GlobalName :: term()}
       | {'via', RegMod :: module(), ViaName :: term()}
-      | partisan_remote_ref:p()
-      | partisan_remote_ref:n().
+      | partisan:remote_pid()
+      | partisan:remote_name().
 -type start_opt() ::
         {'timeout', Time :: timeout()}
       | {'spawn_opt', [partisan_proc_lib:start_spawn_option()]}
