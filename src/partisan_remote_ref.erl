@@ -147,7 +147,6 @@
 -export([to_pid/1]).
 -export([to_pid_or_name/1]).
 -export([to_term/1]).
--export([to_term/1]).
 
 
 
@@ -883,8 +882,6 @@ decode_target([Node|<<"#Name", Rest/binary>>]) when is_atom(Node) ->
     {encoded_name, binary_to_list(Rest)};
 
 decode_target(<<"partisan:", Rest0/binary>>) ->
-    ThisNode = partisan:nodestring(),
-
     %% We remove padding
     Rest =
         case binary:split(Rest0, <<?PADDING_START>>, [global]) of
