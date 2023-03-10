@@ -31,6 +31,13 @@
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
 
+-type pid()                 ::  remote_pid() | pid().
+-type reference()           ::  remote_reference() | reference().
+-type name()                ::  remote_name() | atom().
+-type remote_pid()          ::  partisan_remote_ref:p().
+-type remote_reference()    ::  partisan_remote_ref:r().
+-type remote_name()         ::  partisan_remote_ref:n().
+
 -type monitor_opt()         ::  erlang:monitor_option()
                                 | {channel, partisan:channel()}.
 -type demonitor_opt()       ::  flush | info.
@@ -69,8 +76,8 @@
 -type time()                ::  non_neg_integer().
 -type send_after_dst()      ::  pid()
                                 | (RegName :: atom())
-                                | (Pid :: partisan_remote_ref:p())
-                                | (RegName :: partisan_remote_ref:n()).
+                                | (Pid :: remote_pid())
+                                | (RegName :: remote_name()).
 -type send_after_opts()     ::  forward_opts() | [{abs, boolean()}].
 
 
@@ -85,6 +92,12 @@
 -export_type([monitor_opt/0]).
 -export_type([node_spec/0]).
 -export_type([node_type/0]).
+-export_type([pid/0]).
+-export_type([reference/0]).
+-export_type([name/0]).
+-export_type([remote_pid/0]).
+-export_type([remote_reference/0]).
+-export_type([remote_name/0]).
 -export_type([server_ref/0]).
 
 
@@ -215,7 +228,7 @@ stop() ->
 %% `partisan_remote_ref:from_term(erlang:make_ref())'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec make_ref() -> partisan_remote_ref:r() | no_return().
+-spec make_ref() -> remote_reference() | no_return().
 
 make_ref() ->
     partisan_remote_ref:from_term(erlang:make_ref()).
@@ -232,7 +245,7 @@ make_ref() ->
 %% an Erlang Shell process.
 %% @end
 %% -----------------------------------------------------------------------------
--spec self() -> partisan_remote_ref:p().
+-spec self() -> remote_pid().
 
 self() ->
     partisan_remote_ref:from_term(erlang:self()).
@@ -258,7 +271,7 @@ self() ->
 %% </blockquote>
 %% @end
 %% -----------------------------------------------------------------------------
--spec self(Opts :: [cache]) -> partisan_remote_ref:p().
+-spec self(Opts :: [cache]) -> remote_pid().
 
 self([]) ->
     partisan_remote_ref:from_term(erlang:self());
@@ -300,8 +313,8 @@ monitor(Term) ->
 -spec monitor
     (process, erlang:monitor_process_identifier()) ->
         reference();
-    (process, partisan_remote_ref:p() | partisan_remote_ref:n()) ->
-        partisan_remote_ref:r() | no_return();
+    (process, remote_pid() | remote_name()) ->
+        remote_reference() | no_return();
     (port, erlang:monitor_port_identifier()) ->
         reference() |  no_return();
     (time_offset, clock_service) ->
@@ -323,9 +336,9 @@ monitor(Type, Item) ->
 %% the item being monitored is a remote process identifier
 %% {@link erlang:monitor/3} in which case:
 %% <ul>
-%% <li>`MonitorRef' is a {@link partisan_remote_ref:r()}</li>
-%% <li>`Object' is a {@link partisan_remote_ref:p()} or {@link
-%% partisan_remote_ref:n()}</li>
+%% <li>`MonitorRef' is a {@link remote_reference()}</li>
+%% <li>`Object' is a {@link remote_pid()} or {@link
+%% remote_name()}</li>
 %% </ul>
 %%
 %% This is the Partisan's equivalent to {@link erlang:monitor/2}. It differs
@@ -359,11 +372,11 @@ monitor(Type, Item) ->
     (time_offset, clock_service, [erlang:monitor_option()]) ->
         reference();
     (process, {atom(), node()}, [monitor_opt()]) ->
-        reference() | partisan_remote_ref:r();
-    (process, partisan_remote_ref:p(), [monitor_opt()]) ->
-        partisan_remote_ref:r();
-    (process, partisan_remote_ref:n(), [monitor_opt()]) ->
-        partisan_remote_ref:r().
+        reference() | remote_reference();
+    (process, remote_pid(), [monitor_opt()]) ->
+        remote_reference();
+    (process, remote_name(), [monitor_opt()]) ->
+        remote_reference().
 
 monitor(process, RegisteredName, Opts) when is_atom(RegisteredName) ->
     erlang:monitor(process, RegisteredName, to_erl_monitor_opts(Opts));
@@ -399,7 +412,7 @@ monitor(Type, Term, Opts) when Type == port orelse Type == time_offset ->
 %% `MonitorRef' refers to a monitoring started by another process.
 %% @end
 %% -----------------------------------------------------------------------------
--spec demonitor(MonitorRef :: reference() | partisan_remote_ref:r()) -> true.
+-spec demonitor(MonitorRef :: reference() | remote_reference()) -> true.
 
 demonitor(Ref) ->
     _ = demonitor(Ref, []),
@@ -411,7 +424,7 @@ demonitor(Ref) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec demonitor(
-    MonitorRef :: reference() | partisan_remote_ref:r(),
+    MonitorRef :: reference() | remote_reference(),
     OptionList :: [demonitor_opt()]) -> boolean().
 
 demonitor(Ref, Opts) when erlang:is_reference(Ref) ->
@@ -522,8 +535,8 @@ monitor_nodes(Flag, Opts) ->
 %% -----------------------------------------------------------------------------
 -spec is_local(Arg) -> Result when
     Arg :: pid() | port() | reference()
-            | partisan_remote_ref:p()
-            | partisan_remote_ref:r(),
+            | remote_pid()
+            | remote_reference(),
     Result :: boolean().
 
 is_local(Arg) ->
@@ -535,7 +548,7 @@ is_local(Arg) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec is_local_name(Arg :: atom() | partisan_remote_ref:n()) ->
+-spec is_local_name(Arg :: atom() | remote_name()) ->
     boolean() | no_return().
 
 is_local_name(Arg) when is_atom(Arg) ->
@@ -550,7 +563,7 @@ is_local_name(Arg) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec is_local_name(
-    Arg :: atom() | partisan_remote_ref:n(), Name :: atom()) ->
+    Arg :: atom() | remote_name(), Name :: atom()) ->
     boolean() | no_return().
 
 is_local_name(Name, Name) when is_atom(Name) ->
@@ -568,7 +581,7 @@ is_local_name(Arg, _) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec is_local_pid(Arg :: pid() | partisan_remote_ref:p()) ->
+-spec is_local_pid(Arg :: pid() | remote_pid()) ->
     boolean() | no_return().
 
 
@@ -584,7 +597,7 @@ is_local_pid(Arg) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec is_local_pid(
-    Arg :: pid() | partisan_remote_ref:p(), Pid :: pid()) ->
+    Arg :: pid() | remote_pid(), Pid :: pid()) ->
     boolean() | no_return().
 
 is_local_pid(Pid, Pid) when erlang:is_pid(Pid) ->
@@ -602,7 +615,7 @@ is_local_pid(Arg, _) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec is_local_reference(Arg :: reference() | partisan_remote_ref:r()) ->
+-spec is_local_reference(Arg :: reference() | remote_reference()) ->
     boolean() | no_return().
 
 is_local_reference(Ref) when erlang:is_reference(Ref) ->
@@ -617,7 +630,7 @@ is_local_reference(Arg) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec is_local_reference(
-    Arg :: reference() | partisan_remote_ref:r(), LocalRef :: reference()) ->
+    Arg :: reference() | remote_reference(), LocalRef :: reference()) ->
     boolean() | no_return().
 
 is_local_reference(Ref, Ref) when erlang:is_reference(Ref) ->
@@ -636,7 +649,7 @@ is_local_reference(Arg, _) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec is_self(Arg) -> Result when
-    Arg :: pid() | partisan_remote_ref:p(),
+    Arg :: pid() | remote_pid(),
     Result :: boolean().
 
 is_self(Arg) when erlang:is_pid(Arg) ->
@@ -829,7 +842,7 @@ is_alive() ->
 %% Fails with `badarg' if `Arg' is a remote reference for another node.
 %% @end
 %% -----------------------------------------------------------------------------
--spec whereis(Arg :: atom() | partisan_remote_ref:n()) ->
+-spec whereis(Arg :: atom() | remote_name()) ->
     pid() | port() | undefined.
 
 whereis(Arg) when is_atom(Arg) ->
@@ -848,7 +861,7 @@ whereis(Arg) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec process_info(Arg :: pid() | partisan_remote_ref:p()) ->
+-spec process_info(Arg :: pid() | remote_pid()) ->
     [tuple()] | undefined.
 
 process_info(Arg) when erlang:is_pid(Arg) ->
@@ -872,7 +885,7 @@ process_info(Arg) ->
 %%
 %% -----------------------------------------------------------------------------
 -spec process_info(
-    Arg :: pid() | partisan_remote_ref:p(),
+    Arg :: pid() | remote_pid(),
     Item :: atom() | [atom()]) -> [tuple()] | undefined.
 
 process_info(Arg, ItemOrItems) when erlang:is_pid(Arg) ->
@@ -1014,7 +1027,7 @@ channel_opts(Name) when is_atom(Name) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec is_pid(pid() | partisan_remote_ref:p()) ->
+-spec is_pid(pid() | remote_pid()) ->
     boolean() | no_return().
 
 is_pid(Pid) when erlang:is_pid(Pid) ->
@@ -1028,7 +1041,7 @@ is_pid(RemoteRef) ->
 %% @doc Returns the name of the local node.
 %% @end
 %% -----------------------------------------------------------------------------
--spec is_reference(reference() | partisan_remote_ref:r()) ->
+-spec is_reference(reference() | remote_reference()) ->
     boolean() | no_return().
 
 is_reference(Pid) when erlang:is_reference(Pid) ->
@@ -1042,7 +1055,7 @@ is_reference(RemoteRef) ->
 %% @doc Returns the name of the local node.
 %% @end
 %% -----------------------------------------------------------------------------
--spec is_process_alive(pid() | partisan_remote_ref:p()) ->
+-spec is_process_alive(pid() | remote_pid()) ->
     boolean() | no_return().
 
 is_process_alive(Pid) when erlang:is_pid(Pid) ->
@@ -1071,7 +1084,7 @@ is_process_alive(RemoteRef) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec exit(Pid :: pid() | partisan_remote_ref:p(), Reason :: term()) -> true.
+-spec exit(Pid :: pid() | remote_pid(), Reason :: term()) -> true.
 
 exit(Pid, Reason) when erlang:is_pid(Pid) ->
     erlang:exit(Pid, Reason);
@@ -1298,7 +1311,7 @@ cancel_timer(Ref, Opts) when erlang:is_reference(Ref), is_list(Opts) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec spawn(Node :: node(), Fun :: fun(() -> any())) -> partisan_remote_ref:p().
+-spec spawn(Node :: node(), Fun :: fun(() -> any())) -> remote_pid().
 
 spawn(Node, Fun) ->
     case Node == node() of
@@ -1327,7 +1340,7 @@ spawn(Node, Fun) ->
                     partisan_remote_ref:from_term(Pid, Node);
 
                 Encoded ->
-                    %% eqwalizer:ignore This MUST be partisan_remote_ref:p()
+                    %% eqwalizer:ignore This MUST be remote_pid()
                     Encoded
             end
     end.
@@ -1339,7 +1352,7 @@ spawn(Node, Fun) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec spawn(
-    Node :: node(), Mod :: module(), Function :: atom(), Args :: [term()]) -> partisan_remote_ref:p().
+    Node :: node(), Mod :: module(), Function :: atom(), Args :: [term()]) -> remote_pid().
 
 spawn(Node, Module, Function, Args) ->
     case Node == node() of
@@ -1350,7 +1363,7 @@ spawn(Node, Module, Function, Args) ->
         false ->
             SpawnArgs = [Module, Function, Args],
             %% We call ourselves in Node and not erlang module, as we need
-            %% a partisan_remote_ref:p() even when pid_encoding is disabled
+            %% a remote_pid() even when pid_encoding is disabled
             case partisan_rpc:call(Node, ?MODULE, spawn, SpawnArgs, 5000) of
                 {badrpc, Reason} ->
                     ?LOG_WARNING(#{
@@ -1378,7 +1391,7 @@ spawn(Node, Module, Function, Args) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec spawn_monitor(Node :: node(), Fun :: fun(() -> any())) ->
-    {partisan_remote_ref:p(), partisan_remote_ref:r()}
+    {remote_pid(), remote_reference()}
     | {pid(), reference()}.
 
 spawn_monitor(Node, Fun) ->
@@ -1394,7 +1407,7 @@ spawn_monitor(Node, Fun) ->
 %% -----------------------------------------------------------------------------
 -spec spawn_monitor(
     Node :: node(), Mod :: module(), Function :: atom(), Args :: [term()]) ->
-    {partisan_remote_ref:p(), partisan_remote_ref:r()}
+    {remote_pid(), remote_reference()}
     | {pid(), reference()}.
 
 spawn_monitor(Node, Module, Function, Args) ->
