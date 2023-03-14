@@ -234,7 +234,7 @@ merge_test() ->
            {<<"4">>, 4}],
     VC2 = [{<<"3">>, 3},
            {<<"4">>, 3}],
-    ?assertEqual([], merge(?MODULE:fresh())),
+    ?assertEqual([], merge([?MODULE:fresh()])),
     ?assertEqual([{<<"1">>, 1}, {<<"2">>, 2}, {<<"3">>, 3}, {<<"4">>, 4}],
                  merge([VC1, VC2])).
 
