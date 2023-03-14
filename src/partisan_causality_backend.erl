@@ -53,34 +53,77 @@
     storage
 }).
 
-%%%===================================================================
-%%% API
-%%%===================================================================
 
+
+%% =============================================================================
+%% API
+%% =============================================================================
+
+
+
+%% -----------------------------------------------------------------------------
 %% @doc Same as start_link([]).
+%% @end
+%% -----------------------------------------------------------------------------
+-spec start_link(Label :: atom()) -> gen_server:start_ret().
+
 start_link(Label) ->
     Name = generate_name(Label),
     gen_server:start_link({local, Name}, ?MODULE, [Label], []).
 
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 reemit(Label, {_CausalLabel, LocalClock}) ->
     Name = generate_name(Label),
     gen_server:call(Name, {reemit, LocalClock}, infinity).
 
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 emit(Label, Node, ServerRef, Message) ->
     Name = generate_name(Label),
     gen_server:call(Name, {emit, Node, ServerRef, Message}, infinity).
 
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 receive_message(Label, Message) ->
     Name = generate_name(Label),
     gen_server:call(Name, {receive_message, Message}, infinity).
 
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 set_delivery_fun(Label, DeliveryFun) ->
     Name = generate_name(Label),
     gen_server:call(Name, {set_delivery_fun, DeliveryFun}, infinity).
 
-%%%===================================================================
-%%% gen_server callbacks
-%%%===================================================================
+
+%% -----------------------------------------------------------------------------
+%% @doc Determine is a message is being sent with causal delivery or not.
+%% @end
+%% -----------------------------------------------------------------------------
+is_causal_message({causal, _Label, _Node, _ServerRef, _IncomingOrderBuffer, _MessageClock, _Message}) ->
+    true;
+is_causal_message(_) ->
+    false.
+
+
+
+%% =============================================================================
+%% GEN_SERVER CALLBACKS
+%% =============================================================================
+
+
 
 %% @private
 init([Label]) ->
@@ -302,9 +345,3 @@ generate_name(Label) ->
 write_state(#state{storage=Storage}=State) ->
     true = ets:insert(Storage, {state, State}),
     State.
-
-%% @doc Determine is a message is being sent with causal delivery or not.
-is_causal_message({causal, _Label, _Node, _ServerRef, _IncomingOrderBuffer, _MessageClock, _Message}) ->
-    true;
-is_causal_message(_) ->
-    false.

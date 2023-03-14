@@ -86,8 +86,23 @@
 -type interpos_arg()        ::  {receive_message, node(), any()}.
 -type interpos_fun()        ::  fun((interpos_arg()) -> interpos_arg()).
 -type x_interpos_fun()      ::  fun((interpos_arg()) -> ok).
+-type tag()                 ::  atom().
+-type info()                ::  connections
+                                | retransmit
+                                | periodic
+                                | instrumentation
+                                | distance
+                                | tree_refresh
+                                | {'EXIT', partisan:any_pid(), any()}
+                                | {
+                                    connected,
+                                    partisan:node_spec(),
+                                    partisan:channel(),
+                                    tag(),
+                                    t()
+                                }.
 
-%% API
+%% %% API
 -export([member/1]).
 
 
@@ -510,54 +525,74 @@ supports_capability(_) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
-add_pre_interposition_fun(Name, PreInterpositionFun) ->
+-spec add_pre_interposition_fun(any(), x_interpos_fun()) -> ok.
+
+add_pre_interposition_fun(Name, Fun) ->
     gen_server:call(
         ?MODULE,
-        {add_pre_interposition_fun, Name, PreInterpositionFun},
+        {add_pre_interposition_fun, Name, Fun},
         infinity
     ).
 
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
-remove_pre_interposition_fun(Name) ->
-    gen_server:call(?MODULE, {remove_pre_interposition_fun, Name}, infinity).
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
+-spec get_pre_interposition_funs() -> interposition_map(x_interpos_fun()).
+
+get_pre_interposition_funs() ->
+    gen_server:call(?MODULE, get_pre_interposition_funs, infinity).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec remove_pre_interposition_fun(any()) -> ok.
+
+remove_pre_interposition_fun(Name) ->
+    gen_server:call(?MODULE, {remove_pre_interposition_fun, Name}, infinity).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec add_interposition_fun(any(), interpos_fun()) -> ok.
+
 add_interposition_fun(Name, InterpositionFun) ->
     gen_server:call(
         ?MODULE, {add_interposition_fun, Name, InterpositionFun}, infinity
     ).
 
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
-remove_interposition_fun(Name) ->
-    gen_server:call(?MODULE, {remove_interposition_fun, Name}, infinity).
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
+-spec get_interposition_funs() -> interposition_map(interpos_fun()).
+
 get_interposition_funs() ->
     gen_server:call(?MODULE, get_interposition_funs, infinity).
 
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
-get_pre_interposition_funs() ->
-    gen_server:call(?MODULE, get_pre_interposition_funs, infinity).
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
+-spec remove_interposition_fun(any()) -> ok.
+
+remove_interposition_fun(Name) ->
+    gen_server:call(?MODULE, {remove_interposition_fun, Name}, infinity).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec add_post_interposition_fun(any(), x_interpos_fun()) -> ok.
+
 add_post_interposition_fun(Name, PostInterpositionFun) ->
     gen_server:call(
         ?MODULE,
@@ -569,6 +604,8 @@ add_post_interposition_fun(Name, PostInterpositionFun) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
+-spec remove_post_interposition_fun(any()) -> ok.
+
 remove_post_interposition_fun(Name) ->
     gen_server:call(?MODULE, {remove_post_interposition_fun, Name}, infinity).
 
@@ -675,8 +712,10 @@ init([]) ->
     }}.
 
 
--spec handle_call(term(), {pid(), term()}, t()) ->
-    {reply, term(), t()}.
+-spec handle_call(term(), gen_server:from(), t()) ->
+    {reply, term(), t()}
+    | {noreply, t()}
+    | {stop, normal, t()}.
 
 handle_call({reserve, _Tag}, _From, State) ->
     {reply, {error, no_available_slots}, State};
@@ -703,47 +742,38 @@ handle_call({on_down, Name, Fun, _}, _From, State) ->
     Funs = partisan_util:maps_append(Name, Fun, Funs0),
     {reply, ok, State#state{down_funs = Funs}};
 
-handle_call(
-    {add_pre_interposition_fun, Name, PreInterpositionFun},
-    _From,
-    #state{pre_interposition_funs = PreInterpositionFuns0} = State) ->
-    PreInterpositionFuns = maps:put(Name, PreInterpositionFun, PreInterpositionFuns0),
-    {reply, ok, State#state{pre_interposition_funs=PreInterpositionFuns}};
+handle_call({add_pre_interposition_fun, Name, Fun}, _From, #state{} = State) ->
+    Funs = maps:put(Name, Fun, State#state.pre_interposition_funs),
+    %% eqwalizer:ignore Funs
+    {reply, ok, State#state{pre_interposition_funs = Funs}};
 
-handle_call(
-    {remove_pre_interposition_fun, Name},
-    _From,
-    #state{pre_interposition_funs = PreInterpositionFuns0} = State) ->
-    PreInterpositionFuns = maps:remove(Name, PreInterpositionFuns0),
-    {reply, ok, State#state{pre_interposition_funs=PreInterpositionFuns}};
+handle_call({remove_pre_interposition_fun, Name}, _From, #state{} = State) ->
+    Funs = maps:remove(Name, State#state.pre_interposition_funs),
+    {reply, ok, State#state{pre_interposition_funs = Funs}};
 
-handle_call(
-    {add_interposition_fun, Name, InterpositionFun},
-    _From,
-    #state{interposition_funs = InterpositionFuns0} = State) ->
-    InterpositionFuns = maps:put(Name, InterpositionFun, InterpositionFuns0),
-    {reply, ok, State#state{interposition_funs=InterpositionFuns}};
+handle_call({add_interposition_fun, Name, Fun}, _From, #state{} = State) ->
+    Funs = maps:put(Name, Fun, State#state.interposition_funs),
+    %% eqwalizer:ignore Funs
+    {reply, ok, State#state{interposition_funs = Funs}};
 
-handle_call(
-    {remove_interposition_fun, Name},
-    _From,
-    #state{interposition_funs=InterpositionFuns0} = State) ->
-    InterpositionFuns = maps:remove(Name, InterpositionFuns0),
-    {reply, ok, State#state{interposition_funs=InterpositionFuns}};
+handle_call({remove_interposition_fun, Name}, _From, #state{} = State) ->
+    Funs = maps:remove(Name, State#state.interposition_funs),
+    {reply, ok, State#state{interposition_funs = Funs}};
 
-handle_call(get_interposition_funs, _From, #state{interposition_funs=InterpositionFuns}=State) ->
-    {reply, {ok, InterpositionFuns}, State};
+handle_call(get_interposition_funs, _From, #state{} = State) ->
+    {reply, {ok, State#state.interposition_funs}, State};
 
-handle_call(get_pre_interposition_funs, _From, #state{pre_interposition_funs=PreInterpositionFuns}=State) ->
-    {reply, {ok, PreInterpositionFuns}, State};
+handle_call(get_pre_interposition_funs, _From, #state{} = State) ->
+    {reply, {ok, State#state.pre_interposition_funs}, State};
 
-handle_call({add_post_interposition_fun, Name, PostInterpositionFun}, _From, #state{post_interposition_funs=PostInterpositionFuns0}=State) ->
-    PostInterpositionFuns = maps:put(Name, PostInterpositionFun, PostInterpositionFuns0),
-    {reply, ok, State#state{post_interposition_funs=PostInterpositionFuns}};
+handle_call({add_post_interposition_fun, Name, Fun}, _From, #state{} = State) ->
+    Funs = maps:put(Name, Fun, State#state.post_interposition_funs),
+    %% eqwalizer:ignore Funs
+    {reply, ok, State#state{post_interposition_funs =Funs}};
 
-handle_call({remove_post_interposition_fun, Name}, _From, #state{post_interposition_funs=PostInterpositionFuns0}=State) ->
-    PostInterpositionFuns = maps:remove(Name, PostInterpositionFuns0),
-    {reply, ok, State#state{post_interposition_funs=PostInterpositionFuns}};
+handle_call({remove_post_interposition_fun, Name}, _From, #state{}=State) ->
+    Funs = maps:remove(Name, State#state.post_interposition_funs),
+    {reply, ok, State#state{post_interposition_funs = Funs}};
 
 handle_call({update_members, _}, _, #state{leaving = true} = State) ->
     %% We are leaving so do nothing
@@ -921,7 +951,9 @@ handle_call(Event, _From, State) ->
 
 
 
--spec handle_cast(term(), t()) -> {noreply, t()}.
+-spec handle_cast(term(), t()) ->
+    {noreply, t()}
+    | {stop, normal, t()}.
 
 handle_cast(stop, State) ->
     %% We send ourselves this message when we left the cluster
@@ -955,6 +987,7 @@ handle_cast({receive_message, Node, Channel, From, Msg0}, State) ->
 
     case Msg1 of
         undefined ->
+            %% eqwalizer:ignore From
             gen_server:reply(From, ok),
             {noreply, State};
 
@@ -994,6 +1027,7 @@ handle_cast(
     VClock = partisan_vclock:increment(State#state.name, VClock0),
 
     %% Are we using causality?
+    %% eqwalizer:ignore Options
     CausalLabel = maps:get(causal_label, Options, undefined),
 
     %% Use local information for message unless it's a causal message.
@@ -1044,9 +1078,11 @@ handle_cast(
     case Msg of
         undefined ->
             %% Store for reliability, if necessary.
+            %% eqwalizer:ignore Options
             case maps:get(ack, Options, false) of
                 true ->
                     %% Acknowledgements.
+                    %% eqwalizer:ignore Options
                     case maps:get(retransmission, Options, false) of
                         true ->
                             RescheduleableMessage = {
@@ -1090,6 +1126,7 @@ handle_cast(
                 undefined ->
                     ok;
                 _ ->
+                    %% eqwalizer:ignore From
                     gen_server:reply(From, ok)
             end,
 
@@ -1227,7 +1264,8 @@ handle_cast(Event, State) ->
     {noreply, State}.
 
 
--spec handle_info(term(), t()) -> {noreply, t()}.
+-spec handle_info(info(), t()) -> {noreply, t()}.
+
 handle_info(tree_refresh, State) ->
     %% Get lazily computed outlinks.
     OutLinks = retrieve_outlinks(),
@@ -1382,13 +1420,14 @@ handle_info(connections, State0) ->
 
     {noreply, State};
 
-handle_info({'EXIT', Pid, Reason}, State0) ->
+handle_info({'EXIT', Pid, Reason}, State0)->
     ?LOG_DEBUG(#{
         description => "Connection closed",
         reason => Reason
     }),
 
     %% A connection has closed, prune it from the connections table
+    %% eqwalizer:ignore Pid
     try partisan_peer_connections:prune(Pid) of
         {Info, [Connection]} ->
             NodeSpec = partisan_peer_connections:node_spec(Info),
