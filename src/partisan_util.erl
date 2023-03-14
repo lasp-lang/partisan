@@ -273,8 +273,6 @@ pid(Pid, Node, true) ->
             %% This is super dangerous.
             case partisan_config:get(register_pid_for_encoding, false) of
                 true ->
-                    Unique = erlang:unique_integer([monotonic, positive]),
-
                     Name = case process_info(Pid, registered_name) of
                         {registered_name, OldName} ->
                             ?LOG_DEBUG(
@@ -284,28 +282,32 @@ pid(Pid, Node, true) ->
 
                             %% TODO: Race condition on unregister/register.
                             unregister(OldName),
-                            atom_to_list(OldName);
+                            OldName;
                         [] ->
-                            "partisan_registered_name_" ++
+                            Unique = erlang:unique_integer(
+                                [monotonic, positive]
+                            ),
+                            list_to_atom(
+                                "partisan_registered_name_" ++
                                 integer_to_list(Unique)
+                            )
                     end,
 
                     ?LOG_DEBUG(
                         "registering pid: ~p as name: ~p at node: ~p",
                         [Pid, Name, Node]
                     ),
-                    true = erlang:register(list_to_atom(Name), Pid),
+                    true = erlang:register(Name, Pid),
                     partisan_remote_ref:from_term(Name, Node);
                 false ->
                     partisan_remote_ref:from_term(Pid, Node)
             end;
 
         false ->
-            %% This is even mmore super dangerous.
+            %% This is even more super dangerous.
             case partisan_config:get(register_pid_for_encoding, false) of
                 true ->
                     Unique = erlang:unique_integer([monotonic, positive]),
-
                     Name = list_to_atom(
                         "partisan_registered_name_" ++ integer_to_list(Unique)
                     ),
@@ -313,12 +315,18 @@ pid(Pid, Node, true) ->
                     [_, B, C] = string:split(pid_to_list(Pid), ".", all),
                     PidString = "<0." ++ B ++ "." ++ C,
 
+                    ?LOG_DEBUG(
+                        "registering pid: ~p as name: ~p at node: ~p",
+                        [Pid, Name, Node]
+                    ),
+
                     RegisterFun =
                         fun() ->
                             LocalPid = list_to_pid(PidString),
                             RegName = process_info(LocalPid, registered_name),
-                            NewName = case RegName of
-                                {registered_name, OldName} ->
+                            case RegName of
+                                {registered_name, OldName}
+                                when is_atom(OldName) ->
                                     ?LOG_DEBUG(
                                         "unregistering pid: ~p with name: ~p",
                                         [Pid, OldName]
@@ -327,22 +335,20 @@ pid(Pid, Node, true) ->
                                     %% TODO: Race condition on unregister/
                                     %% register.
                                     unregister(OldName),
-                                    atom_to_list(OldName);
-                                [] ->
-                                    Name
+                                    ok;
+                                _ ->
+                                    ok
                             end,
 
-                            erlang:register(list_to_atom(NewName), LocalPid)
+                            erlang:register(Name, LocalPid)
                     end,
-                    ?LOG_DEBUG(
-                        "registering pid: ~p as name: ~p at node: ~p",
-                        [Pid, Name, Node]
-                    ),
+
                     %% TODO: Race here unless we wait.
                     _ = partisan_rpc:call(
                         Node, erlang, spawn, [RegisterFun], 5000
                     ),
                     partisan_remote_ref:from_term(Name, Node);
+
                 false ->
                     [_, B, C] = string:split(pid_to_list(Pid), ".", all),
                     PidString = "<0." ++ B ++ "." ++ C,
