@@ -527,7 +527,7 @@ node(#partisan_peer_info{} = T) ->
 node(#partisan_peer_connection{node = Val}) when is_atom(Val) ->
     Val;
 
-node(#partisan_peer_info{} = T) ->
+node(#partisan_peer_connection{} = T) ->
     ?NOT_GROUND([T]).
 
 
@@ -551,7 +551,7 @@ node_spec(#partisan_peer_connection{node = Val}) when is_atom(Val) ->
             error(badarg)
     end;
 
-node_spec(#partisan_peer_info{} = T) ->
+node_spec(#partisan_peer_connection{} = T) ->
     ?NOT_GROUND([T]).
 
 
