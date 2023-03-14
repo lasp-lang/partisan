@@ -48,7 +48,6 @@
          code_change/3]).
 
 %% debug functions
--export([debug_get_tree/2]).
 
 -define(REFRESH_INTERVAL, 1000).
 -define(REFRESH_MESSAGE,  refresh).
@@ -64,9 +63,16 @@
 -callback(download_artifact(term(), node()) -> term()).
 -callback(upload_artifact(term(), node(), term()) -> term()).
 
-%%%===================================================================
-%%% API
-%%%===================================================================
+
+-eqwalizer({nowarn_function, breadth_first/3}).
+
+
+
+%% =============================================================================
+%% API
+%% =============================================================================
+
+
 
 %% @doc Same as start_link([]).
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
@@ -448,7 +454,17 @@ maybe_connect(PeerService, Nodes, SeenNodes) ->
 connect(PeerService, Node) ->
     PeerService:join(Node).
 
-breadth_first(Root, Graph, Visited0) ->
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec breadth_first(
+    Root :: node(), Graph :: digraph:graph(), ordsets:ordset(node())) ->
+    {boolean(), ordsets:ordset(node())}.
+
+breadth_first(Root, Graph, Visited0) when is_atom(Root) ->
     %% Check if every link is bidirectional
     %% If not, stop traversal
     In = ordsets:from_list(digraph:in_neighbours(Graph, Root)),
@@ -458,17 +474,30 @@ breadth_first(Root, Graph, Visited0) ->
 
     case In == Out of
         true ->
-            {SymmetricViews, VisitedNodes} = ordsets:fold(
-                fun(Peer, {SymmetricViews0, VisitedNodes0}) ->
-                    {SymmetricViews1, VisitedNodes1} = breadth_first(Peer, Graph, VisitedNodes0),
-                    {SymmetricViews0 andalso SymmetricViews1, ordsets:union(VisitedNodes0, VisitedNodes1)}
-                end,
-                {true, Visited1},
-                ordsets:subtract(Out, Visited1)
-            ),
+            {SymmetricViews, VisitedNodes} =
+                ordsets:fold(
+                    fun
+                        (Peer, {IsSymmetric0, VisitedNodes0})
+                        when is_boolean(IsSymmetric0), is_atom(Peer) ->
+                            {IsSymmetric1, VisitedNodes1} = breadth_first(
+                                Peer, Graph, VisitedNodes0
+                            ),
+                            IsSymmetric2 = IsSymmetric0 andalso IsSymmetric1,
+                            {
+                                IsSymmetric2,
+                                ordsets:union(VisitedNodes0, VisitedNodes1)
+                            }
+                    end,
+                    {true, Visited1},
+                    ordsets:subtract(Out, Visited1)
+                ),
             {SymmetricViews, ordsets:union(VisitedNodes, Out)};
+
         false ->
-            ?LOG_INFO("Non symmetric views for node ~p. In ~p; Out ~p", [Root, In, Out]),
+            ?LOG_INFO(
+                "Non symmetric views for node ~p. In ~p; Out ~p",
+                [Root, In, Out]
+            ),
             {false, ordsets:new()}
     end.
 
@@ -551,15 +580,13 @@ populate_graph(State, Nodes, Graph) ->
 
 %% @private
 populate_tree(Root, Nodes, Tree) ->
-    DebugTree = debug_get_tree(Root, Nodes),
+    DebugTree = partisan_plumtree_broadcast:debug_get_tree(Root, Nodes, 5000),
     lists:foreach(
-        fun({Node, Peers}) ->
-            case Peers of
-                down ->
-                    add_edges(Node, [], Tree);
-                {Eager, _Lazy} ->
-                    add_edges(Node, Eager, Tree)
-            end
+        fun
+            ({Node, down}) ->
+                add_edges(Node, [], Tree);
+            ({Node, {Eager, _Lazy}}) ->
+                add_edges(Node, Eager, Tree)
         end,
         DebugTree
     ).
@@ -580,18 +607,6 @@ add_edges(Name, Membership, Graph) ->
         Graph,
         Membership
     ).
-
--spec debug_get_tree(node(), [node()]) ->
-                            [{node(), {ordsets:ordset(node()), ordsets:ordset(node())}}].
-debug_get_tree(Root, Nodes) ->
-    [begin
-         Peers = try partisan_plumtree_broadcast:debug_get_peers(Node, Root, 5000)
-                 catch _:Error ->
-                           ?LOG_INFO("Call to node ~p to get root tree ~p failed: ~p", [Node, Root, Error]),
-                           down
-                 end,
-         {Node, Peers}
-     end || Node <- Nodes].
 
 %% @private
 upload_artifact(#orchestration_strategy_state{orchestration_strategy=OrchestrationStrategy}=State, Node, Payload) ->
