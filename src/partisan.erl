@@ -710,8 +710,9 @@ when erlang:is_pid(Arg) orelse erlang:is_reference(Arg) orelse is_port(Arg) ->
             end
     end;
 
-node(RemoteRef) ->
-    partisan_remote_ref:node(RemoteRef).
+node(Arg) ->
+    %% eqwalizer:ignore We assume this is a partisan_remote_ref:t()
+    partisan_remote_ref:node(Arg).
 
 
 %% -----------------------------------------------------------------------------
