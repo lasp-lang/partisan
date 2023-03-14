@@ -410,7 +410,9 @@ broadcast_members(Timeout) ->
 %% running.
 %% @end
 %% -----------------------------------------------------------------------------
--spec exchanges() -> partisan_plumtree_broadcast:exchanges().
+-spec exchanges() ->
+    {ok, partisan_plumtree_broadcast:exchanges()}
+    | {error, {badrpc, Reason :: any()}}.
 
 exchanges() ->
     partisan_plumtree_broadcast:exchanges().
@@ -421,7 +423,9 @@ exchanges() ->
 %% running.
 %% @end
 %% -----------------------------------------------------------------------------
--spec exchanges(node()) -> partisan_plumtree_broadcast:exchanges().
+-spec exchanges(node()) ->
+    {ok, partisan_plumtree_broadcast:exchanges()}
+    | {error, {badrpc, Reason :: any()}}.
 
 exchanges(Node) ->
     partisan_plumtree_broadcast:exchanges(Node).
@@ -432,7 +436,8 @@ exchanges(Node) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec cancel_exchanges(partisan_plumtree_broadcast:selector()) ->
-    partisan_plumtree_broadcast:exchanges().
+    {ok, partisan_plumtree_broadcast:exchanges()}
+    | {error, {badrpc, Reason :: any()}}.
 
 cancel_exchanges(WhichExchanges) ->
     partisan_plumtree_broadcast:cancel_exchanges(WhichExchanges).
