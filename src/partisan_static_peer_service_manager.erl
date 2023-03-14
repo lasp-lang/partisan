@@ -63,16 +63,17 @@
          code_change/3]).
 
 
--type pending() :: [partisan:node_spec()].
--type membership() :: sets:set(partisan:node_spec()).
 
 -record(state, {
-    myself :: partisan:node_spec(),
-    pending :: pending(),
-    membership :: membership()
+    myself              :: partisan:node_spec(),
+    pending             :: pending(),
+    membership          :: membership()
 }).
 
--type state_t() :: #state{}.
+-type state_t()         :: #state{}.
+-type pending()         :: [partisan:node_spec()].
+-type membership()      :: sets:set(partisan:node_spec()).
+
 
 %%%===================================================================
 %%% partisan_peer_service_manager callbacks
@@ -272,18 +273,20 @@ handle_call({leave, _Node}, _From, State) ->
     {reply, error, State};
 
 handle_call({join, #{name := Node} = Spec}, _From, #state{} = State) ->
+    %% eqwalizer:ignore
     ok = partisan_util:maybe_connect_disterl(Node),
 
     %% Add to list of pending connections.
     Pending = [Spec | State#state.pending],
 
     %% Trigger connection.
+    %% eqwalizer:ignore
     ok = partisan_peer_service_manager:connect(Spec),
-
-    %% Return.
+    %% eqwalizer:ignore
     {reply, ok, State#state{pending = Pending}};
 
 handle_call({send_message, Name, Message}, _From, #state{} = State) ->
+    %% eqwalizer:ignore
     Result = do_send_message(Name, Message),
     {reply, Result, State};
 
@@ -291,6 +294,7 @@ handle_call(
     {forward_message, Name, _Channel, ServerRef, Message, _Options},
     _From,
     #state{} = State) ->
+    %% eqwalizer:ignore
     Result = do_send_message(Name, {forward_message, ServerRef, Message}),
     {reply, Result, State};
 
