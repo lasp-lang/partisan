@@ -51,19 +51,27 @@
                             | {mod, module()}
                             | reference()
                             | pid().
-
+-type opts()            ::  opts_map() | opts_list().
+-type opts_map()        :: #{
+                                lazy_tick_period => non_neg_integer(),
+                                exchange_tick_period => non_neg_integer()
+                            }.
+-type opts_list()       ::  [
+                                {lazy_tick_period, non_neg_integer()}
+                                | {exchange_tick_period, non_neg_integer()}
+                            ].
 
 -record(state, {
     %% Initially trees rooted at each node are the same.
     %% Portions of that tree belonging to this node are
     %% shared in this set.
-    common_eagers :: nodeset() | undefined,
+    common_eagers :: nodeset(),
 
     %% Initially trees rooted at each node share the same lazy links.
     %% Typically this set will contain a single element. However, it may
     %% contain more in large clusters and may be empty for clusters with
     %% less than three nodes.
-    common_lazys  :: nodeset() | undefined,
+    common_lazys  :: nodeset(),
 
     %% A mapping of sender node (root of each broadcast tree)
     %% to this node's portion of the tree. Elements are
@@ -71,14 +79,14 @@
     %% propagate to this node. Nodes that are never the
     %% root of a message will never have a key added to
     %% `eager_sets'
-    eager_sets    :: #{node() := nodeset()} | undefined,
+    eager_sets    :: #{node() := nodeset()},
 
     %% A Mapping of sender node (root of each spanning tree)
     %% to this node's set of lazy peers. Elements are added
     %% to this structure as messages rooted at a node
     %% propagate to this node. Nodes that are never the root
     %% of a message will never have a key added to `lazy_sets'
-    lazy_sets     :: #{node() := nodeset()} | undefined,
+    lazy_sets     :: #{node() := nodeset()},
 
     %% Set of registered modules that may handle messages that
     %% have been broadcast
@@ -89,7 +97,7 @@
 
     %% Set of all known members. Used to determine
     %% which members have joined and left during a membership update
-    all_members   :: nodeset() | undefined,
+    all_members   :: nodeset(),
 
     %% Lazy tick period in milliseconds. On every tick all outstanding
     %% lazy pushes are sent out
@@ -124,6 +132,7 @@
 -export([debug_get_peers/2]).
 -export([debug_get_peers/3]).
 -export([debug_get_tree/2]).
+-export([debug_get_tree/3]).
 
 %% gen_server callbacks
 -export([init/1]).
@@ -134,6 +143,7 @@
 -export([code_change/3]).
 
 
+-eqwalizer({nowarn_function, start_link/5}).
 
 %% =============================================================================
 %% API
@@ -197,13 +207,13 @@ start_link() ->
 
 %% -----------------------------------------------------------------------------
 %% @doc Starts the broadcast server on this node.
-%% `InitMembers' must be a list of all members known to this node when starting
+%% `Members' must be a list of all members known to this node when starting
 %% the broadcast server.
-%% `InitEagers' are the initial peers of this node for all broadcast trees.
-%% `InitLazys' is a list of random peers not in `InitEagers' that will be used
+%% `Eagers' are the initial peers of this node for all broadcast trees.
+%% `Lazys' is a list of random peers not in `Eagers' that will be used
 %% as the initial lazy peer shared by all trees for this node. If the number
-%% of nodes in the cluster is less than 3, `InitLazys' should be an empty list.
-%% `InitEagers' and `InitLazys' must also be subsets of `InitMembers'. `Mods' is
+%% of nodes in the cluster is less than 3, `Lazys' should be an empty list.
+%% `Eagers' and `Lazys' must also be subsets of `Members'. `Mods' is
 %% a list of modules that may be handlers for broadcasted messages. All modules
 %% in `Mods' should implement the `partisan_plumtree_broadcast_handler'
 %% behaviour.
@@ -220,18 +230,22 @@ start_link() ->
 %% -----------------------------------------------------------------------------
 
 -spec start_link(
-    InitMembers :: [node()],
-    InitEagers :: [node()],
-    InitLazys :: [node()],
+    Members :: [node()],
+    Eagers :: [node()],
+    Lazys :: [node()],
     Mods :: [module()],
-    Opts :: proplists:proplist() | map()) ->
+    Opts :: opts()) ->
     {ok, pid()} | ignore | {error, term()}.
 
-start_link(InitMembers, InitEagers, InitLazys, Mods, Opts) when is_list(Opts) ->
-    start_link(InitMembers, InitEagers, InitLazys, Mods, maps:from_list(Opts));
+start_link(Members, Eagers, Lazys, Mods, Opts)
+when is_list(Members), is_list(Eagers), is_list(Lazys), is_list(Mods),
+is_list(Opts) ->
+    start_link(Members, Eagers, Lazys, Mods, maps:from_list(Opts));
 
-start_link(InitMembers, InitEagers, InitLazys, Mods, Opts) when is_map(Opts) ->
-    Args = [InitMembers, InitEagers, InitLazys, Mods, Opts],
+start_link(Members, Eagers, Lazys, Mods, Opts)
+when is_list(Members), is_list(Eagers), is_list(Lazys), is_list(Mods),
+is_map(Opts) ->
+    Args = [Members, Eagers, Lazys, Mods, Opts],
     StartOpts = [
         {spawn_opt, ?PARALLEL_SIGNAL_OPTIMISATION([])}
     ],
@@ -317,7 +331,7 @@ broadcast_members(Timeout) ->
 %% running.
 %% @end
 %% -----------------------------------------------------------------------------
--spec exchanges() -> exchanges().
+-spec exchanges() -> {ok, exchanges()}.
 
 exchanges() ->
     gen_server:call(?SERVER, exchanges, infinity).
@@ -327,7 +341,9 @@ exchanges() ->
 %% @doc Returns a list of running exchanges, started on `Node'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec exchanges(node()) -> partisan_plumtree_broadcast:exchanges().
+-spec exchanges(node()) ->
+    {ok, exchanges()}
+    | {error, {badrpc, Reason :: any()}}.
 
 exchanges(Node) ->
     exchanges(Node, infinity).
@@ -337,13 +353,21 @@ exchanges(Node) ->
 %% @doc Returns a list of running exchanges, started on `Node'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec exchanges(node(), timeout()) -> partisan_plumtree_broadcast:exchanges().
+-spec exchanges(node(), timeout()) ->
+    {ok, exchanges()}
+    | {error, {badrpc, Reason :: any()}}.
 
 exchanges(Node, Timeout) ->
     %% This will not work because gen_server uses disterl
     %% TODO reconsider turning this server into a partisan_gen_serv
     %% gen_server:call({?SERVER, Node}, exchanges, infinity).
-    partisan_rpc:call(Node, ?SERVER, exchanges, [], Timeout).
+    case partisan_rpc:call(Node, ?SERVER, exchanges, [], Timeout) of
+        {ok, Exchanges} = OK ->
+            %% eqwalizer:ignore
+            OK;
+        {badrpc, _} = Reason ->
+            {error, Reason}
+    end.
 
 
 %% -----------------------------------------------------------------------------
@@ -393,7 +417,7 @@ get_lazy_peers(Root) ->
 
 
 
--spec init([[any()], ...]) -> {ok, state()}.
+-spec init(list()) -> {ok, state()}.
 
 init([Members, InitEagers0, InitLazys0, Mods, Opts]) ->
     %% We subscribe to the membership change events
@@ -405,6 +429,11 @@ init([Members, InitEagers0, InitLazys0, Mods, Opts]) ->
     schedule_exchange_tick(ExchangeTickPeriod),
 
     State1 =  #state{
+        all_members = ordsets:new(),
+        common_lazys = ordsets:new(),
+        common_eagers = ordsets:new(),
+        eager_sets = maps:new(),
+        lazy_sets = maps:new(),
         mods = lists:usort(Mods),
         exchanges = [],
         lazy_tick_period = LazyTickPeriod,
@@ -414,6 +443,8 @@ init([Members, InitEagers0, InitLazys0, Mods, Opts]) ->
     AllMembers = ordsets:from_list(Members),
     InitEagers = ordsets:from_list(InitEagers0),
     InitLazys = ordsets:from_list(InitLazys0),
+
+    %% We finish initialising the state
     State2 = reset_peers(AllMembers, InitEagers, InitLazys, State1),
 
     {ok, State2}.
@@ -497,18 +528,18 @@ handle_cast({graft, MessageId, Mod, Round, Root, From}, State) ->
     State1 = handle_graft(Result, MessageId, Mod, Round, Root, From, State),
     {noreply, State1};
 
-handle_cast({update, MemberList}, #state{} = State) ->
+handle_cast({update, MemberList}, #state{} = State) when is_list(MemberList) ->
     ?LOG_DEBUG("received ~p", [{update, MemberList}]),
 
     #state{
-        all_members = BroadcastMembers,
+        all_members = AllMembers,
         common_eagers = EagerPeers0,
         common_lazys = LazyPeers
     } = State,
 
     Members = ordsets:from_list(MemberList),
-    New = ordsets:subtract(Members, BroadcastMembers),
-    Removed = ordsets:subtract(BroadcastMembers, Members),
+    New = ordsets:subtract(Members, AllMembers),
+    Removed = ordsets:subtract(AllMembers, Members),
 
     ?LOG_DEBUG("new members: ~p", [ordsets:to_list(New)]),
     ?LOG_DEBUG("removed members: ~p", [ordsets:to_list(Removed)]),
@@ -525,7 +556,7 @@ handle_cast({update, MemberList}, #state{} = State) ->
             ?LOG_DEBUG(
                 "new peers, eager: ~p, lazy: ~p", [EagerPeers, LazyPeers]
             ),
-
+            %% eqwalizer:ignore Members
             reset_peers(Members, EagerPeers, LazyPeers, State)
     end,
     State2 = neighbors_down(Removed, State1),
@@ -596,7 +627,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% @doc return the peers for `Node' for the tree rooted at `Root'.
 %% Wait indefinitely for a response is returned from the process
 -spec debug_get_peers(node(), node()) ->
-    {nodeset(), nodeset()}.
+    {nodeset(), nodeset()} | no_return().
 
 debug_get_peers(Node, Root) ->
     debug_get_peers(Node, Root, infinity).
@@ -605,28 +636,59 @@ debug_get_peers(Node, Root) ->
 %% @doc return the peers for `Node' for the tree rooted at `Root'.
 %% Waits `Timeout' ms for a response from the server
 -spec debug_get_peers(node(), node(), infinity | pos_integer()) ->
-    {nodeset(), nodeset()}.
+    {nodeset(), nodeset()} | no_return().
 
 debug_get_peers(Node, Root, Timeout) ->
     %% This will not work because gen_server uses disterl
     %% gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
     %% TODO reconsider turning this server into a partisan_gen_server
-    partisan_rpc:call(Node, ?MODULE, get_peers, [Root], Timeout).
+    case partisan_rpc:call(Node, ?MODULE, get_peers, [Root], Timeout) of
+        {badrpc, Reason} ->
+            error(Reason);
+        {_, _} = Result ->
+            %% eqwalizer:ignore
+            Result
+    end.
 
-
-
+%% -----------------------------------------------------------------------------
 %% @doc return peers for all `Nodes' for tree rooted at `Root'
 %% Wait indefinitely for a response is returned from the process
+%% @end
+%% -----------------------------------------------------------------------------
 -spec debug_get_tree(node(), [node()]) ->
-    [{node(), {nodeset(), nodeset()}}].
+    [{node(), {nodeset(), nodeset()} | down}].
 
 debug_get_tree(Root, Nodes) ->
-    [begin
-         Peers = try debug_get_peers(Node, Root)
-                 catch _:_ -> down
-                 end,
-         {Node, Peers}
-     end || Node <- Nodes].
+    debug_get_tree(Root, Nodes, infinity).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc return peers for all `Nodes' for tree rooted at `Root'
+%% Wait indefinitely for a response is returned from the process
+%% @end
+%% -----------------------------------------------------------------------------
+-spec debug_get_tree(node(), [node()], timeout()) ->
+    [{node(), {nodeset(), nodeset()} | down}].
+
+debug_get_tree(Root, Nodes, Timeout) ->
+    [
+        begin
+            try
+                {Node, debug_get_peers(Node, Root, Timeout)}
+            catch
+                _:Reason ->
+                    ?LOG_INFO(#{
+                        description =>
+                            "Call to get remote root tree failed.",
+                        peer => Node,
+                        root => Root,
+                        reason => Reason
+                    }),
+                    {Node, down}
+            end
+        end
+        || Node <- Nodes
+     ].
 
 
 
