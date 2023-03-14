@@ -174,7 +174,7 @@ call(_N, _M, _F, _A, _T) ->
 
 %% Asynchronous call
 
--opaque request_id() :: {reference(), reference()}.
+-opaque request_id() :: {partisan:any_reference(), partisan:any_reference()}.
 
 -spec send_request(Node, Fun) -> RequestId when
       Node :: node(),
@@ -518,16 +518,16 @@ call_abandon(ReqId) ->
 -dialyzer([{nowarn_function, result/4}, no_return]).
 
 -spec result('down', ReqId, Res, Reason) -> term() when
-      ReqId :: reference(),
-      Res :: reference(),
+      ReqId :: partisan:any_reference(),
+      Res :: partisan:any_reference(),
       Reason :: term();
                   ('spawn_reply', ReqId, Res, Reason) -> no_return() when
-      ReqId :: reference(),
-      Res :: reference(),
+      ReqId :: partisan:any_reference(),
+      Res :: partisan:any_reference(),
       Reason :: term();
                   ('timeout', ReqId, Res, Reason) -> term() when
-      ReqId :: reference(),
-      Res :: reference(),
+      ReqId :: partisan:any_reference(),
+      Res :: partisan:any_reference(),
       Reason :: term().
 
 result(down, _ReqId, Res, {Res, return, Return}) ->
