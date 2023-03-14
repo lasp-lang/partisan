@@ -70,7 +70,10 @@ call(Node, Module, Function, Arguments) ->
 call(Node, Module, Function, Arguments, Timeout) when ?IS_VALID_TMO(Timeout) ->
     call(Node, Module, Function, Arguments, #{timeout => Timeout});
 
-call(Node, Module, Function, Arguments, Opts0) ->
+call(Node, Module, Function, Arguments, Opts) when is_list(Opts) ->
+    call(Node, Module, Function, Arguments, maps:from_list(Opts));
+
+call(Node, Module, Function, Arguments, Opts0) when is_map(Opts0) ->
     Self = partisan:self(),
     Timeout = maps:get(timeout, Opts0, ?DEFAULT_TIMEOUT),
 
