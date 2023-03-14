@@ -35,20 +35,19 @@
 -endif.
 
 
--record(connection, {
-    socket              :: gen_tcp:socket() | ssl:sslsocket(),
+-record(partisan_peer_socket, {
+    socket              :: gen_tcp:socket() | ssl:sslsocket() | socket:socket(),
     transport           :: gen_tcp | ssl,
     control             :: inet | ssl,
     monotonic = false   :: boolean()
 }).
 
+-type t()               :: #partisan_peer_socket{}.
 -type reason()          :: closed | inet:posix().
 -type options()         :: [gen_tcp:option()] | map().
 
 
--type connection()      :: #connection{}.
-
--export_type([connection/0]).
+-export_type([t/0]).
 
 
 -export([accept/1]).
@@ -77,7 +76,7 @@
 %% returning the wrapped socket.
 %% @end
 %% -----------------------------------------------------------------------------
--spec accept(gen_tcp:socket()) -> connection().
+-spec accept(gen_tcp:socket()) -> t().
 
 accept(TCPSocket) ->
     case tls_enabled() of
@@ -92,13 +91,13 @@ accept(TCPSocket) ->
             {ok, TLSSocket} = ?ssl_accept(TCPSocket, TLSOpts),
             %% restore the expected active once setting
             ssl:setopts(TLSSocket, [{active, once}]),
-            #connection{
+            #partisan_peer_socket{
                 socket = TLSSocket,
                 transport = ssl,
                 control = ssl
             };
         _ ->
-            #connection{
+            #partisan_peer_socket{
                 socket = TCPSocket,
                 transport = gen_tcp,
                 control = inet
@@ -112,16 +111,16 @@ accept(TCPSocket) ->
 %% @see ssl:send/2
 %% @end
 %% -----------------------------------------------------------------------------
--spec send(connection(), iodata()) -> ok | {error, reason()}.
+-spec send(t(), iodata()) -> ok | {error, reason()}.
 
-send(#connection{monotonic = false} = Conn, Data) ->
-    Socket = Conn#connection.socket,
-    Transport = Conn#connection.transport,
+send(#partisan_peer_socket{monotonic = false} = Conn, Data) ->
+    Socket = Conn#partisan_peer_socket.socket,
+    Transport = Conn#partisan_peer_socket.transport,
     send(Transport, Socket, Data);
 
-send(#connection{monotonic = true} = Conn, Data) ->
-    Socket = Conn#connection.socket,
-    Transport = Conn#connection.transport,
+send(#partisan_peer_socket{monotonic = true} = Conn, Data) ->
+    Socket = Conn#partisan_peer_socket.socket,
+    Transport = Conn#partisan_peer_socket.transport,
 
     %% Get the current process message queue length.
     {message_queue_len, MQLen} = process_info(self(), message_queue_len),
@@ -146,7 +145,7 @@ send(#connection{monotonic = true} = Conn, Data) ->
 %% @see ssl:recv/2
 %% @end
 %% -----------------------------------------------------------------------------
--spec recv(connection(), integer()) -> {ok, iodata()} | {error, reason()}.
+-spec recv(t(), integer()) -> {ok, iodata()} | {error, reason()}.
 
 recv(Conn, Length) ->
     recv(Conn, Length, infinity).
@@ -158,10 +157,10 @@ recv(Conn, Length) ->
 %% @see ssl:recv/3
 %% @end
 %% -----------------------------------------------------------------------------
--spec recv(connection(), integer(), timeout()) ->
+-spec recv(t(), integer(), timeout()) ->
     {ok, iodata()} | {error, reason()}.
 
-recv(#connection{socket = Socket, transport = Transport}, Length, Timeout) ->
+recv(#partisan_peer_socket{socket = Socket, transport = Transport}, Length, Timeout) ->
     Transport:recv(Socket, Length, Timeout).
 
 
@@ -171,12 +170,12 @@ recv(#connection{socket = Socket, transport = Transport}, Length, Timeout) ->
 %% @see ssl:setopts/2
 %% @end
 %% -----------------------------------------------------------------------------
--spec setopts(connection(), options()) -> ok | {error, inet:posix()}.
+-spec setopts(t(), options()) -> ok | {error, inet:posix()}.
 
-setopts(#connection{} = Connection, Options) when is_map(Options) ->
+setopts(#partisan_peer_socket{} = Connection, Options) when is_map(Options) ->
     setopts(Connection, maps:to_list(Options));
 
-setopts(#connection{socket = Socket, control = Control}, Options) ->
+setopts(#partisan_peer_socket{socket = Socket, control = Control}, Options) ->
     Control:setopts(Socket, Options).
 
 
@@ -186,9 +185,9 @@ setopts(#connection{socket = Socket, control = Control}, Options) ->
 %% @see ssl:close/1
 %% @end
 %% -----------------------------------------------------------------------------
--spec close(connection()) -> ok.
+-spec close(t()) -> ok.
 
-close(#connection{socket = Socket, transport = Transport}) ->
+close(#partisan_peer_socket{socket = Socket, transport = Transport}) ->
     Transport:close(Socket).
 
 
@@ -200,7 +199,7 @@ close(#connection{socket = Socket, transport = Transport}) ->
 %% -----------------------------------------------------------------------------
 -spec connect(
     inet:socket_address() | inet:hostname(), inet:port_number(), options()) ->
-    {ok, connection()} | {error, inet:posix()}.
+    {ok, t()} | {error, inet:posix()}.
 
 connect(Address, Port, Options) ->
     connect(Address, Port, Options, infinity).
@@ -215,7 +214,7 @@ connect(Address, Port, Options) ->
     inet:port_number(),
     options(),
     timeout()) ->
-    {ok, connection()} | {error, inet:posix()}.
+    {ok, t()} | {error, inet:posix()}.
 
 connect(Address, Port, Options, Timeout) ->
     connect(Address, Port, Options, Timeout, #{}).
@@ -230,7 +229,7 @@ connect(Address, Port, Options, Timeout) ->
     inet:port_number(),
     options(),
     timeout(),
-    map() | list()) -> {ok, connection()} | {error, inet:posix()}.
+    map() | list()) -> {ok, t()} | {error, inet:posix()}.
 
 connect(Address, Port, Options, Timeout, PartisanOptions)
 when is_list(PartisanOptions) ->
@@ -269,9 +268,9 @@ when is_map(PartisanOptions) ->
 %% @doc Returns the wrapped socket from within the connection.
 %% @end
 %% -----------------------------------------------------------------------------
--spec socket(connection()) -> gen_tcp:socket() | ssl:sslsocket().
+-spec socket(t()) -> gen_tcp:socket() | ssl:sslsocket().
 socket(Conn) ->
-    Conn#connection.socket.
+    Conn#partisan_peer_socket.socket.
 
 
 
@@ -287,7 +286,7 @@ do_connect(Address, Port, ConnectOpts, Timeout, Transport, Control, Opts) ->
 
    case Transport:connect(Address, Port, ConnectOpts, Timeout) of
        {ok, Socket} ->
-            Connection = #connection{
+            Connection = #partisan_peer_socket{
                 socket = Socket,
                 transport = Transport,
                 control = Control,

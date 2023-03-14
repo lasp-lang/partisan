@@ -42,7 +42,7 @@
          code_change/3]).
 
 -record(state, {
-    socket      ::  partisan_peer_socket:connection(),
+    socket      ::  partisan_peer_socket:t(),
     channel     ::  partisan:channel() | undefined,
     ref         ::  reference()
 }).

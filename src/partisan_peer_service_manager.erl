@@ -228,8 +228,11 @@ connect(NodeSpec) ->
 %% See the section **Stale Specifications** in {@link partisan_membership_set}.
 %% @end
 %% -----------------------------------------------------------------------------
--spec connect(NodeSpec :: partisan:node_spec(), connect_opts()) ->
-    ok | {ok, StaleSpecs :: [partisan:node_spec()]}.
+-spec connect
+    (NodeSpec :: partisan:node_spec(), #{prune := true}) ->
+        {ok, StaleSpecs :: [partisan:node_spec()]};
+    (NodeSpec :: partisan:node_spec(), #{prune := false}) ->
+        ok.
 
 connect(#{listen_addrs := ListenAddrs} = NodeSpec, #{prune := true}) ->
     ToPrune = lists:foldl(
@@ -242,6 +245,7 @@ connect(#{listen_addrs := ListenAddrs} = NodeSpec, #{prune := true}) ->
     {ok, ToPrune};
 
 connect(#{listen_addrs := ListenAddrs} = NodeSpec, #{prune := false}) ->
+    %% eqwalizer:ignore
     ok = lists:foreach(
         fun(ListenAddr) ->
             maybe_connect(NodeSpec, ListenAddr, ok)
@@ -346,6 +350,7 @@ mynode() ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
+
 maybe_connect(#{name := Node} = NodeSpec, ListenAddr, Acc) ->
     Channels =
         case maps:find(channels, NodeSpec) of
@@ -420,6 +425,8 @@ maybe_connect(#{name := Node} = NodeSpec, ListenAddr, Acc) ->
 %% NodeSpec has at least one active connection.
 %% @end
 %% -----------------------------------------------------------------------------
+
+
 maybe_connect([{Channel, ChannelOpts}|T], NodeSpec, ListenAddr, Acc) ->
     %% There is at least one connection for Node.
     Parallelism = get_opt(parallelism, ChannelOpts),
@@ -597,23 +604,27 @@ do_process_forward({via, Module, Name}, Message) ->
     Pid ! Message,
     ok;
 
-do_process_forward(ServerRef, Message)
-when is_pid(ServerRef) orelse is_atom(ServerRef) ->
-    ServerRef ! Message,
-
-    Trace =
-        (
-            is_pid(ServerRef) andalso
-            not is_process_alive(ServerRef)
-        ) orelse (
-            not is_pid(ServerRef) andalso (
-                whereis(ServerRef) == undefined orelse
-                not is_process_alive(whereis(ServerRef))
-            )
-        ),
+do_process_forward(Pid, Message) when is_pid(Pid) ->
+    Pid ! Message,
 
     ?LOG_TRACE_IF(
-        Trace, "Process ~p is NOT ALIVE.", [ServerRef]
+        not is_process_alive(Pid),
+        "Process ~p is NOT ALIVE.",
+        [Pid]
+    ),
+
+    ok;
+
+do_process_forward(Name, Message) when is_atom(Name) ->
+    Name ! Message,
+
+    Pid = whereis(Name),
+
+    ?LOG_TRACE_IF(
+        %% eqwalizer:ignore
+        Pid == undefined orelse not is_process_alive(Pid),
+        "Process ~p is NOT ALIVE.",
+        [Name]
     ),
 
     ok;

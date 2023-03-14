@@ -33,7 +33,7 @@
 -include("partisan_peer_socket.hrl").
 
 -record(state, {
-    socket          ::  gen_tcp:socket() | ssl:sslsocket() | socket:socket(),
+    socket          ::  partisan_peer_socket:t(),
     listen_addr     ::  partisan:listen_addr(),
     channel         ::  partisan:channel(),
     channel_opts    ::  partisan:channel_opts(),
@@ -94,7 +94,7 @@ start_link(Peer, ListenAddr, Channel, ChannelOpts, From) ->
 
 
 
--spec init(Args :: list()) -> {ok, state()} | {stop, Reason :: inet:posix()}.
+-spec init(Args :: list()) -> {ok, state()} | {stop, Reason :: any()}.
 
 init([Peer, ListenAddr, Channel, ChannelOpts, From]) ->
     case connect(ListenAddr, Channel, ChannelOpts) of
@@ -197,9 +197,11 @@ handle_cast(Event, State) ->
     {noreply, State}.
 
 
--spec handle_info(term(), state()) -> {noreply, state()}.
+-spec handle_info(term(), state()) ->
+    {noreply, state()} | {stop, normal, state()}.
 
-handle_info({Tag, _Socket, Data}, State0) when ?DATA_MSG(Tag) ->
+handle_info({Tag, _Socket, Data}, State0)
+when ?DATA_MSG(Tag), is_binary(Data) ->
     Msg = binary_to_term(Data),
 
     ?LOG_TRACE("Received info message at ~p: ~p", [self(), Msg]),
