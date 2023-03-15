@@ -15,7 +15,7 @@ CODESPELL 		= $(shell which codespell)
 SPELLCHECK 	    = $(CODESPELL) -S _build -S doc -S .git -L applys,nd,accout,mattern,pres,fo
 SPELLFIX      	= $(SPELLCHECK) -i 3 -w
 
-.PHONY: compile-no-deps alt-test core-test otp-test test docs xref dialyzer-run dialyzer-quick dialyzer \
+.PHONY: compile-no-deps alt-test core-test otp-test test docs xref dialyzer-run dialyzer-quick dialyzer eqwalizer \
 		cleanplt upload-docs rel deps test plots spellcheck spellfix certs node1 node2 node3 node
 
 all: compile
@@ -39,7 +39,7 @@ xref: compile
 dialyzer: compile
 	${REBAR} dialyzer
 
-eqwalize: src/*.erl
+eqwalizer: src/*.erl
 	for file in $(shell ls $^ | sed 's|.*/\(.*\)\.erl|\1|'); do elp eqwalize $${file}; done
 
 
@@ -70,7 +70,7 @@ perf:
 kill:
 	pkill -9 beam.smp; pkill -9 epmd; exit 0
 
-check: kill test xref dialyzer spellcheck
+check: kill test xref dialyzer eqwalizer spellcheck
 
 spellcheck:
 	$(if $(CODESPELL), $(SPELLCHECK), $(error "Aborting, command codespell not found in PATH"))
