@@ -230,6 +230,9 @@ code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
 
+%% Dialyzer does not know the existence of record_info
+-dialyzer([{nowarn_function, format_status/2}]).
+
 format_status(_Opts, [_PDict, StateName, #state{} = State]) ->
     maps:put(state, StateName, ?RECORD_TO_MAP(State)).
 

@@ -320,6 +320,9 @@ monitor(Term) ->
     (time_offset, clock_service) ->
         reference() | no_return().
 
+%% Dialyzer does not support overloaded contracts
+-dialyzer([{nowarn_function, monitor/2}]).
+
 monitor(Type, Item) ->
     monitor(Type, Item, []).
 
@@ -377,6 +380,9 @@ monitor(Type, Item) ->
         remote_reference();
     (process, remote_name(), [monitor_opt()]) ->
         remote_reference().
+
+%% Dialyzer does not support overloaded contracts
+-dialyzer([{nowarn_function, monitor/3}]).
 
 monitor(process, RegisteredName, Opts) when is_atom(RegisteredName) ->
     erlang:monitor(process, RegisteredName, to_erl_monitor_opts(Opts));
@@ -1031,11 +1037,11 @@ channel_opts(Name) when is_atom(Name) ->
 -spec is_pid(pid() | remote_pid()) ->
     boolean() | no_return().
 
-is_pid(Pid) when erlang:is_pid(Pid) ->
+is_pid(Arg) when erlang:is_pid(Arg) ->
     true;
 
-is_pid(RemoteRef) ->
-    partisan_remote_ref:is_pid(RemoteRef).
+is_pid(Arg) ->
+    partisan_remote_ref:is_pid(Arg).
 
 
 %% -----------------------------------------------------------------------------
@@ -1045,11 +1051,11 @@ is_pid(RemoteRef) ->
 -spec is_reference(reference() | remote_reference()) ->
     boolean() | no_return().
 
-is_reference(Pid) when erlang:is_reference(Pid) ->
+is_reference(Arg) when erlang:is_reference(Arg) ->
     true;
 
-is_reference(RemoteRef) ->
-    partisan_remote_ref:is_reference(RemoteRef).
+is_reference(Arg) ->
+    partisan_remote_ref:is_reference(Arg).
 
 
 %% -----------------------------------------------------------------------------
@@ -1524,14 +1530,15 @@ list_to_node(NodeStr) ->
     erlang:list_to_atom(lists:flatten(NodeStr)).
 
 %% @private
--spec to_erl_send_opts(list()) -> [nosuspend | noconnect].
+-spec to_erl_send_opts([tuple()]) -> [nosuspend | noconnect | tuple()].
 
 to_erl_send_opts(Opts) ->
     to_erl_opts(Opts).
 
 
 %% @private
--spec to_erl_send_after_opts(list()) -> [{abs, boolean()}].
+%%  Returns [{abs, boolean()}].
+-spec to_erl_send_after_opts([tuple()]) -> [tuple()].
 
 to_erl_send_after_opts(Opts) ->
     to_erl_opts(Opts).

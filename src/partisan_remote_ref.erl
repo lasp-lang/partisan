@@ -156,6 +156,7 @@
 
 -eqwalizer({nowarn_function, register_local_pid/1}).
 
+-dialyzer([{nowarn_function, encode/3}, no_improper_lists]).
 
 
 %% =============================================================================

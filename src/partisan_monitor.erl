@@ -948,7 +948,7 @@ decode_ref(RemoteRef) ->
     Mref :: reference() | partisan:remote_reference(),
     Monitored :: partisan:remote_pid() | partisan:remote_name(),
     Reason :: any(),
-    Opts :: map()
+    Opts :: [tuple()]
     ) -> ok.
 
 cast_signal(Dest, Tag, Mref0, Monitored, Reason, Opts)

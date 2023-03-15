@@ -436,8 +436,7 @@ exchanges(Node) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec cancel_exchanges(partisan_plumtree_broadcast:selector()) ->
-    {ok, partisan_plumtree_broadcast:exchanges()}
-    | {error, {badrpc, Reason :: any()}}.
+    partisan_plumtree_broadcast:exchanges().
 
 cancel_exchanges(WhichExchanges) ->
     partisan_plumtree_broadcast:cancel_exchanges(WhichExchanges).

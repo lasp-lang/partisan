@@ -72,9 +72,8 @@
               startlink_ret/0, startlink_err/0]).
 
 %%--------------------------------------------------------------------------
--type pid2()          :: pid() | partisan:remote_pid().
 -type auto_shutdown() :: 'never' | 'any_significant' | 'all_significant'.
--type child()         :: 'undefined' | pid2().
+-type child()         :: 'undefined' | partisan:any_pid().
 -type child_id()      :: term().
 -type mfargs()        :: {M :: module(), F :: atom(), A :: [term()] | undefined}.
 -type modules()       :: [module()] | 'dynamic'.
@@ -89,7 +88,7 @@
                        | {Name :: atom(), Node :: node()}
                        | {'global', Name :: term()}
                        | {'via', Module :: module(), Name :: any()}
-                       | pid2().
+                       | partisan:any_pid().
 -type child_spec()    :: #{id := child_id(),             % mandatory
                start := mfargs(),            % mandatory
                restart => restart(),         % optional
@@ -131,8 +130,8 @@
 
 -record(child, {% pid is undefined when child is not running
         pid = undefined :: child()
-                         | {restarting, pid2() | undefined}
-                         | [pid2()],
+                         | {restarting, partisan:any_pid() | undefined}
+                         | [partisan:any_pid()],
         id              :: child_id(),
         mfargs          :: mfargs(),
         restart_type    :: restart(),
@@ -145,8 +144,8 @@
 -record(state, {name,
         strategy               :: strategy() | 'undefined',
         children = {[],#{}}    :: children(), % Ids in start order
-                dynamics               :: {'maps', #{pid2() => list()}}
-                                        | {'mapsets', #{pid2() => []}}
+                dynamics               :: {'maps', #{partisan:any_pid() => list()}}
+                                        | {'mapsets', #{partisan:any_pid() => []}}
                                         | 'undefined',
         intensity              :: non_neg_integer() | 'undefined',
         period                 :: pos_integer() | 'undefined',
@@ -175,10 +174,10 @@
 %%% SupName = {local, atom()} | {global, term()}.
 %%% ---------------------------------------------------
 
--type startlink_err() :: {'already_started', pid2()}
+-type startlink_err() :: {'already_started', partisan:any_pid()}
                          | {'shutdown', term()}
                          | term().
--type startlink_ret() :: {'ok', pid2()} | 'ignore' | {'error', startlink_err()}.
+-type startlink_ret() :: {'ok', partisan:any_pid()} | 'ignore' | {'error', startlink_err()}.
 
 -spec start_link(Module, Args) -> startlink_ret() when
       Module :: module(),
@@ -237,7 +236,7 @@ delete_child(Supervisor, Id) ->
 
 -spec terminate_child(SupRef, Id) -> Result when
       SupRef :: sup_ref(),
-      Id :: pid2() | child_id(),
+      Id :: partisan:any_pid() | child_id(),
       Result :: 'ok' | {'error', Error},
       Error :: 'not_found' | 'simple_one_for_one'.
 terminate_child(Supervisor, Id) ->
@@ -245,7 +244,7 @@ terminate_child(Supervisor, Id) ->
 
 -spec get_childspec(SupRef, Id) -> Result when
       SupRef :: sup_ref(),
-      Id :: pid2() | child_id(),
+      Id :: partisan:any_pid() | child_id(),
       Result :: {'ok', child_spec()} | {'error', Error},
       Error :: 'not_found'.
 get_childspec(Supervisor, Id) ->
@@ -382,13 +381,15 @@ init_dynamic(_State, StartSpec) ->
 %%-----------------------------------------------------------------
 %% Func: start_children/2
 %% Args: Children = children() % Ids in start order
-%%       SupName = {local, atom()} | {global, term()} | {pid2(), Mod}
+%%       SupName = {local, atom()} | {global, term()} | {partisan:any_pid(), Mod}
 %% Purpose: Start all children.  The new map contains #child's
 %%          with pids.
 %% Returns: {ok, NChildren} | {error, NChildren, Reason}
 %%          NChildren = children() % Ids in termination order
 %%                                   (reversed start order)
 %%-----------------------------------------------------------------
+-dialyzer([{nowarn_function, start_children/2}]).
+
 start_children(Children, SupName) ->
     Start =
         fun(Id,Child) ->
@@ -427,7 +428,7 @@ do_start_child(SupName, Child) ->
                 ok
         end,
         {ok, Pid, Extra};
-        Other ->
+    Other ->
             Other
     end.
 
@@ -611,7 +612,7 @@ count_child(#child{pid = Pid, child_type = supervisor},
 %%% If a restart attempt failed, this message is cast
 %%% from restart/2 in order to give gen_server the chance to
 %%% check it's inbox before trying again.
--spec handle_cast({try_again_restart, child_id() | {'restarting',pid2()}}, state()) ->
+-spec handle_cast({try_again_restart, child_id() | {'restarting',partisan:any_pid()}}, state()) ->
              {'noreply', state()} | {stop, shutdown, state()}.
 
 handle_cast({try_again_restart,TryAgainId}, State) ->
@@ -727,6 +728,8 @@ update_chsp(#child{id=Id}=OldChild, NewDb) ->
 %%% ---------------------------------------------------
 %%% Start a new child.
 %%% ---------------------------------------------------
+
+-dialyzer([{nowarn_function, handle_start_child/2}]).
 
 handle_start_child(Child, State) ->
     case find_child(Child#child.id, State) of
@@ -906,14 +909,14 @@ restarting(Pid) ->
         false -> Pid
     end.
 
--spec try_again_restart(child_id() | {'restarting',pid2()}) -> 'ok'.
+-spec try_again_restart(child_id() | {'restarting',partisan:any_pid()}) -> 'ok'.
 try_again_restart(TryAgainId) ->
     partisan_gen_server:cast(self(), {try_again_restart, TryAgainId}).
 
 %%-----------------------------------------------------------------
 %% Func: terminate_children/2
 %% Args: Children = children() % Ids in termination order
-%%       SupName = {local, atom()} | {global, term()} | {pid2(),Mod}
+%%       SupName = {local, atom()} | {global, term()} | {partisan:any_pid(),Mod}
 %% Returns: NChildren = children() % Ids in startup order
 %%                                 % (reversed termination order)
 %%-----------------------------------------------------------------
@@ -1183,7 +1186,7 @@ split_ids(Id, [Other|Ids], After) ->
 
 %% Find the child record for a given Pid (dynamic child) or Id
 %% (non-dynamic child). This is called from the API functions.
--spec find_child(pid2() | child_id(), state()) -> {ok,child_rec()} | error.
+-spec find_child(partisan:any_pid() | child_id(), state()) -> {ok,child_rec()} | error.
 find_child(Arg, State) when ?is_simple(State) ->
 
     case partisan:is_pid(Arg) of
