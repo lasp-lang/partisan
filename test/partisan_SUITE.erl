@@ -699,13 +699,9 @@ ack_test(Config) ->
 
     %% Set message filter.
     InterpositionFun =
-        fun({forward_message, N, M}) ->
-            case N of
-                Node4 ->
-                    undefined;
-                _ ->
-                    M
-            end;
+        fun
+            ({forward_message, N, _}) when N == Node4 ->
+                undefined;
             ({_, _, M}) ->
                 M
     end,
