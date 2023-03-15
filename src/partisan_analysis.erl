@@ -110,29 +110,52 @@ partisan_analysis(Tree) ->
 		case dict:find(EntryPoint, NamesToFunctions) of
 			{ok, {_, EntryPointTree}} ->
 				Results = analysis_from_function_clause(NamesToFunctions, AllSends, EntryPointTree),
-				dict:merge(fun(_Key, Value1, Value2) -> lists:usort(Value1 ++ Value2) end, Acc, Results);
+				dict:merge(
+					fun(_Key, Value1, Value2)
+						when is_list(Value1), is_list(Value2) ->
+						lists:usort(Value1 ++ Value2)
+					end,
+					Acc,
+					Results
+				);
 			_Error ->
 				Acc
 		end
 	end, dict:new(), MessageEntryPoints),
 
 	%% Rewrite the dict into a proper format.
-	OutputDict = dict:fold(fun(Key, Values, Acc) ->
+	OutputDict = dict:fold(fun(Key, Values, Acc) when is_list(Values) ->
 		NewKey = {receive_message, Key},
 		NewValues = lists:map(fun(V) -> {forward_message, V} end, Values),
 		dict:store(NewKey, NewValues, Acc)
 	end, dict:new(), FinalResults),
 
-	%% Write out the causal relationships.
-    ModuleString = os:getenv("IMPLEMENTATION_MODULE"),
-	io:format("Writing out results!~n", []),
-	{ok, Io} = file:open("./analysis/partisan-causality-" ++ ModuleString, [write, {encoding, utf8}]),
-	[io:format(Io, "~p.~n", [ResultLine]) || ResultLine <- [dict:to_list(OutputDict)]],
-	ok = file:close(Io),
 
-	io:format("~n~p~n", [dict:to_list(OutputDict)]),
+    case os:getenv("IMPLEMENTATION_MODULE") of
+    	false ->
+    		io:format(
+    			"Cannot write out results. "
+    			"IMPLEMENTATION_MODULE env var undefined!~n",
+    			[]
+    		),
+    		ok;
 
-	ok.
+    	ModuleString ->
+    		%% Write out the causal relationships.
+			io:format("Writing out results!~n", []),
+			{ok, Io} = file:open(
+				"./analysis/partisan-causality-" ++ ModuleString,
+				[write, {encoding, utf8}]
+			),
+			[
+				io:format(Io, "~p.~n", [ResultLine])
+				|| ResultLine <- [dict:to_list(OutputDict)]
+			],
+			ok = file:close(Io),
+
+			io:format("~n~p~n", [dict:to_list(OutputDict)]),
+			ok
+	end.
 
 %% ===========================================================================
 %% annotate(Tree) -> {Tree1, OutList, Outputs, Escapes, Dependencies, Parents, Sends, Applys}
@@ -337,6 +360,7 @@ intraprocedural(Tree) ->
 	% io:format("funs: ~p~n", [[Label || {Label, _Fun} <- dict:to_list(Funs)]]),
 
     %% Initialise Escape to the minimal set of escaped labels.
+    %% eqwalizer:ignore Vars
     Vars1 = dict:store(escape, from_label_list([top, external]), Vars),
 
     %% Enter the fixpoint iteration at the StartFun.
@@ -456,6 +480,8 @@ visit(T, L, St) ->
 			ApplyOp = cerl:apply_op(T),
 			St4 = case type(ApplyOp) of
 				var ->
+
+					%% eqwalizer:ignore ApplyOp
 					VarName = var_name(ApplyOp),
 					case VarName of
 						{external, 1} ->
@@ -487,6 +513,7 @@ visit(T, L, St) ->
 	primop ->
 	    As = primop_args(T),
 	    {Xs, St1} = visit_list(As, L, St),
+	    %% eqwalizer:ignore T
 	    primop_call(atom_val(primop_name(T)), length(Xs), Xs, St1);
 	'case' ->
 	    {Xs, St1} = visit(case_arg(T), L, St),
@@ -1078,7 +1105,12 @@ generate_names_to_functions(StartFun) ->
 
 %% TODO: Document me.
 reverse_postorder_fold(FoldFun, Acc, Tree) ->
-	ReversePostorderTraversal = cerl_trees:fold(fun(T, A) -> A ++ [T] end, [], Tree),
+	ReversePostorderTraversal = cerl_trees:fold(
+		fun(T, A) when is_list(A) -> A ++ [T] end,
+		[],
+		Tree
+	),
+	%% eqwalizer:ignore ReversePostorderTraversal
 	lists:foldr(FoldFun, Acc, ReversePostorderTraversal).
 
 %% TODO: Document me.
@@ -1107,6 +1139,7 @@ analysis_from_function_clause(NamesToFunctions, Top, Tree) ->
 											%% This message originated from partisan, so we can track causality.
 
 											% io:format("Receive of message type: ~p~n", [MessageType]),
+											%% eqwalizer:ignore Clause
 											Body = cerl:clause_body(Clause),
 											Sends = interprocedural(NamesToFunctions, Top, Body),
 											% io:format("* Emits the following types of messages: ~p~n", [sets:to_list(Sends)]),
@@ -1154,13 +1187,16 @@ message_type_from_function_clause(Clause) ->
 				true ->
 					case cerl:is_literal(FirstPattern) of
 						true ->
+							%% eqwalizer:ignore FirstPattern
 							concrete(FirstPattern);
 						false ->
 							top
 					end;
 				false ->
+					%% eqwalizer:ignore FirstPattern
 					TupleTrees = tuple_es(FirstPattern),
 					% io:format("=> tuple trees: ~p~n", [TupleTrees]),
+					%% eqwalizer:ignore TupleTrees
 					MessageType = concrete(hd(TupleTrees)),
 					% io:format("=> message type: ~p~n", [MessageType]),
 					MessageType
@@ -1188,6 +1224,7 @@ message_type_from_args(Args) ->
 			end;
 		false ->
 			TupleTrees = tuple_es(Tree),
+			%% eqwalizer:ignore TupleTrees
 			concrete(hd(TupleTrees))
 	end.
 

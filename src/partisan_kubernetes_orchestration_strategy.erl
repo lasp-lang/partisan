@@ -31,6 +31,11 @@
          upload_artifact/3,
          download_artifact/2]).
 
+
+-eqwalizer({nowarn_function, pods_from_kubernetes/1}).
+-eqwalizer({nowarn_function, generate_pods_url/1}).
+-eqwalizer({nowarn_function, headers/0}).
+
 %% @private
 upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Payload) ->
     {ok, <<"OK">>} = eredis:q(Eredis, ["SET", Node, Payload]),

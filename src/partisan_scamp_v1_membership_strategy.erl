@@ -30,9 +30,9 @@
 -include("partisan_logger.hrl").
 
 -record(scamp_v1, {
-    actor               ::  partisan:ctor(),
-    membership          ::  [partisan:node_spec()],
-    last_message_time   ::  term()
+    actor               ::  partisan:actor(),
+    membership          ::  sets:set(partisan:node_spec()),
+    last_message_time   ::  erlang:timestamp() | undefined
 }).
 
 -type t()               ::  #scamp_v1{}.
@@ -54,13 +54,16 @@
 %% @doc Initialize the strategy state.
 %%      Start with an empty state with only ourselves known.
 init(Identity) ->
-    Membership = sets:add_element(partisan:node_spec(), sets:new()),
+    Membership = sets:add_element(
+        partisan:node_spec(),
+        sets:new([{version, 2}])
+    ),
     State = #scamp_v1{
         membership = Membership,
         actor = Identity
     },
 
-    {ok, membership_list(State), State}.
+    {ok, members(State), State}.
 
 %% @doc When a remote node is connected, notify that node to add us.  Then, perform forwarding, if necessary.
 join(Node, #scamp_v1{} = _NodeState, #scamp_v1{} = State0) ->
@@ -74,37 +77,46 @@ join(Node, #scamp_v1{} = _NodeState, #scamp_v1{} = State0) ->
     Membership = sets:add_element(Node, Membership0),
 
     %% 2. Notify node to add us to its state.
-    %%    This is lazily done to ensure we can setup the TCP connection both ways, first.
+    %%    This is lazily done to ensure we can setup the TCP connection both
+    %%    ways, first.
     Myself = partisan:node_spec(),
     OutgoingMessages1 = OutgoingMessages0 ++ [{Node, {membership_strategy, {forward_subscription, Myself}}}],
 
     %% 3. Notify all members we know about to add node to their membership.
-    OutgoingMessages2 = sets:fold(fun(N, OM) ->
-        ?LOG_TRACE(
-            "~p: Forwarding subscription for ~p to node: ~p",
-            [partisan:node(), Node, N]
+    OutgoingMessages2 =
+        sets:fold(
+            fun(N, OM) ->
+                ?LOG_TRACE(
+                    "~p: Forwarding subscription for ~p to node: ~p",
+                    [partisan:node(), Node, N]
+                ),
+
+                OM ++ [{N, {membership_strategy, {forward_subscription, Node}}}]
+            end,
+            OutgoingMessages1,
+            Membership0
         ),
-
-        OM ++ [{N, {membership_strategy, {forward_subscription, Node}}}]
-
-        end, OutgoingMessages1, Membership0),
 
     %% 4. Use 'c' (failure tolerance value) to send forwarded subscriptions for node.
     C = partisan_config:get(scamp_c, ?SCAMP_C_VALUE),
-    ForwardMessages = lists:map(fun(N) ->
-        ?LOG_TRACE(
-            "~p: Forwarding additional subscription for ~p to node: ~p",
-            [partisan:node(), Node, N]
-        ),
+    ForwardMessages = lists:map(
+        fun(N) ->
+            ?LOG_TRACE(
+                "~p: Forwarding additional subscription for ~p to node: ~p",
+                [partisan:node(), Node, N]
+            ),
 
-        {N, {membership_strategy, {forward_subscription, Node}}}
+            {N, {membership_strategy, {forward_subscription, Node}}}
 
-        end, select_random_sublist(State0, C)),
+        end,
+        select_random_sublist(State0, C)
+    ),
+
     OutgoingMessages = OutgoingMessages2 ++ ForwardMessages,
 
-    State = State0#scamp_v1{membership=Membership},
-    MembershipList = membership_list(State),
-    {ok, MembershipList, OutgoingMessages, State}.
+    State = State0#scamp_v1{membership = Membership},
+
+    {ok, members(State), OutgoingMessages, State}.
 
 %% @doc Leave a node from the cluster.
 leave(Node, #scamp_v1{membership=Membership0}=State0) ->
@@ -115,17 +127,19 @@ leave(Node, #scamp_v1{membership=Membership0}=State0) ->
 
     %% Remove node.
     Membership = sets:del_element(Node, Membership0),
-    MembershipList0 = membership_list(State0),
 
     %% Gossip to existing cluster members.
     Message = {remove_subscription, Node},
-    OutgoingMessages = lists:map(fun(Peer) -> {Peer, {membership_strategy, Message}} end, MembershipList0),
+    OutgoingMessages = lists:map(
+        fun(Peer) -> {Peer, {membership_strategy, Message}} end,
+        members(State0)
+    ),
 
     %% Return updated membership.
-    State = State0#scamp_v1{membership=Membership},
-    MembershipList = membership_list(State),
+    State = State0#scamp_v1{membership = Membership},
+    Members = members(State),
 
-    {ok, MembershipList, OutgoingMessages, State}.
+    {ok, Members, OutgoingMessages, State}.
 
 
 %% -----------------------------------------------------------------------------
@@ -153,13 +167,13 @@ compare(_Members, #scamp_v1{}) ->
 %% -----------------------------------------------------------------------------
 prune(_Nodes, #scamp_v1{} = State) ->
     %% Not implemented
-    {ok, membership_list(State), State}.
+    {ok, members(State), State}.
 
 
 %% @doc Periodic protocol maintenance.
 periodic(#scamp_v1{last_message_time=LastMessageTime} = State) ->
     SourceNode = partisan:node_spec(),
-    MembershipList = membership_list(State),
+    Members = members(State),
 
     %% Isolation detection:
     %%
@@ -169,7 +183,7 @@ periodic(#scamp_v1{last_message_time=LastMessageTime} = State) ->
     %% we are isolated.
     OutgoingPingMessages = lists:map(fun(Peer) ->
         {Peer, {membership_strategy, {ping, SourceNode}}}
-    end, MembershipList),
+    end, Members),
 
     Difference = case LastMessageTime of
         undefined ->
@@ -199,7 +213,7 @@ periodic(#scamp_v1{last_message_time=LastMessageTime} = State) ->
             []
     end,
 
-    {ok, MembershipList, OutgoingSubscriptionMessages ++ OutgoingPingMessages, State}.
+    {ok, Members, OutgoingSubscriptionMessages ++ OutgoingPingMessages, State}.
 
 %% @doc Handling incoming protocol message.
 handle_message({ping, SourceNode}, State) ->
@@ -207,48 +221,59 @@ handle_message({ping, SourceNode}, State) ->
         "~p: Received ping from node ~p.", [partisan:node(), SourceNode]
     ),
 
-    MembershipList = membership_list(State),
+    Members = members(State),
     LastMessageTime = erlang:timestamp(),
     OutgoingMessages = [],
-    {ok, MembershipList, OutgoingMessages, State#scamp_v1{last_message_time=LastMessageTime}};
+    {ok, Members, OutgoingMessages, State#scamp_v1{last_message_time=LastMessageTime}};
+
 %% @doc Handling incoming protocol message.
-handle_message({remove_subscription, Node}, #scamp_v1{membership=Membership0}=State0) ->
+handle_message({remove_subscription, Node}, #scamp_v1{} = State0) ->
+
     ?LOG_INFO(
         "~p: Received remove_subscription for node ~p.",
         [partisan:node(), Node]
     ),
-    MembershipList0 = membership_list(State0),
+
+    Membership0 = State0#scamp_v1.membership,
 
     case sets:is_element(Node, Membership0) of
         true ->
             %% Remove.
             Membership = sets:del_element(Membership0, Node),
+            %% eqwalizer:ignore
+            State = State0#scamp_v1{membership = Membership},
+            Members = members(State),
 
             %% Gossip removals.
             Message = {remove_subscription, Node},
-            OutgoingMessages = lists:map(fun(Peer) -> {Peer, {membership_strategy, Message}} end, MembershipList0),
 
-            %% Update state.
-            State = State0#scamp_v1{membership=Membership},
-            MembershipList = membership_list(State),
+            OutgoingMessages = lists:map(
+                fun(Peer) ->
+                    {Peer, {membership_strategy, Message}}
+                end,
+                Members
+            ),
 
-            {ok, MembershipList, OutgoingMessages, State};
+            {ok, Members, OutgoingMessages, State};
+
         false ->
             OutgoingMessages = [],
-            {ok, MembershipList0, OutgoingMessages, State0}
+            {ok, members(State0), OutgoingMessages, State0}
     end;
-handle_message({forward_subscription, Node}, #scamp_v1{membership=Membership0}=State0) ->
+
+handle_message({forward_subscription, Node}, #scamp_v1{} = State0) ->
     ?LOG_TRACE(
         "~p: Received subscription for node ~p.", [partisan:node(), Node]
     ),
 
-    MembershipList0 = membership_list(State0),
+    Membership0 = State0#scamp_v1.membership,
+    Members0 = members(State0),
 
     %% Probability: P = 1 / (1 + sizeOf(View))
     Random = random_0_or_1(),
     Keep = trunc((sets:size(Membership0) + 1) * Random),
 
-    case Keep =:= 0 andalso not lists:member(Node, MembershipList0) of
+    case Keep =:= 0 andalso not lists:member(Node, Members0) of
         true ->
             ?LOG_TRACE(
                 "~p: Adding subscription for node: ~p", [partisan:node(), Node]
@@ -256,9 +281,9 @@ handle_message({forward_subscription, Node}, #scamp_v1{membership=Membership0}=S
 
             Membership = sets:add_element(Node, Membership0),
             State = State0#scamp_v1{membership=Membership},
-            MembershipList = membership_list(State),
+            Members = members(State),
             OutgoingMessages = [],
-            {ok, MembershipList, OutgoingMessages, State};
+            {ok, Members, OutgoingMessages, State};
         false ->
             OutgoingMessages = lists:map(fun(N) ->
                 ?LOG_TRACE(
@@ -268,7 +293,7 @@ handle_message({forward_subscription, Node}, #scamp_v1{membership=Membership0}=S
 
                 {N, {membership_strategy, {forward_subscription, Node}}}
                 end, select_random_sublist(State0, 1)),
-            {ok, MembershipList0, OutgoingMessages, State0}
+            {ok, Members0, OutgoingMessages, State0}
     end.
 
 %%%===================================================================
@@ -276,12 +301,13 @@ handle_message({forward_subscription, Node}, #scamp_v1{membership=Membership0}=S
 %%%===================================================================
 
 %% @private
-membership_list(#scamp_v1{membership=Membership}) ->
+members(#scamp_v1{membership = Membership}) ->
     sets:to_list(Membership).
+
 
 %% @private
 select_random_sublist(State, K) ->
-    List = membership_list(State),
+    List = members(State),
     lists:sublist(shuffle(List), K).
 
 %% -----------------------------------------------------------------------------

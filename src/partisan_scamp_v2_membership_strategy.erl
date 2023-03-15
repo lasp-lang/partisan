@@ -48,7 +48,7 @@
     actor               ::  partisan:actor(),
     partial_view        ::  [partisan:node_spec()],
     in_view             ::  [partisan:node_spec()],
-    last_message_time   ::  term()
+    last_message_time   ::  erlang:timestamp() | undefined
 }).
 
 

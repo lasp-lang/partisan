@@ -118,11 +118,14 @@ init([]) ->
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
-    {reply, term(), #state{}}.
-handle_call({enable, Nodes}, _From, #state{enabled=false}=State) ->
+    {reply, term(), #state{}} | {noreply, #state{}}.
+
+handle_call({enable, Nodes}, _From, #state{enabled=false}=State)
+when is_list(Nodes) ->
     ?LOG_INFO("enabling tracing for nodes: ~p", [Nodes]),
 
-    %% Add send and receive pre-interposition functions to enforce message ordering.
+    %% Add send and receive pre-interposition functions to enforce message
+    %% ordering.
     PreInterpositionFun = fun({Type, OriginNode, OriginalMessage}) ->
         %% TODO: This needs to be fixed: replay and trace need to be done
         %% atomically otherwise processes will race to write trace entry when
@@ -131,33 +134,61 @@ handle_call({enable, Nodes}, _From, #state{enabled=false}=State) ->
         %% technically not the same trace.
         ?LOG_INFO("pre interposition fired for message type: ~p", [Type]),
 
-        %% Under replay ensure they match the trace order (but only for pre-interposition messages).
-        ok = partisan_trace_orchestrator:replay(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
+        %% Under replay ensure they match the trace order (but only for
+        %% pre-interposition messages).
+        ok = partisan_trace_orchestrator:replay(
+            pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}
+        ),
 
         %% Record message incoming and outgoing messages.
-        ok = partisan_trace_orchestrator:trace(pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}),
-
-        ok
+        ok = partisan_trace_orchestrator:trace(
+            pre_interposition_fun, {node(), Type, OriginNode, OriginalMessage}
+        )
     end,
-    lists:foreach(fun({_Name, Node}) ->
-        ?LOG_INFO("Installing $tracing pre-interposition function on node: ~p", [Node]),
-        ok = rpc:call(Node, ?MANAGER, add_pre_interposition_fun, ['$tracing', PreInterpositionFun])
-    end, Nodes),
+
+    lists:foreach(
+        fun({_Name, Node}) when is_atom(Node)->
+            ?LOG_INFO(
+                "Installing $tracing pre-interposition function on node: ~p",
+                [Node]
+            ),
+            ok = rpc:call(
+                Node,
+                ?MANAGER,
+                add_pre_interposition_fun,
+                ['$tracing', PreInterpositionFun]
+            )
+        end,
+        Nodes
+    ),
 
     %% Add send and receive post-interposition functions to perform tracing.
     PostInterpositionFun = fun({Type, OriginNode, OriginalMessage}, {Type, OriginNode, RewrittenMessage}) ->
         %% Record outgoing message after transformation.
     ?LOG_INFO("post interposition fired for message type: ~p", [Type]),
-        ok = partisan_trace_orchestrator:trace(post_interposition_fun, {node(), OriginNode, Type, OriginalMessage, RewrittenMessage})
+        ok = partisan_trace_orchestrator:trace(
+            post_interposition_fun,
+            {node(), OriginNode, Type, OriginalMessage, RewrittenMessage}
+        )
     end,
-    lists:foreach(fun({_Name, Node}) ->
-        ok = rpc:call(Node, ?MANAGER, add_post_interposition_fun, ['$tracing', PostInterpositionFun])
-    end, Nodes),
+    lists:foreach(
+        fun({_Name, Node}) when is_atom(Node) ->
+            ok = rpc:call(
+                Node,
+                ?MANAGER,
+                add_post_interposition_fun,
+                ['$tracing', PostInterpositionFun]
+            )
+        end,
+        Nodes
+    ),
 
     {reply, ok, State#state{nodes=Nodes, enabled=true}};
+
 handle_call(Message, _From, #state{enabled=false}=State) ->
     replay_debug("ignoring ~p as tracing is disabled.", [Message]),
     {reply, ok, State};
+
 handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0, replay=Replay, shrinking=Shrinking, blocked_processes=BlockedProcesses0}=State) ->
     case Replay of
         true ->
@@ -191,9 +222,11 @@ handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0,
                             %% Record new trace position and new list of blocked processes.
                             {reply, ok, State#state{blocked_processes=BlockedProcesses, previous_trace=PreviousTrace}};
                         false ->
-                            %% If not, store message, block caller until processed.
-                            BlockedProcesses = [{{Type, Message}, From} | BlockedProcesses0],
-
+                            %% If not, store message, block caller until
+                            %% processed.
+                            BlockedProcesses = [
+                                {{Type, Message}, From} | BlockedProcesses0
+                            ],
                             %% Block the process.
                             {noreply, State#state{blocked_processes=BlockedProcesses}}
                     end
@@ -332,8 +365,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private
--spec can_deliver_based_on_trace(term(), term(), term(), term()) -> true | false.
-can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace, BlockedProcesses) ->
+-spec can_deliver_based_on_trace(term(), term(), term(), [term()]) ->
+    true | false.
+
+can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace, BlockedProcesses)  ->
     replay_debug("determining if message ~p: ~p can be delivered.", [Type, Message]),
 
     case PreviousTrace of
@@ -741,11 +776,18 @@ message_type(InterpositionType, MessagePayload) ->
             {receive_message, ActualType}
     end.
 
+
 %% @private
 background_annotations() ->
     %% Get module as string.
-    ModuleString = os:getenv("IMPLEMENTATION_MODULE"),
+    background_annotations(os:getenv("IMPLEMENTATION_MODULE")).
 
+%% @private
+background_annotations(false) ->
+    debug("IMPLEMENTATION_MODULE env var undefined", []),
+    [];
+
+background_annotations(ModuleString) ->
     %% Open the annotations file.
     AnnotationsFile = "./annotations/partisan-annotations-" ++ ModuleString,
 
@@ -753,6 +795,7 @@ background_annotations() ->
         false ->
             debug("Annotations file doesn't exist: ~p~n", [AnnotationsFile]),
             [];
+
         true ->
             {ok, [RawAnnotations]} = file:consult(AnnotationsFile),
             % debug("Raw annotations loaded: ~p~n", [RawAnnotations]),

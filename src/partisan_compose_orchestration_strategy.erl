@@ -92,12 +92,15 @@ servers(State) ->
 %% @private
 retrieve_keys(#orchestration_strategy_state{eredis=Eredis}, Tag) ->
     case eredis:q(Eredis, ["KEYS", prefix(Tag ++ "/*")]) of
-        {ok, Nodes} ->
-            Nodes1 = lists:map(fun(N) -> binary_to_list(N) end, Nodes),
+        {ok, Nodes} when is_list(Nodes) ->
+            Nodes1 = lists:map(
+                fun(N) when is_binary(N) -> binary_to_list(N) end,
+                Nodes
+            ),
 
             Nodes2 = lists:flatmap(fun(N) ->
                     case eredis:q(Eredis, ["GET", N]) of
-                        {ok, Myself} ->
+                        {ok, Myself} when is_binary(Myself) ->
                             [binary_to_term(Myself)];
                         _ ->
                             []
