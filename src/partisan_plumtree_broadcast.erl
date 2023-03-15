@@ -362,7 +362,7 @@ exchanges(Node, Timeout) ->
     %% TODO reconsider turning this server into a partisan_gen_serv
     %% gen_server:call({?SERVER, Node}, exchanges, infinity).
     case partisan_rpc:call(Node, ?SERVER, exchanges, [], Timeout) of
-        {ok, Exchanges} = OK ->
+        {ok, _} = OK ->
             %% eqwalizer:ignore
             OK;
         {badrpc, _} = Reason ->
