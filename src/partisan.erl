@@ -1187,7 +1187,7 @@ when ?IS_VALID_TIME(Time) andalso is_list(Opts0) andalso
     erlang:send_after(Time, Dest, Msg, Opts);
 
 
-send_after(Time, {RegName, Node} = Dest, Msg, Opts0)
+send_after(Time, {RegName, Node}, Msg, Opts0)
 when ?IS_VALID_TIME(Time) andalso
 is_list(Opts0) andalso
 is_atom(RegName) andalso
@@ -1195,7 +1195,7 @@ is_atom(Node) andalso
 Node == erlang:node() ->
     %% Local send
     Opts = to_erl_send_after_opts(Opts0),
-    erlang:send_after(Time, Dest, Msg, Opts);
+    erlang:send_after(Time, RegName, Msg, Opts);
 
 send_after(Time, Dest, Msg, Opts)
 when ?IS_VALID_TIME(Time) andalso is_list(Opts) ->
