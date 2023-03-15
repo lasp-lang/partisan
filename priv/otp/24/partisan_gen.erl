@@ -191,16 +191,9 @@ monitor_return({{ok, Pid}, Mon}) ->
             %% Simulate same error we would have if this the previous clause
             error(function_clause)
     end;
-monitor_return({Error, Mon}) when is_reference(Mon) ->
+monitor_return({Error, Mon})  ->
     %% Failure; wait for spawned process to terminate
     %% and release resources, then return the error...
-    receive
-        {'DOWN', Mon, process, _Pid, _Reason} ->
-            ok
-    end,
-    Error;
-monitor_return({Error, Mon}) ->
-    %% Partisan reference case of the previous clause
     case partisan:is_reference(Mon) of
         true ->
             receive
@@ -209,7 +202,7 @@ monitor_return({Error, Mon}) ->
             end,
             Error;
         false ->
-            %% Simulate same error we would have if this the previous clause
+            %% Simulate same error we would have in the original code
             error(function_clause)
     end.
 
@@ -293,38 +286,7 @@ do_call(Process, Label, Request, infinity)
         {'DOWN', Mref, _, _, Reason} ->
             exit(Reason)
     end;
-do_call(Process, Label, Request, Timeout)
-when is_reference(Process) andalso node(Process) == node() ->
-    Mref = erlang:monitor(process, Process, [{alias,demonitor}]),
 
-    Tag = [alias | Mref],
-
-    %% OTP-24:
-    %% Using alias to prevent responses after 'noconnection' and timeouts.
-    %% We however still may call nodes responding via process identifier, so
-    %% we still use 'noconnect' on send in order to try to send on the
-    %% monitored connection, and not trigger a new auto-connect.
-    %%
-    erlang:send(Process, {Label, {self(), Tag}, Request}, [noconnect]),
-
-    receive
-        {[alias | Mref], Reply} ->
-            erlang:demonitor(Mref, [flush]),
-            {ok, Reply};
-        {'DOWN', Mref, _, _, noconnection} ->
-            Node = get_node(Process),
-            exit({nodedown, Node});
-        {'DOWN', Mref, _, _, Reason} ->
-            exit(Reason)
-    after Timeout ->
-            erlang:demonitor(Mref, [flush]),
-            receive
-                {[alias | Mref], Reply} ->
-                    {ok, Reply}
-            after 0 ->
-                    exit(timeout)
-            end
-    end;
 
 do_call(Process, Label, Request, Timeout) ->
     %% Partisan case
