@@ -1024,18 +1024,19 @@ unlink_flush(Pid, DefaultReason) ->
 terminate_dynamic_children(State) ->
     Child = get_dynamic_child(State),
     Pids = dyn_fold(
-        fun(P, Acc) ->
-            case partisan:is_pid(P) of
-                true ->
-                    Mon = partisan:monitor(process, P),
-                    case Child#child.shutdown of
-                        brutal_kill -> exit(P, kill);
-                        _ -> exit(P, shutdown)
-                    end,
-                    Acc#{{P, Mon} => true};
-                false when ?restarting(P)->
-                    Acc
-            end
+        fun
+            (?restarting(_), Acc) ->
+                Acc;
+            (P, Acc) ->
+                case partisan:is_pid(P) of
+                    true ->
+                        Mon = partisan:monitor(process, P),
+                        case Child#child.shutdown of
+                            brutal_kill -> exit(P, kill);
+                            _ -> exit(P, shutdown)
+                        end,
+                        Acc#{{P, Mon} => true}
+                end
         end,
         #{},
         State
