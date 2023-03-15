@@ -39,8 +39,11 @@ xref: compile
 dialyzer: compile
 	${REBAR} dialyzer
 
-eqwalizer:
-	elp eqwalize-all
+eqwalize: src/*.erl
+	for file in $(shell ls $^ | sed 's|.*/\(.*\)\.erl|\1|'); do elp eqwalize $${file}; done
+
+
+
 
 compile:
 	$(REBAR) compile
