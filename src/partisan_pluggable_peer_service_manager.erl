@@ -393,25 +393,27 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
         true ->
             partisan_peer_service_manager:process_forward(ServerRef, Message);
         false ->
+            %% Get forwarding options and combine with message
+            %% specific options.
+            FwdOpts = maps:merge(
+                partisan_config:get(forward_options, #{}), Opts
+            ),
+
             %% Attempt to get the partition key, if possible.
             PartitionKey = maps:get(
-                partition_key, Opts, ?DEFAULT_PARTITION_KEY
+                partition_key, FwdOpts, ?DEFAULT_PARTITION_KEY
             ),
 
             %% Use a clock provided by the sender,
             %% otherwise, use a generated one.
-            Clock = maps:get(clock, Opts, undefined),
+            Clock = maps:get(clock, FwdOpts, undefined),
 
             %% Should ack?
-            ShouldAck = maps:get(ack, Opts, false),
+            ShouldAck = maps:get(ack, FwdOpts, false),
 
             %% Use causality?
             CausalLabel =
-                maps:get(causal_label, Opts, undefined),
-
-            %% Get forwarding options and combine with message
-            %% specific options.
-            ForwardOptions = maps:merge(Opts, forward_opts()),
+                maps:get(causal_label, FwdOpts, undefined),
 
             %% Use configuration to disable fast forwarding.
             DisableFastForward =
@@ -424,7 +426,7 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
             %% - message does not need acknowledgements
             %% - fastforward is not disabled
             FastForward =
-                not (CausalLabel =/= undefined)
+                CausalLabel =:= undefined
                 andalso not ShouldAck
                 andalso not DisableFastForward,
 
@@ -437,7 +439,7 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
                 PartitionKey,
                 ServerRef,
                 PaddedMessage,
-                ForwardOptions
+                FwdOpts
             },
 
             case FastForward of
@@ -865,27 +867,28 @@ handle_call(
     State) ->
 
     %% Run all interposition functions.
-    DeliveryFun = fun() ->
-        %% Fire pre-interposition functions.
-        PreFoldFun = fun(_Node, Fun, ok) ->
-            Fun({forward_message, Node, Msg}),
-            ok
-        end,
-        maps:fold(PreFoldFun, ok, State#state.pre_interposition_funs),
+    DeliveryFun =
+        fun() ->
+            %% Fire pre-interposition functions.
+            PreFoldFun = fun(_Node, Fun, ok) ->
+                Fun({forward_message, Node, Msg}),
+                ok
+            end,
+            maps:fold(PreFoldFun, ok, State#state.pre_interposition_funs),
 
-        %% Once pre-interposition returns, then schedule for delivery.
-        Cmd = {
-            forward_message,
-            From,
-            Node,
-            Clock,
-            PartitionKey,
-            ServerRef,
-            Msg,
-            Opts
-        },
-        gen_server:cast(?MODULE, Cmd)
-    end,
+            %% Once pre-interposition returns, then schedule for delivery.
+            Cmd = {
+                forward_message,
+                From,
+                Node,
+                Clock,
+                PartitionKey,
+                ServerRef,
+                Msg,
+                Opts
+            },
+            gen_server:cast(?MODULE, Cmd)
+        end,
 
     case partisan_config:get(replaying, false) of
         false ->
@@ -893,7 +896,8 @@ handle_call(
             %% preserving serial order of messages.
             DeliveryFun();
         true ->
-            %% Allow the system to proceed, and the message will be delivered once pre-interposition is done.
+            %% Allow the system to proceed, and the message will be delivered
+            %% once pre-interposition is done.
             spawn_link(DeliveryFun)
     end,
 
@@ -1006,7 +1010,7 @@ handle_cast({receive_message, Node, Channel, From, Msg0}, State) ->
     end;
 
 handle_cast(
-    {forward_message, From, Node, Clock, PartitionKey, ServerRef, Msg0, Options},
+    {forward_message, From, Node, Clock, PartitionKey, ServerRef, Msg0, Opts},
     State) ->
 
     #state{
@@ -1027,8 +1031,8 @@ handle_cast(
     VClock = partisan_vclock:increment(State#state.name, VClock0),
 
     %% Are we using causality?
-    %% eqwalizer:ignore Options
-    CausalLabel = maps:get(causal_label, Options, undefined),
+    %% eqwalizer:ignore Opts
+    CausalLabel = maps:get(causal_label, Opts, undefined),
 
     %% Use local information for message unless it's a causal message.
     {MsgClock, FullMessage} =
@@ -1078,12 +1082,12 @@ handle_cast(
     case Msg of
         undefined ->
             %% Store for reliability, if necessary.
-            %% eqwalizer:ignore Options
-            case maps:get(ack, Options, false) of
+            %% eqwalizer:ignore Opts
+            case maps:get(ack, Opts, false) of
                 true ->
                     %% Acknowledgements.
-                    %% eqwalizer:ignore Options
-                    case maps:get(retransmission, Options, false) of
+                    %% eqwalizer:ignore Opts
+                    case maps:get(retransmission, Opts, false) of
                         true ->
                             RescheduleableMessage = {
                                 forward_message,
@@ -1093,7 +1097,7 @@ handle_cast(
                                 PartitionKey,
                                 ServerRef,
                                 Msg0,
-                                Options
+                                Opts
                             },
                             partisan_acknowledgement_backend:store(
                                 MsgClock, RescheduleableMessage
@@ -1147,14 +1151,14 @@ handle_cast(
                     PartitionKey,
                     ServerRef,
                     NewMessage,
-                    Options
+                    Opts
                 }
             ),
             {noreply, State};
 
         _ ->
             %% Store for reliability, if necessary.
-            Result = case maps:get(ack, Options, false) of
+            Result = case maps:get(ack, Opts, false) of
                 false ->
                     %% Tracing.
                     WrappedMessage = {forward_message, ServerRef, FullMessage},
@@ -1176,7 +1180,7 @@ handle_cast(
                         Node,
                         PartitionKey,
                         WrappedMessage,
-                        Options,
+                        Opts,
                         PreInterpositionFuns
                     );
                 true ->
@@ -1220,7 +1224,7 @@ handle_cast(
                     ),
 
                     %% Acknowledgements.
-                    case maps:get(retransmission, Options, false) of
+                    case maps:get(retransmission, Opts, false) of
                         false ->
                             RescheduleableMessage = {
                                 forward_message,
@@ -1230,7 +1234,7 @@ handle_cast(
                                 PartitionKey,
                                 ServerRef,
                                 Msg0,
-                                Options
+                                Opts
                             },
                             partisan_acknowledgement_backend:store(
                                 MsgClock, RescheduleableMessage
@@ -1244,7 +1248,7 @@ handle_cast(
                         Node,
                         PartitionKey,
                         WrappedMessage,
-                        Options,
+                        Opts,
                         PreInterpositionFuns
                     )
             end,
@@ -2280,6 +2284,7 @@ send_acknowledgement(Node, Channel, MsgClock, PreInterpositionFuns) ->
         #{channel => Channel}
     ).
 
+
 %% @private
 maybe_reply(From, Response) ->
     case From of
@@ -2287,16 +2292,6 @@ maybe_reply(From, Response) ->
             ok;
         _ ->
             gen_server:reply(From, Response)
-    end.
-
-
-%% @private
-forward_opts() ->
-    case partisan_config:get(forward_options, #{}) of
-        List when is_list(List) ->
-            maps:from_list(List);
-        Map when is_map(Map) ->
-            Map
     end.
 
 
