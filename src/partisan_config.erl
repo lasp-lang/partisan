@@ -609,6 +609,9 @@ set(membership_binary_compression, Val) ->
     do_set(membership_binary_compression, Val),
     do_set('$membership_encoding_opts', []);
 
+set(forward_options, Opts) when is_list(Opts) ->
+    set(forward_options, maps:from_list(Opts));
+
 set(Key, Value) ->
     do_set(maybe_rename(Key), Value).
 
