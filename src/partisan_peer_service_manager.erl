@@ -41,6 +41,7 @@
 
 -type forward_opts()    ::  #{
                                 ack => boolean(),
+                                retransmission => boolean(),
                                 causal_label => atom(),
                                 channel => partisan:channel(),
                                 clock => any(),
