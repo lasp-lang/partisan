@@ -86,10 +86,10 @@ init_per_group(with_scamp_v2_membership_strategy, Config) ->
     [{membership_strategy, partisan_scamp_v2_membership_strategy}] ++ Config;
 
 init_per_group(with_broadcast, Config) ->
-    [{broadcast, true}, {forward_options, [{transitive, true}]}] ++ Config;
+    [{broadcast, true}, {forward_options, #{transitive => true}}] ++ Config;
 
 init_per_group(with_partition_key, Config) ->
-    [{forward_options, [{partition_key, 1}]}] ++ Config;
+    [{forward_options, #{partition_key => 1}}] ++ Config;
 
 init_per_group(with_binary_padding, Config) ->
     [{binary_padding, true}] ++ Config;
@@ -165,13 +165,16 @@ init_per_group(with_causal_labels, Config) ->
 init_per_group(with_causal_send, Config) ->
     [
         {causal_labels, [default]},
-        {forward_options, [{causal_label, default}]}
+        {forward_options, #{causal_label => default}}
     ] ++ Config;
 
 init_per_group(with_causal_send_and_ack, Config) ->
     [
         {causal_labels, [default]},
-        {forward_options, [{causal_label, default}, {ack, true}]}
+        {forward_options, #{
+            causal_label => default,
+            ack => true
+        }}
     ] ++ Config;
 
 init_per_group(with_forward_delay_interposition, Config) ->
@@ -184,7 +187,7 @@ init_per_group(with_receive_interposition, Config) ->
     [{disable_fast_receive, true}] ++ Config;
 
 init_per_group(with_ack, Config) ->
-    [{disable_fast_forward, true}, {forward_options, [{ack, true}]}] ++ Config;
+    [{forward_options, #{ack => true}}] ++ Config;
 
 init_per_group(with_tls, Config) ->
     TLSOpts = make_certs(Config),
@@ -705,13 +708,15 @@ ack_test(Config) ->
             ({_, _, M}) ->
                 M
     end,
-    ok = rpc:call(Node3, Manager, add_interposition_fun, [Node4, InterpositionFun]),
+    ok = rpc:call(
+        Node3, Manager, add_interposition_fun, [Node4, InterpositionFun]
+    ),
 
     %% Spawn receiver process.
-    Message1 = message1,
-
     Self = self(),
 
+    %% We spawn a registered process on one peer, that will bounce any message
+    %% back to use (CT runner)
     ReceiverFun = fun() ->
         receive
             X ->
@@ -721,7 +726,9 @@ ack_test(Config) ->
     Pid = rpc:call(Node4, erlang, spawn, [ReceiverFun]),
     true = rpc:call(Node4, erlang, register, [receiver, Pid]),
 
-    %% Send message.
+    %% We send message.
+    Msg = message1,
+
     ok = rpc:call(
         Node3,
         Manager,
@@ -729,14 +736,14 @@ ack_test(Config) ->
         [
             Node4,
             receiver,
-            Message1,
-            [{ack, true}]
+            Msg,
+            #{ack => true, retransmission => true}
         ]
     ),
 
     %% Wait to receive message.
     receive
-        Message1 ->
+        Msg ->
             ct:fail("Received message we shouldn't have!")
     after
         1000 ->
@@ -748,7 +755,7 @@ ack_test(Config) ->
 
     %% Wait to receive message.
     receive
-        Message1 ->
+        Msg ->
             ok
     after
         2000 ->
@@ -757,9 +764,6 @@ ack_test(Config) ->
 
     %% Pause for acknowledgement.
     timer:sleep(5000),
-
-
-
     ok.
 
 forward_interposition_test(Config) ->
