@@ -91,6 +91,8 @@
 %% <dd>Whether to use distributed erlang in addition to Partisan channels. This
 %% is used for testing and only works for {@link
 %% partisan_full_membership_strategy} (See `membership_strategy')</dd>
+%% <dt>`connection_interval'</dt>
+%% <dd>Interval of time between peer connection attempts</dd>
 %% <dt>`connection_jitter'</dt>
 %% <dd>TBD</dd>
 %% <dt>`disable_fast_forward'</dt>
@@ -228,6 +230,8 @@
 %% <dd>TBD</dd>
 %% <dt>`reservations'</dt>
 %% <dd>TBD</dd>
+%% <dt>`retransmit_interval'</dt>
+%% <dd>Interval of time between retransmission attempts</dd>
 %% <dt>`shrinking'</dt>
 %% <dd>TBD</dd>
 %% <dt>`tag'</dt>
@@ -401,6 +405,7 @@ init() ->
             {causal_labels, []},
             {connect_disterl, false},
             {connection_jitter, ?CONNECTION_JITTER},
+            {connection_interval, 1000},
             {disable_fast_forward, false},
             {disable_fast_receive, false},
             {distance_enabled, ?DISTANCE_ENABLED},
@@ -431,6 +436,7 @@ init() ->
             {remote_ref_format, improper_list},
             {remote_ref_uri_padding, false},
             {replaying, false},
+            {retransmit_interval, 1000},
             {reservations, []},
             {shrinking, false},
             {tag, DefaultTag},
