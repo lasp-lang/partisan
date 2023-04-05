@@ -39,7 +39,7 @@
 -type remote_name()         ::  partisan_remote_ref:n().
 
 -type monitor_opt()         ::  erlang:monitor_option()
-                                | {channel, partisan:channel()}.
+                                | {channel, channel()}.
 -type demonitor_opt()       ::  flush | info.
 -type net_kernel_opt()      ::  nodedown_reason
                                 | connection_id % OTP 25
@@ -137,6 +137,7 @@
 
 %% Erlang API (net_kernel.erl counterparts)
 -export([monitor_node/2]).
+-export([monitor_node/3]).
 -export([monitor_nodes/1]).
 -export([monitor_nodes/2]).
 
@@ -1024,10 +1025,10 @@ default_channel() ->
 %% Fails if a channel named `Name' doesn't exist.
 %% @end
 %% -----------------------------------------------------------------------------
--spec channel_opts(Name :: channel()) -> channel_opts() | no_return().
+-spec channel_opts(Channel :: channel()) -> channel_opts() | no_return().
 
-channel_opts(Name) when is_atom(Name) ->
-    partisan_config:channel_opts(Name).
+channel_opts(Channel) when is_atom(Channel) ->
+    partisan_config:channel_opts(Channel).
 
 
 %% -----------------------------------------------------------------------------

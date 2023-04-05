@@ -16,7 +16,8 @@
     {mod, {partisan_app,[]}},
     {modules, []},
     {included_applications, []},
-    {env, []},
+    {env, [
+    ]},
     {licenses, ["Apache-2.0"]},
     {links, [
         {"Github", "https://github.com/lasp-lang/partisan"}

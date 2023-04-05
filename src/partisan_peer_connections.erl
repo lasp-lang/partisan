@@ -55,7 +55,7 @@
 ).
 
 
-%% We store two records on the same table, and using the first field as a key
+%% We store two records on the same table, using the first field as a key
 %% (keypos 2). Since both keys differ on type (node() and pid()) this is fine.
 -record(partisan_peer_info, {
     node                    ::  maybe_var(node()),
