@@ -2166,7 +2166,7 @@ do_send_message(Node, Message) ->
     Options :: map()) ->
     ok | {error, disconnected} | {error, not_yet_connected} | {error, term()}.
 
-do_send_message(Node, Message, Options) when is_atom(Node) ->
+do_send_message(Node, Message, Options) when is_atom(Node), is_map(Options) ->
     %% TODO Shouldn't broadcast default to true?
     %% otherwise we will only forward to
     %% nodes in the active view that are connected.
@@ -2226,6 +2226,9 @@ do_send_message(Node, Message, Options) when is_atom(Node) ->
                     {error, Reason}
             end
     end;
+
+do_send_message(Node, Message, Options) when is_atom(Node), is_list(Options) ->
+    do_send_message(Node, Message, maps:from_list(Options));
 
 do_send_message(#{name := Node}, Message, Options) ->
     do_send_message(Node, Message, Options).
