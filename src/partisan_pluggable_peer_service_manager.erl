@@ -1412,7 +1412,7 @@ handle_info(retransmit, State) ->
 
 
 handle_info(connections, State0) ->
-    %% TODO move connection establishing to a helper process as these tasks
+    %% TODO #244 move connection establishing to a helper process as these tasks
     %% interleave with message forwarding. Also consider having a process per
     %% channel or channel connection.
     State1 = establish_connections(State0),
@@ -1914,7 +1914,8 @@ do_send_message(Node, PartitionKey, Message, Options, PreInterpositionFuns) ->
                     case Reason of
                         disconnected ->
                             ?LOG_TRACE(
-                                "Node ~p was connected, but is now disconnected!",
+                                "Node ~p was connected, "
+                                "but is now disconnected!",
                                 [Node]
                             ),
                             {error, disconnected};
@@ -2106,7 +2107,7 @@ maybe_reply_sync_joins(State) ->
                 Acc;
 
             false ->
-                %% We keep the Node in the sync_joins set
+                %% We keep the Node in the new map
                 maps:put(NodeSpec, Set, Acc)
         end
     end,
