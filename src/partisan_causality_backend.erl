@@ -231,7 +231,13 @@ handle_cast(_Msg, State) ->
 
 %% @private
 handle_info(deliver, #state{buffered_messages=BufferedMessages, label=Label}=State0) ->
-    State = lists:foldl(fun(M, S) -> internal_receive_message(M, S) end, State0, BufferedMessages),
+    State = lists:foldl(
+        fun(M, S) ->
+            internal_receive_message(M, S)
+        end,
+        State0,
+        BufferedMessages
+    ),
 
     %% Write state to disk.
     write_state(State),

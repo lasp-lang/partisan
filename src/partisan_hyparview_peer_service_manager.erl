@@ -1962,16 +1962,39 @@ handle_message(
 	#{name := DisconnectName} = DisconnectNode,
 	#{name := CandidateName} = Candidate,
 	#{name := OldName} = OldNode,
-	?LOG_DEBUG("XBOT: Received replace message at Node ~p from ~p", [DisconnectName, CandidateName]),
+
+	?LOG_DEBUG(
+        "XBOT: Received replace message at Node ~p from ~p",
+        [DisconnectName, CandidateName]
+    ),
+
 	Check = is_better(?HYPARVIEW_XBOT_ORACLE, OldNode, Candidate),
-	if not Check ->
-			ok = partisan_peer_service_manager:connect(Candidate),
-			_ = do_send_message(Candidate,{replace_reply, false, OldNode, Initiator, Candidate, DisconnectNode}),
-			?LOG_DEBUG("XBOT: Sending replace reply to Node ~p from ~p", [CandidateName, DisconnectName]);
+	if
+        not Check ->
+    		ok = partisan_peer_service_manager:connect(Candidate),
+    		_ = do_send_message(
+                Candidate,
+                {
+                    replace_reply,
+                    false,
+                    OldNode,
+                    Initiator,
+                    Candidate,
+                    DisconnectNode
+                }
+            ),
+    		?LOG_DEBUG(
+                "XBOT: Sending replace reply to Node ~p from ~p",
+                [CandidateName, DisconnectName]
+            );
+
 		true ->
 			ok = partisan_peer_service_manager:connect(OldNode),
 			_ = do_send_message(OldNode,{switch, undefined, OldNode, Initiator, Candidate, DisconnectNode}),
-			?LOG_DEBUG("XBOT: Sending switch to Node ~p from ~p", [OldName, DisconnectName])
+			?LOG_DEBUG(
+                "XBOT: Sending switch to Node ~p from ~p",
+                [OldName, DisconnectName]
+            )
 	end,
 	{noreply, State};
 
@@ -2919,14 +2942,17 @@ process_candidate([H|T], Candidate, #state{} = State) ->
 
 
 
-
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc Determine if New node is better than Old node based on ping (latency)
 %% @end
 %% -----------------------------------------------------------------------------
 is_better(latency, #{name := NewNodeName}, #{name := OldNodeName}) ->
-    is_better_node_by_latency(timer:tc(net_adm, ping, [NewNodeName]), timer:tc(net_adm, ping, [OldNodeName]));
+    %% TODO This only works for disterl!
+    is_better_node_by_latency(
+        timer:tc(net_adm, ping, [NewNodeName]),
+        timer:tc(net_adm, ping, [OldNodeName])
+    );
 
 is_better(_, _, _) ->
     true.
