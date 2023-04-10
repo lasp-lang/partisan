@@ -752,7 +752,7 @@ nodes() ->
 %% <li>`known' - will return the nodes known by the {@link
 %% partisan_peer_service} i.e. {@link partisan_peer_service:members/0} but not
 %% the nodes referred to by process identifiers,
-%% port identifiers, and references located on this node.<li>
+%% port identifiers, and references located on this node.</li>
 %% <li>`visible' - equivalent to Erlang.</li>
 %% </ul>
 %% @end
@@ -975,12 +975,15 @@ node_spec(Node) when is_atom(Node) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec node_spec(
-    Node :: list() | node(),
+    Node :: binary() | list() | node(),
     Opts :: #{rpc_timeout => timeout()}) ->
     {ok, node_spec()} | {error, Reason :: any()}.
 
+node_spec(Node, Opts) when is_binary(Node) ->
+    node_spec(binary_to_atom(Node), Opts);
+
 node_spec(Node, Opts) when is_list(Node) ->
-    node_spec(list_to_node(Node), Opts);
+    node_spec(list_to_atom(lists:flatten(Node)), Opts);
 
 node_spec(Node, Opts) when is_atom(Node), is_map(Opts) ->
     Timeout = maps:get(rpc_timeout, Opts, 5000),
@@ -1525,10 +1528,6 @@ broadcast(Broadcast, Mod) ->
 %% =============================================================================
 
 
-
-%% @private
-list_to_node(NodeStr) ->
-    erlang:list_to_atom(lists:flatten(NodeStr)).
 
 %% @private
 -spec to_erl_send_opts([tuple()]) -> [nosuspend | noconnect | tuple()].
