@@ -630,7 +630,6 @@ handle_info({'DOWN', Mref, process, _Process, Reason}, State) ->
                     %% eqwalizer:ignore Monitored
                     Monitored,
                     Reason,
-                    %% eqwalizer:ignore Opts
                     [{channel, Channel}]
                 );
             error ->
