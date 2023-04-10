@@ -204,7 +204,7 @@ handle_info({Tag, _Socket, Data}, State0)
 when ?DATA_MSG(Tag), is_binary(Data) ->
     Msg = binary_to_term(Data),
 
-    ?LOG_TRACE("Received info message at ~p: ~p", [self(), Msg]),
+    ?LOG_TRACE("Received tcp data at ~p: ~p", [self(), Msg]),
 
     handle_message(Msg, State0);
 
