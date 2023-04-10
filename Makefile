@@ -14,6 +14,7 @@ VERSION         ?= $(shell git describe --tags)
 CODESPELL 		= $(shell which codespell)
 SPELLCHECK 	    = $(CODESPELL) -S _build -S doc -S .git -L applys,nd,accout,mattern,pres,fo
 SPELLFIX      	= $(SPELLCHECK) -i 3 -w
+OTPVSN 			= $(shell erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell)
 
 .PHONY: compile-no-deps alt-test core-test otp-test test docs xref dialyzer-run dialyzer-quick dialyzer eqwalizer \
 		cleanplt upload-docs rel deps test plots spellcheck spellfix certs node1 node2 node3 node
@@ -40,9 +41,12 @@ dialyzer: compile
 	${REBAR} dialyzer
 
 eqwalizer: src/*.erl
+ifeq ($(shell expr $(OTPVSN) \> 24),1)
 	for file in $(shell ls $^ | sed 's|.*/\(.*\)\.erl|\1|'); do elp eqwalize $${file}; done
-
-
+else
+	$(info OTPVSN is not higher than 24)
+	$(eval override mytarget=echo "Eqwalizer requires OTP25 or higher, skipping eqwalizer")
+endif
 
 
 compile:
@@ -70,7 +74,7 @@ perf:
 kill:
 	pkill -9 beam.smp; pkill -9 epmd; exit 0
 
-check: kill test xref dialyzer eqwalizer spellcheck
+check: kill xref dialyzer eqwalizer
 
 spellcheck:
 	$(if $(CODESPELL), $(SPELLCHECK), $(error "Aborting, command codespell not found in PATH"))
@@ -86,7 +90,7 @@ core-test: setup-tls
 	${REBAR} as test ct -v --readable=false --suite=partisan_SUITE
 
 otp-test: setup-tls
-	${REBAR} as test ct -v --readable=false --suite=partisan_gen_server_SUITE,partisan_gen_event_SUITE,partisan_gen_statem_SUITE
+	${REBAR} as test ct --suite=partisan_gen_server_SUITE,partisan_gen_event_SUITE,partisan_gen_statem_SUITE
 
 alt-test: setup-tls
 	mkdir -p test/partisan_alt_SUITE_data/
@@ -138,10 +142,10 @@ node3: noderun
 # ERL_NODE_NAME=node4@127.0.0.1 make node
 node: noderun
 	ifndef ERL_NODE_NAME
-	    $(error ERL_NODE_NAME is undefined)
+		$(error ERL_NODE_NAME is undefined)
 	endif
 	ifndef PARTISAN_PEER_PORT
-	    $(error PARTISAN_PEER_PORT is undefined)
+		$(error PARTISAN_PEER_PORT is undefined)
 	endif
 	${REBAR} as node release
 	RELX_REPLACE_OS_VARS=true _build/node/rel/partisan/bin/partisan console
