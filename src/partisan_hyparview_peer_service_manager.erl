@@ -53,9 +53,9 @@
 %% <li>Point-to-point messaging for connected nodes with a minimum of 1 hop via
 %% transitive message delivery (as not all nodes directly connected). Delivery
 %% is probabilistic.</li>
-%% <li>No explicit leave operation, becuase the overlay is able to react fast
+%% <li>No explicit leave operation, because the overlay is able to react fast
 %% enough to node failures. Hence when a node wishes to leave the system it is
-%% simply treated as if hte node have failed.</li>
+%% simply treated as if the node have failed.</li>
 %% <li>Scalability to up-to 2,000 nodes.</li>
 %% </ul>
 %%
