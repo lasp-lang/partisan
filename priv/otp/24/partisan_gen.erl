@@ -251,8 +251,6 @@ call(Process, Label, Request, Opts0) when is_list(Opts0) ->
             call(Process, Label, Request, ?default_timeout)
     end;
 %% Optimize a common case.
-call({_, _} = Process, Label, Request, Timeout) when  Timeout =:= infinity orelse is_integer(Timeout) andalso Timeout >= 0 ->
-    do_call(Process, Label, Request, Timeout);
 call(Process, Label, Request, Timeout) when is_pid(Process),
   Timeout =:= infinity orelse is_integer(Timeout) andalso Timeout >= 0 ->
     do_call(Process, Label, Request, Timeout);
@@ -264,6 +262,7 @@ call(Process, Label, Request, Timeout)
             Pid = partisan_remote_ref:to_term(Process),
             do_call(Pid, Label, Request, Timeout);
         false ->
+            %% Process is tuple {Name, Node}
             Fun = fun(Arg) -> do_call(Arg, Label, Request, Timeout) end,
             do_for_proc(Process, Fun)
     end.
