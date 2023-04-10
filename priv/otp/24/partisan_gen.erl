@@ -251,6 +251,8 @@ call(Process, Label, Request, Opts0) when is_list(Opts0) ->
             call(Process, Label, Request, ?default_timeout)
     end;
 %% Optimize a common case.
+call({_, _} = Process, Label, Request, Timeout) when  Timeout =:= infinity orelse is_integer(Timeout) andalso Timeout >= 0 ->
+    do_call(Process, Label, Request, Timeout);
 call(Process, Label, Request, Timeout) when is_pid(Process),
   Timeout =:= infinity orelse is_integer(Timeout) andalso Timeout >= 0 ->
     do_call(Process, Label, Request, Timeout);
