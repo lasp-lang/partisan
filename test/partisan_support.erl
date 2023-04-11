@@ -473,15 +473,6 @@ cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
                 %% I'm a client, pick servers.
                 omit(Clients, Nodes);
             {partisan_hyparview_peer_service_manager, _, _} ->
-                omit([Name], Nodes);
-            {partisan_hyparview_xbot_peer_service_manager, true, false} ->
-                %% If I'm a server, I connect to both
-                %% clients and servers!
-                omit([Name], Nodes);
-            {partisan_hyparview_xbot_peer_service_manager, false, true} ->
-                %% I'm a client, pick servers.
-                omit(Clients, Nodes);
-            {partisan_hyparview_xbot_peer_service_manager, _, _} ->
                 omit([Name], Nodes)
         end,
 
