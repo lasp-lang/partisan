@@ -90,7 +90,8 @@
 %% <dt>`connect_disterl'</dt>
 %% <dd>Whether to use distributed erlang in addition to Partisan channels. This
 %% is used for testing and only works for {@link
-%% partisan_full_membership_strategy} (See `membership_strategy')</dd>
+%% partisan_full_membership_strategy} (See `membership_strategy'). Defaults to
+%% `false'</dd>
 %% <dt>`connection_interval'</dt>
 %% <dd>Interval of time between peer connection attempts</dd>
 %% <dt>`connection_jitter'</dt>

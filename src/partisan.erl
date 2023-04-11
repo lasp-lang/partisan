@@ -22,8 +22,9 @@
 
 %% -----------------------------------------------------------------------------
 %% @doc The Partisan API.
-%% The functions in this module are the Partisan counterparts of a subset of
-%% the functions found in the {@link erlang} and {@link net_kernel} modules.
+%% Some of the functions in this module are the Partisan counterparts of a
+%% subset of the functions found in the {@link erlang} and {@link net_kernel}
+%% modules.
 %%
 %% -----------------------------------------------------------------------------
 -module(partisan).

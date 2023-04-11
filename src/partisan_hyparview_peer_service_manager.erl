@@ -541,7 +541,7 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
     %% We ignore channel -> Why?
     FullMessage = {forward_message, Node, ServerRef, Message, Opts},
 
-    %% Attempt to fast-path through the memoized connection cache.
+    %% Attempt to fast-path, dispatching it directly to the connection process
     case partisan_peer_connections:dispatch(FullMessage) of
         ok ->
             ok;

@@ -1,46 +1,33 @@
 # Partisan Cheatsheet
 
-## Migrating from Distributed Erlang
+## Configuring Partisan
+Partisan is configured using the normal `sys.conf` file and/or calling the functions in the `partisan_config` module.
 
-Several Erlang BIFs (a.k.a "native implementation") won't work when using Partisan so you will need to use the Partisan API instead. The Partisan API  tries to be a dropin replacement to Erlang's as much as possible. It tries comply with Erlang's in terms of naming, function signature and behaviour, so in most cases migrating to Partisan is as easy as replacing the module name from `erlang` to `partisan`.
+#### Example sys.config file
+```erlang
+[
+    {partisan, [
+        %% Which overlay to use
+        {peer_service_manager, partisan_pluggable_peer_service_manager},
+        %% The listening port for Partisan TCP/IP connections
+        {peer_port, 10200},
+        %% The list of channels
+        {channels, [{data, #{parallelism => 1}]},
+        %% Encoding for pid(), reference() and names
+        {pid_encoding, false},
+        {ref_encoding, false},
+        {remote_ref_format, improper_list}
+    ]},
+    %% ...Other apps...
+].
+```
 
-|Erlang|Partisan|Description|
-|---|---|---|
-|`erlang:cancel_timer/1`|`partisan:cancel_timer/1`| |
-|`erlang:cancel_timer/2`|`partisan:cancel_timer/2`| |
-|`erlang:demonitor/1`|`partisan:demonitor/1`| |
-|`erlang:demonitor/2`|`partisan:demonitor/2`| |
-|`erlang:disconnect_node/1`|`partisan:disconnect_node/1`| |
-|`erlang:exit/2`|`partisan:exit/2`| |
-|`erlang:is_alive/0`|`partisan:is_alive/0`| |
-|`erlang:is_pid/1`|`partisan:is_pid/1`| |
-|`erlang:is_process_alive/1`|`partisan:is_process_alive/1`| |
-|`erlang:is_reference/1`|`partisan:is_reference/1`| |
-|`erlang:make_ref/0`|`partisan:make_ref/0`| |
-|`erlang:monitor/1`|`partisan:monitor/1`| |
-|`erlang:monitor/2`|`partisan:monitor/2`| |
-|`erlang:monitor/3`|`partisan:monitor/3`| |
-|`erlang:node/0`|`partisan:node/0`| |
-|`erlang:node/1`|`partisan:node/1`| |
-|`erlang:process_info/1`|`partisan:process_info/1`| |
-|`erlang:process_info/2`|`partisan:process_info/2`| |
-|`erlang:self/0`|`partisan:self/0`| |
-|`erlang:send/2`|`partisan:send/2`| |
-|`erlang:send/3`|`partisan:send/3`| |
-|`erlang:send_after/3`|`partisan:send_after/3`|Accepts a `partisan_remote_ref:t()` as destination. When destination is a local pid, it reverts to the native implementation.|
-|`erlang:send_after/4`|`partisan:send_after/4`|Accepts a `partisan_remote_ref:t()` as destination. When destination is a local pid, it reverts to the native implementation.|
-|`erlang:spawn/2`|`partisan:spawn/2`| |
-|`erlang:spawn/4`|`partisan:spawn/4`| |
-|`erlang:spawn_monitor/2`|`partisan:spawn_monitor/2`| |
-|`erlang:spawn_monitor/4`|`partisan:spawn_monitor/4`| |
-|`erlang:whereis/1`|`partisan:whereis/1`| |
-|`net_kernel:monitor_node/2`|`partisan:monitor_node/2`| |
-|`net_kernel:monitor_nodes/1`|`partisan:monitor_nodes/1`| |
-|`net_kernel:monitor_nodes/2`|`partisan:monitor_nodes/2`| |
+Notice that in order to work, all nodes in the cluster need to use the same configuration (apart from parameters like `peer_port` which can vary between nodes when deployed on the same host).
 
 ## Connecting to other peers and sending messages
 
-The following sections assumes you have two nodes running: `ruby` (`ruby@127.0.0.1`) and `max` (`max@127.0.0.1`).
+The following sections assumes you have two nodes running: **ruby** (`ruby@127.0.0.1`) and **max** (`max@127.0.0.1`).
+<br>
 
 ### Manually joining using Erlang's console
 
@@ -101,3 +88,50 @@ Returns `partisan_remote_ref:t()`. Notice this can be a tuple and improper list 
 Shell got hello
 ok
 ```
+
+### Leave the cluster
+```erlang
+(max@127.0.0.1)4> partisan_peer_service:leave().
+ok
+```
+
+
+## Migrating from Distributed Erlang
+
+In addition to using Partisan-specific functions to manage a cluster and send messages, adopting Partisan implies the need to replace some Erlang BIFs with Partisan's counterparts. This is mainly to cope with the impossibility for Partisan to represent remote pids and references in the way Distributed Erlang does. For that reason, pids and references are encoded manually (or automatically is the configuration options `pid_encoding` and `ref_encoding ` are enabled) using the `partisan_remote_ref:from_term/1` function.
+
+Several Erlang BIFs (a.k.a "native implementation") won't work when using Partisan so you will need to use the Partisan API instead. The Partisan API  tries to be a dropin replacement to Erlang's as much as possible. It tries comply with Erlang's in terms of naming, function signature and behaviour, so in most cases migrating to Partisan is as easy as replacing the module name from `erlang` to `partisan`.
+
+|Erlang|Partisan|Description|
+|---|---|---|
+|`erlang:cancel_timer/1`|`partisan:cancel_timer/1`| |
+|`erlang:cancel_timer/2`|`partisan:cancel_timer/2`| |
+|`erlang:demonitor/1`|`partisan:demonitor/1`| |
+|`erlang:demonitor/2`|`partisan:demonitor/2`| |
+|`erlang:disconnect_node/1`|`partisan:disconnect_node/1`| |
+|`erlang:exit/2`|`partisan:exit/2`| |
+|`erlang:is_alive/0`|`partisan:is_alive/0`| |
+|`erlang:is_pid/1`|`partisan:is_pid/1`| |
+|`erlang:is_process_alive/1`|`partisan:is_process_alive/1`| |
+|`erlang:is_reference/1`|`partisan:is_reference/1`| |
+|`erlang:make_ref/0`|`partisan:make_ref/0`| |
+|`erlang:monitor/1`|`partisan:monitor/1`| |
+|`erlang:monitor/2`|`partisan:monitor/2`| |
+|`erlang:monitor/3`|`partisan:monitor/3`| |
+|`erlang:node/0`|`partisan:node/0`| |
+|`erlang:node/1`|`partisan:node/1`| |
+|`erlang:process_info/1`|`partisan:process_info/1`| |
+|`erlang:process_info/2`|`partisan:process_info/2`| |
+|`erlang:self/0`|`partisan:self/0`| |
+|`erlang:send/2`|`partisan:send/2`| |
+|`erlang:send/3`|`partisan:send/3`| |
+|`erlang:send_after/3`|`partisan:send_after/3`|Accepts a `partisan_remote_ref:t()` as destination. When destination is a local pid, it reverts to the native implementation.|
+|`erlang:send_after/4`|`partisan:send_after/4`|Accepts a `partisan_remote_ref:t()` as destination. When destination is a local pid, it reverts to the native implementation.|
+|`erlang:spawn/2`|`partisan:spawn/2`| |
+|`erlang:spawn/4`|`partisan:spawn/4`| |
+|`erlang:spawn_monitor/2`|`partisan:spawn_monitor/2`| |
+|`erlang:spawn_monitor/4`|`partisan:spawn_monitor/4`| |
+|`erlang:whereis/1`|`partisan:whereis/1`| |
+|`net_kernel:monitor_node/2`|`partisan:monitor_node/2`| |
+|`net_kernel:monitor_nodes/1`|`partisan:monitor_nodes/1`| |
+|`net_kernel:monitor_nodes/2`|`partisan:monitor_nodes/2`| |
