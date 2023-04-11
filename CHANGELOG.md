@@ -1,4 +1,15 @@
 # CHANGELOG
+# v5.0.0-beta.23
+
+### Bug Fixes
+* Coerce `forward_options` configuration option to map format.
+* Fix bug in merge of forward options on `partisan_pluggable_peer_service` module
+* Test suite fixes
+* Export missing `partisan:monitor_node/3` function.
+* Fix a bug in `partisan_hyparview_peer_service_message` when Options are passed as list.
+
+### Changes
+* Remove unused module `partisan_promise_backend`
 
 # v5.0.0-beta.22
 
