@@ -1,4 +1,6 @@
 # CHANGELOG
+# v5.0.0-beta.24
+
 # v5.0.0-beta.23
 
 ### Bug Fixes
