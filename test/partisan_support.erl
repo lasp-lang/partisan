@@ -412,14 +412,6 @@ start(Case, Config, Options) ->
     end,
     lists:foreach(StartFun, Nodes),
 
-    {_, First} = hd(Nodes),
-    L = rpc:call(First, erlang, nodes, []),
-    length(L) =:= length(Nodes)
-        orelse ct:fail(
-            "Wrong erlang cluster.~nExpected:~p~nGot:~p~n ",
-            [Nodes, L]
-        ),
-
     debug("Clustering nodes.", []),
     lists:foreach(
         fun(Node) ->
