@@ -1,5 +1,6 @@
 # CHANGELOG
 # v5.0.0-beta.24
+* Removed eqwalizer from default profile
 
 # v5.0.0-beta.23
 
