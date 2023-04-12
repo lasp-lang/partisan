@@ -502,7 +502,7 @@ cluster({_, Node}, {_, Peer}, Config) ->
     cluster(Node, Peer, Config);
 
 cluster(Node, Peer, Config) ->
-    PeerSpec = rpc:call(Peer, partisan, node_spec, [], 5000),
+    NodeSpec = rpc:call(Node, partisan, node_spec, [], 5000),
 
     JoinMethod =
         case ?config(sync_join, Config) of
@@ -517,7 +517,7 @@ cluster(Node, Peer, Config) ->
     debug("Joining node: ~p with: ~p", [Node, Peer]),
 
     ok = rpc:call(
-        Node, partisan_peer_service, JoinMethod, [PeerSpec], 60000
+        Peer, partisan_peer_service, JoinMethod, [NodeSpec], 60000
     ).
 
 
