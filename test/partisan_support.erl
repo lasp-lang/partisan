@@ -182,11 +182,11 @@ start(Case, Config, Options) ->
         ),
 
         ForwardOptions = case ?config(forward_options, Config) of
-                          undefined ->
-                              [];
-                          FO ->
-                              FO
-                      end,
+            undefined ->
+              #{};
+            FO ->
+              FO
+        end,
         debug("Setting forward_options to: ~p", [ForwardOptions]),
         ok = rpc:call(
             Node, partisan_config, set, [forward_options, ForwardOptions],

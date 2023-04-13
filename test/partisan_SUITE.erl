@@ -65,10 +65,10 @@ init_per_testcase(Case, Config) ->
     [{hash, erlang:phash2({Case, Config})}|Config].
 
 
-end_per_testcase(hyparview_manager_high_active_test = Case, Config) ->
-    ct:pal("Ending test case: ~p", [Case]),
-    %% ?SUPPORT:stop(?TAKE_NODES(Case)),
-    Config;
+%% end_per_testcase(hyparview_manager_high_active_test = Case, Config) ->
+%%     ct:pal("Ending test case: ~p", [Case]),
+%%     %% ?SUPPORT:stop(?TAKE_NODES(Case)),
+%%     Config;
 
 end_per_testcase(Case, Config) ->
     ct:pal("Ending test case: ~p", [Case]),
@@ -86,7 +86,13 @@ init_per_group(with_scamp_v2_membership_strategy, Config) ->
     [{membership_strategy, partisan_scamp_v2_membership_strategy}] ++ Config;
 
 init_per_group(with_broadcast, Config) ->
-    [{broadcast, true}, {forward_options, #{transitive => true}}] ++ Config;
+    ct:timetrap({minutes, 5}),
+    [
+        {broadcast, true},
+        {forward_options, #{transitive => true}},
+        {nbr_of_servers, 5},
+        {nbr_of_clients, 0}
+    ] ++ Config;
 
 init_per_group(with_partition_key, Config) ->
     [{forward_options, #{partition_key => 1}}] ++ Config;
@@ -298,7 +304,7 @@ groups() ->
       [
        hyparview_manager_partition_test,
        hyparview_manager_high_active_test,
-       %% hyparview_manager_low_active_test,
+       hyparview_manager_low_active_test,
        hyparview_manager_high_client_test
       ]},
 
@@ -763,7 +769,7 @@ ack_test(Config) ->
     end,
 
     %% Pause for acknowledgement.
-    timer:sleep(5000),
+    ct:sleep(5000),
     ok.
 
 forward_interposition_test(Config) ->
@@ -1001,7 +1007,7 @@ on_down_test(Config) ->
 
     %% Shutdown, wait for shutdown...
     {ok, Node3} = ?CT_PEER:stop(Name3),
-    timer:sleep(10000),
+    ct:sleep(10000),
 
     %% Assert we receive the response.
     receive
@@ -1052,13 +1058,13 @@ rejoin_test(Config) ->
 
             %% Pause for gossip interval * node exchanges + gossip interval
             %% for full convergence.
-            timer:sleep(
+            ct:sleep(
                 ?OVERRIDE_PERIODIC_INTERVAL * length(Nodes)
                 + ?OVERRIDE_PERIODIC_INTERVAL
             ),
 
             %% TODO: temporary
-            timer:sleep(10000),
+            ct:sleep(10000),
 
             %% Verify membership.
             %%
@@ -1320,7 +1326,7 @@ connectivity_test(Config) ->
                   end, Nodes),
 
     %% Pause for protocol delay and periodic intervals to fire.
-    timer:sleep(10000),
+    ct:sleep(10000),
 
     %% Verify forward message functionality again.
     lists:foreach(fun({_Name, Node}) ->
@@ -1773,16 +1779,27 @@ hyparview_manager_partition_test(Config) ->
         ok ->
             ok;
         {fail, {false, {connected_check_failed, Nodes}}} ->
-            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p",
-                    [Nodes]);
+            ct:fail(
+                "Graph is not connected, "
+                "unable to find route between pairs of nodes ~p",
+                [Nodes]
+            );
         {fail, {false, {symmetry_check_failed, Nodes}}} ->
-            ct:fail("Symmetry is broken (ie. node1 has node2 in it's view but vice-versa is not true) between the following "
-                    "pairs of nodes: ~p", [Nodes]);
+            ct:fail(
+                "Symmetry is broken (ie. node1 has node2 in it's view but "
+                "vice-versa is not true) between the following "
+                "pairs of nodes: ~p",
+                [Nodes]
+            );
         {fail, {false, [{connected_check_failed, ConnectedFails},
                         {symmetry_check_failed, SymmetryFails}]}} ->
-            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p, symmetry is broken as well"
-                    "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
-                    "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
+            ct:fail(
+                "Graph is not connected, unable to find route between pairs "
+                "of nodes ~p, symmetry is broken as well"
+                "(ie. node1 has node2 in it's view but vice-versa "
+                "is not true) between the following pairs of nodes: ~p",
+                [ConnectedFails, SymmetryFails]
+            )
     end,
 
     ct:pal("Nodes: ~p", [Nodes]),
@@ -1798,9 +1815,11 @@ hyparview_manager_partition_test(Config) ->
     PartitionVerifyFun = fun({_Name, Node}) ->
         {ok, Partitions} = rpc:call(Node, Manager, partitions, []),
         ct:pal("Partitions for node ~p: ~p", [Node, Partitions]),
+
         {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
         Active = sets:to_list(ActiveSet),
         ct:pal("Peers for node ~p: ~p", [Node, Active]),
+
         PartitionedPeers = [Peer || {_Reference, Peer} <- Partitions],
         case PartitionedPeers == Active of
             true ->
@@ -1837,35 +1856,50 @@ hyparview_manager_partition_test(Config) ->
 
     %% Verify correct behaviour when a node is stopped
     {_, KilledNode} = N0 = random(Nodes, []),
+
     ok = rpc:call(KilledNode, partisan, stop, []),
+    ?SUPPORT:stop([KilledNode]),
+
     CheckStoppedFun = fun() ->
-                        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
-                            [] -> true;
-                            FailedNodes ->
-                                FailedNodes
-                        end
-                      end,
+        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
+            [] -> true;
+            FailedNodes ->
+                FailedNodes
+        end
+    end,
     case wait_until(CheckStoppedFun, 60 * 2, 100) of
         ok ->
             ok;
         {fail, FailedNodes} ->
-            ct:fail("~p has been killed, it should not be in membership of nodes ~p",
-                    [KilledNode, FailedNodes])
+            ct:fail(
+                "~p has been killed, it should not be in membership of "
+                "nodes ~p",
+                [KilledNode, FailedNodes]
+            )
     end,
 
 
 
     ok.
 
+
+
 hyparview_manager_high_active_test(Config) ->
     %% Use hyparview.
     Manager = partisan_hyparview_peer_service_manager,
-
     %% Specify servers.
-    Servers = ?SUPPORT:node_list(1, "server", Config), %% [server],
+    ServerNbr = case ?config(nbr_of_servers, Config) of
+        undefined -> 1;
+        N -> N
+    end,
+    Servers = ?SUPPORT:node_list(ServerNbr, "server", Config), %% [server],
 
     %% Specify clients.
-    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config), %% client_list(?CLIENT_NUMBER),
+    ClientNbr = case ?config(nbr_of_clients, Config) of
+        undefined -> ?CLIENT_NUMBER;
+        M -> M
+    end,
+    Clients = ?SUPPORT:node_list(ClientNbr, "client", Config), %% client_list(?CLIENT_NUMBER),
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(hyparview_manager_high_active_test, Config,
@@ -1877,58 +1911,81 @@ hyparview_manager_high_active_test(Config) ->
     ?PUT_NODES(Nodes),
 
     CheckStartedFun = fun() ->
-                        case hyparview_membership_check(Nodes) of
-                            {[], []} -> true;
-                            {ConnectedFails, []} ->
-                                {false, {connected_check_failed, ConnectedFails}};
-                            {[], SymmetryFails} ->
-                                {false, {symmetry_check_failed, SymmetryFails}};
-                            {ConnectedFails, SymmetryFails} ->
-                                {false, [{connected_check_failed, ConnectedFails},
-                                         {symmetry_check_failed, SymmetryFails}]}
-                        end
-                      end,
+        case hyparview_membership_check(Nodes) of
+            {[], []} ->
+                true;
+            {ConnectedFails, []} ->
+                {false, {connected_check_failed, ConnectedFails}};
+            {[], SymmetryFails} ->
+                {false, {symmetry_check_failed, SymmetryFails}};
+            {ConnectedFails, SymmetryFails} ->
+                {false, [{connected_check_failed, ConnectedFails},
+                         {symmetry_check_failed, SymmetryFails}]}
+        end
+      end,
 
     case wait_until(CheckStartedFun, 60 * 2, 100) of
         ok ->
             ok;
+
         {fail, {false, {connected_check_failed, Nodes}}} ->
-            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p",
-                    [Nodes]);
+            ct:fail(
+                "Graph is not connected, "
+                "unable to find route between pairs of nodes ~p",
+                [Nodes]
+            );
+
         {fail, {false, {symmetry_check_failed, Nodes}}} ->
-            ct:fail("Symmetry is broken (ie. node1 has node2 in it's view but vice-versa is not true) between the following "
-                    "pairs of nodes: ~p", [Nodes]);
+            ct:fail(
+                "Symmetry is broken (ie. node1 has node2 in it's view but "
+                "vice-versa is not true) between the following "
+                "pairs of nodes: ~p",
+                [Nodes]
+            );
+
         {fail, {false, [{connected_check_failed, ConnectedFails},
                         {symmetry_check_failed, SymmetryFails}]}} ->
-            ct:fail("Graph is not connected, unable to find route between pairs of nodes ~p, symmetry is broken as well"
-                    "(ie. node1 has node2 in it's view but vice-versa is not true) between the following "
-                    "pairs of nodes: ~p", [ConnectedFails, SymmetryFails])
+            ct:fail(
+                "Graph is not connected, unable to find route between pairs "
+                "of nodes ~p, symmetry is broken as well"
+                "(ie. node1 has node2 in it's view but vice-versa is not true)"
+                " between the following pairs of nodes: ~p",
+                [ConnectedFails, SymmetryFails]
+            )
     end,
 
     %% Verify forward message functionality.
-    lists:foreach(fun({_Name, Node}) ->
-                    ok = check_forward_message(Node, Manager, Nodes)
-                  end, Nodes),
+    lists:foreach(
+        fun({_Name, Node}) ->
+            ok = check_forward_message(Node, Manager, Nodes)
+        end,
+        Nodes
+    ),
 
     %% Verify correct behaviour when a node is stopped
-    {_, KilledNode} = N0 = random(Nodes, []),
+    {_, KilledNode} = N0 = random(Nodes, Servers),
     ok = rpc:call(KilledNode, partisan, stop, []),
+    ?SUPPORT:stop([KilledNode]),
+
     CheckStoppedFun = fun() ->
-                        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
-                            [] -> true;
-                            FailedNodes ->
-                                FailedNodes
-                        end
-                      end,
+        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
+            [] ->
+                true;
+            FailedNodes ->
+                FailedNodes
+        end
+      end,
+
     case wait_until(CheckStoppedFun, 60 * 2, 100) of
         ok ->
             ok;
         {fail, FailedNodes} ->
-            ct:fail("~p has been killed, it should not be in membership of nodes ~p",
-                    [KilledNode, FailedNodes])
+            ct:fail(
+                "~p has been killed, "
+                "it should not be in membership of nodes ~p",
+                [KilledNode, FailedNodes]
+            )
     end,
-
-
 
     ok.
 
@@ -1952,17 +2009,17 @@ hyparview_manager_low_active_test(Config) ->
     ?PUT_NODES(Nodes),
 
     CheckStartedFun = fun() ->
-                        case hyparview_membership_check(Nodes) of
-                            {[], []} -> true;
-                            {ConnectedFails, []} ->
-                                {false, {connected_check_failed, ConnectedFails}};
-                            {[], SymmetryFails} ->
-                                {false, {symmetry_check_failed, SymmetryFails}};
-                            {ConnectedFails, SymmetryFails} ->
-                                {false, [{connected_check_failed, ConnectedFails},
-                                         {symmetry_check_failed, SymmetryFails}]}
-                        end
-                      end,
+        case hyparview_membership_check(Nodes) of
+            {[], []} -> true;
+            {ConnectedFails, []} ->
+                {false, {connected_check_failed, ConnectedFails}};
+            {[], SymmetryFails} ->
+                {false, {symmetry_check_failed, SymmetryFails}};
+            {ConnectedFails, SymmetryFails} ->
+                {false, [{connected_check_failed, ConnectedFails},
+                         {symmetry_check_failed, SymmetryFails}]}
+        end
+      end,
 
     case wait_until(CheckStartedFun, 60 * 2, 100) of
         ok ->
@@ -1986,15 +2043,17 @@ hyparview_manager_low_active_test(Config) ->
                   end, Nodes),
 
     %% Verify correct behaviour when a node is stopped
-    {_, KilledNode} = N0 = random(Nodes, []),
+    {_, KilledNode} = N0 = random(Clients, []),
     ok = rpc:call(KilledNode, partisan, stop, []),
+    ?SUPPORT:stop([KilledNode]),
+
     CheckStoppedFun = fun() ->
-                        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
-                            [] -> true;
-                            FailedNodes ->
-                                FailedNodes
-                        end
-                      end,
+        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
+            [] -> true;
+            FailedNodes ->
+                FailedNodes
+        end
+      end,
     case wait_until(CheckStoppedFun, 60 * 2, 100) of
         ok ->
             ok;
@@ -2076,13 +2135,15 @@ hyparview_manager_high_client_test(Config) ->
     %% Verify correct behaviour when a node is stopped
     {_, KilledNode} = N0 = random(Nodes, []),
     ok = rpc:call(KilledNode, partisan, stop, []),
+    ?SUPPORT:stop([KilledNode]),
+
     CheckStoppedFun = fun() ->
-                        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
-                            [] -> true;
-                            FailedNodes ->
-                                FailedNodes
-                        end
-                      end,
+        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
+            [] -> true;
+            FailedNodes ->
+                FailedNodes
+        end
+      end,
     case wait_until(CheckStoppedFun, 60 * 2, 100) of
         ok ->
             ok;
@@ -2199,8 +2260,10 @@ check_forward_message(Node, Manager, Nodes) ->
     ok.
 
 
+-spec random([{atom(), node()}], [atom()]) -> [{atom(), node()}].
+
 random(List0, Omit) ->
-    List = List0 -- lists:flatten([Omit]),
+    List = maps:to_list(maps:without(Omit, maps:from_list(List0))),
     %% Catch exceptions where there may not be enough members.
     try
         Index = rand:uniform(length(List)),
@@ -2218,7 +2281,7 @@ wait_until(Fun, Retry, Delay) when Retry > 0 ->
         _ when Retry == 1 ->
             {fail, Res};
         _ ->
-            timer:sleep(Delay),
+            ct:sleep(Delay),
             wait_until(Fun, Retry - 1, Delay)
     end.
 
@@ -2229,22 +2292,34 @@ wait_until(Fun, Retry, Delay) when Retry > 0 ->
 %%
 hyparview_check_stopped_member(_, [_Node]) ->
     {undefined, []};
+
 hyparview_check_stopped_member(KilledNode, Nodes) ->
     ct:pal("Killed node ~p.", [KilledNode]),
 
     %% Obtain the membership from all the nodes,
     %% the killed node shouldn't be there
-    lists:filtermap(fun({_, Node}) ->
-        ct:pal("Making sure ~p doesn't have ~p in it's membership.", [Node, KilledNode]),
+    lists:filtermap(
+        fun({_, Node}) ->
+            ct:pal(
+                "Making sure ~p doesn't have ~p in it's membership.",
+                [Node, KilledNode]
+            ),
 
-        {ok, Members} = rpc:call(Node, partisan_peer_service, members, []),
-        case lists:member(KilledNode, Members) of
-            true ->
-                {true, Node};
-            false ->
-                false
-        end
-        end, Nodes).
+            {ok, Members} = rpc:call(
+                Node, partisan_peer_service, members, [], 2000
+            ),
+
+            case lists:member(KilledNode, Members) of
+                true ->
+                    ct:pal("Membership for ~p is correct", [Node]),
+                    {true, Node};
+                false ->
+                    ct:pal("Membership for ~p is incorrect", [Node]),
+                    false
+            end
+        end,
+        Nodes
+    ).
 
 %% @private
 hyparview_membership_check(Nodes) ->
@@ -2273,22 +2348,22 @@ hyparview_membership_check(Nodes) ->
     %% empty otherwise
     ConnectedFails =
         lists:flatmap(fun({_Name, Node}=Myself) ->
-                lists:filtermap(fun({_, N}) ->
-                    Path = digraph:get_short_path(Graph, Node, N),
-                    case Path of
-                        false ->
-                            %% print out the active view of each node
-                            % lists:foreach(fun({_, N1}) ->
-                            %                     {ok, ActiveSet} = rpc:call(N1, Manager, active, []),
-                            %                     Active = sets:to_list(ActiveSet),
-                            %                     ct:pal("node ~p active view: ~p", [N1, Active])
-                            %                end, Nodes),
-                            {true, {Node, N}};
-                        _ ->
-                            false
-                    end
-                 end, Nodes -- [Myself])
-            end, Nodes),
+            lists:filtermap(fun({_, N}) ->
+                Path = digraph:get_short_path(Graph, Node, N),
+                case Path of
+                    false ->
+                        %% print out the active view of each node
+                        lists:foreach(fun({_, N1}) ->
+                            {ok, ActiveSet} = rpc:call(N1, Manager, active, []),
+                            Active = sets:to_list(ActiveSet),
+                            ct:pal("node ~p active view: ~p", [N1, Active])
+                        end, Nodes),
+                        {true, {Node, N}};
+                    _ ->
+                        false
+                end
+             end, Nodes -- [Myself])
+        end, Nodes),
 
     %% Verify symmetry.
     SymmetryFails =
@@ -2316,7 +2391,7 @@ hyparview_membership_check(Nodes) ->
 %% @private
 verify_leave({_, NodeToLeave}, Nodes, Manager) ->
     %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
-    timer:sleep(?OVERRIDE_PERIODIC_INTERVAL * length(Nodes) + ?OVERRIDE_PERIODIC_INTERVAL),
+    ct:sleep(?OVERRIDE_PERIODIC_INTERVAL * length(Nodes) + ?OVERRIDE_PERIODIC_INTERVAL),
 
     %% Verify membership.
     %%
@@ -2356,7 +2431,7 @@ verify_leave({_, NodeToLeave}, Nodes, Manager) ->
     ok = rpc:call(Node2, partisan_peer_service, leave, [NodeToLeaveSpec]),
 
     %% Pause for gossip interval * node exchanges + gossip interval for full convergence.
-    timer:sleep(?OVERRIDE_PERIODIC_INTERVAL * length(Nodes) + ?OVERRIDE_PERIODIC_INTERVAL),
+    ct:sleep(?OVERRIDE_PERIODIC_INTERVAL * length(Nodes) + ?OVERRIDE_PERIODIC_INTERVAL),
 
     %% Verify membership.
     %%
@@ -2566,7 +2641,7 @@ hyparview_xbot_manager_high_active_test(Config) ->
 
     ?PUT_NODES(Nodes),
 
-    %%timer:sleep(20000),
+    %%ct:sleep(20000),
 
     CheckStartedFun = fun() ->
                         case hyparview_xbot_membership_check(Nodes) of
@@ -2605,6 +2680,8 @@ hyparview_xbot_manager_high_active_test(Config) ->
     %% Verify correct behaviour when a node is stopped
     {_, KilledNode} = N0 = random(Nodes, []),
     ok = rpc:call(KilledNode, partisan, stop, []),
+    ?SUPPORT:stop([KilledNode]),
+
     CheckStoppedFun = fun() ->
                         case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
                             [] ->
@@ -2644,7 +2721,7 @@ hyparview_xbot_manager_low_active_test(Config) ->
 
     ?PUT_NODES(Nodes),
 
-	timer:sleep(60000),
+	ct:sleep(60000),
 
     CheckStartedFun = fun() ->
                         case hyparview_xbot_membership_check(Nodes) of
@@ -2683,6 +2760,8 @@ hyparview_xbot_manager_low_active_test(Config) ->
     %% Verify correct behaviour when a node is stopped
     {_, KilledNode} = N0 = random(Nodes, []),
     ok = rpc:call(KilledNode, partisan, stop, []),
+    ?SUPPORT:stop([KilledNode]),
+
     CheckStoppedFun = fun() ->
                         case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
                             [] -> true;
@@ -2756,6 +2835,8 @@ hyparview_xbot_manager_high_client_test(Config) ->
     %% Verify correct behaviour when a node is stopped
     {_, KilledNode} = N0 = random(Nodes, []),
     ok = rpc:call(KilledNode, partisan, stop, []),
+    ?SUPPORT:stop([KilledNode]),
+
     CheckStoppedFun = fun() ->
                         case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
                             [] -> true;
