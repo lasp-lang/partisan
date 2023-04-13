@@ -48,16 +48,6 @@ The following sections assumes you have two nodes running: **ruby** (`ruby@127.0
 
 ### Checking cluster membership view
 
-#### Obtain members
-
-```erlang
-(max@127.0.0.1)1> partisan_peer_service:members().
-```
-
-Returns `[node_spec()]` and should contain both node specifications.
-
-#### Obtain nodes
-
 ```erlang
 (max@127.0.0.1)1> partisan:nodes().
 ```
