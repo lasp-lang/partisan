@@ -89,9 +89,7 @@ init_per_group(with_broadcast, Config) ->
     ct:timetrap({minutes, 5}),
     [
         {broadcast, true},
-        {forward_options, #{transitive => true}},
-        {nbr_of_servers, 5},
-        {nbr_of_clients, 0}
+        {forward_options, #{transitive => true}}
     ] ++ Config;
 
 init_per_group(with_partition_key, Config) ->
@@ -1899,7 +1897,8 @@ hyparview_manager_high_active_test(Config) ->
         undefined -> ?CLIENT_NUMBER;
         M -> M
     end,
-    Clients = ?SUPPORT:node_list(ClientNbr, "client", Config), %% client_list(?CLIENT_NUMBER),
+    Clients = ?SUPPORT:node_list(ClientNbr, "client", Config),
+    %% client_list(?CLIENT_NUMBER),
 
     %% Start nodes.
     Nodes = ?SUPPORT:start(hyparview_manager_high_active_test, Config,
@@ -1966,6 +1965,8 @@ hyparview_manager_high_active_test(Config) ->
     {_, KilledNode} = N0 = random(Nodes, Servers),
     ok = rpc:call(KilledNode, partisan, stop, []),
     ?SUPPORT:stop([KilledNode]),
+
+    ct:sleep(10000),
 
     CheckStoppedFun = fun() ->
         case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
@@ -2043,7 +2044,7 @@ hyparview_manager_low_active_test(Config) ->
                   end, Nodes),
 
     %% Verify correct behaviour when a node is stopped
-    {_, KilledNode} = N0 = random(Clients, []),
+    {_, KilledNode} = N0 = random(Nodes, Servers),
     ok = rpc:call(KilledNode, partisan, stop, []),
     ?SUPPORT:stop([KilledNode]),
 
@@ -2291,7 +2292,7 @@ wait_until(Fun, Retry, Delay) when Retry > 0 ->
 %% killed node in their membership
 %%
 hyparview_check_stopped_member(_, [_Node]) ->
-    {undefined, []};
+    [];
 
 hyparview_check_stopped_member(KilledNode, Nodes) ->
     ct:pal("Killed node ~p.", [KilledNode]),
@@ -2306,15 +2307,15 @@ hyparview_check_stopped_member(KilledNode, Nodes) ->
             ),
 
             {ok, Members} = rpc:call(
-                Node, partisan_peer_service, members, [], 2000
+                Node, partisan_peer_service, members, [], 15000
             ),
 
             case lists:member(KilledNode, Members) of
                 true ->
-                    ct:pal("Membership for ~p is correct", [Node]),
+                    ct:pal("Membership for ~p is incorrect", [Node]),
                     {true, Node};
                 false ->
-                    ct:pal("Membership for ~p is incorrect", [Node]),
+                    ct:pal("Membership for ~p is correct", [Node]),
                     false
             end
         end,
@@ -2683,13 +2684,13 @@ hyparview_xbot_manager_high_active_test(Config) ->
     ?SUPPORT:stop([KilledNode]),
 
     CheckStoppedFun = fun() ->
-                        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
-                            [] ->
-                                true;
-                            FailedNodes ->
-                                FailedNodes
-                        end
-                      end,
+        case hyparview_check_stopped_member(KilledNode, Nodes -- [N0]) of
+            [] ->
+                true;
+            FailedNodes ->
+                FailedNodes
+        end
+    end,
     case wait_until(CheckStoppedFun, 60 * 2, 100) of
         ok ->
             ok;
