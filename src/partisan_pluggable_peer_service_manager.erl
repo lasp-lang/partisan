@@ -961,10 +961,9 @@ handle_call(Event, _From, State) ->
 
 handle_cast(stop, State) ->
     %% We send ourselves this message when we left the cluster
-    %% We stop to cleanup, supervisor will start us again, this will kill all
-    %% connections.
+    %% We stop to cleanup, supervisor will start us again,
+    %% terminate/1 will kill all connections.
     {stop, normal, State};
-    % {noreply, State};
 
 handle_cast({kill_connections, Nodes}, State) ->
     ok = kill_connections(Nodes, State),

@@ -534,6 +534,11 @@ get(broadcast_start_exchange_limit = Key) ->
 get(Key) ->
     persistent_term:get(?KEY(maybe_rename(Key))).
 
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 get(Key, Default) ->
     persistent_term:get(?KEY(maybe_rename(Key)), Default).
 
