@@ -1166,18 +1166,7 @@ handle_info(Event, State) ->
 -spec terminate(term(), t()) -> term().
 
 terminate(_Reason, _State) ->
-    Fun =
-        fun(_Info, Connections) ->
-            lists:foreach(
-              fun(Connection) ->
-                    Pid = partisan_peer_connections:pid(Connection),
-                    catch gen_server:stop(Pid, normal, infinity),
-                    ok
-              end,
-              Connections
-            )
-         end,
-    ok = partisan_peer_connections:foreach(Fun).
+    ok = partisan_peer_connections:kill_all().
 
 
 -spec code_change(term() | {down, term()}, t(), term()) ->
