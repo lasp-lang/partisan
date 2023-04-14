@@ -390,11 +390,11 @@ forward_message(Node, ServerRef, Message, Opts) when is_list(Opts) ->
 
 forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
     %% If attempting to forward to the local node or using disterl, bypass.
-    ProcessFwd =
+    Bypass =
         Node =:= partisan:node()
         orelse partisan_config:get(connect_disterl, false),
 
-    case ProcessFwd of
+    case Bypass of
         true ->
             partisan_peer_service_manager:process_forward(ServerRef, Message);
         false ->
@@ -413,28 +413,6 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
             %% otherwise, use a generated one.
             Clock = maps:get(clock, FwdOpts, undefined),
 
-            %% Should ack?
-            ShouldAck = maps:get(ack, FwdOpts, false),
-
-            %% Use causality?
-            CausalLabel =
-                maps:get(causal_label, FwdOpts, undefined),
-
-            %% Use configuration to disable fast forwarding.
-            DisableFastForward =
-                partisan_config:get(disable_fast_forward, false),
-
-            %% Should use fast forwarding?
-            %%
-            %% Conditions:
-            %% - not labeled for causal delivery
-            %% - message does not need acknowledgements
-            %% - fastforward is not disabled
-            FastForward =
-                CausalLabel =:= undefined
-                andalso not ShouldAck
-                andalso not DisableFastForward,
-
             PaddedMessage = partisan_util:maybe_pad_term(Message),
 
             Cmd = {
@@ -447,8 +425,31 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
                 FwdOpts
             },
 
+            %% Is fast forward disabled?
+            DisableFastForward =
+                partisan_config:get(disable_fast_forward, false),
+
+            %% Needs ack?
+            NeedsAck = maps:get(ack, FwdOpts, false),
+
+            %% Use causal delivery?
+            CausalDelivery =
+                maps:get(causal_label, FwdOpts, undefined) =:= undefined,
+
+            %% Should we use fast forwarding?
+            %%
+            %% Conditions:
+            %% - fastforward is not disabled
+            %% - not labeled for causal delivery
+            %% - message does not need acknowledgement
+            FastForward =
+                not DisableFastForward
+                andalso not NeedsAck
+                andalso not CausalDelivery,
+
             case FastForward of
                 true ->
+                    %% Concurrent execution
                     %% Attempt to fast-path by accessing the connection
                     %% directly
                     case partisan_peer_connections:dispatch(Cmd) of
@@ -458,6 +459,7 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
                             gen_server:call(?MODULE, Cmd, infinity)
                     end;
                 false ->
+                    %% Serialized execution
                     gen_server:call(?MODULE, Cmd, infinity)
             end
     end.
@@ -487,12 +489,15 @@ receive_message(
     partisan_causality_backend:receive_message(Label, Msg);
 
 receive_message(Node, Channel, {forward_message, ServerRef, Msg} = Cmd) ->
+    %% We received a message for a destination in this node.
     case partisan_config:get(disable_fast_receive, false) of
         true ->
+            %% Serialize execution
             gen_server:call(
                 ?MODULE, {receive_message, Node, Channel, Cmd}, infinity
             );
         false ->
+            %% Concurrent execution
             partisan_peer_service_manager:process_forward(ServerRef, Msg)
     end;
 
