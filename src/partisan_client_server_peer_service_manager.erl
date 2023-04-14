@@ -263,7 +263,7 @@ forward_message(Term, Message) ->
 %% @end
 %% -----------------------------------------------------------------------------
 forward_message(Pid, Message, Opts) when is_pid(Pid) ->
-    forward_message(partisan:node(), Pid, Message, Opts);
+    forward_message(partisan:node(Pid), Pid, Message, Opts);
 
 forward_message(Name, Message, Opts) when is_atom(Name) ->
     forward_message(partisan:node(), Name, Message, Opts);

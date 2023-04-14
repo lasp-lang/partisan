@@ -155,7 +155,7 @@ forward_message(Term, Message) ->
 %% @end
 %% -----------------------------------------------------------------------------
 forward_message(Pid, Message, Opts) when is_pid(Pid) ->
-    forward_message(partisan:node(), Pid, Message, Opts);
+    forward_message(partisan:node(Pid), Pid, Message, Opts);
 
 forward_message(RemoteRef, Message, Opts) ->
     partisan_remote_ref:is_pid(RemoteRef)
