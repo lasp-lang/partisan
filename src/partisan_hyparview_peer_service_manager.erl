@@ -368,7 +368,7 @@
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Start the peer service manager.
+%% @doc Starts the peer service manager.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
@@ -378,9 +378,11 @@ start_link() ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Return membership list.
+%% @doc Returns membership list.
 %% @end
 %% -----------------------------------------------------------------------------
+-spec members() -> [node()].
+
 members() ->
     gen_server:call(?MODULE, members, infinity).
 
@@ -389,6 +391,8 @@ members() ->
 %% @doc Return membership list.
 %% @end
 %% -----------------------------------------------------------------------------
+-spec members_for_orchestration() -> [partisan:node_spec()].
+
 members_for_orchestration() ->
     gen_server:call(?MODULE, members_for_orchestration, infinity).
 
@@ -397,6 +401,8 @@ members_for_orchestration() ->
 %% @doc Decode state.
 %% @end
 %% -----------------------------------------------------------------------------
+-spec decode(term()) -> term().
+
 decode({state, Active, _Epoch}) ->
     decode(Active);
 
@@ -408,6 +414,8 @@ decode(Active) ->
 %% @doc Return local node's view of cluster membership.
 %% @end
 %% -----------------------------------------------------------------------------
+-spec get_local_state() -> {state, Active :: active(), Epoch :: integer()}.
+
 get_local_state() ->
     gen_server:call(?MODULE, get_local_state, infinity).
 
@@ -538,7 +546,6 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
         message => Message
     }),
 
-    %% We ignore channel -> Why?
     FullMessage = {forward_message, Node, ServerRef, Message, Opts},
 
     %% Attempt to fast-path, dispatching it directly to the connection process
@@ -2168,7 +2175,9 @@ disconnect(Node) ->
     ok | {error, disconnected} | {error, not_yet_connected} | {error, term()}.
 
 do_send_message(Node, Message) ->
-    do_send_message(Node, Message, #{}).
+    %% transitive is disabled
+    Opts = #{},
+    do_send_message(Node, Message, Opts).
 
 
 %% @private
