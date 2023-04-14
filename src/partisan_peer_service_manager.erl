@@ -297,9 +297,8 @@ send_message(Node, Message) ->
 
 %% -----------------------------------------------------------------------------
 %% @doc Internal function used by peer_service manager implementations to
-%% forward a message to a process identified by `ServerRef' that is either
-%% local or located at remote process when the remote node is connected via
-%% disterl.
+%% forward a message to a local process identified by `ServerRef' (or a global
+%% process when connected using disterl).
 %% Trying to send a message to a remote server reference when the process is
 %% located at a node connected with Partisan will return `ok' but will not
 %% succeed.
@@ -635,7 +634,7 @@ do_process_forward(ServerRef, Message) ->
         [partisan:node(), Message, ServerRef]
     ),
 
-    case partisan_remote_ref:to_term(ServerRef) of
+    try partisan_remote_ref:to_term(ServerRef) of
         Pid when is_pid(Pid) ->
             ?LOG_TRACE_IF(
                 not is_process_alive(Pid),
@@ -646,5 +645,13 @@ do_process_forward(ServerRef, Message) ->
 
         Name when is_atom(Name) ->
             Name ! Message,
+            ok
+    catch
+        error:badarg ->
+            ?LOG_INFO(#{
+                description => "unknown destination, dropping message",
+                to => ServerRef,
+                message => Message
+            }),
             ok
     end.
