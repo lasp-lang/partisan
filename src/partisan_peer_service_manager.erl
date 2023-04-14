@@ -150,6 +150,7 @@
     Msg :: partisan:message(),
     Opts :: forward_opts()) -> ok.
 
+-callback receive_message(node(), partisan:channel(), any()) -> ok.
 
 -callback decode(term()) -> term().
 
