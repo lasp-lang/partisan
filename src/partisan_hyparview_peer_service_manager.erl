@@ -790,7 +790,7 @@ handle_call(partitions, _From, State) ->
     {reply, {ok, State#state.partitions}, State};
 
 handle_call({leave, _Node}, _From, State) ->
-    {reply, error, State};
+    {reply, {error, not_implemented}, State};
 
 handle_call({join, #{name := _Name} = Node}, _From, State) ->
     gen_server:cast(?MODULE, {join, Node}),

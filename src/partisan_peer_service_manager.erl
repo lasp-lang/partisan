@@ -116,11 +116,9 @@
 
 -callback leave() -> ok.
 
--callback leave(partisan:node_spec()) -> ok.
+-callback leave(partisan:node_spec()) -> ok | {error, not_implemented}.
 
 -callback send_message(node(), partisan:message()) -> ok.
-
--callback receive_message(node(), partisan:channel(), partisan:message()) -> ok.
 
 -callback cast_message(
     ServerRef :: server_ref(),
