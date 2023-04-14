@@ -74,6 +74,7 @@
 }).
 
 
+
 -type t()                   ::  #state{}.
 -type from()                ::  {pid(), atom()}.
 -type on_event_fun()        ::  partisan_peer_service_manager:on_event_fun().
@@ -312,6 +313,8 @@ leave(#{name := _} = NodeSpec) ->
 %% @end
 %% -----------------------------------------------------------------------------
 send_message(Node, Message) ->
+    %% TODO maybe deprecate, not used by Partisan and we can always do
+    %% partisan_rpc:call/4
     Cmd = {send_message, Node, Message},
     gen_server:call(?MODULE, Cmd, infinity).
 
@@ -341,6 +344,8 @@ cast_message(Node, ServerRef, Message) ->
 %% @end
 %% -----------------------------------------------------------------------------
 cast_message(Node, ServerRef, Message, Options) ->
+    %% TODO maybe deprecate, since we have partisan_gen_server:cast
+    %% and partisan_gen_statem:cast ?
     forward_message(Node, ServerRef, {'$gen_cast', Message}, Options).
 
 
