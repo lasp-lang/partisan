@@ -1,4 +1,5 @@
 # Partisan
+<img width="400" src="assets/partisan_logo_black.png">
 
 ![Version](https://img.shields.io/badge/version-5.0.0--beta.24-blue?style=for-the-badge)<br>
 ![Core Test Suite](https://img.shields.io/github/actions/workflow/status/lasp-lang/partisan/build_and_test.yml?&branch=master&label=core-test-suite&style=for-the-badge)
