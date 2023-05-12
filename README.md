@@ -1,10 +1,12 @@
-# Partisan
-<img width="400" src="assets/partisan_logo_black.png">
+<img alt="Partisan" width="600" src="assets/partisan_logo_black.png">
+
 
 ![Version](https://img.shields.io/badge/version-5.0.0--beta.24-blue?style=for-the-badge)<br>
 ![Core Test Suite](https://img.shields.io/github/actions/workflow/status/lasp-lang/partisan/build_and_test.yml?&branch=master&label=core-test-suite&style=for-the-badge)
 ![OTP Test Suite](https://img.shields.io/github/actions/workflow/status/lasp-lang/partisan/otp-test.yml?&branch=master&label=otp-test-suite&style=for-the-badge)
 ![Alt Test Suite](https://img.shields.io/github/actions/workflow/status/lasp-lang/partisan/alt-test.yml?&branch=master&label=alt-test-suite&style=for-the-badge)
+
+# Partisan
 
 Partisan is a scalable and flexible, TCP-based membership system and distribution layer for the BEAM. It bypasses the use of Distributed Erlang for manual connection management via TCP, and has several pluggable backends for different deployment scenarios.
 
