@@ -1,4 +1,4 @@
-<img alt="Partisan" width="600" src="assets/partisan_logo_black.png">
+<img alt="Partisan" width="600" src="https://github.com/lasp-lang/partisan/blob/e4ec25b547c4d50000250b904690b26594b3e72e/assets/partisan_logo_black.png?raw=true">
 
 
 ![Version](https://img.shields.io/badge/version-5.0.0--beta.24-blue?style=for-the-badge)<br>

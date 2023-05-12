@@ -33,7 +33,6 @@ compile-no-deps:
 
 docs:
 	${REBAR} ex_doc skip_deps=true
-	cp -r assets/*.* doc/assets
 
 xref: compile
 	${REBAR} xref skip_deps=true
