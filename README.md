@@ -84,7 +84,7 @@ Partisan was designed to increase scalability, reduce latency and improve failur
 
 ### Projects
 
-* [Bondy](https://github.com/bondy-io/bondy)
+* [Bondy](https://bondy.io)
 * [Erleans](https://github.com/erleans/erleans)
 * [PlumDB](https://github.com/Leapsight/plum_db)
 
