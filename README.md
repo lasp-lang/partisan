@@ -100,8 +100,8 @@ Partisan was designed to increase scalability, reduce latency and improve failur
 * [Partisan: Enabling Real-World Protocol Evaluation](https://dl.acm.org/doi/10.1145/3231104.3231106) - ApPLIED '18: Proceedings of the 2018 Workshop on Advanced Tools, Programming Languages, and PLatforms for Implementing and Evaluating Algorithms for Distributed systems, Christopher Meiklejohn
 * [Partisan: Enabling Cloud-Scale Erlang Applications](https://arxiv.org/abs/1802.02652), Christopher Meiklejohn, Heather Miller
 * [Partisan: Scaling the Distributed Actor Runtime](https://www.usenix.org/system/files/atc19-meiklejohn.pdf) - 2019 USENIX Annual Technical Conference,  Christopher S. Meiklejohn and Heather Miller, Carnegie Mellon University; Peter Alvaro, UC Santa Cruz
-* [HyParView: a membership protocol for reliable gossip-based broadcast](https://asc.di.fct.unl.pt/~jleitao/pdf/dsn07-leitao.pdf), Joao Leitao, Jose Pereira Luis Rodrigues.
-* [X-BOT: A Protocol for Resilient Optimization of Unstructured Overlay Networks](https://www.academia.edu/2901632/X_BOT_A_Protocol_for_Resilient_Optimization_of_Unstructured_Overlay_Networks), Joao Leitao, Jose Pereira Luis Rodrigues.
+* [HyParView: a membership protocol for reliable gossip-based broadcast](https://asc.di.fct.unl.pt/~jleitao/pdf/dsn07-leitao.pdf), Jo&atilde;o Leit&atilde;o, Jos&eacute; Pereira, Lu&iacute;s Rodrigues
+* [X-BOT: A Protocol for Resilient Optimization of Unstructured Overlay Networks](https://www.academia.edu/2901632/X_BOT_A_Protocol_for_Resilient_Optimization_of_Unstructured_Overlay_Networks), Jo&atilde;o Leit&atilde;o, Jo&atilde;o Pedro Marques, Jos&eacute; Pereira, Lu&iacute;s Rodrigues
 
 ### Presentations
 
