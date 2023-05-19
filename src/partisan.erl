@@ -1332,7 +1332,7 @@ spawn(Node, Fun) ->
             %% eqwalizer:ignore This MUST be a pid()
             partisan_remote_ref:from_term(Pid);
         false ->
-            case partisan_rpc:call(Node, ?MODULE, spawn, [Fun], 5000) of
+            case partisan_rpc:call(Node, erlang, spawn, [Fun], 5000) of
                 {badrpc, Reason} ->
                     ?LOG_WARNING(#{
                         description =>
@@ -1376,7 +1376,7 @@ spawn(Node, Module, Function, Args) ->
             SpawnArgs = [Module, Function, Args],
             %% We call ourselves in Node and not erlang module, as we need
             %% a remote_pid() even when pid_encoding is disabled
-            case partisan_rpc:call(Node, ?MODULE, spawn, SpawnArgs, 5000) of
+            case partisan_rpc:call(Node, erlang, spawn, SpawnArgs, 5000) of
                 {badrpc, Reason} ->
                     ?LOG_WARNING(#{
                         description =>
