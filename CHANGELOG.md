@@ -1,4 +1,13 @@
 # CHANGELOG
+# v5.0.0-rc.1
+
+### Bug Fixes
+* Make sure a message forward to a local process never fails (restoring the original behaviour).
+* Minor bug fixes
+* Fixed type issues detected by Eqwalizer and Dialyzer
+### Changes
+* Readme Docs improvements
+
 # v5.0.0-beta.24
 * Removed eqwalizer from default profile
 

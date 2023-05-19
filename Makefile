@@ -40,12 +40,15 @@ xref: compile
 dialyzer: compile
 	${REBAR} dialyzer
 
+# This is super slow as we are invoking equalizer for each source file as
+# opposed to once. We do this becuase we want to ignore modules in the otp_src
+# directory but at the moment Eqwalizer does not allow that option
 eqwalizer: src/*.erl
 ifeq ($(shell expr $(OTPVSN) \> 24),1)
 	for file in $(shell ls $^ | sed 's|.*/\(.*\)\.erl|\1|'); do elp eqwalize $${file}; done
 else
 	$(info OTPVSN is not higher than 24)
-	$(eval override mytarget=echo "Eqwalizer requires OTP25 or higher, skipping eqwalizer")
+	$(eval override mytarget=echo "skipping eqwalizer target. Eqwalizer tool  requires OTP25 or higher")
 endif
 
 
@@ -87,15 +90,33 @@ spellfix:
 test: eunit core-test otp-test cover
 
 core-test: setup-tls
+ifeq ($(shell expr $(OTPVSN) \> 24),1)
+	$(info OTPVSN is higher than 24)
+	$(eval override mytarget=echo "skipping core-test target. CT Suite currently requires OTP24")
+else
 	${REBAR} as test ct -v --readable=false --suite=partisan_SUITE
+endif
+
 
 otp-test: setup-tls
+ifeq ($(shell expr $(OTPVSN) \> 24),1)
+	$(info OTPVSN is higher than 24)
+	$(eval override mytarget=echo "skipping al-test target. CT Suite currently requires OTP24")
+else
 	${REBAR} as test ct --suite=partisan_gen_server_SUITE,partisan_gen_event_SUITE,partisan_gen_statem_SUITE
+endif
+
 
 alt-test: setup-tls
+ifeq ($(shell expr $(OTPVSN) \> 24),1)
+	$(info OTPVSN is higher than 24)
+	$(eval override mytarget=echo "skipping alt-test target. CT Suite currently requires OTP24")
+else
 	mkdir -p test/partisan_alt_SUITE_data/
 	openssl rand -out test/partisan_alt_SUITE_data/RAND 4096
 	${REBAR} as test ct -v --readable=false --suite=partisan_alt_SUITE
+endif
+
 
 setup-tls:
 	mkdir -p test/partisan_SUITE_data/

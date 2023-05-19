@@ -401,7 +401,7 @@ members_for_orchestration() ->
 %% @doc Decode state.
 %% @end
 %% -----------------------------------------------------------------------------
--spec decode(term()) -> term().
+-spec decode({state, sets:set(), any()} | sets:set()) -> list().
 
 decode({state, Active, _Epoch}) ->
     decode(Active);
