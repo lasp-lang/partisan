@@ -1,4 +1,8 @@
 # CHANGELOG
+# v5.0.0-rc.2
+### Bug Fixes
+* Fixes a bug in `partisan:spawn/2`
+
 # v5.0.0-rc.1
 
 ### Bug Fixes
