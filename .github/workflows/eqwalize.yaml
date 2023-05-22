@@ -28,7 +28,7 @@ jobs:
           sudo apt-get -y install libssl-dev
 
       - name: Install Eqwalizer
-        run: "curl https://github.com/WhatsApp/eqwalizer/releases/download/v0.17.16/elp-linux.tar.gz | tar -xz && chmod +x elp
+        run: 'curl https://github.com/WhatsApp/eqwalizer/releases/download/v0.17.16/elp-linux.tar.gz | tar -xz && chmod +x elp'
       - name: "add elp to path"
         run: 'echo "$GITHUB_WORKSPACE/elp" >> $GITHUB_PATH'
 
