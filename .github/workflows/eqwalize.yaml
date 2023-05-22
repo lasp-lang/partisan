@@ -1,0 +1,39 @@
+name: Eqwalize
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build_and_test:
+    name: Run Eqwalizer
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        otp: ['25.3.2']
+        rebar3: ['3.21.0']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Install OTP and rebar3
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{matrix.otp}}
+          rebar3-version: ${{matrix.rebar3}}
+
+      - name: Install build dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install libssl-dev
+
+      - name: Install Eqwalizer
+        run: "curl https://github.com/WhatsApp/eqwalizer/releases/download/v0.17.16/elp-linux.tar.gz | tar -xz && chmod +x elp
+      - name: "add elp to path"
+        run: 'echo "$GITHUB_WORKSPACE/elp" >> $GITHUB_PATH'
+
+      - name: Start epmd
+        run: epmd -daemon
+
+      - name: Build and test
+        run: make eqwalizer
