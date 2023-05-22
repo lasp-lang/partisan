@@ -164,8 +164,9 @@
 
 -if(?OTP_RELEASE >= 25).
     %% already defined by OTP
+    -define(CT_NODE, peer).
 -else.
-    -define(CT_PEER, ct_slave).
+    -define(CT_NODE, ct_slave).
 -endif.
 
 -compile([nowarn_export_all, export_all]).

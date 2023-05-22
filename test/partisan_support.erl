@@ -85,7 +85,7 @@ start(Case, Config, Options) ->
             | NodeConfig0
         ],
 
-        case ?CT_PEER:start(Name, NodeConfig) of
+        case ?CT_NODE:start(Name, NodeConfig) of
             {ok, Node} ->
                 %% After starting a slave, it takes a little while until global
                 %% knows about it, even if nodes() includes it, so we make sure
@@ -519,7 +519,7 @@ stop(Nodes) ->
         Stop({_, Node}) ->
             Stop(Node);
         Stop(Node) ->
-            case ?CT_PEER:stop(Node) of
+            case ?CT_NODE:stop(Node) of
                 {ok, _} ->
                     ok;
                 {error, stop_timeout, _} ->
@@ -528,7 +528,7 @@ stop(Nodes) ->
                 {error, not_started, _} ->
                     ok;
                 Error ->
-                    ct:pal("Error while stopping CT_PEER ~p", [Error])
+                    ct:pal("Error while stopping CT_NODE ~p", [Error])
             end
     end,
 
