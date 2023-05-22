@@ -62,10 +62,6 @@
 -export([disabled/3]).
 
 
--eqwalizer({nowarn_function, enable/0}).
--eqwalizer({nowarn_function, disable/0}).
--eqwalizer({nowarn_function, status/0}).
-
 
 %% =============================================================================
 %% CALLBACKS

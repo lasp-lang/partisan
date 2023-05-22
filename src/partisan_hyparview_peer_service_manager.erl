@@ -324,6 +324,8 @@
 %% temporary exceptions
 -export([delete_state_from_disk/0]).
 
+-eqwalizer({nowarn_function, decode/1}).
+
 
 %% -----------------------------------------------------------------------------
 %% Notes on HyParView protocol
