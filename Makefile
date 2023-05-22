@@ -1,3 +1,5 @@
+# we disable it, as we only enable it for the eqwalize target
+PARTISAN_EQWALIZER = 0
 BASE_DIR         = $(shell pwd)
 CONCURRENCY 	 ?= 4
 DEP_DIR         ?= "deps"
@@ -45,12 +47,11 @@ dialyzer: compile
 # directory but at the moment Eqwalizer does not allow that option
 eqwalizer: src/*.erl
 ifeq ($(shell expr $(OTPVSN) \> 24),1)
-	for file in $(shell ls $^ | sed 's|.*/\(.*\)\.erl|\1|'); do elp eqwalize $${file}; done
+	export PARTISAN_EQWALIZER=1 && for file in $(shell ls $^ | sed 's|.*/\(.*\)\.erl|\1|'); do elp eqwalize $${file}; done
 else
 	$(info OTPVSN is not higher than 24)
 	$(eval override mytarget=echo "skipping eqwalizer target. Eqwalizer tool  requires OTP25 or higher")
 endif
-
 
 compile:
 	$(REBAR) compile
