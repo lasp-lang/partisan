@@ -191,7 +191,7 @@ handle_info({participant_timeout, Id}, State) ->
                     true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=commit}}),
 
                     %% Forward to process.
-                    partisan_peer_service_manager:process_forward(ServerRef, Message);
+                    partisan_peer_service_manager:deliver(ServerRef, Message);
                 commit ->
                     ?LOG_INFO("Participant: ~p already committed.", [node()]),
                     ok
@@ -374,7 +374,7 @@ handle_info({commit, #transaction{id=Id, coordinator=Coordinator, server_ref=Ser
     true = ets:insert(?PARTICIPATING_TRANSACTIONS, {Id, Transaction#transaction{participant_status=commit}}),
 
     %% Forward to process.
-    partisan_peer_service_manager:process_forward(ServerRef, Message),
+    partisan_peer_service_manager:deliver(ServerRef, Message),
 
     %% Repond to coordinator that we are now committed.
     MyNode = partisan:node(),

@@ -448,7 +448,7 @@ establish_connections(Pending, Membership) ->
 
 
 handle_message({forward_message, ServerRef, Message}, _Channel, State) ->
-    partisan_peer_service_manager:process_forward(ServerRef, Message),
+    partisan_peer_service_manager:deliver(ServerRef, Message),
     {reply, ok, State}.
 
 

@@ -78,7 +78,7 @@
 -export([disconnect/2]).
 -export([mynode/0]).
 -export([myself/0]).
--export([process_forward/2]).
+-export([deliver/2]).
 -export([send_message/2]).
 -export([supports_capability/2]).
 
@@ -304,11 +304,11 @@ send_message(Node, Message) ->
 %% succeed.
 %% @end
 %% -----------------------------------------------------------------------------
--spec process_forward(ServerRef :: server_ref(), Msg :: any()) -> ok.
+-spec deliver(ServerRef :: server_ref(), Msg :: any()) -> ok.
 
-process_forward(ServerRef, Msg) ->
+deliver(ServerRef, Msg) ->
     try
-        do_process_forward(ServerRef, Msg)
+        do_deliver(ServerRef, Msg)
     catch
         Class:Reason:Stacktrace ->
             ?LOG_DEBUG(#{
@@ -593,17 +593,17 @@ get_opt(parallelism, #{}) ->
 
 
 %% @private
-do_process_forward({global, Name}, Message) ->
+do_deliver({global, Name}, Message) ->
     Pid = global:whereis_name(Name),
     Pid ! Message,
     ok;
 
-do_process_forward({via, Module, Name}, Message) ->
+do_deliver({via, Module, Name}, Message) ->
     Pid = Module:whereis_name(Name),
     Pid ! Message,
     ok;
 
-do_process_forward(Pid, Message) when is_pid(Pid) ->
+do_deliver(Pid, Message) when is_pid(Pid) ->
     Pid ! Message,
 
     ?LOG_TRACE_IF(
@@ -614,7 +614,7 @@ do_process_forward(Pid, Message) when is_pid(Pid) ->
 
     ok;
 
-do_process_forward(Name, Message) when is_atom(Name) ->
+do_deliver(Name, Message) when is_atom(Name) ->
     Name ! Message,
 
     Pid = whereis(Name),
@@ -628,7 +628,7 @@ do_process_forward(Name, Message) when is_atom(Name) ->
 
     ok;
 
-do_process_forward(ServerRef, Message) ->
+do_deliver(ServerRef, Message) ->
     ?LOG_DEBUG(
         "node ~p received message ~p for ~p",
         [partisan:node(), Message, ServerRef]

@@ -570,7 +570,7 @@ receive_message(Peer, Channel, {forward_message, ServerRef, Msg} = Cmd) ->
                 ?MODULE, {receive_message, Peer, Channel, Cmd}, infinity
             );
         false ->
-            partisan_peer_service_manager:process_forward(ServerRef, Msg)
+            partisan_peer_service_manager:deliver(ServerRef, Msg)
     end;
 
 receive_message(Peer, Channel, Msg) ->
@@ -1802,7 +1802,7 @@ handle_message({relay_message, NodeSpec, Message, TTL}, Channel, #state{} = Stat
     {noreply, State};
 
 handle_message({forward_message, ServerRef, Message}, _Channel, State) ->
-    partisan_peer_service_manager:process_forward(ServerRef, Message),
+    partisan_peer_service_manager:deliver(ServerRef, Message),
     {noreply, State};
 
 handle_message(

@@ -396,7 +396,7 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
 
     case Bypass of
         true ->
-            partisan_peer_service_manager:process_forward(ServerRef, Message);
+            partisan_peer_service_manager:deliver(ServerRef, Message);
         false ->
             %% Get forwarding options and combine with message
             %% specific options.
@@ -498,7 +498,7 @@ receive_message(Node, Channel, {forward_message, ServerRef, Msg} = Cmd) ->
             );
         false ->
             %% Concurrent execution
-            partisan_peer_service_manager:process_forward(ServerRef, Msg)
+            partisan_peer_service_manager:deliver(ServerRef, Msg)
     end;
 
 receive_message(Node, Channel, Msg) ->
@@ -1774,7 +1774,7 @@ handle_message(
             partisan_causality_backend:receive_message(Label, Msg);
         false ->
             %% Attempt message delivery.
-            partisan_peer_service_manager:process_forward(ServerRef, Msg)
+            partisan_peer_service_manager:deliver(ServerRef, Msg)
     end,
 
     maybe_reply(From, ok),
@@ -1809,7 +1809,7 @@ handle_message(
             partisan_causality_backend:receive_message(Label, Msg);
         false ->
             %% Attempt message delivery.
-            partisan_peer_service_manager:process_forward(ServerRef, Msg)
+            partisan_peer_service_manager:deliver(ServerRef, Msg)
     end,
 
     maybe_reply(From, ok),
@@ -1822,7 +1822,7 @@ handle_message({forward_message, ServerRef, Msg},
                From,
                _Channel,
                State) ->
-    partisan_peer_service_manager:process_forward(ServerRef, Msg),
+    partisan_peer_service_manager:deliver(ServerRef, Msg),
     maybe_reply(From, ok),
     {noreply, State};
 

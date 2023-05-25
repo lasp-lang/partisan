@@ -280,7 +280,7 @@ deliver(#state{my_node=MyNode, local_clock=LocalClock, order_buffer=OrderBuffer,
     case DeliveryFun of
         undefined ->
             try
-                partisan_peer_service_manager:process_forward(ServerRef, Message)
+                partisan_peer_service_manager:deliver(ServerRef, Message)
             catch
                 _:Reason ->
                     ?LOG_DEBUG(#{

@@ -94,7 +94,7 @@ handle_cast({broadcast, ServerRef, Message}, #state{next_id=NextId, membership=M
     Id = {MyNode, NextId},
 
     %% Forward to process.
-    partisan_peer_service_manager:process_forward(ServerRef, Message),
+    partisan_peer_service_manager:deliver(ServerRef, Message),
 
     %% Store outgoing message.
     true = ets:insert(?MODULE, {Id, Message}),
@@ -136,7 +136,7 @@ handle_info({broadcast, Id, ServerRef, Message}, State) ->
     case ets:lookup(?MODULE, Id) of
         [] ->
             %% Forward to process.
-            partisan_peer_service_manager:process_forward(ServerRef, Message),
+            partisan_peer_service_manager:deliver(ServerRef, Message),
 
             %% Store.
             true = ets:insert(?MODULE, {Id, Message}),
