@@ -87,7 +87,12 @@
 
     %% returns ok
     -define(FIRE_PRE_INTERPOSITIONS(Type, Node, Msg, S),
-
+        PreIFuns = case S of
+            #state{} ->
+                S#state.pre_interposition_funs;
+            S when is_list(S) ->
+                S
+        end,
         maps:fold(
             fun(_Node, Fun, ok) ->
                 ?LOG_DEBUG(
@@ -98,12 +103,18 @@
                 ok
             end,
             ok,
-            S#state.pre_interposition_funs
+            PreIFuns
         )
     ).
 
     %% returns message
     -define(FIRE_INTERPOSITIONS(Type, Node, Msg, S),
+        IFuns = case S of
+            #state{} ->
+                S#state.interposition_funs;
+            S when is_list(S) ->
+                S
+        end,
         maps:fold(
             fun(_Name, Fun, M) ->
                 ?LOG_DEBUG(
@@ -113,12 +124,18 @@
                 Fun({Type, Node, M})
             end,
             Msg0,
-            S#state.interposition_funs
+            IFuns
         )
     ).
 
     %% returns ok
     -define(FIRE_POST_INTERPOSITIONS(Type, Node, Msg0, Msg1, S),
+        PostIFuns = case S of
+            #state{} ->
+                S#state.post_interposition_funs;
+            S when is_list(S) ->
+                S
+        end,
         maps:fold(
             fun(_Name, Fun, ok) ->
                 ?LOG_DEBUG(
@@ -132,20 +149,24 @@
                 ok
             end,
             ok,
-            S#state.post_interposition_funs
+            PostIFuns
         )
     ).
 
 -else.
 
     %% returns ok
-    -define(FIRE_PRE_INTERPOSITIONS(_Type, _Node, _Msg, _Funs), ok).
+    -define(FIRE_PRE_INTERPOSITIONS(_Type, _Node, _Msg, Term),
+        %% To supress variable unused compiler Warning
+        _ = Term,
+        ok
+    ).
 
     %% returns message
-    -define(FIRE_INTERPOSITIONS(_Type, _Node, Msg, _Funs), Msg).
+    -define(FIRE_INTERPOSITIONS(_Type, _Node, Msg, _Term), Msg).
 
     %% returns ok
-    -define(FIRE_POST_INTERPOSITIONS(_Type, _Node, _Msg0, _Msg1, _Funs), ok).
+    -define(FIRE_POST_INTERPOSITIONS(_Type, _Node, _Msg0, _Msg1, _Term), ok).
 
 -endif.
 
@@ -976,12 +997,14 @@ handle_call(
     {forward_message, Node, Clock, PartitionKey, ServerRef, Msg, Opts},
     From,
     State) ->
+    %% We avoid referencing all the state in the DeliveryFun
+    PreIFuns = State#state.pre_interposition_funs,
 
     %% Run all interposition functions.
     DeliveryFun =
         fun() ->
             %% Fire pre-interposition functions.
-            ok = ?FIRE_FWD_PRE_INTERPOSITIONS(Node, Msg, State),
+            ok = ?FIRE_FWD_PRE_INTERPOSITIONS(Node, Msg, PreIFuns),
 
             %% Once pre-interposition returns, then schedule for delivery.
             Cmd = {
@@ -1011,8 +1034,9 @@ handle_call(
     {noreply, State};
 
 handle_call({receive_message, Node, Channel, Msg}, From, State) ->
+    PreIFuns = State#state.pre_interposition_funs,
     DeliveryFun = fun() ->
-        ok = ?FIRE_RECV_PRE_INTERPOSITIONS(Node, Msg, State),
+        ok = ?FIRE_RECV_PRE_INTERPOSITIONS(Node, Msg, PreIFuns),
 
         %% Once pre-interposition returns, then schedule for delivery.
         gen_server:cast(?MODULE, {receive_message, Node, Channel, From, Msg})
@@ -2267,9 +2291,10 @@ schedule_self_message_delivery(Node, Message, PartitionKey, State) ->
 
 %% @private
 schedule_self_message_delivery(Node, Message, PartitionKey, State, Options) ->
-    %% Run all interposition functions.
+    PreIFuns = State#state.pre_interposition_funs,
+
     DeliveryFun = fun() ->
-        ok  = ?FIRE_FWD_PRE_INTERPOSITIONS(Node, Message, State),
+        ok  = ?FIRE_FWD_PRE_INTERPOSITIONS(Node, Message, PreIFuns),
 
         %% Once pre-interposition returns, then schedule for delivery.
         gen_server:cast(?MODULE, {
