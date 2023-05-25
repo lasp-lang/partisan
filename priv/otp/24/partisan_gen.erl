@@ -288,12 +288,11 @@ do_call(Process, Label, Request, infinity)
             exit(Reason)
     end;
 
-
-do_call(Process, Label, Request, Timeout) ->
+do_call(ProcessRef, Label, Request, Timeout) ->
     %% Partisan case
     %% For remote process do_send_request will use Tag = [alias | Mref]
     %% to comply with OTP although we do not support remote aliases
-    Mref = do_send_request(Process, Label, Request),
+    Mref = do_send_request(ProcessRef, Label, Request),
 
     %% Wait for reply.
     receive
@@ -301,7 +300,7 @@ do_call(Process, Label, Request, Timeout) ->
             partisan:demonitor(Mref, [flush]),
             {ok, Reply};
         {'DOWN', Mref, _, _, noconnection} ->
-            Node = get_node(Process),
+            Node = get_node(ProcessRef),
             exit({nodedown, Node});
         {'DOWN', Mref, _, _, Reason} ->
             exit(Reason)
@@ -319,27 +318,24 @@ do_call(Process, Label, Request, Timeout) ->
         end
     end.
 
+
+%% We trust the arguments to be correct, i.e
+%% Process is either a local or remote pid,
+%% or a {Name, Node} tuple (of atoms) and in this
+%% case this node (node()) _is_ distributed and Node =/= node().
+get_node({_S, N}) when is_atom(N) ->
+    N;
+
 get_node(Process) ->
-    %% We trust the arguments to be correct, i.e
-    %% Process is either a local or remote pid,
-    %% or a {Name, Node} tuple (of atoms) and in this
-    %% case this node (node()) _is_ distributed and Node =/= node().
-    case Process of
-    {_S, N} when is_atom(N) ->
-        N;
-    _ when is_pid(Process) ->
-        node(Process);
-    _ ->
-        %% We assume process is partisan_remote_ref
-        partisan:node(Process)
-    end.
+    %% We assume process is partisan_remote_ref or pid()
+    partisan:node(Process).
 
 
 -spec send_request(Name::server_ref(), Label::term(), Request::term()) -> request_id().
 send_request(Process, Label, Request) when is_pid(Process) ->
     do_send_request(Process, Label, Request);
 send_request(Process, Label, Request) ->
-    Fun = fun(Pid) -> do_send_request(Pid, Label, Request) end,
+    Fun = fun(ProcessRef) -> do_send_request(ProcessRef, Label, Request) end,
     try do_for_proc(Process, Fun)
     catch exit:Reason ->
             %% Make send_request async and fake a down message
@@ -483,7 +479,9 @@ stop(Process) ->
 
 stop(Process, Reason, Timeout)
   when Timeout =:= infinity; is_integer(Timeout), Timeout >= 0 ->
-    Fun = fun(Pid) -> partisan_proc_lib:stop(Pid, Reason, Timeout) end,
+    Fun = fun(ProcessRef) ->
+        partisan_proc_lib:stop(ProcessRef, Reason, Timeout)
+    end,
     do_for_proc(Process, Fun).
 
 %%-----------------------------------------------------------------
@@ -498,10 +496,10 @@ do_for_proc(Pid, Fun) when is_pid(Pid) ->
 %% Local by name
 do_for_proc(Name, Fun) when is_atom(Name) ->
     case whereis(Name) of
-    Pid when is_pid(Pid) ->
-        Fun(Pid);
-    undefined ->
-        exit(noproc)
+        Pid when is_pid(Pid) ->
+            Fun(Pid);
+        undefined ->
+            exit(noproc)
     end;
 %% Global by name
 do_for_proc(Process, Fun)
@@ -537,9 +535,9 @@ do_for_proc({Name, Node} = Process, Fun) when is_atom(Node) ->
             Fun(Process)
     end;
 
-do_for_proc(Process, Fun) ->
-    partisan_remote_ref:is_pid(Process) orelse error(function_clause),
-    Fun(Process).
+do_for_proc(ProcessRef, Fun) ->
+    partisan_remote_ref:is_pid(ProcessRef) orelse error(function_clause),
+    Fun(ProcessRef).
 
 
 %%%-----------------------------------------------------------------
