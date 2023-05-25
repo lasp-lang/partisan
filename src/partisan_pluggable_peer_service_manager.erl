@@ -53,104 +53,110 @@
 -endif.
 
 %% returns ok
--define(FIRE_FWD_PRE_INTERPOSITIONS(Node, Msg, S),
-    ?FIRE_PRE_INTERPOSITIONS(forward_message, Node, Msg, S)
+-define(FIRE_FWD_PRE_INTERPOSITIONS(Node, Msg, Term),
+    ?FIRE_PRE_INTERPOSITIONS(forward_message, Node, Msg, Term)
 ).
 
 %% returns ok
--define(FIRE_RECV_PRE_INTERPOSITIONS(Node, Msg, S),
-    ?FIRE_PRE_INTERPOSITIONS(receive_message, Node, Msg, S)
+-define(FIRE_RECV_PRE_INTERPOSITIONS(Node, Msg, Term),
+    ?FIRE_PRE_INTERPOSITIONS(receive_message, Node, Msg, Term)
 ).
 
 %% returns message
--define(FIRE_FWD_INTERPOSITIONS(Node, Msg, S),
-    ?FIRE_INTERPOSITIONS(forward_message, Node, Msg, S)
+-define(FIRE_FWD_INTERPOSITIONS(Node, Msg, Term),
+    ?FIRE_INTERPOSITIONS(forward_message, Node, Msg, Term)
 ).
 
 %% returns message
--define(FIRE_RECV_INTERPOSITIONS(Node, Msg, S),
-    ?FIRE_INTERPOSITIONS(receive_message, Node, Msg, S)
+-define(FIRE_RECV_INTERPOSITIONS(Node, Msg, Term),
+    ?FIRE_INTERPOSITIONS(receive_message, Node, Msg, Term)
 ).
 
 %% returns ok
--define(FIRE_FWD_POST_INTERPOSITIONS(Node, Msg0, Msg1, S),
-    ?FIRE_POST_INTERPOSITIONS(forward_message, Node, Msg0, Msg1, S)
+-define(FIRE_FWD_POST_INTERPOSITIONS(Node, Msg0, Msg1, Term),
+    ?FIRE_POST_INTERPOSITIONS(forward_message, Node, Msg0, Msg1, Term)
 ).
 
 %% returns ok
--define(FIRE_RECV_POST_INTERPOSITIONS(Node, Msg0, Msg1, S),
-    ?FIRE_POST_INTERPOSITIONS(receive_message, Node, Msg0, Msg1, S)
+-define(FIRE_RECV_POST_INTERPOSITIONS(Node, Msg0, Msg1, Term),
+    ?FIRE_POST_INTERPOSITIONS(receive_message, Node, Msg0, Msg1, Term)
 ).
 
 
 -ifdef(INTERPOSITION).
 
     %% returns ok
-    -define(FIRE_PRE_INTERPOSITIONS(Type, Node, Msg, S),
-        PreIFuns = case S of
-            #state{} ->
-                S#state.pre_interposition_funs;
-            S when is_list(S) ->
-                S
-        end,
-        maps:fold(
-            fun(_Node, Fun, ok) ->
-                ?LOG_DEBUG(
-                    "Firing pre-interposition fun for message: ~p",
-                    [Msg]
-                ),
-                Fun({forward_message, Node, Msg}),
-                ok
+    -define(FIRE_PRE_INTERPOSITIONS(Type, Node, Msg, Term),
+        begin
+            FireFuns = case Term of
+                #state{} ->
+                    Term#state.pre_interposition_funs;
+                Term when is_map(Term) ->
+                    Term
             end,
-            ok,
-            PreIFuns
-        )
+            maps:fold(
+                fun(_Node, Fun, ok) ->
+                    ?LOG_DEBUG(
+                        "Firing pre-interposition fun for message: ~p",
+                        [Msg]
+                    ),
+                    Fun({forward_message, Node, Msg}),
+                    ok
+                end,
+                ok,
+                FireFuns
+            )
+        end
     ).
 
     %% returns message
-    -define(FIRE_INTERPOSITIONS(Type, Node, Msg, S),
-        IFuns = case S of
-            #state{} ->
-                S#state.interposition_funs;
-            S when is_list(S) ->
-                S
-        end,
-        maps:fold(
-            fun(_Name, Fun, M) ->
-                ?LOG_DEBUG(
-                    "Firing interposition fun for message: ~p",
-                    [Msg]
-                ),
-                Fun({Type, Node, M})
+    -define(FIRE_INTERPOSITIONS(Type, Node, Msg, Term),
+        begin
+            FireFuns = case Term of
+                #state{} ->
+                    Term#state.interposition_funs;
+                Term when is_map(Term) ->
+                    Term
             end,
-            Msg0,
-            IFuns
-        )
+            maps:fold(
+                fun(_Name, Fun, M) ->
+                    ?LOG_DEBUG(
+                        "Firing interposition fun for message: ~p",
+                        [Msg]
+                    ),
+                    Fun({Type, Node, M})
+                end,
+                Msg0,
+                FireFuns
+            )
+        end
     ).
 
     %% returns ok
-    -define(FIRE_POST_INTERPOSITIONS(Type, Node, Msg0, Msg1, S),
-        PostIFuns = case S of
-            #state{} ->
-                S#state.post_interposition_funs;
-            S when is_list(S) ->
-                S
-        end,
-        maps:fold(
-            fun(_Name, Fun, ok) ->
-                ?LOG_DEBUG(
-                    "Firing post-interposition fun for messages: [~p, ~p]",
-                    [Msg0, Msg1]
-                ),
-                Fun(
-                    {Type, Node, Msg0},
-                    {Type, Node, Msg1}
-                ),
-                ok
+    -define(FIRE_POST_INTERPOSITIONS(Type, Node, Msg0, Msg1, Term),
+        begin
+            FireFuns = case Term of
+                #state{} ->
+                    Term#state.post_interposition_funs;
+                Term when is_map(Term) ->
+                    Term
             end,
-            ok,
-            PostIFuns
-        )
+            maps:fold(
+                fun(_Name, Fun, ok) ->
+                    ?LOG_DEBUG(
+                        "Firing post-interposition fun for messages: [~p, ~p]",
+                        [Msg0, Msg1]
+                    ),
+                    Fun(
+                        {Type, Node, Msg0},
+                        {Type, Node, Msg1}
+                    ),
+                    ok
+                end,
+                ok,
+                FireFuns
+            )
+        end
     ).
 
 -else.
@@ -158,8 +164,10 @@
     %% returns ok
     -define(FIRE_PRE_INTERPOSITIONS(_Type, _Node, _Msg, Term),
         %% To supress variable unused compiler Warning
-        _ = Term,
-        ok
+        begin
+            _ = Term,
+            ok
+        end
     ).
 
     %% returns message
