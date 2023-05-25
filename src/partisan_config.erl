@@ -601,6 +601,22 @@ set(channels, Arg) when is_list(Arg) orelse is_map(Arg) ->
                 }
         end,
 
+    maps:foreach(
+        fun(Channel, #{parallelism := N} = Opts) ->
+            telemetry:execute(
+                [partisan, channel, configured],
+                #{
+                    max => N
+                },
+                #{
+                    channel => Channel,
+                    channel_opts => Opts
+                }
+            )
+        end,
+        Channels
+    ),
+
     do_set(channels, Channels);
 
 set(broadcast_mods, Value) ->
