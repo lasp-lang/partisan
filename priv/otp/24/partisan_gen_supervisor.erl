@@ -59,11 +59,11 @@
                               {reason,Reason},
                               {offender,extract_child(Child)}]},
                    #{domain=>[otp,sasl],
-                     report_cb=>fun supervisor:format_log/2,
+                     report_cb=>fun ?MODULE:format_log/2,
                      logger_formatter=>#{title=>"SUPERVISOR REPORT"},
                      error_logger=>#{tag=>error_report,
                                      type=>supervisor_report,
-                                     report_cb=>fun supervisor:format_log/1}})).
+                                     report_cb=>fun ?MODULE:format_log/1}})).
 
 %%--------------------------------------------------------------------------
 
@@ -1608,11 +1608,11 @@ report_progress(Child, SupName) ->
                 report=>[{supervisor,SupName},
                          {started,extract_child(Child)}]},
               #{domain=>[otp,sasl],
-                report_cb=>fun supervisor:format_log/2,
+                report_cb=>fun ?MODULE:format_log/2,
                 logger_formatter=>#{title=>"PROGRESS REPORT"},
                 error_logger=>#{tag=>info_report,
                                 type=>progress,
-                                report_cb=>fun supervisor:format_log/1}}).
+                                report_cb=>fun ?MODULE:format_log/1}}).
 
 %% format_log/1 is the report callback used by Logger handler
 %% error_logger only. It is kept for backwards compatibility with
