@@ -581,7 +581,7 @@ handle_info({'EXIT', From, Reason}, State0) ->
     try partisan_peer_connections:prune(From) of
         {Info, [_Connection]} ->
             State =
-                case partisan_peer_connections:connection_count(Info) of
+                case partisan_peer_connections:count(Info) of
                     0 ->
                         %% This was the last connection so the node is down.
                         NodeSpec = partisan_peer_connections:node_spec(Info),

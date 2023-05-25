@@ -87,10 +87,10 @@
 -export_type([connections/0]).
 
 -export([channel/1]).
--export([connection_count/0]).
--export([connection_count/1]).
--export([connection_count/2]).
--export([connection_count/3]).
+-export([count/0]).
+-export([count/1]).
+-export([count/2]).
+-export([count/3]).
 -export([connections/0]).
 -export([connections/1]).
 -export([connections/2]).
@@ -208,7 +208,7 @@ node_specs() ->
     boolean().
 
 is_connected(Node) when is_atom(Node) ->
-    Node =:= partisan:node() orelse connection_count(Node) > 0;
+    Node =:= partisan:node() orelse count(Node) > 0;
 
 is_connected(#{name := _} = NodeSpec) ->
     is_connected(NodeSpec, '_').
@@ -225,10 +225,10 @@ is_connected(#{name := _} = NodeSpec) ->
     boolean() | no_return().
 
 is_connected(Node, Channels) when is_atom(Node) ->
-    Node =:= partisan:node() orelse connection_count(Node, Channels) > 0;
+    Node =:= partisan:node() orelse count(Node, Channels) > 0;
 
 is_connected(#{name := Node} = Spec, Channels) ->
-    Node =:= partisan:node() orelse connection_count(Spec, Channels) > 0.
+    Node =:= partisan:node() orelse count(Spec, Channels) > 0.
 
 
 %% -----------------------------------------------------------------------------
@@ -258,7 +258,7 @@ is_fully_connected(Node) when is_atom(Node) ->
 
 is_fully_connected(#{name := Node, channels := Channels} = NodeSpec)
 when is_atom(Node) andalso is_map(Channels) ->
-    is_fully_connected(NodeSpec, connection_count(Node));
+    is_fully_connected(NodeSpec, count(Node));
 
 is_fully_connected(#{name := Node}) ->
     is_fully_connected(Node).
@@ -268,9 +268,9 @@ is_fully_connected(#{name := Node}) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec connection_count() -> non_neg_integer().
+-spec count() -> non_neg_integer().
 
-connection_count() ->
+count() ->
     MS = match_spec('_', '_', '_', count),
     try
         ets:select_count(?MODULE, MS)
@@ -289,11 +289,11 @@ connection_count() ->
 %% `lookup_element' operation.
 %% @end
 %% -----------------------------------------------------------------------------
--spec connection_count(Arg :: partisan:node_spec() | node() | info()) ->
+-spec count(Arg :: partisan:node_spec() | node() | info()) ->
     non_neg_integer().
 
-connection_count(Arg) when is_atom(Arg) ->
-    %% An optimisation that is faster than connection_count(Arg, '_'),
+count(Arg) when is_atom(Arg) ->
+    %% An optimisation that is faster than count(Arg, '_'),
     %% as connection_count/1 is more often called than connection_count/2.
     try
         Pos = #partisan_peer_info.connection_count,
@@ -303,14 +303,14 @@ connection_count(Arg) when is_atom(Arg) ->
             0
     end;
 
-connection_count(Arg) when is_map(Arg)->
-    connection_count(Arg, '_');
+count(Arg) when is_map(Arg)->
+    count(Arg, '_');
 
-connection_count(#partisan_peer_info{connection_count = Val})
+count(#partisan_peer_info{connection_count = Val})
 when is_integer(Val) ->
     Val;
 
-connection_count(#partisan_peer_info{} = T) ->
+count(#partisan_peer_info{} = T) ->
     ?NOT_GROUND([T]).
 
 
@@ -318,13 +318,13 @@ connection_count(#partisan_peer_info{} = T) ->
 %% @doc Returns the nbr of connections for node `Node' and channel `Channel'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec connection_count(
+-spec count(
     NodeOrSpec :: maybe_var(partisan:node_spec() | node()),
     Channels :: maybe_var(partisan:channel() | [partisan:channel()])
     ) ->
     non_neg_integer() | no_return().
 
-connection_count(Node, Channels) ->
+count(Node, Channels) ->
     MS = match_spec(Node, Channels, '_', count),
     try
         ets:select_count(?MODULE, MS)
@@ -345,12 +345,12 @@ connection_count(Node, Channels) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec connection_count(
+-spec count(
     Node :: maybe_var(node() | partisan:node_spec()),
     Channels :: maybe_var(partisan:channel() | [partisan:channel()]),
     ListenAddr :: partisan:listen_addr()) -> Count :: non_neg_integer().
 
-connection_count(Node, Channels, ListenAddr) ->
+count(Node, Channels, ListenAddr) ->
     MS = match_spec(Node, Channels, ListenAddr, count),
     try
         ets:select_count(?MODULE, MS)
@@ -608,7 +608,7 @@ andalso ?IS_IP(IP) andalso is_integer(Port) andalso Port >= 0 ->
         false ->
             {ok, Info} = info(Node),
             InfoSpec = node_spec(Info),
-            Count = connection_count(Node),
+            Count = count(Node),
 
             case Count == 0 of
                 true ->
@@ -1215,19 +1215,19 @@ no_connections_test() ->
     ),
     ?assertEqual(
         0,
-        connection_count(node1)
+        count(node1)
     ),
     ?assertEqual(
         0,
-        connection_count(spec1())
+        count(spec1())
     ),
     ?assertEqual(
         0,
-        connection_count(node1, undefined)
+        count(node1, undefined)
     ),
     ?assertEqual(
         0,
-        connection_count(spec1(), undefined)
+        count(spec1(), undefined)
     ),
     ?assertEqual(
         error,
@@ -1312,35 +1312,35 @@ one_connection_test() ->
 
     ?assertEqual(
         1,
-        connection_count(node1)
+        count(node1)
     ),
     ?assertEqual(
         1,
-        connection_count(Spec1)
+        count(Spec1)
     ),
     ?assertEqual(
         1,
-        connection_count(node1, undefined)
+        count(node1, undefined)
     ),
     ?assertEqual(
         1,
-        connection_count(Spec1, undefined)
+        count(Spec1, undefined)
     ),
     ?assertEqual(
         1,
-        connection_count(node1, undefined, listen_addr1())
+        count(node1, undefined, listen_addr1())
     ),
     ?assertEqual(
         0,
-        connection_count(node1, unknown_channel)
+        count(node1, unknown_channel)
     ),
     ?assertEqual(
         0,
-        connection_count(Spec1, unknown_channel)
+        count(Spec1, unknown_channel)
     ),
     ?assertEqual(
         0,
-        connection_count(node1, unknown_channel, listen_addr1())
+        count(node1, unknown_channel, listen_addr1())
     ),
     ?assertEqual(
         true,
@@ -1435,58 +1435,58 @@ several_connections_test() ->
     ),
     ?assertEqual(
         2,
-        connection_count(node1)
+        count(node1)
     ),
     ?assertEqual(
         1,
-        connection_count(Spec1),
+        count(Spec1),
         "even though the node has 2 connections, the spec matches 1, because the second connection has a diff IP"
     ),
     ?assertEqual(
         1,
-        connection_count(node1, undefined)
+        count(node1, undefined)
     ),
     ?assertEqual(
         1,
-        connection_count(node1, foo)
+        count(node1, foo)
     ),
     ?assertEqual(
         1,
-        connection_count(Spec1, undefined),
+        count(Spec1, undefined),
         "even though the node has 2 connections, the spec matches 1, because the second connection has a diff IP"
     ),
     ?assertEqual(
         0,
-        connection_count(node1, unknown_channel)
+        count(node1, unknown_channel)
     ),
     ?assertEqual(
         0,
-        connection_count(Spec1, unknown_channel)
+        count(Spec1, unknown_channel)
     ),
 
     ?assertEqual(
         0,
-        connection_count(node2)
+        count(node2)
     ),
     ?assertEqual(
         0,
-        connection_count(Spec2)
+        count(Spec2)
     ),
     ?assertEqual(
         0,
-        connection_count(node2, undefined)
+        count(node2, undefined)
     ),
     ?assertEqual(
         0,
-        connection_count(Spec2, undefined)
+        count(Spec2, undefined)
     ),
     ?assertEqual(
         0,
-        connection_count(node2, unknown_channel)
+        count(node2, unknown_channel)
     ),
     ?assertEqual(
         0,
-        connection_count(Spec2, unknown_channel)
+        count(Spec2, unknown_channel)
     ),
 
     ?assertMatch(
@@ -1569,35 +1569,35 @@ several_nodes_undefined_test() ->
 
     ?assertEqual(
         1,
-        connection_count(node2)
+        count(node2)
     ),
     ?assertEqual(
         1,
-        connection_count(Spec2)
+        count(Spec2)
     ),
     ?assertEqual(
         1,
-        connection_count(node2, Channel)
+        count(node2, Channel)
     ),
     ?assertEqual(
         1,
-        connection_count(Spec2, Channel)
+        count(Spec2, Channel)
     ),
     ?assertEqual(
         1,
-        connection_count(node2, Channel, listen_addr2())
+        count(node2, Channel, listen_addr2())
     ),
     ?assertEqual(
         0,
-        connection_count(node2, unknown_channel)
+        count(node2, unknown_channel)
     ),
     ?assertEqual(
         0,
-        connection_count(Spec2, unknown_channel)
+        count(Spec2, unknown_channel)
     ),
     ?assertEqual(
         0,
-        connection_count(node2, unknown_channel, listen_addr2())
+        count(node2, unknown_channel, listen_addr2())
     ),
     ?assertEqual(
         true,
@@ -1680,35 +1680,35 @@ several_nodes_foo_test() ->
 
     ?assertEqual(
         2,
-        connection_count(node2)
+        count(node2)
     ),
     ?assertEqual(
         2,
-        connection_count(Spec2)
+        count(Spec2)
     ),
     ?assertEqual(
         1,
-        connection_count(node2, Channel)
+        count(node2, Channel)
     ),
     ?assertEqual(
         1,
-        connection_count(Spec2, Channel)
+        count(Spec2, Channel)
     ),
     ?assertEqual(
         1,
-        connection_count(node2, Channel, listen_addr2())
+        count(node2, Channel, listen_addr2())
     ),
     ?assertEqual(
         0,
-        connection_count(node2, unknown_channel)
+        count(node2, unknown_channel)
     ),
     ?assertEqual(
         0,
-        connection_count(Spec2, unknown_channel)
+        count(Spec2, unknown_channel)
     ),
     ?assertEqual(
         0,
-        connection_count(node2, unknown_channel, listen_addr2())
+        count(node2, unknown_channel, listen_addr2())
     ),
     ?assertEqual(
         true,

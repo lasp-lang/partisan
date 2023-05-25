@@ -1447,7 +1447,7 @@ handle_info({'EXIT', Pid, Reason}, State0)->
             #{name := Node} = NodeSpec,
             Channel = partisan_peer_connections:channel(Connection),
 
-            case partisan_peer_connections:connection_count(Node, Channel) of
+            case partisan_peer_connections:count(Node, Channel) of
                 0 ->
                     % We notify all subscribers.
                     ok = down(NodeSpec, Channel, State0);
@@ -1456,7 +1456,7 @@ handle_info({'EXIT', Pid, Reason}, State0)->
             end,
 
             State =
-                case partisan_peer_connections:connection_count(Info) of
+                case partisan_peer_connections:count(Info) of
                     0 ->
                         %% This was the last connection so the node is down.
                         %% We notify all subscribers.

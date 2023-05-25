@@ -361,7 +361,7 @@ maybe_connect(#{name := Node} = NodeSpec, ListenAddr, Acc) ->
     %% we are only interested in knowing if we have at least one connection
     %% even if this was a stale NodeSpec.
     %% See the section Stale Specifications in partisan_membership_set.
-    case partisan_peer_connections:connection_count(Node) of
+    case partisan_peer_connections:count(Node) of
         0 ->
             %% Found disconnected or not found
             %% We are going to try with a first connection using the default
@@ -430,7 +430,7 @@ maybe_connect([{Channel, ChannelOpts}|T], NodeSpec, ListenAddr, Acc) ->
     %% There is at least one connection for Node.
     Parallelism = get_opt(parallelism, ChannelOpts),
 
-    case partisan_peer_connections:connection_count(NodeSpec, Channel) of
+    case partisan_peer_connections:count(NodeSpec, Channel) of
         Count when Count < Parallelism ->
             ?LOG_DEBUG(
                 "~p of ~p connected for channel ~p) Connecting node ~p.",
@@ -513,7 +513,7 @@ maybe_stale(NodeSpec, Channel, ListenAddr, Acc, 0, Reason) ->
     %% invalid.
     %% If not, then we cannot rule out the NodeSpec as valid.
     ListenAddrCount =
-        partisan_peer_connections:connection_count(Node, Channel, ListenAddr),
+        partisan_peer_connections:count(Node, Channel, ListenAddr),
 
 
     case ListenAddrCount > 0 of
