@@ -1224,12 +1224,17 @@ performance_test(Config) ->
             list_to_integer(S)
     end,
 
-    %% Parallelism.
-    Parallelism = case rpc:call(Node1, partisan_config, get, [parallelism]) of
+    %% Allow env var to override
+    Parallelism = case os:getenv("PARALLELISM", undefined) of
         undefined ->
-            1;
-        P ->
-            P
+            case rpc:call(Node1, partisan_config, get, [parallelism]) of
+                undefined ->
+                    1;
+                P ->
+                    P
+            end;
+        P when is_list(P) ->
+            list_to_integer(P)
     end,
 
     NumMessages = 1000,
