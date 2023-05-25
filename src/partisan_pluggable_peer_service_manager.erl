@@ -43,11 +43,112 @@
 -include("partisan_logger.hrl").
 -include("partisan.hrl").
 
-
 -define(SET_FROM_LIST(L), sets:from_list(L, [{version, 2}])).
 -define(IS_ON_EVENT_FUN(X), (
     is_function(X, 0) orelse is_function(X, 1) orelse is_function(X, 2)
 )).
+
+-ifdef(TEST).
+    -define(INTERPOSITION, true).
+-endif.
+
+%% returns ok
+-define(FIRE_FWD_PRE_INTERPOSITIONS(Node, Msg, S),
+    ?FIRE_PRE_INTERPOSITIONS(forward_message, Node, Msg, S)
+).
+
+%% returns ok
+-define(FIRE_RECV_PRE_INTERPOSITIONS(Node, Msg, S),
+    ?FIRE_PRE_INTERPOSITIONS(receive_message, Node, Msg, S)
+).
+
+%% returns message
+-define(FIRE_FWD_INTERPOSITIONS(Node, Msg, S),
+    ?FIRE_INTERPOSITIONS(forward_message, Node, Msg, S)
+).
+
+%% returns message
+-define(FIRE_RECV_INTERPOSITIONS(Node, Msg, S),
+    ?FIRE_INTERPOSITIONS(receive_message, Node, Msg, S)
+).
+
+%% returns ok
+-define(FIRE_FWD_POST_INTERPOSITIONS(Node, Msg0, Msg1, S),
+    ?FIRE_POST_INTERPOSITIONS(forward_message, Node, Msg0, Msg1, S)
+).
+
+%% returns ok
+-define(FIRE_RECV_POST_INTERPOSITIONS(Node, Msg0, Msg1, S),
+    ?FIRE_POST_INTERPOSITIONS(receive_message, Node, Msg0, Msg1, S)
+).
+
+
+-ifdef(INTERPOSITION).
+
+    %% returns ok
+    -define(FIRE_PRE_INTERPOSITIONS(Type, Node, Msg, S),
+
+        maps:fold(
+            fun(_Node, Fun, ok) ->
+                ?LOG_DEBUG(
+                    "Firing pre-interposition fun for message: ~p",
+                    [Msg]
+                ),
+                Fun({forward_message, Node, Msg}),
+                ok
+            end,
+            ok,
+            S#state.pre_interposition_funs
+        )
+    ).
+
+    %% returns message
+    -define(FIRE_INTERPOSITIONS(Type, Node, Msg, S),
+        maps:fold(
+            fun(_Name, Fun, M) ->
+                ?LOG_DEBUG(
+                    "Firing interposition fun for message: ~p",
+                    [Msg]
+                ),
+                Fun({Type, Node, M})
+            end,
+            Msg0,
+            S#state.interposition_funs
+        )
+    ).
+
+    %% returns ok
+    -define(FIRE_POST_INTERPOSITIONS(Type, Node, Msg0, Msg1, S),
+        maps:fold(
+            fun(_Name, Fun, ok) ->
+                ?LOG_DEBUG(
+                    "Firing post-interposition fun for messages: [~p, ~p]",
+                    [Msg0, Msg1]
+                ),
+                Fun(
+                    {Type, Node, Msg0},
+                    {Type, Node, Msg1}
+                ),
+                ok
+            end,
+            ok,
+            S#state.post_interposition_funs
+        )
+    ).
+
+-else.
+
+    %% returns ok
+    -define(FIRE_PRE_INTERPOSITIONS(_Type, _Node, _Msg, _Funs), ok).
+
+    %% returns message
+    -define(FIRE_INTERPOSITIONS(_Type, _Node, Msg, _Funs), Msg).
+
+    %% returns ok
+    -define(FIRE_POST_INTERPOSITIONS(_Type, _Node, _Msg0, _Msg1, _Funs), ok).
+
+-endif.
+
 
 -record(state, {
     name                        ::  node(),
@@ -867,7 +968,7 @@ handle_call({send_message, Node, Message}, _From, State) ->
         Node,
         Message,
         ?DEFAULT_PARTITION_KEY,
-        State#state.pre_interposition_funs
+        State
     ),
     {reply, ok, State};
 
@@ -880,11 +981,7 @@ handle_call(
     DeliveryFun =
         fun() ->
             %% Fire pre-interposition functions.
-            PreFoldFun = fun(_Node, Fun, ok) ->
-                Fun({forward_message, Node, Msg}),
-                ok
-            end,
-            maps:fold(PreFoldFun, ok, State#state.pre_interposition_funs),
+            ok = ?FIRE_FWD_PRE_INTERPOSITIONS(Node, Msg, State),
 
             %% Once pre-interposition returns, then schedule for delivery.
             Cmd = {
@@ -914,16 +1011,8 @@ handle_call(
     {noreply, State};
 
 handle_call({receive_message, Node, Channel, Msg}, From, State) ->
-    PreInterpositionFuns = State#state.pre_interposition_funs,
-
-    %% Run all interposition functions.
     DeliveryFun = fun() ->
-        %% Fire pre-interposition functions.
-        PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
-            PreInterpositionFun({receive_message, Node, Msg}),
-            ok
-        end,
-        maps:fold(PreFoldFun, ok, PreInterpositionFuns),
+        ok = ?FIRE_RECV_PRE_INTERPOSITIONS(Node, Msg, State),
 
         %% Once pre-interposition returns, then schedule for delivery.
         gen_server:cast(?MODULE, {receive_message, Node, Channel, From, Msg})
@@ -980,23 +1069,10 @@ handle_cast({kill_connections, Nodes}, State) ->
     {noreply, State};
 
 handle_cast({receive_message, Node, Channel, From, Msg0}, State) ->
-    %% Filter messages using interposition functions.
-    FoldFun = fun(_InterpositionName, Fun, M) ->
-        Fun({receive_message, Node, M})
-    end,
-    Msg1 = maps:fold(
-        FoldFun, Msg0, State#state.interposition_funs
-    ),
 
-    %% Fire post-interposition functions.
-    PostFoldFun = fun(_Name, Fun, ok) ->
-        Fun(
-            {receive_message, Node, Msg0},
-            {receive_message, Node, Msg1}
-        ),
-        ok
-    end,
-    maps:fold(PostFoldFun, ok, State#state.post_interposition_funs),
+    %% Filter messages using interposition functions.
+    Msg1 = ?FIRE_RECV_INTERPOSITIONS(Node, Msg0, State),
+    ok = ?FIRE_RECV_POST_INTERPOSITIONS(Node, Msg0, Msg1, State),
 
     case Msg1 of
         undefined ->
@@ -1023,18 +1099,10 @@ handle_cast(
     State) ->
 
     #state{
-        interposition_funs = InterpositionFuns,
-        pre_interposition_funs = PreInterpositionFuns,
-        post_interposition_funs = PostInterpositionFuns,
         vclock = VClock0
     } = State,
 
-    %% Filter messages using interposition functions.
-    FoldFun = fun(_InterpositionName, InterpositionFun, M) ->
-        InterpositionFun({forward_message, Node, M})
-    end,
-
-    Msg = maps:fold(FoldFun, Msg0, InterpositionFuns),
+    Msg = ?FIRE_FWD_INTERPOSITIONS(Node, Msg0, State),
 
     %% Increment the clock.
     VClock = partisan_vclock:increment(State#state.name, VClock0),
@@ -1118,17 +1186,7 @@ handle_cast(
                     ok
             end,
 
-            %% TODO use Erlang Preprocessor to conditionally remove this code
-            %% to enhance performance in production
-            %% Fire post-interposition functions.
-            PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
-                PostInterpositionFun(
-                    {forward_message, Node, Msg0},
-                    {forward_message, Node, FullMessage}
-                ),
-                ok
-            end,
-            maps:fold(PostFoldFun, ok, PostInterpositionFuns),
+            ok = ?FIRE_FWD_POST_INTERPOSITIONS(Node, Msg0, FullMessage, State),
 
             ?LOG_DEBUG(
                 "~p: Message ~p after send interposition is: ~p",
@@ -1171,18 +1229,13 @@ handle_cast(
                 false ->
                     %% Tracing.
                     WrappedMessage = {forward_message, ServerRef, FullMessage},
-                    WrappedMsg0 =
-                        {forward_message, ServerRef, Msg0},
 
-                    %% Fire post-interposition functions -- trace after wrapping!
-                    PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
-                        PostInterpositionFun(
-                            {forward_message, Node, WrappedMsg0},
-                            {forward_message, Node, WrappedMessage}
-                        ),
-                        ok
-                    end,
-                    maps:fold(PostFoldFun, ok, PostInterpositionFuns),
+                    ok = ?FIRE_FWD_POST_INTERPOSITIONS(
+                        Node,
+                        {forward_message, ServerRef, Msg0},
+                        WrappedMessage,
+                        State
+                    ),
 
                     %% Send message along.
                     do_send_message(
@@ -1190,17 +1243,10 @@ handle_cast(
                         PartitionKey,
                         WrappedMessage,
                         Opts,
-                        PreInterpositionFuns
+                        State
                     );
                 true ->
                     %% Tracing.
-                    WrappedMsg0 = {
-                        forward_message,
-                        State#state.name,
-                        MsgClock,
-                        ServerRef,
-                        Msg0
-                    },
                     WrappedMessage = {
                         forward_message,
                         State#state.name,
@@ -1213,15 +1259,17 @@ handle_cast(
                         "should acknowledge message: ~p", [WrappedMessage]
                     ),
 
-                    %% Fire post-interposition functions -- trace after wrapping!
-                    PostFoldFun = fun(_Name, PostInterpositionFun, ok) ->
-                        PostInterpositionFun(
-                            {forward_message, Node, WrappedMsg0},
-                            {forward_message, Node, WrappedMessage}
-                        ),
-                        ok
-                    end,
-                    maps:fold(PostFoldFun, ok, PostInterpositionFuns),
+                    ok = ?FIRE_FWD_POST_INTERPOSITIONS(
+                        Node,
+                        {
+                            forward_message,
+                            State#state.name,
+                            MsgClock,
+                            ServerRef,
+                            Msg0
+                        },
+                        WrappedMessage, State
+                    ),
 
                     ?LOG_DEBUG(
                         "~p: Sending message ~p with clock: ~p",
@@ -1258,7 +1306,7 @@ handle_cast(
                         PartitionKey,
                         WrappedMessage,
                         Opts,
-                        PreInterpositionFuns
+                        State
                     )
             end,
 
@@ -1297,7 +1345,6 @@ handle_info(distance, State0) ->
 
     %% Send distance requests.
     SrcNode = partisan:node_spec(),
-    PreInterpositionFuns = State#state.pre_interposition_funs,
 
     ok = lists:foreach(
         fun(Peer) ->
@@ -1305,7 +1352,7 @@ handle_info(distance, State0) ->
                 Peer,
                 {ping, SrcNode, Peer, Time},
                 ?DEFAULT_PARTITION_KEY,
-                PreInterpositionFuns,
+                State,
                 #{channel => ?MEMBERSHIP_CHANNEL}
             )
         end,
@@ -1322,10 +1369,12 @@ handle_info(instrumentation, State) ->
     schedule_instrumentation(),
     {noreply, State};
 
-handle_info(periodic, #state{membership_strategy=MStrategy,
-                             membership_strategy_state=MState0,
-                             pre_interposition_funs=PreInterpositionFuns
-                             }=State0) ->
+handle_info(periodic, #state{} = State0) ->
+    #state{
+        membership_strategy=MStrategy,
+        membership_strategy_state=MState0
+    } = State0,
+
     {ok, Members, OutgoingMessages, MState} =
         partisan_membership_strategy:periodic(MStrategy, MState0),
 
@@ -1336,7 +1385,7 @@ handle_info(periodic, #state{membership_strategy=MStrategy,
                 Node,
                 Message,
                 ?DEFAULT_PARTITION_KEY,
-                PreInterpositionFuns,
+                State0,
                 #{channel => ?MEMBERSHIP_CHANNEL}
             )
         end,
@@ -1356,8 +1405,6 @@ handle_info(periodic, #state{membership_strategy=MStrategy,
     {noreply, State};
 
 handle_info(retransmit, State) ->
-    PreInterpositionFuns = State#state.pre_interposition_funs,
-
     RetransmitFun = fun({_, {forward_message, From, Node, Clock, PartitionKey, ServerRef, Message, Options}}) ->
         ?LOG_DEBUG(
             "~p no acknowledgement yet, "
@@ -1365,16 +1412,7 @@ handle_info(retransmit, State) ->
             [State#state.name, Message, Clock, Node]
         ),
 
-        %% Fire pre-interposition functions.
-        PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
-            ?LOG_DEBUG(
-                "firing preinterposition fun for original message: ~p",
-                [Message]
-            ),
-            PreInterpositionFun({forward_message, Node, Message}),
-            ok
-        end,
-        maps:fold(PreFoldFun, ok, PreInterpositionFuns),
+        ok = ?FIRE_FWD_PRE_INTERPOSITIONS(Node, Message, State),
 
         %% Schedule message for redelivery.
         RetryOptions = Options#{retransmission => true},
@@ -1482,8 +1520,7 @@ handle_info(
         pending = Pending0,
         members = Members0,
         membership_strategy = MStrategy,
-        membership_strategy_state = MState0,
-        pre_interposition_funs = PreInterpositionFuns
+        membership_strategy_state = MState0
     } = State0,
 
     ?LOG_DEBUG(#{
@@ -1511,7 +1548,7 @@ handle_info(
                         Node,
                         Message,
                         ?DEFAULT_PARTITION_KEY,
-                        PreInterpositionFuns,
+                        State0,
                         #{channel => ?MEMBERSHIP_CHANNEL}
                     )
                 end,
@@ -1645,14 +1682,12 @@ handle_message(
     %% Establish any new connections.
     State = establish_connections(State0),
 
-    PreInterpositionFuns = State#state.pre_interposition_funs,
-
     %% Send ping response.
     schedule_self_message_delivery(
         SrcNode,
         {pong, SrcNode, DestNode, SrcTime},
         ?DEFAULT_PARTITION_KEY,
-        PreInterpositionFuns,
+        State,
         %% we coerce channel, regardless of _Channel
         #{channel => ?MEMBERSHIP_CHANNEL}
     ),
@@ -1690,8 +1725,7 @@ handle_message(
     #state{
         members = Members0,
         membership_strategy = MStrategy,
-        membership_strategy_state = MState0,
-        pre_interposition_funs = PreInterpositionFuns
+        membership_strategy_state = MState0
     } = State0,
 
     %% Process the protocol message.
@@ -1716,7 +1750,7 @@ handle_message(
                 Node,
                 Message,
                 ?DEFAULT_PARTITION_KEY,
-                PreInterpositionFuns,
+                State0,
                 %% we coerce channel, regardless of _Channel
                 #{channel => ?MEMBERSHIP_CHANNEL}
             )
@@ -1764,10 +1798,9 @@ handle_message(
     #state{} = State) when is_tuple(Msg) andalso element(1, Msg) == causal ->
 
     {causal, Label, _, _, _, _, _} = Msg,
-    PreInterpositionFuns = State#state.pre_interposition_funs,
 
     %% Send message acknowledgement.
-    send_acknowledgement(SrcNode, Channel, MsgClock, PreInterpositionFuns),
+    send_acknowledgement(SrcNode, Channel, MsgClock, State),
 
     case partisan_causality_backend:is_causal_message(Msg) of
         true ->
@@ -1788,11 +1821,9 @@ handle_message(
     Channel,
     #state{} = State) ->
     %% Send message acknowledgement.
-    PreInterpositionFuns = State#state.pre_interposition_funs,
+    send_acknowledgement(SrcNode, Channel, MsgClock, State),
 
-    send_acknowledgement(SrcNode, Channel, MsgClock, PreInterpositionFuns),
-
-    partisan_peer_service_manager:process_forward(ServerRef, Msg),
+    partisan_peer_service_manager:deliver(ServerRef, Msg),
 
     maybe_reply(From, ok),
 
@@ -1887,7 +1918,7 @@ schedule_connections() ->
 
 
 %% @private
-do_send_message(Node, PartitionKey, Message, Options, PreInterpositionFuns) ->
+do_send_message(Node, PartitionKey, Message, Options, State) ->
     %% Find a connection for the remote node, if we have one.
     Channel = maps:get(channel, Options, ?DEFAULT_CHANNEL),
     Res = partisan_peer_connections:dispatch_pid(Node, Channel, PartitionKey),
@@ -1914,7 +1945,7 @@ do_send_message(Node, PartitionKey, Message, Options, PreInterpositionFuns) ->
                                 Message,
                                 Options,
                                 TTL,
-                                PreInterpositionFuns
+                                State
                             );
                         false ->
                             ok
@@ -2012,8 +2043,7 @@ internal_leave(#{name := Name} = Node, State0) ->
 
     #state{
         membership_strategy = MStrategy,
-        membership_strategy_state = MState0,
-        pre_interposition_funs = PreInterpositionFuns
+        membership_strategy_state = MState0
     } = State0,
 
     ?LOG_DEBUG(#{
@@ -2050,7 +2080,7 @@ internal_leave(#{name := Name} = Node, State0) ->
                     Peername,
                     Message,
                     ?DEFAULT_PARTITION_KEY,
-                    PreInterpositionFuns,
+                    State,
                     #{channel => ?MEMBERSHIP_CHANNEL}
                 )
         end,
@@ -2145,7 +2175,7 @@ avoid_rush() ->
     end.
 
 %% @private
-do_tree_forward(Node, PartitionKey, Message, Opts, TTL, PreInterpositionFuns) ->
+do_tree_forward(Node, PartitionKey, Message, Opts, TTL, State) ->
     MyName = partisan:node(),
 
     ?LOG_TRACE(
@@ -2189,7 +2219,7 @@ do_tree_forward(Node, PartitionKey, Message, Opts, TTL, PreInterpositionFuns) ->
                 Peer,
                 RelayMessage,
                 PartitionKey,
-                PreInterpositionFuns,
+                State,
                 maps:without([transitive], Opts)
             )
         end,
@@ -2229,29 +2259,17 @@ schedule_tree_refresh() ->
             ok
     end.
 
-%% @private
-schedule_self_message_delivery(
-    Node, Message, PartitionKey, PreInterpositionFuns) ->
-    schedule_self_message_delivery(
-        Node, Message, PartitionKey, PreInterpositionFuns, #{}
-    ).
 
 %% @private
-schedule_self_message_delivery(
-    Node, Message, PartitionKey, PreInterpositionFuns, Options) ->
+schedule_self_message_delivery(Node, Message, PartitionKey, State) ->
+    schedule_self_message_delivery(Node, Message, PartitionKey, State, #{}).
+
+
+%% @private
+schedule_self_message_delivery(Node, Message, PartitionKey, State, Options) ->
     %% Run all interposition functions.
     DeliveryFun = fun() ->
-        %% Fire pre-interposition functions.
-        PreFoldFun = fun(_Name, PreInterpositionFun, ok) ->
-            ?LOG_DEBUG(
-                "firing forward_message preinterposition fun for message: ~p",
-                [Message]
-            ),
-            PreInterpositionFun({forward_message, Node, Message}),
-            ok
-        end,
-
-        maps:fold(PreFoldFun, ok, PreInterpositionFuns),
+        ok  = ?FIRE_FWD_PRE_INTERPOSITIONS(Node, Message, State),
 
         %% Once pre-interposition returns, then schedule for delivery.
         gen_server:cast(?MODULE, {
@@ -2281,7 +2299,7 @@ schedule_self_message_delivery(
 
 
 %% @private
-send_acknowledgement(Node, Channel, MsgClock, PreInterpositionFuns) ->
+send_acknowledgement(Node, Channel, MsgClock, State) ->
     %% Generate message.
     Message = {ack, MsgClock},
 
@@ -2290,7 +2308,7 @@ send_acknowledgement(Node, Channel, MsgClock, PreInterpositionFuns) ->
         Node,
         Message,
         ?DEFAULT_PARTITION_KEY,
-        PreInterpositionFuns,
+        State,
         #{channel => Channel}
     ).
 
