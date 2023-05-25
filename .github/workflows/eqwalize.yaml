@@ -30,11 +30,7 @@ jobs:
       - name: Install Eqwalizer and add it to path
         env:
           ELP_BIN: https://github.com/WhatsApp/eqwalizer/releases/download/v0.17.16/elp-linux.tar.gz
-        run: |
-          curl -LJO $ELP_BIN
-          tar -xzf elp-linux.tar.gz
-          chmod +x elp
-          echo "$GITHUB_WORKSPACE/elp" >> $GITHUB_PATH
+        run: curl -LJO $ELP_BIN && tar -xzf elp-linux.tar.gz && chmod +x elp && echo "$GITHUB_WORKSPACE/elp" >> $GITHUB_PATH
 
       - name: Start epmd
         run: epmd -daemon
