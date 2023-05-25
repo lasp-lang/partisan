@@ -551,7 +551,7 @@ call(Config) when is_list(Config) ->
 %% --------------------------------------
 
 send_request(Config) when is_list(Config) ->
-    OldFl = process_flag(trap_exit, true),
+    _OldFl = process_flag(trap_exit, true),
 
     {ok, Pid} = partisan_gen_server:start_link({local, my_test_name},
                                       partisan_gen_server_SUITE, [], []),
