@@ -156,7 +156,6 @@
 }).
 
 
-
 -type t()                   ::  #state{}.
 -type from()                ::  {pid(), atom()}.
 -type on_event_fun()        ::  partisan_peer_service_manager:on_event_fun().
@@ -269,7 +268,10 @@ member(Node) when is_atom(Node) ->
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 
 start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+    Opts = [
+        {spawn_opt, ?PARALLEL_SIGNAL_OPTIMISATION([])}
+    ],
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], Opts).
 
 
 %% -----------------------------------------------------------------------------
@@ -805,11 +807,6 @@ init([]) ->
         membership_strategy_state = MState
     }}.
 
-
--spec handle_call(term(), gen_server:from(), t()) ->
-    {reply, term(), t()}
-    | {noreply, t()}
-    | {stop, normal, t()}.
 
 handle_call({reserve, _Tag}, _From, State) ->
     {reply, {error, no_available_slots}, State};
