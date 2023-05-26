@@ -20,7 +20,7 @@
 
 %% -----------------------------------------------------------------------------
 %% @doc
-%% This module requires `disterl`.
+%% This module requires `disterl'.
 %% @end
 %% -----------------------------------------------------------------------------
 -module(partisan_trace_orchestrator).
