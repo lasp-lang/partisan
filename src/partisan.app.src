@@ -11,7 +11,8 @@
         ssl,
         types,
         acceptor_pool,
-        uuid
+        uuid,
+        telemetry
     ]},
     {mod, {partisan_app,[]}},
     {modules, []},
