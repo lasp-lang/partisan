@@ -495,7 +495,7 @@ seed() ->
 
 
 %% -----------------------------------------------------------------------------
-%% @docReturn a random seed, either from the environment or one that's
+%% @doc Return a random seed, either from the environment or one that's
 %% generated for the run.
 %% @end
 %% -----------------------------------------------------------------------------

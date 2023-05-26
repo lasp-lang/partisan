@@ -20,7 +20,9 @@
 
 %% -----------------------------------------------------------------------------
 %% @doc This module realises the {@link partisan_peer_service_manager}
-%% behaviour implementing a full-mesh topology.
+%% behaviour implementing a peer sampling service with a pluggable overlay
+%% topology by delegating the topology definition to a callback module
+%% implementing the @{partisan_peer_service_strategy} behaviour.
 %%
 %% == Characteristics ==
 %% <ul>

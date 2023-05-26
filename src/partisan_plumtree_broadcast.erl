@@ -18,7 +18,56 @@
 %%
 %% -----------------------------------------------------------------------------
 %% -----------------------------------------------------------------------------
-%% @doc
+%% @doc This module implements the
+%% <a href="https://www.dpss.inesc-id.pt/~ler/reports/srds07.pdf">
+%% Plumtree Protocol
+%% </a>
+%% which is the component that materialises Partisan's gossip scheme.
+%%
+%% The component is implemented as as a {@link gen_server} that has two
+%% functions:
+%% <dl>
+%% <dt><b>Tree construction</b></dt>
+%% <dd>This component is in charge of selecting which links of the random
+%% overlay network will be used to forward the message payload using an eager
+%% push strategy. It implements a tree construction mechanisms that is as
+%% simple as possible, with minimal overhead in terms of control messages.</dd>
+%% <dt><b>Tree repair</b></dt>
+%% <dd>This component is in charge of repairing the tree when failures occur.
+%% The process ensures that, despite failures, all nodes remain covered by the
+%% spanning tree. Therefore, it should be able to detect and heal partitions of
+%% the tree. The overhead imposed by this operation should also be as low as
+%% possible.</dd>
+%% </dl>
+%%
+%% == Overview ==
+%% The protocol operates as any pure gossip protocol, in the sense that, in
+%% order to broadcast a message, each node gossips with `f' nodes provided by a
+%% peer sampling service (where `f' is the protocol fanout). However, each node
+%% uses a combination of eager push and lazy push gossip.
+%%
+%% <em>Eager push</em> is used just for a subset of the `f' nodes, while
+%% <em>lazy push</em> is used for the remaining nodes. The links used for eager
+%% push are selected in such a way that their closure effectively builds a
+%% broadcast tree embedded in the random overlay network. Lazy push links are
+%% used to ensure gossip reliability when nodes fail and also to quickly heal
+%% the broadcast tree.
+%% Furthermore, the set of (random) peers is not changed at each gossip round.
+%% Instead, the same peers are used until failures are detected.
+%%
+%% The protocol uses a Partisan Channel (See @{link broadcast_channel}), i.e.
+%% based on TCP, to support the message exchange, as they
+%% offer extra reliability and an additional source of failure detection.
+%%
+%% Plumtree depends on an overlay network which is maintained by a peer
+%% sampling service ({@link partisan_peer_service_manager}) and relies on the
+%% peer sampling services/s exhibiting a property: <em>Symmetric (partial)
+%% views</em>. If the links that form the spanning tree are symmetric,
+%% then the tree may be shared by multiple sources. Symmetric partial views
+%% render the task of creating bi-directional trees easier, and reduce the
+%% amount of peers that each node has to maintain.
+%%
+%%
 %% @end
 %% -----------------------------------------------------------------------------
 -module(partisan_plumtree_broadcast).
