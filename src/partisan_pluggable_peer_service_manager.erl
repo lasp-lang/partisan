@@ -1127,7 +1127,8 @@ handle_cast(
                             ),
 
                         %% Wrap the clock with a scope.
-                        %% TODO: Maybe do this wrapping inside of the causality backend.
+                        %% TODO: Maybe do this wrapping inside of the causality
+                        %% backend.
                         LocalClock = {CausalLabel, LocalClock0},
 
                         %% Return clock and wrapped message.
@@ -1488,7 +1489,6 @@ handle_info({'EXIT', Pid, Reason}, State0)->
 
             case partisan_peer_connections:count(Node, Channel) of
                 0 ->
-                    % We notify all subscribers.
                     ok = down(NodeSpec, Channel, State0);
                 _ ->
                     ok
@@ -1635,21 +1635,23 @@ establish_connections(State) ->
                 %% We exclude ourselves
                 Acc;
             (#{name := _} = Node, Acc) ->
-                %% TODO this should be a fold that will return the invalid
+                %% This function call returns the a list of invalid
                 %% NodeSpecs (nodes that have an invalid IP address because we
                 %% already have a connection to NodeSpec.node on another IP
                 %% address).
                 %% We then remove those NodeSpes from the membership set and
                 %% update ourselves without the need for sending any leave/join
                 %% gossip.
-                {ok, L} = partisan_peer_service_manager:connect(
+                {ok, StaleSpecs} = partisan_peer_service_manager:connect(
                     Node, #{prune => true}
                 ),
-                [L | Acc]
+                %% We will call lists:append at the end
+                [StaleSpecs | Acc]
         end,
         [],
         Nodes
     ),
+
     prune(lists:append(LoL), State).
 
 
@@ -1986,9 +1988,9 @@ down(NodeOrSpec, State) ->
 
 
 %% @private
-down(NodeOrSpec, _Channel, State) ->
+down(NodeSpec, _Channel, State) ->
     %% TODO use Channel
-    apply_funs(NodeOrSpec, State#state.channel_down_funs).
+    apply_funs(NodeSpec, State#state.channel_down_funs).
 
 
 %% @private
