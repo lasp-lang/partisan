@@ -27,14 +27,6 @@
 %% -----------------------------------------------------------------------------
 -module(partisan_peer_socket).
 
-%% this macro only exists in OTP-21 and above, where ssl_accept/2 is deprecated
--ifdef(OTP_RELEASE).
--define(ssl_accept(TCPSocket, TLSOpts), ssl:handshake(TCPSocket, TLSOpts)).
--else.
--define(ssl_accept(TCPSocket, TLSOpts), ssl:ssl_accept(TCPSocket, TLSOpts)).
--endif.
-
-
 -record(partisan_peer_socket, {
     socket              :: gen_tcp:socket() | ssl:sslsocket() | socket:socket(),
     transport           :: gen_tcp | ssl,
@@ -88,7 +80,7 @@ accept(TCPSocket) ->
             %% calling this function, else the upgrade succeeds or does not
             %% succeed depending on timing.
             inet:setopts(TCPSocket, [{active, false}]),
-            {ok, TLSSocket} = ?ssl_accept(TCPSocket, TLSOpts),
+            {ok, TLSSocket} = ssl:handshake(TCPSocket, TLSOpts),
             %% restore the expected active once setting
             ssl:setopts(TLSSocket, [{active, once}]),
             #partisan_peer_socket{
