@@ -74,7 +74,6 @@
 }).
 
 
--type optional(T)           ::  T | undefined.
 -type maybe_var(T)          ::  T | var().
 -type var()                 ::  '_' | '$1' | '$2' | '$3'.
 -type info()                ::  #partisan_peer_info{}.
