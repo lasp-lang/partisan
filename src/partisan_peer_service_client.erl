@@ -33,7 +33,7 @@
 -include("partisan_peer_socket.hrl").
 
 -record(state, {
-    socket          ::  partisan_peer_socket:t(),
+    socket          ::  optional(partisan_peer_socket:t()),
     listen_addr     ::  partisan:listen_addr(),
     channel         ::  partisan:channel(),
     channel_opts    ::  partisan:channel_opts(),
