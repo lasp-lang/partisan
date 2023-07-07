@@ -414,7 +414,8 @@ send_message(Node, Message) ->
     Message :: partisan:message()) -> ok.
 
 cast_message(Term, Message) ->
-    forward_message(Term, {'$gen_cast', Message}, #{}).
+    _ = forward_message(Term, {'$gen_cast', Message}, #{}),
+    ok.
 
 
 %% -----------------------------------------------------------------------------
@@ -432,7 +433,8 @@ cast_message(Node, ServerRef, Message) ->
 cast_message(Node, ServerRef, Message, Options) ->
     %% TODO maybe deprecate, since we have partisan_gen_server:cast
     %% and partisan_gen_statem:cast ?
-    forward_message(Node, ServerRef, {'$gen_cast', Message}, Options).
+    _ = forward_message(Node, ServerRef, {'$gen_cast', Message}, Options),
+    ok.
 
 
 %% -----------------------------------------------------------------------------

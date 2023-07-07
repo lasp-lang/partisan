@@ -232,7 +232,8 @@ send_message(Name, Message) ->
 
 cast_message(Term, Message) ->
     FullMessage = {'$gen_cast', Message},
-    forward_message(Term, FullMessage, #{}).
+    _ = forward_message(Term, FullMessage, #{}),
+    ok.
 
 
 %% -----------------------------------------------------------------------------
@@ -249,7 +250,8 @@ cast_message(Node, ServerRef, Message) ->
 %% -----------------------------------------------------------------------------
 cast_message(Node, ServerRef, Message, Options) ->
     FullMessage = {'$gen_cast', Message},
-    forward_message(Node, ServerRef, FullMessage, Options).
+    _ = forward_message(Node, ServerRef, FullMessage, Options),
+    ok.
 
 
 
