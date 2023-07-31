@@ -52,7 +52,7 @@ Partisan was designed to increase scalability, reduce latency and improve failur
 
 * Scalability
     * Provides several overlays that are configurable at runtime
-        * `partisan_pluggable_peer_service_manager`: full mesh with TCP-based failure detection. All nodes maintain active connections to all other nodes in the system using one or more TPC connections.
+        * `partisan_pluggable_peer_service_manager`: full mesh with TCP-based failure detection. All nodes maintain active connections to all other nodes in the system using one or more TCP connections.
         * `partisan_hyparview_peer_service_manager.`: modified implementation of the HyParView protocol, peer-to-peer, designed for high scale, high churn environments. A hybrid partial view membership protocol, with TCP-based failure detection.
         * `partisan_client_server_peer_service_manager.`: star topology, where clients communicate with servers, and servers communicate with other servers.
         * `partisan_static_peer_service_manager`: static membership, where connections are explicitly made between nodes
