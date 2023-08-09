@@ -520,6 +520,7 @@ timeout_event_type(Type) ->
       | partisan:remote_name().
 -type start_opt() ::
         {'timeout', Time :: timeout()}
+      | {'channel', partisan:channel()}
       | {'spawn_opt', [partisan_proc_lib:start_spawn_option()]}
       | enter_loop_opt().
 -type start_ret() ::
