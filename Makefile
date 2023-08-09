@@ -1,5 +1,4 @@
 # we disable it, as we only enable it for the eqwalize target
-PARTISAN_EQWALIZER = 0
 BASE_DIR         = $(shell pwd)
 CONCURRENCY 	 ?= 4
 DEP_DIR         ?= "deps"
@@ -16,6 +15,8 @@ VERSION         ?= $(shell git describe --tags)
 CODESPELL 		= $(shell which codespell)
 SPELLCHECK 	    = $(CODESPELL) -S _build -S doc -S .git -L applys,nd,accout,mattern,pres,fo
 SPELLFIX      	= $(SPELLCHECK) -i 3 -w
+
+PARTISAN_EQWALIZER = 0
 OTPVSN 			= $(shell erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell)
 
 .PHONY: compile-no-deps alt-test core-test otp-test test docs xref dialyzer-run dialyzer-quick dialyzer eqwalizer \
