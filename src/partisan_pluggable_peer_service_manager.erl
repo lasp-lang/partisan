@@ -167,7 +167,8 @@
                                         on_event_fun()
                                 }.
 -type interposition_map(T)  ::  #{any() => T}.
--type interpos_arg()        ::  {receive_message, node(), any()}.
+-type interpos_arg()        ::  {receive_message, node(), any()}
+                                | {forward_message, node(), any()}.
 -type interpos_fun()        ::  fun((interpos_arg()) -> interpos_arg()).
 -type x_interpos_fun()      ::  fun((interpos_arg()) -> ok).
 -type tag()                 ::  atom().
@@ -839,7 +840,6 @@ handle_call({on_down, Name, Fun, _}, _From, State) ->
 
 handle_call({add_pre_interposition_fun, Name, Fun}, _From, #state{} = State) ->
     Funs = maps:put(Name, Fun, State#state.pre_interposition_funs),
-    %% eqwalizer:ignore Funs
     {reply, ok, State#state{pre_interposition_funs = Funs}};
 
 handle_call({remove_pre_interposition_fun, Name}, _From, #state{} = State) ->
@@ -848,7 +848,6 @@ handle_call({remove_pre_interposition_fun, Name}, _From, #state{} = State) ->
 
 handle_call({add_interposition_fun, Name, Fun}, _From, #state{} = State) ->
     Funs = maps:put(Name, Fun, State#state.interposition_funs),
-    %% eqwalizer:ignore Funs
     {reply, ok, State#state{interposition_funs = Funs}};
 
 handle_call({remove_interposition_fun, Name}, _From, #state{} = State) ->
@@ -863,7 +862,6 @@ handle_call(get_pre_interposition_funs, _From, #state{} = State) ->
 
 handle_call({add_post_interposition_fun, Name, Fun}, _From, #state{} = State) ->
     Funs = maps:put(Name, Fun, State#state.post_interposition_funs),
-    %% eqwalizer:ignore Funs
     {reply, ok, State#state{post_interposition_funs =Funs}};
 
 handle_call({remove_post_interposition_fun, Name}, _From, #state{}=State) ->
@@ -1057,9 +1055,11 @@ handle_cast({kill_connections, Nodes}, State) ->
 handle_cast({receive_message, Node, Channel, From, Msg0}, State) ->
 
     %% Filter messages using interposition functions.
+    %% eqwalizer:ignore Node
     Msg1 = ?FIRE_INTERPOSITIONS(
         receive_message, Node, Msg0, State#state.interposition_funs
     ),
+    %% eqwalizer:ignore Node
     ok = ?FIRE_POST_INTERPOSITIONS(
         receive_message, Node, Msg0, Msg1, State#state.post_interposition_funs
     ),
@@ -1092,6 +1092,7 @@ handle_cast(
         vclock = VClock0
     } = State,
 
+    %% eqwalizer:ignore Node
     Msg = ?FIRE_INTERPOSITIONS(
         forward_message, Node, Msg0, State#state.interposition_funs
     ),
@@ -1152,11 +1153,9 @@ handle_cast(
     case Msg of
         undefined ->
             %% Store for reliability, if necessary.
-            %% eqwalizer:ignore Opts
             case maps:get(ack, Opts, false) of
                 true ->
                     %% Acknowledgements.
-                    %% eqwalizer:ignore Opts
                     case maps:get(retransmission, Opts, false) of
                         true ->
                             RescheduleableMessage = {
@@ -1196,7 +1195,6 @@ handle_cast(
                 undefined ->
                     ok;
                 _ ->
-                    %% eqwalizer:ignore From
                     gen_server:reply(From, ok)
             end,
 

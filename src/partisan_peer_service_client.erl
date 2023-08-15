@@ -141,7 +141,8 @@ init([Peer, ListenAddr, Channel, ChannelOpts, From]) ->
 -spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()}.
 
-handle_call({send_message, Message}, _From, #state{} = State) ->
+
+handle_call({send_message, Msg}, _From, #state{} = State) ->
     case get({?MODULE, egress_delay}) of
         0 ->
             ok;
@@ -149,14 +150,14 @@ handle_call({send_message, Message}, _From, #state{} = State) ->
             timer:sleep(Other)
     end,
 
-    Data = partisan_util:encode(Message, State#state.encoding_opts),
+    Data = partisan_util:encode(Msg, State#state.encoding_opts),
 
-    case partisan_peer_socket:send(State#state.socket, Data) of
+    case send(State#state.socket, Data) of
         ok ->
-            ?LOG_TRACE("Dispatched message: ~p", [Message]),
+            ?LOG_TRACE("Dispatched message: ~p", [Msg]),
             {reply, ok, State};
         Error ->
-            ?LOG_DEBUG("Message ~p failed to send: ~p", [Message, Error]),
+            ?LOG_DEBUG("Message ~p failed to send: ~p", [Msg, Error]),
             {reply, Error, State}
     end;
 
@@ -167,8 +168,8 @@ handle_call(Event, _From, State) ->
 
 -spec handle_cast(term(), state()) -> {noreply, state()}.
 
-handle_cast({send_message, Message}, #state{} = State) ->
-    ?LOG_TRACE("Received cast: ~p", [Message]),
+handle_cast({send_message, Msg}, #state{} = State) ->
+    ?LOG_TRACE("Received cast: ~p", [Msg]),
 
     case get({?MODULE, egress_delay}) of
         0 ->
@@ -177,16 +178,16 @@ handle_cast({send_message, Message}, #state{} = State) ->
             timer:sleep(Other)
     end,
 
-    Data = partisan_util:encode(Message, State#state.encoding_opts),
+    Data = partisan_util:encode(Msg, State#state.encoding_opts),
 
-    case partisan_peer_socket:send(State#state.socket, Data) of
+    case send(State#state.socket, Data) of
         ok ->
-            ?LOG_TRACE("Dispatched message: ~p", [Message]),
+            ?LOG_TRACE("Dispatched message: ~p", [Msg]),
             ok;
         Error ->
             ?LOG_INFO(#{
                 description => "Failed to send message",
-                message => Message,
+                message => Msg,
                 error => Error
             })
     end,
@@ -225,7 +226,7 @@ handle_info(Event, State) ->
 
 terminate(Reason, #state{} = State) ->
     ?LOG_TRACE("Process ~p terminating for reason ~p...", [self(), Reason]),
-    ok = partisan_peer_socket:close(State#state.socket),
+    ok = close_socket(State#state.socket),
     ok.
 
 
@@ -293,6 +294,22 @@ when is_atom(Channel), is_map(ChannelOpts) ->
 
 
 %% @private
+send(undefined, _) ->
+    {error, no_socket};
+
+send(Socket, Data) ->
+    partisan_peer_socket:send(Socket, Data).
+
+
+%% @private
+close_socket(undefined) ->
+    ok;
+
+close_socket(Socket) ->
+    partisan_peer_socket:close(Socket).
+
+
+%% @private
 handle_message({state, Tag, LocalState}, #state{} = State) ->
     #state{
         peer = Peer,
@@ -314,9 +331,9 @@ handle_message({state, Tag, LocalState}, #state{} = State) ->
 
 handle_message({hello, Node}, #state{peer = #{name := Node}} = State) ->
     Socket = State#state.socket,
-    Message = term_to_binary({hello, partisan:node(), State#state.channel}),
+    Msg = term_to_binary({hello, partisan:node(), State#state.channel}),
 
-    case partisan_peer_socket:send(Socket, Message) of
+    case send(Socket, Msg) of
         ok ->
             ok;
         Error ->
@@ -338,10 +355,10 @@ when A =/= B ->
     }),
     {stop, {unexpected_peer, A, B}, State};
 
-handle_message(Message, State) ->
+handle_message(Msg, State) ->
     ?LOG_WARNING(#{
         description => "Received invalid message",
-        message => Message
+        message => Msg
     }),
     {stop, normal, State}.
 
