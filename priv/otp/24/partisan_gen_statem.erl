@@ -789,6 +789,8 @@ call_dirty(ServerRef, Request, Timeout, T) ->
               Stacktrace)
     end.
 
+-dialyzer([{nowarn_function, call_clean/4}]).
+
 call_clean({Name, Node} = ServerRef, Request, Timeout, T)
 when is_atom(Name), is_atom(Node) ->
     case Node == partisan:node() of
