@@ -450,12 +450,14 @@ receive_response(Mref, Timeout) ->
 check_response(Msg, Mref) ->
 case Msg of
     {[alias|Mref], Reply} ->
+        %% eqwalizer:ignore Mref
         partisan:demonitor(Mref, [flush]),
         {reply, Reply};
-    {'DOWN', Mref, _, Object, Reason} ->
-        {error, {Reason, Object}};
-        _ ->
-            no_reply
+    {'DOWN', Mref, _, ServerRef, Reason} ->
+        %% eqwalizer:ignore
+        {error, {Reason, ServerRef}};
+    _ ->
+        no_reply
     end.
 
 %%
