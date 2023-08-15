@@ -310,11 +310,13 @@ check_childspecs2(ChildSpecs, AutoShutdown) ->
 get_callback_module(Pid) ->
     {status, _Pid, {module, _Mod},
      [_PDict, _SysState, _Parent, _Dbg, Misc]} = partisan_sys:get_status(Pid),
+    %% eqwalizer:ignore Misc
     case lists:keyfind(supervisor, 1, Misc) of
     {supervisor, [{"Callback", Mod}]} ->
         Mod;
     _ ->
         [_Header, _Data, {data, [{"State", State}]} | _] = Misc,
+        %% eqwalizer:ignore State
         State#state.module
     end.
 
@@ -463,6 +465,7 @@ do_start_child_i(M, F, A) ->
 handle_call({start_child, EArgs}, _From, State) when ?is_simple(State) ->
     Child = get_dynamic_child(State),
     #child{mfargs = {M, F, A}} = Child,
+    %% eqwalizer:ignore A will not be 'undefined', EArgs is list
     Args = A ++ EArgs,
     case do_start_child_i(M, F, Args) of
     {ok, undefined} ->
@@ -598,12 +601,14 @@ handle_call(count_children, _From, State) ->
 
 count_child(#child{pid = Pid, child_type = worker},
         {Specs, Active, Supers, Workers}) ->
+    %% eqwalizer:ignore Pid
     case partisan:is_pid(Pid) andalso partisan:is_process_alive(Pid) of
     true ->  {Specs+1, Active+1, Supers, Workers+1};
     false -> {Specs+1, Active, Supers, Workers+1}
     end;
 count_child(#child{pid = Pid, child_type = supervisor},
         {Specs, Active, Supers, Workers}) ->
+    %% eqwalizer:ignore Pid
     case partisan:is_pid(Pid) andalso partisan:is_process_alive(Pid) of
     true ->  {Specs+1, Active+1, Supers+1, Workers};
     false -> {Specs+1, Active, Supers+1, Workers}
@@ -954,9 +959,28 @@ do_terminate(Child, SupName) ->
 %% supervisor. 
 %% Returns: ok | {error, OtherReason}  (this should be reported)
 %%-----------------------------------------------------------------
-shutdown(#child{pid=Pid, shutdown=brutal_kill} = Child) ->
+shutdown(#child{pid=Pid} = Child) ->
+    case partisan:is_pid(Pid) of
+        true ->
+            do_shutdown(Child);
+        false ->
+            ok
+    end.
+
+%%-----------------------------------------------------------------
+%% Shutdowns a child. We must check the EXIT value
+%% of the child, because it might have died with another reason than
+%% the wanted. In that case we want to report the error. We put a
+%% monitor on the child an check for the 'DOWN' message instead of
+%% checking for the 'EXIT' message, because if we check the 'EXIT'
+%% message a "naughty" child, who does unlink(Sup), could hang the
+%% supervisor.
+%% Returns: ok | {error, OtherReason}  (this should be reported)
+%%-----------------------------------------------------------------
+do_shutdown(#child{pid=Pid, shutdown=brutal_kill} = Child) ->
     Mon = partisan:monitor(process, Pid),
-    exit(Pid, kill),
+    %% eqwalizer:ignore Pid
+    partisan:exit(Pid, kill),
     receive
         {'DOWN', Mon, process, Pid, Reason0} ->
             case unlink_flush(Pid, Reason0) of
@@ -972,9 +996,10 @@ shutdown(#child{pid=Pid, shutdown=brutal_kill} = Child) ->
                     {error, Reason}
             end
     end;
-shutdown(#child{pid=Pid, shutdown=Time} = Child) ->
+do_shutdown(#child{pid=Pid, shutdown=Time} = Child) when is_integer(Time) ->
     Mon = partisan:monitor(process, Pid),
-    exit(Pid, shutdown),
+    %% eqwalizer:ignore Pid
+    partisan:exit(Pid, shutdown),
     receive
         {'DOWN', Mon, process, Pid, Reason0} ->
             case unlink_flush(Pid, Reason0) of
@@ -988,7 +1013,8 @@ shutdown(#child{pid=Pid, shutdown=Time} = Child) ->
                     {error, Reason}
             end
     after Time ->
-        exit(Pid, kill),
+        %% eqwalizer:ignore Pid
+        partisan:exit(Pid, kill),
         receive
             {'DOWN', Mon, process, Pid, Reason0} ->
                 case unlink_flush(Pid, Reason0) of
@@ -1004,7 +1030,8 @@ shutdown(#child{pid=Pid, shutdown=Time} = Child) ->
         end
     end.
 
-unlink_flush(Pid, DefaultReason) ->
+
+unlink_flush(Pid, DefaultReason) when is_pid(Pid) ->
     %% We call unlink in order to guarantee that the 'EXIT' has arrived
     %% from the dead process. See the unlink docs for details.
     unlink(Pid),
@@ -1013,7 +1040,12 @@ unlink_flush(Pid, DefaultReason) ->
             Reason
     after 0 ->
         DefaultReason
-    end.
+    end;
+
+unlink_flush(_, _) ->
+    %% PArtisan does not yet support unlink for partisan_remote_ref
+    normal.
+
 
 %%-----------------------------------------------------------------
 %% Func: terminate_dynamic_children/1
@@ -1035,8 +1067,8 @@ terminate_dynamic_children(State) ->
                     true ->
                         Mon = partisan:monitor(process, P),
                         case Child#child.shutdown of
-                            brutal_kill -> exit(P, kill);
-                            _ -> exit(P, shutdown)
+                            brutal_kill -> partisan:exit(P, kill);
+                            _ -> partisan:exit(P, shutdown)
                         end,
                         Acc#{{P, Mon} => true}
                 end
@@ -1123,7 +1155,7 @@ wait_dynamic_children(Child, Pids, Sz, TRef, EStack) ->
             end;
 
         {timeout, TRef, kill} ->
-            maps:foreach(fun({P, _}, _) -> exit(P, kill) end, Pids),
+            maps:foreach(fun({P, _}, _) -> partisan:exit(P, kill) end, Pids),
             wait_dynamic_children(Child, Pids, Sz, undefined, EStack)
     end.
 
@@ -1188,13 +1220,13 @@ split_ids(Id, [Other|Ids], After) ->
 %% (non-dynamic child). This is called from the API functions.
 -spec find_child(partisan:any_pid() | child_id(), state()) -> {ok,child_rec()} | error.
 find_child(Arg, State) when ?is_simple(State) ->
-
     case partisan:is_pid(Arg) of
         true ->
             case find_dynamic_child(Arg, State) of
                 error ->
                     case find_dynamic_child(restarting(Arg), State) of
                         error ->
+                    %% eqwalizer:ignore Pid
                     case partisan:is_process_alive(Arg) of
                     true -> error;
                     false -> {ok, get_dynamic_child(State)}
@@ -1226,6 +1258,7 @@ find_child_and_args(Pid, State) when ?is_simple(State) ->
 find_child_and_args(Arg, State) ->
     case partisan:is_pid(Arg) of
         true ->
+            %% eqwalizer:ignore Pid
             find_child_by_pid(Arg, State);
         false ->
             {_Ids,Db} = State#state.children,
@@ -1587,6 +1620,7 @@ add_restart(Restarts0, Now, Period) ->
 %%% Error and progress reporting.
 %%% ------------------------------------------------------
 extract_child(Child) when is_list(Child#child.pid) ->
+    %% eqwalizer:ignore Child#child.pid is list
     [{nb_children, length(Child#child.pid)},
      {id, Child#child.id},
      {mfargs, Child#child.mfargs},

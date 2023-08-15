@@ -1039,7 +1039,7 @@ channel_opts(Channel) when is_atom(Channel) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec is_pid(pid() | remote_pid()) ->
+-spec is_pid(any()) ->
     boolean() | no_return().
 
 is_pid(Arg) when erlang:is_pid(Arg) ->
