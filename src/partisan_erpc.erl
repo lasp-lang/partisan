@@ -48,7 +48,7 @@
          call/4,
          call/5,
          cast/2,
-     cast/4,
+         cast/4,
          send_request/2,
          send_request/4,
          receive_response/1,
@@ -59,7 +59,7 @@
          multicall/2,
          multicall/3,
          multicall/4,
-     multicall/5,
+         multicall/5,
          multicast/2,
      multicast/4]).
 
@@ -151,13 +151,7 @@ call(N, M, F, A, T) when is_atom(M),
                     end
             end;
         false ->
-            Res =
-                case N =:= partisan:node() of
-                    true ->
-                        make_ref();
-                    false ->
-                        partisan:make_ref()
-                end,
+            Res = partisan:make_ref(),
             ReqId = spawn_request(N, ?MODULE, execute_call, [Res, M, F, A],
                                   [{reply, error_only}, monitor]),
             receive
@@ -174,7 +168,7 @@ call(_N, _M, _F, _A, _T) ->
 
 %% Asynchronous call
 
--opaque request_id() :: {partisan:any_reference(), partisan:any_reference()}.
+-opaque request_id() :: {partisan:remote_reference(), partisan:remote_reference()}.
 
 -spec send_request(Node, Fun) -> RequestId when
       Node :: node(),
@@ -197,13 +191,7 @@ send_request(N, M, F, A) when is_atom(N),
                               is_atom(M),
                               is_atom(F),
                               is_list(A) ->
-    Res =
-        case N =:= partisan:node() of
-            true ->
-                make_ref();
-            false ->
-                partisan:make_ref()
-        end,
+    Res = partisan:make_ref(),
     ReqId = spawn_request(N, ?MODULE, execute_call, [Res, M, F, A],
                           [{reply, error_only}, monitor]),
     {Res, ReqId};
@@ -214,11 +202,11 @@ send_request(_N, _M, _F, _A) ->
       RequestId :: request_id(),
       Result :: term().
 
-receive_response({Res, ReqId} = RId) when is_reference(Res),
-                                          is_reference(ReqId) ->
-    receive_response(RId, infinity);
-receive_response(_) ->
-    error({?MODULE, badarg}).
+receive_response({Res, ReqId} = RId) ->
+    partisan:is_reference(Res) andalso partisan:is_reference(ReqId)
+        orelse error({?MODULE, badarg}),
+    receive_response(RId, infinity).
+
 
 -dialyzer([{nowarn_function, receive_response/2}, no_return]).
 
@@ -354,7 +342,7 @@ multicall(Ns, M, F, A, T) ->
         true = is_atom(M),
         true = is_atom(F),
         true = is_list(A),
-        Tag = make_ref(),
+        Tag = partisan:make_ref(),
         SendState = mcall_send_requests(Tag, Ns, M, F, A, T),
         mcall_receive_replies(Tag, SendState)
     catch
@@ -518,16 +506,16 @@ call_abandon(ReqId) ->
 -dialyzer([{nowarn_function, result/4}, no_return]).
 
 -spec result('down', ReqId, Res, Reason) -> term() when
-      ReqId :: partisan:any_reference(),
-      Res :: partisan:any_reference(),
+      ReqId :: partisan:remote_reference(),
+      Res :: partisan:remote_reference(),
       Reason :: term();
                   ('spawn_reply', ReqId, Res, Reason) -> no_return() when
-      ReqId :: partisan:any_reference(),
-      Res :: partisan:any_reference(),
+      ReqId :: partisan:remote_reference(),
+      Res :: partisan:remote_reference(),
       Reason :: term();
                   ('timeout', ReqId, Res, Reason) -> term() when
-      ReqId :: partisan:any_reference(),
-      Res :: partisan:any_reference(),
+      ReqId :: partisan:remote_reference(),
+      Res :: partisan:remote_reference(),
       Reason :: term().
 
 result(down, _ReqId, Res, {Res, return, Return}) ->
@@ -609,11 +597,12 @@ mcall_local_call(M, F, A) ->
             end
     end.
 
-mcall_send_request(T, N, M, F, A) when is_reference(T),
-                                       is_atom(N),
+mcall_send_request(T, N, M, F, A) when is_atom(N),
                                        is_atom(M),
                                        is_atom(F),
                                        is_list(A) ->
+    %% we fail To simulate original behaviour
+    partisan:is_reference(T) orelse error(function_clause),
     spawn_request(N, ?MODULE, execute_call, [T, M, F, A],
                   [{reply, error_only},
                    {reply_tag, T},
