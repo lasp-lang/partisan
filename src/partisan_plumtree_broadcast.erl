@@ -713,7 +713,7 @@ debug_get_tree(Root, Nodes) ->
 
 %% -----------------------------------------------------------------------------
 %% @doc return peers for all `Nodes' for tree rooted at `Root'
-%% Wait indefinitely for a response is returned from the process
+%% Wait `Timeout' for a response is returned from the process
 %% @end
 %% -----------------------------------------------------------------------------
 -spec debug_get_tree(node(), [node()], timeout()) ->
