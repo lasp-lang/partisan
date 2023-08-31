@@ -2822,24 +2822,25 @@ do_tree_forward(Node, Message, Options, TTL) ->
 retrieve_outlinks(Root) ->
     ?LOG_TRACE(#{description => "About to retrieve outlinks..."}),
 
-    Result = partisan_plumtree_broadcast:debug_get_peers(Root, Root, 1000),
-
     OutLinks =
-        try Result of
-            {EagerPeers, _LazyPeers} ->
-                ordsets:to_list(EagerPeers)
+        try
+
+            {EagerPeers, _LazyPeers} =
+                partisan_plumtree_broadcast:debug_get_peers(Root, Root, 1000),
+            ordsets:to_list(EagerPeers) -- [Root]
+
         catch
-            _:_ ->
+            _:Reason ->
                 ?LOG_INFO(#{
-                    description => "Request to get outlinks timed out..."
+                    description => "Request to get outlinks failed",
+                    reason => Reason
                 }),
                 []
         end,
 
     ?LOG_TRACE("Finished getting outlinks: ~p", [OutLinks]),
 
-    OutLinks -- [Root].
-
+    OutLinks.
 
 
 %% =============================================================================
