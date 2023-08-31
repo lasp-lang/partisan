@@ -19,7 +19,7 @@ SPELLFIX      	= $(SPELLCHECK) -i 3 -w
 PARTISAN_EQWALIZER = 0
 OTPVSN 			= $(shell erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell)
 
-.PHONY: compile-no-deps alt-test core-test otp-test test docs xref dialyzer-run dialyzer-quick dialyzer eqwalizer \
+.PHONY: compile-no-deps alt-test core-test otp-test test docs xref dialyzer-run dialyzer-quick dialyzer eqwalizer eqwalize-all\
 		cleanplt upload-docs rel deps test plots spellcheck spellfix certs node1 node2 node3 node
 
 all: compile
@@ -49,6 +49,15 @@ dialyzer: compile
 eqwalizer: src/*.erl
 ifeq ($(shell expr $(OTPVSN) \> 24),1)
 	export PARTISAN_EQWALIZER=1 && for file in $(shell ls $^ | sed 's|.*/\(.*\)\.erl|\1|'); do elp eqwalize $${file}; done
+else
+	$(info OTPVSN is not higher than 24)
+	$(eval override mytarget=echo "skipping eqwalizer target. Eqwalizer tool  requires OTP25 or higher")
+endif
+
+
+eqwalize-all:
+ifeq ($(shell expr $(OTPVSN) \> 24),1)
+	PARTISAN_EQWALIZER=1 elp eqwalize-all
 else
 	$(info OTPVSN is not higher than 24)
 	$(eval override mytarget=echo "skipping eqwalizer target. Eqwalizer tool  requires OTP25 or higher")
@@ -105,7 +114,7 @@ ifeq ($(shell expr $(OTPVSN) \> 24),1)
 	$(info OTPVSN is higher than 24)
 	$(eval override mytarget=echo "skipping al-test target. CT Suite currently requires OTP24")
 else
-	${REBAR} as test ct --suite=partisan_gen_server_SUITE,partisan_gen_event_SUITE,partisan_gen_statem_SUITE
+	${REBAR} as test ct --suite=partisan_erpc_SUITE,partisan_gen_server_SUITE,partisan_gen_event_SUITE,partisan_gen_statem_SUITE
 endif
 
 
@@ -151,15 +160,21 @@ logs:
 ## Release targets
 ##
 
+node1:
+	RELX_REPLACE_OS_VARS=true \
+	ERL_NODE_NAME=node1@127.0.0.1 \
+	PARTISAN_PEER_PORT=10100 \
+	_build/node/rel/partisan/bin/partisan console
 
+node2:
+	${REBAR} as node release
+	RELX_REPLACE_OS_VARS=true \
+	ERL_NODE_NAME=node2@127.0.0.1 \
+	PARTISAN_PEER_PORT=10200 \
+	_build/node/rel/partisan/bin/partisan console
 
-node1: export ERL_NODE_NAME=node1@127.0.0.1 export PARTISAN_PEER_PORT=10100
-node1: noderun
-
-node2: export ERL_NODE_NAME=node2@127.0.0.1 export PARTISAN_PEER_PORT=10200
-node2: noderun
-
-node3: export ERL_NODE_NAME=node3@127.0.0.1 export PARTISAN_PEER_PORT=10300
+node3: export ERL_NODE_NAME=node3@127.0.0.1
+node3: export PARTISAN_PEER_PORT=10300
 node3: noderun
 
 # ERL_NODE_NAME=node4@127.0.0.1 make node
