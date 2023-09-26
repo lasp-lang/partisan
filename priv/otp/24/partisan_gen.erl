@@ -50,6 +50,7 @@
 -export([send_request/4]).
 -export([erase_opts/0]).
 -export([get_opts/0]).
+-export([get_opts/1]).
 -export([set_opts/1]).
 
 
@@ -713,6 +714,18 @@ get_opts() ->
         Opts ->
             Opts
     end.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc merges opts with the result of calling {@link get_opts/0} where the
+%% latter overrides the former.
+%% The returned list is guaranteed to have a value for key `channel'.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec get_opts(Opts :: list()) -> [{channel, partisan:channel()}].
+
+get_opts(Opts) ->
+    lists:keymerge(1, get_opts(), lists:keysort(1, Opts)).
 
 
 

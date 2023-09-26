@@ -614,20 +614,19 @@ cast({Name, Node} = ServerRef, Msg) when is_atom(Name), is_atom(Node) ->
             %% Optimisation
             send(Name, Msg);
         false ->
-            partisan_send(ServerRef, wrap_cast(Msg))
+            cast(ServerRef, Msg, [])
     end;
 cast(Dest, Msg) ->
     %% Maybe partisan_remote_ref
-    partisan_send(Dest, wrap_cast(Msg)).
+    cast(Dest, Msg, []).
 
 %% Partisan addition
-cast(ServerRef, Request, Opts) ->
+cast(Dest, Msg, Opts) ->
     %% Set opts will set the default channel is non is defined, so there is no
     %% need to cleanup the calling process dict.
     %% We do this to avoid changing this code too much, but we might need to do
     %% it in the end.
-    partisan_gen:set_opts(Opts),
-    cast(ServerRef, Request).
+    partisan_send(Dest, wrap_cast(Msg), Opts).
 
 
 %% Call a state machine (synchronous; a reply is expected) that
@@ -661,8 +660,10 @@ call(ServerRef, Request, {_, _} = Timeout) ->
     erlang:error(badarg, [ServerRef,Request,Timeout]);
 %% Partisan addition
 call(ServerRef, Request, Opts) when is_list(Opts) ->
+    %% We are ignoting all opts, we should merge them with
+    %% partisan:get_opts and pass them to call_clean
+    %% or temp set them in process dict as call_opts
     Timeout = get_timeout(Opts),
-    partisan_gen:set_opts(Opts),
     call(ServerRef, Request, Timeout);
 call(ServerRef, Request, Timeout) ->
     call_clean(ServerRef, Request, Timeout, Timeout).
@@ -867,13 +868,17 @@ send(Proc, Msg) ->
     ok.
 
 
-partisan_send({Name, Node}, Msg) ->
-    partisan:forward_message(Node, Name, Msg, partisan_gen:get_opts());
-
 partisan_send(Dest, Msg) ->
+    partisan_send(Dest, Msg, partisan_gen:get_opts()).
+
+
+partisan_send({Name, Node}, Msg, Opts) ->
+    partisan:forward_message(Node, Name, Msg, partisan_gen:get_opts(Opts));
+
+partisan_send(Dest, Msg, Opts) ->
     %% Simulate the error we would have gotten in cast/2
     partisan_remote_ref:is_type(Dest) orelse error(function_clause),
-    partisan:forward_message(Dest, Msg, partisan_gen:get_opts()).
+    partisan:forward_message(Dest, Msg, partisan_gen:get_opts(Opts)).
 
 
 
