@@ -27,7 +27,6 @@
 
 -behaviour(gen_server).
 
-
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
 -include("partisan_peer_socket.hrl").
@@ -129,10 +128,13 @@ init([Peer, ListenAddr, Channel, ChannelOpts, From]) ->
             {ok, State};
 
         {error, Reason} ->
-            ?LOG_TRACE(
-                "Pid ~p is unable to connect to ~p due to ~p",
-                [self(), Peer, Reason]
-            ),
+            ?LOG_TRACE(#{
+                description => "Unable to establish connection with peer",
+                peer => Peer,
+                listen_addr => ListenAddr,
+                channel => Channel,
+                reason => Reason
+            }),
             %% We use shutdown to avoid a crash report
             {stop, normal}
     end.
@@ -287,9 +289,23 @@ when is_atom(Channel), is_map(ChannelOpts) ->
         {ok, Socket} ->
             {ok, Socket};
 
-        {error, Error} ->
-            %% TODO LOG HERE
-            {error, Error}
+        {error, Reason} when ?IS_INET_POSIX(Reason) ->
+            %% TODO We do not want to log here becuase this can be high frequency
+            %% so what we should do is store the latest error on the
+            %% partisan_peer_connections as a status that is cleanedup when we
+            %% establish the connection
+            {error, Reason};
+
+        {error, Reason} ->
+            ?LOG_ERROR(#{
+                description =>
+                 "Error while trying to establish connection with peer",
+                channel => Channel,
+                reason => Reason,
+                ip => Address,
+                port => Port
+            }),
+            {error, Reason}
     end.
 
 

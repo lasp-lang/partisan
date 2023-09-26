@@ -14,6 +14,90 @@
     (is_atom(M) andalso is_atom(F) andalso is_list(A))
 ).
 
+-define(IS_INET_POSIX(X),
+    (
+        X == eaddrinuse orelse
+        X == eaddrnotavail orelse
+        X == eafnosupport orelse
+        X == ealready orelse
+        X == econnaborted orelse
+        X == econnrefused orelse
+        X == econnreset orelse
+        X == edestaddrreq orelse
+        X == ehostdown orelse
+        X == ehostunreach orelse
+        X == einprogress orelse
+        X == eisconn orelse
+        X == emsgsize orelse
+        X == enetdown orelse
+        X == enetunreach orelse
+        X == enopkg orelse
+        X == enoprotoopt orelse
+        X == enotconn orelse
+        X == enotty orelse
+        X == enotsock orelse
+        X == eproto orelse
+        X == eprotonosupport orelse
+        X == eprototype orelse
+        X == esocktnosupport orelse
+        X == etimedout orelse
+        X == ewouldblock orelse
+        X == exbadport orelse
+        ?IS_FILE_POSIX(X)
+    )
+).
+
+-define(IS_FILE_POSIX(X),
+    (
+        X == eacces orelse
+        X == eagain orelse
+        X == ebadf orelse
+        X == ebadmsg orelse
+        X == ebusy orelse
+        X == edeadlk orelse
+        X == edeadlock orelse
+        X == edquot orelse
+        X == eexist orelse
+        X == efault orelse
+        X == efbig orelse
+        X == eftype orelse
+        X == eintr orelse
+        X == einval orelse
+        X == eio orelse
+        X == eisdir orelse
+        X == eloop orelse
+        X == emfile orelse
+        X == emlink orelse
+        X == emultihop orelse
+        X == enametoolong orelse
+        X == enfile orelse
+        X == enobufs orelse
+        X == enodev orelse
+        X == enolck orelse
+        X == enolink orelse
+        X == enoent orelse
+        X == enomem orelse
+        X == enospc orelse
+        X == enosr orelse
+        X == enostr orelse
+        X == enosys orelse
+        X == enotblk orelse
+        X == enotdir orelse
+        X == enotsup orelse
+        X == enxio orelse
+        X == eopnotsupp orelse
+        X == eoverflow orelse
+        X == eperm orelse
+        X == epipe orelse
+        X == erange orelse
+        X == erofs orelse
+        X == espipe orelse
+        X == esrch orelse
+        X == estale orelse
+        X == etxtbsy orelse
+        X == exdev
+    )
+).
 
 %% =============================================================================
 %% PLUMTREE
