@@ -38,7 +38,16 @@
     end
 ).
 
--define(NOT_GROUND(Args),
+-define(SELECT_COUNT(Arg),
+    try
+        ets:select_count(?MODULE, Arg)
+    catch
+        error:badarg ->
+            0
+    end
+).
+
+-define(NOT_GROUND_ERROR(Args),
     erlang:error(
         badarg,
         Args,
@@ -55,8 +64,17 @@
 ).
 
 
-%% We store two records on the same table, using the first field as a key
-%% (keypos 2). Since both keys differ on type (node() and pid()) this is fine.
+%% We store two records (partisan_peer_info and partisan_peer_connection) on the
+%% same table, using the first field as a key on keypos 2.
+%% Since both keys differ on type (node() and pid() respectively) this does not
+%% affect lookup performance.
+%% maybe_var(T) type is used for match patterns in match specifications.
+%% Invariants:
+%% - For every Node there might be 0 or 1 partisan_peer_info object.
+%% - For every partisan_peer_info there might be 0 or more
+%% partisan_peer_connection objects.
+%% - For every partisan_peer_connection for Node there is 1 partisan_peer_info
+%% object
 -record(partisan_peer_info, {
     node                    ::  maybe_var(node()),
     node_spec               ::  maybe_var(partisan:node_spec()),
@@ -143,7 +161,10 @@ init() ->
             %% Already initialised
             ok;
         undefined ->
+            %% Make sure both record keys are in the same key position,
+            %% otherwise crash.
             Pos = #partisan_peer_info.node,
+            Pos = #partisan_peer_connection.pid,
 
             ?MODULE = ets:new(?MODULE, [
                 named_table,
@@ -154,7 +175,10 @@ init() ->
                 %% although writes will only happen when a connection is
                 %% started/stopped for a peer node.
                 {read_concurrency, true},
-                {write_concurrency, true}
+                {write_concurrency, true},
+                %% This is redundant for ordered_set with write_concurrency
+                %% enabled, but we like it to be explicit
+                {decentralized_counters, true}
             ]),
 
             ok
@@ -169,8 +193,8 @@ init() ->
 -spec nodes() -> [node()].
 
 nodes() ->
-    %% We select the first element (nodename) of the tuple where the
-    %% second element (connection counter) is greater than zero.
+    %% We project the first element (node) of each record where the
+    %% third element (connection_count counter) is greater than zero.
     MatchHead = #partisan_peer_info{
         node = '$1',
         node_spec = '_',
@@ -186,8 +210,8 @@ nodes() ->
 %% @end
 %% -----------------------------------------------------------------------------
 node_specs() ->
-    % We select the first element (nodename) of the tuple where the
-    %% second element (connection counter) is greater than zero.
+    %% We project the second element (node_spec) of each record where the
+    %% third element (connection connection_count) is greater than zero.
     MatchHead = #partisan_peer_info{
         node = '_',
         node_spec = '$1',
@@ -246,7 +270,8 @@ is_fully_connected(Node) when is_atom(Node) ->
         _ ->
             case info(Node) of
                 {ok, #partisan_peer_info{
-                    node_spec = Spec, connection_count = Count
+                    node_spec = Spec,
+                    connection_count = Count
                 }} ->
                     is_fully_connected(Spec, Count);
                 error ->
@@ -270,13 +295,20 @@ is_fully_connected(#{name := Node}) ->
 -spec count() -> non_neg_integer().
 
 count() ->
-    MS = match_spec('_', '_', '_', count),
-    try
-        ets:select_count(?MODULE, MS)
-    catch
-        error:badarg ->
-            0
-    end.
+    %% Global static match spec
+    Key = {?MODULE, count},
+    MS =
+        case persistent_term:get(Key) of
+            undefined ->
+                Value = match_spec('_', '_', '_', count),
+                _ = persistent_term:put(Key, Value),
+                Value;
+
+            Value ->
+                Value
+        end,
+
+    ?SELECT_COUNT(MS).
 
 
 %% -----------------------------------------------------------------------------
@@ -310,7 +342,7 @@ when is_integer(Val) ->
     Val;
 
 count(#partisan_peer_info{} = T) ->
-    ?NOT_GROUND([T]).
+    ?NOT_GROUND_ERROR([T]).
 
 
 %% -----------------------------------------------------------------------------
@@ -351,12 +383,7 @@ count(Node, Channels) ->
 
 count(Node, Channels, ListenAddr) ->
     MS = match_spec(Node, Channels, ListenAddr, count),
-    try
-        ets:select_count(?MODULE, MS)
-    catch
-        error:badarg ->
-            0
-    end.
+    ?SELECT_COUNT(MS).
 
 
 %% -----------------------------------------------------------------------------
@@ -479,7 +506,7 @@ channel(#partisan_peer_connection{channel = Val}) when is_atom(Val) ->
     Val;
 
 channel(#partisan_peer_connection{} = T) ->
-    ?NOT_GROUND([T]).
+    ?NOT_GROUND_ERROR([T]).
 
 
 %% -----------------------------------------------------------------------------
@@ -492,7 +519,7 @@ pid(#partisan_peer_connection{pid = Val}) when is_pid(Val) ->
     Val;
 
 pid(#partisan_peer_connection{} = T) ->
-    ?NOT_GROUND([T]).
+    ?NOT_GROUND_ERROR([T]).
 
 
 
@@ -508,7 +535,7 @@ listen_addr(
     Val;
 
 listen_addr(#partisan_peer_connection{} = T) ->
-    ?NOT_GROUND([T]).
+    ?NOT_GROUND_ERROR([T]).
 
 
 %% -----------------------------------------------------------------------------
@@ -521,13 +548,13 @@ node(#partisan_peer_info{node = Val}) when is_atom(Val) ->
     Val;
 
 node(#partisan_peer_info{} = T) ->
-    ?NOT_GROUND([T]);
+    ?NOT_GROUND_ERROR([T]);
 
 node(#partisan_peer_connection{node = Val}) when is_atom(Val) ->
     Val;
 
 node(#partisan_peer_connection{} = T) ->
-    ?NOT_GROUND([T]).
+    ?NOT_GROUND_ERROR([T]).
 
 
 %% -----------------------------------------------------------------------------
@@ -540,7 +567,7 @@ node_spec(#partisan_peer_info{node_spec = Val}) when is_map(Val) ->
     Val;
 
 node_spec(#partisan_peer_info{} = T) ->
-    ?NOT_GROUND([T]);
+    ?NOT_GROUND_ERROR([T]);
 
 node_spec(#partisan_peer_connection{node = Val}) when is_atom(Val) ->
     case info(Val) of
@@ -551,7 +578,7 @@ node_spec(#partisan_peer_connection{node = Val}) when is_atom(Val) ->
     end;
 
 node_spec(#partisan_peer_connection{} = T) ->
-    ?NOT_GROUND([T]).
+    ?NOT_GROUND_ERROR([T]).
 
 
 %% -----------------------------------------------------------------------------
@@ -564,13 +591,13 @@ timestamp(#partisan_peer_info{timestamp = Val}) when is_integer(Val) ->
     Val;
 
 timestamp(#partisan_peer_info{} = T) ->
-    ?NOT_GROUND([T]);
+    ?NOT_GROUND_ERROR([T]);
 
 timestamp(#partisan_peer_connection{timestamp = Val}) when is_integer(Val) ->
     Val;
 
 timestamp(#partisan_peer_connection{} = T) ->
-    ?NOT_GROUND([T]).
+    ?NOT_GROUND_ERROR([T]).
 
 
 %% -----------------------------------------------------------------------------
@@ -604,6 +631,7 @@ andalso ?IS_IP(IP) andalso is_integer(Port) andalso Port >= 0 ->
     try ets:insert_new(?MODULE, Conn) of
         true ->
             incr_counter(Spec);
+
         false ->
             {ok, Info} = info(Node),
             InfoSpec = node_spec(Info),
@@ -612,7 +640,12 @@ andalso ?IS_IP(IP) andalso is_integer(Port) andalso Port >= 0 ->
             case Count == 0 of
                 true ->
                     ?LOG_DEBUG(#{
-                        description => "A new connection was made using a node specification instance that differs from the existing specification for node. Replacing the existing specification with the new one as no existing connections exist.",
+                        description =>
+                            "A new connection was made using a node "
+                            "specification instance that differs from the "
+                            "existing specification for node. "
+                            "Replacing the existing specification with "
+                            "the new one as no existing connections exist.",
                         node_spec => InfoSpec,
                         connection => #{
                             pid => Pid,
@@ -621,9 +654,15 @@ andalso ?IS_IP(IP) andalso is_integer(Port) andalso Port >= 0 ->
                     }),
                     ets:insert(?MODULE, Conn),
                     incr_counter(Spec);
+
                 false ->
                     ?LOG_WARNING(#{
-                        description => "A new connection was made using a node specification instance that differs from the existing specification for node. Keeping the existing specification in the info record as connections exist.",
+                        description =>
+                            "A new connection was made using a node "
+                            "specification instance that differs from the "
+                            "existing specification for node. "
+                            "Keeping the existing specification in the info "
+                            "record as connections exist.",
                         node_spec => InfoSpec,
                         connection_count => Count,
                         connection => #{
@@ -658,6 +697,7 @@ prune(Node) when is_atom(Node) ->
 
     %% Remove all connections
     Connections =
+        %% There is no select_take in ets, so we select and then delete.
         try ets:select(?MODULE, [{MatchHead, [], ['$_']}]) of
             [] ->
                 [];
@@ -669,7 +709,7 @@ prune(Node) when is_atom(Node) ->
                 error(notalive)
         end,
 
-    %% Remove info and return spec
+    %% We finally remove info and return it as part of the result
     case ets:take(?MODULE, Node) of
         [#partisan_peer_info{} = I] ->
             {I, Connections};
@@ -681,10 +721,8 @@ prune(Pid) when is_pid(Pid) ->
     %% Remove matching connection
     try ets:take(?MODULE, Pid) of
         [#partisan_peer_connection{node = Node}] = L ->
-            %% We dexcrease the connection count
-            Ops = [{#partisan_peer_info.connection_count, -1}],
-            _ = ets:update_counter(?MODULE, Node, Ops),
-
+            %% We decrease the connection count
+            ok = decr_counter(Node),
             {ok, #partisan_peer_info{} = I} = info(Node),
             {I, L};
         [] ->
@@ -729,6 +767,7 @@ erase(Node) when is_atom(Node) ->
 erase(#{name := Node}) ->
     erase(Node).
 
+
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -738,7 +777,7 @@ erase(#{name := Node}) ->
 kill_all() ->
     Fun = fun(_NodeInfo, Connections) ->
         lists:foreach(
-            fun(C) ->
+            fun(#partisan_peer_connection{} = C) ->
                 Pid = pid(C),
                 catch gen_server:stop(Pid, normal, infinity),
                 ok
@@ -865,12 +904,17 @@ dispatch_pid(Node, Channel) ->
 
 dispatch_pid(Node, Channel, PartitionKey)
 when is_atom(Node), is_atom(Channel) ->
-    DefaultChannel = ?DEFAULT_CHANNEL,
-
     Connections = case connections(Node, Channel) of
-        [] when Channel =/= DefaultChannel ->
-            %% Fallback to default channel
-            connections(Node, DefaultChannel);
+        [] when Channel =/= ?DEFAULT_CHANNEL ->
+
+            case partisan_config:get(channel_fallback, true) of
+                true ->
+                    %% Fallback to default channel
+                    connections(Node, ?DEFAULT_CHANNEL);
+                false ->
+                    []
+            end;
+
         L ->
             L
     end,
@@ -904,7 +948,6 @@ when is_map(Opts) ->
 
 
 
-
 %% @private
 is_fully_connected(#{channels := Channels}, Count) ->
     Expected = lists:sum([N || #{parallelism := N} <- maps:values(Channels)]),
@@ -925,6 +968,17 @@ incr_counter(#{name := Node} = Spec) ->
         timestamp = erlang:system_time(nanosecond)
     },
     _ = ets:update_counter(?MODULE, Node, Ops, Default),
+    ok.
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+decr_counter(Node) ->
+    Ops = [{#partisan_peer_info.connection_count, -1}],
+    _ = ets:update_counter(?MODULE, Node, Ops),
     ok.
 
 
