@@ -314,6 +314,7 @@
 -export([seed/0]).
 -export([seed/1]).
 -export([set/2]).
+
 -export([trace/2]).
 
 -compile({no_auto_import, [get/1]}).
@@ -330,7 +331,6 @@
 %% =============================================================================
 %% API
 %% =============================================================================
-
 
 
 %% -----------------------------------------------------------------------------
@@ -404,6 +404,7 @@ init() ->
             {broadcast, false},
             {broadcast_mods, [partisan_plumtree_backend]},
             {causal_labels, []},
+            {channel_fallback, true},
             {connect_disterl, false},
             {connection_jitter, ?CONNECTION_JITTER},
             {connection_interval, 1000},

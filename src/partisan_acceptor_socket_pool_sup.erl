@@ -55,7 +55,6 @@ init([]) ->
     Pool = pool(),
     ListenAddrs = partisan_config:listen_addrs(),
 
-
     ?LOG_INFO(#{
         description => "Starting Partisan listener",
         listen_addrs => ListenAddrs
