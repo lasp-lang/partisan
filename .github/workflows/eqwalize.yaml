@@ -28,8 +28,10 @@ jobs:
           sudo apt-get -y install libssl-dev
 
       - name: Install Eqwalizer and add it to path
-        env:
-          ELP_BIN: https://github.com/WhatsApp/eqwalizer/releases/download/v0.17.16/elp-linux.tar.gz
+        uses: supplypike/setup-bin@v3
+        with:
+          uri: https://github.com/WhatsApp/eqwalizer/releases/download/v0.17.16/elp-linux.tar.gz
+          name: 'elp'
         run: |
           curl -LJO $ELP_BIN && tar -xzf elp-linux.tar.gz
           chmod +x elp
