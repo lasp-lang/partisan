@@ -1,6 +1,6 @@
 [
     {partisan, [
-        {name, 'node1@127.0.0.1'},
+        {name, '${ERL_NODE_NAME}'},
         {peer_port, ${PARTISAN_PEER_PORT}},
         {peer_service_manager, partisan_hyparview_peer_service_manager},
         {hyparview, [
@@ -64,7 +64,7 @@
                         {fun logger_filters:remote_gl/2, stop}
                     },
                     {no_domain,
-                        {fun logger_filters:domain/2,{log,undefined,[]}}
+                        {fun logger_filters:domain/2, {log, undefined, []}}
                     },
                     {domain,
                         {fun logger_filters:domain/2, {stop, equal, [sasl]}}

@@ -640,6 +640,21 @@ set(membership_binary_compression, Val) ->
 set(forward_options, Opts) when is_list(Opts) ->
     set(forward_options, maps:from_list(Opts));
 
+set(tls_client_options, Opts0) when is_list(Opts0) ->
+    case lists:keytake(hostname_verification, 1, Opts0) of
+        {value, {hostname_verification, wildcard}, Opts1} ->
+            Match = public_key:pkix_verify_hostname_match_fun(https),
+            Check = {customize_hostname_check, [{match_fun, Match}]},
+            Opts = lists:keystore(customize_hostname_check, 1, Opts1, Check),
+            do_set(tls_client_options, Opts);
+
+        {value, {hostname_verification, _}, Opts1} ->
+            do_set(tls_client_options, Opts1);
+
+        false ->
+            do_set(tls_client_options, Opts0)
+    end;
+
 set(Key, Value) ->
     do_set(maybe_rename(Key), Value).
 

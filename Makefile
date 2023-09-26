@@ -20,7 +20,7 @@ PARTISAN_EQWALIZER = 0
 OTPVSN 			= $(shell erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell)
 
 .PHONY: compile-no-deps alt-test core-test otp-test test docs xref dialyzer-run dialyzer-quick dialyzer eqwalizer eqwalize-all\
-		cleanplt upload-docs rel deps test plots spellcheck spellfix certs node1 node2 node3 node
+		cleanplt upload-docs rel deps test plots spellcheck spellfix certs node1 node2 node3 node checkssl
 
 all: compile
 
@@ -160,39 +160,25 @@ logs:
 ## Release targets
 ##
 
+
 node1:
-	RELX_REPLACE_OS_VARS=true \
-	ERL_NODE_NAME=node1@127.0.0.1 \
-	PARTISAN_PEER_PORT=10100 \
-	_build/node/rel/partisan/bin/partisan console
+	${REBAR} as node1 release
+	ERL_DIST_PORT=37781 _build/node1/rel/partisan/bin/partisan console
 
 node2:
-	${REBAR} as node release
-	RELX_REPLACE_OS_VARS=true \
-	ERL_NODE_NAME=node2@127.0.0.1 \
-	PARTISAN_PEER_PORT=10200 \
-	_build/node/rel/partisan/bin/partisan console
+	${REBAR} as node2 release
+	ERL_DIST_PORT=37782 _build/node2/rel/partisan/bin/partisan console
 
-node3: export ERL_NODE_NAME=node3@127.0.0.1
-node3: export PARTISAN_PEER_PORT=10300
-node3: noderun
-
-# ERL_NODE_NAME=node4@127.0.0.1 make node
-node: noderun
-	ifndef ERL_NODE_NAME
-		$(error ERL_NODE_NAME is undefined)
-	endif
-	ifndef PARTISAN_PEER_PORT
-		$(error PARTISAN_PEER_PORT is undefined)
-	endif
-	${REBAR} as node release
-	RELX_REPLACE_OS_VARS=true _build/node/rel/partisan/bin/partisan console
+node3:
+	${REBAR} as node3 release
+	ERL_DIST_PORT=37783 _build/node3/rel/partisan/bin/partisan console
 
 
-noderun:
-	${REBAR} as node release
-	RELX_REPLACE_OS_VARS=true _build/node/rel/partisan/bin/partisan console
-
+checkssl:
+	openssl s_client -connect localhost:10100 \
+	-cert config/_ssl/client/cert.pem \
+	-key config/_ssl/client/keycert.pem \
+	-CAfile config/_ssl/client/cacerts.pem
 rel:
 	${REBAR} as test release
 
