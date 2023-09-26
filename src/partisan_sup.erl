@@ -120,7 +120,7 @@ init([]) ->
     ),
 
     %% Open connection pool.
-    %% This MUST be the last children to be started
+    %% This MUST be the last child to be started
     PoolSup = {
         partisan_acceptor_socket_pool_sup,
         {partisan_acceptor_socket_pool_sup, start_link, []},
