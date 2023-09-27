@@ -620,7 +620,17 @@ cast(Dest, Msg) ->
     %% Maybe partisan_remote_ref
     cast(Dest, Msg, []).
 
+
 %% Partisan addition
+cast(Dest, Msg, _) when is_pid(Dest); is_atom(Dest) ->
+    cast(Dest, Msg);
+
+cast({global,_}  = GRef, Msg, _) ->
+    cast(GRef, Msg);
+
+cast({via, _, _} = ViaRef, Msg, _) ->
+    cast(ViaRef, Msg);
+
 cast(Dest, Msg, Opts) ->
     %% Set opts will set the default channel is non is defined, so there is no
     %% need to cleanup the calling process dict.
