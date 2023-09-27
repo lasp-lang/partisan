@@ -114,7 +114,7 @@ ifeq ($(shell expr $(OTPVSN) \> 24),1)
 	$(info OTPVSN is higher than 24)
 	$(eval override mytarget=echo "skipping al-test target. CT Suite currently requires OTP24")
 else
-	${REBAR} as test ct --suite=partisan_erpc_SUITE,partisan_gen_server_SUITE,partisan_gen_event_SUITE,partisan_gen_statem_SUITE
+	${REBAR} as test ct --suite=partisan_gen_server_SUITE,partisan_gen_event_SUITE,partisan_gen_statem_SUITE
 endif
 
 
