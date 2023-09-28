@@ -492,6 +492,8 @@ forward_message(Node, ServerRef, Message, Opts) when is_list(Opts) ->
     forward_message(Node, ServerRef, Message, maps:from_list(Opts));
 
 forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
+    %% TODO ServerRef heer can be atom(), pid(), partisan_ref(), {via, _, _},
+    %% {Name, Node} or anything !!!!
     %% If attempting to forward to the local node or using disterl, bypass.
     Bypass =
         Node =:= partisan:node()
@@ -500,6 +502,7 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
     case Bypass of
         true ->
             partisan_peer_service_manager:deliver(ServerRef, Message);
+
         false ->
             %% Get forwarding options and combine with message
             %% specific options.
