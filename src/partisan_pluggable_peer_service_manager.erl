@@ -553,19 +553,15 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
                 andalso not NeedsAck
                 andalso not CausalDelivery,
 
-            case FastForward of
-                true ->
-                    %% Concurrent execution
-                    %% Attempt to fast-path by accessing the connection
-                    %% directly
-                    case partisan_peer_connections:dispatch(Cmd) of
-                        ok ->
-                            ok;
-                        {error, _} ->
-                            gen_server:call(?MODULE, Cmd, infinity)
-                    end;
-                false ->
-                    %% Serialized execution
+            %% Attempt to fast-forward sending to the connection directly
+            case FastForward andalso partisan_peer_connections:dispatch(Cmd) of
+                ok ->
+                    ok;
+
+                _ ->
+                    %% FastForward == false or {error, _} from dispatch
+                    %% We do a serialized execution as Opts might require
+                    %% retransmission
                     gen_server:call(?MODULE, Cmd, infinity)
             end
     end.
