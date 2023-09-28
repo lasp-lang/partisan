@@ -1,4 +1,7 @@
 # CHANGELOG
+# v5.0.0-rc.7
+* Performance improvements for `partisan:forward/2,3,4`.
+
 # v5.0.0-rc.2
 ### Bug Fixes
 * Fixes a bug in `partisan:spawn/2`
