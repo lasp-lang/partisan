@@ -553,7 +553,8 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
                 andalso not NeedsAck
                 andalso not CausalDelivery,
 
-            %% Attempt to fast-forward sending to the connection directly
+            %% Attempt to fast-path, dispatching it directly to the connection
+            %% process
             case FastForward andalso partisan_peer_connections:dispatch(Cmd) of
                 ok ->
                     ok;
