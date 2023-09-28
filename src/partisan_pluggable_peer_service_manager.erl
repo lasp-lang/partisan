@@ -450,14 +450,28 @@ forward_message(Term, Message) ->
 %% @doc Gensym support for forwarding.
 %% @end
 %% -----------------------------------------------------------------------------
-forward_message(Pid, Message, Opts) when is_pid(Pid) ->
-    forward_message(partisan:node(Pid), Pid, Message, Opts);
+forward_message(PidOrName, Message, _Opts)
+when is_pid(PidOrName); is_atom(PidOrName) ->
+    _ = erlang:send(PidOrName, Message),
+    ok;
 
-forward_message(Name, Message, Opts) when is_atom(Name) ->
-    forward_message(partisan:node(), Name, Message, Opts);
+forward_message({Name, Node}, Message, Opts)
+when is_atom(Name), is_atom(Node) ->
+    case Node == partisan:node() of
+        true ->
+            _ = erlang:send(Name, Message),
+            ok;
+        false ->
+            forward_message(Node, Name, Message, Opts)
+    end;
 
-forward_message({Name, Node}, Message, Opts) ->
-    forward_message(Node, Name, Message, Opts);
+forward_message({global, _} = ServerRef, Message, _Opts) ->
+    %% Will do nothing is disterl is not enabled as we currently do not have
+    %% partisan_global
+    partisan_peer_service_manager:deliver(ServerRef, Message);
+
+forward_message({via, _, _} = ServerRef, Message, _Opts) ->
+    partisan_peer_service_manager:deliver(ServerRef, Message);
 
 forward_message(RemoteRef, Message, Opts) ->
     partisan_remote_ref:is_pid(RemoteRef)
