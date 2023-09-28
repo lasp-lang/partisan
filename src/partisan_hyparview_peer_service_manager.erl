@@ -519,14 +519,38 @@ forward_message(Term, Message) ->
 %% @doc Gensym support for forwarding.
 %% @end
 %% -----------------------------------------------------------------------------
-forward_message(Pid, Message, Opts) when is_pid(Pid) ->
-    forward_message(partisan:node(Pid), Pid, Message, Opts);
+forward_message(PidOrName, Message, _Opts)
+when is_pid(PidOrName); is_atom(PidOrName) ->
+    _ = erlang:send(PidOrName, Message),
+    ok;
 
-forward_message(Name, Message, Opts) when is_atom(Name) ->
-    forward_message(partisan:node(), Name, Message, Opts);
+forward_message({Name, Node}, Message, Opts)
+when is_atom(Name), is_atom(Node) ->
+    case Node == partisan:node() of
+        true ->
+            _ = erlang:send(Name, Message),
+            ok;
+        false ->
+            forward_message(Node, Name, Message, Opts)
+    end;
 
-forward_message({Name, Node}, Message, Opts) ->
-    forward_message(Node, Name, Message, Opts);
+forward_message({global, _} = ServerRef, Message, Opts) ->
+    ?LOG_DEBUG(#{
+        description => "Message cannot be delivered, global not supported",
+        destination => ServerRef,
+        message => Message,
+        options => Opts
+    }),
+    ok;
+
+forward_message({via, _, _} = ServerRef, Message, Opts) ->
+    ?LOG_DEBUG(#{
+        description => "Message cannot be delivered, global not supported",
+        destination => ServerRef,
+        message => Message,
+        options => Opts
+    }),
+    ok;
 
 forward_message(RemoteRef, Message, Opts) ->
     partisan_remote_ref:is_pid(RemoteRef)
