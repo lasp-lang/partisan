@@ -28,7 +28,7 @@
 %%          {type, partisan_peer_discovery_list},
 %%          {config, #{
 %%              name => mynode
-%%              nodes => [
+%%              addresses => [
 %%                  <<"192.168.40.1:9000">>,
 %%                  <<"192.168.40.10:9000">>,
 %%                  <<"mynode@192.168.40.100:9000">>,

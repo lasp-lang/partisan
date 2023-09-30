@@ -209,9 +209,12 @@ init([#{enabled := true, type := Mod} = Opts]) when is_atom(Mod) ->
 init([#{enabled := true} = Opts]) ->
     {stop, {invalid_config, Opts}};
 
-init(_) ->
+init(#{}) ->
     State = #state{enabled = false},
-    {ok, disabled, State}.
+    {ok, disabled, State};
+
+init([Opts]) when is_list(Opts) ->
+    init([maps:from_list(Opts)]).
 
 
 callback_mode() ->

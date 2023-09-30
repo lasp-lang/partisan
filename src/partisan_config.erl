@@ -620,8 +620,35 @@ set(channels, Arg) when is_list(Arg) orelse is_map(Arg) ->
 
     do_set(channels, Channels);
 
-set(broadcast_mods, Value) ->
-    do_set(broadcast_mods, lists:usort(Value ++ ?BROADCAST_MODS));
+set(broadcast_mods, L0) ->
+    is_list(L0) orelse error({badarg, [broadcast_mods, L0]}),
+    Map = fun
+        ToAtom(Mod) when is_list(Mod) ->
+            try
+                {true, list_to_existing_atom(Mod)}
+            catch
+                error:Reason ->
+                    ToAtom({error, Mod})
+            end;
+
+        ToAtom({error, Mod}) ->
+            ?LOG_ERROR(#{
+                description => "Configuration error. Broadcast module ignored",
+                reason => "Invalid module",
+                module => Mod
+            }),
+            false;
+
+        ToAtom(Mod) when is_atom(Mod), Mod =/= undefined ->
+            true;
+
+        ToAtom(Mod) ->
+            ToAtom({error, Mod})
+
+    end,
+    L = lists:filtermap(Map, L0),
+    %% We always add the mods required by partisan itself.
+    do_set(broadcast_mods, lists:usort(L ++ ?BROADCAST_MODS));
 
 set(hyparview, Value) ->
     set_hyparview_config(Value);
