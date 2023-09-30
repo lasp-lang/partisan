@@ -65,7 +65,7 @@
 -type actor()               ::  binary().
 -type listen_addr()         ::  #{
                                     ip := inet:ip_address(),
-                                    port := non_neg_integer()
+                                    port := 1..65535
                                 }.
 -type node_spec()           ::  #{
                                     name := node(),
