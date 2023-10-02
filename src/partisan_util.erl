@@ -22,8 +22,12 @@
 -module(partisan_util).
 
 -include("partisan_logger.hrl").
+-include("partisan_util.hrl").
 -include("partisan.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 -export([maps_append/3]).
 -export([encode/1]).
@@ -32,6 +36,10 @@
 -export([maybe_pad_term/1]).
 -export([get/2]).
 -export([get/3]).
+-export([format_posix_error/1]).
+-export([parse_ip_address/1]).
+-export([parse_port_nbr/1]).
+-export([parse_listen_address/1]).
 
 
 
@@ -160,6 +168,104 @@ encode(Term, Opts) ->
         false ->
             erlang:term_to_iovec(Term, Opts)
     end.
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Given a POSIX error reason see {@link inet} and {@link file}, returns a
+%% descriptive binary string of the error in English and adding `Reason' at the
+%% end of the description inside parenthesis.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec format_posix_error(Reason :: term()) ->
+    Message :: binary() | Reason :: term().
+
+format_posix_error(Reason) when is_atom(Reason) ->
+    case inet:format_error(Reason) of
+        "unknown" ++ _ ->
+            Reason;
+        Message ->
+            iolist_to_binary([Message, " (", atom_to_list(Reason), ")"])
+    end.
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec parse_ip_address(Address :: string() | binary() | inet:ip_address()) ->
+    IPAddress :: inet:ip_address() | no_return().
+
+parse_ip_address(Address) when is_list(Address) ->
+    case inet:parse_address(Address) of
+        {ok, IPAddress} ->
+            IPAddress;
+
+        {error, _} ->
+            error(badarg)
+    end;
+
+parse_ip_address(Term) when is_binary(Term) ->
+    parse_ip_address(binary_to_list(Term));
+
+parse_ip_address(Term) when ?IS_IP(Term) ->
+    Term;
+
+parse_ip_address(_) ->
+    error(badarg).
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+parse_port_nbr(N) when ?IS_PORT_NBR(N) ->
+    N;
+
+parse_port_nbr(Term) when is_binary(Term) ->
+    parse_port_nbr(binary_to_integer(Term));
+
+parse_port_nbr(Term) when is_list(Term) ->
+    parse_port_nbr(list_to_integer(Term));
+
+parse_port_nbr(_) ->
+    error(badarg).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec parse_listen_address(Term :: map() | list() | binary() | tuple()) ->
+    partisan:listen_addr() | no_return().
+
+parse_listen_address(#{ip := IPAddress, port := N} = Addr)
+when ?IS_IP(IPAddress) andalso ?IS_PORT_NBR(N) ->
+    Addr;
+
+parse_listen_address(#{ip := IP, port := N}) ->
+    #{ip => parse_ip_address(IP), port => parse_port_nbr(N)};
+
+parse_listen_address({IPAddr, N}) when ?IS_IP(IPAddr) andalso ?IS_PORT_NBR(N) ->
+    #{ip => IPAddr, port => N};
+
+parse_listen_address({IPAddr, N}) ->
+    parse_listen_address(#{ip => IPAddr, port => N});
+
+parse_listen_address(Term) when is_list(Term) ->
+    case string:split(Term, ":") of
+        [IPAddr, N] ->
+            parse_listen_address(#{ip => IPAddr, port => N});
+        _ ->
+            error(badarg)
+    end;
+
+parse_listen_address(Term) when is_binary(Term) ->
+    parse_listen_address(binary_to_list(Term));
+
+parse_listen_address(_) ->
+    error(badarg).
 
 
 
@@ -358,4 +464,59 @@ pid(Pid, Node, true) ->
 
 
 
+%% =============================================================================
+%% EUNIT TESTS
+%% =============================================================================
 
+
+
+-ifdef(TEST).
+
+
+parse_listen_address_test_() ->
+    Addr = #{ip => {127,0,0,1}, port => 53688},
+    [
+        ?_assertEqual(Addr, parse_listen_address("127.0.0.1:53688")),
+        ?_assertEqual(Addr, parse_listen_address(<<"127.0.0.1:53688">>)),
+        ?_assertEqual(Addr, parse_listen_address(Addr)),
+        ?_assertEqual(Addr, parse_listen_address(#{
+            ip => "127.0.0.1", port => "53688"}
+        )),
+        ?_assertEqual(Addr, parse_listen_address(#{
+            ip => <<"127.0.0.1">>, port => <<"53688">>}
+        )),
+        ?_assertEqual(Addr, parse_listen_address(#{
+            ip => {127,0,0,1}, port => <<"53688">>}
+        )),
+        ?_assertEqual(Addr, parse_listen_address(#{
+            ip => {127,0,0,1}, port => 53688}
+        )),
+        ?_assertEqual(Addr, parse_listen_address(
+            {{127,0,0,1}, 53688}
+        )),
+        ?_assertEqual(Addr, parse_listen_address(
+            {"127.0.0.1", "53688"}
+        )),
+        ?_assertEqual(Addr, parse_listen_address(
+            {<<"127.0.0.1">>, <<"53688">>}
+        )),
+        ?_assertError(badarg, parse_listen_address(#{
+            ip => " 127.0.0.1 ", port => 53688}
+        )),
+        ?_assertError(badarg, parse_listen_address(#{
+            ip => {127,0,0,1}, port => " 53688 "}
+        )),
+        ?_assertError(badarg, parse_listen_address(#{
+            ip => {127,0,0,1}, port => 0}
+        )),
+        ?_assertError(badarg, parse_listen_address(#{
+            ip => {127,0,0,1}, port => "0"}
+        )),
+        ?_assertError(badarg, parse_listen_address(#{
+            ip => {127,0,0,1}, port => <<"0">>}
+        ))
+    ].
+
+
+
+-endif.

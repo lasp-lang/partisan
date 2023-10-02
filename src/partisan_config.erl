@@ -28,10 +28,39 @@
 %% As per Erlang convention the options are given using the `sys.config' file
 %% under the `partisan' application section.
 %%
+%% === Example ===
+%% ```
+%% [
+%%     ...
+%%     {partisan, [
+%%         {listen_addrs, [
+%%             #{ip => {127, 0, 0, 1}, port => 12345}
+%%         ]},
+%%         {channels, #{
+%%             data => #{parallelism => 4}
+%%         }},
+%%         {remote_ref_format, improper_list},
+%%         {tls, true},
+%%         {tls_server_options, [
+%%             {certfile, "config/_ssl/server/keycert.pem"},
+%%             {cacertfile, "config/_ssl/server/cacerts.pem"},
+%%             {keyfile, "config/_ssl/server/key.pem"},
+%%             {verify, verify_none}
+%%         ]},
+%%         {tls_client_options, [
+%%             {certfile, "config/_ssl/client/keycert.pem"},
+%%             {cacertfile, "config/_ssl/client/cacerts.pem"},
+%%             {keyfile, "config/_ssl/client/key.pem"},
+%%             {verify, verify_none}
+%%         ]}
+%%     ]}
+%% ]
+%% '''
+%%
 %% == Options ==
-%% The following is the list of all the options you can read using {@link get/
-%% 1} and {@link get/2}, and modify using the `sys.config' file and {@link set/
-%% 2}.
+%% The following is the list of all the options you can read using
+%% {@link get/1} and {@link get/2}, and modify using the `sys.config' file and
+%% {@link set/2}.
 %%
 %% See {@section Deprecated Options} below.
 %%
@@ -67,7 +96,7 @@
 %% Finally the list is transformed to a map where keys are channel names and
 %% values are channel map representation.
 %%
-%% <strong>Example:</strong>
+%% ==== Example ====
 %%
 %% Given the following option value:
 %% ```
@@ -88,10 +117,17 @@
 %% '''
 %% </dd>
 %% <dt>`connect_disterl'</dt>
-%% <dd>Whether to use distributed erlang in addition to Partisan channels. This
-%% is used for testing and only works for {@link
-%% partisan_full_membership_strategy} (See `membership_strategy'). Defaults to
-%% `false'</dd>
+%% <dd>A configuration that is intended solely for testing of the
+%% {@link partisan_full_membership_strategy} (See `membership_strategy').
+%% It defines whether to use Distributed Erlang (disterl) in addition to
+%% Partisan channels. Defaults to `false'.
+%%
+%% Notice that this setting does not prevent you having both disterl and
+%% Partisan enabled for your release. However, you need to have special care to
+%% avoid mixing the two, for example by calling a {@link partisan_gen_server}
+%% that uses Partisan for distribution with {@link gen_server} that uses
+%% disterl.
+%% </dd>
 %% <dt>`connection_interval'</dt>
 %% <dd>Interval of time between peer connection attempts</dd>
 %% <dt>`connection_jitter'</dt>
@@ -109,53 +145,77 @@
 %% <dt>`exchange_tick_period'</dt>
 %% <dd>TBD</dd>
 %% <dt>`gossip'</dt>
-%% <dd>If `true' gossip is used to disseminate membership
-%% state.</dd>
+%% <dd>If `true' gossip is used to disseminate membership to peers.
+%% Default is `true'.
+%% At the moment used only by {@link partisan_full_membership_strategy}.
+%% </dd>
 %% <dt>`hyparview'</dt>
 %% <dd> The configuration for the {@link
 %% partisan_hyparview_peer_service_manager}. A list with the following
 %% properties:
 %%
-%% <dl>
-%% <dt>`active_max_size'</dt>
-%% <dd>Defaults to `6'.</dd>
-%% <dt>`active_min_size'</dt>
-%% <dd>Defaults to `3'.</dd>
-%% <dt>`active_rwl'</dt>
-%% <dd>Active View Random Walk Length. Defaults to `6'.</dd>
-%% <dt>`passive_max_size'</dt>
-%% <dd>Defaults to `30'.</dd>
-%% <dt>`passive_rwl'</dt>
-%% <dd>Passive View Random Walk Length. Defaults to `6'.</dd>
-%% <dt>`random_promotion'</dt>
-%% <dd>A boolean indicating if random promotion is enabled. Defaults
-%% `true'.</dd>
-%% <dt>`random_promotion_interval'</dt>
-%% <dd>Time after which the protocol attempts to promote a node in the passive
-%% view to the active view. Defaults to `5000'.</dd>
-%% <dt>`shuffle_interval'</dt>
-%% <dd>Defaults to `10000'.</dd>
-%% <dt>`shuffle_k_active'</dt>
-%% <dd>Number of peers to include in the shuffle exchange. Defaults to `3'.</dd>
-%% <dt>`shuffle_k_passive'</dt>
-%% <dd>Number of peers to include in the shuffle exchange. Defaults to `4'.</dd>
-%% </dl>
+%% <ul>
+%% <li>`active_max_size' - Defaults to `6'.</li>
+%% <li>`active_min_size' - Defaults to `3'.</li>
+%% <li>`active_rwl' - Active View Random Walk Length. Defaults to `6'.</li>
+%% <li>`passive_max_size' - Defaults to `30'.</li>
+%% <li>`passive_rwl' - Passive View Random Walk Length. Defaults to `6'.</li>
+%% <li>`random_promotion' - A boolean indicating if random promotion is enabled. Defaults
+%% `true'.</li>
+%% <li>`random_promotion_interval' - Time after which the protocol attempts to promote a node in the passive
+%% view to the active view. Defaults to `5000'.</li>
+%% <li>`shuffle_interval' - Defaults to `10000'.</li>
+%% <li>`shuffle_k_active' - Number of peers to include in the shuffle exchange. Defaults to `3'.</li>
+%% <li>`shuffle_k_passive' - Number of peers to include in the shuffle exchange. Defaults to `4'.</li>
+%% </ul>
 %%
 %% </dd>
 %% <dt>`ingress_delay'</dt>
 %% <dd>TBD</dd>
 %% <dt>`lazy_tick_period'</dt>
 %% <dd>TBD</dd>
+%% <dt>`listen_addrs'</dt>
+%% <dd>A list of `listen_addr()' objects. This overrides `peer_ip' and
+%% `peer_port' and its the preferred way to configure the peer listener. If
+%% missing, the `peer_ip' property will be used, unless is also missing, in
+%% which case the nodename's host part will be used to determine the IP
+%% address.
+%%
+%% The `listen_addr()' object can be represented using lists, binaries,
+%% tuples or maps as shown in the following example:
+%% ```
+%% {listen_addrs, [
+%%    "127.0.0.1:12345",
+%%    <<"127.0.0.1:12345">>,
+%%    {"127.0.0.1", "12345"},
+%%    {{127, 0, 0, 1}, 12345},
+%%    #{ip => "127.0.0.1", port => "12345"},
+%%    #{ip => <<"127.0.0.1">>, port => <<"12345">>},
+%%    #{ip => {127, 0, 0, 1}, port => 12345}
+%% ]}
+%% '''
+%% Notice the above example will result in the following, as equivalent terms
+%% are deduplicated.
+%% ```
+%% {listen_addrs, [
+%%    #{ip => {127, 0, 0, 1}, port => 12345}
+%% ]}
+%% '''
+%% </dd>
 %% <dt>`membership_binary_compression'</dt>
 %% <dd>A boolean value or an integer in the range from `0..9' to be used with
 %% {@link erlang:term_to_binary/2} when encoding the membership set for
-%% broadcast. A value of `true' is equivalent to integer `6' (equivalent to
-%% option `compressed' in {@link erlang:term_to_binary/2}). A value of `false'
-%% is equivalent to `0' (no compression). Default is `true'.</dd>
+%% broadcast.
+%%
+%% A value of `true' is equivalent to integer `6' (equivalent to
+%% option `compressed' in {@link erlang:term_to_binary/2}).
+%% A value of `false' is equivalent to `0' (no compression).
+%%
+%% Default is`true'.</dd>
 %% <dt>`membership_strategy'</dt>
 %% <dd>The membership strategy to be used with {@link
-%% partisan_pluggable_peer_service_manager}. Default is {@link
-%% partisan_full_membership_strategy}</dd>
+%% partisan_pluggable_peer_service_manager}.
+%% Default is {@link partisan_full_membership_strategy}</dd>
 %% <dt>`membership_strategy_tracing'</dt>
 %% <dd>TBD</dd>
 %% <dt>`name'</dt>
@@ -169,12 +229,13 @@
 %% partisan_peer_service_manager} behaviour which defines the overlay network
 %% topology and the membership view maintenance strategy. Default is {@link
 %% partisan_pluggable_peer_service_manager}.</dd>
-%% <dt>`peer_host'</dt>
-%% <dd>TBD</dd>
 %% <dt>`peer_ip'</dt>
-%% <dd>TBD</dd>
+%% <dd>The IP to use for the peer connection listener. If undefined, the IP
+%% address will be resolved using the nodename's host (the part to the right of
+%% the `@' character. If the IP address cannot be resolved, it will default to
+%% `{127,0,0,1}'.</dd>
 %% <dt>`peer_port'</dt>
-%% <dd>TBD</dd>
+%% <dd>The port numner for the peer connection listener.</dd>
 %% <dt>`periodic_enabled'</dt>
 %% <dd>TBD</dd>
 %% <dt>`periodic_interval'</dt>
@@ -188,28 +249,36 @@
 %% <dt>`register_pid_for_encoding'</dt>
 %% <dd>TBD</dd>
 %% <dt>`remote_ref_format'</dt>
-%% <dd>If `uri' partisan remote references (see module {@link
-%% partisan_remote_ref}) will be encoded as a URI binary, if `tuple' it will be
-%% encoded as a tuple (the format used by Partisan v1 to v4). Otherwise, if
-%% `improper_list' it will be encoded as an improper list, similar to how
-%% aliases are encoded by the OTP modules. This option exists to allow the user
-%% to tradeoff between memory and latency. In terms of memory `uri' is the
-%% cheapest, followed by `improper_list'. In terms of latency `tuple' is the
-%% fastest followed by `improper_list'. The default is `improper_list' a if
-%% offers a good balance between memory and latency.
+%% <dd>Defines how partisan remote references pids, references and registered
+%% names will be encoded. See {@link partisan_remote_ref}).
+%%
+%% Accepts the following atom values:
+%% <ul>
+%% <li> `uri' - remote references will be encoded as binary URIs.</li>
+%% <li> `tuple' - remote references will be encoded as tuples (the
+%% format used by Partisan v1 to v4).</li>
+%% <li>`improper_list' - remote references will be encoded as  improper lists,
+%% similar to how aliases are encoded by the OTP modules.</li>
+%% </ul>
+%%
+%% This option exists to allow the user to tradeoff between memory and latency.
+%% In terms of memory `uri' is the cheapest, followed by `improper_list'. In
+%% terms of latency `tuple' is the fastest followed by `improper_list'. The
+%% default is `improper_list' a if offers a good balance between memory and
+%% latency.
 %%
 %% ```
 %% 1> partisan_config:set(remote_ref_format, uri).
 %% ok
-%% 2> partisan_remote_ref:from_term(self()).
+%% 2> partisan:self().
 %% <<"partisan:pid:nonode@nohost:0.1062.0">>
 %% 3> partisan_config:set(remote_ref_format, tuple).
-%% 4> partisan_remote_ref:from_term(self()).
+%% 4> partisan:self().
 %% {partisan_remote_reference,
 %%    nonode@nohost,
 %%    {partisan_process_reference,"<0.1062.0>"}}
 %% 5> partisan_config:set(remote_ref_format, improper_list).
-%% 6> partisan_remote_ref:from_term(self()).
+%% 6> partisan:self().
 %% [nonode@nohost|<<"Pid#<0.1062.0>">>]
 %% '''
 %% </dd>
@@ -217,13 +286,13 @@
 %% <dd>If `true' and the URI encoding of a
 %% remote reference results in a binary smaller than 65 bytes, the URI will be
 %% padded. The default is `false'.
-%% %% ```
+%% ```
 %% 1> partisan_config:set(remote_ref_binary_padding, false).
-%% 1> partisan_remote_ref:from_term(self()).
+%% 1> partisan:self().
 %% <<"partisan:pid:nonode@nohost:0.1062.0">>
 %% 2> partisan_config:set(remote_ref_binary_padding, true).
 %% ok
-%% 3> partisan_remote_ref:from_term(self()).
+%% 3> partisan:self().
 %% <<"partisan:pid:nonode@nohost:0.1062.0:"...>>
 %% '''
 %% </dd>
@@ -232,21 +301,58 @@
 %% <dt>`reservations'</dt>
 %% <dd>TBD</dd>
 %% <dt>`retransmit_interval'</dt>
-%% <dd>Interval of time between retransmission attempts</dd>
+%% <dd> When option `retransmission' is set to `true' in the
+%% `partisan:forward_opts()' used in a call to
+%% {@link partisan:forward_message/3} and message delivery fails, the Peer
+%% Service will enqueue the message for retransmission. This option is used to
+%% control the interval of time between retransmission attempts.
+%% </dd>
 %% <dt>`shrinking'</dt>
 %% <dd>TBD</dd>
 %% <dt>`tag'</dt>
-%% <dd>The role of this node when using
-%% `partisan_client_server_peer_manager'. Values can be`client' or `server'.
-%% Use `undefined' when using a different peer service manager.</dd>
+%% <dd>The role of this node when using the Client-Server topology implemented
+%% by @{link partisan_client_server_peer_manager}.
+%% ==== Options ====
+%% <ul>
+%% <li>`undefined' - The node acts as a normal peer in all other topologies. This the default value</li>
+%% <li>`client' - The node acts as a client. To be used only in combination with
+%% `{partisan_peer_manager, partisan_client_server_peer_manager}'</li>
+%% <li>`server' - The node acts as a server. To be used only in combination with
+%% `{partisan_peer_manager, partisan_client_server_peer_manager}'</li>
+%% </ul>
+%% </dd>
 %% <dt>`tls'</dt>
-%% <dd>a boolean value indicating whether channel connections should use TLS. If
+%% <dd>A boolean value indicating whether channel connections should use TLS. If
 %% enabled, you have to provide a value for `tls_client_options' and
 %% `tls_server_options'. The default is `false'.</dd>
 %% <dt>`tls_client_options'</dt>
-%% <dd>The default is `[]'.</dd>
+%% <dd>The TLS socket options used when establishing outgoing connections to
+%% peers. The configuration applies to all Partisan channels.
+%% The default is `[]'.
+%% ==== Example ====
+%% ```
+%% {tls_client_options, [
+%%     {certfile, "config/_ssl/client/keycert.pem"},
+%%     {cacertfile, "config/_ssl/client/cacerts.pem"},
+%%     {keyfile, "config/_ssl/client/key.pem"},
+%%     {verify, verify_none}
+%% ]}
+%% '''
+%% </dd>
 %% <dt>`tls_server_options'</dt>
-%% <dd>The default is `[]'.</dd>
+%% <dd>The TLS socket options used when establishing incoming connections from
+%% peers. The configuration applies to all Partisan channels.
+%% The default is `[]'.
+%% ==== Example ====
+%% ```
+%% {tls_server_options, [
+%%     {certfile, "config/_ssl/server/keycert.pem"},
+%%     {cacertfile, "config/_ssl/server/cacerts.pem"},
+%%     {keyfile, "config/_ssl/server/key.pem"},
+%%     {verify, verify_none}
+%% ]}
+%% '''
+%% </dd>
 %% <dt>`tracing'</dt>
 %% <dd>a boolean value. The default is `false'.</dd>
 %% <dt>`xbot_interval'</dt>
@@ -275,6 +381,8 @@
 %% Use `active_min_size' in the `hyparview' option instead.</dd>
 %% <dt>`passive_view_shuffle_period'</dt>
 %% <dd>Use `shuffle_interval' in the `hyparview' option instead.</dd>
+%% <dt>`peer_port'</dt>
+%% <dd>Use `listen_addrs' instead.</dd>
 %% <dt>`partisan_peer_service_manager'</dt>
 %% <dd>Use `peer_service_manager' instead.</dd>
 %% <dt>`prwl'</dt>
@@ -294,6 +402,7 @@
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -include("partisan_logger.hrl").
+-include("partisan_util.hrl").
 -include("partisan.hrl").
 
 
@@ -390,7 +499,7 @@ init() ->
     end,
 
     %% Configure system parameters.
-    DefaultPeerIP = try_get_node_address(),
+    DefaultPeerIP = try_get_peer_ip(),
     DefaultPeerPort = random_port(),
 
     [env_or_default(Key, Default) ||
@@ -419,6 +528,7 @@ init() ->
             {hyparview, ?HYPARVIEW_DEFAULTS},
             {ingress_delay, 0},
             {lazy_tick_period, ?DEFAULT_LAZY_TICK_PERIOD},
+            {listen_addrs, []},
             {membership_binary_compression, true},
             {membership_strategy, ?DEFAULT_MEMBERSHIP_STRATEGY},
             {membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING},
@@ -426,7 +536,6 @@ init() ->
             {parallelism, ?PARALLELISM},
             {peer_discovery, #{enabled => false}},
             {peer_service_manager, PeerService},
-            {peer_host, undefined},
             {peer_ip, DefaultPeerIP},
             {peer_port, DefaultPeerPort},
             {periodic_enabled, ?PERIODIC_ENABLED},
@@ -456,21 +565,18 @@ init() ->
 
     %% Setup default listen addr.
     %% This will be part of the partisan:node_spec() which is the map
-    DefaultAddr0 = #{port => get(peer_port)},
+    DefaultAddr = #{
+        ip => get(peer_ip),
+        port => get(peer_port)
+    },
 
-    DefaultAddr =
-        case get(peer_host) of
-            undefined ->
-                DefaultAddr0#{ip => get(peer_ip)};
-            Host ->
-                DefaultAddr0#{host => Host}
-        end,
+    case get(listen_addrs) of
+        [] ->
+            set(listen_addrs, [DefaultAddr]);
+        L when is_list(L) ->
+            ok
+    end.
 
-    %% We make sure they are sorted so that we can compare them (specially when
-    %% part of the node_spec()).
-    ok = env_or_default(listen_addrs, [DefaultAddr]),
-    ListenAddrs = lists:usort(get(listen_addrs)),
-    ok = set(listen_addrs, ListenAddrs).
 
 
 %% -----------------------------------------------------------------------------
@@ -572,8 +678,14 @@ get_with_opts(Key, Opts, Default) when is_map(Opts); is_list(Opts) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
+set(listen_addrs, Value0) when is_list(Value0) ->
+    %% We make sure they are sorted so that we can compare them (specially when
+    %% part of the node_spec()).
+    Value = lists:usort(validate_listen_addrs(Value0)),
+    do_set(listen_addrs, Value);
+
 set(peer_ip, Value) when is_list(Value) ->
-    {ok, ParsedIP} = inet_parse:address(Value),
+    ParsedIP = partisan_util:parse_ip_address(Value),
     do_set(peer_ip, ParsedIP);
 
 set(channels, Arg) when is_list(Arg) orelse is_map(Arg) ->
@@ -779,8 +891,15 @@ maybe_set_node_name() ->
             %% We read directly from the env (not our cache)
             UserDefined = application:get_env(partisan, name, undefined),
             set_node_name(UserDefined);
-        _ ->
+
+        Nodename ->
             %% Name already set
+            ?LOG_NOTICE(#{
+                description =>
+                    "Partisan node name generated and configured",
+                name => Nodename,
+                disterl_enabled => get(disterl_enabled)
+            }),
             ok
     end.
 
@@ -788,10 +907,10 @@ maybe_set_node_name() ->
 %% @private
 set_node_name(UserDefined) ->
     Name =
-        case node() of
+        case erlang:node() of
             nonode@nohost when UserDefined == undefined ->
                 Generated = gen_node_name(),
-                ?LOG_INFO(#{
+                ?LOG_NOTICE(#{
                     description =>
                         "Partisan node name generated and configured",
                     name => Generated,
@@ -800,13 +919,19 @@ set_node_name(UserDefined) ->
                 Generated;
 
             nonode@nohost when UserDefined =/= undefined ->
+                ?LOG_NOTICE(#{
+                    description => "Partisan node name configured",
+                    name => UserDefined,
+                    disterl_enabled => false
+                }),
                 UserDefined;
 
             Other ->
-                ?LOG_INFO(#{
+                ?LOG_NOTICE(#{
                     description => "Partisan node name configured",
                     name => Other,
-                    disterl_enabled => true
+                    disterl_enabled =>
+                        application:get_env(?APP, disterl_enabled, false)
                 }),
                 Other
         end,
@@ -817,10 +942,39 @@ set_node_name(UserDefined) ->
 
 %% @private
 gen_node_name() ->
-    UUIDState = uuid:new(self()),
-    {UUID, _UUIDState1} = uuid:get_v1(UUIDState),
+    {UUID, _UUIDState} = uuid:get_v1(uuid:new(self())),
     StringUUID = uuid:uuid_to_string(UUID),
-    list_to_atom(StringUUID ++ "@127.0.0.1").
+
+    Host =
+        case application:get_env(?APP, peer_ip, undefined) of
+            undefined ->
+                {ok, Val} = inet:gethostname(),
+                Val;
+
+            Val ->
+                address_to_string(partisan_util:parse_ip_address(Val))
+        end,
+
+    list_to_atom(StringUUID ++ "@" ++ Host).
+
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+address_to_string(IPAddress) when ?IS_IP(IPAddress) ->
+    inet:ntoa(IPAddress);
+
+address_to_string(Address) when is_binary(Address) ->
+    binary_to_list(Address);
+
+address_to_string(Address) when is_list(Address) ->
+    Address.
+
+
+
 
 
 %% -----------------------------------------------------------------------------
@@ -900,6 +1054,22 @@ maybe_rename(Key) ->
     Key.
 
 
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+validate_listen_addrs(Addrs) ->
+    lists:foldl(
+        fun(Addr, Acc) ->
+            [partisan_util:parse_listen_address(Addr) | Acc]
+        end,
+        [],
+        Addrs
+    ).
+
+
+
 %% @private
 random_port() ->
     {ok, Socket} = gen_tcp:listen(0, []),
@@ -909,69 +1079,115 @@ random_port() ->
 
 
 %% @private
-try_get_node_address() ->
+try_get_peer_ip() ->
     case application:get_env(partisan, peer_ip) of
-        {ok, Address} ->
-            Address;
+        {ok, Value} when is_list(Value) orelse ?IS_IP(Value) ->
+            partisan_util:parse_ip_address(Value);
+
         undefined ->
-            get_node_address()
+            get_peer_ip()
     end.
 
 
 %% @private
-get_node_address() ->
-    Name = atom_to_list(partisan:node()),
-    [_Hostname, FQDN] = string:tokens(Name, "@"),
+get_peer_ip() ->
+    LongName = atom_to_list(partisan:node()),
+    [_ShortName, Host] = string:tokens(LongName, "@"),
 
     %% Spawn a process to perform resolution.
     Me = self(),
-
-    ResolverFun = fun() ->
-        ?LOG_INFO(#{
-            description => "Resolving FQDN",
-            fqdn => FQDN
-        }),
-        case inet:getaddr(FQDN, inet) of
-            {ok, Address} ->
-                ?LOG_INFO(#{
-                    description => "Resolved domain name",
-                    name => Name,
-                    address => Address
-                }),
-                Me ! {ok, Address};
-            {error, Reason} ->
-                ?LOG_INFO(#{
-                    description =>
-                        "Cannot resolve local name, resulting to 127.0.0.1",
-                    fqdn => FQDN,
-                    reason => Reason
-                }),
-                Me ! {ok, ?PEER_IP}
-        end
-    end,
-
-    %% Spawn the resolver.
-    ResolverPid = spawn(ResolverFun),
-
-    %% Exit the resolver after a limited amount of time.
-    timer:exit_after(3000, ResolverPid, normal),
+    ReqId = spawn_request(
+        node(),
+        fun() -> Me ! {ok, get_ip_addr(Host)} end,
+        [{reply, error_only}]
+    ),
 
     %% Wait for response, either answer or exit.
     receive
-        {ok, Address} ->
+        {ok, Addr} ->
+            Addr;
+
+        {spawn_reply, ReqId, error, Reason} ->
             ?LOG_INFO(#{
-                description => "Resolving FQDN",
-                fqdn => FQDN,
-                address => Address
+                description =>
+                    "Cannot resolve IP address for host, using 127.0.0.1",
+                host => Host,
+                reason => Reason
             }),
-            Address;
-        Error ->
+            ?LOCALHOST
+
+    after
+        5000 ->
+            _ = spawn_request_abandon(ReqId),
             ?LOG_INFO(#{
-                description => "Error resolving FQDN",
-                fqdn => FQDN,
-                error => Error
+                description =>
+                    "Cannot resolve IP address for host, using 127.0.0.1",
+                host => Host,
+                reason => timeout
             }),
-            ?PEER_IP
+            ?LOCALHOST
+    end.
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec get_ip_addr(Host :: inet:ip_address() | inet:hostname()) ->
+    inet:ip_address().
+
+get_ip_addr(Host) ->
+    Families = case is_inet6_supported() of
+        true -> [inet6, inet];
+        false -> [inet]
+    end,
+    get_ip_addr(Host, Families, undefined).
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+get_ip_addr(Host, [H|T], _) ->
+    case inet:getaddr(Host, H) of
+        {ok, Addr} ->
+            ?LOG_NOTICE(#{
+                description => "Resolved IP address for host",
+                family => H,
+                host => Host,
+                addr => Addr
+            }),
+            Addr;
+
+        {error, Reason} ->
+            get_ip_addr(Host, T, Reason)
+    end;
+
+get_ip_addr(Host, [], Reason) ->
+    %% Fallback, as we could't resolve Host
+    ?LOG_NOTICE(#{
+        description => "Cannot resolve IP address for host, using 127.0.0.1",
+        host => Host,
+        reason => partisan_util:format_posix_error(Reason)
+    }),
+    {127, 0, 0, 1}.
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+is_inet6_supported() ->
+    case gen_tcp:listen(0, [inet6]) of
+        {ok, Socket} ->
+            ok = gen_tcp:close(Socket),
+            true;
+
+        _Error ->
+            false
     end.
 
 

@@ -1,5 +1,5 @@
 -define(APP, partisan).
--define(PEER_IP, {127, 0, 0, 1}).
+-define(LOCALHOST, {127, 0, 0, 1}).
 -define(PEER_PORT, 9090).
 -define(DEFAULT_TIMEOUT, 5000). % Same as OTP
 %% Idea from erpc.erl

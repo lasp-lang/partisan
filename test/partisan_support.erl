@@ -128,7 +128,7 @@ start(Case, Config, Options) ->
         ),
 
         ok = rpc:call(
-            Node, application, set_env, [partisan, peer_ip, ?PEER_IP],
+            Node, application, set_env, [partisan, peer_ip, ?LOCALHOST],
             5000
         ),
 

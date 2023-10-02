@@ -1,5 +1,25 @@
 # CHANGELOG
+# v5.0.0-rc.8
+### Bug Fixes
+* Fixes #250 `peer_host` not working. The `peer_host` was an experimental option that was never rally implemented and thus has been deprecated and the original feature has been now implemented using the `listen_addrs` feature and the new host resolution algorithm
+
+### Changes
+* `listen_addrs` is now the preferred way to configure the IP/Ports where Partisan will listen for connections. The new implementation allows for multiple different formats and coerces them to the `partisan:listen_addr()` type i.e. `#{ip => inet:ip_address(), port => 1..65535}`. The following example shows the different formats accepted by the option.
+```erlang
+    {listen_addrs, [
+        "127.0.0.1:12345",
+        <<"127.0.0.1:12345">>,
+        {"127.0.0.1", "12345"},
+        {{127, 0, 0, 1}, 12345},
+        #{ip => "127.0.0.1", port => "12345"},
+        #{ip => <<"127.0.0.1">>, port => <<"12345">>},
+        #{ip => {127, 0, 0, 1}, port => 12345}
+    ]},
+```
+* A new algorithm has been implemented to determine the listen address when `listen_addr` is not defined in the configuration. The algorithm uses `peer_ip` the Erlang nodename or `name` configuration option to extract the host from the name e.g. `HOST` in `mynode@HOST` and uses `inet:getaddr` to determine the IP Address.
+
 # v5.0.0-rc.7
+### Changes
 * Performance improvements for `partisan:forward/2,3,4`.
 
 # v5.0.0-rc.2
