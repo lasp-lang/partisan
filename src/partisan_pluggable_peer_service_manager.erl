@@ -1358,13 +1358,11 @@ handle_info(distance, State0) ->
     Time = erlang:timestamp(),
 
     %% Send distance requests.
-    SrcNode = partisan:node_spec(),
-
     ok = lists:foreach(
         fun(Peer) ->
             schedule_self_message_delivery(
                 Peer,
-                {ping, SrcNode, Peer, Time},
+                {ping, State0#state.node_spec, Peer, Time},
                 ?DEFAULT_PARTITION_KEY,
                 State,
                 #{channel => ?MEMBERSHIP_CHANNEL}
@@ -1788,7 +1786,7 @@ handle_message(
 
     gen_server:cast(?MODULE, {kill_connections, LeavingNodes}),
 
-    case lists:member(partisan:node_spec(), Members) of
+    case lists:member(State#state.node_spec, Members) of
         false ->
             ?LOG_INFO(#{
                 description => "Shutting down: membership doesn't contain us",
@@ -1953,7 +1951,7 @@ do_send_message(Node, PartitionKey, Message, Options, State) ->
                             ?LOG_DEBUG(
                                 "Performing tree forward from node ~p "
                                 "to node ~p and message: ~p",
-                                [partisan:node(), Node, Message]
+                                [State#state.name, Node, Message]
                             ),
                             TTL = partisan_config:get(relay_ttl, ?RELAY_TTL),
                             do_tree_forward(
@@ -2193,11 +2191,10 @@ avoid_rush() ->
 
 %% @private
 do_tree_forward(Node, PartitionKey, Message, Opts, TTL, State) ->
-    MyName = partisan:node(),
 
     ?LOG_TRACE(
         "Attempting to forward message ~p from ~p to ~p.",
-        [Message, MyName, Node]
+        [Message, State#state.name, Node]
     ),
 
     %% Preempt with user-supplied outlinks.
@@ -2217,7 +2214,7 @@ do_tree_forward(Node, PartitionKey, Message, Opts, TTL, State) ->
                     []
             end;
         OL ->
-            OL -- [MyName]
+            OL -- [State#state.name]
     end,
 
     %% Send messages, but don't attempt to forward again, if we aren't
@@ -2227,7 +2224,7 @@ do_tree_forward(Node, PartitionKey, Message, Opts, TTL, State) ->
             ?LOG_TRACE(
                 "Forwarding relay message ~p to node ~p "
                 "for node ~p from node ~p",
-                [Message, Peer, Node, MyName]
+                [Message, Peer, Node, State#state.name]
             ),
 
             RelayMessage = {relay_message, Node, Message, TTL - 1},
