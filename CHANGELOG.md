@@ -18,7 +18,7 @@
 ```
 * A new algorithm has been implemented to determine the listen address when `listen_addr` is not defined in the configuration. The algorithm uses `peer_ip` the Erlang nodename or `name` configuration option to extract the host from the name e.g. `HOST` in `mynode@HOST` and uses `inet:getaddr` to determine the IP Address.
 
-# v5.0.0-rc.7
+# v5.0.0-rc.8
 ### Changes
 * Performance improvements for `partisan:forward/2,3,4`.
 

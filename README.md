@@ -1,7 +1,7 @@
 <img alt="Partisan" width="600" src="https://github.com/lasp-lang/partisan/blob/e4ec25b547c4d50000250b904690b26594b3e72e/assets/partisan_logo_black.png?raw=true">
 
 
-![Version](https://img.shields.io/badge/version-5.0.0--rc.7-blue?style=for-the-badge)<br>
+![Version](https://img.shields.io/badge/version-5.0.0--rc.8-blue?style=for-the-badge)<br>
 ![Core Test Suite](https://img.shields.io/github/actions/workflow/status/lasp-lang/partisan/build_and_test.yml?&branch=master&label=core-test-suite&style=for-the-badge)
 ![OTP Test Suite](https://img.shields.io/github/actions/workflow/status/lasp-lang/partisan/otp-test.yml?&branch=master&label=otp-test-suite&style=for-the-badge)
 ![Alt Test Suite](https://img.shields.io/github/actions/workflow/status/lasp-lang/partisan/alt-test.yml?&branch=master&label=alt-test-suite&style=for-the-badge)
