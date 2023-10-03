@@ -44,7 +44,11 @@
 -include("partisan_logger.hrl").
 
 
--record(state, {}).
+-record(state, {
+    node                    ::  partisan:node(),
+    epoch                   ::  integer(),
+    monotonic = 0           ::  non_neg_integer()
+}).
 
 -type state()   ::  #state{}.
 
@@ -53,7 +57,11 @@
 }).
 
 -type broadcast_message()   :: #broadcast{}.
--type timestamp()           :: {node(), non_neg_integer()}.
+-type timestamp()           :: {
+                                    Node :: node(),
+                                    Epoch :: integer(),
+                                    Monotonic :: partisan_interval_sets:set()
+                                }.
 -type broadcast_id()        :: timestamp().
 -type broadcast_payload()   :: timestamp().
 
@@ -237,38 +245,58 @@ init([]) ->
     schedule_heartbeat(),
 
     %% Open an ETS table for tracking heartbeat messages.
-    ets:new(?MODULE, [named_table]),
+    ets:new(?MODULE, [named_table, set]),
 
-    {ok, #state{}}.
+    State = #state{
+        node = partisan:node(),
+        epoch = erlang:system_time(),
+        monotonic = 0
+    },
+    {ok, State}.
 
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()}.
 
-handle_call({is_stale, Timestamp}, _From, State) ->
-    Result = case ets:lookup(?MODULE, Timestamp) of
+handle_call({is_stale, {Node, Epoch, Seq}}, _From, State) ->
+    Result = case ets:lookup(?MODULE, Node) of
         [] ->
             false;
-        _ ->
-            true
+
+        [{_, Epoch, ISet}] ->
+            partisan_interval_sets:is_element(Seq, ISet);
+
+        [{_, Epoch0, _}] ->
+            Epoch0 < Epoch
+
     end,
     {reply, Result, State};
 
-handle_call({graft, Timestamp}, _From, State) ->
-    Result = case ets:lookup(?MODULE, Timestamp) of
+handle_call({graft, {Node, Epoch, Seq} = Timestamp}, _From, State) ->
+    Result = case ets:lookup(?MODULE, Node) of
         [] ->
             ?LOG_DEBUG(#{
                 description => "Heartbeat message not found for graft.",
                 timestamp => Timestamp
             }),
             {error, {not_found, Timestamp}};
-        [{Timestamp, _}] ->
-            {ok, Timestamp}
+
+        [{Node, Epoch, ISet}] ->
+            case partisan_interval_sets:is_element(Seq, ISet) of
+                true ->
+                    {ok, Timestamp};
+                false ->
+                    {error, {not_found, Timestamp}}
+            end;
+
+        [{_, Epoch0, _}] when Epoch0 < Epoch ->
+            {error, {not_found, Timestamp}}
+
     end,
     {reply, Result, State};
 
-handle_call({merge, Timestamp}, _From, State) ->
-    true = ets:insert(?MODULE, [{Timestamp, true}]),
+handle_call({merge, {_, _, _} = Timestamp}, _From, State) ->
+    true = add_timestamp(Timestamp),
     {reply, ok, State};
 
 handle_call(Event, _From, State) ->
@@ -285,16 +313,16 @@ handle_cast(Event, State) ->
 
 handle_info(heartbeat, State) ->
     %% Generate message with monotonically increasing integer.
-    Counter = erlang:unique_integer([monotonic, positive]),
+    Monotonic = State#state.monotonic + 1,
 
     %% Make sure the node prefixes the timestamp with it's own
     %% identifier: this means that we can have this tree
     %% participate in multiple trees, each rooted at a different
     %% node.
-    Timestamp = {partisan:node(), Counter},
+    Timestamp = {State#state.node, State#state.epoch, Monotonic},
 
     %% Insert a new message into the table.
-    true = ets:insert(?MODULE, [{Timestamp, true}]),
+    true = add_timestamp(Timestamp),
 
     %% Send message with monotonically increasing integer.
     ok = partisan_plumtree_broadcast:broadcast(
@@ -310,7 +338,7 @@ handle_info(heartbeat, State) ->
     %% Schedule report.
     schedule_heartbeat(),
 
-    {noreply, State};
+    {noreply, State#state{monotonic = Monotonic}};
 
 handle_info(Event, State) ->
     ?LOG_WARNING(#{description => "Unhandled info event", event => Event}),
@@ -335,6 +363,27 @@ code_change(_OldVsn, State, _Extra) ->
 %% PRIVATE
 %% =============================================================================
 
+
+
+%% @private
+add_timestamp({Node, Epoch, Monotonic}) ->
+    case ets:lookup(?MODULE, Node) of
+        [] ->
+            ISet = partisan_interval_sets:from_list([Monotonic]),
+            true = ets:insert(?MODULE, [{Node, Epoch, ISet}]);
+
+        [{_, Epoch0, Val}] when Epoch0 < Epoch ->
+            ISet = partisan_interval_sets:from_list([Monotonic]),
+            true = ets:insert(?MODULE, [{Node, Epoch, ISet}]);
+
+        [{_, Epoch, ISet0}] ->
+            ISet = partisan_interval_sets:add_element(Monotonic, ISet0),
+            true = ets:insert(?MODULE, [{Node, Epoch, ISet}]);
+
+        [{_, Epoch0, Val}] when Epoch0 > Epoch ->
+            %% We ignore as it is an old message
+            true
+    end.
 
 
 %% @private
