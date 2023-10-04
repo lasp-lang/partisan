@@ -36,6 +36,7 @@
 %%         {listen_addrs, [
 %%             #{ip => {127, 0, 0, 1}, port => 12345}
 %%         ]},
+%%         {peer_port, 12345},
 %%         {channels, #{
 %%             data => #{parallelism => 4}
 %%         }},
@@ -64,19 +65,22 @@
 %%
 %% See {@section Deprecated Options} below.
 %%
-%% <dl>
-%% <dt>`binary_padding'</dt>
-%% <dd>A boolean value indicating whether to pad
+%% <h4 id="binary_padding" class="section-heading">binary_padding</h4>
+%% A boolean value indicating whether to pad
 %% encoded messages whose external binary representation consumes less than 65
-%% bytes.</dd>
-%% <dt>`broadcast'</dt>
-%% <dd>TBD</dd>
-%% <dt>`broadcast_mods'</dt>
-%% <dd>TBD</dd>
-%% <dt>`causal_labels'</dt>
-%% <dd>TBD</dd>
-%% <dt>`channels'</dt>
-%% <dd>Defines the channels to be used by Partisan. The
+%% bytes.
+%%
+%% <h4 id="broadcast" class="section-heading">broadcast</h4>
+%% TBD
+%%
+%% <h4 id="broadcast_mods" class="section-heading">broadcast_mods</h4>
+%% TBD
+%%
+%% <h4 id="broadcast_mods" class="section-heading">broadcast_mods</h4>
+%% TBD
+%%
+%% <h4 id="channels" class="section-heading">channels</h4>
+%% Defines the channels to be used by Partisan. The
 %% option takes either a channels map where keys are channel names
 %% ({@link partisan:channel()}) and values are channel options ({@link
 %% partisan:channel_opts()}), or a list of values where each value can be any
@@ -115,9 +119,9 @@
 %%     baz => #{monotonic => false, parallelism => 4},
 %% }
 %% '''
-%% </dd>
-%% <dt>`connect_disterl'</dt>
-%% <dd>A configuration that is intended solely for testing of the
+%%
+%% <h4 id="connect_disterl" class="section-heading">connect_disterl</h4>
+%% A configuration that is intended solely for testing of the
 %% {@link partisan_full_membership_strategy} (See `membership_strategy').
 %% It defines whether to use Distributed Erlang (disterl) in addition to
 %% Partisan channels. Defaults to `false'.
@@ -127,30 +131,41 @@
 %% avoid mixing the two, for example by calling a {@link partisan_gen_server}
 %% that uses Partisan for distribution with {@link gen_server} that uses
 %% disterl.
-%% </dd>
-%% <dt>`connection_interval'</dt>
-%% <dd>Interval of time between peer connection attempts</dd>
-%% <dt>`connection_jitter'</dt>
-%% <dd>TBD</dd>
-%% <dt>`disable_fast_forward'</dt>
-%% <dd>TBD</dd>
-%% <dt>`disable_fast_receive'</dt>
-%% <dd>TBD</dd>
-%% <dt>`distance_enabled'</dt>
-%% <dd>TBD</dd>
-%% <dt>`egress_delay'</dt>
-%% <dd>TBD</dd>
-%% <dt>`exchange_selection'</dt>
-%% <dd>TBD</dd>
-%% <dt>`exchange_tick_period'</dt>
-%% <dd>TBD</dd>
-%% <dt>`gossip'</dt>
-%% <dd>If `true' gossip is used to disseminate membership to peers.
+%%
+%% <h4 id="connection_interval" class="section-heading">connection_interval</h4>
+%% Interval of time between peer connection attempts
+%%
+%% <h4 id="connection_jitter" class="section-heading">connection_jitter</h4>
+%% TBD
+%%
+%% <h4 id="disable_fast_forward"
+%% class="section-heading">disable_fast_forward</h4>
+%% TBD
+%%
+%% <h4 id="disable_fast_receive"
+%% class="section-heading">disable_fast_receive</h4>
+%% TBD
+%%
+%% <h4 id="distance_enabled" class="section-heading">distance_enabled</h4>
+%% TBD
+%%
+%% <h4 id="egress_delay" class="section-heading">egress_delay</h4>
+%% TBD
+%%
+%% <h4 id="exchange_selection" class="section-heading">exchange_selection</h4>
+%% TBD
+%%
+%% <h4 id="exchange_tick_period"
+%% class="section-heading">exchange_tick_period</h4>
+%% TBD
+%%
+%% <h4 id="gossip" class="section-heading">gossip</h4>
+%% If `true' gossip is used to disseminate membership to peers.
 %% Default is `true'.
 %% At the moment used only by {@link partisan_full_membership_strategy}.
-%% </dd>
-%% <dt>`hyparview'</dt>
-%% <dd> The configuration for the {@link
+%%
+%% <h4 id="hyparview" class="section-heading">hyparview</h4>
+%%  The configuration for the {@link
 %% partisan_hyparview_peer_service_manager}. A list with the following
 %% properties:
 %%
@@ -169,20 +184,24 @@
 %% <li>`shuffle_k_passive' - Number of peers to include in the shuffle exchange. Defaults to `4'.</li>
 %% </ul>
 %%
-%% </dd>
-%% <dt>`ingress_delay'</dt>
-%% <dd>TBD</dd>
-%% <dt>`lazy_tick_period'</dt>
-%% <dd>TBD</dd>
-%% <dt>`listen_addrs'</dt>
-%% <dd>A list of `listen_addr()' objects. This overrides `peer_ip' and
-%% `peer_port' and its the preferred way to configure the peer listener. If
-%% missing, the `peer_ip' property will be used, unless is also missing, in
-%% which case the nodename's host part will be used to determine the IP
-%% address.
+%% <h4 id="ingress_delay" class="section-heading">ingress_delay</h4>
+%% TBD
 %%
-%% The `listen_addr()' object can be represented using lists, binaries,
-%% tuples or maps as shown in the following example:
+%% <h4 id="lazy_tick_period" class="section-heading">lazy_tick_period</h4>
+%% TBD
+%%
+%% <h4 id="listen_addrs" class="section-heading">listen_addrs</h4>
+%% A list of {@link partisan:listen_addr()} objects. This overrides
+%% <a href="#peer_ip" class="no-underline"><code>peer_ip</code></a> and
+%% <a href="#peer_port" class="no-underline"><code>peer_port</code></a>
+%% (see below) and its the way to configure the peer
+%% listener should you want to listen on multiple IP addresses. If
+%% this option is missing, the `peer_ip' property will be used, unless is also
+%% missing, in which case the nodename's host part will be used to determine the
+%% IP address.
+%%
+%% The {@link partisan:listen_addr()} object can be represented using lists,
+%% binaries, tuples or maps as shown in the following example:
 %% ```
 %% {listen_addrs, [
 %%    "127.0.0.1:12345",
@@ -196,14 +215,29 @@
 %% '''
 %% Notice the above example will result in the following, as equivalent terms
 %% are deduplicated.
+%%
 %% ```
 %% {listen_addrs, [
 %%    #{ip => {127, 0, 0, 1}, port => 12345}
 %% ]}
 %% '''
-%% </dd>
-%% <dt>`membership_binary_compression'</dt>
-%% <dd>A boolean value or an integer in the range from `0..9' to be used with
+%%
+%% This option also accepts IP addresses without a port e.g. "127.0.0.1".
+%% In this case the port will be the value
+%% <a href="#peer_port" class="no-underline"><code>peer_port</code></a> option.
+%% Notice
+%% <a href="#peer_port" class="no-underline"><code>peer_port</code></a>
+%%  is also used by some peer discovery strategies that cannot
+%% detect in which port the peer is listening e.g. DNS.
+%%
+%% See also
+%% <a href="#peer_ip" class="no-underline"><code>peer_ip</code></a> for an
+%% alternative when using a single IP address.
+%%
+%%
+%% <h4 id="membership_binary_compression"
+%% class="section-heading">membership_binary_compression</h4>
+%% A boolean value or an integer in the range from `0..9' to be used with
 %% {@link erlang:term_to_binary/2} when encoding the membership set for
 %% broadcast.
 %%
@@ -211,45 +245,90 @@
 %% option `compressed' in {@link erlang:term_to_binary/2}).
 %% A value of `false' is equivalent to `0' (no compression).
 %%
-%% Default is`true'.</dd>
-%% <dt>`membership_strategy'</dt>
-%% <dd>The membership strategy to be used with {@link
+%% Default is`true'.
+%%
+%% <h4 id="membership_strategy" class="section-heading">membership_strategy</h4>
+%% The membership strategy to be used with {@link
 %% partisan_pluggable_peer_service_manager}.
-%% Default is {@link partisan_full_membership_strategy}</dd>
-%% <dt>`membership_strategy_tracing'</dt>
-%% <dd>TBD</dd>
-%% <dt>`name'</dt>
-%% <dd>TBD</dd>
-%% <dt>`orchestration_strategy'</dt>
-%% <dd>TBD</dd>
-%% <dt>`parallelism'</dt>
-%% <dd>TBD</dd>
-%% <dt>`peer_service_manager'</dt>
-%% <dd>The peer service manager to be used. An implementation of the {@link
+%% Default is {@link partisan_full_membership_strategy}
+%%
+%% <h4 id="membership_strategy_tracing" class="section-heading">membership_strategy_tracing</h4>
+%% TBD
+%%
+%% <h4 id="name" class="section-heading">name</h4>
+%% The nodename to be used when one was not provided via the Erlang
+%% `vm.args' configuration file or via the shell flag `--name'. The value should
+%% be a longname e.g. `{{Name}}@{{HostOrIPAddress}}'.
+%%
+%% When neither Erlang's nodename nor this value are defined,
+%% Partisan will generate a random nodename. This is primarily used for testing
+%% and you should always set the nodename when deploying to production, either
+%% via Erlang or using this option.
+%%
+%% <h4 id="orchestration_strategy"
+%% class="section-heading">orchestration_strategy</h4>
+%% TBD
+%%
+%% <h4 id="parallelism" class="section-heading">parallelism</h4>
+%% The default number of connections to use per channel, when a channel
+%% hasn't been given a specific `parallelism' value via the `channels' option.
+%% The default is `1'. For more information see option `channels'.
+%%
+%% <h4 id="peer_service_manager"
+%% class="section-heading">peer_service_manager</h4>
+%% The peer service manager to be used. An implementation of the {@link
 %% partisan_peer_service_manager} behaviour which defines the overlay network
 %% topology and the membership view maintenance strategy. Default is {@link
-%% partisan_pluggable_peer_service_manager}.</dd>
-%% <dt>`peer_ip'</dt>
-%% <dd>The IP to use for the peer connection listener. If undefined, the IP
-%% address will be resolved using the nodename's host (the part to the right of
-%% the `@' character. If the IP address cannot be resolved, it will default to
-%% `{127,0,0,1}'.</dd>
-%% <dt>`peer_port'</dt>
-%% <dd>The port numner for the peer connection listener.</dd>
-%% <dt>`periodic_enabled'</dt>
-%% <dd>TBD</dd>
-%% <dt>`periodic_interval'</dt>
-%% <dd>TBD</dd>
-%% <dt>`pid_encoding'</dt>
-%% <dd>TBD</dd>
-%% <dt>`random_seed'</dt>
-%% <dd>TBD</dd>
-%% <dt>`ref_encoding'</dt>
-%% <dd>TBD</dd>
-%% <dt>`register_pid_for_encoding'</dt>
-%% <dd>TBD</dd>
-%% <dt>`remote_ref_format'</dt>
-%% <dd>Defines how partisan remote references pids, references and registered
+%% partisan_pluggable_peer_service_manager}.
+%%
+%% <h4 id="peer_ip" class="section-heading">peer_ip</h4>
+%% The IP address to use for the peer connection listener when no
+%% {@link partisan:listen_addr()} have been defined via option
+%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code></a>.
+%% If a value is not defined (and
+%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code></a>
+%%  was not used), Partisan
+%% will attempt to resolve the IP address using the nodename's host i.e. the
+%% part to the right of the `@' character in the nodename, and will default to
+%% `{127,0,0,1}' if it can't.
+%%
+%% <h4 id="peer_port" class="section-heading">peer_port</h4>
+%% The port number to use for the peer connection listener when no
+%% {@link partisan:listen_addr()} have been defined via option
+%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code></a>.
+%% If a value is not defined (and
+%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code></a>
+%%  was not used), Partisan will use a randomly generated port.
+%% However, the random port will only work for clusters deployed within the same
+%% host i.e. used for testing. Moreover, the `peer_port' value is also used by
+%% some peer discovery strategies that cannot detect in which port the peer is
+%% listening e.g. DNS. So for production environments we recommend always
+%% setting the same value on all peers, and having at least one
+%% {@link partisan:listen_addr()} in each peer
+%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code></a>
+%%  option (when used) having the same port value.
+%%
+%% <h4 id="periodic_enabled" class="section-heading">periodic_enabled</h4>
+%% TBD
+%%
+%% <h4 id="periodic_interval" class="section-heading">periodic_interval</h4>
+%% TBD
+%%
+%% <h4 id="pid_encoding" class="section-heading">pid_encoding</h4>
+%% TBD
+%%
+%% <h4 id="random_seed" class="section-heading">random_seed</h4>
+%% TBD
+%%
+%% <h4 id="ref_encoding" class="section-heading">ref_encoding</h4>
+%% TBD
+%%
+%% <h4 id="register_pid_for_encoding"
+%% class="section-heading">register_pid_for_encoding</h4>
+%% TBD
+%%
+%% <h4 id="remote_ref_format" class="section-heading">remote_ref_format</h4>
+%% Defines how partisan remote references pids, references and registered
 %% names will be encoded. See {@link partisan_remote_ref}).
 %%
 %% Accepts the following atom values:
@@ -281,9 +360,10 @@
 %% 6> partisan:self().
 %% [nonode@nohost|<<"Pid#<0.1062.0>">>]
 %% '''
-%% </dd>
-%% <dt>`remote_ref_uri_padding'</dt>
-%% <dd>If `true' and the URI encoding of a
+%%
+%% <h4 id="remote_ref_uri_padding"
+%% class="section-heading">remote_ref_uri_padding</h4>
+%% If `true' and the URI encoding of a
 %% remote reference results in a binary smaller than 65 bytes, the URI will be
 %% padded. The default is `false'.
 %% ```
@@ -295,22 +375,25 @@
 %% 3> partisan:self().
 %% <<"partisan:pid:nonode@nohost:0.1062.0:"...>>
 %% '''
-%% </dd>
-%% <dt>`replaying'</dt>
-%% <dd>TBD</dd>
-%% <dt>`reservations'</dt>
-%% <dd>TBD</dd>
-%% <dt>`retransmit_interval'</dt>
-%% <dd> When option `retransmission' is set to `true' in the
+%%
+%% <h4 id="replaying" class="section-heading">replaying</h4>
+%% TBD
+%%
+%% <h4 id="reservations" class="section-heading">reservations</h4>
+%% TBD
+%%
+%% <h4 id="retransmit_interval" class="section-heading">retransmit_interval</h4>
+%%  When option `retransmission' is set to `true' in the
 %% `partisan:forward_opts()' used in a call to
 %% {@link partisan:forward_message/3} and message delivery fails, the Peer
 %% Service will enqueue the message for retransmission. This option is used to
 %% control the interval of time between retransmission attempts.
-%% </dd>
-%% <dt>`shrinking'</dt>
-%% <dd>TBD</dd>
-%% <dt>`tag'</dt>
-%% <dd>The role of this node when using the Client-Server topology implemented
+%%
+%% <h4 id="shrinking" class="section-heading">shrinking</h4>
+%% TBD
+%%
+%% <h4 id="tag" class="section-heading">tag</h4>
+%% The role of this node when using the Client-Server topology implemented
 %% by @{link partisan_client_server_peer_manager}.
 %% ==== Options ====
 %% <ul>
@@ -320,13 +403,14 @@
 %% <li>`server' - The node acts as a server. To be used only in combination with
 %% `{partisan_peer_manager, partisan_client_server_peer_manager}'</li>
 %% </ul>
-%% </dd>
-%% <dt>`tls'</dt>
-%% <dd>A boolean value indicating whether channel connections should use TLS. If
+%%
+%% <h4 id="tls" class="section-heading">tls</h4>
+%% A boolean value indicating whether channel connections should use TLS. If
 %% enabled, you have to provide a value for `tls_client_options' and
-%% `tls_server_options'. The default is `false'.</dd>
-%% <dt>`tls_client_options'</dt>
-%% <dd>The TLS socket options used when establishing outgoing connections to
+%% `tls_server_options'. The default is `false'.
+%%
+%% <h4 id="tls_client_options" class="section-heading">tls_client_options</h4>
+%% The TLS socket options used when establishing outgoing connections to
 %% peers. The configuration applies to all Partisan channels.
 %% The default is `[]'.
 %% ==== Example ====
@@ -338,9 +422,9 @@
 %%     {verify, verify_none}
 %% ]}
 %% '''
-%% </dd>
-%% <dt>`tls_server_options'</dt>
-%% <dd>The TLS socket options used when establishing incoming connections from
+%%
+%% <h4 id="tls_server_options" class="section-heading">tls_server_options</h4>
+%% The TLS socket options used when establishing incoming connections from
 %% peers. The configuration applies to all Partisan channels.
 %% The default is `[]'.
 %% ==== Example ====
@@ -352,49 +436,63 @@
 %%     {verify, verify_none}
 %% ]}
 %% '''
-%% </dd>
-%% <dt>`tracing'</dt>
-%% <dd>a boolean value. The default is `false'.</dd>
-%% <dt>`xbot_interval'</dt>
-%% <dd>TBD</dd>
-%% </dl>
+%%
+%% <h4 id="tracing" class="section-heading">tracing</h4>
+%% a boolean value. The default is `false'.
+%%
+%% <h4 id="xbot_interval" class="section-heading">xbot_interval</h4>
+%% TBD
 %%
 %% == Deprecated Options ==
 %% The following is the list of options have been deprecated. Some of them have
 %% been renamed and/or moved down a level in the configuration tree.
 %%
-%% <dl>
-%% <dt>`arwl'</dt>
-%% <dd>HyParView's Active View Random Walk Length. Defaults to
-%% `6'. Use `active_rwl' in the `hyparview' option instead.</dd>
-%% <dt>`fanout'</dt>
-%% <dd>The number of nodes that are contacted at each gossip
-%% interval.</dd>
-%% <dt>`max_active_size'</dt>
-%% <dd>HyParView's Active View Random Walk Length. Defaults to `6'.
-%% Use `active_max_size' in the `hyparview' option instead.</dd>
-%% <dt>`max_passive_size'</dt>
-%% <dd>HyParView's Active View Random Walk Length. Defaults to `30'.
-%% Use `passive_max_size' in the `hyparview' option instead.</dd>
-%% <dt>`mix_active_size'</dt>
-%% <dd>HyParView's Active View Random Walk Length. Defaults to `3'.
-%% Use `active_min_size' in the `hyparview' option instead.</dd>
-%% <dt>`passive_view_shuffle_period'</dt>
-%% <dd>Use `shuffle_interval' in the `hyparview' option instead.</dd>
-%% <dt>`peer_port'</dt>
-%% <dd>Use `listen_addrs' instead.</dd>
-%% <dt>`partisan_peer_service_manager'</dt>
-%% <dd>Use `peer_service_manager' instead.</dd>
-%% <dt>`prwl'</dt>
-%% <dd>HyParView's Passive View Random Walk Length. Defaults to
-%% `6'. Use `passive_rwl' in the `hyparview' option instead.</dd>
-%% <dt>`random_promotion'</dt>
-%% <dd>Use `random_promotion' in the `hyparview' option instead.</dd>
-%% <dt>`random_promotion_period'</dt>
-%% <dd>Use `random_promotion_interval' in the `hyparview' option instead.</dd>
-%% <dt>`remote_ref_as_uri'</dt>
-%% <dd>Use `{remote_ref_format, uri}' instead</dd>
-%% </dl>
+%% <h4 id="arwl" class="section-heading">arwl</h4>
+%% HyParView's Active View Random Walk Length. Defaults to
+%% `6'. Use `active_rwl' in the `hyparview' option instead.
+%%
+%% <h4 id="fanout" class="section-heading">fanout</h4>
+%% The number of nodes that are contacted at each gossip
+%% interval.
+%%
+%% <h4 id="max_active_size" class="section-heading">max_active_size</h4>
+%% HyParView's Active View Random Walk Length. Defaults to `6'.
+%% Use `active_max_size' in the `hyparview' option instead.
+%%
+%% <h4 id="max_passive_size" class="section-heading">max_passive_size</h4>
+%% HyParView's Active View Random Walk Length. Defaults to `30'.
+%% Use `passive_max_size' in the `hyparview' option instead.
+%%
+%% <h4 id="mix_active_size" class="section-heading">mix_active_size</h4>
+%% HyParView's Active View Random Walk Length. Defaults to `3'.
+%% Use `active_min_size' in the `hyparview' option instead.
+%%
+%% <h4 id="passive_view_shuffle_period"
+%% class="section-heading">passive_view_shuffle_period</h4>
+%% Use `shuffle_interval' in the `hyparview' option instead.
+%%
+%% <h4 id="peer_port" class="section-heading">peer_host</h4>
+%% Use
+%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code></a>
+%%  instead.
+%%
+%% <h4 id="partisan_peer_service_manager"
+%% class="section-heading">partisan_peer_service_manager</h4>
+%% Use `peer_service_manager' instead.
+%%
+%% <h4 id="prwl" class="section-heading">prwl</h4>
+%% HyParView's Passive View Random Walk Length. Defaults to
+%% `6'. Use `passive_rwl' in the `hyparview' option instead.
+%%
+%% <h4 id="random_promotion" class="section-heading">random_promotion</h4>
+%% Use `random_promotion' in the `hyparview' option instead.
+%%
+%% <h4 id="random_promotion_period"
+%% class="section-heading">random_promotion_period</h4>
+%% Use `random_promotion_interval' in the `hyparview' option instead.
+%%
+%% <h4 id="remote_ref_as_uri" class="section-heading">remote_ref_as_uri</h4>
+%% Use `{remote_ref_format, uri}' instead
 %%
 %% @end
 %% -----------------------------------------------------------------------------
