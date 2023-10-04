@@ -258,7 +258,8 @@ parse_listen_address(Term) when is_list(Term) ->
         [IPAddr, N] ->
             parse_listen_address(#{ip => IPAddr, port => N});
         _ ->
-            error(badarg)
+            Port = partisan_config:get(peer_port),
+            parse_listen_address(#{ip => IPAddr, port => Port});
     end;
 
 parse_listen_address(Term) when is_binary(Term) ->
