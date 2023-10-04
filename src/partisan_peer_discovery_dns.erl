@@ -45,12 +45,13 @@
 -include("partisan_util.hrl").
 
 -type options()     ::  #{
-                            record_type := a | srv | fqdns,
+                            record_type := record_type(),
                             name := binary() | string(),
                             nodename := binary() | string()
                         }.
 
-
+-type record_type() ::  a | srv | fqdns
+                        | list() | binary().
 -export([init/1]).
 -export([lookup/2]).
 
@@ -75,11 +76,17 @@ init(#{name := Name} = Opts) when is_binary(Name) ->
 init(#{nodename := Nodename} = Opts) when is_binary(Nodename) ->
     init(Opts#{nodename => binary_to_list(Nodename)});
 
-init(#{record_type := Type, name := Name, nodename := Nodename} = Opts)
+init(#{record_type := Type0, name := Name, nodename := Nodename} = Opts)
 when is_list(Name)
-andalso is_list(Nodename)
-andalso (Type == a orelse Type == srv orelse Type == fqdns) ->
-    {ok, Opts};
+andalso is_list(Nodename) ->
+    try
+        Type = record_type(Type0),
+        {ok, Opts#{record_type => Type}}
+
+    catch
+        throw:badarg ->
+            {error, {invalid_options, Opts}}
+    end;
 
 init(Opts) ->
     {error, {invalid_options, Opts}}.
@@ -133,6 +140,30 @@ lookup(Name, Type0, Timeout) ->
     Results = inet_res:lookup(Name, in, Type, [], Timeout),
     Port = partisan_config:get(peer_port),
     [format_data(Type0, DNSData, Port) || DNSData <- Results].
+
+
+%% @private
+record_type(a) ->
+    a;
+record_type(srv) ->
+    srv;
+record_type(fqdns) ->
+    fqdns;
+record_type("a") ->
+    a;
+record_type("srv") ->
+    srv;
+record_type("fqdns") ->
+    fqdns;
+record_type(<<"a">>) ->
+    a;
+record_type(<<"srv">>) ->
+    srv;
+record_type(<<"fqdns">>) ->
+    fqdns;
+record_type(_) ->
+    throw(badarg).
+
 
 
 %% @private
