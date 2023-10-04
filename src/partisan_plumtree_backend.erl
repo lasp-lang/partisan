@@ -267,7 +267,7 @@ handle_call({is_stale, {Node, Epoch, Seq}}, _From, State) ->
             partisan_interval_sets:is_element(Seq, ISet);
 
         [{_, Epoch0, _}] ->
-            Epoch0 < Epoch
+            Epoch0 > Epoch
 
     end,
     {reply, Result, State};
