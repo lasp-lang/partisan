@@ -69,6 +69,7 @@
 %% API
 -export([start_link/0]).
 -export([start_link/1]).
+-export([timestamps/0]).
 
 %% transmission callbacks
 -export([extract_log_type_and_payload/1]).
@@ -116,6 +117,22 @@ start_link() ->
 start_link(Opts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
 
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns all the timestamps.
+%%
+%% Notice this can copy a lot of data from the ets table to the calling process.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec timestamps() -> [timestamp()].
+
+timestamps() ->
+    try
+        ets:tab2list(?MODULE)
+    catch
+        error:badarg ->
+            []
+    end.
 
 
 %% -----------------------------------------------------------------------------
@@ -188,6 +205,7 @@ merge(Timestamp, Timestamp) ->
     case is_stale(Timestamp) of
         true ->
             false;
+
         false ->
             gen_server:call(?MODULE, {merge, Timestamp}, infinity),
             true
