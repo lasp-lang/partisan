@@ -122,6 +122,9 @@ start_link(Opts) ->
 %% @doc Returns all the timestamps.
 %%
 %% Notice this can copy a lot of data from the ets table to the calling process.
+%%
+%% In case `partisan_config:get(broadcast)' returns `false', this function
+%% returns an empty list.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec timestamps() -> [timestamp()].
@@ -215,12 +218,30 @@ merge(Timestamp, Timestamp) ->
 %% -----------------------------------------------------------------------------
 %% @doc Use the clock on the object to determine if this message is
 %% stale or not.
+%% A message is stale if the received message is causually newer than an
+%% existing one. If the message is missing or if the context does not represent
+%% an anscestor of message , false is returned. Otherwise, true is
+%% returned.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec is_stale(broadcast_id()) -> boolean().
 
-is_stale(Timestamp) ->
-    gen_server:call(?MODULE, {is_stale, Timestamp}, infinity).
+is_stale({Node, Epoch, Monotonic}) ->
+    try ets:lookup(?MODULE, Node) of
+        [] ->
+            false;
+
+        [{_, Epoch, ISet}] ->
+            partisan_interval_sets:is_element(Monotonic, ISet);
+
+        [{_, Epoch0, _}] ->
+            Epoch0 > Epoch
+
+    catch
+        _:_ ->
+            %% we return true so that merge is not called
+            true
+    end.
 
 
 %% -----------------------------------------------------------------------------
@@ -228,10 +249,35 @@ is_stale(Timestamp) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec graft(broadcast_id()) ->
-    stale | {ok, broadcast_payload()} | {error, term()}.
+    stale | {ok, broadcast_payload()} | {error, {not_found, timestamp()}}.
 
-graft(Timestamp) ->
-    gen_server:call(?MODULE, {graft, Timestamp}, infinity).
+graft({Node, Epoch, Monotonic} = Timestamp) ->
+    try ets:lookup(?MODULE, Node) of
+        [] ->
+            ?LOG_DEBUG(#{
+                description => "Heartbeat message not found for graft.",
+                timestamp => Timestamp
+            }),
+            not_found(Timestamp);
+
+        [{Node, Epoch, ISet}] ->
+            case partisan_interval_sets:is_element(Monotonic, ISet) of
+                true ->
+                    {ok, Timestamp};
+                false ->
+                    not_found(Timestamp)
+            end;
+
+        [{_, Epoch0, _}] when Epoch0 > Epoch ->
+            stale;
+
+         [{_, Epoch0, _}] when Epoch0 < Epoch ->
+            not_found(Timestamp)
+
+    catch
+        _:_ ->
+            not_found(Timestamp)
+    end.
 
 
 %% -----------------------------------------------------------------------------
@@ -263,7 +309,7 @@ init([]) ->
     schedule_heartbeat(),
 
     %% Open an ETS table for tracking heartbeat messages.
-    ets:new(?MODULE, [named_table, set]),
+    ets:new(?MODULE, [named_table, set, protected]),
 
     State = #state{
         node = partisan:node(),
@@ -275,43 +321,6 @@ init([]) ->
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()}.
-
-handle_call({is_stale, {Node, Epoch, Seq}}, _From, State) ->
-    Result = case ets:lookup(?MODULE, Node) of
-        [] ->
-            false;
-
-        [{_, Epoch, ISet}] ->
-            partisan_interval_sets:is_element(Seq, ISet);
-
-        [{_, Epoch0, _}] ->
-            Epoch0 > Epoch
-
-    end,
-    {reply, Result, State};
-
-handle_call({graft, {Node, Epoch, Seq} = Timestamp}, _From, State) ->
-    Result = case ets:lookup(?MODULE, Node) of
-        [] ->
-            ?LOG_DEBUG(#{
-                description => "Heartbeat message not found for graft.",
-                timestamp => Timestamp
-            }),
-            {error, {not_found, Timestamp}};
-
-        [{Node, Epoch, ISet}] ->
-            case partisan_interval_sets:is_element(Seq, ISet) of
-                true ->
-                    {ok, Timestamp};
-                false ->
-                    {error, {not_found, Timestamp}}
-            end;
-
-        [{_, Epoch0, _}] when Epoch0 < Epoch ->
-            {error, {not_found, Timestamp}}
-
-    end,
-    {reply, Result, State};
 
 handle_call({merge, {_, _, _} = Timestamp}, _From, State) ->
     true = add_timestamp(Timestamp),
@@ -382,15 +391,20 @@ code_change(_OldVsn, State, _Extra) ->
 %% =============================================================================
 
 
+%% @private
+not_found(Timestamp) ->
+    {error, {not_found, Timestamp}}.
+
 
 %% @private
 add_timestamp({Node, Epoch, Monotonic}) ->
     case ets:lookup(?MODULE, Node) of
         [] ->
             ISet = partisan_interval_sets:from_list([Monotonic]),
-            true = ets:insert(?MODULE, [{Node, Epoch, ISet}]);
+            true = ets:insert(?MODULE, [{Node, Epoch, ISet}]),
+            false;
 
-        [{_, Epoch0, Val}] when Epoch0 < Epoch ->
+        [{_, Epoch0, _}] when Epoch0 < Epoch ->
             ISet = partisan_interval_sets:from_list([Monotonic]),
             true = ets:insert(?MODULE, [{Node, Epoch, ISet}]);
 
@@ -398,7 +412,7 @@ add_timestamp({Node, Epoch, Monotonic}) ->
             ISet = partisan_interval_sets:add_element(Monotonic, ISet0),
             true = ets:insert(?MODULE, [{Node, Epoch, ISet}]);
 
-        [{_, Epoch0, Val}] when Epoch0 > Epoch ->
+        [{_, Epoch0, _}] when Epoch0 > Epoch ->
             %% We ignore as it is an old message
             true
     end.
