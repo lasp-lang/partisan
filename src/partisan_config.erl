@@ -297,7 +297,7 @@
 %% {@link partisan:listen_addr()} have been defined via option
 %% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code></a>.
 %% If a value is not defined (and
-%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code></a>
+%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code>
 %%  was not used), Partisan will use a randomly generated port.
 %% However, the random port will only work for clusters deployed within the same
 %% host i.e. used for testing. Moreover, the `peer_port' value is also used by
@@ -305,7 +305,7 @@
 %% listening e.g. DNS. So for production environments we recommend always
 %% setting the same value on all peers, and having at least one
 %% {@link partisan:listen_addr()} in each peer
-%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code></a>
+%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code>
 %%  option (when used) having the same port value.
 %%
 %% <h4 id="periodic_enabled" class="section-heading">periodic_enabled</h4>
