@@ -401,8 +401,7 @@ add_timestamp({Node, Epoch, Monotonic}) ->
     case ets:lookup(?MODULE, Node) of
         [] ->
             ISet = partisan_interval_sets:from_list([Monotonic]),
-            true = ets:insert(?MODULE, [{Node, Epoch, ISet}]),
-            false;
+            true = ets:insert(?MODULE, [{Node, Epoch, ISet}]);
 
         [{_, Epoch0, _}] when Epoch0 < Epoch ->
             ISet = partisan_interval_sets:from_list([Monotonic]),
