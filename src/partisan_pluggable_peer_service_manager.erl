@@ -1343,7 +1343,7 @@ handle_cast(Event, State) ->
 
 handle_info(tree_refresh, State) ->
     %% Get lazily computed outlinks.
-    OutLinks = retrieve_outlinks(),
+    OutLinks = retrieve_outlinks(5000),
 
     %% Reschedule.
     schedule_tree_refresh(),
@@ -2244,6 +2244,11 @@ do_tree_forward(Node, PartitionKey, Message, Opts, TTL, State) ->
 
 %% @private
 retrieve_outlinks() ->
+    retrieve_outlinks(1000).
+
+
+%% @private
+retrieve_outlinks(Timeout) when is_integer(Timeout) ->
     ?LOG_TRACE(#{description => "About to retrieve outlinks..."}),
 
     Root = partisan:node(),
@@ -2252,7 +2257,7 @@ retrieve_outlinks() ->
         try
 
             {EagerPeers, _LazyPeers} =
-                partisan_plumtree_broadcast:debug_get_peers(Root, Root, 1000),
+                partisan_plumtree_broadcast:debug_get_peers(Root, Root, Timeout),
             ordsets:to_list(EagerPeers) -- [Root]
 
         catch
