@@ -1,4 +1,22 @@
 # CHANGELOG
+# v5.0.0-rc.9
+## Changes
+* `partisan_peer_discovery_dns` configuration changes. The configuration parameters `name` was renamed to `query` and `nodename` was renamed to `node_basename`. `name` and `nodename` are still valid inputs but they are transformed during init.
+```
+{partisan, [
+    {peer_discovery, [
+         {type, partisan_peer_discovery_dns},
+         {config, #{
+             record_type => fqdns,
+             query => "foo.local",
+             node_basename => "foo"
+         }}
+    ]}
+]}
+```
+* New implementation of plumtree heartbeats in `partisan_plumtree_backend` to bound the timestamps stored by each peer. This is done using the new module `partisan_invertal_sets`.
+The module also offers new performance improvements by avoiding calling the server when possible (using ets directly instead).
+
 # v5.0.0-rc.8
 ### Bug Fixes
 * Fixes #250 `peer_host` not working. The `peer_host` was an experimental option that was never rally implemented and thus has been deprecated and the original feature has been now implemented using the `listen_addrs` feature and the new host resolution algorithm
