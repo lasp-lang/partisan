@@ -88,8 +88,9 @@ Partisan was designed to increase scalability, reduce latency and improve failur
 * [Erleans](https://github.com/erleans/erleans)
 * [PlumDB](https://github.com/Leapsight/plum_db)
 
-### Organizations
+### Organizations and People
 
+* [Christopher Meiklejohn's Blog](https://christophermeiklejohn.com)
 * [Leapsight](https://www.leapsight.com)
 
 
