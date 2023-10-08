@@ -92,7 +92,7 @@ init([]) ->
         ?WORKER(partisan_acknowledgement_backend, [], permanent, 5000),
         ?WORKER(partisan_orchestration_backend, [], permanent, 5000),
         ?SUPERVISOR(partisan_peer_service_sup, [], permanent, infinity),
-        %% THe peer service needs started before Plumtree servers
+        %% THe peer service needs to be started before Plumtree servers
         ?WORKER(partisan_plumtree_backend, [], permanent, 5000),
         ?WORKER(partisan_plumtree_broadcast, [], permanent, 5000)
         | ?CHILDREN
