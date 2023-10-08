@@ -837,7 +837,7 @@ set(broadcast_mods, L0) ->
             try
                 {true, list_to_existing_atom(Mod)}
             catch
-                error:Reason ->
+                error:_ ->
                     ToAtom({error, Mod})
             end;
 
