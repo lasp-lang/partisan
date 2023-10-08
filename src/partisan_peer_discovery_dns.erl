@@ -28,8 +28,8 @@
 %%          {type, partisan_peer_discovery_dns},
 %%          {config, #{
 %%              record_type => fqdns,
-%%              name => "theDNSSearchName",
-%%              nodename => "foo"
+%%              query => "foo.local",
+%%              node_basename => "foo"
 %%          }}
 %%     ]}
 %% ]}
@@ -44,11 +44,16 @@
 -include_lib("kernel/include/inet.hrl").
 -include("partisan_util.hrl").
 
--type options()     ::  #{
-                            record_type := record_type(),
-                            name := binary() | string(),
-                            nodename := binary() | string()
-                        }.
+-type options()             ::  #{
+                                    record_type := record_type(),
+                                    query := binary() | string(),
+                                    node_basename := binary() | string()
+                                }.
+-type deprecated_options()  ::  #{
+                                    record_type := record_type(),
+                                    name := binary() | string(),
+                                    nodename := binary() | string()
+                                }.
 
 -type record_type() ::  a | srv | fqdns
                         | list() | binary().
@@ -67,18 +72,29 @@
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec init(Opts :: options()) ->
+-spec init(Opts :: options() | deprecated_options()) ->
     {ok, State :: any()} | {error, Reason ::  any()}.
 
-init(#{name := Name} = Opts) when is_binary(Name) ->
-    init(Opts#{name => binary_to_list(Name)});
+init(#{name := Name} = Opts) ->
+    %% Deprecated
+    init(Opts#{query => Name});
 
-init(#{nodename := Nodename} = Opts) when is_binary(Nodename) ->
-    init(Opts#{nodename => binary_to_list(Nodename)});
+init(#{nodename := Name} = Opts) ->
+    %% Deprecated
+    init(Opts#{node_basename => Name});
 
-init(#{record_type := Type0, name := Name, nodename := Nodename} = Opts)
-when is_list(Name)
-andalso is_list(Nodename) ->
+init(#{query := Name} = Opts) when is_binary(Name) ->
+    init(Opts#{query => binary_to_list(Name)});
+
+init(#{node_basename := Nodename} = Opts) when is_atom(Nodename) ->
+    init(Opts#{node_basename => atom_to_list(Nodename)});
+
+init(#{node_basename := Nodename} = Opts) when is_binary(Nodename) ->
+    init(Opts#{node_basename => binary_to_list(Nodename)});
+
+init(#{record_type := Type0, query := Query, node_basename := Basename} = Opts)
+when is_list(Query)
+andalso is_list(Basename) ->
     try
         Type = record_type(Type0),
         {ok, Opts#{record_type => Type}}
@@ -100,16 +116,16 @@ init(Opts) ->
     {ok, [partisan:node_spec()], NewState :: any()}
     | {error, Reason :: any(), NewState :: any()}.
 
-lookup(#{record_type := Type, name := Name} = S, Timeout) ->
+lookup(#{record_type := Type, query := Query} = S, Timeout) ->
 
-    Results = lookup(Name, Type, Timeout),
+    Results = lookup(Query, Type, Timeout),
 
     ?LOG_DEBUG(
         fun([]) ->
             #{
             description => "DNS lookup response",
             response => Results,
-            name => Name
+            query => Query
             }
         end,
         []
@@ -117,9 +133,9 @@ lookup(#{record_type := Type, name := Name} = S, Timeout) ->
 
     case Results =/= [] of
         true ->
-            Nodename = maps:get(nodename, S),
+            Basename = maps:get(node_basename, S),
             Channels = partisan_config:get(channels),
-            Peers = to_peer_list(Results, Nodename, Channels),
+            Peers = to_peer_list(Results, Basename, Channels),
             {ok, Peers, S};
         false ->
             {ok, [], S}
@@ -130,16 +146,6 @@ lookup(#{record_type := Type, name := Name} = S, Timeout) ->
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
-
-
-
-
-%% @private
-lookup(Name, Type0, Timeout) ->
-    Type = dns_type(Type0),
-    Results = inet_res:lookup(Name, in, Type, [], Timeout),
-    Port = partisan_config:get(peer_port),
-    [format_data(Type0, DNSData, Port) || DNSData <- Results].
 
 
 %% @private
@@ -155,15 +161,19 @@ record_type("srv") ->
     srv;
 record_type("fqdns") ->
     fqdns;
-record_type(<<"a">>) ->
-    a;
-record_type(<<"srv">>) ->
-    srv;
-record_type(<<"fqdns">>) ->
-    fqdns;
+record_type(Str) when is_binary(Str) ->
+    record_type(binary_to_list(Str));
 record_type(_) ->
     throw(badarg).
 
+
+
+%% @private
+lookup(Query, Type0, Timeout) ->
+    Type = dns_type(Type0),
+    Results = inet_res:lookup(Query, in, Type, [], Timeout),
+    Port = partisan_config:get(peer_port),
+    [format_data(Type0, DNSData, Port) || DNSData <- Results].
 
 
 %% @private
@@ -189,26 +199,28 @@ format_data(srv, {_, _, Port, Host}, _) ->
     IPAddr =
         case inet:parse_address(Host) of
             {error, einval} ->
-                {ok, #hostent{h_addr_list = [Val | _]}} =
-                    inet_res:getbyname(Host, a),
+                {ok, HostEnt} = inet_res:getbyname(Host, a),
+                #hostent{h_addr_list = [Val | _]} = HostEnt,
                 Val;
+
             {ok, Val} ->
                 Val
         end,
+
     {Host, #{ip => IPAddr, port => Port}}.
 
 
 %% @private
-to_peer_list(Results, Nodename, Channels) ->
-    to_peer_list(Results, Nodename, Channels, maps:new()).
+to_peer_list(Results, Basename, Channels) ->
+    to_peer_list(Results, Basename, Channels, maps:new()).
 
 
 %% @private
 to_peer_list([], _, _, Acc) ->
     maps:values(Acc);
 
-to_peer_list([{Host, ListAddr} | T], Nodename, Channels, Acc0) ->
-    Node = list_to_atom(string:join([Nodename, Host], "@")),
+to_peer_list([{Host, ListAddr} | T], Basename, Channels, Acc0) ->
+    Node = list_to_atom(string:join([Basename, Host], "@")),
 
     %% We use a map to accumulate all the IPAddrs per node
     Acc =
@@ -230,7 +242,7 @@ to_peer_list([{Host, ListAddr} | T], Nodename, Channels, Acc0) ->
                 maps:put(Node, Spec, Acc0)
         end,
 
-    to_peer_list(T, Nodename, Channels, Acc).
+    to_peer_list(T, Basename, Channels, Acc).
 
 
 
