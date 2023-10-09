@@ -1,4 +1,22 @@
 # CHANGELOG
+# v5.0.0-rc.10
+## Changes
+* `partisan_peer_discovery_dns` configuration changes. Added support for IPV6 via `aaaa` record_type and additional `options`.
+```
+{partisan, [
+    {peer_discovery, [
+         {type, partisan_peer_discovery_dns},
+         {config, #{
+             record_type => aaaa,
+             query => "foo.local",
+             node_basename => "foo",
+             options => #{
+                nameservers => ["fdaa::3"]
+             }
+         }}
+    ]}
+]}
+```
 # v5.0.0-rc.9
 ## Changes
 * `partisan_peer_discovery_dns` configuration changes. The configuration parameters `name` was renamed to `query` and `nodename` was renamed to `node_basename`. `name` and `nodename` are still valid inputs but they are transformed during init.
