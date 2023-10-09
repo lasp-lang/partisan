@@ -607,6 +607,7 @@ init() ->
             %% list will not be read from the application environment.
             %% The following keys are missing on purpose
             %% as we need to process them after: [channels].
+            %% Also do not change the sort order of this list.
             {binary_padding, false},
             {broadcast, false},
             {broadcast_mods, [partisan_plumtree_backend]},
@@ -626,7 +627,6 @@ init() ->
             {hyparview, ?HYPARVIEW_DEFAULTS},
             {ingress_delay, 0},
             {lazy_tick_period, ?DEFAULT_LAZY_TICK_PERIOD},
-            {listen_addrs, []},
             {membership_binary_compression, true},
             {membership_strategy, ?DEFAULT_MEMBERSHIP_STRATEGY},
             {membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING},
@@ -636,6 +636,8 @@ init() ->
             {peer_service_manager, PeerService},
             {peer_ip, DefaultPeerIP},
             {peer_port, DefaultPeerPort},
+            %% IMPORTANT! listen_addrs should be after peer_port and peer_ip
+            {listen_addrs, []},
             {periodic_enabled, ?PERIODIC_ENABLED},
             {periodic_interval, 10000},
             {pid_encoding, true},

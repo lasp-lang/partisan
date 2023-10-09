@@ -44,19 +44,32 @@
 -include_lib("kernel/include/inet.hrl").
 -include("partisan_util.hrl").
 
--type options()             ::  #{
+-type config()             ::  #{
                                     record_type := record_type(),
                                     query := binary() | string(),
-                                    node_basename := binary() | string()
+                                    node_basename := binary() | string(),
+                                    options => options()
                                 }.
--type deprecated_options()  ::  #{
+-type deprecated_config()  ::  #{
                                     record_type := record_type(),
                                     name := binary() | string(),
-                                    nodename := binary() | string()
+                                    nodename := binary() | string(),
+                                    options => options()
                                 }.
 
--type record_type() ::  a | srv | fqdns
-                        | list() | binary().
+-type record_type()         ::  string_or_type(a | aaaa | srv | fqdns).
+
+-type options()             ::  #{
+                                    alt_nameservers => [nameserver()],
+                                    nameservers => [nameserver()],
+                                    inet6 => string_or_type(boolean())
+                                }.
+-type nameserver()          ::  {
+                                    string_or_type(inet:ip_address()),
+                                    string_or_type(1..65535)
+                                }
+                                | binary() | string().
+-type string_or_type(T)     ::  T | binary() | string().
 -export([init/1]).
 -export([lookup/2]).
 
@@ -72,7 +85,7 @@
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec init(Opts :: options() | deprecated_options()) ->
+-spec init(Opts :: config() | deprecated_config()) ->
     {ok, State :: any()} | {error, Reason ::  any()}.
 
 init(#{name := Name} = Opts) ->
@@ -97,10 +110,11 @@ when is_list(Query)
 andalso is_list(Basename) ->
     try
         Type = record_type(Type0),
-        {ok, Opts#{record_type => Type}}
+        InetOpts = parse_inet_opts(maps:get(options, Opts, #{})),
+        {ok, Opts#{record_type => Type, options => InetOpts}}
 
     catch
-        throw:badarg ->
+        error:badarg ->
             {error, {invalid_options, Opts}}
     end;
 
@@ -116,9 +130,8 @@ init(Opts) ->
     {ok, [partisan:node_spec()], NewState :: any()}
     | {error, Reason :: any(), NewState :: any()}.
 
-lookup(#{record_type := Type, query := Query} = S, Timeout) ->
-
-    Results = lookup(Query, Type, Timeout),
+lookup(#{record_type := Type, query := Query, options := Opts} = S, Timeout) ->
+    Results = lookup(Query, Type, Opts, Timeout),
 
     ?LOG_DEBUG(
         fun([]) ->
@@ -148,48 +161,137 @@ lookup(#{record_type := Type, query := Query} = S, Timeout) ->
 %% =============================================================================
 
 
-%% @private
-record_type(a) ->
-    a;
-record_type(srv) ->
-    srv;
-record_type(fqdns) ->
-    fqdns;
-record_type("a") ->
-    a;
-record_type("srv") ->
-    srv;
-record_type("fqdns") ->
-    fqdns;
-record_type(Str) when is_binary(Str) ->
-    record_type(binary_to_list(Str));
-record_type(_) ->
-    throw(badarg).
-
-
 
 %% @private
-lookup(Query, Type0, Timeout) ->
+-spec parse_inet_opts(map()) -> list().
+
+parse_inet_opts(Opts) ->
+    Fun = fun
+        (Nameservers, L0)
+            when is_list(L0) andalso
+            (
+                Nameservers == alt_nameservers orelse
+                Nameservers == nameservers
+            ) ->
+            L = parse_nameservers(L0),
+            {true, L};
+
+        (inet6, Term) when is_boolean(Term) ->
+            true;
+
+        (inet6, Term) when Term == "true"; Term == <<"true">> ->
+            {true, true};
+
+        (inet6, Term) when Term == "false"; Term == <<"false">> ->
+            {true, false};
+
+        (_, _) ->
+            false
+    end,
+    maps:to_list(maps:filtermap(Fun, Opts)).
+
+
+%% @private
+parse_nameservers(L) ->
+    DefaultPort = 53,
+    Fun = fun
+        ({IPAddr, Port}) ->
+            {
+                partisan_util:parse_ip_address(IPAddr),
+                partisan_util:parse_port_nbr(Port)
+            };
+        (IPAddr) ->
+            {
+                partisan_util:parse_ip_address(IPAddr),
+                DefaultPort
+            }
+    end,
+    lists:map(Fun, L).
+
+
+%% @private
+lookup(Query, Type0, Opts, Timeout) ->
     Type = dns_type(Type0),
-    Results = inet_res:lookup(Query, in, Type, [], Timeout),
+    Results = inet_res:lookup(Query, in, Type, Opts, Timeout),
     Port = partisan_config:get(peer_port),
     [format_data(Type0, DNSData, Port) || DNSData <- Results].
 
 
 %% @private
-dns_type(a) ->
-    a;
-dns_type(srv) ->
-    srv;
-dns_type(fqdns) ->
-    a.
+record_type(Str) when is_list(Str) ->
+    record_type(list_to_existing_atom(Str));
+
+record_type(Str) when is_binary(Str) ->
+    record_type(binary_to_existing_atom(Str));
+
+record_type(fqdns) ->
+    fqdns;
+
+record_type(Term) when is_atom(Term) ->
+    dns_type(Term);
+
+record_type(_) ->
+    error(badarg).
 
 
 %% @private
-format_data(a, IPAddr, Port) when ?IS_IP(IPAddr) ->
-    Host = inet_parse:ntoa(IPAddr),
-    {Host, #{ip => IPAddr, port => Port}};
+dns_type(fqdns) ->
+    a;
+dns_type(a = Term) ->
+    Term;
+dns_type(aaaa = Term) ->
+    Term;
+dns_type(caa = Term) ->
+    Term;
+dns_type(cname = Term) ->
+    Term;
+dns_type(gid = Term) ->
+    Term;
+dns_type(hinfo = Term) ->
+    Term;
+dns_type(ns = Term) ->
+    Term;
+dns_type(mb = Term) ->
+    Term;
+dns_type(md = Term) ->
+    Term;
+dns_type(mg = Term) ->
+    Term;
+dns_type(mf = Term) ->
+    Term;
+dns_type(minfo = Term) ->
+    Term;
+dns_type(mx = Term) ->
+    Term;
+dns_type(naptr = Term) ->
+    Term;
+dns_type(null = Term) ->
+    Term;
+dns_type(ptr = Term) ->
+    Term;
+dns_type(soa = Term) ->
+    Term;
+dns_type(spf = Term) ->
+    Term;
+dns_type(srv = Term) ->
+    Term;
+dns_type(txt = Term) ->
+    Term;
+dns_type(uid = Term) ->
+    Term;
+dns_type(uinfo = Term) ->
+    Term;
+dns_type(unspec = Term) ->
+    Term;
+dns_type(uri = Term) ->
+    Term;
+dns_type(wks = Term) ->
+    Term;
+dns_type(Term) ->
+    error({badarg, [Term]}).
 
+
+%% @private
 format_data(fqdns, IPAddr, Port) when ?IS_IP(IPAddr) ->
     {ok, {hostent, Host, _, _, _, _}} = inet_res:gethostbyaddr(IPAddr),
     {Host, #{ip => IPAddr, port => Port}};
@@ -207,6 +309,11 @@ format_data(srv, {_, _, Port, Host}, _) ->
                 Val
         end,
 
+    {Host, #{ip => IPAddr, port => Port}};
+
+format_data(A, IPAddr, Port)
+when (A == a orelse A == aaaa) andalso ?IS_IP(IPAddr) ->
+    Host = inet_parse:ntoa(IPAddr),
     {Host, #{ip => IPAddr, port => Port}}.
 
 
