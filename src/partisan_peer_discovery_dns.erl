@@ -90,11 +90,11 @@
 
 init(#{name := Name} = Opts) ->
     %% Deprecated
-    init(Opts#{query => Name});
+    init(maps:put(query, Name, maps:remove(name, Opts)));
 
 init(#{nodename := Name} = Opts) ->
     %% Deprecated
-    init(Opts#{node_basename => Name});
+    init(maps:put(node_basename, Name, maps:remove(nodename, Opts)));
 
 init(#{query := Name} = Opts) when is_binary(Name) ->
     init(Opts#{query => binary_to_list(Name)});
