@@ -298,7 +298,7 @@ count() ->
     %% Global static match spec
     Key = {?MODULE, count},
     MS =
-        case persistent_term:get(Key) of
+        case persistent_term:get(Key, undefined) of
             undefined ->
                 Value = match_spec('_', '_', '_', count),
                 _ = persistent_term:put(Key, Value),
