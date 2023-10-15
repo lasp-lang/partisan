@@ -82,8 +82,8 @@
 
 
 
--type message_id()      :: any().
--type message_round()   :: non_neg_integer().
+-type message_id()      ::  any().
+-type message_round()   ::  non_neg_integer().
 %% Lazy messages that have not been acked. Messages are added to
 %% this set when a node is sent a lazy message (or when it should be
 %% sent one sometime in the future). Messages are removed when the lazy
@@ -92,16 +92,16 @@
 %% These are stored in the ?PLUMTREE_OUTSTANDING ets table under using nodename
 %% as key.
 %% PLUMTREE_OUTSTANDING is created and owned by partisan_sup
--type outstanding()     :: {message_id(), module(), message_round(), node()}.
--type exchange()        :: {module(), node(), reference(), pid()}.
--type exchanges()       :: [exchange()].
+-type outstanding()     ::  {message_id(), module(), message_round(), node()}.
+-type exchange()        ::  {module(), node(), reference(), pid()}.
+-type exchanges()       ::  [exchange()].
 -type selector()        ::  all
                             | {peer, node()}
                             | {mod, module()}
                             | reference()
                             | pid().
 -type opts()            ::  opts_map() | opts_list().
--type opts_map()        :: #{
+-type opts_map()        ::  #{
                                 lazy_tick_period => non_neg_integer(),
                                 exchange_tick_period => non_neg_integer()
                             }.
@@ -109,6 +109,7 @@
                                 {lazy_tick_period, non_neg_integer()}
                                 | {exchange_tick_period, non_neg_integer()}
                             ].
+-type info_opt()        ::  node_spec | metadata | distance.
 
 -record(state, {
     %% Initially trees rooted at each node are the same.
@@ -160,6 +161,8 @@
 -type state()           :: #state{}.
 -type nodeset()         :: ordsets:ordset(node()).
 
+-export_type([info_opt/0]).
+-export_type([nodeset/0]).
 
 %% API
 -export([broadcast/2]).
@@ -176,12 +179,15 @@
 
 %% Debug API
 -export([get_peers/1]).
+-export([get_peers/2]).
 -export([get_eager_peers/1]).
 -export([get_lazy_peers/1]).
 -export([debug_get_peers/2]).
 -export([debug_get_peers/3]).
+-export([debug_get_peers/4]).
 -export([debug_get_tree/2]).
 -export([debug_get_tree/3]).
+-export([debug_get_tree/4]).
 
 %% gen_server callbacks
 -export([init/1]).
@@ -443,6 +449,16 @@ get_peers(Root) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
+-spec get_peers(Root :: node(), Opts :: [partisan:info_opts()]) -> list().
+
+get_peers(Root, Opts) when is_list(Opts) ->
+    gen_server:call(?SERVER, {get_peers, Root, Opts}).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 -spec get_eager_peers(Root :: node()) -> list().
 
 get_eager_peers(Root) ->
@@ -509,6 +525,16 @@ handle_call({get_peers, Root}, _From, State) ->
         Root, State#state.lazy_sets, State#state.common_lazys
     ),
     {reply, {EagerPeers, LazyPeers}, State};
+
+handle_call({get_peers, Root, InfoOpts}, _From, State) ->
+    EagerPeers = all_peers(
+        Root, State#state.eager_sets, State#state.common_eagers
+    ),
+    LazyPeers = all_peers(
+        Root, State#state.lazy_sets, State#state.common_lazys
+    ),
+    Info = partisan:node_info(InfoOpts),
+    {reply, {EagerPeers, LazyPeers, Info}, State};
 
 handle_call({get_eager_peers, Root}, _From, State) ->
     EagerPeers = all_peers(
@@ -696,8 +722,33 @@ debug_get_peers(Node, Root, Timeout) ->
             error(Reason);
         {_, _} = Result ->
             %% eqwalizer:ignore
+            Result;
+        {_, _, _} = Result ->
+            %% eqwalizer:ignore
             Result
     end.
+
+
+%% @doc return the peers for `Node' for the tree rooted at `Root'.
+%% Waits `Timeout' ms for a response from the server
+-spec debug_get_peers(node(), node(), [info_opt()], infinity | pos_integer()) ->
+    {nodeset(), nodeset(), Info :: map()} | no_return().
+
+debug_get_peers(Node, Root, Opts, Timeout) ->
+    %% This will not work because gen_server uses disterl
+    %% gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
+    %% TODO reconsider turning this server into a partisan_gen_server
+    case partisan_rpc:call(Node, ?MODULE, get_peers, [Root, Opts], Timeout) of
+        {badrpc, Reason} ->
+            error(Reason);
+        {_, _} = Result ->
+            %% eqwalizer:ignore
+            Result;
+        {_, _, _} = Result ->
+            %% eqwalizer:ignore
+            Result
+    end.
+
 
 %% -----------------------------------------------------------------------------
 %% @doc return peers for all `Nodes' for tree rooted at `Root'
@@ -739,6 +790,34 @@ debug_get_tree(Root, Nodes, Timeout) ->
         || Node <- Nodes
      ].
 
+
+%% -----------------------------------------------------------------------------
+%% @doc return peers for all `Nodes' for tree rooted at `Root'
+%% Wait `Timeout' for a response is returned from the process
+%% @end
+%% -----------------------------------------------------------------------------
+-spec debug_get_tree(node(), [node()], [info_opt()], timeout()) ->
+    [{node(), {nodeset(), nodeset(), Info :: map()} | down}].
+
+debug_get_tree(Root, Nodes, Opts, Timeout) ->
+    [
+        begin
+            try
+                {Node, debug_get_peers(Node, Root, Opts, Timeout)}
+            catch
+                _:Reason ->
+                    ?LOG_INFO(#{
+                        description =>
+                            "Call to get remote root tree failed.",
+                        peer => Node,
+                        root => Root,
+                        reason => Reason
+                    }),
+                    {Node, down}
+            end
+        end
+        || Node <- Nodes
+     ].
 
 
 %% =============================================================================

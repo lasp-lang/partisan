@@ -36,7 +36,6 @@
 %%         {listen_addrs, [
 %%             #{ip => {127, 0, 0, 1}, port => 12345}
 %%         ]},
-%%         {peer_port, 12345},
 %%         {channels, #{
 %%             data => #{parallelism => 4}
 %%         }},
@@ -61,7 +60,8 @@
 %% == Options ==
 %% The following is the list of all the options you can read using
 %% {@link get/1} and {@link get/2}, and modify using the `sys.config' file and
-%% {@link set/2}.
+%% {@link set/2}. Notice that most values will only take effect once you restart
+%% the Partisan application or the {@link partisan_peer_service_manager}.
 %%
 %% See {@section Deprecated Options} below.
 %%
@@ -192,8 +192,8 @@
 %%
 %% <h4 id="listen_addrs" class="section-heading">listen_addrs</h4>
 %% A list of {@link partisan:listen_addr()} objects. This overrides
-%% <a href="#peer_ip" class="no-underline"><code>peer_ip</code></a> and
-%% <a href="#peer_port" class="no-underline"><code>peer_port</code></a>
+%% <a href="#listen_ip" class="no-underline"><code>listen_ip</code></a> and
+%% <a href="#listen_port" class="no-underline"><code>listen_port</code></a>
 %% (see below) and its the way to configure the peer
 %% listener should you want to listen on multiple IP addresses. If
 %% this option is missing, the `peer_ip' property will be used, unless is also
@@ -224,16 +224,42 @@
 %%
 %% This option also accepts IP addresses without a port e.g. "127.0.0.1".
 %% In this case the port will be the value
-%% <a href="#peer_port" class="no-underline"><code>peer_port</code></a> option.
+%% <a href="#listen_port" class="no-underline"><code>listen_port</code></a> option.
 %% Notice
-%% <a href="#peer_port" class="no-underline"><code>peer_port</code></a>
+%% <a href="#listen_port" class="no-underline"><code>listen_port</code></a>
 %%  is also used by some peer discovery strategies that cannot
 %% detect in which port the peer is listening e.g. DNS.
 %%
 %% See also
-%% <a href="#peer_ip" class="no-underline"><code>peer_ip</code></a> for an
+%% <a href="#listen_ip" class="no-underline"><code>listen_ip</code></a> for an
 %% alternative when using a single IP address.
 %%
+%% <h4 id="listen_ip" class="section-heading">listen_ip</h4>
+%% The IP address to use for the peer connection listener when no
+%% {@link partisan:listen_addr()} have been defined via option
+%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code></a>.
+%% If a value is not defined (and
+%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code></a>
+%%  was not used), Partisan
+%% will attempt to resolve the IP address using the nodename's host i.e. the
+%% part to the right of the `@' character in the nodename, and will default to
+%% `{127,0,0,1}' if it can't.
+%%
+%% <h4 id="listen_port" class="section-heading">listen_port</h4>
+%% The port number to use for the peer connection listener when no
+%% {@link partisan:listen_addr()} have been defined via option
+%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code></a>.
+%% If a value is not defined (and
+%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code></a>
+%%  was not used), Partisan will use a randomly generated port.
+%% However, the random port will only work for clusters deployed within the same
+%% host i.e. used for testing. Moreover, the `listen_port' value is also used by
+%% some peer discovery strategies that cannot detect in which port the peer is
+%% listening e.g. DNS. So for production environments we recommend always
+%% setting the same value on all peers, and having at least one
+%% {@link partisan:listen_addr()} in each peer
+%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code></a>
+%%  option (when used) having the same port value.
 %%
 %% <h4 id="membership_binary_compression"
 %% class="section-heading">membership_binary_compression</h4>
@@ -254,6 +280,9 @@
 %%
 %% <h4 id="membership_strategy_tracing" class="section-heading">membership_strategy_tracing</h4>
 %% TBD
+%%
+%% <h4 id="metadata" class="section-heading">metadata</h4>
+%% A custom mapping of keys to values.
 %%
 %% <h4 id="name" class="section-heading">name</h4>
 %% The nodename to be used when one was not provided via the Erlang
@@ -280,33 +309,6 @@
 %% partisan_peer_service_manager} behaviour which defines the overlay network
 %% topology and the membership view maintenance strategy. Default is {@link
 %% partisan_pluggable_peer_service_manager}.
-%%
-%% <h4 id="peer_ip" class="section-heading">peer_ip</h4>
-%% The IP address to use for the peer connection listener when no
-%% {@link partisan:listen_addr()} have been defined via option
-%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code></a>.
-%% If a value is not defined (and
-%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code></a>
-%%  was not used), Partisan
-%% will attempt to resolve the IP address using the nodename's host i.e. the
-%% part to the right of the `@' character in the nodename, and will default to
-%% `{127,0,0,1}' if it can't.
-%%
-%% <h4 id="peer_port" class="section-heading">peer_port</h4>
-%% The port number to use for the peer connection listener when no
-%% {@link partisan:listen_addr()} have been defined via option
-%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code></a>.
-%% If a value is not defined (and
-%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code>
-%%  was not used), Partisan will use a randomly generated port.
-%% However, the random port will only work for clusters deployed within the same
-%% host i.e. used for testing. Moreover, the `peer_port' value is also used by
-%% some peer discovery strategies that cannot detect in which port the peer is
-%% listening e.g. DNS. So for production environments we recommend always
-%% setting the same value on all peers, and having at least one
-%% {@link partisan:listen_addr()} in each peer
-%% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code>
-%%  option (when used) having the same port value.
 %%
 %% <h4 id="periodic_enabled" class="section-heading">periodic_enabled</h4>
 %% TBD
@@ -471,7 +473,17 @@
 %% class="section-heading">passive_view_shuffle_period</h4>
 %% Use `shuffle_interval' in the `hyparview' option instead.
 %%
-%% <h4 id="peer_port" class="section-heading">peer_host</h4>
+%% <h4 id="peer_ip" class="section-heading">peer_ip</h4>
+%% Use
+%% <a href="#listen_ip" class="no-underline"><code>listen_ip</code></a>
+%%  instead.
+%%
+%% <h4 id="peer_port" class="section-heading">peer_port</h4>
+%% Use
+%% <a href="#listen_port" class="no-underline"><code>listen_port</code></a>
+%%  instead.
+%%
+%% <h4 id="peer_host" class="section-heading">peer_host</h4>
 %% Use
 %% <a href="#listen_addrs" class="no-underline"><code>listen_addrs</code></a>
 %%  instead.
@@ -630,12 +642,15 @@ init() ->
             {membership_binary_compression, true},
             {membership_strategy, ?DEFAULT_MEMBERSHIP_STRATEGY},
             {membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING},
+            {metadata, #{}},
             {orchestration_strategy, ?DEFAULT_ORCHESTRATION_STRATEGY},
             {parallelism, ?PARALLELISM},
             {peer_discovery, #{enabled => false}},
             {peer_service_manager, PeerService},
-            {peer_ip, DefaultPeerIP},
-            {peer_port, DefaultPeerPort},
+            {peer_ip, DefaultPeerIP}, % deprecated, use listen_ip
+            {listen_ip, DefaultPeerIP},
+            {peer_port, DefaultPeerPort}, % deprecated, use listen_port
+            {listen_port, DefaultPeerPort},
             %% IMPORTANT! listen_addrs should be after peer_port and peer_ip
             {listen_addrs, []},
             {periodic_enabled, ?PERIODIC_ENABLED},
@@ -1149,6 +1164,12 @@ maybe_rename(random_promotion_period) ->
 
 maybe_rename(partisan_peer_service_manager) ->
     peer_service_manager;
+
+maybe_rename(peer_ip) ->
+    listen_ip;
+
+maybe_rename(peer_port) ->
+    listen_port;
 
 maybe_rename(Key) ->
     Key.

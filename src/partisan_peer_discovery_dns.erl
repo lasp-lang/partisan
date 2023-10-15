@@ -213,7 +213,7 @@ parse_nameservers(L) ->
 lookup(Query, Type0, Opts, Timeout) ->
     Type = dns_type(Type0),
     Results = inet_res:lookup(Query, in, Type, Opts, Timeout),
-    Port = partisan_config:get(peer_port),
+    Port = partisan_config:get(listen_port),
     [format_data(Type0, DNSData, Port) || DNSData <- Results].
 
 

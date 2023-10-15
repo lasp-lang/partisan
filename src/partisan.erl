@@ -21,7 +21,7 @@
 %% -------------------------------------------------------------------
 
 %% -----------------------------------------------------------------------------
-%% @doc The Partisan API.
+%% @doc This module implements the Partisan API.
 %% Some of the functions in this module are the Partisan counterparts of a
 %% subset of the functions found in the {@link erlang} and {@link net_kernel}
 %% modules.
@@ -45,10 +45,10 @@
 -type net_kernel_opt()      ::  nodedown_reason
                                 | connection_id % OTP 25
                                 | {node_type, visible | hidden | all}.
--type channel_opt()  ::   net_kernel_opt()
+-type channel_opt()         ::   net_kernel_opt()
                                 | {channel, channel()}
                                 | {channel_fallback, boolean()}.
--type monitor_nodes_opt()  ::   net_kernel_opt()
+-type monitor_nodes_opt()   ::   net_kernel_opt()
                                 | channel_opt().
 -type send_dst()            ::  erlang:send_destination()
                                 | server_ref().
@@ -72,6 +72,15 @@
                                     listen_addrs := [listen_addr()],
                                     channels := #{channel() => channel_opts()}
                                 }.
+-type node_info()           ::  #{info_opt() => term()}.
+-type info_opt()            ::  metadata
+                                | name
+                                | channels
+                                | listen_addrs
+                                | listen_ip
+                                | listen_port
+                                | connection_count.
+
 
 -type message()             ::  term().
 -type time()                ::  non_neg_integer().
@@ -87,6 +96,7 @@
 -export_type([channel_opts/0]).
 -export_type([demonitor_opt/0]).
 -export_type([forward_opts/0]).
+-export_type([info_opt/0]).
 -export_type([listen_addr/0]).
 -export_type([message/0]).
 -export_type([monitor_nodes_opt/0]).
@@ -1018,6 +1028,30 @@ node_spec(Node, Opts) when is_atom(Node), is_map(Opts) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
+-spec node_info() -> node_info().
+
+node_info() ->
+    node_info([]).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec node_info([info_opt()]) -> map().
+
+node_info([]) ->
+    #{};
+
+node_info(L) when is_list(L) ->
+    node_info(L, #{}).
+
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
 -spec default_channel() -> channel().
 
 default_channel() ->
@@ -1528,6 +1562,48 @@ broadcast(Broadcast, Mod) ->
 %% PRIVATE
 %% =============================================================================
 
+
+
+%% @private
+node_info(L, Acc) ->
+    node_info(L, Acc, node_spec()).
+
+
+%% @private
+node_info([name|T], Acc0, #{name := Val} = Spec) ->
+    Acc1 = Acc0#{name => Val},
+    node_info(T, Acc1, Spec);
+
+node_info([listen_addrs|T], Acc0, #{listen_addrs := Val} = Spec) ->
+    Acc1 = Acc0#{listen_addrs => Val},
+    node_info(T, Acc1, Spec);
+
+node_info([channels|T], Acc0, #{channels := Val} = Spec) ->
+    Acc1 = Acc0#{channels => Val},
+    node_info(T, Acc1, Spec);
+
+node_info([listen_ip|T], Acc0, #{listen_addrs := [#{ip := Val} | _]} = Spec) ->
+    Acc1 = Acc0#{listen_ip => Val},
+    node_info(T, Acc1, Spec);
+
+node_info([listen_port|T], Acc0, #{listen_addrs := [#{port := Val} | _]} = Spec) ->
+    Acc1 = Acc0#{listen_port => Val},
+    node_info(T, Acc1, Spec);
+
+node_info([metadata|T], Acc0, Spec) ->
+    Default = #{},
+    Acc1 = Acc0#{metadata => partisan_config:get(metadata, Default)},
+    node_info(T, Acc1, Spec);
+
+node_info([connection_count|T], Acc0, Spec) ->
+    Acc1 = Acc0#{connection_count => partisan_peer_connections:count()},
+    node_info(T, Acc1, Spec);
+
+node_info([_|T], Acc, Spec) ->
+    node_info(T, Acc, Spec);
+
+node_info([], Acc, _) ->
+    Acc.
 
 
 %% @private

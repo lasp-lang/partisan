@@ -172,7 +172,7 @@ to_peer({Node, Port}, Channels) when is_list(Node), ?IS_PORT_NBR(Port) ->
 split_nodestring_port(HostPort) ->
     case string:split(HostPort, ":") of
         [_] ->
-            {HostPort, partisan_config:get(peer_port)};
+            {HostPort, partisan_config:get(listen_port)};
 
         [Nodestring, Port] ->
             try
