@@ -27,8 +27,8 @@
 -endif.
 
 -type set()         ::  [element()].
--type element()     ::  number() | interval().
--type interval()    ::  {number(), number()}.
+-type element()     ::  integer() | interval().
+-type interval()    ::  {integer(), integer()}.
 
 
 -export_type([set/0]).
@@ -77,7 +77,7 @@ new() ->
 %% -----------------------------------------------------------------------------
 %% @doc Return 'true' if Set is an ordered set of elements, else 'false'.
 %% -----------------------------------------------------------------------------
--spec is_type(set()) -> boolean().
+-spec is_type(term()) -> boolean().
 
 is_type([E|Es]) ->
     is_element_type(E) andalso is_type(Es, E);
@@ -126,19 +126,19 @@ is_empty(S) ->
 %% -----------------------------------------------------------------------------
 %% @doc Returns the minimum integer value contained in the set.
 %% -----------------------------------------------------------------------------
--spec min(set()) -> number().
+-spec min(set()) -> integer().
 
-min([{H, _}|_]) ->
-    H;
+min([{N, _}|_]) when is_integer(N) ->
+    N;
 
-min([N|_]) ->
+min([N|_]) when is_integer(N) ->
     N.
 
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the maximum integer value contained in the set.
 %% -----------------------------------------------------------------------------
--spec max(set()) -> number().
+-spec max(set()) -> integer().
 
 max(S) ->
     case lists:last(S) of
@@ -159,7 +159,7 @@ to_list(S) ->
 %% -----------------------------------------------------------------------------
 %% @doc Return the points in OrdSet as a list.
 %% -----------------------------------------------------------------------------
--spec seq(set()) -> [number()].
+-spec seq(set()) -> [integer()].
 
 seq(Set) ->
     List = lists:foldl(

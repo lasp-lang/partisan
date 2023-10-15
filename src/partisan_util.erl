@@ -176,8 +176,8 @@ encode(Term, Opts) ->
 %% end of the description inside parenthesis.
 %% @end
 %% -----------------------------------------------------------------------------
--spec format_posix_error(Reason :: term()) ->
-    Message :: binary() | Reason :: term().
+-spec format_posix_error(Reason :: inet:posix() | 'system_limit') ->
+    Message :: binary() | Reason :: inet:posix() | 'system_limit'.
 
 format_posix_error(Reason) when is_atom(Reason) ->
     case inet:format_error(Reason) of

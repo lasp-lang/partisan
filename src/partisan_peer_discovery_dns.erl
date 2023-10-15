@@ -70,8 +70,11 @@
                                 }
                                 | binary() | string().
 -type string_or_type(T)     ::  T | binary() | string().
+
 -export([init/1]).
 -export([lookup/2]).
+
+-eqwalizer({nowarn_function, init/1}).
 
 
 

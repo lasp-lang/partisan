@@ -45,7 +45,7 @@
 
 
 -record(state, {
-    node                    ::  partisan:node(),
+    node                    ::  node(),
     epoch                   ::  integer(),
     monotonic = 0           ::  non_neg_integer()
 }).
@@ -60,7 +60,7 @@
 -type timestamp()           :: {
                                     Node :: node(),
                                     Epoch :: integer(),
-                                    Monotonic :: partisan_interval_sets:set()
+                                    Monotonic :: integer()
                                 }.
 -type broadcast_id()        :: timestamp().
 -type broadcast_payload()   :: timestamp().
@@ -312,7 +312,7 @@ init([]) ->
     ets:new(?MODULE, [named_table, set, protected]),
 
     State = #state{
-        node = partisan:node(),
+        node = node(),
         epoch = erlang:system_time(),
         monotonic = 0
     },

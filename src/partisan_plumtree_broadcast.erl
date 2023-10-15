@@ -449,7 +449,7 @@ get_peers(Root) ->
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec get_peers(Root :: node(), Opts :: [partisan:info_opts()]) -> list().
+-spec get_peers(Root :: node(), Opts :: [partisan:info_opt()]) -> list().
 
 get_peers(Root, Opts) when is_list(Opts) ->
     gen_server:call(?SERVER, {get_peers, Root, Opts}).
@@ -533,7 +533,8 @@ handle_call({get_peers, Root, InfoOpts}, _From, State) ->
     LazyPeers = all_peers(
         Root, State#state.lazy_sets, State#state.common_lazys
     ),
-    Info = partisan:node_info(InfoOpts),
+    Info = try_node_info(Root, InfoOpts),
+
     {reply, {EagerPeers, LazyPeers, Info}, State};
 
 handle_call({get_eager_peers, Root}, _From, State) ->
@@ -697,6 +698,19 @@ code_change(_OldVsn, State, _Extra) ->
 %% DEBUG API
 %% =============================================================================
 
+
+
+%% @private
+try_node_info(Node, Opts) ->
+    %% This will not work because gen_server uses disterl
+    %% gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
+    %% TODO reconsider turning this server into a partisan_gen_server
+    case partisan_rpc:call(Node, partisan, node_info, [Opts], 5000) of
+        {badrpc, Reason} ->
+            #{};
+        Info ->
+            Info
+    end.
 
 
 %% @doc return the peers for `Node' for the tree rooted at `Root'.
