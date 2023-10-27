@@ -323,11 +323,11 @@ monitor(Term) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec monitor
-    (process, erlang:monitor_process_identifier()) ->
+    (process, pid() | atom() | {atom(), node()}) ->
         reference();
     (process, remote_pid() | remote_name()) ->
         remote_reference() | no_return();
-    (port, erlang:monitor_port_identifier()) ->
+    (port, port() | atom()) ->
         reference() |  no_return();
     (time_offset, clock_service) ->
         reference() | no_return().
@@ -382,7 +382,7 @@ monitor(Type, Item) ->
 -spec monitor
     (process, pid() | atom(), [monitor_opt()]) ->
         reference();
-    (port, erlang:monitor_port_identifier(), [erlang:monitor_option()]) ->
+    (port, port() | atom(), [erlang:monitor_option()]) ->
         reference();
     (time_offset, clock_service, [erlang:monitor_option()]) ->
         reference();
