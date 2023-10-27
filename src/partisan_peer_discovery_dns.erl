@@ -35,6 +35,22 @@
 %% ]}
 %% '''
 %%
+%% === Checking if a DNS query ===
+%% If you are experiencing an issue with Partisan not finding the peers using
+%% DNS you might want to check the configuration is correct.
+%%
+%% One way of doing that is by doing the following on your Erlang shell:
+%%
+%% ```
+%% 1> Config = #{
+%%      record_type => fqdns,
+%%      query => "foo.local",
+%%      node_basename => "foo"
+%% }.
+%% 2> {ok, State} = partisan_peer_discovery_dns:init(Config).
+%% 3> partisan_peer_discovery_dns:lookup(Config, 1000).
+%% '''
+%% The last line should return the result
 %% @end
 %% -----------------------------------------------------------------------------
 -module(partisan_peer_discovery_dns).
