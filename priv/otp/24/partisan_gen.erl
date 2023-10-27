@@ -291,13 +291,13 @@ do_call(Process, Label, Request, infinity)
 
 do_call(ProcessRef, Label, Request, Timeout) ->
     %% Partisan case
-    %% For remote process do_send_request will use Tag = [alias | Mref]
+    %% For remote process do_send_request will use Tag = [alias|Mref]
     %% to comply with OTP although we do not support remote aliases
     Mref = do_send_request(ProcessRef, Label, Request),
 
     %% Wait for reply.
     receive
-        {[alias | Mref], Reply} ->
+        {[alias|Mref], Reply} ->
             partisan:demonitor(Mref, [flush]),
             {ok, Reply};
         {'DOWN', Mref, _, _, noconnection} ->
@@ -312,7 +312,7 @@ do_call(ProcessRef, Label, Request, Timeout) ->
             message => Request
         }),
         receive
-            {[alias | Mref], Reply} ->
+            {[alias|Mref], Reply} ->
                 {ok, Reply}
         after 0 ->
                 exit(timeout)
@@ -361,6 +361,7 @@ when is_pid(Process) orelse is_atom(Process) ->
 do_send_request({ServerRef, Node} = Process, Label, Request) ->
     case Node == partisan:node() of
         true ->
+            %% Call first clause
             do_send_request(ServerRef, Label, Request);
         false ->
             %% Monitor request and message are delivered using the same channel
