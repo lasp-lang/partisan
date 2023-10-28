@@ -546,7 +546,11 @@ handle_cast({broadcast, MessageId, Message, Mod, Round, Root, From}, State) ->
         "received {broadcast, ~p, Msg, ~p, ~p, ~p, ~p}",
         [MessageId, Mod, Round, Root, From]
     ),
-    Valid = Mod:merge(MessageId, Message),
+    Valid = 
+    case catch Mod:merge(MessageId, Message) of
+        Resp when is_atom(Resp) andalso true == Resp orelse false == Resp -> Resp;
+        _ -> false
+    end,
     State1 = handle_broadcast(Valid, MessageId, Message, Mod, Round, Root, From, State),
     {noreply, State1};
 
