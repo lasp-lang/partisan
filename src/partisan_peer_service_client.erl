@@ -369,7 +369,8 @@ when A =/= B ->
         got => A,
         expected => B
     }),
-    {stop, {unexpected_peer, A, B}, State};
+    {noreply, State}; %% ignore
+    %% {stop, {unexpected_peer, A, B}, State};
 
 handle_message(Msg, State) ->
     ?LOG_WARNING(#{
