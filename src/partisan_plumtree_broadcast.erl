@@ -573,7 +573,11 @@ handle_cast({broadcast, MessageId, Message, Mod, Round, Root, From}, State) ->
         "received {broadcast, ~p, Msg, ~p, ~p, ~p, ~p}",
         [MessageId, Mod, Round, Root, From]
     ),
-    Valid = Mod:merge(MessageId, Message),
+    Valid = 
+    case catch Mod:merge(MessageId, Message) of
+        Resp when is_atom(Resp) andalso true == Resp orelse false == Resp -> Resp;
+        _ -> false
+    end,
     State1 = handle_broadcast(Valid, MessageId, Message, Mod, Round, Root, From, State),
     {noreply, State1};
 
@@ -585,7 +589,12 @@ handle_cast({prune, Root, From}, State) ->
 
 handle_cast({i_have, MessageId, Mod, Round, Root, From}, State) ->
     ?LOG_DEBUG("received ~p", [{i_have, MessageId, Mod, Round, Root, From}]),
-    Stale = Mod:is_stale(MessageId),
+    Stale = % Mod:is_stale(MessageId),
+    case catch Mod:is_stale(MessageId) of
+        Resp when is_atom(Resp) andalso true == Resp orelse false == Resp -> Resp;
+        _ -> false
+    end,
+
     State1 = handle_ihave(Stale, MessageId, Mod, Round, Root, From, State),
     {noreply, State1};
 
@@ -599,7 +608,11 @@ handle_cast({ignored_i_have, MessageId, Mod, Round, Root, From}, State) ->
 
 handle_cast({graft, MessageId, Mod, Round, Root, From}, State) ->
     ?LOG_DEBUG("received ~p", [{graft, MessageId, Mod, Round, Root, From}]),
-    Result = Mod:graft(MessageId),
+    Result = 
+    case catch Mod:graft(MessageId) of
+        Resp when is_atom(Resp) andalso true == Resp orelse false == Resp -> Resp;
+        _ -> false
+    end,
     ?LOG_DEBUG("graft(~p): ~p", [MessageId, Result]),
     State1 = handle_graft(Result, MessageId, Mod, Round, Root, From, State),
     {noreply, State1};
@@ -1081,7 +1094,7 @@ maybe_exchange(Peer, #state{mods = [_|Mods]} = State, [H|T]) ->
 
 %% @private
 exchange(Peer, #state{exchanges = Exchanges} = State, Mod) ->
-    case Mod:exchange(Peer) of
+    case catch Mod:exchange(Peer) of
         ignore ->
             ?LOG_DEBUG(
                 "~p ignored exchange request with ~p.", [Mod, Peer]
@@ -1096,6 +1109,8 @@ exchange(Peer, #state{exchanges = Exchanges} = State, Mod) ->
             State#state{exchanges = [{Mod, Peer, Ref, Pid} | Exchanges]};
 
         {error, _Reason} ->
+            State;
+        _ -> 
             State
     end.
 
