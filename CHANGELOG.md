@@ -2,6 +2,7 @@
 # v5.0.0-rc.12
 ## Fixes
 * Fix a bug causing fast forward to be disabled in full-mesh topologies
+* Merged [PR #254](https://github.com/lasp-lang/partisan/pull/254) - Thanks Massimo Cesaro!
 
 # v5.0.0-rc.11
 ## Fixes

@@ -573,11 +573,7 @@ handle_cast({broadcast, MessageId, Message, Mod, Round, Root, From}, State) ->
         "received {broadcast, ~p, Msg, ~p, ~p, ~p, ~p}",
         [MessageId, Mod, Round, Root, From]
     ),
-    Valid = 
-    case catch Mod:merge(MessageId, Message) of
-        Resp when is_atom(Resp) andalso true == Resp orelse false == Resp -> Resp;
-        _ -> false
-    end,
+    Valid = partisan_util:apply(Mod, merge, [MessageId, Message], false),
     State1 = handle_broadcast(Valid, MessageId, Message, Mod, Round, Root, From, State),
     {noreply, State1};
 
@@ -589,12 +585,7 @@ handle_cast({prune, Root, From}, State) ->
 
 handle_cast({i_have, MessageId, Mod, Round, Root, From}, State) ->
     ?LOG_DEBUG("received ~p", [{i_have, MessageId, Mod, Round, Root, From}]),
-    Stale = % Mod:is_stale(MessageId),
-    case catch Mod:is_stale(MessageId) of
-        Resp when is_atom(Resp) andalso true == Resp orelse false == Resp -> Resp;
-        _ -> false
-    end,
-
+    Stale = partisan_util:apply(Mod, is_stale, [MessageId], false),
     State1 = handle_ihave(Stale, MessageId, Mod, Round, Root, From, State),
     {noreply, State1};
 
@@ -608,11 +599,7 @@ handle_cast({ignored_i_have, MessageId, Mod, Round, Root, From}, State) ->
 
 handle_cast({graft, MessageId, Mod, Round, Root, From}, State) ->
     ?LOG_DEBUG("received ~p", [{graft, MessageId, Mod, Round, Root, From}]),
-    Result = 
-    case catch Mod:graft(MessageId) of
-        Resp when is_atom(Resp) andalso true == Resp orelse false == Resp -> Resp;
-        _ -> false
-    end,
+    Result = partisan_util:apply(Mod, graft, [MessageId], false),
     ?LOG_DEBUG("graft(~p): ~p", [MessageId, Result]),
     State1 = handle_graft(Result, MessageId, Mod, Round, Root, From, State),
     {noreply, State1};

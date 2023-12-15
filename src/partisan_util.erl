@@ -29,17 +29,18 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([maps_append/3]).
+-export([apply/4]).
 -export([encode/1]).
 -export([encode/2]).
--export([maybe_connect_disterl/1]).
--export([maybe_pad_term/1]).
+-export([format_posix_error/1]).
 -export([get/2]).
 -export([get/3]).
--export([format_posix_error/1]).
+-export([maps_append/3]).
+-export([maybe_connect_disterl/1]).
+-export([maybe_pad_term/1]).
 -export([parse_ip_address/1]).
--export([parse_port_nbr/1]).
 -export([parse_listen_address/1]).
+-export([parse_port_nbr/1]).
 
 
 
@@ -140,6 +141,27 @@ maps_append(Key, Value, Map) ->
         [Value],
         Map
     ).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec apply(
+    Mod :: module(), Fun :: atom(), Args :: list(), Default :: any()) -> any().
+
+apply(Mod, Fun, Args, Default) ->
+    erlang:function_exported(Mod, module_info, 0)
+        orelse code:ensure_loaded(Mod),
+
+    Arity = length(Args),
+
+    case erlang:function_exported(Mod, Fun, Arity) of
+        true ->
+            erlang:apply(Mod, Fun, Args);
+        false ->
+            Default
+    end.
 
 
 %% -----------------------------------------------------------------------------
