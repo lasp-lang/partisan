@@ -540,7 +540,7 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
 
             %% Use causal delivery?
             CausalDelivery =
-                maps:get(causal_label, FwdOpts, undefined) =:= undefined,
+                maps:get(causal_label, FwdOpts, undefined) =/= undefined,
 
             %% Should we use fast forwarding?
             %%
@@ -549,9 +549,11 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
             %% - not labeled for causal delivery
             %% - message does not need acknowledgement
             FastForward =
-                not DisableFastForward
-                andalso not NeedsAck
-                andalso not CausalDelivery,
+                not (
+                    DisableFastForward
+                    orelse NeedsAck
+                    orelse CausalDelivery
+                ),
 
             %% Attempt to fast-path, dispatching it directly to the connection
             %% process
