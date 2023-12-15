@@ -26,6 +26,7 @@
     ]}
 ]}
 ```
+
 # v5.0.0-rc.9
 ## Changes
 * `partisan_peer_discovery_dns` configuration changes. The configuration parameters `name` was renamed to `query` and `nodename` was renamed to `node_basename`. `name` and `nodename` are still valid inputs but they are transformed during init.
