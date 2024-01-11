@@ -90,7 +90,7 @@ ok
 
 In addition to using Partisan-specific functions to manage a cluster and send messages, adopting Partisan implies the need to replace some Erlang BIFs with Partisan's counterparts. This is mainly to cope with the impossibility for Partisan to represent remote pids and references in the way Distributed Erlang does. For that reason, pids and references are encoded manually (or automatically is the configuration options `pid_encoding` and `ref_encoding ` are enabled) using the `partisan_remote_ref:from_term/1` function.
 
-Several Erlang BIFs (a.k.a "native implementation") won't work when using Partisan so you will need to use the Partisan API instead. The Partisan API  tries to be a dropin replacement to Erlang's as much as possible. It tries comply with Erlang's in terms of naming, function signature and behaviour, so in most cases migrating to Partisan is as easy as replacing the module name from `erlang` to `partisan`.
+Several Erlang BIFs (a.k.a "native implementation") won't work when using Partisan so you will need to use the Partisan API instead. The Partisan API  tries to be a drop-in replacement to Erlang's as much as possible. It tries comply with Erlang's in terms of naming, function signature and behaviour, so in most cases migrating to Partisan is as easy as replacing the module name from `erlang` to `partisan`.
 
 |Erlang|Partisan|Description|
 |---|---|---|
