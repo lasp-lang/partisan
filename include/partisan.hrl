@@ -150,7 +150,7 @@
 ).
 
 %% Pluggable manager options.
--define(DISTANCE_ENABLED, true).
+-define(DISTANCE_ENABLED, false).
 -define(PERIODIC_ENABLED, true).
 
 
