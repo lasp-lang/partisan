@@ -1,4 +1,9 @@
 # CHANGELOG
+# v5.0.0-rc.13
+## Fixes
+* set `distance_enabled` options to `false` by default.
+
+
 # v5.0.0-rc.12
 ## Fixes
 * Fix a bug causing fast forward to be disabled in full-mesh topologies
