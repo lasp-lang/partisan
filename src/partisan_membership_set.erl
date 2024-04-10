@@ -32,8 +32,8 @@
 %% specifically a state_orset.
 %%
 %% Notice that because the set stores `partisan:node_spec()' objects and not
-%% `node()',
-%% the set can have multiple `partisan:node_spec()' objects for the same node.
+%% `node()', the set can have multiple `partisan:node_spec()' objects for the
+%% same node.
 %%
 %% This can occur when the set contains one or more
 %% <em>stale specifications</em>.
@@ -245,8 +245,6 @@ decode(Binary) ->
 
 
 -ifdef(TEST).
-
-
 
 
 node_spec(Nodename) ->
