@@ -29,7 +29,6 @@
 -include_lib("kernel/include/logger.hrl").
 -include("partisan_util.hrl").
 
-
 -record(state, {
     enabled                                 ::  boolean(),
     callback_mod                            ::  module() | undefined,
@@ -41,6 +40,7 @@
     peers = []                              ::  [partisan:node_spec()]
 }).
 
+-type state() :: #state{}.
 
 %% API
 -export([start/0]).
@@ -255,31 +255,22 @@ enabled({call, From}, disable, State) ->
     ok = gen_statem:reply(From, ok),
     {next_state, disabled, State};
 
+enabled({call, From}, lookup, State0) ->
+    {Members, State} = lookup(State0),
+    ok = gen_statem:reply(From, {ok, Members}),
+    {keep_state, State};
+
 enabled(state_timeout, lookup, State) ->
     %% The polling interval timeout, we need to perform a lookup
     {keep_state, State, [{next_event, internal, lookup}]};
 
 enabled(internal, lookup, State0) ->
-    CBMod = State0#state.callback_mod,
-    CBState0 = State0#state.callback_state,
-    Timeout = State0#state.timeout,
-
-    {ok, Peers, CBState} = CBMod:lookup(CBState0, Timeout),
-
-    ?LOG_DEBUG(#{
-        description => "Got peer discovery lookup response",
-        callback_mod => CBMod,
-        response => Peers
-    }),
-
     %% Add/remove peers from the membership view, this is the right way to do it
     %% as opposed to invididually join the peers. This is so that the peer
     %% service can decide which nodes to join based on the topology/strategy.
-    Members = [partisan:node_spec() | Peers],
     %% update_members/1 will deduplicate members.
+    {Members, State} = lookup(State0),
     ok = partisan_peer_service:update_members(Members),
-
-    State = State0#state{callback_state = CBState},
 
     %% Schedule next lookup
     Action = {state_timeout, State#state.polling_interval, lookup, []},
@@ -306,6 +297,10 @@ disabled({call, From}, enable, State) ->
     ok = gen_statem:reply(From, ok),
     {next_state, enabled, State, [{next_event, internal, next}]};
 
+disabled({call, From}, lookup, _) ->
+    ok = gen_statem:reply(From, {error, disabled}),
+    keep_state_and_data;
+
 disabled(EventType, EventContent, State) ->
     handle_common_event(EventType, EventContent, disabled, State).
 
@@ -314,7 +309,6 @@ disabled(EventType, EventContent, State) ->
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
-
 
 
 
@@ -339,3 +333,26 @@ handle_common_event(EventType, EventContent, _StateName, State) ->
     }),
 
     keep_state_and_data.
+
+
+%% @private
+-spec lookup(state()) -> {[partisan:node_spec()], state()}.
+
+lookup(State0) ->
+    CBMod = State0#state.callback_mod,
+    CBState0 = State0#state.callback_state,
+    Timeout = State0#state.timeout,
+
+    {ok, Peers, CBState} = CBMod:lookup(CBState0, Timeout),
+
+    ?LOG_DEBUG(#{
+        description => "Got peer discovery lookup response",
+        callback_mod => CBMod,
+        response => Peers
+    }),
+
+    %% Add/remove peers from the membership view, this is the right way to do it
+    %% as opposed to invididually join the peers. This is so that the peer
+    %% service can decide which nodes to join based on the topology/strategy.
+    State = State0#state{callback_state = CBState},
+    {[partisan:node_spec() | Peers], State}.
