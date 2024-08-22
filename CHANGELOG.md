@@ -1,4 +1,12 @@
 # CHANGELOG
+# v5.0.0-rc.14
+## Fixes
+* Fixes the case where `partisan_plumbtree_broadcast` behaviour implementors' callbacks throw an exception which would crash the broadcast server.
+* Replace use of RPC in `partisan_plumbtree_broadcast` and use 
+  `partisan_gen_server:call/3` instead
+* Other minor fixes
+
+
 # v5.0.0-rc.13
 ## Fixes
 * set `distance_enabled` options to `false` by default.
