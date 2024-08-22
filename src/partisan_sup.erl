@@ -103,7 +103,7 @@ init([]) ->
 
     CausalBackendFun = fun(Label) ->
         {partisan_causality_backend,
-         {partisan_causality_backend, start_link, [Label]},
+     {partisan_causality_backend, start_link, [Label]},
           permanent, 5000, worker, [partisan_causality_backend]}
     end,
 

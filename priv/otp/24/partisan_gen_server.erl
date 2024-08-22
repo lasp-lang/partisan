@@ -287,7 +287,7 @@ call(Name, Request, TimeoutOrOpts) ->
     case catch partisan_gen:call(Name, '$gen_call', Request, TimeoutOrOpts) of
     {ok,Res} ->
         Res;
-    {'EXIT',Reason} ->
+    {'EXIT', Reason} ->
         exit({Reason, {?MODULE, call, [Name, Request, TimeoutOrOpts]}})
     end.
 
