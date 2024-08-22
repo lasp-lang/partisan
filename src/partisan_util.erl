@@ -148,7 +148,8 @@ maps_append(Key, Value, Map) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec apply(
-    Mod :: module(), Fun :: atom(), Args :: list(), Default :: any()) -> any().
+    Mod :: module(), Fun :: atom(), Args :: list(), Default :: any()) ->
+    any() | no_return().
 
 apply(Mod, Fun, Args, Default) ->
     erlang:function_exported(Mod, module_info, 0)
@@ -162,6 +163,27 @@ apply(Mod, Fun, Args, Default) ->
         false ->
             Default
     end.
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec safe_apply(
+    Mod :: module(), Fun :: atom(), Args :: list(), Default :: any()) -> any().
+
+safe_apply(Mod, Fun, Args, Default) ->
+    try
+        safe_apply(Mod, Fun, Args, Default)
+    catch
+        Class:Reason:Stacktrace ->
+            Formatted = erl_error:format_exception(Class, Reason, Stacktrace),
+            ?LOG_DEBUG(#{
+                description => "Error while applying MFA",
+                exception => Formatted
+            }),
+            Default
+    end.
+
 
 
 %% -----------------------------------------------------------------------------
