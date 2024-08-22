@@ -117,7 +117,7 @@ handle_call(_Msg, _From, State) ->
 %% @private
 handle_cast({cast, ServerRef}, State) ->
     ?LOG_INFO("Received cast message with server_ref: ~p in the handle_call handler.", [ServerRef]),
-    ServerRef ! ok,
+    partisan:send(ServerRef, ok),
     {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
