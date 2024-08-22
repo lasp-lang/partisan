@@ -173,7 +173,7 @@ apply(Mod, Fun, Args, Default) ->
 
 safe_apply(Mod, Fun, Args, Default) ->
     try
-        safe_apply(Mod, Fun, Args, Default)
+        apply(Mod, Fun, Args, Default)
     catch
         Class:Reason:Stacktrace ->
             Formatted = erl_error:format_exception(Class, Reason, Stacktrace),
