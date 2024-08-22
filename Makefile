@@ -103,7 +103,7 @@ test: eunit core-test otp-test cover
 core-test: setup-tls
 ifeq ($(shell expr $(OTPVSN) \> 24),1)
 	$(info OTPVSN is higher than 24)
-	$(eval override mytarget=echo "skipping core-test target. CT Suite currently requires OTP24")
+	$(info Skipping core-test target. CT Suite currently requires OTP24)
 else
 	${REBAR} as test ct -v --readable=false --suite=partisan_SUITE
 endif
