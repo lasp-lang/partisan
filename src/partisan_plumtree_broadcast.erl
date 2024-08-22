@@ -72,7 +72,7 @@
 %% -----------------------------------------------------------------------------
 -module(partisan_plumtree_broadcast).
 
--behaviour(gen_server).
+-behaviour(partisan_gen_server).
 
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
@@ -112,6 +112,9 @@
 -type info_opt()        ::  node_spec | metadata | distance.
 
 -record(state, {
+    %% This node
+    node :: node(),
+
     %% Initially trees rooted at each node are the same.
     %% Portions of that tree belonging to this node are
     %% shared in this set.
@@ -304,7 +307,7 @@ is_map(Opts) ->
     StartOpts = [
         {spawn_opt, ?PARALLEL_SIGNAL_OPTIMISATION([])}
     ],
-    gen_server:start_link({local, ?SERVER}, ?MODULE, Args, StartOpts).
+    partisan_gen_server:start_link({local, ?SERVER}, ?MODULE, Args, StartOpts).
 
 
 %% -----------------------------------------------------------------------------
@@ -323,7 +326,7 @@ is_map(Opts) ->
 
 broadcast(Broadcast, Mod) ->
     {MessageId, Payload} = Mod:broadcast_data(Broadcast),
-    gen_server:cast(?SERVER, {broadcast, MessageId, Payload, Mod}).
+    partisan_gen_server:cast(?SERVER, {broadcast, MessageId, Payload, Mod}).
 
 
 %% -----------------------------------------------------------------------------
@@ -338,12 +341,7 @@ broadcast(Broadcast, Mod) ->
 -spec broadcast_channel(Mod :: module()) -> partisan:channel().
 
 broadcast_channel(Mod) ->
-    case erlang:function_exported(Mod, broadcast_channel, 0) of
-        true ->
-            Mod:broadcast_channel();
-        false ->
-            ?DEFAULT_CHANNEL
-    end.
+    partisan_util:apply(Mod, broadcast_channel, [], ?DEFAULT_CHANNEL).
 
 
 %% -----------------------------------------------------------------------------
@@ -352,11 +350,11 @@ broadcast_channel(Mod) ->
 %% partisan_peer_service:add_sup_callback(fun ?MODULE:update/1),
 %% @end
 %% -----------------------------------------------------------------------------
--spec update([node()]) -> ok.
+-spec update([node()]) -> ok | no_return().
 
 update(LocalState0) ->
-    LocalState = partisan_peer_service:decode(LocalState0),
-    gen_server:cast(?SERVER, {update, LocalState}).
+    MemberList = partisan_peer_service:decode(LocalState0),
+    partisan_gen_server:cast(?SERVER, {update, MemberList}).
 
 
 %% -----------------------------------------------------------------------------
@@ -364,7 +362,7 @@ update(LocalState0) ->
 %% Wait indefinitely for a response is returned from the process.
 %% @end
 %% -----------------------------------------------------------------------------
--spec broadcast_members() -> nodeset().
+-spec broadcast_members() -> nodeset() | no_return().
 
 broadcast_members() ->
     broadcast_members(infinity).
@@ -375,10 +373,10 @@ broadcast_members() ->
 %% Waits `Timeout' ms for a response from the server.
 %% @end
 %% -----------------------------------------------------------------------------
--spec broadcast_members(infinity | pos_integer()) -> nodeset().
+-spec broadcast_members(infinity | pos_integer()) -> nodeset() | no_return().
 
 broadcast_members(Timeout) ->
-    gen_server:call(?SERVER, broadcast_members, Timeout).
+    partisan_gen_server:call(?SERVER, broadcast_members, Timeout).
 
 
 %% -----------------------------------------------------------------------------
@@ -386,19 +384,17 @@ broadcast_members(Timeout) ->
 %% running.
 %% @end
 %% -----------------------------------------------------------------------------
--spec exchanges() -> {ok, exchanges()}.
+-spec exchanges() -> exchanges() | no_return().
 
 exchanges() ->
-    gen_server:call(?SERVER, exchanges, infinity).
+    partisan_gen_server:call(?SERVER, exchanges, infinity).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns a list of running exchanges, started on `Node'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec exchanges(node()) ->
-    {ok, exchanges()}
-    | {error, {badrpc, Reason :: any()}}.
+-spec exchanges(node()) -> exchanges() | no_return().
 
 exchanges(Node) ->
     exchanges(Node, infinity).
@@ -408,71 +404,61 @@ exchanges(Node) ->
 %% @doc Returns a list of running exchanges, started on `Node'.
 %% @end
 %% -----------------------------------------------------------------------------
--spec exchanges(node(), timeout()) ->
-    {ok, exchanges()}
-    | {error, {badrpc, Reason :: any()}}.
+-spec exchanges(node(), timeout()) -> exchanges() | no_return().
 
 exchanges(Node, Timeout) ->
-    %% This will not work because gen_server uses disterl
-    %% TODO reconsider turning this server into a partisan_gen_serv
-    %% gen_server:call({?SERVER, Node}, exchanges, infinity).
-    case partisan_rpc:call(Node, ?SERVER, exchanges, [], Timeout) of
-        {ok, _} = OK ->
-            %% eqwalizer:ignore
-            OK;
-        {badrpc, _} = Reason ->
-            {error, Reason}
-    end.
+    partisan_gen_server:call({?SERVER, Node}, exchanges, Timeout).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc Cancel exchanges started by this node.
 %% @end
 %% -----------------------------------------------------------------------------
--spec cancel_exchanges(selector()) -> exchanges().
+-spec cancel_exchanges(selector()) -> exchanges() | no_return().
 
 cancel_exchanges(Selector) ->
-    gen_server:call(?SERVER, {cancel_exchanges, Selector}, infinity).
+    partisan_gen_server:call(?SERVER, {cancel_exchanges, Selector}, infinity).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec get_peers(Root :: node()) -> list().
+-spec get_peers(Root :: node()) -> list() | no_return().
 
 get_peers(Root) ->
-    gen_server:call(?SERVER, {get_peers, Root}).
+    partisan_gen_server:call(?SERVER, {get_peers, Root}).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec get_peers(Root :: node(), Opts :: [partisan:info_opt()]) -> list().
+-spec get_peers(Root :: node(), Opts :: [partisan:info_opt()]) ->
+    list() | no_return().
 
 get_peers(Root, Opts) when is_list(Opts) ->
-    gen_server:call(?SERVER, {get_peers, Root, Opts}).
+    partisan_gen_server:call(?SERVER, {get_peers, Root, Opts}).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec get_eager_peers(Root :: node()) -> list().
+-spec get_eager_peers(Root :: node()) -> list() | no_return().
 
 get_eager_peers(Root) ->
-    gen_server:call(?SERVER, {get_eager_peers, Root}).
+    partisan_gen_server:call(?SERVER, {get_eager_peers, Root}).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec get_lazy_peers(Root :: node()) -> list().
+-spec get_lazy_peers(Root :: node()) -> list() | no_return().
 
 get_lazy_peers(Root) ->
-    gen_server:call(?SERVER, {get_lazy_peers, Root}).
+    partisan_gen_server:call(?SERVER, {get_lazy_peers, Root}).
 
 
 
@@ -494,6 +480,7 @@ init([Members, InitEagers0, InitLazys0, Mods, Opts]) ->
     schedule_exchange_tick(ExchangeTickPeriod),
 
     State1 =  #state{
+        node = partisan:node(),
         all_members = ordsets:new(),
         common_lazys = ordsets:new(),
         common_eagers = ordsets:new(),
@@ -549,10 +536,10 @@ handle_call({get_lazy_peers, Root}, _From, State) ->
     ),
     {reply, LazyPeers, State};
 
-handle_call(broadcast_members, _From, State=#state{all_members=AllMembers}) ->
+handle_call(broadcast_members, _From, State=#state{all_members = AllMembers}) ->
     {reply, AllMembers, State};
 
-handle_call(exchanges, _From, State=#state{exchanges=Exchanges}) ->
+handle_call(exchanges, _From, State=#state{exchanges = Exchanges}) ->
     {reply, Exchanges, State};
 
 handle_call({cancel_exchanges, WhichExchanges}, _From, State) ->
@@ -573,7 +560,7 @@ handle_cast({broadcast, MessageId, Message, Mod, Round, Root, From}, State) ->
         "received {broadcast, ~p, Msg, ~p, ~p, ~p, ~p}",
         [MessageId, Mod, Round, Root, From]
     ),
-    Valid = partisan_util:apply(Mod, merge, [MessageId, Message], false),
+    Valid = partisan_util:safe_apply(Mod, merge, [MessageId, Message], false),
     State1 = handle_broadcast(Valid, MessageId, Message, Mod, Round, Root, From, State),
     {noreply, State1};
 
@@ -585,7 +572,7 @@ handle_cast({prune, Root, From}, State) ->
 
 handle_cast({i_have, MessageId, Mod, Round, Root, From}, State) ->
     ?LOG_DEBUG("received ~p", [{i_have, MessageId, Mod, Round, Root, From}]),
-    Stale = partisan_util:apply(Mod, is_stale, [MessageId], false),
+    Stale = partisan_util:safe_apply(Mod, is_stale, [MessageId], false),
     State1 = handle_ihave(Stale, MessageId, Mod, Round, Root, From, State),
     {noreply, State1};
 
@@ -599,13 +586,13 @@ handle_cast({ignored_i_have, MessageId, Mod, Round, Root, From}, State) ->
 
 handle_cast({graft, MessageId, Mod, Round, Root, From}, State) ->
     ?LOG_DEBUG("received ~p", [{graft, MessageId, Mod, Round, Root, From}]),
-    Result = partisan_util:apply(Mod, graft, [MessageId], false),
+    Result = partisan_util:safe_apply(Mod, graft, [MessageId], false),
     ?LOG_DEBUG("graft(~p): ~p", [MessageId, Result]),
     State1 = handle_graft(Result, MessageId, Mod, Round, Root, From, State),
     {noreply, State1};
 
-handle_cast({update, MemberList}, #state{} = State) when is_list(MemberList) ->
-    ?LOG_DEBUG("received ~p", [{update, MemberList}]),
+handle_cast({update, NodeList}, #state{} = State) when is_list(NodeList) ->
+    ?LOG_DEBUG("received ~p", [{update, NodeList}]),
 
     #state{
         all_members = AllMembers,
@@ -613,7 +600,7 @@ handle_cast({update, MemberList}, #state{} = State) when is_list(MemberList) ->
         common_lazys = LazyPeers
     } = State,
 
-    Members = ordsets:from_list(MemberList),
+    Members = ordsets:from_list(NodeList),
     New = ordsets:subtract(Members, AllMembers),
     Removed = ordsets:subtract(AllMembers, Members),
 
@@ -702,21 +689,22 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private
 try_node_info(Node, Opts) ->
-    %% This will not work because gen_server uses disterl
-    %% gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
-    %% TODO reconsider turning this server into a partisan_gen_server
-    case partisan_rpc:call(Node, partisan, node_info, [Opts], 5000) of
-        {badrpc, Reason} ->
-            #{};
-        Info ->
-            Info
+    case partisan:node() of
+        Node ->
+            partisan:node_info(Opts);
+        Peer ->
+            case partisan_rpc:call(Peer, partisan, node_info, [Opts], 5000) of
+                {badrpc, _} ->
+                    #{};
+                Info ->
+                    Info
+            end
     end.
 
 
 %% @doc return the peers for `Node' for the tree rooted at `Root'.
 %% Wait indefinitely for a response is returned from the process
--spec debug_get_peers(node(), node()) ->
-    {nodeset(), nodeset()} | no_return().
+-spec debug_get_peers(node(), node()) -> {nodeset(), nodeset()} | no_return().
 
 debug_get_peers(Node, Root) ->
     debug_get_peers(Node, Root, infinity).
@@ -728,19 +716,7 @@ debug_get_peers(Node, Root) ->
     {nodeset(), nodeset()} | no_return().
 
 debug_get_peers(Node, Root, Timeout) ->
-    %% This will not work because gen_server uses disterl
-    %% gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
-    %% TODO reconsider turning this server into a partisan_gen_server
-    case partisan_rpc:call(Node, ?MODULE, get_peers, [Root], Timeout) of
-        {badrpc, Reason} ->
-            error(Reason);
-        {_, _} = Result ->
-            %% eqwalizer:ignore
-            Result;
-        {_, _, _} = Result ->
-            %% eqwalizer:ignore
-            Result
-    end.
+    partisan_gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
 
 
 %% @doc return the peers for `Node' for the tree rooted at `Root'.
@@ -749,19 +725,7 @@ debug_get_peers(Node, Root, Timeout) ->
     {nodeset(), nodeset(), Info :: map()} | no_return().
 
 debug_get_peers(Node, Root, Opts, Timeout) ->
-    %% This will not work because gen_server uses disterl
-    %% gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
-    %% TODO reconsider turning this server into a partisan_gen_server
-    case partisan_rpc:call(Node, ?MODULE, get_peers, [Root, Opts], Timeout) of
-        {badrpc, Reason} ->
-            error(Reason);
-        {_, _} = Result ->
-            %% eqwalizer:ignore
-            Result;
-        {_, _, _} = Result ->
-            %% eqwalizer:ignore
-            Result
-    end.
+    partisan_gen_server:call({?SERVER, Node}, {get_peers, Root, Opts}, Timeout).
 
 
 %% -----------------------------------------------------------------------------
@@ -846,7 +810,7 @@ handle_broadcast(
     %% remove sender from eager and set as lazy
     ?LOG_DEBUG("moving peer ~p from eager to lazy", [From]),
     State1 = add_lazy(From, Root, State),
-    ok = send({prune, Root, partisan:node()}, Mod, From),
+    ok = send({prune, Root, State#state.node}, Mod, From),
     State1;
 
 handle_broadcast(true, MessageId, Message, Mod, Round, Root, From, State) ->
@@ -861,7 +825,7 @@ handle_broadcast(true, MessageId, Message, Mod, Round, Root, From, State) ->
 handle_ihave(true, MessageId, Mod, Round, Root, From, State) ->
     %% stale i_have
     ok = send(
-        {ignored_i_have, MessageId, Mod, Round, Root, partisan:node()},
+        {ignored_i_have, MessageId, Mod, Round, Root, State#state.node},
         Mod,
         From
     ),
@@ -871,7 +835,7 @@ handle_ihave(false, MessageId, Mod, Round, Root, From, State) ->
     %% valid i_have
     %% TODO: don't graft immediately
     ok = send(
-        {graft, MessageId, Mod, Round, Root, partisan:node()}, Mod, From
+        {graft, MessageId, Mod, Round, Root, State#state.node}, Mod, From
     ),
     add_eager(From, Root, State).
 
@@ -891,7 +855,7 @@ handle_graft({ok, Message}, MessageId, Mod, Round, Root, From, State) ->
     %% subsequent ignore serve as the ack.
     State1 = add_eager(From, Root, State),
     ok = send(
-        {broadcast, MessageId, Message, Mod, Round, Root, partisan:node()},
+        {broadcast, MessageId, Message, Mod, Round, Root, State#state.node},
         Mod,
         From
     ),
@@ -953,8 +917,9 @@ neighbors_down(Removed, #state{} = State) ->
 
 %% @private
 eager_push(MessageId, Message, Mod, State) ->
+    Node = State#state.node,
     eager_push(
-        MessageId, Message, Mod, 0, partisan:node(), partisan:node(), State
+        MessageId, Message, Mod, 0, Node, Node, State
     ).
 
 
@@ -963,7 +928,7 @@ eager_push(MessageId, Message, Mod, Round, Root, From, State) ->
     Peers = eager_peers(Root, From, State),
     ?LOG_DEBUG("eager push to peers: ~p", [Peers]),
     ok = send(
-        {broadcast, MessageId, Message, Mod, Round, Root, partisan:node()},
+        {broadcast, MessageId, Message, Mod, Round, Root, State#state.node},
         Mod,
         Peers
     ),
@@ -972,8 +937,9 @@ eager_push(MessageId, Message, Mod, Round, Root, From, State) ->
 
 %% @private
 schedule_lazy_push(MessageId, Mod, State) ->
+    Node = State#state.node,
     schedule_lazy_push(
-        MessageId, Mod, 0, partisan:node(), partisan:node(), State
+        MessageId, Mod, 0, Node, Node, State
     ).
 
 
@@ -1023,17 +989,22 @@ send_lazy() ->
 -spec send_lazy(outstanding(), node()) -> ok.
 
 send_lazy({MessageId, Mod, Round, Root}, Peer) ->
+    Node = partisan:node(),
+
     ?LOG_DEBUG(#{
         description => "sending lazy push ~p",
-        message => {i_have, MessageId, Mod, Round, Root, partisan:node()}
+        message => {i_have, MessageId, Mod, Round, Root, Node}
     }),
-    send({i_have, MessageId, Mod, Round, Root, partisan:node()}, Mod, Peer).
+    send({i_have, MessageId, Mod, Round, Root, Node}, Mod, Peer).
 
 
 %% @private
 maybe_exchange(State) ->
-    Root = random_root(State),
-    Peer = random_peer(Root, State),
+    %% This checks for any channel connection, not specifically the broadcast
+    %% channel.
+    Connected = partisan_peer_connections:nodes(),
+    Root = random_root(State, Connected),
+    Peer = random_peer(Root, State, Connected),
     maybe_exchange(Peer, State).
 
 maybe_exchange(undefined, State) ->
@@ -1153,8 +1124,8 @@ exchange_filter({mod, Mod}) ->
 %% @doc picks random root uniformly
 %% @end
 %% -----------------------------------------------------------------------------
-random_root(#state{all_members=Members}) ->
-    random_other_node(Members).
+random_root(#state{all_members=Members}, Connected) ->
+    random_other_node(Members, Connected).
 
 
 %% -----------------------------------------------------------------------------
@@ -1162,8 +1133,8 @@ random_root(#state{all_members=Members}) ->
 %% peer is not this node
 %% @end
 %% -----------------------------------------------------------------------------
-random_peer(Root, State=#state{all_members=All}) ->
-    Node = partisan:node(),
+random_peer(Root, State=#state{all_members = All}, Connected) ->
+    Node = State#state.node,
     Mode = partisan_config:get(exchange_selection, optimized),
 
     Other = case Mode of
@@ -1182,9 +1153,9 @@ random_peer(Root, State=#state{all_members=All}) ->
 
     case ordsets:size(Other) of
         0 ->
-            random_other_node(ordsets:del_element(Node, All));
+            random_other_node(ordsets:del_element(Node, All), Connected);
         _ ->
-            random_other_node(Other)
+            random_other_node(Other, Connected)
     end.
 
 
@@ -1193,11 +1164,13 @@ random_peer(Root, State=#state{all_members=All}) ->
 %% @doc picks random node from ordset
 %% @end
 %% -----------------------------------------------------------------------------
-random_other_node(OrdSet) ->
+random_other_node(OrdSet0, Connected) ->
+    OrdSet = ordsets:intersection(OrdSet0, Connected),
     Size = ordsets:size(OrdSet),
 
     case Size of
-        0 -> undefined;
+        0 ->
+            undefined;
         _ ->
             lists:nth(rand:uniform(Size), ordsets:to_list(OrdSet))
     end.
@@ -1215,18 +1188,23 @@ ack_outstanding(MessageId, Mod, Round, Root, From) ->
 add_all_outstanding(MessageId, Mod, Round, Root, Peers) ->
     Message = {MessageId, Mod, Round, Root},
     Objects = [{Peer, Message} || Peer <- ordsets:to_list(Peers)],
+    %% These will be removed when ACKed
     true = ets:insert(?PLUMTREE_OUTSTANDING, Objects),
     ok.
 
 
 %% @private
 add_eager(From, Root, State) ->
-    update_peers(From, Root, fun ordsets:add_element/2, fun ordsets:del_element/2, State).
+    update_peers(
+        From, Root, fun ordsets:add_element/2, fun ordsets:del_element/2, State
+    ).
 
 
 %% @private
 add_lazy(From, Root, State) ->
-    update_peers(From, Root, fun ordsets:del_element/2, fun ordsets:add_element/2, State).
+    update_peers(
+        From, Root, fun ordsets:del_element/2, fun ordsets:add_element/2, State
+    ).
 
 
 %% @private
@@ -1294,8 +1272,8 @@ send(Msg, Mod, Peers) when is_list(Peers) ->
 
 send(Msg, Mod, Peer) ->
     instrument_transmission(Msg, Mod),
-    Opts = #{channel => broadcast_channel(Mod)},
-    partisan:cast_message(Peer, ?SERVER, Msg, Opts).
+    Opts = [{channel, broadcast_channel(Mod)}],
+    partisan_gen_server:cast({?SERVER, Peer}, Msg, Opts).
 
 
 %% @private
@@ -1318,10 +1296,10 @@ schedule_tick(Message, Timer, Default) ->
 -spec reset_peers(nodeset(), nodeset(), nodeset(), state()) -> state().
 
 reset_peers(AllMembers, EagerPeers, LazyPeers, State) ->
-    MyNode = partisan:node(),
+    Node = State#state.node,
     State#state{
-        common_eagers = ordsets:del_element(MyNode, EagerPeers),
-        common_lazys  = ordsets:del_element(MyNode, LazyPeers),
+        common_eagers = ordsets:del_element(Node, EagerPeers),
+        common_lazys  = ordsets:del_element(Node, LazyPeers),
         eager_sets    = maps:new(),
         lazy_sets     = maps:new(),
         all_members   = AllMembers

@@ -410,9 +410,7 @@ broadcast_members(Timeout) ->
 %% running.
 %% @end
 %% -----------------------------------------------------------------------------
--spec exchanges() ->
-    {ok, partisan_plumtree_broadcast:exchanges()}
-    | {error, {badrpc, Reason :: any()}}.
+-spec exchanges() -> partisan_plumtree_broadcast:exchanges() | no_return().
 
 exchanges() ->
     partisan_plumtree_broadcast:exchanges().
@@ -424,8 +422,7 @@ exchanges() ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec exchanges(node()) ->
-    {ok, partisan_plumtree_broadcast:exchanges()}
-    | {error, {badrpc, Reason :: any()}}.
+    partisan_plumtree_broadcast:exchanges() | no_return().
 
 exchanges(Node) ->
     partisan_plumtree_broadcast:exchanges(Node).

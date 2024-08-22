@@ -96,7 +96,8 @@
 
 -callback members_for_orchestration() -> [partisan:node_spec()].
 
--callback update_members([node()]) -> ok | {error, not_implemented}.
+-callback update_members([partisan:node_spec()]) ->
+    ok | {error, not_implemented}.
 
 -callback get_local_state() -> term().
 
