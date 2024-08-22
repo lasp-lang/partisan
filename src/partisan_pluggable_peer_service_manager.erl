@@ -890,6 +890,7 @@ handle_call({update_members, _}, _, #state{leaving = true} = State) ->
 
 handle_call({update_members, Members}, _From, #state{} = State0) ->
     %% For compatibility with external membership services.
+    %% Also called by partisan_peer_service_agent.
     Mod = State0#state.membership_strategy,
     MState = State0#state.membership_strategy_state,
 
@@ -1514,8 +1515,9 @@ handle_info({'EXIT', Pid, Reason}, State0)->
                         %% This was the last connection so the node is down.
                         %% We notify all subscribers.
                         ok = down(NodeSpec, State0),
-                        %% If still a member we add it to pending, so that we
-                        %% can compute the on_up signal
+                        %% If still a member we need to add it to pending,
+                        %% so that we can reconnect and then compute the
+                        %% on_up signal.
                         maybe_append_pending(NodeSpec, State0);
                     _ ->
                         State0
@@ -1639,8 +1641,9 @@ establish_connections(State) ->
     Pending = State#state.pending,
     Members = State#state.members,
 
+    %% @REVIEW Shouldn't this be a set union? Also what about IP Changes?
     %% Compute list of nodes that should be connected.
-    Nodes = Members ++ Pending,
+    NodesSpecs = Members ++ Pending,
 
     %% Reconnect disconnected members and members waiting to join.
     LoL = lists:foldl(
@@ -1649,11 +1652,11 @@ establish_connections(State) ->
                 %% We exclude ourselves
                 Acc;
             (#{name := _} = Node, Acc) ->
-                %% This function call returns the a list of invalid
+                %% This function call returns the a list of stale
                 %% NodeSpecs (nodes that have an invalid IP address because we
                 %% already have a connection to NodeSpec.node on another IP
                 %% address).
-                %% We then remove those NodeSpes from the membership set and
+                %% We then remove those NodeSpecs from the membership set and
                 %% update ourselves without the need for sending any leave/join
                 %% gossip.
                 {ok, StaleSpecs} = partisan_peer_service_manager:connect(
@@ -1663,7 +1666,7 @@ establish_connections(State) ->
                 [StaleSpecs | Acc]
         end,
         [],
-        Nodes
+        NodesSpecs
     ),
 
     prune(lists:append(LoL), State).
@@ -2039,6 +2042,8 @@ apply_funs(#{name := Node}, Mapping) ->
 
 %% @private
 pending_leavers(#state{} = State) ->
+    %% @REVIEW Shouldn't this be a set union? Also what about IP Changes?
+
     Members = ?SET_FROM_LIST(State#state.members),
     Pending0 = ?SET_FROM_LIST(State#state.pending),
     Connected = ?SET_FROM_LIST(partisan_peer_connections:node_specs()),
