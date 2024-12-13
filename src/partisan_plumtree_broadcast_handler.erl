@@ -44,7 +44,7 @@
 
 
 %% Return a two-tuple of message id and payload from a given broadcast
--callback broadcast_data(any()) -> {any(), any()}.
+-callback broadcast_data(any()) -> {MessageId :: any(), Payload :: any()}.
 
 
 %% Return the channel to be used when broadcasting data associate with this
