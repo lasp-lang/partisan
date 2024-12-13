@@ -857,6 +857,7 @@ handle_broadcast(
 handle_broadcast(true, MessageId, Message, Mod, Round, Root, From, State) ->
     %% valid msg
     %% remove sender from lazy and set as eager
+    ?LOG_DEBUG("moving peer ~p from lazy to eager", [From]),
     State1 = add_eager(From, Root, State),
     State2 = eager_push(MessageId, Message, Mod, Round + 1, Root, From, State1),
     schedule_lazy_push(MessageId, Mod, Round + 1, Root, From, State2).
@@ -1097,6 +1098,12 @@ exchange(Peer, #state{exchanges = Exchanges} = State, Mod) ->
         ignore ->
             ?LOG_DEBUG(
                 "~p ignored exchange request with ~p.", [Mod, Peer]
+            ),
+            State;
+
+        ok ->
+            ?LOG_DEBUG(
+                "~p accepted exchange request with ~p.", [Mod, Peer]
             ),
             State;
 
