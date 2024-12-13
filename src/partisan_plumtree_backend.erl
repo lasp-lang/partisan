@@ -220,7 +220,7 @@ merge(Timestamp, Timestamp) ->
 %% stale or not.
 %% A message is stale if the received message is causually newer than an
 %% existing one. If the message is missing or if the context does not represent
-%% an anscestor of message , false is returned. Otherwise, true is
+%% an ancestor of message, false is returned. Otherwise, true is
 %% returned.
 %% @end
 %% -----------------------------------------------------------------------------
