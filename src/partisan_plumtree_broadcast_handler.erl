@@ -72,7 +72,7 @@
 %% The exchange does not need to account for messages in-flight when it is
 %% started or broadcast during its operation. These can be taken care of in
 %% future exchanges.
--callback exchange(node()) -> {ok, pid()} | {error, term()} | ignore.
+-callback exchange(node()) -> ok | {ok, pid()} | {error, term()} | ignore.
 
 
 -optional_callbacks([broadcast_channel/0]).

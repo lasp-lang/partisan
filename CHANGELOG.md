@@ -1,5 +1,8 @@
 # CHANGELOG
 # v5.0.0-rc.14
+## Changes
+* Add `ok` as valid return for `exchange` callback in `partisan_plumbtree_broadcast_handler`.
+# v5.0.0-rc.14
 ## Fixes
 * Fixes the case where `partisan_plumbtree_broadcast` behaviour implementors' callbacks throw an exception which would crash the broadcast server.
 * Replace use of RPC in `partisan_plumbtree_broadcast` and use 
