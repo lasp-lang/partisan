@@ -603,7 +603,9 @@ handle_cast({ignored_i_have, MessageId, Mod, Round, Root, From}, State) ->
 
 handle_cast({graft, MessageId, Mod, Round, Root, From}, State) ->
     ?LOG_DEBUG("received ~p", [{graft, MessageId, Mod, Round, Root, From}]),
-    Result = partisan_util:safe_apply(Mod, graft, [MessageId], false),
+    Result = partisan_util:safe_apply(
+        Mod, graft, [MessageId], {error, nocallback}
+    ),
     ?LOG_DEBUG("graft(~p): ~p", [MessageId, Result]),
     State1 = handle_graft(Result, MessageId, Mod, Round, Root, From, State),
     {noreply, State1};
