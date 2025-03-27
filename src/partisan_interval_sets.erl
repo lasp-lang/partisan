@@ -21,17 +21,12 @@
 %% -----------------------------------------------------------------------------
 -module(partisan_interval_sets).
 
-
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.
-
--type set()         ::  [element()].
--type element()     ::  integer() | interval().
 -type interval()    ::  {integer(), integer()}.
+-type element()     ::  integer() | interval().
+-type t()           ::  [element()].
 
-
--export_type([set/0]).
+-export_type([interval/0]).
+-export_type([t/0]).
 
 
 -export([add_element/2]).
@@ -51,11 +46,33 @@
 -export([flat_size/1]).
 -export([subtract/2]).
 -export([to_list/1]).
--export([seq/1]).
+-export([to_flat_list/1]).
 -export([union/1]).
 -export([union/2]).
 -export([min/1]).
 -export([max/1]).
+
+
+-ifdef(TEST).
+
+-include_lib("eunit/include/eunit.hrl").
+
+-export([element_union/2]).
+-export([element_intersection/2]).
+-export([element_overlaps/2]).
+-export([element_starts_before/2]).
+-export([element_meets/2]).
+-export([element_merges/2]).
+-export([element_begins/2]).
+-export([element_ends/2]).
+-export([element_succeeds/2]).
+-export([element_precedes/2]).
+-export([element_includes/2]).
+-export([element_included/2]).
+-export([element_subtract/2]).
+
+-endif.
+
 
 
 
@@ -77,7 +94,7 @@ new() ->
 %% -----------------------------------------------------------------------------
 %% @doc Return 'true' if Set is an ordered set of elements, else 'false'.
 %% -----------------------------------------------------------------------------
--spec is_type(term()) -> boolean().
+-spec is_type(t()) -> boolean().
 
 is_type([E|Es]) ->
     is_element_type(E) andalso is_type(Es, E);
@@ -92,7 +109,7 @@ is_type(_) ->
 %% -----------------------------------------------------------------------------
 %% @doc Return the number of elements in OrdSet.
 %% -----------------------------------------------------------------------------
--spec size(set()) -> non_neg_integer().
+-spec size(t()) -> non_neg_integer().
 
 size(S) ->
     length(S).
@@ -101,7 +118,7 @@ size(S) ->
 %% -----------------------------------------------------------------------------
 %% @doc Return the number of points in the Ordset.
 %% -----------------------------------------------------------------------------
--spec flat_size(set()) -> non_neg_integer().
+-spec flat_size(t()) -> non_neg_integer().
 
 flat_size(S) ->
     lists:foldl(
@@ -117,7 +134,7 @@ flat_size(S) ->
 %% -----------------------------------------------------------------------------
 %% @doc Return 'true' if OrdSet is an empty set, otherwise 'false'.
 %% -----------------------------------------------------------------------------
--spec is_empty(set()) -> boolean().
+-spec is_empty(t()) -> boolean().
 
 is_empty(S) ->
     S =:= [].
@@ -126,19 +143,19 @@ is_empty(S) ->
 %% -----------------------------------------------------------------------------
 %% @doc Returns the minimum integer value contained in the set.
 %% -----------------------------------------------------------------------------
--spec min(set()) -> integer().
+-spec min(t()) -> integer().
 
-min([{N, _}|_]) when is_integer(N) ->
-    N;
+min([{H, _}|_]) ->
+    H;
 
-min([N|_]) when is_integer(N) ->
+min([N|_]) ->
     N.
 
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the maximum integer value contained in the set.
 %% -----------------------------------------------------------------------------
--spec max(set()) -> integer().
+-spec max(t()) -> integer().
 
 max(S) ->
     case lists:last(S) of
@@ -150,7 +167,7 @@ max(S) ->
 %% -----------------------------------------------------------------------------
 %% @doc Return the elements in OrdSet as a list.
 %% -----------------------------------------------------------------------------
--spec to_list(set()) -> [element()].
+-spec to_list(t()) -> [element()].
 
 to_list(S) ->
     S.
@@ -159,9 +176,9 @@ to_list(S) ->
 %% -----------------------------------------------------------------------------
 %% @doc Return the points in OrdSet as a list.
 %% -----------------------------------------------------------------------------
--spec seq(set()) -> [integer()].
+-spec to_flat_list(t()) -> [integer()].
 
-seq(Set) ->
+to_flat_list(Set) ->
     List = lists:foldl(
         fun
             ({H, T}, Acc) ->
@@ -179,7 +196,7 @@ seq(Set) ->
 %% -----------------------------------------------------------------------------
 %% @doc Build an ordered set from the elements in List.
 %% -----------------------------------------------------------------------------
--spec from_list(List :: [element()]) -> Sets :: set().
+-spec from_list(List :: [element()]) -> Sets :: t().
 
 from_list(L0) ->
     L1 = lists:usort(
@@ -214,7 +231,7 @@ from_list(L0) ->
 %% -----------------------------------------------------------------------------
 %% @doc Return 'true' if Element is an element of Sets, else 'false'.
 %% -----------------------------------------------------------------------------
--spec is_element(Element :: element(), Sets :: set()) -> boolean().
+-spec is_element(Element :: element(), Sets :: t()) -> boolean().
 
 is_element(Element, Sets) ->
     ok = validate_element(Element),
@@ -239,7 +256,7 @@ do_is_element(_, []) ->
 %% -----------------------------------------------------------------------------
 %% @doc Return OrdSet with Element inserted in it.
 %% -----------------------------------------------------------------------------
--spec add_element(Element :: element(), Set1 :: set()) -> Set2 :: set().
+-spec add_element(Element :: element(), Set1 :: t()) -> Set2 :: t().
 
 add_element(A, [B|Es] = Set) ->
     ok = validate_element(A),
@@ -282,7 +299,7 @@ add_element(E, []) ->
 %% -----------------------------------------------------------------------------
 %% @doc Return OrdSet but with Element removed.
 %% -----------------------------------------------------------------------------
--spec del_element(Element :: element(), Set1 :: set()) -> Set2 :: set().
+-spec del_element(Element :: element(), Set1 :: t()) -> Set2 :: t().
 
 del_element(A, [B|Es] = Set) ->
     ok = validate_element(A),
@@ -322,10 +339,10 @@ del_element(_, []) ->
 %% -----------------------------------------------------------------------------
 %% @doc Return the union of IntervalSet1 and IntervalSet2.
 %% -----------------------------------------------------------------------------
--spec union(Set1 :: set(), Set2 :: set()) -> Set3 :: set().
+-spec union(Set1 :: t(), Set2 :: t()) -> Set3 :: t().
 
 union(Set1, Set2) ->
-    compact(ordsets:union(seq(Set1), seq(Set2))).
+    compact(ordsets:union(to_flat_list(Set1), to_flat_list(Set2))).
 
 % union([E1|Es1], [E2|_]=Set2) when E1 < E2 ->
 %     [E1|union(Es1, Set2)];
@@ -340,19 +357,19 @@ union(Set1, Set2) ->
 %% -----------------------------------------------------------------------------
 %% @doc Return the union of the list of interval sets.
 %% -----------------------------------------------------------------------------
--spec union(SetsList :: [set()]) -> Set :: set().
+-spec union(SetsList :: [t()]) -> Set :: t().
 
 union(SetsList) ->
-    compact(lists:umerge([seq(Set) || Set <- SetsList])).
+    compact(lists:umerge([to_flat_list(Set) || Set <- SetsList])).
 
 
 %% -----------------------------------------------------------------------------
 %% @doc Return the intersection of IntervalSet1 and IntervalSet2.
 %% -----------------------------------------------------------------------------
--spec intersection(Set1 :: set(), Set2 :: set()) -> Set3 :: set().
+-spec intersection(Set1 :: t(), Set2 :: t()) -> Set3 :: t().
 
 intersection(Set1, Set2) ->
-    compact(ordsets:intersection(seq(Set1), seq(Set2))).
+    compact(ordsets:intersection(to_flat_list(Set1), to_flat_list(Set2))).
 
 
 % intersection([E1|Es1], [E2|_]=Set2) when E1 < E2 ->
@@ -370,7 +387,7 @@ intersection(Set1, Set2) ->
 %% -----------------------------------------------------------------------------
 %% @doc Return the intersection of the list of interval sets.
 %% -----------------------------------------------------------------------------
--spec intersection(SetsList :: [set()]) -> Set :: set().
+-spec intersection(SetsList :: [t()]) -> Set :: t().
 
 intersection([S1,S2|Ss]) ->
     intersection1(intersection(S1, S2), Ss);
@@ -388,10 +405,10 @@ intersection1(S1, []) ->
 %% -----------------------------------------------------------------------------
 %% @doc Check whether IntervalSet1 and IntervalSet2 are disjoint.
 %% -----------------------------------------------------------------------------
--spec is_disjoint(Set1 :: set(), Set2 :: set()) -> boolean().
+-spec is_disjoint(Set1 :: t(), Set2 :: t()) -> boolean().
 
 is_disjoint(Set1, Set2) ->
-    ordsets:is_disjoint(seq(Set1), seq(Set2)).
+    ordsets:is_disjoint(to_flat_list(Set1), to_flat_list(Set2)).
 
 % is_disjoint([E1|Es1], [E2|_]=Set2) when E1 < E2 ->
 %     is_disjoint(Es1, Set2);
@@ -409,10 +426,10 @@ is_disjoint(Set1, Set2) ->
 %% @doc Return all and only the elements of IntervalSet1 which are not also in
 %% IntervalSet2.
 %% -----------------------------------------------------------------------------
--spec subtract(Set1 :: set(), Set2 :: set()) -> Set3 :: set().
+-spec subtract(Set1 :: t(), Set2 :: t()) -> Set3 :: t().
 
 subtract(Set1, Set2) ->
-    compact(ordsets:subtract(seq(Set1), seq(Set2))).
+    compact(ordsets:subtract(to_flat_list(Set1), to_flat_list(Set2))).
 
 % subtract([E1|Es1], [E2|_]=Set2) when E1 < E2 ->
 %     [E1|subtract(Es1, Set2)];
@@ -434,10 +451,10 @@ subtract(Set1, Set2) ->
 %% @doc Return 'true' when every element of IntervalSet1 is also a member of
 %%  IntervalSet2, else 'false'.
 %% -----------------------------------------------------------------------------
--spec is_subset(Set1 :: set(), Set2 :: set()) -> boolean().
+-spec is_subset(Set1 :: t(), Set2 :: t()) -> boolean().
 
 is_subset(Set1, Set2) ->
-    ordsets:is_subset(seq(Set1), seq(Set2)).
+    ordsets:is_subset(to_flat_list(Set1), to_flat_list(Set2)).
 
 % is_subset([E1|_], [E2|_]) when E1 < E2 -> %E1 not in Set2
 %     false;
@@ -454,7 +471,7 @@ is_subset(Set1, Set2) ->
 %% -----------------------------------------------------------------------------
 -spec fold(Function, Acc0, Sets) -> Acc1 when
       Function :: fun((Element :: element(), AccIn :: term()) -> AccOut :: term()),
-      Sets :: set(),
+      Sets :: t(),
       Acc0 :: term(),
       Acc1 :: term().
 
@@ -467,8 +484,8 @@ fold(F, Acc, Set) ->
 %% -----------------------------------------------------------------------------
 -spec filter(Pred, Set1) -> Set2 when
       Pred :: fun((Element :: element()) -> boolean()),
-      Set1 :: set(),
-      Set2 :: set().
+      Set1 :: t(),
+      Set2 :: t().
 
 filter(F, Set) ->
     lists:filter(F, Set).
@@ -561,14 +578,13 @@ validate_element(E) ->
 
 
 %% @private
-compact([]) ->
-    [];
-
 compact(L) ->
     compact(L, []).
 
 
 %% @private
+compact([], _Acc) ->
+    [];
 compact([E1|Es], Acc) ->
     compact(Es, Acc, E1).
 
@@ -702,56 +718,56 @@ element_meets(A, B) ->
     abs(A - B) == 1.
 
 
-%% %% @private
-%% element_begins({H1, T1}, {H2, _} = B) ->
-%%     H1 =:= H2 andalso is_element(T1, [B]);
-
-%% element_begins({_, _} = A, N) ->
-%%     element_begins(A, interval(N));
-
-%% element_begins(N, {_, _} = B) ->
-%%     element_begins(interval(N), B);
-
-%% element_begins(_, _) ->
-%%     false.
+%% @private
+element_merges(A, B) ->
+    element_overlaps(A, B) orelse element_meets(A, B).
 
 
-%% %% @private
-%% element_ends({H1, T1}, {_, T2} = B) ->
-%%     T1 =:= T2 andalso is_element(H1, [B]);
+%% @private
+element_begins({H1, T1}, {H2, _} = B) ->
+    H1 =:= H2 andalso is_element(T1, [B]);
 
-%% element_ends({_, _} = A, N) ->
-%%     element_ends(A, interval(N));
+element_begins({_, _} = A, N) ->
+    element_begins(A, interval(N));
 
-%% element_ends(N, {_, _} = B) ->
-%%     element_ends(interval(N), B);
+element_begins(N, {_, _} = B) ->
+    element_begins(interval(N), B);
 
-%% element_ends(_, _) ->
-%%     false.
+element_begins(_, _) ->
+    false.
 
 
-%% %% @private
-%% element_merges(A, B) ->
-%%     element_overlaps(A, B) orelse element_meets(A, B).
+%% @private
+element_ends({H1, T1}, {_, T2} = B) ->
+    T1 =:= T2 andalso is_element(H1, [B]);
+
+element_ends({_, _} = A, N) ->
+    element_ends(A, interval(N));
+
+element_ends(N, {_, _} = B) ->
+    element_ends(interval(N), B);
+
+element_ends(_, _) ->
+    false.
 
 
 %% private
-%% element_union({_, _} = A, {_, _} = B) ->
-%%     case element_merges(A, B) of
-%%         true ->
-%%             unsafe_element_union(A, B);
-%%         false ->
-%%             error(badarg)
-%%     end;
+element_union({_, _} = A, {_, _} = B) ->
+    case element_merges(A, B) of
+        true ->
+            unsafe_element_union(A, B);
+        false ->
+            error(badarg)
+    end;
 
-%% element_union({_, _} = A, N) ->
-%%     element_union(A, interval(N));
+element_union({_, _} = A, N) ->
+    element_union(A, interval(N));
 
-%% element_union(N, {_, _} = B) ->
-%%     element_union(interval(N), B);
+element_union(N, {_, _} = B) ->
+    element_union(interval(N), B);
 
-%% element_union(N, B) ->
-%%     element_union(interval(N), B).
+element_union(N, B) ->
+    element_union(interval(N), B).
 
 
 %% private
@@ -842,8 +858,6 @@ do_element_subtract(_, _) ->
 %% TEST
 %% =============================================================================
 
-
-
 -ifdef(TEST).
 
 from_list_test_() ->
@@ -857,13 +871,13 @@ from_list_test_() ->
     ].
 
 
-seq_test_() ->
+to_flat_list_test_() ->
     Expected = [1, 2, 4, 6, 7, 8, 9, 10],
     [
-        ?_assertEqual(Expected, seq(Expected)),
-        ?_assertEqual(Expected, seq([{1, 2}, 4, 6, 7, 8, 9, 10])),
-        ?_assertEqual(Expected, seq([{1, 2}, 4, {6, 7}, 8, 9, 10])),
-        ?_assertEqual(Expected, seq([{1, 2}, 4, {6, 10}]))
+        ?_assertEqual(Expected, to_flat_list(Expected)),
+        ?_assertEqual(Expected, to_flat_list([{1, 2}, 4, 6, 7, 8, 9, 10])),
+        ?_assertEqual(Expected, to_flat_list([{1, 2}, 4, {6, 7}, 8, 9, 10])),
+        ?_assertEqual(Expected, to_flat_list([{1, 2}, 4, {6, 10}]))
     ].
 
 
@@ -988,8 +1002,8 @@ add_element_test_() ->
         [
             ?_assertEqual(Expected, add_element(Element, Set)),
             ?_assertEqual(
-                ordsets:union(seq([Element]), seq(Set)),
-                seq(add_element(Element, Set))
+                ordsets:union(to_flat_list([Element]), to_flat_list(Set)),
+                to_flat_list(add_element(Element, Set))
             )
         ]
         || {Expected, Element, Set} <- Cases
@@ -1011,8 +1025,8 @@ del_element_test_() ->
         [
             ?_assertEqual(Expected, del_element(Element, Set)),
             ?_assertEqual(
-                ordsets:subtract(seq(Set), seq([Element])),
-                seq(del_element(Element, Set))
+                ordsets:subtract(to_flat_list(Set), to_flat_list([Element])),
+                to_flat_list(del_element(Element, Set))
             )
         ]
         || {Expected, Element, Set} <- Cases
