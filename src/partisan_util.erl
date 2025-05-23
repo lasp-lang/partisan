@@ -177,7 +177,7 @@ safe_apply(Mod, Fun, Args, Default) ->
     catch
         Class:Reason:Stacktrace ->
             Formatted = erl_error:format_exception(Class, Reason, Stacktrace),
-            ?LOG_DEBUG(#{
+            ?LOG_ERROR(#{
                 description => "Error while applying MFA",
                 exception => Formatted
             }),
