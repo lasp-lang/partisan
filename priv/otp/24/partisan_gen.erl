@@ -241,7 +241,7 @@ init_it2(GenMod, Starter, Parent, Name, Mod, Args, Options) ->
 call(Process, Label, Request) ->
     call(Process, Label, Request, ?default_timeout).
 
-%% Partisan extension
+%% Partisan extension to support 4th arg as list or timeout
 call(Process, Label, Request, Opts0) when is_list(Opts0) ->
     case lists:keytake(timeout, 1, Opts0) of
         {value, {timeout, Timeout}, Opts} ->
@@ -528,14 +528,13 @@ do_for_proc(Process, Fun)
 %%     do_for_proc(Name, Fun);
 %% Remote by name
 do_for_proc({Name, Node} = Process, Fun) when is_atom(Node) ->
-
     case partisan:node() of
+        nonode@nohost ->
+            exit({nodedown, Node});
         Node ->
             %% Local by name in disguise
             do_for_proc(Name, Fun);
-        nonode@nohost ->
-            exit({nodedown, Node});
-        _ ->
+        _Peer ->
             Fun(Process)
     end;
 
