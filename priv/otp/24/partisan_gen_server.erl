@@ -340,7 +340,7 @@ cast(PartisanDest, Request) ->
 
 
 %% Partisan addition
-cast(ServerRef, Request, Opts) ->
+cast(ServerRef, Request, Opts) when is_list(Opts) ->
     %% Set opts will set the default channel is non is defined, so there is no
     %% need to cleanup the calling process dict.
     %% We do this to avoid changing this code too much, but we might need to do
@@ -406,11 +406,11 @@ multi_call(Nodes, Name, Req, Timeout)
 %% Partisan addition
 multi_call(Nodes, Name, Req, Opts0)
   when is_list(Nodes), is_atom(Name), is_list(Opts0) ->
-    case lists:keytake(timeout, 1, Opts0) of
-        {value, {timeout, Timeout}, Opts} ->
+    case partisan_opts:take(Opts0, timeout) of
+        {ok, {Timeout, Opts}} ->
             partisan_gen:set_opts(Opts),
             multi_call(Nodes, Name, Req, Timeout);
-        false ->
+        error ->
             partisan_gen:set_opts(Opts0),
             multi_call(Nodes, Name, Req)
     end.
@@ -762,9 +762,9 @@ rec_nodes_rest(_Tag, [], _Name, Badnodes, Replies) ->
 start_monitor(Node, Name) when is_atom(Node), is_atom(Name) ->
     %% Disterl = partisan_config:get(connect_disterl),
     %% TODO FIx this for partisan
-    Myself = partisan:node(),
+    Self = partisan:node(),
 
-    if Myself =:= nonode@nohost, Node =/= nonode@nohost ->
+    if Self =:= nonode@nohost, Node =/= nonode@nohost ->
         Ref = make_ref(),
         self() ! {'DOWN', Ref, process, {Name, Node}, noconnection},
         {Node, Ref};
