@@ -101,8 +101,8 @@ spellfix:
 test: eunit core-test otp-test cover
 
 core-test: setup-tls
-ifeq ($(shell expr $(OTPVSN) \> 24),1)
-	$(info OTPVSN is higher than 24)
+ifeq ($(shell expr $(OTPVSN) \> 25),1)
+	$(info OTPVSN is higher than 25)
 	$(info Skipping core-test target. CT Suite currently requires OTP24)
 else
 	${REBAR} as test ct -v --readable=false --suite=partisan_SUITE
@@ -172,6 +172,10 @@ node2:
 node3:
 	${REBAR} as node3 release
 	ERL_DIST_PORT=37783 _build/node3/rel/partisan/bin/partisan console
+
+node4:
+	${REBAR} as node4 release
+	ERL_DIST_PORT=37784 _build/node4/rel/partisan/bin/partisan console
 
 
 checkssl:
