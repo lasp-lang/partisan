@@ -899,12 +899,12 @@ child_specs_map(Config) when is_list(Config) ->
     B2 = #{id => child},
     B3 = #{start => {m, f, [a]}},
     B4 = CS0#{start => mfa},
-    B5 = CS0#{restart => prmanent},
+    B5 = CS0#{restart => permanent},
     B6 = CS0#{shutdown => -10},
     B7 = CS0#{type => wrker},
     B8 = CS0#{modules => dy},
     B9 = CS0#{modules => [1,2,3]},
-    B10 = CS0#{significant => maybe},
+    B10 = CS0#{significant => 'maybe'},
 
     {error, missing_id} = partisan_gen_supervisor:start_child(sup_test, B1),
     {error, missing_start} = partisan_gen_supervisor:start_child(sup_test, B2),
@@ -932,7 +932,7 @@ child_specs_map(Config) when is_list(Config) ->
     {error, {invalid_modules,dy}} = partisan_gen_supervisor:check_childspecs([B8]),
     {error, {invalid_module, 1}} =
     partisan_gen_supervisor:check_childspecs([B9]),
-    {error, {invalid_significant, maybe}} =
+    {error, {invalid_significant, 'maybe'}} =
     partisan_gen_supervisor:check_childspecs([B10]),
 
     CSFilter = fun (CS) -> maps:filter(fun (_, V) -> V =/= undefined end, CS) end,
