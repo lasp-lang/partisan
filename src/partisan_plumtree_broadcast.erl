@@ -738,17 +738,22 @@ debug_get_peers(Node, Root, Timeout) ->
     %% This will not work because gen_server uses disterl
     %% gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
     %% TODO reconsider turning this server into a partisan_gen_server
-    case partisan_rpc:call(Node, ?MODULE, get_peers, [Root], Timeout) of
-        {badrpc, Reason} ->
-            error(Reason);
-        {_, _} = Result ->
-            %% eqwalizer:ignore
-            Result;
-        {_, _, _} = Result ->
-            %% eqwalizer:ignore
-            Result
-    end.
+    case Node == partisan:node() of
+        true ->
+            get_peers(Root);
 
+        false ->
+            case partisan_rpc:call(Node, ?MODULE, get_peers, [Root], Timeout) of
+                {badrpc, Reason} ->
+                    error(Reason);
+                {_, _} = Result ->
+                    %% eqwalizer:ignore
+                    Result;
+                {_, _, _} = Result ->
+                    %% eqwalizer:ignore
+                    Result
+            end
+    end.
 
 %% @doc return the peers for `Node' for the tree rooted at `Root'.
 %% Waits `Timeout' ms for a response from the server
@@ -759,15 +764,23 @@ debug_get_peers(Node, Root, Opts, Timeout) ->
     %% This will not work because gen_server uses disterl
     %% gen_server:call({?SERVER, Node}, {get_peers, Root}, Timeout).
     %% TODO reconsider turning this server into a partisan_gen_server
-    case partisan_rpc:call(Node, ?MODULE, get_peers, [Root, Opts], Timeout) of
-        {badrpc, Reason} ->
-            error(Reason);
-        {_, _} = Result ->
-            %% eqwalizer:ignore
-            Result;
-        {_, _, _} = Result ->
-            %% eqwalizer:ignore
-            Result
+    case Node == partisan:node() of
+        true ->
+            get_peers(Root, Opts);
+
+        false ->
+            case
+            partisan_rpc:call(Node, ?MODULE, get_peers, [Root, Opts], Timeout)
+            of
+            {badrpc, Reason} ->
+                error(Reason);
+            {_, _} = Result ->
+                %% eqwalizer:ignore
+                Result;
+            {_, _, _} = Result ->
+                %% eqwalizer:ignore
+                Result
+        end
     end.
 
 
@@ -1346,10 +1359,10 @@ schedule_tick(Message, Timer, Default) ->
 -spec reset_peers(nodeset(), nodeset(), nodeset(), state()) -> state().
 
 reset_peers(AllMembers, EagerPeers, LazyPeers, State) ->
-    MyNode = partisan:node(),
+    ThisNode = partisan:node(),
     State#state{
-        common_eagers = ordsets:del_element(MyNode, EagerPeers),
-        common_lazys  = ordsets:del_element(MyNode, LazyPeers),
+        common_eagers = ordsets:del_element(ThisNode, EagerPeers),
+        common_lazys  = ordsets:del_element(ThisNode, LazyPeers),
         eager_sets    = maps:new(),
         lazy_sets     = maps:new(),
         all_members   = AllMembers
