@@ -146,6 +146,7 @@
 -export([to_name/1]).
 -export([to_pid/1]).
 -export([to_pid_or_name/1]).
+-export([to_reference/1]).
 -export([to_term/1]).
 
 
