@@ -55,7 +55,6 @@
 -export([callback_mode/0]).
 -export([terminate/3]).
 -export([code_change/4]).
--export([format_status/2]).
 
 %% gen_statem states
 -export([enabled/3]).
@@ -227,14 +226,6 @@ terminate(_Reason, _StateName, _State) ->
 
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
-
-
-%% Dialyzer does not know the existence of record_info
--dialyzer([{nowarn_function, format_status/2}]).
-
-format_status(_Opts, [_PDict, StateName, #state{} = State]) ->
-    maps:put(state, StateName, ?RECORD_TO_MAP(State)).
-
 
 
 %% =============================================================================
