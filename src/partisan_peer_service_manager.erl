@@ -279,7 +279,7 @@ disconnect(Nodes, Fun) when is_list(Nodes), is_function(Fun, 1) ->
                 false ->
                     ok
             end,
-            ok = partisan_peer_connections:erase(N),
+            ok = partisan_peer_connections:kill(N),
             catch Fun(N)
         end || N <- Nodes, N =/= Node
     ],

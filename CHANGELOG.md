@@ -1,7 +1,29 @@
 # CHANGELOG
+# v5.0.0
+## Changes
+* Drop `rc` tag and graduate to v5.0.0!
+* Added `connection_ping` configuration option to prevent staleness during TCP half-open connections and other netorking issues. The same configuration works both for the client and server sides of the connection.
+
+# v5.0.0-rc.17
+## Changes
+* Drop support for OTP24
+* Added missing export `to_reference/1` in `partisan_remote_ref`
+
+## Fixes
+* Fixes plumtree calling the local node
+* Update to `partisan_interval_set` util module
+
+# v5.0.0-rc.16
+## Fixes
+* Fixes a bug introduced in previous commit in the return of the `graft` callback.
+
+# v5.0.0-rc.15
+## Fixes
+* Allow `ok` as result for `partisan_plumtree_broadcast:exchange/1` callback.
+
 # v5.0.0-rc.14
 ## Changes
-* Add `ok` as valid return for `exchange` callback in `partisan_plumbtree_broadcast_handler`.
+* Add `ok` as valid return for `exchange` callback in `partisan_plumtree_broadcast_handler`.
 # v5.0.0-rc.14
 ## Fixes
 * Fixes the case where `partisan_plumbtree_broadcast` behaviour implementors' callbacks throw an exception which would crash the broadcast server.

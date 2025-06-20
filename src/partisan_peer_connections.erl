@@ -119,6 +119,7 @@
 -export([erase/1]).
 -export([fold/2]).
 -export([foreach/1]).
+-export([foreach/2]).
 -export([info/1]).
 -export([init/0]).
 -export([is_connected/1]).
@@ -788,6 +789,26 @@ kill_all() ->
     ok = foreach(Fun).
 
 
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+-spec kill(node()) -> ok.
+
+kill(Node) ->
+    Fun = fun(_NodeInfo, Connections) ->
+        lists:foreach(
+            fun(#partisan_peer_connection{} = C) ->
+                Pid = pid(C),
+                catch gen_server:stop(Pid, normal, infinity),
+                ok
+            end,
+            Connections
+        )
+    end,
+    ok = foreach(Fun, Node).
+
+
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -851,6 +872,36 @@ foreach(Fun) ->
             _ = lists:foreach(
                 fun(#partisan_peer_info{node = Node} = Info) ->
                     Connections = connections(Node),
+                    catch Fun(Info, Connections),
+                    ok
+                end,
+                L
+            )
+    end.
+
+
+foreach(Fun, Node) ->
+    MatchHead = #partisan_peer_info{
+        node = Node,
+        node_spec = '_',
+        connection_count = '$1',
+        timestamp = '_'
+    },
+    MS = [{MatchHead, [{'>', '$1', 0}], ['$_']}],
+
+    case ets:select(?MODULE, MS) of
+        [] ->
+            ok;
+
+        L ->
+            %% We assume we have at most a few hundreds connections max.
+            %% An optimisation will be to use batches (limit + continuations).
+            %% E.g. a 100 node full-mesh cluster with 4 channels and
+            %% parallelism of 1 will have 800 connections
+            %% (400 outbound, 400 inbound).
+            _ = lists:foreach(
+                fun(#partisan_peer_info{node = N} = Info) ->
+                    Connections = connections(N),
                     catch Fun(Info, Connections),
                     ok
                 end,
