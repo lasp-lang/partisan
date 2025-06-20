@@ -1,3 +1,32 @@
+
+%% =============================================================================
+%% ERLANG VERSION MIGRATION SUPPORT
+%% =============================================================================
+
+
+-if(?OTP_RELEASE >= 27).
+    -define(MODULEDOC(Str), -moduledoc(Str)).
+    -define(DOC(Str), -doc(Str)).
+-else.
+    -define(MODULEDOC(Str), -compile([])).
+    -define(DOC(Str), -compile([])).
+-endif.
+
+
+%% =============================================================================
+%% COMMON TYPES
+%% =============================================================================
+
+-type optional(T)       ::  T | undefined.
+-type options()         :: [{atom(), term()}] | #{atom() => term()}.
+-type ttl()             ::  non_neg_integer().
+
+
+%% =============================================================================
+%% APP
+%% =============================================================================
+%%
+
 -define(APP, partisan).
 -define(LOCALHOST, {127, 0, 0, 1}).
 -define(PEER_PORT, 9090).
@@ -152,14 +181,6 @@
 %% Pluggable manager options.
 -define(DISTANCE_ENABLED, false).
 -define(PERIODIC_ENABLED, true).
-
-
-%% COMMON TYPES
--type options()         :: [{atom(), term()}] | #{atom() => term()}.
-
-
--type ttl()             ::  non_neg_integer().
--type optional(T)       ::  T | undefined.
 
 
 %% =============================================================================
