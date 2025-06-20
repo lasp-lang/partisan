@@ -10,7 +10,6 @@
         crypto,
         ssl,
         types,
-        acceptor_pool,
         uuid,
         telemetry
     ]},
