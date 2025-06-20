@@ -681,7 +681,7 @@ is_self(Arg) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Shortcut for `partisan_peer_service:join/1`.
+%% @doc Shortcut for `partisan_peer_service:join/1'.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec join(node_spec()) -> ok.
@@ -691,7 +691,7 @@ join(NodeSpec) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc Shortcut for `partisan_peer_service:leave/0`.
+%% @doc Shortcut for `partisan_peer_service:leave/0'.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec leave() -> ok.
