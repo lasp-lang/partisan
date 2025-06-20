@@ -27,6 +27,18 @@
 
 -behaviour(gen_server).
 
+-define(REPORT,
+    #{
+        channel => get({?MODULE, channel}),
+        channel_opts => get({?MODULE, channel_opts}),
+        listen_addr => get({?MODULE, listen_addr}),
+        peer => get({?MODULE, peer})
+    }
+).
+-define(REPORT(Report),
+    maps:merge(Report, ?REPORT)
+).
+
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
 -include("partisan_peer_socket.hrl").
@@ -98,18 +110,28 @@ start_link(Peer, ListenAddr, Channel, ChannelOpts, From) ->
 init([Peer, ListenAddr, Channel, ChannelOpts, From]) ->
     case connect(ListenAddr, Channel, ChannelOpts) of
         {ok, Socket} ->
+            ?LOG_INFO(#{
+                description => "Connection established",
+                peer => Peer,
+                listen_addr => ListenAddr,
+                channel => Channel
+            }),
+
             %% For debugging, store information in the process dictionary.
+            EgressDelay =  partisan_config:get(egress_delay, 0),
+
             put({?MODULE, from}, From),
             put({?MODULE, listen_addr}, ListenAddr),
             put({?MODULE, channel}, Channel),
             put({?MODULE, channel_opts}, ChannelOpts),
             put({?MODULE, peer}, Peer),
-            put({?MODULE, egress_delay}, partisan_config:get(egress_delay, 0)),
+            put({?MODULE, egress_delay}, EgressDelay),
 
             EncodeOpts =
                 case maps:get(compression, ChannelOpts, false) of
                     true ->
                         [compressed];
+
                     N when N >= 0, N =< 9 ->
                         [{compressed, N}];
                     _ ->
@@ -226,10 +248,22 @@ handle_info(Event, State) ->
 
 -spec terminate(term(), state()) -> term().
 
+terminate(Reason, #state{} = State)
+when Reason == normal orelse
+     Reason == shutdown orelse
+     (is_tuple(Reason) andalso element(1, Reason) == shutdown) ->
+    ?LOG_INFO(?REPORT(#{
+        description => "Connection closed",
+        reason => Reason
+    })),
+    ok = close_socket(State#state.socket);
+
 terminate(Reason, #state{} = State) ->
-    ?LOG_TRACE("Process ~p terminating for reason ~p...", [self(), Reason]),
-    ok = close_socket(State#state.socket),
-    ok.
+    ?LOG_ERROR(?REPORT(#{
+        description => "Connection closed",
+        reason => Reason
+    })),
+    close_socket(State#state.socket).
 
 
 -spec code_change(term() | {down, term()}, state(), term()) ->

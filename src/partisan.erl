@@ -173,6 +173,9 @@
 -export([is_local_reference/1]).
 -export([is_local_reference/2]).
 -export([is_self/1]).
+-export([join/1]).
+-export([kill_connections/1]).
+-export([leave/0]).
 -export([node_spec/0]).
 -export([node_spec/1]).
 -export([node_spec/2]).
@@ -675,6 +678,37 @@ is_self(Arg) when erlang:is_pid(Arg) ->
 
 is_self(Arg) ->
     partisan_remote_ref:is_local_pid(Arg, erlang:self()).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Shortcut for `partisan_peer_service:join/1`.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec join(node_spec()) -> ok.
+
+join(NodeSpec) ->
+    partisan_peer_service:join(NodeSpec).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Shortcut for `partisan_peer_service:leave/0`.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec leave() -> ok.
+
+leave() ->
+    partisan_peer_service:leave().
+
+
+%% -----------------------------------------------------------------------------
+%% @doc
+%% @end
+%% -----------------------------------------------------------------------------
+kill_connections(Node) when is_atom(Node) ->
+    kill_connections([Node]);
+
+kill_connections(Nodes) when is_list(Nodes) ->
+    partisan_peer_service_manager:disconnect(Nodes).
 
 
 %% -----------------------------------------------------------------------------
