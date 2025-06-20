@@ -92,6 +92,13 @@ In addition to using Partisan-specific functions to manage a cluster and send me
 
 Several Erlang BIFs (a.k.a "native implementation") won't work when using Partisan so you will need to use the Partisan API instead. The Partisan API tries to be a drop-in replacement to Erlang's as much as possible. It tries comply with Erlang's in terms of naming, function signature and behaviour, so in most cases migrating to Partisan is as easy as replacing the module name from `erlang` to `partisan`.
 
+The same applies for OTP behaviours when making remote calls e.g. `gen_server:call/1` will not work when the first argument is a remote name. If you need your OTP behaviours to comminicate over the network you will need to: (i) implement the partisan counterpart fork i.e. `m:partisan_gen_server`; or (ii) use `partisan_rpc:call/2` instead of `gen_server:call/2`.
+
+Notice also that calling `sys` functions e.g. `sys:get_state/1` passing a `partisan_gen_server` pid will not work. You will also have to use the partisan
+counterpart `partisan_sys:get_state/1`.
+
+The following table shows a mapping of Erlang to Partisan APIs.
+
 |Erlang|Partisan|Description|
 |---|---|---|
 |`erlang:cancel_timer/1`|`partisan:cancel_timer/1`| |
