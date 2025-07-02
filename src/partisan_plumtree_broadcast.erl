@@ -325,8 +325,20 @@ is_map(Opts) ->
 -spec broadcast(any(), module()) -> ok.
 
 broadcast(Broadcast, Mod) ->
-    {MessageId, Payload} = Mod:broadcast_data(Broadcast),
-    gen_server:cast(?SERVER, {broadcast, MessageId, Payload, Mod}).
+    try
+        {MessageId, Payload} = Mod:broadcast_data(Broadcast),
+        gen_server:cast(?SERVER, {broadcast, MessageId, Payload, Mod})
+
+    catch
+      Class:Reason:Stacktrace ->
+        ?LOG_NOTICE(#{
+            description =>
+                "Exception on callback broadcast_data. Broadcast cancelled.",
+            class => Class,
+            reason => Reason,
+            stacktrace => Stacktrace
+        })
+    end.
 
 
 %% -----------------------------------------------------------------------------
@@ -341,11 +353,24 @@ broadcast(Broadcast, Mod) ->
 -spec broadcast_channel(Mod :: module()) -> partisan:channel().
 
 broadcast_channel(Mod) ->
-    case erlang:function_exported(Mod, broadcast_channel, 0) of
-        true ->
-            Mod:broadcast_channel();
-        false ->
-            ?DEFAULT_CHANNEL
+    try
+        case erlang:function_exported(Mod, broadcast_channel, 0) of
+            true ->
+                Mod:broadcast_channel();
+            false ->
+                ?DEFAULT_CHANNEL
+        end
+    catch
+      Class:Reason:Stacktrace ->
+        ?LOG_NOTICE(#{
+            description =>
+                "Exception on callback broadcast_channel, "
+                "returning default channel.",
+            class => Class,
+            reason => Reason,
+            stacktrace => Stacktrace
+        }),
+        undefined
     end.
 
 
@@ -1131,6 +1156,7 @@ exchange(Peer, #state{exchanges = Exchanges} = State, Mod) ->
 
         {error, _Reason} ->
             State;
+
         _ ->
             State
     end.
