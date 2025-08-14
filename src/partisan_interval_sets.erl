@@ -238,7 +238,7 @@ is_element(Element, Sets) ->
     do_is_element(Element, Sets).
 
 
-%% @private
+
 do_is_element(A, [B|Es]) ->
     (not element_starts_before(A, B) andalso not element_precedes(A, B))
     andalso (
@@ -803,11 +803,11 @@ do_element_subtract(_, _) ->
 -ifdef(TEST).
 %% DISABLED FOR NOW
 
-%% @private
+
 element_merges(A, B) ->
     element_overlaps(A, B) orelse element_meets(A, B).
 
-%% @private
+
 element_begins({H1, T1}, {H2, _} = B) ->
     H1 =:= H2 andalso is_element(T1, [B]);
 
@@ -821,7 +821,6 @@ element_begins(_, _) ->
     false.
 
 
-%% @private
 element_ends({H1, T1}, {_, T2} = B) ->
     T1 =:= T2 andalso is_element(H1, [B]);
 
@@ -835,7 +834,6 @@ element_ends(_, _) ->
     false.
 
 
-%% private
 element_union({_, _} = A, {_, _} = B) ->
     case element_merges(A, B) of
         true ->
@@ -862,11 +860,11 @@ element_union(N, B) ->
 -ifdef(TEST).
 
 
-%% @private
+
 element_merges(A, B) ->
     element_overlaps(A, B) orelse element_meets(A, B).
 
-%% @private
+
 element_begins({H1, T1}, {H2, _} = B) ->
     H1 =:= H2 andalso is_element(T1, [B]);
 
@@ -880,7 +878,7 @@ element_begins(_, _) ->
     false.
 
 
-%% @private
+
 element_ends({H1, T1}, {_, T2} = B) ->
     T1 =:= T2 andalso is_element(H1, [B]);
 
