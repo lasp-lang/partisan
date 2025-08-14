@@ -16,13 +16,13 @@
 
 -record(state, {
     socket                  ::  partisan_peer_socket:t(),
-    peer                    ::  node(),
+    peer_node               ::  node(),
     channel                 ::  partisan:channel(),
     ref                     ::  reference(),
     ping_idle_timeout       ::  non_neg_integer(),
     ping_tref               ::  optional(partisan_remote_ref:r()),
     ping_retry              ::  optional(partisan_retry:t()),
-    ping_payload            ::  binary()
+    ping_id                 ::  optional(partisan:reference())
 }).
 
 -type state_t() :: #state{}.
@@ -125,7 +125,7 @@ handle_info(
     {timeout, Ref, ping_idle_timeout}, #state{ping_tref = Ref} = State) ->
     ?LOG_INFO(#{
         description => "Connection idle, sending ping",
-        peer => State#state.peer,
+        peer_node => State#state.peer_node,
         channel => State#state.channel,
         attempt => partisan_retry:count(State#state.ping_retry)
     }),
@@ -171,7 +171,7 @@ handle_inbound({hello, Node, Channel}, #state{} = State0) ->
     put({?MODULE, peer}, Node),
     put({?MODULE, channel}, Channel),
 
-    State = State0#state{peer = Node},
+    State = State0#state{peer_node = Node},
 
     %% Connect the node with Distributed Erlang, just for now for
     %% control messaging in the test suite execution.
@@ -192,27 +192,40 @@ handle_inbound({hello, Node, Channel}, #state{} = State0) ->
     {noreply, reset_ping(State)};
 
 
-handle_inbound({ping, Node, Payload}, #state{peer = Node} = State) ->
-    send_message(State#state.socket, {pong, Node, Payload}),
+handle_inbound(#ping{from = Node} = Ping, #state{peer_node = Node} = State) ->
+    ok = send_pong(State, Ping),
     {noreply, reset_ping(State)};
 
-handle_inbound({ping, _, _}, #state{} = State) ->
-    {stop, invalid_ping, State};
+handle_inbound(#ping{} = Ping, #state{} = State) ->
+        ?LOG_WARNING(#{
+        description => "Received invalid ping message",
+        message => Ping
+    }),
+    {noreply, State};
 
-handle_inbound({pong, Node, _}, #state{} = State) ->
-    case Node == partisan:node() of
-        true ->
-            {noreply, reset_ping(State)};
+handle_inbound(
+    #pong{from = Node, id = Id, timestamp = Ts},
+    #state{peer_node = Node, ping_id = Id} = State) ->
+    ok = telemetry:execute(
+        [partisan, connection, server, hearbeat],
+        #{latency => erlang:system_time(millisecond) - Ts},
+        #{
+            node => partisan:node(),
+            channel => State#state.channel,
+            socket => State#state.socket,
+            peer_node => Node
+        }
+    ),
+    {noreply, reset_ping(State)};
 
-        false ->
-            {stop, invalid_ping_response, State}
-    end;
+handle_inbound(#pong{} = Pong, #state{} = State) ->
+    {stop, {invalid_ping_response, Pong}, State};
 
 handle_inbound(Message, State) ->
-    Peer = get({?MODULE, peer}),
+    PeerNode = get({?MODULE, peer_node}),
     Channel = get({?MODULE, channel}),
     Manager = partisan_peer_service:manager(),
-    _ = Manager:receive_message(Peer, Channel, Message),
+    _ = Manager:receive_message(PeerNode, Channel, Message),
     ?LOG_TRACE("Dispatched ~p to manager.", [Message]),
     {noreply, reset_ping(State)}.
 
@@ -236,8 +249,11 @@ maybe_delay() ->
 
 %% @private
 send_message(Socket, Message) ->
-    EncodedMessage = erlang:term_to_binary(Message),
-    partisan_peer_socket:send(Socket, EncodedMessage).
+    Data = erlang:term_to_iovec(Message),
+    send_data(Socket, Data).
+
+send_data(Socket, Data) ->
+    partisan_peer_socket:send(Socket, Data).
 
 
 %% @private
@@ -278,7 +294,7 @@ maybe_enable_ping(State, #{enabled := true} = PingOpts) ->
 
     State#state{
         ping_idle_timeout = IdleTimeout,
-        ping_payload = partisan:make_ref(),
+        ping_id = partisan:make_ref(),
         ping_retry = Retry
     };
 
@@ -328,10 +344,30 @@ when Limit == deadline orelse Limit == max_retries ->
     {stop, {shutdown, ping_timeout}, State};
 
 maybe_send_ping(_Time, #state{} = State0) ->
-    Data = {ping, partisan:node(), State0#state.ping_payload},
-    ok = send_message(State0#state.socket, Data),
+    State = send_ping(State0),
+    {noreply, State}.
+
+
+
+%% @private
+send_ping(State) ->
+    Ref = partisan:make_ref(),
+    Ping = #ping{
+        from = partisan:node(),
+        id = Ref,
+        timestamp = erlang:system_time(millisecond)
+    },
+    ok = send_message(State#state.socket, Ping),
 
     %% We schedule the next retry
-    Ref = partisan_retry:fire(State0#state.ping_retry),
-    State = State0#state{ping_tref = Ref},
-    {noreply, State}.
+    Tref = partisan_retry:fire(State#state.ping_retry),
+    State#state{ping_id = Ref, ping_tref = Tref}.
+
+%% @private
+send_pong(State, #ping{id = Id, timestamp = Ts}) ->
+    Pong = #pong{
+        from = partisan:node(),
+        id = Id,
+        timestamp = Ts
+    },
+    send_message(State#state.socket, Pong).
