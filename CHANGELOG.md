@@ -1,4 +1,13 @@
 # CHANGELOG
+# v5.0.3
+## Fixes
+* Fixed implementation of  `partisan_peer_service_client` and 
+`partisan_peer_service_server` ping implementation that would close a 
+connection when receiving and invalid ping message. Also added latency 
+calculation and publich two telemetry events 
+`[partisan, connection, client, heartbeat]` and 
+`[partisan, connection, server, hearbeat]`
+
 # v5.0.0
 ## Changes
 * Drop `rc` tag and graduate to v5.0.0!
