@@ -24,6 +24,63 @@
 -include("partisan_logger.hrl").
 -include("partisan.hrl").
 
+?MODULEDOC("""
+This module implements a Kubernetes-based orchestration strategy for Partisan.
+
+It discovers peers by querying the Kubernetes Pods API using label selectors and
+transforms the resulting pod list into Partisan node descriptors. It also uses
+Redis as a simple artifact store for exchanging small per-node payloads during
+orchestration.
+
+As per Kubernetes convention, discovery is performed by issuing an HTTP GET to
+the API server `/api/v1/pods` endpoint with a `labelSelector` query parameter.
+
+## Discovery
+Peer discovery is split by role:
+
+* `clients/1` returns pods labelled as clients
+* `servers/1` returns pods labelled as servers
+
+Both functions additionally scope discovery using the `evaluation_timestamp`
+configuration value, so that multiple deployments or test runs can coexist.
+
+The label selector is URL-encoded and built as:
+
+* `tag=client,evaluation-timestamp=<timestamp>`
+* `tag=server,evaluation-timestamp=<timestamp>`
+
+If the Kubernetes API request fails or the response cannot be processed, an
+empty set is returned.
+
+## Node representation
+Each discovered pod is converted to a node descriptor map with:
+
+* `name` as an atom in the form `"<pod-name>@<pod-ip>"`
+* `listen_addrs` as a list containing `#{ip => IPAddress, port => Port}`
+
+The pod name is taken from `metadata.name` and the address from `status.podIP`.
+Pods missing either field are ignored.
+
+## Artifact storage
+Artifacts are stored and retrieved from Redis keyed by node identifier:
+
+* `upload_artifact/3` stores the payload using `SET`
+* `download_artifact/2` retrieves the payload using `GET`
+
+If Redis is unavailable, `download_artifact/2` returns `undefined` and logs the
+error.
+
+## Configuration and environment
+This module depends on the following configuration and environment variables:
+
+* `evaluation_timestamp` (configuration, default `0`)
+* `APISERVER` (environment): Kubernetes API server base URL
+* `TOKEN` (environment): Bearer token for Kubernetes API authentication
+* `PEER_PORT` (environment, default `"9090"`): port used in generated listen
+  addresses
+
+""").
+
 -behaviour(partisan_orchestration_strategy).
 
 -export([clients/1,
