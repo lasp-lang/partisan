@@ -33,7 +33,7 @@ configuration options.
 Some options will only take effect after a restart of the Partisan application, while other will take effect while the application is still running.
 
 As per Erlang convention the options are given using the `sys.config` file under
-the `partisan' application section.
+the `partisan` application section.
 
 ## Example
 ```
