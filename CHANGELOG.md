@@ -1,4 +1,16 @@
 # CHANGELOG
+# V6.0.0 (DEVELOP)
+## Fixes
+* Resolves crash on OTP 28 caused by supervisor returning new {timeout, T, Msg} action tuples that the frozen partisan_gen_server did not understand (bad receive timeout value). See Changes section
+
+## Changes
+* **Breaking change*: Minimum supported OTP version is now 27 (previously 24)**
+* Replaced the static OTP module forks in priv/otp/24/ with a compile-time AST transformation system that generates partisan OTP modules from the installed OTP source.
+    * New modules: partisan_gen_transform, partisan_otp_rewrite, partisan_otp_patches — a three-stage pipeline that extracts abstract code from the installed OTP, applies mechanical AST rewrites (module renames, BIF replacements), applies version-adaptive structural patches, and compiles the result
+    * Generated at compile time via `priv/generate_otp_modules.escript` (rebar3 post-compile hook), with a runtime fallback in `partisan_app:start/2` for checkout dependencies
+    * 7 modules generated: partisan_gen, partisan_proc_lib, partisan_sys, partisan_gen_server, partisan_gen_event, partisan_gen_statem, partisan_gen_supervisor
+    * Version-adaptive: Patches automatically adjust to the OTP version (e.g., OTP 28 supervisor replies include hibernate_after_action/1, OTP 27 does not), eliminating the entire class of "OTP N+1 broke our forks" bugs
+
 # v5.0.3
 ## Fixes
 * Fixed implementation of  `partisan_peer_service_client` and 
