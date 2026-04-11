@@ -98,35 +98,53 @@ spellfix:
 	$(if $(CODESPELL), $(SPELLFIX), $(error "Aborting, command codespell not found in PATH"))
 
 
-test: eunit core-test otp-test cover
+test: eunit core-test otp-test otp-compat-test cover
 
 core-test: setup-tls
-ifeq ($(shell expr $(OTPVSN) \> 25),1)
-	$(info OTPVSN is higher than 25)
-	$(info Skipping core-test target. CT Suite currently requires OTP24)
-else
 	${REBAR} as test ct -v --readable=false --suite=partisan_SUITE
-endif
-
 
 otp-test: setup-tls
-ifeq ($(shell expr $(OTPVSN) \> 24),1)
-	$(info OTPVSN is higher than 24)
-	$(eval override mytarget=echo "skipping al-test target. CT Suite currently requires OTP24")
-else
 	${REBAR} as test ct --suite=partisan_gen_server_SUITE,partisan_gen_event_SUITE,partisan_gen_statem_SUITE
-endif
-
 
 alt-test: setup-tls
-ifeq ($(shell expr $(OTPVSN) \> 24),1)
-	$(info OTPVSN is higher than 24)
-	$(eval override mytarget=echo "skipping alt-test target. CT Suite currently requires OTP24")
-else
 	mkdir -p test/partisan_alt_SUITE_data/
 	openssl rand -out test/partisan_alt_SUITE_data/RAND 4096
 	${REBAR} as test ct -v --readable=false --suite=partisan_alt_SUITE
-endif
+
+## Run OTP compatibility test suites.
+## These are adapted versions of OTP's own gen_server_SUITE, supervisor_SUITE, etc.
+## that validate the generated partisan modules behave identically to OTP.
+otp-compat-test:
+	${REBAR} as test compile
+	erl -noshell -pa _build/test/lib/*/ebin -eval ' \
+		OutDir = "_build/test/lib/partisan/test", \
+		partisan_otp_test_gen:generate_all_suites(OutDir), \
+		halt(0).'
+	erl -noshell -sname partisan_ct_runner \
+		-pa _build/test/lib/*/ebin \
+		-pa _build/test/lib/partisan/test \
+		-pa _build/test/lib/partisan/test/otp \
+		-eval ' \
+		application:ensure_all_started(partisan), \
+		[code:ensure_loaded(M) || M <- [partisan_gen, partisan_proc_lib, partisan_sys, \
+			partisan_gen_server, partisan_gen_event, partisan_gen_statem, \
+			partisan_gen_supervisor]], \
+		Suites = [partisan_otp_gen_server_SUITE, partisan_otp_supervisor_SUITE, \
+			partisan_otp_gen_statem_SUITE, partisan_otp_gen_event_SUITE, \
+			partisan_otp_proc_lib_SUITE, partisan_otp_sys_SUITE], \
+		Results = lists:map(fun(Suite) -> \
+			R = ct:run_test([ \
+				{dir, "_build/test/lib/partisan/test"}, \
+				{suite, Suite}, \
+				{logdir, "_build/test/logs"}, \
+				{auto_compile, false}]), \
+			io:format("~p: ~p~n", [Suite, R]), \
+			{Suite, R} \
+		end, Suites), \
+		TotalOk = lists:sum([Ok || {_, {Ok, _, _}} <- Results]), \
+		TotalFail = lists:sum([F || {_, {_, F, _}} <- Results]), \
+		io:format("~nTotal: ~p ok, ~p failed~n", [TotalOk, TotalFail]), \
+		case TotalFail of 0 -> halt(0); _ -> halt(1) end.'
 
 
 setup-tls:

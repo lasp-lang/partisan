@@ -487,7 +487,7 @@ stop8(Config) ->
                 ?EXPECT_FAILURE(partisan_gen_statem:stop(Pid), Reason1),
             Pid
         after
-            %% {ok,NodeName} = ct_slave:stop(Node)
+
             partisan_support_otp:stop_all_nodes()
         end,
     {{nodedown,NodeName},{partisan_sys,terminate,_}} =
@@ -519,7 +519,7 @@ stop9(Config) ->
                 ?EXPECT_FAILURE(partisan_gen_statem:stop(STM), Reason1),
             STM
         after
-            %% {ok,NodeName} = ct_slave:stop(Node)
+
             partisan_support_otp:stop_all_nodes()
         end,
     {{nodedown,NodeName},{partisan_sys,terminate,_}} =

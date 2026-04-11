@@ -437,7 +437,7 @@ stop10(_Config) ->
     ok = partisan_gen_server:stop({global,to_stop}),
     false = partisan_rpc:call(Node,partisan,is_process_alive,[Pid]),
     {'EXIT',noproc} = (catch partisan_gen_server:stop({global,to_stop})),
-    %% peer:stop(Peer),
+
     partisan_support_otp:stop_node(Node),
     {'EXIT',noproc} = (catch partisan_gen_server:stop({global,to_stop})),
     ok.
@@ -735,7 +735,7 @@ call_remote_n1(Config) when is_list(Config) ->
     Node = proplists:get_value(node,Config),
     {ok, _Pid} = partisan_rpc:call(Node, partisan_gen_server, start,
               [{global, N}, ?MODULE, [], []]),
-    %% peer:stop(proplists:get_value(peer,Config)),
+
     partisan_support_otp:stop_node(proplists:get_value(node,Config)),
     {'EXIT', {noproc, _}} =
     (catch partisan_gen_server:call({global, N}, started_p, infinity)),
@@ -748,7 +748,7 @@ call_remote_n2(Config) when is_list(Config) ->
 
     {ok, Pid} = partisan_rpc:call(Node, partisan_gen_server, start,
              [{global, N}, ?MODULE, [], []]),
-    %% peer:stop(proplists:get_value(peer,Config)),
+
     partisan_support_otp:stop_node(proplists:get_value(node,Config)),
     {'EXIT', {{nodedown, Node}, _}} = (catch partisan_gen_server:call(Pid,
                                  started_p, infinity)),
@@ -760,7 +760,7 @@ call_remote_n3(Config) when is_list(Config) ->
 
     {ok, _Pid} = partisan_rpc:call(Node, partisan_gen_server, start,
               [{local, piller}, ?MODULE, [], []]),
-    %% peer:stop(proplists:get_value(peer,Config)),
+
     partisan_support_otp:stop_node(proplists:get_value(node,Config)),
     {'EXIT', {{nodedown, Node}, _}} = (catch partisan_gen_server:call({piller, Node},
                                  started_p, infinity)),
@@ -830,7 +830,7 @@ cast_fast(Config) when is_list(Config) ->
     {Time,ok} = timer:tc(fun() ->
                  partisan_gen_server:cast({hopp,FalseNode}, hopp)
              end),
-    %% peer:stop(Peer),
+
     partisan_support_otp:stop_node(Node),
     if Time > 1000000 ->       % Default listen timeout is about 7.0 s
         ct:fail(hanging_cast);
