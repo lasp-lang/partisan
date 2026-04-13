@@ -230,7 +230,17 @@ generate_module(SourceFile, OutDir, NameFun) ->
 
             %% Strip ts_install_cth from suite/0 — it's OTP's internal
             %% CT hook that isn't available outside the OTP test framework.
-            FinalForms = strip_ts_install_cth(RewrittenForms4b),
+            FinalForms0 = strip_ts_install_cth(RewrittenForms4b),
+
+            %% Fix string literals in format_log tests.
+            %% The rewrite renames atoms but not strings. Format log tests
+            %% compare format strings like "    supervisor: ~tp~n" which
+            %% need to match the generated module's output.
+            FinalForms1 = replace_module_strings(FinalForms0),
+
+            %% Inject partisan_peer_opts/1 local function so ?CT_PEER()
+            %% starts peer nodes with partisan code paths.
+            FinalForms = inject_peer_opts_fun(FinalForms1),
 
             %% Compile to beam.
             case compile:forms(FinalForms,
@@ -283,8 +293,78 @@ rename_module([], _) ->
 test_helper_renames() ->
     [].
 
+%% SUITE module renames. Used by helpers that reference the SUITE module
+%% as a callback (e.g., format_status_server calls gen_server_SUITE:init/1).
+suite_renames() ->
+    [{gen_server_SUITE, partisan_otp_gen_server_SUITE},
+     {supervisor_SUITE, partisan_otp_supervisor_SUITE},
+     {gen_statem_SUITE, partisan_otp_gen_statem_SUITE},
+     {gen_event_SUITE, partisan_otp_gen_event_SUITE},
+     {proc_lib_SUITE, partisan_otp_proc_lib_SUITE},
+     {sys_SUITE, partisan_otp_sys_SUITE}].
+
 
 %% Strip the ts_install_cth CT hook from suite/0 return value.
+%% Replace module name substrings in string literals throughout the AST.
+%% Format log tests compare strings like "    supervisor: ~tp~n" that
+%% need to match the renamed module output.
+replace_module_strings(Forms) when is_list(Forms) ->
+    [replace_module_strings(F) || F <- Forms];
+replace_module_strings({string, Anno, Val}) ->
+    NewVal = lists:foldl(
+        fun({Old, New}, Acc) ->
+            re:replace(Acc, Old, New, [global, {return, list}])
+        end,
+        Val,
+        module_string_replacements()
+    ),
+    {string, Anno, NewVal};
+replace_module_strings(Tuple) when is_tuple(Tuple) ->
+    list_to_tuple([replace_module_strings(E) || E <- tuple_to_list(Tuple)]);
+replace_module_strings(Other) ->
+    Other.
+
+module_string_replacements() ->
+    %% Order matters — longer patterns first to avoid partial matches.
+    [{"gen_server", "partisan_gen_server"},
+     {"gen_statem", "partisan_gen_statem"},
+     {"gen_event", "partisan_gen_event"},
+     {"supervisor", "partisan_gen_supervisor"}].
+
+
+%% Inject a local partisan_peer_opts/1 function into the SUITE forms.
+%% This function adds all code paths to the peer start options.
+%% We capture absolute paths at GENERATION time (not runtime) to avoid
+%% issues with CT changing CWD or relative path resolution.
+inject_peer_opts_fun(Forms) ->
+    %% Capture absolute paths NOW (at generation time).
+    AbsPaths = [filename:absname(P) ||
+                P <- code:get_path(), filelib:is_dir(P)],
+    PaArgs = lists:flatmap(fun(P) -> ["-pa", P] end, AbsPaths),
+    %% Build the function source with the paths embedded as a literal.
+    PaArgsStr = io_lib:format("~p", [PaArgs]),
+    FunSrc = lists:flatten([
+        "partisan_peer_opts(Opts) when is_map(Opts) ->\n"
+        "    PaArgs = ", PaArgsStr, ",\n"
+        "    ExistingArgs = maps:get(args, Opts, []),\n"
+        "    Opts#{args => PaArgs ++ ExistingArgs};\n"
+        "partisan_peer_opts(Opts) when is_list(Opts) ->\n"
+        "    PaArgs = ", PaArgsStr, ",\n"
+        "    PaArgs ++ Opts.\n"
+    ]),
+    {ok, Tokens, _} = erl_scan:string(FunSrc),
+    {ok, FunForm} = erl_parse:parse_form(Tokens),
+    %% Insert before the eof marker.
+    insert_before_eof(Forms, FunForm).
+
+insert_before_eof([], FunForm) ->
+    [FunForm];
+insert_before_eof([{eof, _} = Eof], FunForm) ->
+    [FunForm, Eof];
+insert_before_eof([H | T], FunForm) ->
+    [H | insert_before_eof(T, FunForm)].
+
+
 %% Replace test_server:start_peer(Opts, Mod, Fun) calls so peer nodes
 %% get the code paths needed to load partisan modules.
 %% Wraps Opts with partisan_otp_test_gen:peer_opts(Opts).
@@ -302,7 +382,9 @@ replace_start_peer_clause({clause, Anno, Pats, Guards, Body}) ->
      [replace_start_peer_expr(E) || E <- Body]}.
 
 %% Match: test_server:start_peer(Opts, Mod, Fun) →
-%%        test_server:start_peer(partisan_otp_test_gen:peer_opts(Opts), Mod, Fun)
+%%        test_server:start_peer(partisan_peer_opts(Opts), Mod, Fun)
+%% Uses a LOCAL function injected into the SUITE (not a remote call)
+%% so it's always available even if CT purges other modules.
 replace_start_peer_expr(
     {call, Anno,
      {remote, Anno2,
@@ -310,8 +392,7 @@ replace_start_peer_expr(
       {atom, Anno4, start_peer}},
      [Opts | RestArgs]}) ->
     WrappedOpts = {call, Anno,
-        {remote, Anno, {atom, Anno, partisan_otp_test_gen},
-                       {atom, Anno, peer_opts}},
+        {atom, Anno, partisan_peer_opts},
         [Opts]},
     {call, Anno,
      {remote, Anno2,
@@ -425,7 +506,11 @@ setup_data_dirs(TestDir, OutDir) ->
                     Src = filename:join([TestDir, OrigSubDir, File]),
                     Dst = filename:join(DestDir, File),
                     case filelib:is_file(Src) of
-                        true -> {ok, _} = file:copy(Src, Dst);
+                        true ->
+                            %% Apply partisan rewrite to the helper source
+                            %% and write as .erl (init_per_suite compiles
+                            %% from source via compile:file/1).
+                            rewrite_helper_source(Src, Dst);
                         false -> ok
                     end
                 end, Files)
@@ -470,6 +555,44 @@ compile_standalone_helpers(TestDir, OutDir) ->
             end
         end, Helpers),
     ok.
+
+
+%% Rewrite a helper .erl source file with partisan module renames
+%% and write the result as a new .erl file.
+%% Uses epp to parse, partisan_otp_rewrite to transform, and erl_pp
+%% to pretty-print back to source.
+rewrite_helper_source(SrcFile, DstFile) ->
+    case parse_source(SrcFile) of
+        {ok, Forms} ->
+            %% Apply the rewrite (gen_server→partisan_gen_server, etc.)
+            %% but keep the original module name.
+            Rewritten = partisan_otp_rewrite:transform(gen_server, Forms),
+            %% Fix the module name back to original (rewrite renamed it
+            %% to partisan_gen_server which is wrong for a helper module).
+            OrigModule = get_module_name(Forms),
+            Fixed0 = rename_module(Rewritten, OrigModule),
+            %% Also rename SUITE module references that helpers use as
+            %% callback modules (e.g., format_status_server calls
+            %% gen_server_SUITE:init/1).
+            Fixed = lists:foldl(
+                fun({Old, New}, Acc) -> rename_atom(Acc, Old, New) end,
+                Fixed0,
+                suite_renames()
+            ),
+            %% Pretty-print to source.
+            Source = lists:map(
+                fun({eof, _}) -> "";
+                   (Form) ->
+                    try erl_pp:form(Form)
+                    catch _:_ -> ""
+                    end
+                end, Fixed),
+            ok = file:write_file(DstFile, Source);
+        {error, _} ->
+            %% Fallback: copy as-is.
+            {ok, _} = file:copy(SrcFile, DstFile),
+            ok
+    end.
 
 
 find_existing_dir([]) -> error;
