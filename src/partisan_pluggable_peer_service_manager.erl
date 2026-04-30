@@ -494,16 +494,24 @@ forward_message(Node, ServerRef, Message, Opts) when is_list(Opts) ->
 forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
     %% TODO ServerRef heer can be atom(), pid(), partisan_ref(), {via, _, _},
     %% {Name, Node} or anything !!!!
-    %% If attempting to forward to the local node or using disterl, bypass.
-    Bypass =
-        Node =:= partisan:node()
-        orelse partisan_config:get(connect_disterl, false),
-
-    case Bypass of
+    %% Local-node forwarding bypasses the forwarding machinery entirely.
+    %% When `connect_disterl` is enabled and the target is remote, use disterl
+    %% directly (previously this wrongly dropped remote messages into the
+    %% local deliver path, which only tries to message a locally-registered
+    %% name).
+    case Node =:= partisan:node() of
         true ->
             partisan_peer_service_manager:deliver(ServerRef, Message);
 
         false ->
+            case partisan_config:get(connect_disterl, false) of
+                true ->
+                    _ = (catch erlang:send(
+                        {ServerRef, Node}, Message, [noconnect]
+                    )),
+                    ok;
+
+                false ->
             %% Get forwarding options and combine with message
             %% specific options.
             FwdOpts = maps:merge(
@@ -566,6 +574,7 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
                     %% We do a serialized execution as Opts might require
                     %% retransmission
                     gen_server:call(?MODULE, Cmd, infinity)
+            end
             end
     end.
 

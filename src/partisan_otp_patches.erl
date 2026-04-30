@@ -166,8 +166,13 @@ do_send_request_source() ->
     "        true ->\n"
     "            do_send_request(ServerRef, Label, Request);\n"
     "        false ->\n"
+    "            %% The `{alias, demonitor}' option is required so the receiver\n"
+    "            %% can reply via `[alias|Mref]'. Without it, the reply has no\n"
+    "            %% delivery target and the caller hangs until the monitor fires.\n"
     "            Opts = partisan_gen:get_opts(),\n"
-    "            Mref = partisan:monitor(process, Process, Opts),\n"
+    "            Mref = partisan:monitor(\n"
+    "                process, Process, [{alias, demonitor} | Opts]\n"
+    "            ),\n"
     "            Message = {Label, {partisan:self(), [alias|Mref]}, Request},\n"
     "            partisan:forward_message(Node, ServerRef, Message, Opts),\n"
     "            Mref\n"
@@ -335,7 +340,7 @@ get_parent_source() ->
     "        [Parent | _] when is_atom(Parent) ->\n"
     "            name_to_pid(Parent);\n"
     "        _ ->\n"
-    "            exit(process_was_not_started_by_partisan_proc_lib)\n"
+    "            exit(process_was_not_started_by_proc_lib)\n"
     "    end.\n".
 
 
@@ -394,21 +399,41 @@ proc_lib_patches() ->
 
 
 proc_lib_stop_source() ->
+    %% Mirror OTP's `proc_lib:stop/3' with the `partisan_sys' atom. `Reason'
+    %% in the catch patterns is a LITERAL match against the argument (bound in
+    %% the enclosing scope), so only same-reason exits from `partisan_sys:\n"
+    %% terminate' are treated as success — any other wrapped exit (e.g.
+    %% `{nodedown, Node}') propagates verbatim via the `exit:Reason1` clause,
+    %% matching OTP's `{'EXIT', {{nodedown, Node}, _}}' contract.
     "stop(Process, Reason, Timeout) ->\n"
-    "    {Pid, Mref} = erlang:spawn_monitor(do_stop(Process, Reason)),\n"
+    "    Mref = partisan:monitor(process, Process),\n"
+    "    T0 = erlang:monotonic_time(millisecond),\n"
+    "    StopTimeout = fun(infinity) -> infinity;\n"
+    "                     (T) -> max(0, T - (erlang:monotonic_time(millisecond) - T0))\n"
+    "                  end,\n"
+    "    Remaining = try partisan_sys:terminate(Process, Reason, Timeout) of\n"
+    "        ok -> StopTimeout(Timeout)\n"
+    "    catch\n"
+    "        exit:{noproc, {partisan_sys, terminate, _}} ->\n"
+    "            partisan:demonitor(Mref, [flush]),\n"
+    "            exit(noproc);\n"
+    "        exit:{timeout, {partisan_sys, terminate, _}} ->\n"
+    "            partisan:demonitor(Mref, [flush]),\n"
+    "            exit(timeout);\n"
+    "        exit:{Reason, {partisan_sys, terminate, _}} ->\n"
+    "            StopTimeout(Timeout);\n"
+    "        exit:Reason1 ->\n"
+    "            partisan:demonitor(Mref, [flush]),\n"
+    "            exit(Reason1)\n"
+    "    end,\n"
     "    receive\n"
     "        {'DOWN', Mref, _, _, Reason} ->\n"
     "            ok;\n"
-    "        {'DOWN', Mref, _, _, {noproc, {partisan_sys, terminate, _}}} ->\n"
-    "            exit(noproc);\n"
-    "        {'DOWN', Mref, _, _, CrashReason} ->\n"
-    "            exit(CrashReason)\n"
-    "    after Timeout ->\n"
-    "        exit(Pid, kill),\n"
-    "        receive\n"
-    "            {'DOWN', Mref, _, _, _} ->\n"
-    "                exit(timeout)\n"
-    "        end\n"
+    "        {'DOWN', Mref, _, _, Reason2} ->\n"
+    "            exit(Reason2)\n"
+    "    after Remaining ->\n"
+    "        partisan:demonitor(Mref, [flush]),\n"
+    "        exit(timeout)\n"
     "    end.\n".
 
 
@@ -480,12 +505,12 @@ supervisor_patches(OtpVsn) ->
         %% `partisan_gen_supervisor` since the rewrite renames the atom but
         %% users pass `supervisor` in their child specs.
         {replace, validChildType, 1, sup_validChildType_source()},
-        {replace, do_check_childspec, 2, sup_do_check_childspec_source()},
-        %% format_log_multi: Fix format strings to use `partisan_gen_supervisor`
-        %% instead of `supervisor` (string literals are not renamed by rewrite).
-        {replace, format_log_multi, 2, sup_format_log_multi_source()},
-        %% format_log_single: Fix single-line format strings similarly.
-        {replace, format_log_single, 2, sup_format_log_single_source()}
+        {replace, do_check_childspec, 2, sup_do_check_childspec_source()}
+        %% NOTE: format_log_multi/2 and format_log_single/2 are NOT patched.
+        %% The mechanical rewrite handles the atom renames in pattern matches
+        %% ({supervisor,progress} → {partisan_gen_supervisor,progress}).
+        %% The format strings ("Supervisor: ", "    supervisor: ~tp~n") are
+        %% human-readable labels that should stay as-is.
     ].
 
 
@@ -495,6 +520,8 @@ sup_do_start_child_source() ->
     "do_start_child(SupName, Child, Report) ->\n"
     "    #child{mfargs = {M, F, Args}} = Child,\n"
     "    case do_start_child_i(M, F, Args) of\n"
+    "        {ok, Pid} when Pid =:= undefined ->\n"
+    "            {ok, undefined};\n"
     "        {ok, Pid} ->\n"
     "            case partisan:is_pid(Pid) of\n"
     "                true ->\n"
@@ -522,6 +549,8 @@ sup_do_start_child_source() ->
 sup_do_start_child_i_source() ->
     "do_start_child_i(M, F, A) ->\n"
     "    case catch apply(M, F, A) of\n"
+    "        {ok, Pid} when Pid =:= undefined ->\n"
+    "            {ok, undefined};\n"
     "        {ok, Pid} ->\n"
     "            case partisan:is_pid(Pid) of\n"
     "                true -> {ok, Pid};\n"
@@ -1044,10 +1073,15 @@ sup_validChildType_source() ->
 %% `#{type := supervisor}` to `#{type := partisan_gen_supervisor}`. We need
 %% to handle both atoms. This is a full replacement of the function.
 sup_do_check_childspec_source() ->
+    %% Normalize the `supervisor' atom to `partisan_gen_supervisor' (instead
+    %% of the other direction): downstream guards in this module have been
+    %% rewritten to `=:= partisan_gen_supervisor', so the stored value must
+    %% match. `get_childspec' will also return `partisan_gen_supervisor',
+    %% which is what the (rewritten) test source expects.
     "do_check_childspec(#{restart := RestartType, type := ChildType0} = ChildSpec,\n"
     "                   AutoShutdown) ->\n"
     "    ChildType = case ChildType0 of\n"
-    "        partisan_gen_supervisor -> supervisor;\n"
+    "        supervisor -> partisan_gen_supervisor;\n"
     "        Other0 -> Other0\n"
     "    end,\n"
     "    Id = case ChildSpec of\n"
@@ -1070,7 +1104,8 @@ sup_do_check_childspec_source() ->
     "    Shutdown = case ChildSpec of\n"
     "        #{shutdown := S} -> S;\n"
     "        _ when ChildType =:= worker -> 5000;\n"
-    "        _ when ChildType =:= supervisor -> infinity\n"
+    "        _ when ChildType =:= partisan_gen_supervisor;\n"
+    "                 ChildType =:= supervisor -> infinity\n"
     "    end,\n"
     "    validShutdown(Shutdown),\n"
     "    Mods = case ChildSpec of\n"

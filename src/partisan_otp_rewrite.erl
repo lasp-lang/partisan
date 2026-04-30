@@ -100,7 +100,12 @@ auto_import_rewrites() ->
         {node, 0} => partisan,
         {node, 1} => partisan,
         {monitor_node, 2} => partisan,
-        {make_ref, 0} => partisan,
+        %% NOTE: make_ref/0 is intentionally NOT rewritten. gen_statem uses
+        %% synthetic `make_ref()` values as timer tags that are passed to
+        %% erlang:cancel_timer/1, which only accepts native references.
+        %% gen_server uses make_ref/0 for internal state tags as well. Partisan
+        %% ref encoding happens at the transport boundary (send/receive), so
+        %% internal refs can remain native.
         {monitor, 2} => partisan,
         {monitor, 3} => partisan,
         {demonitor, 1} => partisan,

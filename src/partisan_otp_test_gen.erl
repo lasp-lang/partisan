@@ -232,10 +232,13 @@ generate_module(SourceFile, OutDir, NameFun) ->
             %% CT hook that isn't available outside the OTP test framework.
             FinalForms0 = strip_ts_install_cth(RewrittenForms4b),
 
-            %% Fix string literals in format_log tests.
-            %% The rewrite renames atoms but not strings. Format log tests
-            %% compare format strings like "    supervisor: ~tp~n" which
-            %% need to match the generated module's output.
+            %% Rewrite SUITE module name references in string literals.
+            %% The rewrite renames `?MODULE` (expanded atom) to the partisan
+            %% SUITE name, but literal strings in expected-output comparisons
+            %% (e.g., "** Undefined handle_info in gen_server_SUITE\n")
+            %% still reference the original module name. At runtime, the
+            %% renamed module emits its partisan name, so the test comparison
+            %% fails unless we update the literal too.
             FinalForms1 = replace_module_strings(FinalForms0),
 
             %% Inject partisan_peer_opts/1 local function so ?CT_PEER()
@@ -325,11 +328,16 @@ replace_module_strings(Other) ->
     Other.
 
 module_string_replacements() ->
-    %% Order matters — longer patterns first to avoid partial matches.
-    [{"gen_server", "partisan_gen_server"},
-     {"gen_statem", "partisan_gen_statem"},
-     {"gen_event", "partisan_gen_event"},
-     {"supervisor", "partisan_gen_supervisor"}].
+    %% Rename SUITE module names in literal test strings so runtime
+    %% comparisons match the partisan-renamed module. The negative
+    %% lookahead `(?!_)` prevents matching the `_data` directory suffix
+    %% (e.g., "gen_event_SUITE_data" stays unchanged).
+    [{"gen_server_SUITE(?!_)", "partisan_otp_gen_server_SUITE"},
+     {"gen_statem_SUITE(?!_)", "partisan_otp_gen_statem_SUITE"},
+     {"gen_event_SUITE(?!_)", "partisan_otp_gen_event_SUITE"},
+     {"supervisor_SUITE(?!_)", "partisan_otp_supervisor_SUITE"},
+     {"proc_lib_SUITE(?!_)", "partisan_otp_proc_lib_SUITE"},
+     {"sys_SUITE(?!_)", "partisan_otp_sys_SUITE"}].
 
 
 %% Inject a local partisan_peer_opts/1 function into the SUITE forms.
@@ -338,24 +346,86 @@ module_string_replacements() ->
 %% issues with CT changing CWD or relative path resolution.
 inject_peer_opts_fun(Forms) ->
     %% Capture absolute paths NOW (at generation time).
-    AbsPaths = [filename:absname(P) ||
-                P <- code:get_path(), filelib:is_dir(P)],
+    %% Also include the OutDir for the generated suite/helper beams since
+    %% some tests do `spawn_link(Node, ?MODULE, F, A)` where ?MODULE is
+    %% the rewritten suite name — the peer must be able to load it.
+    {ok, Cwd} = file:get_cwd(),
+    BuildPaths = [
+        filename:absname(filename:join([Cwd, "_build/test/lib/partisan/test"])),
+        filename:absname(filename:join([Cwd, "_build/test/lib/partisan/test/otp"]))
+    ],
+    AbsPaths = lists:usort(
+        BuildPaths ++
+        [filename:absname(P) || P <- code:get_path(), filelib:is_dir(P)]
+    ),
     PaArgs = lists:flatmap(fun(P) -> ["-pa", P] end, AbsPaths),
+    %% Also force partisan config on the peer so remote calls delegate
+    %% to erlang/disterl instead of requiring a running partisan_monitor.
+    PartisanArgs = ["-partisan", "connect_disterl", "true"],
+    %% Pre-load the partisan OTP modules on peer startup. Some tests
+    %% (e.g. parallel multicall_remote) use `spawn_link(Node, M, F, A)`
+    %% which races with the auto-loader and intermittently fails with
+    %% `undef partisan_gen_server:start_link/4'. Eager-loading sidesteps
+    %% the race.
+    PreloadArgs = [
+        "-eval",
+        "lists:foreach(fun(M) -> code:ensure_loaded(M) end, "
+        "[partisan_gen, partisan_proc_lib, partisan_sys, "
+        "partisan_gen_server, partisan_gen_event, partisan_gen_statem, "
+        "partisan_gen_supervisor])."
+    ],
+    AllArgs = PaArgs ++ PartisanArgs ++ PreloadArgs,
     %% Build the function source with the paths embedded as a literal.
-    PaArgsStr = io_lib:format("~p", [PaArgs]),
+    AllArgsStr = io_lib:format("~p", [AllArgs]),
     FunSrc = lists:flatten([
         "partisan_peer_opts(Opts) when is_map(Opts) ->\n"
-        "    PaArgs = ", PaArgsStr, ",\n"
+        "    PeerArgs = ", AllArgsStr, ",\n"
         "    ExistingArgs = maps:get(args, Opts, []),\n"
-        "    Opts#{args => PaArgs ++ ExistingArgs};\n"
+        "    Opts#{args => PeerArgs ++ ExistingArgs};\n"
         "partisan_peer_opts(Opts) when is_list(Opts) ->\n"
-        "    PaArgs = ", PaArgsStr, ",\n"
-        "    PaArgs ++ Opts.\n"
+        "    PeerArgs = ", AllArgsStr, ",\n"
+        "    PeerArgs ++ Opts.\n"
+        %% Pass-through wrapper around test_server:start_peer's return.
+        %% When it succeeds with `{ok, _Peer, Node}', synchronously load
+        %% partisan modules on the peer over RPC so subsequent\n"
+        %% `spawn_link(Node, ?MODULE, F, A)' calls don't race the auto-loader.
+        "partisan_post_peer_start({ok, Peer, Node} = R) ->\n"
+        "    Mods = [partisan_gen, partisan_proc_lib, partisan_sys, "
+        "partisan_gen_server, partisan_gen_event, partisan_gen_statem, "
+        "partisan_gen_supervisor],\n"
+        "    _ = (catch rpc:call(\n"
+        "          Node, lists, foreach,\n"
+        "          [fun(M) -> code:ensure_loaded(M) end, Mods],\n"
+        "          5000)),\n"
+        "    _ = Peer,\n"
+        "    R;\n"
+        "partisan_post_peer_start(R) -> R.\n"
     ]),
     {ok, Tokens, _} = erl_scan:string(FunSrc),
-    {ok, FunForm} = erl_parse:parse_form(Tokens),
-    %% Insert before the eof marker.
-    insert_before_eof(Forms, FunForm).
+    Forms2 = parse_funs(Tokens, []),
+    %% Insert each generated form before the eof marker (preserving order).
+    lists:foldl(
+        fun(F, Acc) -> insert_before_eof(Acc, F) end,
+        Forms,
+        Forms2
+    ).
+
+%% Parse a token stream into a list of function forms (for multiple defs).
+parse_funs([], Acc) -> lists:reverse(Acc);
+parse_funs(Tokens, Acc) ->
+    {Form, Rest} = parse_one_form(Tokens, []),
+    case Form of
+        [] -> lists:reverse(Acc);
+        _ ->
+            {ok, F} = erl_parse:parse_form(Form),
+            parse_funs(Rest, [F | Acc])
+    end.
+
+parse_one_form([], Acc) -> {lists:reverse(Acc), []};
+parse_one_form([{dot, _} = D | Rest], Acc) ->
+    {lists:reverse([D | Acc]), Rest};
+parse_one_form([T | Rest], Acc) ->
+    parse_one_form(Rest, [T | Acc]).
 
 insert_before_eof([], FunForm) ->
     [FunForm];
@@ -382,9 +452,13 @@ replace_start_peer_clause({clause, Anno, Pats, Guards, Body}) ->
      [replace_start_peer_expr(E) || E <- Body]}.
 
 %% Match: test_server:start_peer(Opts, Mod, Fun) →
-%%        test_server:start_peer(partisan_peer_opts(Opts), Mod, Fun)
-%% Uses a LOCAL function injected into the SUITE (not a remote call)
-%% so it's always available even if CT purges other modules.
+%%        partisan_start_peer(test_server:start_peer(partisan_peer_opts(Opts), Mod, Fun))
+%% The outer wrapper does an `rpc:call` after the peer is up to eagerly
+%% load partisan modules on it. -eval at peer boot is *supposed* to do
+%% this, but a parallel `spawn_link(Node, ?MODULE, F, A)' can sometimes
+%% race the auto-loader and observe `undef partisan_gen_server:...'
+%% (multicall_remote/1). Doing the load synchronously over RPC removes
+%% the race entirely.
 replace_start_peer_expr(
     {call, Anno,
      {remote, Anno2,
@@ -394,11 +468,15 @@ replace_start_peer_expr(
     WrappedOpts = {call, Anno,
         {atom, Anno, partisan_peer_opts},
         [Opts]},
+    InnerCall =
+        {call, Anno,
+         {remote, Anno2,
+          {atom, Anno3, test_server},
+          {atom, Anno4, start_peer}},
+         [WrappedOpts | RestArgs]},
     {call, Anno,
-     {remote, Anno2,
-      {atom, Anno3, test_server},
-      {atom, Anno4, start_peer}},
-     [WrappedOpts | RestArgs]};
+        {atom, Anno, partisan_post_peer_start},
+        [InnerCall]};
 %% Recurse into compound expressions
 replace_start_peer_expr({'case', Anno, Expr, Clauses}) ->
     {'case', Anno, replace_start_peer_expr(Expr),
@@ -413,7 +491,48 @@ replace_start_peer_expr({block, Anno, Body}) ->
     {block, Anno, [replace_start_peer_expr(E) || E <- Body]};
 replace_start_peer_expr({match, Anno, P, E}) ->
     {match, Anno, P, replace_start_peer_expr(E)};
+replace_start_peer_expr({'fun', Anno, {clauses, Clauses}}) ->
+    {'fun', Anno, {clauses, [replace_start_peer_clause(C) || C <- Clauses]}};
+replace_start_peer_expr({named_fun, Anno, Name, Clauses}) ->
+    {named_fun, Anno, Name, [replace_start_peer_clause(C) || C <- Clauses]};
+replace_start_peer_expr({call, Anno, Callee, Args}) ->
+    {call, Anno, replace_start_peer_expr(Callee),
+     [replace_start_peer_expr(A) || A <- Args]};
+replace_start_peer_expr({lc, Anno, Expr, Quals}) ->
+    {lc, Anno, replace_start_peer_expr(Expr), Quals};
+replace_start_peer_expr({tuple, Anno, Elems}) ->
+    {tuple, Anno, [replace_start_peer_expr(E) || E <- Elems]};
+replace_start_peer_expr({cons, Anno, H, T}) ->
+    {cons, Anno, replace_start_peer_expr(H), replace_start_peer_expr(T)};
 replace_start_peer_expr(Other) ->
+    Other.
+
+
+%% Walk the `groups/0` function and strip the `parallel' atom out of any
+%% group properties list. This converts `[parallel]' (and `[parallel,
+%% shuffle]' etc.) to `[]', forcing CT to run those test cases serially.
+strip_parallel_group_props(Forms) ->
+    [strip_parallel_in_form(F) || F <- Forms].
+
+strip_parallel_in_form({function, Anno, groups, 0, Clauses}) ->
+    {function, Anno, groups, 0,
+     [strip_parallel_in_clause(C) || C <- Clauses]};
+strip_parallel_in_form(Other) ->
+    Other.
+
+strip_parallel_in_clause({clause, Anno, Pats, Guards, Body}) ->
+    {clause, Anno, Pats, Guards,
+     [strip_parallel_in_expr(E) || E <- Body]}.
+
+strip_parallel_in_expr({cons, _Anno, {atom, _, parallel}, Tail}) ->
+    strip_parallel_in_expr(Tail);
+strip_parallel_in_expr({cons, Anno, Head, Tail}) ->
+    {cons, Anno,
+     strip_parallel_in_expr(Head),
+     strip_parallel_in_expr(Tail)};
+strip_parallel_in_expr({tuple, Anno, Elems}) ->
+    {tuple, Anno, [strip_parallel_in_expr(E) || E <- Elems]};
+strip_parallel_in_expr(Other) ->
     Other.
 
 
@@ -515,7 +634,45 @@ setup_data_dirs(TestDir, OutDir) ->
                     end
                 end, Files)
         end, DataDirMappings),
+    %% Stage the supervisor app_faulty fixture so
+    %% supervisor_SUITE:faulty_application_shutdown/1 finds its data_dir.
+    setup_app_faulty(TestDir, OutDir),
     ok.
+
+
+setup_app_faulty(TestDir, OutDir) ->
+    SrcAppDir = filename:join([TestDir, "supervisor_SUITE_data", "app_faulty"]),
+    case filelib:is_dir(SrcAppDir) of
+        false -> ok;
+        true ->
+            DestRoot = filename:join([OutDir,
+                                      "partisan_otp_supervisor_SUITE_data",
+                                      "app_faulty"]),
+            DestEbin = filename:join(DestRoot, "ebin"),
+            ok = filelib:ensure_dir(filename:join(DestEbin, "dummy")),
+            %% Copy .app file as-is.
+            AppSrc = filename:join([SrcAppDir, "ebin", "app_faulty.app"]),
+            AppDst = filename:join(DestEbin, "app_faulty.app"),
+            case filelib:is_file(AppSrc) of
+                true -> {ok, _} = file:copy(AppSrc, AppDst), ok;
+                false -> ok
+            end,
+            %% Compile each .erl source directly into ebin/.
+            SrcDir = filename:join(SrcAppDir, "src"),
+            ErlFiles = filelib:wildcard(filename:join(SrcDir, "*.erl")),
+            lists:foreach(
+                fun(Erl) ->
+                    case compile:file(Erl, [{outdir, DestEbin}, return]) of
+                        {ok, _} -> ok;
+                        {ok, _, _} -> ok;
+                        Other ->
+                            io:format(standard_error,
+                                      "app_faulty compile of ~s failed: ~p~n",
+                                      [Erl, Other])
+                    end
+                end, ErlFiles),
+            ok
+    end.
 
 
 %% Compile standalone helper modules (supervisor_1.erl, sys_sp1.erl, etc.)
@@ -530,6 +687,7 @@ compile_standalone_helpers(TestDir, OutDir) ->
         "supervisor_3.erl",
         "supervisor_4.erl",
         "supervisor_deadlock.erl",
+        "naughty_child.erl",
         "sys_sp1.erl",
         "sys_sp2.erl",
         "dummy_h.erl",

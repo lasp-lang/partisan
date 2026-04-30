@@ -124,8 +124,11 @@ otp-compat-test:
 		-pa _build/test/lib/*/ebin \
 		-pa _build/test/lib/partisan/test \
 		-pa _build/test/lib/partisan/test/otp \
+		-partisan connect_disterl true \
 		-eval ' \
+		application:set_env(partisan, connect_disterl, true), \
 		application:ensure_all_started(partisan), \
+		partisan_config:set(connect_disterl, true), \
 		[code:ensure_loaded(M) || M <- [partisan_gen, partisan_proc_lib, partisan_sys, \
 			partisan_gen_server, partisan_gen_event, partisan_gen_statem, \
 			partisan_gen_supervisor]], \
@@ -137,7 +140,8 @@ otp-compat-test:
 				{dir, "_build/test/lib/partisan/test"}, \
 				{suite, Suite}, \
 				{logdir, "_build/test/logs"}, \
-				{auto_compile, false}]), \
+				{auto_compile, false}, \
+				{multiply_timetraps, 5}]), \
 			io:format("~p: ~p~n", [Suite, R]), \
 			{Suite, R} \
 		end, Suites), \

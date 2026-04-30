@@ -407,12 +407,22 @@ monitor(process, Pid, Opts) when erlang:is_pid(Pid) ->
 
 monitor(process, {RegisteredName, Node}, Opts)
 when is_atom(RegisteredName) ->
-    case partisan_config:get(connect_disterl) orelse partisan:node() == Node of
+    case partisan:node() == Node of
         true ->
             erlang:monitor(process, RegisteredName, to_erl_monitor_opts(Opts));
         false ->
-            Ref = partisan_remote_ref:from_term(RegisteredName, Node),
-            partisan_monitor:monitor(Ref, Opts)
+            case partisan_config:get(connect_disterl, false) of
+                true ->
+                    erlang:monitor(
+                        process, {RegisteredName, Node},
+                        to_erl_monitor_opts(Opts)
+                    );
+                false ->
+                    Ref = partisan_remote_ref:from_term(
+                        RegisteredName, Node
+                    ),
+                    partisan_monitor:monitor(Ref, Opts)
+            end
     end;
 
 monitor(process, Term, Opts) when erlang:is_pid(Term) orelse is_atom(Term) ->
