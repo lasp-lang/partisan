@@ -1645,7 +1645,7 @@ wait_erlang_hibernate_1(0, Pid) ->
 wait_erlang_hibernate_1(N, Pid) ->
     {current_function,MFA} = erlang:process_info(Pid, current_function),
     case MFA of
-    {erlang,hibernate,3} ->
+    {erlang,hibernate,_Arity} ->
         ok;
     _ ->
         receive after 10 -> ok end,
@@ -1661,7 +1661,7 @@ is_not_in_erlang_hibernate_1(0, _Pid) ->
 is_not_in_erlang_hibernate_1(N, Pid) ->
     {current_function,MFA} = erlang:process_info(Pid, current_function),
     case MFA of
-    {erlang,hibernate,3} ->
+    {erlang,hibernate,_Arity} ->
         receive after 10 -> ok end,
         is_not_in_erlang_hibernate_1(N-1, Pid);
     _ ->
@@ -1735,7 +1735,7 @@ enter_loop(_Config) ->
     %% Process not started using proc_lib
     Pid4 = spawn_link(partisan_gen_statem, enter_loop, [?MODULE,[],state0,[]]),
     receive
-    {'EXIT',Pid4,process_was_not_started_by_partisan_proc_lib} ->
+    {'EXIT',Pid4,process_was_not_started_by_proc_lib} ->
         ok
     after 5000 ->
         ct:fail(partisan_gen_statem_did_not_die)
@@ -2222,7 +2222,8 @@ simple_report(Name, Term, Reason) ->
       timeouts=>{0,[]},
       log=>[],
       reason=>{error,Reason,[]},
-      client_info=>undefined}.
+      client_info=>undefined,
+      process_label=>undefined}.
 
 elaborate_report(Name, Term, Reason) ->
     #{label=>{partisan_gen_statem,terminate},
@@ -2236,7 +2237,8 @@ elaborate_report(Name, Term, Reason) ->
       timeouts=>{1,[{timeout,message}]},
       log=>[Term],
       reason=>{error,Reason,stacktrace()},
-      client_info=>{self(),{self(),[]}}}.
+      client_info=>{self(),{self(),[]}},
+      process_label=>undefined}.
 
 stacktrace() ->
     [{m,f,1,lists:seq(1, 15)}].

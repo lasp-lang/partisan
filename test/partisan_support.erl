@@ -85,7 +85,7 @@ start(Case, Config, Options) ->
             | NodeConfig0
         ],
 
-        case ?CT_NODE:start(Name, NodeConfig) of
+        case start_ct_node(Name, NodeConfig) of
             {ok, Node} ->
                 %% After starting a slave, it takes a little while until global
                 %% knows about it, even if nodes() includes it, so we make sure
@@ -519,7 +519,7 @@ stop(Nodes) ->
         Stop({_, Node}) ->
             Stop(Node);
         Stop(Node) ->
-            case ?CT_NODE:stop(Node) of
+            case stop_ct_node(Node) of
                 {ok, _} ->
                     ok;
                 {error, stop_timeout, _} ->
@@ -534,6 +534,80 @@ stop(Nodes) ->
 
     _ = catch lists:foreach(StopFun, Nodes),
     ok.
+
+
+%% @private
+%% Compatibility shim: emulate the legacy `ct_slave:start(Name, Opts)' /
+%% `ct_slave:stop(Node)' API on top of OTP 25+ `peer'. Keeps the suite's
+%% existing call sites working without rewriting every test.
+%% Stores the peer Pid in a process-dictionary key keyed by Node name so the
+%% companion `stop_ct_node/1' can shut it down.
+-spec start_ct_node(atom(), [tuple()]) ->
+    {ok, node()} | {error, atom(), term()}.
+start_ct_node(Name, Opts) ->
+    StartupFuns = proplists:get_value(startup_functions, Opts, []),
+    BootTimeout = proplists:get_value(boot_timeout, Opts, 30),
+    %% Ensure the runner is alive — required for disterl-mode peer:start.
+    case erlang:is_alive() of
+        true -> ok;
+        false ->
+            RunnerName = list_to_atom("ct_runner_" ++ os:getpid()),
+            {ok, _} = net_kernel:start(RunnerName, #{name_domain => shortnames})
+    end,
+    %% Use the runner's host portion to ensure peer/runner agree on the host.
+    Host = case string:split(atom_to_list(node()), "@") of
+        [_, H] -> H;
+        _ -> net_adm:localhost()
+    end,
+    PaArgs = lists:flatmap(
+        fun(P) -> ["-pa", P] end,
+        [P || P <- code:get_path(), is_list(P), filelib:is_dir(P)]
+    ),
+    %% Ensure both ends share a non-`nocookie' cookie.
+    Cookie = case erlang:get_cookie() of
+        nocookie -> partisan_test_cookie;
+        C -> C
+    end,
+    erlang:set_cookie(node(), Cookie),
+    %% Use disterl so the rest of the suite can drive the peer with
+    %% `rpc:call/4'. Standard-io connection mode skips disterl entirely
+    %% which breaks every existing rpc-based assertion.
+    PeerOpts = #{
+        name => Name,
+        host => Host,
+        wait_boot => BootTimeout * 1000,
+        args => ["-setcookie", atom_to_list(Cookie) | PaArgs]
+    },
+    ct:pal(
+        "Starting peer name=~p host=~s alive=~p cookie=~p args_count=~p",
+        [Name, Host, erlang:is_alive(), erlang:get_cookie(), length(maps:get(args, PeerOpts))]
+    ),
+    case peer:start(PeerOpts) of
+        {ok, Peer, Node} ->
+            persistent_term:put({?MODULE, peer, Node}, Peer),
+            %% Run any startup_functions over the disterl connection.
+            _ = [
+                (catch rpc:call(Node, M, F, A, 5000))
+                || {M, F, A} <- StartupFuns
+            ],
+            {ok, Node};
+        {error, Reason} ->
+            ct:pal("peer:start failed: ~p", [Reason]),
+            {error, peer_start_failed, Reason}
+    end.
+
+stop_ct_node(Node) ->
+    Key = {?MODULE, peer, Node},
+    case persistent_term:get(Key, undefined) of
+        undefined ->
+            %% Fall back to disterl shutdown.
+            _ = rpc:call(Node, init, stop, [], 5000),
+            {ok, Node};
+        Peer ->
+            persistent_term:erase(Key),
+            _ = (catch peer:stop(Peer)),
+            {ok, Node}
+    end.
 
 %% @private
 connect(G, N1, N2) ->

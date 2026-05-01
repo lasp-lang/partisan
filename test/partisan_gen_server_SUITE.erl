@@ -1037,7 +1037,7 @@ is_in_erlang_hibernate_1(0, Pid) ->
 is_in_erlang_hibernate_1(N, Pid) ->
     {current_function,MFA} = erlang:process_info(Pid, current_function),
     case MFA of
-    {erlang,hibernate,3} ->
+    {erlang,hibernate,_Arity} ->
         ok;
     _ ->
         receive after 10 -> ok end,
@@ -1054,7 +1054,7 @@ is_not_in_erlang_hibernate_1(0, Pid) ->
 is_not_in_erlang_hibernate_1(N, Pid) ->
     {current_function,MFA} = erlang:process_info(Pid, current_function),
     case MFA of
-        {erlang,hibernate,3} ->
+        {erlang,hibernate,_Arity} ->
             receive after 10 -> ok end,
             is_not_in_erlang_hibernate_1(N-1, Pid);
         _ ->
@@ -1269,7 +1269,7 @@ spec_init(Config) when is_list(Config) ->
     Pid5 =
     erlang:spawn_link(?MODULE, spec_init_not_proc_lib, [[]]),
     receive 
-    {'EXIT', Pid5, process_was_not_started_by_partisan_proc_lib} ->
+    {'EXIT', Pid5, process_was_not_started_by_proc_lib} ->
         ok
     after 5000 ->
         ct:fail(partisan_gen_server_did_not_die)
@@ -1749,7 +1749,8 @@ format_log_1(_Config) ->
                state=>Term,
                log=>[],
                reason=>Term,
-               client_info=>{self(),{clientname,[]}}},
+               client_info=>{self(),{clientname,[]}},
+               process_label=>undefined},
     {F1,A1} = partisan_gen_server:format_log(Report),
     FExpected1 = "** Generic server ~tp terminating \n"
         "** Last message in was ~tp~n"
@@ -1780,7 +1781,8 @@ format_log_1(_Config) ->
                                       state=>Term,
                                       log=>[],
                                       reason=>Term,
-                                      client_info=>{self(),{clientname,[]}}}),
+                                      client_info=>{self(),{clientname,[]}},
+                                      process_label=>undefined}),
     FExpected2 = "** Generic server ~tP terminating \n"
         "** Last message in was ~tP~n"
         "** When Server state == ~tP~n"
@@ -1818,7 +1820,8 @@ format_log_2(_Config) ->
                state=>Term,
                log=>[],
                reason=>Term,
-               client_info=>{self(),{clientname,[]}}},
+               client_info=>{self(),{clientname,[]}},
+               process_label=>undefined},
     FormatOpts1 = #{},
     Str1 = flatten_format_log(Report,FormatOpts1),
     L1 = length(Str1),
