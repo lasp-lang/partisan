@@ -802,7 +802,17 @@ monitor(Process, Opts, {connected, true}) ->
             ok = add_proc_mon_out_idx(Node, Mref),
             Mref;
         {error, timeout} ->
-            monitor(Process, Opts, timeout);
+            %% partisan transport hasn't yet noticed the peer dropped, but
+            %% disterl may already know. If the target node is no longer in
+            %% `erlang:nodes()' (and never was — we never had a connection
+            %% — or has been removed), fire `noconnection' immediately
+            %% rather than reporting `timeout' (which callers compare to
+            %% `nodedown'-style reasons).
+            Status = case is_node_reachable(Node) of
+                false -> noconnection;
+                true -> timeout
+            end,
+            monitor(Process, Opts, Status);
         {error, noproc} ->
             monitor(Process, Opts, noproc);
         {error, {nodedown, _}} ->
@@ -885,6 +895,25 @@ call(ServerRef, Message, Timeout) ->
             {error, timeout};
         exit:{noproc, _} ->
             {error, notalive}
+    end.
+
+
+%% @private
+%% True if Node is currently reachable. When the runner is disterl-alive we
+%% trust disterl as the authority: it detects TCP closure within ~1s, while
+%% partisan transport's heartbeat-based detection can lag for many seconds.
+%% In pure-partisan setups (no disterl) we fall back to partisan's view.
+is_node_reachable(Node) ->
+    case Node =:= partisan:node() of
+        true ->
+            true;
+        false ->
+            case erlang:is_alive() of
+                true ->
+                    lists:member(Node, erlang:nodes());
+                false ->
+                    partisan_peer_connections:is_connected(Node)
+            end
     end.
 
 
