@@ -1644,10 +1644,10 @@ wait_erlang_hibernate_1(0, Pid) ->
     ct:fail(should_be_in_erlang_hibernate_3);
 wait_erlang_hibernate_1(N, Pid) ->
     {current_function,MFA} = erlang:process_info(Pid, current_function),
-    case MFA of
-    {erlang,hibernate,_Arity} ->
+    case is_hibernating_mfa(MFA) of
+    true ->
         ok;
-    _ ->
+    false ->
         receive after 10 -> ok end,
         wait_erlang_hibernate_1(N-1, Pid)
     end.
@@ -1660,13 +1660,21 @@ is_not_in_erlang_hibernate_1(0, _Pid) ->
     ct:fail(should_not_be_in_erlang_hibernate_3);
 is_not_in_erlang_hibernate_1(N, Pid) ->
     {current_function,MFA} = erlang:process_info(Pid, current_function),
-    case MFA of
-    {erlang,hibernate,_Arity} ->
+    case is_hibernating_mfa(MFA) of
+    true ->
         receive after 10 -> ok end,
         is_not_in_erlang_hibernate_1(N-1, Pid);
-    _ ->
+    false ->
         ok
     end.
+
+%% OTP 28's gen_statem (and the rewritten partisan_gen_statem) parks a
+%% hibernating process inside its own `loop_hibernate/4' rather than inside
+%% `erlang:hibernate/_'. Match either form.
+is_hibernating_mfa({erlang, hibernate, _}) -> true;
+is_hibernating_mfa({partisan_gen_statem, loop_hibernate, _}) -> true;
+is_hibernating_mfa({gen_statem, loop_hibernate, _}) -> true;
+is_hibernating_mfa(_) -> false.
 
 
 enter_loop(_Config) ->

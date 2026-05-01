@@ -597,6 +597,12 @@ start_ct_node(Name, Opts) ->
     end.
 
 stop_ct_node(Node) ->
+    %% Ask the peer to leave the partisan cluster gracefully so the local
+    %% partisan_monitor sees the disconnect (and fires `noconnection' DOWN
+    %% messages on outstanding monitors). Without this, killing the peer via
+    %% `peer:stop' alone makes the runner wait for partisan's heartbeat to
+    %% time out, which exceeds CT's per-test budget.
+    _ = (catch rpc:call(Node, partisan_peer_service, leave, [], 2000)),
     Key = {?MODULE, peer, Node},
     case persistent_term:get(Key, undefined) of
         undefined ->

@@ -182,6 +182,7 @@
 -export([nodes/0]).
 -export([nodes/1]).
 -export([nodestring/0]).
+-export([remote_ref_to_disterl/1]).
 -export([self/1]).
 
 
@@ -429,8 +430,18 @@ monitor(process, Term, Opts) when erlang:is_pid(Term) orelse is_atom(Term) ->
     erlang:monitor(process, Term, to_erl_monitor_opts(Opts));
 
 monitor(process, RemoteRef, Opts) ->
-    %% eqwalizer:ignore RemoteRef
-    partisan_monitor:monitor(RemoteRef, Opts);
+    %% When `connect_disterl' is true the test harness explicitly opted into
+    %% disterl-only routing — decode the remote-ref and use `erlang:monitor'
+    %% so DOWN messages fire promptly when the peer drops. Otherwise use the
+    %% partisan transport's own monitor (the default behaviour).
+    case partisan_config:get(connect_disterl, false)
+            andalso remote_ref_to_disterl(RemoteRef) of
+        {ok, {Name, _Node} = NN} when is_atom(Name) ->
+            erlang:monitor(process, NN, to_erl_monitor_opts(Opts));
+        _ ->
+            %% eqwalizer:ignore RemoteRef
+            partisan_monitor:monitor(RemoteRef, Opts)
+    end;
 
 monitor(Type, Term, Opts) when Type == port orelse Type == time_offset ->
     erlang:monitor(Type, Term, to_erl_monitor_opts(Opts)).
@@ -1760,6 +1771,41 @@ process_exit_reason(not_yet_connected) ->
     noconnection;
 process_exit_reason(_) ->
     noproc.
+
+
+%% @private
+%% True if the target lives on a node we already have a disterl connection
+%% to (or is local). Caller uses this to prefer disterl-based monitoring,
+%% which detects noconnection promptly.
+is_disterl_connected(Pid) when erlang:is_pid(Pid) ->
+    Node = erlang:node(Pid),
+    Node =:= erlang:node()
+        orelse lists:member(Node, erlang:nodes());
+is_disterl_connected({Name, Node}) when is_atom(Name), is_atom(Node) ->
+    Node =:= erlang:node()
+        orelse lists:member(Node, erlang:nodes());
+is_disterl_connected(_) ->
+    false.
+
+%% @private
+%% When `connect_disterl' is set, convert a partisan_remote_ref to a
+%% disterl-usable form: a foreign pid (via `list_to_pid/1') for encoded pids,
+%% or `{Name, Node}' for encoded names. Returns `error' for refs we don't
+%% know how to convert (the caller should fall back to partisan_monitor).
+remote_ref_to_disterl(Ref) ->
+    try
+        Node = partisan_remote_ref:node(Ref),
+        case partisan_remote_ref:target(Ref) of
+            {encoded_pid, Str} ->
+                {ok, list_to_pid(Str)};
+            {encoded_name, Str} ->
+                {ok, {list_to_existing_atom(Str), Node}};
+            _ ->
+                error
+        end
+    catch
+        _:_ -> error
+    end.
 
 
 

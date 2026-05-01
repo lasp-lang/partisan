@@ -952,7 +952,8 @@ hibernate(Config) when is_list(Config) ->
         erlang:process_info(Pid, current_function)),
     receive
     {result,R} ->
-        {current_function,{erlang,hibernate,3}} = R
+        {current_function, MFA0} = R,
+        true = is_hibernating_mfa(MFA0)
     end,
 
     true = partisan_gen_server:call(my_test_name_hibernate, hibernate),
@@ -1036,10 +1037,10 @@ is_in_erlang_hibernate_1(0, Pid) ->
     ct:fail(not_in_erlang_hibernate_3);
 is_in_erlang_hibernate_1(N, Pid) ->
     {current_function,MFA} = erlang:process_info(Pid, current_function),
-    case MFA of
-    {erlang,hibernate,_Arity} ->
+    case is_hibernating_mfa(MFA) of
+    true ->
         ok;
-    _ ->
+    false ->
         receive after 10 -> ok end,
         is_in_erlang_hibernate_1(N-1, Pid)
     end.
@@ -1053,13 +1054,21 @@ is_not_in_erlang_hibernate_1(0, Pid) ->
     ct:fail(not_in_erlang_hibernate_3);
 is_not_in_erlang_hibernate_1(N, Pid) ->
     {current_function,MFA} = erlang:process_info(Pid, current_function),
-    case MFA of
-        {erlang,hibernate,_Arity} ->
+    case is_hibernating_mfa(MFA) of
+        true ->
             receive after 10 -> ok end,
             is_not_in_erlang_hibernate_1(N-1, Pid);
-        _ ->
+        false ->
             ok
     end.
+
+%% Recognize a hibernating-process current_function. OTP 28's gen_server
+%% hibernation parks the process inside its own `loop_hibernate/4' rather than
+%% inside `erlang:hibernate/_' (which the test was originally written for).
+is_hibernating_mfa({erlang, hibernate, _}) -> true;
+is_hibernating_mfa({partisan_gen_server, loop_hibernate, _}) -> true;
+is_hibernating_mfa({gen_server, loop_hibernate, _}) -> true;
+is_hibernating_mfa(_) -> false.
 
 %% --------------------------------------
 %% Test partisan_gen_server:abcast and handle_cast.
@@ -1609,7 +1618,10 @@ undef_terminate2(Config) when is_list(Config) ->
     ok = partisan_gen_server:stop(Server, {error, test}, infinity),
     ok = verify_down_reason(MRef, Server, {error, test}).
 
-%% Start should return an undef error if init isn't implemented
+%% Start should return an undef error if init isn't implemented.
+%% OTP 28 catches the undef inside start_link and returns the error
+%% synchronously without ever fully spawning the server, so no `{'EXIT', _, _}'
+%% message is delivered to the trap_exit caller.
 undef_init(_Config) ->
     {error, {undef, [{oc_init_server, init, [_], _}|_]}} =
         partisan_gen_server:start(oc_init_server, [], []),
@@ -1617,12 +1629,10 @@ undef_init(_Config) ->
     {error, {undef, [{oc_init_server, init, [_], _}|_]}} =
         (catch partisan_gen_server:start_link(oc_init_server, [], [])),
     receive
-        {'EXIT', Server,
-         {undef, [{oc_init_server, init, [_], _}|_]}} when is_pid(Server) ->
-            partisan:is_pid(Server) orelse ct:fail({bad_pid, Server}),
-            ok
-    after 1000 ->
-        ct:fail(expected_exit_msg)
+        Msg ->
+            ct:fail({unexpected_msg, Msg})
+    after 500 ->
+        ok
     end.
 
 %% The upgrade should fail if code_change is expected in the callback module

@@ -479,9 +479,26 @@ forward_message(RemoteRef, Message, Opts) ->
         orelse error(badarg),
 
     Node = partisan_remote_ref:node(RemoteRef),
-    Target = partisan_remote_ref:target(RemoteRef),
-
-    forward_message(Node, Target, Message, Opts).
+    %% When `connect_disterl' is true, prefer disterl: send directly to the
+    %% native pid/name. Otherwise route through the encoded target so the
+    %% partisan transport handles it.
+    case partisan_config:get(connect_disterl, false) of
+        true ->
+            case partisan:remote_ref_to_disterl(RemoteRef) of
+                {ok, Pid} when is_pid(Pid) ->
+                    _ = (catch erlang:send(Pid, Message, [noconnect])),
+                    ok;
+                {ok, {Name, _Node} = NN} when is_atom(Name) ->
+                    _ = (catch erlang:send(NN, Message, [noconnect])),
+                    ok;
+                _ ->
+                    Target = partisan_remote_ref:target(RemoteRef),
+                    forward_message(Node, Target, Message, Opts)
+            end;
+        false ->
+            Target = partisan_remote_ref:target(RemoteRef),
+            forward_message(Node, Target, Message, Opts)
+    end.
 
 
 %% -----------------------------------------------------------------------------
