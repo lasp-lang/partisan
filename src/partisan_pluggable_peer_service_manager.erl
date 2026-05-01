@@ -512,19 +512,33 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
     %% TODO ServerRef heer can be atom(), pid(), partisan_ref(), {via, _, _},
     %% {Name, Node} or anything !!!!
     %% Local-node forwarding bypasses the forwarding machinery entirely.
-    %% When `connect_disterl` is enabled and the target is remote, use disterl
-    %% directly (previously this wrongly dropped remote messages into the
-    %% local deliver path, which only tries to message a locally-registered
-    %% name).
+    %% When `connect_disterl` is enabled and the target node lives in
+    %% `erlang:nodes()' (i.e. there is a real disterl link to it) we use
+    %% disterl directly so the message arrives even when the partisan
+    %% transport hasn't established a peer connection. We only short-circuit
+    %% when the caller has not asked for any partisan-specific forwarding
+    %% feature — interposition, ack, causal delivery — those need the
+    %% full forward path so `partisan_pluggable_peer_service_manager'
+    %% callbacks can fire.
     case Node =:= partisan:node() of
         true ->
             partisan_peer_service_manager:deliver(ServerRef, Message);
 
         false ->
-            case partisan_config:get(connect_disterl, false) of
+            CanShortCircuit =
+                (is_atom(ServerRef) orelse erlang:is_pid(ServerRef))
+                    andalso partisan_config:get(connect_disterl, false)
+                    andalso lists:member(Node, erlang:nodes())
+                    andalso not maps:is_key(ack, Opts)
+                    andalso not maps:is_key(causal_label, Opts),
+            case CanShortCircuit of
                 true ->
+                    Target = case is_atom(ServerRef) of
+                        true -> {ServerRef, Node};
+                        false -> ServerRef
+                    end,
                     _ = (catch erlang:send(
-                        {ServerRef, Node}, Message, [noconnect]
+                        Target, Message, [noconnect]
                     )),
                     ok;
 

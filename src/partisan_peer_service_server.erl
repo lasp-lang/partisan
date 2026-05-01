@@ -168,7 +168,11 @@ handle_inbound({hello, Node, Channel}, #state{} = State0) ->
     Tag = partisan_config:get(tag, undefined),
 
     %% Store node and channel in the process dictionary.
-    put({?MODULE, peer}, Node),
+    %% The key is read back as `{?MODULE, peer_node}' in `handle_inbound/2'
+    %% to forward incoming messages with the correct origin node — naming
+    %% them differently silently broke interposition (every Node arg ended
+    %% up as `undefined').
+    put({?MODULE, peer_node}, Node),
     put({?MODULE, channel}, Channel),
 
     State = State0#state{peer_node = Node},

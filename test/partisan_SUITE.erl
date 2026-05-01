@@ -1004,7 +1004,10 @@ on_down_test(Config) ->
     ok = rpc:call(Node4, Manager, on_down, [Node3, Callback]),
 
     %% Shutdown, wait for shutdown...
-    {ok, Node3} = ?CT_NODE:stop(Name3),
+    %% Use the partisan_support shim instead of `?CT_NODE:stop' directly:
+    %% the OTP 25+ `peer:stop/1' takes a Peer pid (not a node name like
+    %% the legacy `ct_slave:stop/1'), and the shim hides that difference.
+    {ok, _} = partisan_support:stop_ct_node(Node3),
     ct:sleep(10000),
 
     %% Assert we receive the response.
