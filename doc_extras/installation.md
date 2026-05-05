@@ -90,27 +90,26 @@ modules generator (described below) runs the same way it would under
 
 ## How the Partisan OTP modules generator is triggered
 
-When you compile a project that depends on Partisan you will see two extra
-lines on top of the usual rebar3 output:
+When you compile a project that depends on Partisan you will see one extra
+line on top of the usual rebar3 output:
 
 ```
+Generated 7 partisan OTP module sources into src/
 ===> Compiling partisan
-Generating partisan OTP modules into _build/default/lib/partisan/ebin
-Generated 7 partisan OTP modules: [gen,proc_lib,sys,gen_server,gen_event,
-                                   gen_statem,supervisor]
 ```
 
-That last line is the **OTP modules generator** running. It is wired up
+That first line is the **OTP modules generator** running. It is wired up
 automatically — consumers do not need to add anything to their `rebar.config`
 or `mix.exs`.
 
 ### What it produces
 
 The generator takes the source of OTP's `gen`, `proc_lib`, `sys`,
-`gen_server`, `gen_event`, `gen_statem`, and `supervisor` modules and emits
-Partisan-flavoured copies:
+`gen_server`, `gen_event`, `gen_statem`, and `supervisor` modules and
+writes Partisan-flavoured `.erl` source files into Partisan's own `src/`
+directory:
 
-| OTP module    | Generated module               |
+| OTP module    | Generated source / module      |
 |---------------|--------------------------------|
 | `gen`         | `partisan_gen`                 |
 | `proc_lib`    | `partisan_proc_lib`            |
@@ -123,51 +122,57 @@ Partisan-flavoured copies:
 In each generated module every reference to disterl —
 `erlang:monitor/2,3`, `erlang:demonitor/1,2`, `Pid ! Msg` to a remote
 target, `gen_server:call({Name, Node}, …)`, calls to `rpc`, etc. — is
-rewritten to go through Partisan's transport. The resulting beam files land
-in Partisan's own `ebin/` (i.e. `_build/<profile>/lib/partisan/ebin/`) and
-the generated module names are added to `partisan.app` so they are loadable
-in releases.
+rewritten to go through Partisan's transport. rebar3 then compiles those
+`.erl` files alongside Partisan's other source, so the resulting `.beam`
+files land in Partisan's own `ebin/`
+(`_build/<profile>/lib/partisan/ebin/`) and are picked up automatically
+by the auto-discovered modules list in `partisan.app`.
 
 ### How it gets triggered
 
-The trigger is a rebar3 `post_hooks` registration that lives directly in
+The trigger is a rebar3 `pre_hooks` registration that lives directly in
 Partisan's `rebar.config`:
 
 ```erlang
 %% rebar.config
-{post_hooks, [
-    {compile, "escript priv/generate_otp_modules.escript"}
+{pre_hooks, [
+    {compile, "escript priv/generate_otp_sources.escript"}
 ]}.
 ```
 
-The hook lives in `rebar.config` (not `rebar.config.script`) on purpose:
-some rebar3 versions do not evaluate a dependency's `rebar.config.script`
-the first time the dep is fetched, which silently left consumer projects
-without the generated modules. Putting the hook in `rebar.config` makes it
-unambiguous — rebar3 honours it on every `rebar3 compile`, both inside the
-Partisan repository and inside any project that depends on Partisan.
+It is a **pre-compile** (not post-compile) hook on purpose. When
+Partisan and another Partisan-using dep (e.g. plum_db) are both direct
+deps of a top-level project (e.g. bondy), rebar3 may start the second
+dep's compile before Partisan's post-compile hook can fire — and the
+second dep then fails with `behaviour partisan_gen_supervisor
+undefined`. Generating the sources in a pre-compile hook avoids that
+race entirely: the `partisan_gen_*.beam` files are produced as part of
+Partisan's own normal compile, so they always exist before any
+downstream dep starts compiling.
 
-The escript at `priv/generate_otp_modules.escript` then:
+The escript at `priv/generate_otp_sources.escript`:
 
-1. Loads the just-compiled support modules (`partisan_gen_transform`,
-   `partisan_otp_rewrite`, `partisan_otp_patches`) from Partisan's own
-   `ebin/`.
-2. For each target OTP module, finds its installed beam via `code:which/1`
-   and extracts the abstract syntax tree with
+1. Compiles the three support modules (`partisan_otp_rewrite`,
+   `partisan_otp_patches`, `partisan_gen_transform`) in-memory directly
+   from `src/*.erl`.
+2. For each target OTP module, finds its installed beam via
+   `code:which/1` and extracts the abstract syntax tree with
    `beam_lib:chunks/2`.
 3. Applies the AST rewrite (module renames, BIF rewrites, behaviour
    attribute rewrites, atom-in-data rewrites — see
    `partisan_otp_rewrite:rename_map/0`) plus any version-specific patches
    under `priv/otp/<otp-version>/`.
-4. Compiles the rewritten forms with `compile:forms/2` and writes the
-   resulting beam.
-5. Updates `partisan.app` so the generated module names appear in the
-   `modules` key. This step matters in release mode (embedded), where only
-   modules listed in `.app` are loadable.
+4. Pretty-prints the rewritten forms with `erl_pp:form/1` and writes
+   them as `partisan_gen_server.erl`, `partisan_gen_supervisor.erl`,
+   etc. into Partisan's `src/` directory.
+5. Returns. rebar3 then compiles those `.erl` files alongside the rest
+   of Partisan's source.
 
-The generator is **stateless and deterministic** — the inputs are the
-OTP source on the build host and the rename maps in
-`partisan_otp_rewrite`; the output is fully determined by them.
+The generated `.erl` files are listed in `.gitignore` so they never
+end up in version control. The generator is **stateless and
+deterministic** — the inputs are the OTP source on the build host and
+the rename maps in `partisan_otp_rewrite`; the output is fully
+determined by them.
 
 ### When the generator becomes visible
 
