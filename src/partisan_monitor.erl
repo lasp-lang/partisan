@@ -551,25 +551,23 @@ monitor_nodes(Flag, Opts0) when is_boolean(Flag), is_list(Opts0) ->
 
 
 init([]) ->
-    %% We trap exists so that we get a call to terminate w/reason shutdown when
-    %% the supervisor terminates us. This happens when
-    %% partisan_peer_service:manager() is terminated.
+    ?LOG_WARNING(">>>>> partisan_monitor:init/1 enter"),
     erlang:process_flag(trap_exit, true),
+    ?LOG_WARNING(">>>>> partisan_monitor:init/1 trap_exit set"),
 
     %% We subscribe to node status to implement node monitoring.
-    %% Certain partisan_peer_service_manager implementations might not support
-    %% the on_up and on_down events which we need for node monitoring, so in
-    %% those cases this module will not work.
     Enabled = subscribe_to_node_status(),
+    ?LOG_WARNING(">>>>> partisan_monitor:init/1 subscribed to node status, enabled=~p", [Enabled]),
     _ = persistent_term:put({?MODULE, enabled}, Enabled),
 
-
     _ = subscribe_to_channel_status(),
+    ?LOG_WARNING(">>>>> partisan_monitor:init/1 subscribed to channel status"),
 
     %% partisan_gen behaviours call monitor/2 and demonitor/1 so being
     %% this server one, that would create a deadlock due to a circular call.
     %% We use a static dummy ref for those calls to avoid calling ourselves.
     _ = persistent_term:put(?DUMMY_MREF_KEY, partisan:make_ref()),
+    ?LOG_WARNING(">>>>> partisan_monitor:init/1 dummy ref set"),
 
     TabOpts = [
         named_table,
@@ -588,6 +586,7 @@ init([]) ->
     %% Tables for node status monitoring
     _ = ets:new(?NODE_MON,          [duplicate_bag, {keypos, 1} | TabOpts]),
     _ = ets:new(?NODE_TYPE_MON,     [set, {keypos, 2} | TabOpts]),
+    ?LOG_WARNING(">>>>> partisan_monitor:init/1 ets tables created"),
 
     State = #state{
         enabled = Enabled,
@@ -595,6 +594,7 @@ init([]) ->
         nodes = sets:new([{version, 2}])
     },
 
+    ?LOG_WARNING(">>>>> partisan_monitor:init/1 returning ok"),
     {ok, State}.
 
 
