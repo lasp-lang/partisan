@@ -187,10 +187,13 @@
 %% @end
 %% -----------------------------------------------------------------------------
 start_link() ->
+    ?LOG_WARNING(">>>>> partisan_monitor:start_link/0 BEFORE partisan_gen_server:start_link"),
     Opts = [
         {spawn_opt, ?PARALLEL_SIGNAL_OPTIMISATION([])}
     ],
-    partisan_gen_server:start_link({local, ?MODULE}, ?MODULE, [], Opts).
+    Res = partisan_gen_server:start_link({local, ?MODULE}, ?MODULE, [], Opts),
+    ?LOG_WARNING(">>>>> partisan_monitor:start_link/0 AFTER start_link, result=~p", [Res]),
+    Res.
 
 
 %% -----------------------------------------------------------------------------
