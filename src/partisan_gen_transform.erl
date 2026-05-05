@@ -274,8 +274,10 @@ write_beam(Dir, Module, Binary) ->
 
 
 %% Locate the ebin directory for partisan.
+%% `code:lib_dir/2' is deprecated since OTP 28; use `code:lib_dir/1' and
+%% join the subdirectory ourselves.
 ebin_dir() ->
-    case code:lib_dir(partisan, ebin) of
+    case code:lib_dir(partisan) of
         {error, _} ->
             %% During development/test, search rebar3 output dirs.
             Candidates = [
@@ -286,6 +288,6 @@ ebin_dir() ->
                 [Dir | _] -> filename:absname(Dir);
                 [] -> filename:absname("_build/default/lib/partisan/ebin")
             end;
-        Dir ->
-            Dir
+        LibDir ->
+            filename:join(LibDir, "ebin")
     end.
