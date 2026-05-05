@@ -508,34 +508,6 @@ replace_start_peer_expr(Other) ->
     Other.
 
 
-%% Walk the `groups/0` function and strip the `parallel' atom out of any
-%% group properties list. This converts `[parallel]' (and `[parallel,
-%% shuffle]' etc.) to `[]', forcing CT to run those test cases serially.
-strip_parallel_group_props(Forms) ->
-    [strip_parallel_in_form(F) || F <- Forms].
-
-strip_parallel_in_form({function, Anno, groups, 0, Clauses}) ->
-    {function, Anno, groups, 0,
-     [strip_parallel_in_clause(C) || C <- Clauses]};
-strip_parallel_in_form(Other) ->
-    Other.
-
-strip_parallel_in_clause({clause, Anno, Pats, Guards, Body}) ->
-    {clause, Anno, Pats, Guards,
-     [strip_parallel_in_expr(E) || E <- Body]}.
-
-strip_parallel_in_expr({cons, _Anno, {atom, _, parallel}, Tail}) ->
-    strip_parallel_in_expr(Tail);
-strip_parallel_in_expr({cons, Anno, Head, Tail}) ->
-    {cons, Anno,
-     strip_parallel_in_expr(Head),
-     strip_parallel_in_expr(Tail)};
-strip_parallel_in_expr({tuple, Anno, Elems}) ->
-    {tuple, Anno, [strip_parallel_in_expr(E) || E <- Elems]};
-strip_parallel_in_expr(Other) ->
-    Other.
-
-
 %% OTP test suites reference this internal hook which isn't available
 %% outside OTP's test framework. We remove the {ct_hooks, ...} tuple
 %% from the suite/0 return list.
