@@ -92,26 +92,29 @@ generate_all() ->
     generate_all(ebin_dir()).
 
 %% @doc Generate all modules into the specified ebin directory.
+%%
+%% Writing the beam to `Dir' is best-effort. When this is called as the
+%% runtime fallback from `partisan_app:start/2', the release's ebin is
+%% typically read-only — we still want to load the binary into memory
+%% because that is what makes the module callable for the running node.
+%% Persistence to disk only saves a regeneration on the next cold start.
 generate_all(Dir) ->
-    %% Ensure the output directory exists.
-    ok = filelib:ensure_dir(filename:join(Dir, "dummy")),
+    _ = catch filelib:ensure_dir(filename:join(Dir, "dummy")),
     Results = lists:foldl(
         fun(Module, Acc) ->
             case generate(Module) of
                 {ok, PartisanModule, Binary} ->
-                    case write_beam(Dir, PartisanModule, Binary) of
-                        ok ->
-                            BeamFile = atom_to_list(PartisanModule) ++ ".beam",
-                            case code:load_binary(
-                                PartisanModule, BeamFile, Binary
-                            ) of
-                                {module, PartisanModule} ->
-                                    Acc;
-                                {error, Reason} ->
-                                    [{Module, {load_failed, Reason}} | Acc]
-                            end;
+                    BeamFile = atom_to_list(PartisanModule) ++ ".beam",
+                    %% Best-effort persistence; ignore write failures
+                    %% (read-only release filesystem is fine).
+                    _ = write_beam(Dir, PartisanModule, Binary),
+                    case code:load_binary(
+                        PartisanModule, BeamFile, Binary
+                    ) of
+                        {module, PartisanModule} ->
+                            Acc;
                         {error, Reason} ->
-                            [{Module, {write_failed, Reason}} | Acc]
+                            [{Module, {load_failed, Reason}} | Acc]
                     end;
                 {error, Reason} ->
                     [{Module, Reason} | Acc]

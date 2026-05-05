@@ -130,20 +130,22 @@ in releases.
 
 ### How it gets triggered
 
-The trigger is a rebar3 `post_hooks` registration that lives in
-`rebar.config.script`:
+The trigger is a rebar3 `post_hooks` registration that lives directly in
+Partisan's `rebar.config`:
 
 ```erlang
+%% rebar.config
 {post_hooks, [
     {compile, "escript priv/generate_otp_modules.escript"}
-]}
+]}.
 ```
 
-`rebar.config.script` is a dynamic script that rebar3 evaluates after
-reading `rebar.config` — the script appends this hook to whatever the
-project already had. As a result the hook fires on every `rebar3 compile`,
-both inside the Partisan repository and inside any project that depends on
-Partisan.
+The hook lives in `rebar.config` (not `rebar.config.script`) on purpose:
+some rebar3 versions do not evaluate a dependency's `rebar.config.script`
+the first time the dep is fetched, which silently left consumer projects
+without the generated modules. Putting the hook in `rebar.config` makes it
+unambiguous — rebar3 honours it on every `rebar3 compile`, both inside the
+Partisan repository and inside any project that depends on Partisan.
 
 The escript at `priv/generate_otp_modules.escript` then:
 

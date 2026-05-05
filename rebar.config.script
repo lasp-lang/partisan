@@ -23,21 +23,12 @@ CheckOtpVersion = fun
         exit("OTP version " ++ V ++ " not supported by Partisan. Requires OTP 27+.")
 end,
 
-%% Add post-compile hook to generate partisan OTP modules from the installed
-%% OTP source. The three transform modules (partisan_gen_transform,
-%% partisan_otp_rewrite, partisan_otp_patches) are compiled as regular src/
-%% modules, then the escript uses them to generate partisan_gen_server,
-%% partisan_gen_supervisor, etc.
-AddGenerateHook = fun(Acc) ->
-    Hook = {post_hooks, [{compile, "escript priv/generate_otp_modules.escript"}]},
-    case lists:keyfind(post_hooks, 1, Acc) of
-        {post_hooks, Existing} ->
-            lists:keystore(post_hooks, 1, Acc,
-                {post_hooks, Existing ++ [{compile, "escript priv/generate_otp_modules.escript"}]});
-        false ->
-            [Hook | Acc]
-    end
-end,
+%% NOTE: the post_hook that generates the partisan OTP modules
+%% (`partisan_gen_server', `partisan_gen_statem', …) used to live here. It
+%% has been moved to `rebar.config' so it is honoured deterministically
+%% when partisan is consumed as a hex/git dependency — some rebar3
+%% versions do not evaluate a dep's `rebar.config.script' on first
+%% fetch, which left consumer projects without the generated modules.
 
 %% Adds Eqwalizer support only if Vsn >= "25".
 %% We do this as the Eqwalizer executable doesn't allow us to use a separate
@@ -80,9 +71,9 @@ end,
 
 case Eqwalizer of
     true ->
-        MaybeEqwalizerSupport(Vsn, AddGenerateHook(CheckOtpVersion(Vsn, CONFIG)));
+        MaybeEqwalizerSupport(Vsn, CheckOtpVersion(Vsn, CONFIG));
     false ->
-        AddGenerateHook(CheckOtpVersion(Vsn, CONFIG))
+        CheckOtpVersion(Vsn, CONFIG)
 end.
 
 
