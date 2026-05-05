@@ -17,10 +17,37 @@ Partisan is a runtime system that enables greater scalability and reduced latenc
 * Partisan is the first distributed actor system to expose this level of control to the application developer, improving the performance of existing actor application and enabling new types of actor applications.
 
 ## Getting started
-See the documentation for Partisan at [hex.pm](https://hexdocs.pm/partisan/partisan.html).
 
-Alternatively you can build the documentation yourself locally using `make docs`.
-The resulting documentation will be found in the `docs` directory, just open the `index.html` file with your preferred web browser.
+The full documentation is published at
+[hexdocs.pm/partisan](https://hexdocs.pm/partisan/partisan.html). The
+[Installation tutorial](https://hexdocs.pm/partisan/installation.html)
+walks through adding Partisan as a dependency from rebar3 or Mix and
+explains how the build-time OTP modules generator
+(`partisan_gen_server`, `partisan_gen_statem`, …) is wired up.
+
+In short, for an Erlang project add the dep:
+
+```erlang
+%% rebar.config
+{deps, [{partisan, "5.0.3"}]}.
+```
+
+For an Elixir project:
+
+```elixir
+# mix.exs
+defp deps, do: [{:partisan, "~> 5.0"}]
+```
+
+Then `rebar3 compile` (or `mix deps.get && mix compile`). On every
+compile Partisan automatically generates Partisan-flavoured copies of
+OTP's `gen_server`, `gen_statem`, `supervisor`, etc. into its own
+`ebin/` — no extra configuration is required on the consumer side. See
+the [Installation tutorial](https://hexdocs.pm/partisan/installation.html)
+for the details of how that works and when you would care.
+
+You can build the docs locally with `make docs`; the result lands in
+`doc/` (open `doc/index.html`).
 
 
 ## Why do we need Partisan?
