@@ -43,3 +43,8 @@ src/*.swp
 tags
 TEST-*
 test/*/RAND
+
+# Fly.io private config (account/org/deploy token) — never commit.
+# The tracked template is test/fly/.env.example.
+.env
+test/fly/.env

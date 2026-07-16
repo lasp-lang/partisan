@@ -1,4 +1,3 @@
-# we disable it, as we only enable it for the eqwalize target
 BASE_DIR         = $(shell pwd)
 CONCURRENCY 	 ?= 4
 DEP_DIR         ?= "deps"
@@ -16,10 +15,9 @@ CODESPELL 		= $(shell which codespell)
 SPELLCHECK 	    = $(CODESPELL) -S _build -S doc -S .git -L applys,nd,accout,mattern,pres,fo
 SPELLFIX      	= $(SPELLCHECK) -i 3 -w
 
-PARTISAN_EQWALIZER = 0
 OTPVSN 			= $(shell erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell)
 
-.PHONY: compile-no-deps alt-test core-test otp-test test docs xref dialyzer-run dialyzer-quick dialyzer eqwalizer eqwalize-all\
+.PHONY: compile-no-deps alt-test core-test otp-test test ci-light ci-heavy security-test docs xref dialyzer-run dialyzer-quick dialyzer\
 		cleanplt upload-docs rel deps test plots spellcheck spellfix certs node1 node2 node3 node checkssl
 
 all: compile
@@ -42,26 +40,6 @@ xref: compile
 
 dialyzer: compile
 	${REBAR} dialyzer
-
-# This is super slow as we are invoking equalizer for each source file as
-# opposed to once. We do this becuase we want to ignore modules in the otp_src
-# directory but at the moment Eqwalizer does not allow that option
-eqwalizer: src/*.erl
-ifeq ($(shell expr $(OTPVSN) \> 24),1)
-	export PARTISAN_EQWALIZER=1 && for file in $(shell ls $^ | sed 's|.*/\(.*\)\.erl|\1|'); do elp eqwalize $${file}; done
-else
-	$(info OTPVSN is not higher than 24)
-	$(eval override mytarget=echo "skipping eqwalizer target. Eqwalizer tool  requires OTP25 or higher")
-endif
-
-
-eqwalize-all:
-ifeq ($(shell expr $(OTPVSN) \> 24),1)
-	PARTISAN_EQWALIZER=1 elp eqwalize-all
-else
-	$(info OTPVSN is not higher than 24)
-	$(eval override mytarget=echo "skipping eqwalizer target. Eqwalizer tool  requires OTP25 or higher")
-endif
 
 compile:
 	$(REBAR) compile
@@ -88,7 +66,7 @@ perf:
 kill:
 	pkill -9 beam.smp; pkill -9 epmd; exit 0
 
-check: kill xref dialyzer eqwalizer
+check: kill xref dialyzer
 
 spellcheck:
 	$(if $(CODESPELL), $(SPELLCHECK), $(error "Aborting, command codespell not found in PATH"))
@@ -99,6 +77,15 @@ spellfix:
 
 
 test: eunit core-test otp-test otp-compat-test cover
+
+# CI split (see test/fly/): light suites run on GitHub runners; heavy multi-node
+# suites run on a large Fly.io Machine. `ci-heavy` is what test/fly/run.sh runs.
+ci-light: eunit otp-test otp-compat-test security-test
+
+ci-heavy: core-test alt-test proper
+
+security-test:
+	${REBAR} as test ct -v --readable=false --suite=partisan_security_SUITE
 
 core-test: setup-tls
 	${REBAR} as test ct -v --readable=false --suite=partisan_SUITE

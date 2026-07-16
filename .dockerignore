@@ -1,0 +1,21 @@
+# Keep the Fly build context small. Do NOT exclude src/ include/ test/ priv/
+# otp_src/ config/ rebar.* Makefile — the suite (esp. otp-compat-test) needs them.
+_build/
+deps/
+doc/
+.git/
+.github/
+_notes/
+.claude/
+old-bin/
+protocols/
+analysis/
+annotations/
+*.dump
+*.crashdump
+erl_crash.dump
+TEST-*.xml
+results.csv
+*.beam
+.DS_Store
+test/fly/.env

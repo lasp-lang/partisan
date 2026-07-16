@@ -1,15 +1,50 @@
 # CHANGELOG
-# V6.0.0 (DEVELOP)
-## Fixes
-* Resolves crash on OTP 28 caused by supervisor returning new {timeout, T, Msg} action tuples that the frozen partisan_gen_server did not understand (bad receive timeout value). See Changes section
+# v6.0.0
+
+## Breaking changes
+* **Minimum supported OTP version is now 27** (previously 24). The build now hard-fails on OTP < 27 (`rebar.config.script`).
+* **Removed `partisan_gen_fsm`** (previously deprecated and incomplete). Code based on `gen_fsm` is no longer supported — migrate to `partisan_gen_statem`.
+* **Monitor inter-node protocol changed.** `DOWN` signals are now delivered directly to the monitoring process on the monitor's bound channel (FIFO-ordered with user traffic), and a new inter-node cast `{gc_proc_mon_out, _}` is used for monitor GC.
+    * **Rolling upgrade:** in a mixed v5/v6 cluster a v6 node may send a v5 monitor server a message it does not understand (leaving a stale bookkeeping entry); prefer a full cluster upgrade over long-lived mixed operation. See "Process & Peer Monitoring".
 
 ## Changes
-* **Breaking change*: Minimum supported OTP version is now 27 (previously 24)**
-* Replaced the static OTP module forks in priv/otp/24/ with a compile-time AST transformation system that generates partisan OTP modules from the installed OTP source.
-    * New modules: partisan_gen_transform, partisan_otp_rewrite, partisan_otp_patches — a three-stage pipeline that extracts abstract code from the installed OTP, applies mechanical AST rewrites (module renames, BIF replacements), applies version-adaptive structural patches, and compiles the result
-    * Generated at compile time via `priv/generate_otp_modules.escript` (rebar3 post-compile hook), with a runtime fallback in `partisan_app:start/2` for checkout dependencies
-    * 7 modules generated: partisan_gen, partisan_proc_lib, partisan_sys, partisan_gen_server, partisan_gen_event, partisan_gen_statem, partisan_gen_supervisor
-    * Version-adaptive: Patches automatically adjust to the OTP version (e.g., OTP 28 supervisor replies include hibernate_after_action/1, OTP 27 does not), eliminating the entire class of "OTP N+1 broke our forks" bugs
+### OTP compatibility
+* Replaced the static OTP module forks in `priv/otp/24/` with a compile-time AST transformation system that generates the partisan OTP modules from the installed OTP source.
+    * New modules: `partisan_gen_transform`, `partisan_otp_rewrite`, `partisan_otp_patches` — a pipeline that extracts abstract code from the installed OTP, applies mechanical AST rewrites (module renames, BIF replacements) and version-adaptive structural patches, and compiles the result.
+    * Generated at compile time via `priv/generate_otp_sources.escript` (a rebar3 **pre-compile** hook), with a runtime fallback in `partisan_app:start/2` (`ensure_otp_modules/0`) for checkout dependencies; startup fails with `{partisan_otp_modules_missing, _}` if generation did not run.
+    * 7 modules generated: `partisan_gen`, `partisan_proc_lib`, `partisan_sys`, `partisan_gen_server`, `partisan_gen_event`, `partisan_gen_statem`, `partisan_gen_supervisor`.
+    * Version-adaptive: patches adjust to the OTP version (e.g. OTP 28 supervisor replies include `hibernate_after_action/1`, OTP 27 does not), eliminating the "OTP N+1 broke our forks" bug class.
+* Added `partisan_otp_test_gen` (generator for the OTP-compatibility test suites).
+* Added installation / build documentation (`doc_extras/installation.md`).
+
+### Process & Peer Monitoring
+* Monitors are now bound to a channel for their lifetime; the eventual `DOWN` is delivered on that channel, in order with other traffic on it (matches disterl's "messages before DOWN" guarantee). Added per-channel down detection: a single channel dropping while the node stays up fires `DOWN`/`noconnection` for monitors on that channel only.
+* Monitor failure reason on a transport-level timeout is now reported as `noconnection` (nodedown-style) instead of `timeout`.
+
+### disterl-hybrid routing
+* When `connect_disterl = true`, `partisan:monitor/3` and message forwarding now use native `erlang:monitor`/`erlang:send` for peers reachable over Erlang distribution (narrowed to atom/pid targets with no `ack`/`causal_label` option, so interposition, ack and causal paths still use the partisan transport). Default is unchanged (`connect_disterl = false`).
+
+### Development & tooling
+* Removed eqWAlizer from CI and the build: the `Eqwalize` GitHub workflow, the `make eqwalizer`/`eqwalize-all` targets, and the `eqwalizer_support`/`eqwalizer_rebar3` injection in `rebar.config.script`. Dialyzer remains the static-analysis gate (`make dialyzer` / `make check`). In-source `-eqwalizer(...)` attributes and `%% eqwalizer:ignore` comments are retained (inert without the checker) and can be stripped in a later cleanup.
+* Split CI by resource footprint: the light suites (`compile`, `eunit`, `otp-compat-test`, `otp-test`) run on GitHub runners (`build_and_test.yml`), while the heavy multi-node cluster suites (`partisan_SUITE`, `partisan_alt_SUITE`, PropEr) run on a large ephemeral Fly.io machine — they exceed a GitHub runner's memory. New `make ci-light` / `make ci-heavy` aggregate targets and a `test/fly/` runner.
+* Fixed the dialyzer PLT configuration: the old `{dialyzer_base_plt_apps, ...}` key is not a valid rebar3 option and was silently ignored, so `compiler`, `ssl`, `public_key` and `inets` were absent from the PLT. Replaced with a proper `{dialyzer, [{base_plt_apps, [...]}]}`, clearing ~100 spurious "unknown function" warnings.
+* Adopted `erlfmt` for source formatting (rebar3 plugin + config).
+* Test suite: disabled OTP 25+ `global` `prevent_overlapping_partitions` on the disterl-based CT control plane (`partisan_support`). On OTP 27 it disconnected peer nodes mid-test as HyParView churned connections, making the HyParView cases flaky (`global … requested disconnect … to prevent overlapping partitions`). Partisan itself runs `connect_disterl = false`, so production is unaffected.
+
+## Security
+* Bounded inbound peer message frames: a new `max_message_size` config option (default **64 MB**) sets `{packet_size, _}` on the `{packet, 4}` framing of both the connect (`partisan_peer_service_client`) and accept (`partisan_acceptor_socket`) paths, so an oversized frame is rejected before it is assembled or decoded — closing a pre-authentication memory-exhaustion / decompression-bomb vector on the peer plane.
+* Bounded the server-side TLS handshake: `partisan_peer_socket:accept/1` now passes a timeout (new `tls_handshake_timeout` option, default **5000 ms**) to `ssl:handshake/3`, so a peer that completes the TCP connection but stalls the TLS handshake can no longer pin an acceptor indefinitely.
+* Startup security-posture logging (`partisan_app:start/2`): a `?LOG_WARNING` when cluster TLS is enabled but peers are not verified (`verify_peer` missing → encrypted but MITM-able), and a `?LOG_NOTICE` when the peer plane is plaintext/unauthenticated (`tls = false`), so an insecure peer-plane configuration is surfaced at boot rather than silent. The diagnostic is best-effort and never affects application start.
+* Documentation: replaced the `verify_none` TLS examples (which modelled an unauthenticated, MITM-able configuration) with `verify_peer` mTLS, documented the new `max_message_size` / `tls_handshake_timeout` options, and added a "Securing the cluster peer plane" deployment guide (`doc_extras/cluster_security.md`).
+
+## Fixes
+* Resolves a crash on OTP 28 caused by the supervisor returning new `{timeout, T, Msg}`/`hibernate_after` action tuples the frozen `partisan_gen_server` did not understand.
+* **Interposition:** fixed a pterm key mismatch (`{partisan_peer_service_server, peer}` written but `peer_node` read) that caused the origin `Node` passed to interposition functions on inbound-forwarded messages to always be `undefined`.
+* Fixed `send_request` in the generated `partisan_gen` code to use `{alias, demonitor}` so `[alias | Mref]` replies route correctly.
+* Fixed `partisan_interval_sets:from_list/1`: it now validates every element (including single-element lists) and sorts with a correct total order (`compare_lex`) before compaction. The previous implementation validated only the elements its `usort` comparator happened to touch — so a single-element list was never validated — and could drop distinct intervals sharing a start bound.
+
+## Additions
+* New exports `partisan:remote_ref_to_disterl/1` and `partisan:is_disterl_connected/1` — helpers for disterl-hybrid deployments (`connect_disterl = true`).
 
 # v5.0.3
 ## Fixes

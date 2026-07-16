@@ -246,7 +246,6 @@ handle_message({remove_subscription, Node}, #scamp_v1{} = State0) ->
         true ->
             %% Remove.
             Membership = sets:del_element(Membership0, Node),
-            %% eqwalizer:ignore
             State = State0#scamp_v1{membership = Membership},
             Members = members(State),
 

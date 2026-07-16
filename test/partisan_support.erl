@@ -33,6 +33,13 @@
 start_disterl() ->
     {ok, Hostname} = inet:gethostname(),
     os:cmd(os:find_executable("epmd") ++ " -daemon"),
+    %% The suite drives peers over disterl. OTP 25+ `global' partition
+    %% prevention would disconnect peer nodes mid-test as HyParView churns
+    %% connections (`global ... requested disconnect ... to prevent overlapping
+    %% partitions'), causing flaky failures. Disable it on the runner node
+    %% before distribution starts. Partisan itself uses connect_disterl=false
+    %% in production, so this only affects the test control plane.
+    ok = application:set_env(kernel, prevent_overlapping_partitions, false),
     case net_kernel:start([list_to_atom("runner@" ++ Hostname), shortnames]) of
         {ok, _} ->
             ok;
@@ -598,6 +605,9 @@ start_ct_node(Name, Opts) ->
             ok;
         false ->
             RunnerName = list_to_atom("ct_runner_" ++ os:getpid()),
+            ok = application:set_env(
+                kernel, prevent_overlapping_partitions, false
+            ),
             {ok, _} = net_kernel:start(RunnerName, #{name_domain => shortnames})
     end,
     %% Use the runner's host portion to ensure peer/runner agree on the host.
@@ -624,7 +634,17 @@ start_ct_node(Name, Opts) ->
         name => Name,
         host => Host,
         wait_boot => BootTimeout * 1000,
-        args => ["-setcookie", atom_to_list(Cookie) | PaArgs]
+        args =>
+            [
+                "-setcookie",
+                atom_to_list(Cookie),
+                %% Match the runner: don't let `global' disconnect peers to
+                %% prevent overlapping partitions (flaky HyParView failures).
+                "-kernel",
+                "prevent_overlapping_partitions",
+                "false"
+                | PaArgs
+            ]
     },
     ct:pal(
         "Starting peer name=~p host=~s alive=~p cookie=~p args_count=~p",

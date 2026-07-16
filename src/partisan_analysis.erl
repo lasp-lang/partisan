@@ -480,7 +480,6 @@ intraprocedural(Tree) ->
     % io:format("funs: ~p~n", [[Label || {Label, _Fun} <- dict:to_list(Funs)]]),
 
     %% Initialise Escape to the minimal set of escaped labels.
-    %% eqwalizer:ignore Vars
     Vars1 = dict:store(escape, from_label_list([top, external]), Vars),
 
     %% Enter the fixpoint iteration at the StartFun.
@@ -614,7 +613,6 @@ visit(T, L, St) ->
                     St4 =
                         case type(ApplyOp) of
                             var ->
-                                %% eqwalizer:ignore ApplyOp
                                 VarName = var_name(ApplyOp),
                                 case VarName of
                                     {external, 1} ->
@@ -651,7 +649,6 @@ visit(T, L, St) ->
         primop ->
             As = primop_args(T),
             {Xs, St1} = visit_list(As, L, St),
-            %% eqwalizer:ignore T
             primop_call(atom_val(primop_name(T)), length(Xs), Xs, St1);
         'case' ->
             {Xs, St1} = visit(case_arg(T), L, St),
@@ -1312,7 +1309,6 @@ reverse_postorder_fold(FoldFun, Acc, Tree) ->
         [],
         Tree
     ),
-    %% eqwalizer:ignore ReversePostorderTraversal
     lists:foldr(FoldFun, Acc, ReversePostorderTraversal).
 
 %% TODO: Document me.
@@ -1348,7 +1344,6 @@ analysis_from_function_clause(NamesToFunctions, Top, Tree) ->
                                                 %% This message originated from partisan, so we can track causality.
 
                                                 % io:format("Receive of message type: ~p~n", [MessageType]),
-                                                %% eqwalizer:ignore Clause
                                                 Body = cerl:clause_body(Clause),
                                                 Sends = interprocedural(
                                                     NamesToFunctions, Top, Body
@@ -1407,16 +1402,13 @@ message_type_from_function_clause(Clause) ->
                 true ->
                     case cerl:is_literal(FirstPattern) of
                         true ->
-                            %% eqwalizer:ignore FirstPattern
                             concrete(FirstPattern);
                         false ->
                             top
                     end;
                 false ->
-                    %% eqwalizer:ignore FirstPattern
                     TupleTrees = tuple_es(FirstPattern),
                     % io:format("=> tuple trees: ~p~n", [TupleTrees]),
-                    %% eqwalizer:ignore TupleTrees
                     MessageType = concrete(hd(TupleTrees)),
                     % io:format("=> message type: ~p~n", [MessageType]),
                     MessageType
@@ -1445,7 +1437,6 @@ message_type_from_args(Args) ->
             end;
         false ->
             TupleTrees = tuple_es(Tree),
-            %% eqwalizer:ignore TupleTrees
             concrete(hd(TupleTrees))
     end.
 

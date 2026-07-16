@@ -56,6 +56,7 @@ init([PeerIP, PeerPort]) ->
         {mode, binary},
         {ip, PeerIP},
         {packet, 4},
+        {packet_size, partisan_config:get(max_message_size)},
         {reuseaddr, true},
         {nodelay, true},
         {keepalive, true}
@@ -66,7 +67,6 @@ init([PeerIP, PeerPort]) ->
             %% it in the config
             ok = maybe_update_port_config(PeerIP, PeerPort, Socket),
             %% acceptor could close the socket if there is a problem
-            %% eqwalizer:ignore Socket
             MRef = monitor(port, Socket),
             partisan_acceptor_pool:accept_socket(Socket, AcceptorPoolSize),
             {ok, {Socket, MRef}};

@@ -245,7 +245,6 @@ connect(#{listen_addrs := ListenAddrs} = NodeSpec, #{prune := true}) ->
     ),
     {ok, ToPrune};
 connect(#{listen_addrs := ListenAddrs} = NodeSpec, #{prune := false}) ->
-    %% eqwalizer:ignore
     ok = lists:foreach(
         fun(ListenAddr) ->
             maybe_connect(NodeSpec, ListenAddr, ok)
@@ -593,7 +592,6 @@ do_deliver(Name, Message) when is_atom(Name) ->
     Pid = whereis(Name),
 
     ?LOG_TRACE_IF(
-        %% eqwalizer:ignore
         Pid == undefined orelse not is_process_alive(Pid),
         "Process ~p is NOT ALIVE.",
         [Name]

@@ -21,7 +21,7 @@ From [hex.pm](https://hex.pm/packages/partisan):
 ```erlang
 %% rebar.config
 {deps, [
-    {partisan, "5.0.3"}
+    {partisan, "6.0.0"}
 ]}.
 ```
 
@@ -31,7 +31,7 @@ From a git tag (useful for tracking unreleased fixes):
 %% rebar.config
 {deps, [
     {partisan,
-        {git, "https://github.com/lasp-lang/partisan.git", {tag, "5.0.3"}}
+        {git, "https://github.com/lasp-lang/partisan.git", {tag, "6.0.0"}}
     }
 ]}.
 ```
@@ -60,7 +60,7 @@ From hex.pm:
 # mix.exs
 defp deps do
   [
-    {:partisan, "~> 5.0"}
+    {:partisan, "~> 6.0"}
   ]
 end
 ```
@@ -72,7 +72,7 @@ defp deps do
   [
     {:partisan,
       git: "https://github.com/lasp-lang/partisan.git",
-      tag: "5.0.3"}
+      tag: "6.0.0"}
   ]
 end
 ```

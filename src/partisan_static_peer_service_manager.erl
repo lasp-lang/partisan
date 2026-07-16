@@ -265,19 +265,15 @@ handle_call({reserve, _Tag}, _From, State) ->
 handle_call({leave, _Node}, _From, State) ->
     {reply, error, State};
 handle_call({join, #{name := Node} = Spec}, _From, #state{} = State) ->
-    %% eqwalizer:ignore
     ok = partisan_util:maybe_connect_disterl(Node),
 
     %% Add to list of pending connections.
     Pending = [Spec | State#state.pending],
 
     %% Trigger connection.
-    %% eqwalizer:ignore
     ok = partisan_peer_service_manager:connect(Spec),
-    %% eqwalizer:ignore
     {reply, ok, State#state{pending = Pending}};
 handle_call({send_message, Name, Message}, _From, #state{} = State) ->
-    %% eqwalizer:ignore
     Result = do_send_message(Name, Message),
     {reply, Result, State};
 handle_call(
@@ -285,7 +281,6 @@ handle_call(
     _From,
     #state{} = State
 ) ->
-    %% eqwalizer:ignore
     Result = do_send_message(Name, {forward_message, ServerRef, Message}),
     {reply, Result, State};
 handle_call({receive_message, Channel, Message}, _From, State) ->

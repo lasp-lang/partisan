@@ -178,33 +178,9 @@ to_flat_list(Set) ->
 %% -----------------------------------------------------------------------------
 -spec from_list(List :: [element()]) -> Sets :: t().
 
-from_list(L0) ->
-    L1 = lists:usort(
-        fun
-            ({V1, V2} = E1, {V3, _} = E2) ->
-                ok = validate_element(E1),
-                ok = validate_element(E2),
-                V2 =< V3 orelse V1 =< V3;
-            ({V1, _} = E1, E2) when is_integer(E2) ->
-                ok = validate_element(E1),
-                V1 =< E2;
-            (E1, {V1, _} = E2) when is_integer(E1) ->
-                ok = validate_element(E2),
-                E1 =< V1;
-            (E1, E2) when is_integer(E1), is_integer(E2), E1 < E2 ->
-                true;
-            (E1, E2) ->
-                ok = validate_element(E1),
-                ok = validate_element(E2),
-                false
-        end,
-        L0
-    ),
-    compact(L1).
-
 from_list(List) ->
     ok = lists:foreach(fun(E) -> validate_element(E) end, List),
-    compact(lists:usort(fun(A, B) -> compare_lex(A, B) end)).
+    compact(lists:usort(fun(A, B) -> compare_lex(A, B) end, List)).
 
 %% -----------------------------------------------------------------------------
 %% @doc Return 'true' if Element is an element of Sets, else 'false'.
@@ -675,14 +651,11 @@ do_element_subtract(_, _) ->
     error(badarg).
 
 compare_lex({H1, T1}, {H2, T2}) ->
-    (H1 < H2) or (H1 == H2 and T1 =< T2);
-
+    (H1 < H2) orelse (H1 == H2 andalso T1 =< T2);
 compare_lex({H, T}, N) when is_integer(N) ->
-    (H < N) or (H == N and T =< N);
-
+    (H < N) orelse (H == N andalso T =< N);
 compare_lex(N, {H, T}) when is_integer(N) ->
-    (N < H) or (N == H and H =< T);
-
+    (N < H) orelse (N == H andalso H =< T);
 compare_lex(E1, E2) when is_integer(E1) andalso is_integer(E2) ->
     E1 =< E2.
 

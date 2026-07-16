@@ -153,8 +153,6 @@
 -compile({no_auto_import, [is_reference/1]}).
 -compile({no_auto_import, [node/1]}).
 
--eqwalizer({nowarn_function, register_local_pid/1}).
-
 -dialyzer([{nowarn_function, encode/3}, no_improper_lists]).
 
 %% =============================================================================
@@ -668,7 +666,6 @@ encode(Pid, Node, Format) when erlang:is_pid(Pid) ->
 
     case Format of
         improper_list ->
-            %% eqwalizer:ignore improper_list
             [Node | list_to_binary("#Pid" ++ PidStr)];
         uri ->
             PidBin = untag(PidStr),
@@ -680,7 +677,6 @@ encode(Pid, Node, Format) when erlang:is_pid(Pid) ->
     end;
 encode(Ref, Node, improper_list) when erlang:is_reference(Ref) ->
     Node =:= partisan:node() orelse error(badarg),
-    %% eqwalizer:ignore improper_list
     [Node | list_to_binary(ref_to_list(Ref))];
 encode(Ref, Node, uri) when erlang:is_reference(Ref) ->
     %% We do not support reference rewriting
@@ -694,7 +690,6 @@ encode(Ref, Node, tuple) when erlang:is_reference(Ref) ->
     Target = {encoded_ref, erlang:ref_to_list(Ref)},
     {?MODULE, Node, Target};
 encode(Name, Node, improper_list) when is_atom(Name) ->
-    %% eqwalizer:ignore improper_list
     [Node | list_to_binary("#Name" ++ atom_to_list(Name))];
 encode(Name, Node, uri) when is_atom(Name) ->
     NameBin = atom_to_binary(Name, utf8),
@@ -864,7 +859,6 @@ do_is_local(Bin, Nodestring, TargetAsBin) ->
 
 untag(String0) ->
     String1 = string:replace(String0, "<", ""),
-    %% eqwalizer:ignore String1
     iolist_to_binary(string:replace(String1, ">", "")).
 
 %% @private

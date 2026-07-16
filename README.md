@@ -1,6 +1,6 @@
 <img alt="Partisan" width="600" src="https://github.com/lasp-lang/partisan/blob/e4ec25b547c4d50000250b904690b26594b3e72e/assets/partisan_logo_black.png?raw=true">
 
-![Version](https://img.shields.io/badge/version-5.0.0--rc.8-blue?style=for-the-badge)  
+![Version](https://img.shields.io/badge/version-6.0.0-blue?style=for-the-badge)  
 ![Core Test Suite](https://img.shields.io/github/actions/workflow/status/lasp-lang/partisan/build_and_test.yml?&branch=master&label=core-test-suite&style=for-the-badge)
 ![OTP Test Suite](https://img.shields.io/github/actions/workflow/status/lasp-lang/partisan/otp-test.yml?&branch=master&label=otp-test-suite&style=for-the-badge)
 ![Alt Test Suite](https://img.shields.io/github/actions/workflow/status/lasp-lang/partisan/alt-test.yml?&branch=master&label=alt-test-suite&style=for-the-badge)
@@ -29,14 +29,14 @@ In short, for an Erlang project add the dep:
 
 ```erlang
 %% rebar.config
-{deps, [{partisan, "5.0.3"}]}.
+{deps, [{partisan, "6.0.0"}]}.
 ```
 
 For an Elixir project:
 
 ```elixir
 # mix.exs
-defp deps, do: [{:partisan, "~> 5.0"}]
+defp deps, do: [{:partisan, "~> 6.0"}]
 ```
 
 Then `rebar3 compile` (or `mix deps.get && mix compile`). On every
@@ -104,7 +104,7 @@ Partisan was designed to increase scalability, reduce latency and improve failur
 
 ## Requirements
 
-* Erlang/OTP 24+
+* Erlang/OTP 27+
 
 ## Who is using Partisan
 

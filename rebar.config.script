@@ -2,18 +2,8 @@
 %% ex: ts=4 sw=4 ft=erlang et
 %%
 
-%% We will add the location of the OTP patched modules based on the
-%% OTP version
-Vsn = erlang:system_info(otp_release),
 %% CONFIG is a special variable injected by rebar3.
-Eqwalizer =
-    case os:getenv("PARTISAN_EQWALIZER", false) of
-        Var when Var == "1" orelse Var == "true" ->
-            true;
-        _ ->
-            false
-    end,
-
+Vsn = erlang:system_info(otp_release),
 
 %% Check minimum OTP version.
 CheckOtpVersion = fun
@@ -30,51 +20,4 @@ end,
 %% versions do not evaluate a dep's `rebar.config.script' on first
 %% fetch, which left consumer projects without the generated modules.
 
-%% Adds Eqwalizer support only if Vsn >= "25".
-%% We do this as the Eqwalizer executable doesn't allow us to use a separate
-%% rebar3 profile.
-MaybeEqwalizerSupport = fun
-    (V, Acc0) when V >= "25" ->
-        {profiles, Profiles0} = lists:keyfind(profiles, 1, Acc0),
-        {test, Test0} = lists:keyfind(test, 1, Profiles0),
-        {deps, Deps0} = lists:keyfind(deps, 1, Test0),
-        Deps = Deps0 ++ [
-            {eqwalizer_support,
-                {
-                  git_subdir,
-                  "https://github.com/whatsapp/eqwalizer.git",
-                  {tag, "v0.17.16"},
-                  "eqwalizer_support"
-                }
-            }
-        ],
-        Test = lists:keystore(deps, 1, Test0, {deps, Deps}),
-        Profiles = lists:keystore(test, 1, Profiles0, {test, Test}),
-        Acc1 = lists:keystore(profiles, 1, Acc0, {profiles, Profiles}),
-
-        {project_plugins, Plugs0} = lists:keyfind(project_plugins, 1, Acc1),
-        Plugs = Plugs0 ++ [
-            {eqwalizer_rebar3,
-              {
-                git_subdir,
-                "https://github.com/whatsapp/eqwalizer.git",
-                {branch, "main"},
-                "eqwalizer_rebar3"
-              }
-            }
-        ],
-        lists:keystore(deps, 1, Acc1, {project_plugins, Plugs});
-
-    (_, Acc) ->
-        Acc
-end,
-
-case Eqwalizer of
-    true ->
-        MaybeEqwalizerSupport(Vsn, CheckOtpVersion(Vsn, CONFIG));
-    false ->
-        CheckOtpVersion(Vsn, CONFIG)
-end.
-
-
-
+CheckOtpVersion(Vsn, CONFIG).

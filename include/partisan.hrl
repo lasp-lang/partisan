@@ -283,6 +283,14 @@
 -define(OVERRIDE_PERIODIC_INTERVAL, 10000).
 
 -define(DEFAULT_LAZY_TICK_PERIOD, 1000).
+
+%% Max size (bytes) of an inbound peer message frame; larger frames are
+%% rejected before decode (pre-auth DoS guard). 64 MB.
+-define(DEFAULT_MAX_MESSAGE_SIZE, 67108864).
+
+%% Timeout (ms) for the server-side TLS handshake on an inbound peer
+%% connection; bounds a stalled handshake so it cannot pin an acceptor.
+-define(DEFAULT_TLS_HANDSHAKE_TIMEOUT, 5000).
 -define(DEFAULT_EXCHANGE_TICK_PERIOD, 10000).
 
 -if(?OTP_RELEASE >= 25).

@@ -1,4 +1,4 @@
-name: Core Test Suites
+name: Build & light tests (GitHub runners)
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ jobs:
       matrix:
         otp: ['27.3', '28.3']
         rebar3: ['3.24']
-        test_target: ['compile', 'eunit', 'otp-compat-test']
+        test_target: ['compile', 'eunit', 'otp-compat-test', 'otp-test']
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,3 +38,7 @@ jobs:
       - name: OTP Compatibility Tests
         if: matrix.test_target == 'otp-compat-test'
         run: make otp-compat-test
+
+      - name: OTP behaviour suites
+        if: matrix.test_target == 'otp-test'
+        run: make otp-test

@@ -1,0 +1,22 @@
+# Root Fly config for the heavy-test-runner app. Kept at repo root so
+# `fly deploy` builds with the repository as the Docker context (the Dockerfile
+# does `COPY . .`). The Dockerfile + scripts live under test/fly/. See
+# test/fly/README.md.
+
+app = "partisan-ci"
+primary_region = "lhr"
+
+[build]
+  dockerfile = "test/fly/Dockerfile"
+
+[env]
+  TEST_TARGET = "ci-heavy"
+
+# One-off test runner: the machine runs the suite once and exits. Do NOT
+# restart on exit (a non-zero test result must not loop the machine).
+[[restart]]
+  policy = "never"
+
+[[vm]]
+  size = "performance-8x"
+  memory = "16gb"

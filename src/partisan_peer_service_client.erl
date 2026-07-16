@@ -292,6 +292,7 @@ connect(#{ip := Address, port := Port}, Channel, ChannelOpts) when
         binary,
         {active, once},
         {packet, 4},
+        {packet_size, partisan_config:get(max_message_size)},
         {keepalive, true}
     ],
 

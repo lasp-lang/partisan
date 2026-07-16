@@ -50,13 +50,16 @@ the `partisan' application section.
          {certfile, "config/_ssl/server/keycert.pem"},
          {cacertfile, "config/_ssl/server/cacerts.pem"},
          {keyfile, "config/_ssl/server/key.pem"},
-         {verify, verify_none}
+         %% Authenticate peers with a cert signed by the cluster CA.
+         %% verify_none would encrypt but NOT authenticate (MITM-able).
+         {verify, verify_peer},
+         {fail_if_no_peer_cert, true}
      ]},
      {tls_client_options, [
          {certfile, "config/_ssl/client/keycert.pem"},
          {cacertfile, "config/_ssl/client/cacerts.pem"},
          {keyfile, "config/_ssl/client/key.pem"},
-         {verify, verify_none}
+         {verify, verify_peer}
      ]}
  ]}
 ].
@@ -269,17 +272,25 @@ The role of this node when using the Client-Server topology implemented by @{lin
 *   `client' - The node acts as a client. To be used only in combination with `{partisan_peer_manager, partisan_client_server_peer_manager}'
 *   `server' - The node acts as a server. To be used only in combination with `{partisan_peer_manager, partisan_client_server_peer_manager}'
 
+#### max_message_size
+
+Maximum size in bytes of an inbound peer message frame. Frames larger than this are rejected before they are assembled or decoded, guarding against pre-authentication memory exhaustion and decompression bombs on the peer plane. The default is `67108864' (64 MB).
+
 #### tls
 
-A boolean value indicating whether channel connections should use TLS. If enabled, you have to provide a value for `tls_client_options' and `tls_server_options'. The default is `false'.
+A boolean value indicating whether peer connections should use TLS. If enabled you must provide `tls_client_options' and `tls_server_options'. The default is `false'. NOTE: for authenticated (non-MITM-able) clustering set `{verify, verify_peer}' with a cluster CA on BOTH sides; `verify_none' only encrypts and does NOT authenticate the peer.
 
 #### tls_client_options
 
-The TLS socket options used when establishing outgoing connections to peers. The configuration applies to all Partisan channels. The default is `[]'. ==== Example ==== ``` {tls_client_options, [ {certfile, "config/_ssl/client/keycert.pem"}, {cacertfile, "config/_ssl/client/cacerts.pem"}, {keyfile, "config/_ssl/client/key.pem"}, {verify, verify_none} ]} '''
+The TLS socket options used when establishing outgoing connections to peers. The configuration applies to all Partisan channels. The default is `[]'. ==== Example ==== ``` {tls_client_options, [ {certfile, "config/_ssl/client/keycert.pem"}, {cacertfile, "config/_ssl/client/cacerts.pem"}, {keyfile, "config/_ssl/client/key.pem"}, {verify, verify_peer} ]} '''
+
+#### tls_handshake_timeout
+
+Timeout in milliseconds for the server-side TLS handshake on an inbound peer connection. Bounds a stalled handshake so it cannot pin an acceptor. The default is `5000'.
 
 #### tls_server_options
 
-The TLS socket options used when establishing incoming connections from peers. The configuration applies to all Partisan channels. The default is `[]'. ==== Example ==== ``` {tls_server_options, [ {certfile, "config/_ssl/server/keycert.pem"}, {cacertfile, "config/_ssl/server/cacerts.pem"}, {keyfile, "config/_ssl/server/key.pem"}, {verify, verify_none} ]} '''
+The TLS socket options used when establishing incoming connections from peers. The configuration applies to all Partisan channels. The default is `[]'. ==== Example ==== ``` {tls_server_options, [ {certfile, "config/_ssl/server/keycert.pem"}, {cacertfile, "config/_ssl/server/cacerts.pem"}, {keyfile, "config/_ssl/server/key.pem"}, {verify, verify_peer}, {fail_if_no_peer_cert, true} ]} '''
 
 #### tracing
 
@@ -474,6 +485,9 @@ init() ->
             {hyparview, ?HYPARVIEW_DEFAULTS},
             {ingress_delay, 0},
             {lazy_tick_period, ?DEFAULT_LAZY_TICK_PERIOD},
+            %% Max size (bytes) of an inbound peer message frame; frames larger
+            %% than this are rejected before decode (pre-auth DoS guard).
+            {max_message_size, ?DEFAULT_MAX_MESSAGE_SIZE},
             {membership_binary_compression, true},
             {membership_strategy, ?DEFAULT_MEMBERSHIP_STRATEGY},
             {membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING},
@@ -505,6 +519,7 @@ init() ->
             {tag, DefaultTag},
             {tls, false},
             {tls_client_options, []},
+            {tls_handshake_timeout, ?DEFAULT_TLS_HANDSHAKE_TIMEOUT},
             {tls_server_options, []},
             {tracing, false},
             {transmission_logging_mfa, undefined}

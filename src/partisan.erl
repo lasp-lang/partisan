@@ -169,6 +169,7 @@
 -export([forward_message/4]).
 -export([is_connected/1]).
 -export([is_connected/2]).
+-export([is_disterl_connected/1]).
 -export([is_fully_connected/1]).
 -export([is_local/1]).
 -export([is_local_name/1]).
@@ -208,14 +209,6 @@
 -compile({no_auto_import, [spawn/4]}).
 -compile({no_auto_import, [spawn_monitor/2]}).
 -compile({no_auto_import, [spawn_monitor/4]}).
-
--eqwalizer({nowarn_function, make_ref/0}).
--eqwalizer({nowarn_function, self/0}).
--eqwalizer({nowarn_function, self/1}).
--eqwalizer({nowarn_function, is_local_name/2}).
--eqwalizer({nowarn_function, is_local_pid/2}).
--eqwalizer({nowarn_function, is_local_reference/2}).
--eqwalizer({nowarn_function, to_net_kernel_opts/1}).
 
 %% =============================================================================
 %% API
@@ -430,7 +423,6 @@ monitor(process, RemoteRef, Opts) ->
         {ok, {Name, _Node} = NN} when is_atom(Name) ->
             erlang:monitor(process, NN, to_erl_monitor_opts(Opts));
         _ ->
-            %% eqwalizer:ignore RemoteRef
             partisan_monitor:monitor(RemoteRef, Opts)
     end;
 monitor(Type, Term, Opts) when Type == port orelse Type == time_offset ->
@@ -748,7 +740,6 @@ node(Arg) when
             end
     end;
 node(Arg) ->
-    %% eqwalizer:ignore We assume this is a partisan_remote_ref:t()
     partisan_remote_ref:node(Arg).
 
 %% -----------------------------------------------------------------------------
@@ -1016,7 +1007,6 @@ node_spec(Node, Opts) when is_atom(Node), is_map(Opts) ->
                     A = [],
                     case partisan_rpc:call(Node, M, F, A, Timeout) of
                         #{name := Node} = Spec ->
-                            %% eqwalizer:ignore
                             {ok, Spec};
                         {badrpc, Reason} ->
                             {error, Reason}
@@ -1099,7 +1089,6 @@ is_process_alive(Pid) when erlang:is_pid(Pid) ->
 is_process_alive(RemoteRef) ->
     case partisan_remote_ref:is_local_pid(RemoteRef) of
         true ->
-            %% eqwalizer:ignore It's local so this call won't fail
             erlang:is_process_alive(partisan_remote_ref:to_term(RemoteRef));
         false ->
             Node = node(RemoteRef),
@@ -1127,7 +1116,6 @@ exit(RemoteRef, Reason) ->
         Pid when erlang:is_pid(Pid) ->
             erlang:exit(Pid, Reason);
         Name when is_atom(Name) ->
-            %% eqwalizer:ignore We know it's a pid
             erlang:exit(whereis(Name), Reason)
     catch
         error:badarg ->
@@ -1171,10 +1159,8 @@ send(Dest, Msg) ->
 send(Dest, Msg, Opts) ->
     case partisan_config:get(connect_disterl) of
         true ->
-            %% eqwalizer:ignore
             erlang:send(Dest, Msg, to_erl_send_opts(Opts));
         false ->
-            %% eqwalizer:ignore
             forward_message(Dest, Msg, Opts)
     end.
 
@@ -1336,7 +1322,6 @@ spawn(Node, Fun) ->
     case Node == node() of
         true ->
             Pid = erlang:spawn(Fun),
-            %% eqwalizer:ignore This MUST be a pid()
             partisan_remote_ref:from_term(Pid);
         false ->
             case partisan_rpc:call(Node, erlang, spawn, [Fun], 5000) of
@@ -1351,13 +1336,10 @@ spawn(Node, Fun) ->
                             erlang:exit(process_exit_reason(Reason))
                         end
                     ),
-                    %% eqwalizer:ignore It's a pid so this call won't fail
                     partisan_remote_ref:from_term(Pid);
                 Pid when erlang:is_pid(Pid) ->
-                    %% eqwalizer:ignore It's a pid so this call won't fail
                     partisan_remote_ref:from_term(Pid, Node);
                 Encoded ->
-                    %% eqwalizer:ignore This MUST be remote_pid()
                     Encoded
             end
     end.
@@ -1374,7 +1356,6 @@ spawn(Node, Module, Function, Args) ->
     case Node == node() of
         true ->
             Pid = erlang:spawn(Module, Function, Args),
-            %% eqwalizer:ignore It's a pid so this call won't fail
             partisan_remote_ref:from_term(Pid);
         false ->
             SpawnArgs = [Module, Function, Args],
@@ -1392,10 +1373,8 @@ spawn(Node, Module, Function, Args) ->
                             erlang:exit(process_exit_reason(Reason))
                         end
                     ),
-                    %% eqwalizer:ignore It's a pid so this call won't fail
                     partisan_remote_ref:from_term(Pid);
                 EncodedPid ->
-                    %% eqwalizer:ignore we know this is correct
                     EncodedPid
             end
     end.
@@ -1654,10 +1633,18 @@ process_exit_reason(not_yet_connected) ->
 process_exit_reason(_) ->
     noproc.
 
-%% @private
-%% True if the target lives on a node we already have a disterl connection
-%% to (or is local). Caller uses this to prefer disterl-based monitoring,
-%% which detects noconnection promptly.
+%% -----------------------------------------------------------------------------
+%% @doc Returns `true' if `Target' resides on the local node or on a node to
+%% which this node currently holds an Erlang distribution (disterl) connection;
+%% otherwise `false'. With `connect_disterl' enabled this lets a caller decide
+%% whether a target can be reached/monitored over disterl (which detects
+%% `noconnection' promptly) rather than over the Partisan overlay. `Target' is a
+%% pid or a `{RegisteredName, Node}' tuple; any other term returns `false'.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_disterl_connected(Target :: pid() | {atom(), node()} | term()) ->
+    boolean().
+
 is_disterl_connected(Pid) when erlang:is_pid(Pid) ->
     Node = erlang:node(Pid),
     Node =:= erlang:node() orelse

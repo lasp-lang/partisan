@@ -74,7 +74,8 @@ accept(TCPSocket) ->
             %% calling this function, else the upgrade succeeds or does not
             %% succeed depending on timing.
             inet:setopts(TCPSocket, [{active, false}]),
-            {ok, TLSSocket} = ssl:handshake(TCPSocket, TLSOpts),
+            HSTimeout = partisan_config:get(tls_handshake_timeout),
+            {ok, TLSSocket} = ssl:handshake(TCPSocket, TLSOpts, HSTimeout),
             %% restore the expected active once setting
             ssl:setopts(TLSSocket, [{active, once}]),
             #partisan_peer_socket{

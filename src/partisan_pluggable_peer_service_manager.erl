@@ -1023,18 +1023,15 @@ handle_cast({kill_connections, Nodes}, State) ->
     {noreply, State};
 handle_cast({receive_message, Node, Channel, From, Msg0}, State) ->
     %% Filter messages using interposition functions.
-    %% eqwalizer:ignore Node
     Msg1 = ?FIRE_INTERPOSITIONS(
         receive_message, Node, Msg0, State#state.interposition_funs
     ),
-    %% eqwalizer:ignore Node
     ok = ?FIRE_POST_INTERPOSITIONS(
         receive_message, Node, Msg0, Msg1, State#state.post_interposition_funs
     ),
 
     case Msg1 of
         undefined ->
-            %% eqwalizer:ignore From
             gen_server:reply(From, ok),
             {noreply, State};
         {'$delay', Msg} ->
@@ -1057,7 +1054,6 @@ handle_cast(
         vclock = VClock0
     } = State,
 
-    %% eqwalizer:ignore Node
     Msg = ?FIRE_INTERPOSITIONS(
         forward_message, Node, Msg0, State#state.interposition_funs
     ),
@@ -1066,7 +1062,6 @@ handle_cast(
     VClock = partisan_vclock:increment(State#state.name, VClock0),
 
     %% Are we using causality?
-    %% eqwalizer:ignore Opts
     CausalLabel = maps:get(causal_label, Opts, undefined),
 
     %% Use local information for message unless it's a causal message.
@@ -1437,7 +1432,6 @@ handle_info({'EXIT', Pid, Reason}, State0) ->
     }),
 
     %% A connection has closed, prune it from the connections table
-    %% eqwalizer:ignore Pid
     try partisan_peer_connections:prune(Pid) of
         {Info, [Connection]} ->
             NodeSpec = partisan_peer_connections:node_spec(Info),

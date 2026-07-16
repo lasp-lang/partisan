@@ -198,8 +198,6 @@
 -export([terminate/2]).
 -export([code_change/3]).
 
--eqwalizer({nowarn_function, start_link/5}).
-
 %% =============================================================================
 %% API
 %% =============================================================================
@@ -439,7 +437,6 @@ exchanges(Node, Timeout) ->
     %% gen_server:call({?SERVER, Node}, exchanges, infinity).
     case partisan_rpc:call(Node, ?SERVER, exchanges, [], Timeout) of
         {ok, _} = OK ->
-            %% eqwalizer:ignore
             OK;
         {badrpc, _} = Reason ->
             {error, Reason}
@@ -636,7 +633,6 @@ handle_cast({update, NodeList}, #state{} = State) when is_list(NodeList) ->
                 ?LOG_DEBUG(
                     "new peers, eager: ~p, lazy: ~p", [EagerPeers, LazyPeers]
                 ),
-                %% eqwalizer:ignore Members
                 reset_peers(Members, EagerPeers, LazyPeers, State)
         end,
     State2 = neighbors_down(Removed, State1),
@@ -731,10 +727,8 @@ debug_get_peers(Node, Root, Timeout) ->
                 {badrpc, Reason} ->
                     error(Reason);
                 {_, _} = Result ->
-                    %% eqwalizer:ignore
                     Result;
                 {_, _, _} = Result ->
-                    %% eqwalizer:ignore
                     Result
             end
     end.
@@ -760,10 +754,8 @@ debug_get_peers(Node, Root, Opts, Timeout) ->
                 {badrpc, Reason} ->
                     error(Reason);
                 {_, _} = Result ->
-                    %% eqwalizer:ignore
                     Result;
                 {_, _, _} = Result ->
-                    %% eqwalizer:ignore
                     Result
             end
     end.

@@ -67,8 +67,6 @@
 -callback download_artifact(term(), node()) -> term().
 -callback upload_artifact(term(), node(), term()) -> term().
 
--eqwalizer({nowarn_function, breadth_first/3}).
-
 %% =============================================================================
 %% API
 %% =============================================================================

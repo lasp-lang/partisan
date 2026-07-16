@@ -91,8 +91,6 @@ an atom indicating termination conditions: `max_retries` or `deadline`.
 
 -compile({no_auto_import, [get/1]}).
 
--eqwalizer({nowarn_function, init/2}).
-
 %% =============================================================================
 %% API
 %% =============================================================================
@@ -189,7 +187,6 @@ fail(#partisan_retry{backoff = undefined} = State0) ->
         count = State0#partisan_retry.count + 1
     },
     State = maybe_init_ts(State1),
-    %% eqwalizer:ignore
     {get(State), State};
 fail(#partisan_retry{backoff = B0} = State0) ->
     {_, B1} = backoff:fail(B0),
@@ -199,7 +196,6 @@ fail(#partisan_retry{backoff = B0} = State0) ->
         backoff = B1
     },
     State = maybe_init_ts(State1),
-    %% eqwalizer:ignore
     {get(State), State}.
 
 ?DOC("""
@@ -216,7 +212,6 @@ succeed(#partisan_retry{backoff = undefined} = State0) ->
         count = 0,
         start_ts = undefined
     },
-    %% eqwalizer:ignore
     {get(State), State};
 succeed(#partisan_retry{backoff = B0} = State0) ->
     {_, B1} = backoff:succeed(B0),
@@ -225,7 +220,6 @@ succeed(#partisan_retry{backoff = B0} = State0) ->
         start_ts = undefined,
         backoff = B1
     },
-    %% eqwalizer:ignore
     {get(State), State}.
 
 ?DOC("""
