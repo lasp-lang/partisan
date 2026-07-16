@@ -63,8 +63,10 @@ node_num_nodes() ->
 
 %% What node-specific operations should be called.
 node_commands() ->
-    [{call, ?MODULE, write, [primary_node_name(), key(), value()]},
-     {call, ?MODULE, read, [primary_node_name(), key()]}].
+    [
+        {call, ?MODULE, write, [primary_node_name(), key(), value()]},
+        {call, ?MODULE, read, [primary_node_name(), key()]}
+    ].
 
 %% Assertion commands.
 node_assertion_functions() ->
@@ -77,7 +79,7 @@ node_global_functions() ->
 %% What should the initial node state be.
 node_initial_state() ->
     node_debug("initializing", []),
-    #node_state{store=dict:new()}.
+    #node_state{store = dict:new()}.
 
 %% Names of the node functions so we kow when we can dispatch to the node
 %% pre- and postconditions.
@@ -98,20 +100,36 @@ node_precondition(_NodeState, _Command) ->
 
 node_next_state(_State, NodeState, _Response, {call, ?MODULE, verify, []}) ->
     NodeState;
-node_next_state(_State, NodeState, _Response, {call, ?MODULE, read, [_Node, _Key]}) ->
+node_next_state(
+    _State, NodeState, _Response, {call, ?MODULE, read, [_Node, _Key]}
+) ->
     NodeState;
-node_next_state(_State, NodeState, {badrpc, timeout}, {call, ?MODULE, write, [_Node, _Key, _Value]}) ->
+node_next_state(
+    _State,
+    NodeState,
+    {badrpc, timeout},
+    {call, ?MODULE, write, [_Node, _Key, _Value]}
+) ->
     NodeState;
-node_next_state(_State, #node_state{store=Store0}=NodeState, _Response, {call, ?MODULE, write, [_Node, Key, Value]}) ->
+node_next_state(
+    _State,
+    #node_state{store = Store0} = NodeState,
+    _Response,
+    {call, ?MODULE, write, [_Node, Key, Value]}
+) ->
     Store = dict:store(Key, Value, Store0),
     node_debug("store is now: ~p", [dict:to_list(Store)]),
-    NodeState#node_state{store=Store};
+    NodeState#node_state{store = Store};
 node_next_state(_State, NodeState, Response, Command) ->
-    node_debug("generic state transition made for response: ~p command: ~p", [Response, Command]),
+    node_debug("generic state transition made for response: ~p command: ~p", [
+        Response, Command
+    ]),
     NodeState.
 
 %% Postconditions for node commands.
-node_postcondition(#node_state{store=Store}, {call, ?MODULE, read, [Node, Key]}, {ok, Value}) ->
+node_postcondition(
+    #node_state{store = Store}, {call, ?MODULE, read, [Node, Key]}, {ok, Value}
+) ->
     case dict:find(Key, Store) of
         {ok, Value} ->
             true;
@@ -121,93 +139,152 @@ node_postcondition(#node_state{store=Store}, {call, ?MODULE, read, [Node, Key]},
 
             case Result of
                 false ->
-                    node_debug("read at node ~p for key ~p returned other value: ~p when expecting: not_found",
-                            [Node, Key, Value]);
+                    node_debug(
+                        "read at node ~p for key ~p returned other value: ~p when expecting: not_found",
+                        [Node, Key, Value]
+                    );
                 _ ->
                     ok
             end,
 
             Result;
         Other ->
-            node_debug("read at node ~p for key ~p returned other value: ~p when expecting: ~p",
-                       [Node, Key, Other, Value]),
+            node_debug(
+                "read at node ~p for key ~p returned other value: ~p when expecting: ~p",
+                [Node, Key, Other, Value]
+            ),
             false
     end;
-node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, Value]}, {ok, Value}) ->
+node_postcondition(
+    _NodeState, {call, ?MODULE, write, [_Node, _Key, Value]}, {ok, Value}
+) ->
     true;
-node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {badrpc, timeout}) ->
+node_postcondition(
+    _NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {badrpc, timeout}
+) ->
     true;
-node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, deadlock) ->
+node_postcondition(
+    _NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, deadlock
+) ->
     false;
-node_postcondition(#node_state{store=Store}=_NodeState, {call, ?MODULE, verify, []}, AllResults) ->
+node_postcondition(
+    #node_state{store = Store} = _NodeState,
+    {call, ?MODULE, verify, []},
+    AllResults
+) ->
     %% Everything we think we wrote is there.
-    StoreToNodeResult = dict:fold(fun(Key, Value, Acc) ->
-        All = dict:fold(fun(Node, Results, Acc1) ->
-            % node_debug("looking at reuslts: ~p", [Results]),
+    StoreToNodeResult = dict:fold(
+        fun(Key, Value, Acc) ->
+            All = dict:fold(
+                fun(Node, Results, Acc1) ->
+                    % node_debug("looking at reuslts: ~p", [Results]),
 
-            case Results of
-                badrpc ->
-                    node_debug("=> node crashed, considering valid.", []),
-                    Acc1 andalso true;
-                _ ->
-                    case dict:find(Key, Results) of
-                        {ok, Value} ->
+                    case Results of
+                        badrpc ->
+                            node_debug(
+                                "=> node crashed, considering valid.", []
+                            ),
                             Acc1 andalso true;
-                        Other ->
-                            node_debug("Node ~p did not contain result for key: ~p, instead: ~p, should have: ~p", [Node, Key, Other, Value]),
-                            node_debug("=> Results for node ~p are: ~p", [Node, dict:to_list(Results)]),
-                            Acc1 andalso false
+                        _ ->
+                            case dict:find(Key, Results) of
+                                {ok, Value} ->
+                                    Acc1 andalso true;
+                                Other ->
+                                    node_debug(
+                                        "Node ~p did not contain result for key: ~p, instead: ~p, should have: ~p",
+                                        [Node, Key, Other, Value]
+                                    ),
+                                    node_debug(
+                                        "=> Results for node ~p are: ~p", [
+                                            Node, dict:to_list(Results)
+                                        ]
+                                    ),
+                                    Acc1 andalso false
+                            end
                     end
-            end
-        end, true, AllResults),
+                end,
+                true,
+                AllResults
+            ),
 
-        Acc andalso All
-    end, true, Store),
+            Acc andalso All
+        end,
+        true,
+        Store
+    ),
 
     %% Everything we think we wrote is there.
-    NodesMissingValues = dict:fold(fun(Key, Value, Acc) ->
-        NodesAcc = dict:fold(fun(Node, Results, Acc1) ->
-            % node_debug("looking at reuslts: ~p", [Results]),
+    NodesMissingValues = dict:fold(
+        fun(Key, Value, Acc) ->
+            NodesAcc = dict:fold(
+                fun(Node, Results, Acc1) ->
+                    % node_debug("looking at reuslts: ~p", [Results]),
 
-            case Results of
-                badrpc ->
-                    node_debug("=> node crashed, considering valid.", []),
-                    Acc1 ++ [Node];
-                _ ->
-                    case dict:find(Key, Results) of
-                        {ok, Value} ->
-                            Acc1;
-                        Other ->
-                            node_debug("Node ~p did not contain result for key: ~p, instead: ~p, should have: ~p", [Node, Key, Other, Value]),
-                            node_debug("=> Results for node ~p are: ~p", [Node, dict:to_list(Results)]),
-                            Acc1 ++ [Node]
+                    case Results of
+                        badrpc ->
+                            node_debug(
+                                "=> node crashed, considering valid.", []
+                            ),
+                            Acc1 ++ [Node];
+                        _ ->
+                            case dict:find(Key, Results) of
+                                {ok, Value} ->
+                                    Acc1;
+                                Other ->
+                                    node_debug(
+                                        "Node ~p did not contain result for key: ~p, instead: ~p, should have: ~p",
+                                        [Node, Key, Other, Value]
+                                    ),
+                                    node_debug(
+                                        "=> Results for node ~p are: ~p", [
+                                            Node, dict:to_list(Results)
+                                        ]
+                                    ),
+                                    Acc1 ++ [Node]
+                            end
                     end
-            end
-        end, [], AllResults),
+                end,
+                [],
+                AllResults
+            ),
 
-        lists:usort(Acc ++ NodesAcc)
-    end, [], Store),
+            lists:usort(Acc ++ NodesAcc)
+        end,
+        [],
+        Store
+    ),
 
     %% Everything there is something we wrote.
-    NodeToStoreResult = dict:fold(fun(Node, Results, Acc) ->
-        case Results of
-            badrpc ->
-                node_debug("=> node crashed, considering valid.", []),
-                Acc andalso true;
-            _ ->
-                All = dict:fold(fun(Key, Value, Acc1) ->
-                    case dict:find(Key, Store) of
-                        {ok, Value} ->
-                            Acc1 andalso true;
-                        Other ->
-                            node_debug("Node ~p had result key: ~p value: ~p but in the store we had ~p", [Node, Key, Value, Other]),
-                            Acc1 andalso false
-                    end
-                end, true, Results),
+    NodeToStoreResult = dict:fold(
+        fun(Node, Results, Acc) ->
+            case Results of
+                badrpc ->
+                    node_debug("=> node crashed, considering valid.", []),
+                    Acc andalso true;
+                _ ->
+                    All = dict:fold(
+                        fun(Key, Value, Acc1) ->
+                            case dict:find(Key, Store) of
+                                {ok, Value} ->
+                                    Acc1 andalso true;
+                                Other ->
+                                    node_debug(
+                                        "Node ~p had result key: ~p value: ~p but in the store we had ~p",
+                                        [Node, Key, Value, Other]
+                                    ),
+                                    Acc1 andalso false
+                            end
+                        end,
+                        true,
+                        Results
+                    ),
 
-                Acc andalso All
-        end
-    end, true, AllResults),
+                    Acc andalso All
+            end
+        end,
+        true,
+        AllResults
+    ),
 
     Tolerance = fault_tolerance(),
     node_debug("=> Tolerance: ~p", [Tolerance]),
@@ -218,10 +295,13 @@ node_postcondition(#node_state{store=Store}=_NodeState, {call, ?MODULE, verify, 
     node_debug("=> NodesMissingValues: ~p", [NodesMissingValues]),
 
     (StoreToNodeResult andalso NodeToStoreResult) orelse
-    (not StoreToNodeResult andalso NodeToStoreResult andalso length(NodesMissingValues) =< Tolerance);
+        (not StoreToNodeResult andalso NodeToStoreResult andalso
+            length(NodesMissingValues) =< Tolerance);
 node_postcondition(_NodeState, Command, Response) ->
-    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p",
-               [Command, Response]),
+    node_debug(
+        "generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p",
+        [Command, Response]
+    ),
     false.
 
 %%%===================================================================
@@ -231,7 +311,10 @@ node_postcondition(_NodeState, Command, Response) ->
 -define(PROPERTY_MODULE, prop_partisan).
 
 -define(ETS, prop_partisan).
--define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
+-define(NAME, fun(Name) ->
+    [{_, NodeName}] = ets:lookup(?ETS, Name),
+    NodeName
+end).
 
 %% @private
 read(Node, Key) ->
@@ -256,14 +339,22 @@ verify() ->
     node_debug("waiting 1s for quiesence...", []),
     timer:sleep(1000),
 
-    Results = lists:foldl(fun(Node, Acc) ->
-        case rpc:call(?NAME(Node), implementation_module(), store, [], infinity) of
-            {ok, State} ->
-                dict:store(Node, State, Acc);
-            {badrpc, _} ->
-                dict:store(Node, badrpc, Acc)
-        end
-    end, dict:new(), names()),
+    Results = lists:foldl(
+        fun(Node, Acc) ->
+            case
+                rpc:call(
+                    ?NAME(Node), implementation_module(), store, [], infinity
+                )
+            of
+                {ok, State} ->
+                    dict:store(Node, State, Acc);
+                {badrpc, _} ->
+                    dict:store(Node, badrpc, Acc)
+            end
+        end,
+        dict:new(),
+        names()
+    ),
 
     ?PROPERTY_MODULE:command_conclusion(RunnerNode, [verify]),
 
@@ -297,11 +388,16 @@ node_begin_case() ->
     node_debug("nodes are: ~p", [Nodes]),
 
     %% Start the backend.
-    lists:foreach(fun({ShortName, _}) ->
-        {ok, _Pid} = rpc:call(?NAME(ShortName), implementation_module(), start_link, []),
-        % node_debug("backend started with pid ~p at node ~p", [Pid, ShortName]),
-        ok
-    end, Nodes),
+    lists:foreach(
+        fun({ShortName, _}) ->
+            {ok, _Pid} = rpc:call(
+                ?NAME(ShortName), implementation_module(), start_link, []
+            ),
+            % node_debug("backend started with pid ~p at node ~p", [Pid, ShortName]),
+            ok
+        end,
+        Nodes
+    ),
 
     ok.
 
@@ -317,17 +413,22 @@ node_end_case() ->
     [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
 
     %% Stop the backend.
-    lists:foreach(fun({ShortName, _}) ->
-        case rpc:call(?NAME(ShortName), implementation_module(), stop, []) of
-            ok ->
-                ok;
-            {badrpc, _} ->
-                ok;
-            Error ->
-                ct:fail("Couldn't terminate process for reason: ~p", [Error]),
-                ok
-        end
-    end, Nodes),
+    lists:foreach(
+        fun({ShortName, _}) ->
+            case
+                rpc:call(?NAME(ShortName), implementation_module(), stop, [])
+            of
+                ok ->
+                    ok;
+                {badrpc, _} ->
+                    ok;
+                Error ->
+                    ct:fail("Couldn't terminate process for reason: ~p", [Error]),
+                    ok
+            end
+        end,
+        Nodes
+    ),
 
     node_debug("ended.", []),
 
@@ -347,25 +448,33 @@ rpc_with_timeout(Node, Function, Args) ->
     ImplementationModule = implementation_module(),
     Timeout = ImplementationModule:timeout(),
 
-    Result = case scheduler() of
-        finite_fault ->
-            Self = self(),
+    Result =
+        case scheduler() of
+            finite_fault ->
+                Self = self(),
 
-            spawn_link(fun() ->
-                RpcResult = rpc:call(?NAME(Node), ImplementationModule, Function, Args, Timeout),
-                Self ! {result, RpcResult}
-            end),
+                spawn_link(fun() ->
+                    RpcResult = rpc:call(
+                        ?NAME(Node),
+                        ImplementationModule,
+                        Function,
+                        Args,
+                        Timeout
+                    ),
+                    Self ! {result, RpcResult}
+                end),
 
-            receive
-                {result, RpcResult} ->
-                    RpcResult
-            after
-                20000 ->
+                receive
+                    {result, RpcResult} ->
+                        RpcResult
+                after 20000 ->
                     deadlock
-            end;
-        _ ->
-            rpc:call(?NAME(Node), ImplementationModule, Function, Args, Timeout)
-    end,
+                end;
+            _ ->
+                rpc:call(
+                    ?NAME(Node), ImplementationModule, Function, Args, Timeout
+                )
+        end,
 
     node_debug("result of RPC for ~p(~p) => ~p", [Function, Args, Result]),
     Result.

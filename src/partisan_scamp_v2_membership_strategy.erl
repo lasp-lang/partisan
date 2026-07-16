@@ -41,18 +41,15 @@
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
 
-
-
 -record(scamp_v2, {
-    myself              ::  partisan:node_spec(),
-    actor               ::  partisan:actor(),
-    partial_view        ::  [partisan:node_spec()],
-    in_view             ::  [partisan:node_spec()],
-    last_message_time   ::  erlang:timestamp() | undefined
+    myself :: partisan:node_spec(),
+    actor :: partisan:actor(),
+    partial_view :: [partisan:node_spec()],
+    in_view :: [partisan:node_spec()],
+    last_message_time :: erlang:timestamp() | undefined
 }).
 
-
--type t()               ::  #scamp_v2{}.
+-type t() :: #scamp_v2{}.
 
 -export([init/1]).
 -export([join/3]).
@@ -62,13 +59,9 @@
 -export([prune/2]).
 -export([handle_message/2]).
 
-
-
 %% =============================================================================
 %% API
 %% =============================================================================
-
-
 
 %% @doc Initialize the strategy state.
 %%      Start with an empty state with only ourselves known.
@@ -84,7 +77,6 @@ init(Identity) ->
     },
     {ok, PartialView, State}.
 
-
 %% @doc When a remote node is connected, notify that node to add us.  Then, perform forwarding, if necessary.
 join(Node, _NodeState, #scamp_v2{} = State0) ->
     PartialView0 = State0#scamp_v2.partial_view,
@@ -92,14 +84,16 @@ join(Node, _NodeState, #scamp_v2{} = State0) ->
 
     %% 1. Add node to our state.
     ?LOG_INFO("~p: Adding node ~p to our partial_view.", [partisan:node(), Node]),
-    PartialView = [Node|PartialView0],
+    PartialView = [Node | PartialView0],
 
     %% 2. Notify node to add us to its state.
     %%    This is lazily done to ensure we can setup the TCP connection both ways, first.
     Myself = partisan:node_spec(),
-    OutgoingMessages1 = OutgoingMessages0 ++ [
-        {Node, {membership_strategy, {forward_subscription, Myself}}}
-    ],
+    OutgoingMessages1 =
+        OutgoingMessages0 ++
+            [
+                {Node, {membership_strategy, {forward_subscription, Myself}}}
+            ],
 
     %% 3. Notify all members we know about to add node to their partial_view.
     OutgoingMessages2 =
@@ -124,27 +118,36 @@ join(Node, _NodeState, #scamp_v2{} = State0) ->
     %% What does this mean?
     %%
     C = partisan_config:get(scamp_c, ?SCAMP_C_VALUE),
-    ForwardMessages = lists:map(fun(N) ->
-        ?LOG_INFO(
-            "~p: Forwarding additional subscription for ~p to node: ~p",
-            [partisan:node(), Node, N]
-        ),
+    ForwardMessages = lists:map(
+        fun(N) ->
+            ?LOG_INFO(
+                "~p: Forwarding additional subscription for ~p to node: ~p",
+                [partisan:node(), Node, N]
+            ),
 
-        {N, {membership_strategy, {forward_subscription, Node}}}
-        end, select_random_sublist(State0, C - 1)), %% Important difference from scamp_v1: (c - 1) additional copies instead of c!
+            {N, {membership_strategy, {forward_subscription, Node}}}
+        %% Important difference from scamp_v1: (c - 1) additional copies instead of c!
+        end,
+        select_random_sublist(State0, C - 1)
+    ),
     OutgoingMessages = OutgoingMessages2 ++ ForwardMessages,
 
-    {ok, PartialView, OutgoingMessages, State0#scamp_v2{partial_view=PartialView}}.
+    {ok, PartialView, OutgoingMessages, State0#scamp_v2{
+        partial_view = PartialView
+    }}.
 
 %% @doc Leave a node from the cluster.
-leave(Node, #scamp_v2{partial_view=PartialView}=State0) ->
-    ?LOG_INFO("~p: Issuing remove_subscription for node ~p.", [partisan:node(), Node]),
+leave(Node, #scamp_v2{partial_view = PartialView} = State0) ->
+    ?LOG_INFO("~p: Issuing remove_subscription for node ~p.", [
+        partisan:node(), Node
+    ]),
 
     %% Begin unsubcription process: send a bootstrap message to the node that is being removed.
     Message = {bootstrap_remove_subscription, Node},
-    OutgoingMessages = lists:map(fun(Peer) -> {Peer, {membership_strategy, Message}} end, PartialView),
+    OutgoingMessages = lists:map(
+        fun(Peer) -> {Peer, {membership_strategy, Message}} end, PartialView
+    ),
     {ok, PartialView, OutgoingMessages, State0}.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the tuple `{Joiners, Leavers}' where `Joiners' is the list of
@@ -164,9 +167,6 @@ compare(_Members, #scamp_v2{}) ->
     %% user.
     {[], []}.
 
-
-
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -175,9 +175,11 @@ prune(_Nodes, #scamp_v2{partial_view = PartialView} = State) ->
     %% Not implemented
     {ok, PartialView, State}.
 
-
 %% @doc Periodic protocol maintenance.
-periodic(#scamp_v2{partial_view=PartialView, last_message_time=LastMessageTime}=State) ->
+periodic(
+    #scamp_v2{partial_view = PartialView, last_message_time = LastMessageTime} =
+        State
+) ->
     SourceNode = partisan:node_spec(),
 
     %% Isolation detection:
@@ -186,48 +188,66 @@ periodic(#scamp_v2{partial_view=PartialView, last_message_time=LastMessageTime}=
     %% periodically transmit a message to all known nodes.  Each node will keep track of the
     %% last message received, and if we don't receive one after X interval, then we know
     %% we are isolated.
-    OutgoingPingMessages = lists:map(fun(Peer) ->
-        {Peer, {membership_strategy, {ping, SourceNode}}}
-    end, PartialView),
+    OutgoingPingMessages = lists:map(
+        fun(Peer) ->
+            {Peer, {membership_strategy, {ping, SourceNode}}}
+        end,
+        PartialView
+    ),
 
-    Difference = case LastMessageTime of
-        undefined ->
-            0;
-        _ ->
-            CurrentTime = erlang:timestamp(),
-            timer:now_diff(CurrentTime, LastMessageTime)
-    end,
+    Difference =
+        case LastMessageTime of
+            undefined ->
+                0;
+            _ ->
+                CurrentTime = erlang:timestamp(),
+                timer:now_diff(CurrentTime, LastMessageTime)
+        end,
 
-    OutgoingSubscriptionMessages = case Difference > (?PERIODIC_INTERVAL * ?SCAMP_MESSAGE_WINDOW) of
-        true ->
-            %% Node is isolated.
-            ?LOG_TRACE("~p: Node is possibly isolated.", [partisan:node()]),
+    OutgoingSubscriptionMessages =
+        case Difference > (?PERIODIC_INTERVAL * ?SCAMP_MESSAGE_WINDOW) of
+            true ->
+                %% Node is isolated.
+                ?LOG_TRACE("~p: Node is possibly isolated.", [partisan:node()]),
 
-            Myself = partisan:node_spec(),
+                Myself = partisan:node_spec(),
 
-            lists:map(fun(N) ->
-                ?LOG_TRACE(
-                    "~p: Forwarding additional subscription for ~p to node: ~p",
-                    [partisan:node(), Myself, N]
-                ),
+                lists:map(
+                    fun(N) ->
+                        ?LOG_TRACE(
+                            "~p: Forwarding additional subscription for ~p to node: ~p",
+                            [partisan:node(), Myself, N]
+                        ),
 
-                {N, {membership_strategy, {forward_subscription, Myself}}}
-            end, select_random_sublist(State, 1));
-        false ->
-            %% Node is not isolated.
-            []
-    end,
+                        {N,
+                            {membership_strategy,
+                                {forward_subscription, Myself}}}
+                    end,
+                    select_random_sublist(State, 1)
+                );
+            false ->
+                %% Node is not isolated.
+                []
+        end,
 
-    {ok, PartialView, OutgoingSubscriptionMessages ++ OutgoingPingMessages, State}.
+    {ok, PartialView, OutgoingSubscriptionMessages ++ OutgoingPingMessages,
+        State}.
 
 %% @doc Handling incoming protocol message.
-handle_message({ping, SourceNode}, #scamp_v2{partial_view=PartialView0}=State) ->
+handle_message(
+    {ping, SourceNode}, #scamp_v2{partial_view = PartialView0} = State
+) ->
     ?LOG_TRACE("~p: Received ping from node ~p.", [partisan:node(), SourceNode]),
 
     LastMessageTime = erlang:timestamp(),
     OutgoingMessages = [],
-    {ok, PartialView0, OutgoingMessages, State#scamp_v2{last_message_time=LastMessageTime}};
-handle_message({bootstrap_remove_subscription, Node}, #scamp_v2{partial_view=PartialView0, in_view=InView0}=State0) ->
+    {ok, PartialView0, OutgoingMessages, State#scamp_v2{
+        last_message_time = LastMessageTime
+    }};
+handle_message(
+    {bootstrap_remove_subscription, Node},
+    #scamp_v2{partial_view = PartialView0, in_view = InView0} = State0
+) ->
     ?LOG_TRACE(
         "~p: Received bootstrap_remove_subscription from node ~p.",
         [partisan:node(), Node]
@@ -242,37 +262,57 @@ handle_message({bootstrap_remove_subscription, Node}, #scamp_v2{partial_view=Par
             %% 1. Notify InView[0 - (L - C - 1)] to replace with PartialView[0 - (L - C - 1)]
             NumToIterate = length(InView0) - (C - 1),
 
-            ReplacementMessages = case NumToIterate > 0 of
-                true ->
-                    lists:map(fun(N) ->
-                        Nth = lists:nth(N, InView0),
-                        Replacement = lists:nth(N div length(PartialView0), PartialView0),
-                        {Nth, {membership_strategy, {replace_subscription, Node, Replacement}}}
-                    end, lists:seq(1, NumToIterate));
-                false ->
-                    []
-            end,
+            ReplacementMessages =
+                case NumToIterate > 0 of
+                    true ->
+                        lists:map(
+                            fun(N) ->
+                                Nth = lists:nth(N, InView0),
+                                Replacement = lists:nth(
+                                    N div length(PartialView0), PartialView0
+                                ),
+                                {Nth,
+                                    {membership_strategy,
+                                        {replace_subscription, Node,
+                                            Replacement}}}
+                            end,
+                            lists:seq(1, NumToIterate)
+                        );
+                    false ->
+                        []
+                end,
 
             %% 2. Notify InView[(L - C - 1) - ] to remove.
             RemainderToIterate = length(InView0) - NumToIterate,
 
-            RemovalMessages = case RemainderToIterate > 0 of
-                true ->
-                    lists:map(fun(N) ->
-                        Nth = lists:nth(N, InView0),
-                        {Nth, {membership_strategy, {remove_subscription, Node}}}
-                    end, lists:seq(1, RemainderToIterate));
-                false ->
-                    []
-            end,
+            RemovalMessages =
+                case RemainderToIterate > 0 of
+                    true ->
+                        lists:map(
+                            fun(N) ->
+                                Nth = lists:nth(N, InView0),
+                                {Nth,
+                                    {membership_strategy,
+                                        {remove_subscription, Node}}}
+                            end,
+                            lists:seq(1, RemainderToIterate)
+                        );
+                    false ->
+                        []
+                end,
 
             %% Reset our state.
-            {ok, [], ReplacementMessages ++ RemovalMessages, State0#scamp_v2{in_view=[], partial_view=[]}};
+            {ok, [], ReplacementMessages ++ RemovalMessages, State0#scamp_v2{
+                in_view = [], partial_view = []
+            }};
         _ ->
             %% Not us, do nothing.
             {ok, PartialView0, [], State0}
     end;
-handle_message({replace_subscription, Node, Replacement}, #scamp_v2{partial_view=PartialView0}=State0) ->
+handle_message(
+    {replace_subscription, Node, Replacement},
+    #scamp_v2{partial_view = PartialView0} = State0
+) ->
     ?LOG_TRACE(
         "~p: Received replace_subscription for node ~p => ~p.",
         [partisan:node(), Node, Replacement]
@@ -282,18 +322,25 @@ handle_message({replace_subscription, Node, Replacement}, #scamp_v2{partial_view
     %% its children; but, this doesn't update in links, right?  Is that missing in the
     %% protocol description?
 
-    PartialView = lists:map(fun(N) ->
+    PartialView = lists:map(
+        fun(N) ->
             case N of
                 Node ->
                     Replacement;
                 _ ->
                     N
             end
-        end, PartialView0),
+        end,
+        PartialView0
+    ),
 
-    {ok, PartialView, [], State0#scamp_v2{partial_view=PartialView}};
-handle_message({remove_subscription, Node}, #scamp_v2{partial_view=PartialView0}=State0) ->
-    ?LOG_TRACE("~p: Received remove_subscription for node ~p.", [partisan:node(), Node]),
+    {ok, PartialView, [], State0#scamp_v2{partial_view = PartialView}};
+handle_message(
+    {remove_subscription, Node}, #scamp_v2{partial_view = PartialView0} = State0
+) ->
+    ?LOG_TRACE("~p: Received remove_subscription for node ~p.", [
+        partisan:node(), Node
+    ]),
 
     case lists:member(Node, PartialView0) of
         true ->
@@ -302,15 +349,23 @@ handle_message({remove_subscription, Node}, #scamp_v2{partial_view=PartialView0}
 
             %% Gossip removals.
             Message = {remove_subscription, Node},
-            OutgoingMessages = lists:map(fun(Peer) -> {Peer, {membership_strategy, Message}} end, PartialView0),
+            OutgoingMessages = lists:map(
+                fun(Peer) -> {Peer, {membership_strategy, Message}} end,
+                PartialView0
+            ),
 
             %% Update state.
-            {ok, PartialView, OutgoingMessages, State0#scamp_v2{partial_view=PartialView}};
+            {ok, PartialView, OutgoingMessages, State0#scamp_v2{
+                partial_view = PartialView
+            }};
         false ->
             OutgoingMessages = [],
             {ok, PartialView0, OutgoingMessages, State0}
     end;
-handle_message({forward_subscription, Node}, #scamp_v2{partial_view=PartialView0}=State0) ->
+handle_message(
+    {forward_subscription, Node},
+    #scamp_v2{partial_view = PartialView0} = State0
+) ->
     ?LOG_TRACE("~p: Received subscription for node ~p.", [partisan:node(), Node]),
 
     %% Probability: P = 1 / (1 + sizeOf(View))
@@ -319,39 +374,57 @@ handle_message({forward_subscription, Node}, #scamp_v2{partial_view=PartialView0
 
     case Keep =:= 0 andalso not lists:member(Node, PartialView0) of
         true ->
-            ?LOG_TRACE("~p: Adding subscription for node: ~p", [partisan:node(), Node]),
-            PartialView = [Node|PartialView0],
+            ?LOG_TRACE("~p: Adding subscription for node: ~p", [
+                partisan:node(), Node
+            ]),
+            PartialView = [Node | PartialView0],
 
             %% Respond to the node that's joining and tell them to keep us.
             ?LOG_TRACE(
-                "~p: Notifying ~p to keep us: ~p", [partisan:node(), Node, partisan:node()]
+                "~p: Notifying ~p to keep us: ~p", [
+                    partisan:node(), Node, partisan:node()
+                ]
             ),
-            OutgoingMessages = [{Node, {membership_strategy, {keep_subscription, partisan:node_spec()}}}],
+            OutgoingMessages = [
+                {Node,
+                    {membership_strategy,
+                        {keep_subscription, partisan:node_spec()}}}
+            ],
 
-            {ok, PartialView, OutgoingMessages, State0#scamp_v2{partial_view=PartialView}};
+            {ok, PartialView, OutgoingMessages, State0#scamp_v2{
+                partial_view = PartialView
+            }};
         false ->
-            OutgoingMessages = lists:map(fun(N) ->
-                ?LOG_TRACE(
-                    "~p: Forwarding subscription for ~p to node: ~p",
-                    [partisan:node(), Node, N]
-                ),
-                {N, {membership_strategy, {forward_subscription, Node}}}
-            end, select_random_sublist(State0, 1)),
+            OutgoingMessages = lists:map(
+                fun(N) ->
+                    ?LOG_TRACE(
+                        "~p: Forwarding subscription for ~p to node: ~p",
+                        [partisan:node(), Node, N]
+                    ),
+                    {N, {membership_strategy, {forward_subscription, Node}}}
+                end,
+                select_random_sublist(State0, 1)
+            ),
             {ok, PartialView0, OutgoingMessages, State0}
     end;
-handle_message({keep_subscription, Node}, #scamp_v2{partial_view=PartialView0, in_view=InView0}=State) ->
-    ?LOG_TRACE("~p: Received keep_subscription for node ~p.", [partisan:node(), Node]),
+handle_message(
+    {keep_subscription, Node},
+    #scamp_v2{partial_view = PartialView0, in_view = InView0} = State
+) ->
+    ?LOG_TRACE("~p: Received keep_subscription for node ~p.", [
+        partisan:node(), Node
+    ]),
 
-    InView = [Node|InView0],
+    InView = [Node | InView0],
     OutgoingMessages = [],
-    {ok, PartialView0, OutgoingMessages, State#scamp_v2{in_view=InView}}.
+    {ok, PartialView0, OutgoingMessages, State#scamp_v2{in_view = InView}}.
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
 %% @private
-select_random_sublist(#scamp_v2{partial_view=PartialView}, K) ->
+select_random_sublist(#scamp_v2{partial_view = PartialView}, K) ->
     lists:sublist(shuffle(PartialView), K).
 
 %% -----------------------------------------------------------------------------

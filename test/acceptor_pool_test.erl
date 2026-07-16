@@ -7,9 +7,11 @@
 
 -export([init/1]).
 
--export([acceptor_init/3,
-         acceptor_continue/3,
-         acceptor_terminate/2]).
+-export([
+    acceptor_init/3,
+    acceptor_continue/3,
+    acceptor_terminate/2
+]).
 
 start_link(Spec) ->
     acceptor_pool:start_link(?MODULE, Spec).

@@ -26,29 +26,29 @@
 
 -behaviour(partisan_orchestration_strategy).
 
--export([clients/1,
-         servers/1,
-         upload_artifact/3,
-         download_artifact/2]).
-
+-export([
+    clients/1,
+    servers/1,
+    upload_artifact/3,
+    download_artifact/2
+]).
 
 -eqwalizer({nowarn_function, pods_from_kubernetes/1}).
 -eqwalizer({nowarn_function, generate_pods_url/1}).
 -eqwalizer({nowarn_function, headers/0}).
 
 %% @private
-upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Payload) ->
+upload_artifact(#orchestration_strategy_state{eredis = Eredis}, Node, Payload) ->
     {ok, <<"OK">>} = eredis:q(Eredis, ["SET", Node, Payload]),
     ok.
 
 %% @private
-download_artifact(#orchestration_strategy_state{eredis=Eredis}, Node) ->
-
+download_artifact(#orchestration_strategy_state{eredis = Eredis}, Node) ->
     try
         case eredis:q(Eredis, ["GET", Node]) of
             {ok, Payload} ->
                 Payload;
-            {error,no_connection} ->
+            {error, no_connection} ->
                 undefined
         end
     catch
@@ -60,13 +60,17 @@ download_artifact(#orchestration_strategy_state{eredis=Eredis}, Node) ->
 %% @private
 clients(_State) ->
     EvalTimestamp = partisan_config:get(evaluation_timestamp, 0),
-    LabelSelector = "tag%3Dclient,evaluation-timestamp%3D" ++ integer_to_list(EvalTimestamp),
+    LabelSelector =
+        "tag%3Dclient,evaluation-timestamp%3D" ++
+            integer_to_list(EvalTimestamp),
     pods_from_kubernetes(LabelSelector).
 
 %% @private
 servers(_State) ->
     EvalTimestamp = partisan_config:get(evaluation_timestamp, 0),
-    LabelSelector = "tag%3Dserver,evaluation-timestamp%3D" ++ integer_to_list(EvalTimestamp),
+    LabelSelector =
+        "tag%3Dserver,evaluation-timestamp%3D" ++
+            integer_to_list(EvalTimestamp),
     pods_from_kubernetes(LabelSelector).
 
 %% @private
@@ -94,24 +98,25 @@ generate_pod_nodes(#{<<"items">> := Items}) ->
         _ ->
             Nodes = lists:foldr(
                 fun(Item, Acc) ->
-
                     %% get name if defined
-                    Name = case maps:is_key(<<"metadata">>, Item) of
-                        true ->
-                            Metadata = maps:get(<<"metadata">>, Item),
-                            maps:get(<<"name">>, Metadata, undefined);
-                        false ->
-                            undefined
-                    end,
+                    Name =
+                        case maps:is_key(<<"metadata">>, Item) of
+                            true ->
+                                Metadata = maps:get(<<"metadata">>, Item),
+                                maps:get(<<"name">>, Metadata, undefined);
+                            false ->
+                                undefined
+                        end,
 
                     %% get pod ip if defined
-                    PodIP = case maps:is_key(<<"status">>, Item) of
-                        true ->
-                            Status = maps:get(<<"status">>, Item),
-                            maps:get(<<"podIP">>, Status, undefined);
-                        false ->
-                            undefined
-                    end,
+                    PodIP =
+                        case maps:is_key(<<"status">>, Item) of
+                            true ->
+                                Status = maps:get(<<"status">>, Item),
+                                maps:get(<<"podIP">>, Status, undefined);
+                            false ->
+                                undefined
+                        end,
 
                     case Name /= undefined andalso PodIP /= undefined of
                         true ->
@@ -130,8 +135,12 @@ generate_pod_nodes(#{<<"items">> := Items}) ->
 generate_pod_node(Name, Host) ->
     {ok, IPAddress} = inet_parse:address(binary_to_list(Host)),
     Port = list_to_integer(os:getenv("PEER_PORT", "9090")),
-    #{name => list_to_atom(binary_to_list(Name) ++ "@" ++ binary_to_list(Host)),
-      listen_addrs => [#{ip => IPAddress, port => Port}]}.
+    #{
+        name => list_to_atom(
+            binary_to_list(Name) ++ "@" ++ binary_to_list(Host)
+        ),
+        listen_addrs => [#{ip => IPAddress, port => Port}]
+    }.
 
 %% @private
 get_request(Url, DecodeFun) ->

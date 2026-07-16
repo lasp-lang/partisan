@@ -39,11 +39,9 @@
 -define(PEER_KEY, {?MODULE, peer_node}).
 -define(RECV_TIMEOUT, 30000).
 
-
 %% =============================================================================
 %% PROPERTIES
 %% =============================================================================
-
 
 %% -----------------------------------------------------------------------------
 %% @doc FIFO ordering between user messages and the DOWN signal.
@@ -67,7 +65,6 @@ prop_fifo_message_then_down() ->
             do_fifo_test(get_peer(), N) =:= ok
         )
     ).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Consecutive DOWN signals are delivered in the order the local
@@ -94,7 +91,6 @@ prop_consecutive_downs_in_order() ->
         )
     ).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc An explicit non-default channel that is not connected MUST fire
 %% an immediate `noconnection' DOWN, not silently fall back to the
@@ -115,11 +111,9 @@ prop_no_fallback_for_explicit_channel() ->
         )
     ).
 
-
 %% =============================================================================
 %% TEST BODIES
 %% =============================================================================
-
 
 do_fifo_test(Peer, NMsgs) ->
     Self = partisan:self(),
@@ -138,15 +132,16 @@ do_fifo_test(Peer, NMsgs) ->
                 true ->
                     ok;
                 false ->
-                    {fail, {out_of_order,
-                            #{first_diverged => first_diverge(Expected, Actual),
-                              expected_len => length(Expected),
-                              actual_len => length(Actual)}}}
+                    {fail,
+                        {out_of_order, #{
+                            first_diverged => first_diverge(Expected, Actual),
+                            expected_len => length(Expected),
+                            actual_len => length(Actual)
+                        }}}
             end;
         {fail, Reason} ->
             {fail, Reason}
     end.
-
 
 do_consecutive_downs_test(Peer, K) ->
     Self = partisan:self(),
@@ -184,7 +179,6 @@ do_consecutive_downs_test(Peer, K) ->
             {fail, {ack_drain_failed, Other}}
     end.
 
-
 do_no_fallback_test(Peer, Chan) ->
     Sender = partisan:spawn(Peer, ?MODULE, fifo_sender_loop, []),
 
@@ -209,11 +203,9 @@ do_no_fallback_test(Peer, Chan) ->
 
     Result.
 
-
 %% =============================================================================
 %% SETUP / TEARDOWN
 %% =============================================================================
-
 
 setup() ->
     %% Bring up disterl on the runner so partisan_support_otp can spawn
@@ -237,15 +229,12 @@ setup() ->
         ok
     end.
 
-
 get_peer() ->
     persistent_term:get(?PEER_KEY).
-
 
 %% =============================================================================
 %% REMOTE HELPER (runs on peer node)
 %% =============================================================================
-
 
 %% Two commands:
 %%
@@ -266,18 +255,15 @@ fifo_sender_loop() ->
         exit(timeout)
     end.
 
-
 send_seq(_Dest, I, N) when I > N ->
     ok;
 send_seq(Dest, I, N) ->
     partisan:forward_message(Dest, {msg, I}),
     send_seq(Dest, I + 1, N).
 
-
 %% =============================================================================
 %% LOCAL HELPERS
 %% =============================================================================
-
 
 %% Collect exactly N messages tagged `{msg, _}' followed by exactly one
 %% DOWN with reason `normal' for the given Mref. Any other interleaving
@@ -299,10 +285,12 @@ collect_in_order(N, Mref, Acc) ->
         {msg, _} = M ->
             collect_in_order(N - 1, Mref, [M | Acc]);
         {'DOWN', Mref, process, _, _} = D ->
-            {fail, #{premature_down => true,
-                     collected => length(Acc),
-                     still_expected => N,
-                     down => D}};
+            {fail, #{
+                premature_down => true,
+                collected => length(Acc),
+                still_expected => N,
+                down => D
+            }};
         {'DOWN', _OtherRef, _, _, _} ->
             %% DOWN for an unrelated ref; ignore and keep waiting.
             collect_in_order(N, Mref, Acc);
@@ -311,7 +299,6 @@ collect_in_order(N, Mref, Acc) ->
     after ?RECV_TIMEOUT ->
         {fail, {timeout_at_msg, N, length(Acc)}}
     end.
-
 
 %% Collect exactly N DOWN signals into a list ordered by arrival.
 collect_downs(0, Acc) ->
@@ -324,7 +311,6 @@ collect_downs(N, Acc) ->
         error({timeout_collecting_downs, N, length(Acc)})
     end.
 
-
 %% Drain N {sent, _} acks. Returns ok or {timeout, _}.
 drain_acks(0) ->
     ok;
@@ -334,7 +320,6 @@ drain_acks(N) ->
     after 5000 ->
         {timeout, N}
     end.
-
 
 %% First arrival index of `Ref' in `Downs' (1-based). Both refs are
 %% encoded partisan remote refs for the same node, so `=:=' suffices.
@@ -350,7 +335,6 @@ position_of(Ref, [Ref | _T], I) ->
 position_of(Ref, [_ | T], I) ->
     position_of(Ref, T, I + 1).
 
-
 %% Return the index where two lists first diverge, or `none' if the
 %% prefix matches up to the shorter list's length.
 first_diverge(Expected, Actual) ->
@@ -360,7 +344,6 @@ first_diverge([], _, _) -> none;
 first_diverge(_, [], _) -> none;
 first_diverge([H | T1], [H | T2], I) -> first_diverge(T1, T2, I + 1);
 first_diverge([_ | _], [_ | _], I) -> I.
-
 
 %% A channel atom that is *not* configured in the cluster. We
 %% deliberately avoid `binary_to_existing_atom' so callers cannot

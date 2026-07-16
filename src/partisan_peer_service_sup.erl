@@ -56,10 +56,8 @@
 
 -export([init/1]).
 
-
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
-
 
 init([]) ->
     Manager = partisan_peer_service:manager(),

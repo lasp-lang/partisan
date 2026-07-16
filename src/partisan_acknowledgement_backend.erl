@@ -25,20 +25,23 @@
 
 -include("partisan_logger.hrl").
 
-
 %% API
--export([start_link/0,
-         store/2,
-         ack/1,
-         outstanding/0]).
+-export([
+    start_link/0,
+    store/2,
+    ack/1,
+    outstanding/0
+]).
 
 %% gen_server callbacks
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 -record(state, {storage}).
 
@@ -66,17 +69,19 @@ outstanding() ->
 init([]) ->
     Storage = ets:new(?MODULE, [named_table]),
     logger:set_process_metadata(#{node => partisan:node()}),
-    {ok, #state{storage=Storage}}.
+    {ok, #state{storage = Storage}}.
 
 %% @private
-handle_call({ack, MessageClock}, _From, #state{storage=Storage}=State) ->
+handle_call({ack, MessageClock}, _From, #state{storage = Storage} = State) ->
     ?LOG_DEBUG(#{
         description => "Acknowledgement received",
         clock => MessageClock
     }),
     true = ets:delete(Storage, MessageClock),
     {reply, ok, State};
-handle_call({store, MessageClock, Message}, _From, #state{storage=Storage}=State) ->
+handle_call(
+    {store, MessageClock, Message}, _From, #state{storage = Storage} = State
+) ->
     ?LOG_DEBUG(#{
         description => "storing message in acknowledgement backend",
         clock => MessageClock,
@@ -84,7 +89,7 @@ handle_call({store, MessageClock, Message}, _From, #state{storage=Storage}=State
     }),
     true = ets:insert(Storage, {MessageClock, Message}),
     {reply, ok, State};
-handle_call(outstanding, _From, #state{storage=Storage}=State) ->
+handle_call(outstanding, _From, #state{storage = Storage} = State) ->
     Objects = ets:foldl(fun(X, Acc) -> Acc ++ [X] end, [], Storage),
     {reply, {ok, Objects}, State};
 handle_call(_Msg, _From, State) ->

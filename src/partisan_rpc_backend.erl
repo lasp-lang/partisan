@@ -39,34 +39,25 @@
 
 -include("partisan.hrl").
 
-
 %% =============================================================================
 %% API
 %% =============================================================================
 
-
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-
-
 
 %% =============================================================================
 %% GEN_SERVER_CALLBACKS
 %% =============================================================================
 
-
-
 init([]) ->
     {ok, #state{}}.
-
 
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
-
 
 handle_info({call, M, F, A, _Timeout, {origin, Caller}}, State) ->
     %% Execute function.
@@ -75,7 +66,7 @@ handle_info({call, M, F, A, _Timeout, {origin, Caller}}, State) ->
             erlang:apply(M, F, A)
         catch
             _:Reason ->
-                 {badrpc, Reason}
+                {badrpc, Reason}
         end,
 
     %% Send the response to execution.
@@ -83,14 +74,11 @@ handle_info({call, M, F, A, _Timeout, {origin, Caller}}, State) ->
     ok = partisan:forward_message(Caller, {rpc_response, Response}, Opts),
 
     {noreply, State};
-
 handle_info(_Msg, State) ->
     {noreply, State}.
 
-
 terminate(_Reason, _State) ->
     ok.
-
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.

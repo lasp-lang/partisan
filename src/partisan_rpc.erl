@@ -23,7 +23,7 @@
 
 -include("partisan.hrl").
 
--type error_reason()    ::  timeout | any().
+-type error_reason() :: timeout | any().
 
 %% API
 -export([call/4]).
@@ -33,13 +33,9 @@
 -dialyzer([{nowarn_function, call/4}, no_return]).
 -dialyzer([{nowarn_function, call/5}, no_return]).
 
-
-
 %% =============================================================================
 %% API
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -49,11 +45,11 @@
     Node :: node(),
     Module :: module(),
     Function :: atom(),
-    Arguments :: [any()]) -> Reply :: any() | {badrpc, error_reason()}.
+    Arguments :: [any()]
+) -> Reply :: any() | {badrpc, error_reason()}.
 
 call(Node, Module, Function, Arguments) ->
     call(Node, Module, Function, Arguments, infinity).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -64,15 +60,14 @@ call(Node, Module, Function, Arguments) ->
     Module :: module(),
     Function :: atom(),
     Arguments :: [any()],
-    Timeout :: timeout() | partisan_peer_service_manager:forward_opts()) ->
+    Timeout :: timeout() | partisan_peer_service_manager:forward_opts()
+) ->
     Reply :: any() | {badrpc, error_reason()}.
 
 call(Node, Module, Function, Arguments, Timeout) when ?IS_VALID_TMO(Timeout) ->
     call(Node, Module, Function, Arguments, #{timeout => Timeout});
-
 call(Node, Module, Function, Arguments, Opts) when is_list(Opts) ->
     call(Node, Module, Function, Arguments, maps:from_list(Opts));
-
 call(Node, Module, Function, Arguments, Opts0) when is_map(Opts0) ->
     Self = partisan:self(),
     Timeout = maps:get(timeout, Opts0, ?DEFAULT_TIMEOUT),
@@ -90,14 +85,12 @@ call(Node, Module, Function, Arguments, Opts0) when is_map(Opts0) ->
             receive
                 {rpc_response, Response} ->
                     Response
-            after
-                Timeout ->
-                    {badrpc, timeout}
+            after Timeout ->
+                {badrpc, timeout}
             end;
         {error, Reason} ->
             {badrpc, Reason}
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -107,16 +100,11 @@ call(Node, Module, Function, Arguments, Opts0) when is_map(Opts0) ->
 
 prepare_opts(L) when is_list(L) ->
     prepare_opts(maps:from_list(L));
-
 prepare_opts(#{channel := _} = Opts) ->
     Opts;
-
 prepare_opts(Opts) when is_map(Opts) ->
     Opts#{channel => ?DEFAULT_CHANNEL}.
-
-
 
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
-

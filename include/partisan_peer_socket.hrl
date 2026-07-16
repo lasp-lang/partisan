@@ -4,13 +4,13 @@
 -define(CLOSED_MSG(Tag), Tag == tcp_closed orelse Tag == ssl_closed).
 
 -record(ping, {
-    from                    ::  node(),
-    id                      ::  partisan:reference(),
-    timestamp               ::  non_neg_integer()
+    from :: node(),
+    id :: partisan:reference(),
+    timestamp :: non_neg_integer()
 }).
 
 -record(pong, {
-    from                    ::  node(),
-    id                      ::  partisan:reference(),
-    timestamp               ::  non_neg_integer()
+    from :: node(),
+    id :: partisan:reference(),
+    timestamp :: non_neg_integer()
 }).

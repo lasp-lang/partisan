@@ -20,13 +20,11 @@
 
 -module(partisan_plumtree_util).
 
-
 -include("partisan_logger.hrl").
 
 -export([build_tree/3]).
 -export([log/2]).
 -export([log/3]).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Convert a list of elements into an N-ary tree. This conversion
@@ -49,14 +47,17 @@ build_tree(N, Nodes, Opts) ->
                 Nodes
         end,
     {Tree, _} =
-        lists:foldl(fun(Elm, {Result, Worklist}) ->
-                            Len = erlang:min(N, length(Worklist)),
-                            {Children, Rest} = lists:split(Len, Worklist),
-                            NewResult = [{Elm, Children} | Result],
-                            {NewResult, Rest}
-                    end, {[], tl(Expand)}, Nodes),
+        lists:foldl(
+            fun(Elm, {Result, Worklist}) ->
+                Len = erlang:min(N, length(Worklist)),
+                {Children, Rest} = lists:split(Len, Worklist),
+                NewResult = [{Elm, Children} | Result],
+                {NewResult, Rest}
+            end,
+            {[], tl(Expand)},
+            Nodes
+        ),
     orddict:from_list(Tree).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -69,13 +70,10 @@ build_tree(N, Nodes, Opts) ->
 log(Level, String) ->
     log(Level, String, []).
 
-
 log(debug, String, Args) ->
     ?LOG_DEBUG(String, Args);
-
 log(info, String, Args) ->
     ?LOG_INFO(String, Args);
-
 log(error, String, Args) ->
     ?LOG_ERROR(String, Args).
 
@@ -86,14 +84,9 @@ log(_Level, _String, _Args) -> ok.
 
 -endif.
 
-
-
-
 %% =============================================================================
 %% TESTS
 %% =============================================================================
-
-
 
 -ifdef(TEST).
 
@@ -102,161 +95,476 @@ log(_Level, _String, _Args) -> ok.
 arity_test() ->
     %% 1-ary tree
     ?assertEqual([{node1, []}], orddict:to_list(build_tree(1, [node1], []))),
-    ?assertEqual([{node1, [node2]},
-                  {node2, []}], orddict:to_list(build_tree(1, [node1, node2], []))),
-    ?assertEqual([{node1, [node2]},
-                  {node2, [node3]},
-                  {node3, []}], orddict:to_list(build_tree(1, [node1, node2, node3], []))),
-    ?assertEqual([{node1, [node2]},
-                  {node2, [node3]},
-                  {node3, [node4]},
-                  {node4, []}], orddict:to_list(build_tree(1, [node1, node2,
-                                                               node3, node4], []))),
+    ?assertEqual(
+        [
+            {node1, [node2]},
+            {node2, []}
+        ],
+        orddict:to_list(build_tree(1, [node1, node2], []))
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2]},
+            {node2, [node3]},
+            {node3, []}
+        ],
+        orddict:to_list(build_tree(1, [node1, node2, node3], []))
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2]},
+            {node2, [node3]},
+            {node3, [node4]},
+            {node4, []}
+        ],
+        orddict:to_list(
+            build_tree(
+                1,
+                [
+                    node1,
+                    node2,
+                    node3,
+                    node4
+                ],
+                []
+            )
+        )
+    ),
 
     %% 2-ary tree
     ?assertEqual([{node1, []}], orddict:to_list(build_tree(2, [node1], []))),
-    ?assertEqual([{node1, [node2]},
-                  {node2, []}], orddict:to_list(build_tree(2, [node1, node2], []))),
-    ?assertEqual([{node1, [node2, node3]},
-                  {node2, []},
-                  {node3, []}], orddict:to_list(build_tree(2, [node1, node2, node3], []))),
-    ?assertEqual([{node1, [node2, node3]},
-                  {node2, [node4]},
-                  {node3, []},
-                  {node4, []}], orddict:to_list(build_tree(2, [node1, node2,
-                                                               node3, node4], []))),
-    ?assertEqual([{node1, [node2, node3]},
-                  {node2, [node4, node5]},
-                  {node3, []},
-                  {node4, []},
-                  {node5, []}], orddict:to_list(build_tree(2, [node1, node2,
-                                                               node3, node4,
-                                                               node5], []))),
-    ?assertEqual([{node1, [node2, node3]},
-                  {node2, [node4, node5]},
-                  {node3, [node6]},
-                  {node4, []},
-                  {node5, []},
-                  {node6, []}], orddict:to_list(build_tree(2, [node1, node2,
-                                                               node3, node4,
-                                                               node5, node6], []))),
+    ?assertEqual(
+        [
+            {node1, [node2]},
+            {node2, []}
+        ],
+        orddict:to_list(build_tree(2, [node1, node2], []))
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node3]},
+            {node2, []},
+            {node3, []}
+        ],
+        orddict:to_list(build_tree(2, [node1, node2, node3], []))
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node3]},
+            {node2, [node4]},
+            {node3, []},
+            {node4, []}
+        ],
+        orddict:to_list(
+            build_tree(
+                2,
+                [
+                    node1,
+                    node2,
+                    node3,
+                    node4
+                ],
+                []
+            )
+        )
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node3]},
+            {node2, [node4, node5]},
+            {node3, []},
+            {node4, []},
+            {node5, []}
+        ],
+        orddict:to_list(
+            build_tree(
+                2,
+                [
+                    node1,
+                    node2,
+                    node3,
+                    node4,
+                    node5
+                ],
+                []
+            )
+        )
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node3]},
+            {node2, [node4, node5]},
+            {node3, [node6]},
+            {node4, []},
+            {node5, []},
+            {node6, []}
+        ],
+        orddict:to_list(
+            build_tree(
+                2,
+                [
+                    node1,
+                    node2,
+                    node3,
+                    node4,
+                    node5,
+                    node6
+                ],
+                []
+            )
+        )
+    ),
 
     %% 3-ary tree
     ?assertEqual([{node1, []}], orddict:to_list(build_tree(3, [node1], []))),
-    ?assertEqual([{node1, [node2]},
-                  {node2, []}], orddict:to_list(build_tree(3, [node1, node2], []))),
-    ?assertEqual([{node1, [node2, node3]},
-                  {node2, []},
-                  {node3, []}], orddict:to_list(build_tree(3, [node1, node2, node3], []))),
-    ?assertEqual([{node1, [node2, node3, node4]},
-                  {node2, []},
-                  {node3, []},
-                  {node4, []}], orddict:to_list(build_tree(3, [node1, node2,
-                                                               node3, node4], []))),
-    ?assertEqual([{node1, [node2, node3, node4]},
-                  {node2, [node5]},
-                  {node3, []},
-                  {node4, []},
-                  {node5, []}], orddict:to_list(build_tree(3, [node1, node2,
-                                                               node3, node4,
-                                                               node5], []))),
-    ?assertEqual([{node1, [node2, node3, node4]},
-                  {node2, [node5, node6]},
-                  {node3, []},
-                  {node4, []},
-                  {node5, []},
-                  {node6, []}], orddict:to_list(build_tree(3, [node1, node2,
-                                                               node3, node4,
-                                                               node5, node6], []))),
-    ?assertEqual([{node1, [node2, node3, node4]},
-                  {node2, [node5, node6, node7]},
-                  {node3, []},
-                  {node4, []},
-                  {node5, []},
-                  {node6, []},
-                  {node7, []}], orddict:to_list(build_tree(3, [node1, node2,
-                                                               node3, node4,
-                                                               node5, node6,
-                                                               node7], []))),
-    ?assertEqual([{node1, [node2, node3, node4]},
-                  {node2, [node5, node6, node7]},
-                  {node3, [node8]},
-                  {node4, []},
-                  {node5, []},
-                  {node6, []},
-                  {node7, []},
-                  {node8, []}], orddict:to_list(build_tree(3, [node1, node2,
-                                                               node3, node4,
-                                                               node5, node6,
-                                                               node7, node8], []))).
+    ?assertEqual(
+        [
+            {node1, [node2]},
+            {node2, []}
+        ],
+        orddict:to_list(build_tree(3, [node1, node2], []))
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node3]},
+            {node2, []},
+            {node3, []}
+        ],
+        orddict:to_list(build_tree(3, [node1, node2, node3], []))
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node3, node4]},
+            {node2, []},
+            {node3, []},
+            {node4, []}
+        ],
+        orddict:to_list(
+            build_tree(
+                3,
+                [
+                    node1,
+                    node2,
+                    node3,
+                    node4
+                ],
+                []
+            )
+        )
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node3, node4]},
+            {node2, [node5]},
+            {node3, []},
+            {node4, []},
+            {node5, []}
+        ],
+        orddict:to_list(
+            build_tree(
+                3,
+                [
+                    node1,
+                    node2,
+                    node3,
+                    node4,
+                    node5
+                ],
+                []
+            )
+        )
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node3, node4]},
+            {node2, [node5, node6]},
+            {node3, []},
+            {node4, []},
+            {node5, []},
+            {node6, []}
+        ],
+        orddict:to_list(
+            build_tree(
+                3,
+                [
+                    node1,
+                    node2,
+                    node3,
+                    node4,
+                    node5,
+                    node6
+                ],
+                []
+            )
+        )
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node3, node4]},
+            {node2, [node5, node6, node7]},
+            {node3, []},
+            {node4, []},
+            {node5, []},
+            {node6, []},
+            {node7, []}
+        ],
+        orddict:to_list(
+            build_tree(
+                3,
+                [
+                    node1,
+                    node2,
+                    node3,
+                    node4,
+                    node5,
+                    node6,
+                    node7
+                ],
+                []
+            )
+        )
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node3, node4]},
+            {node2, [node5, node6, node7]},
+            {node3, [node8]},
+            {node4, []},
+            {node5, []},
+            {node6, []},
+            {node7, []},
+            {node8, []}
+        ],
+        orddict:to_list(
+            build_tree(
+                3,
+                [
+                    node1,
+                    node2,
+                    node3,
+                    node4,
+                    node5,
+                    node6,
+                    node7,
+                    node8
+                ],
+                []
+            )
+        )
+    ).
 
 cycles_test() ->
     %% 1-ary tree
-    ?assertEqual([{node1, [node1]}], orddict:to_list(build_tree(1, [node1], [cycles]))),
-    ?assertEqual([{node1, [node2]},
-                  {node2, [node1]}], orddict:to_list(build_tree(1, [node1, node2], [cycles]))),
-    ?assertEqual([{node1, [node2]},
-                  {node2, [node3]},
-                  {node3, [node1]}], orddict:to_list(build_tree(1, [node1, node2, node3], [cycles]))),
-    ?assertEqual([{node1, [node2]},
-                  {node2, [node3]},
-                  {node3, [node4]},
-                  {node4, [node1]}], orddict:to_list(build_tree(1, [node1, node2,
-                                                                   node3, node4], [cycles]))),
+    ?assertEqual(
+        [{node1, [node1]}], orddict:to_list(build_tree(1, [node1], [cycles]))
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2]},
+            {node2, [node1]}
+        ],
+        orddict:to_list(build_tree(1, [node1, node2], [cycles]))
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2]},
+            {node2, [node3]},
+            {node3, [node1]}
+        ],
+        orddict:to_list(build_tree(1, [node1, node2, node3], [cycles]))
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2]},
+            {node2, [node3]},
+            {node3, [node4]},
+            {node4, [node1]}
+        ],
+        orddict:to_list(
+            build_tree(
+                1,
+                [
+                    node1,
+                    node2,
+                    node3,
+                    node4
+                ],
+                [cycles]
+            )
+        )
+    ),
 
     %% 2-ary tree
-    ?assertEqual([{node1, [node1, node1]}], orddict:to_list(build_tree(2, [node1], [cycles]))),
-    ?assertEqual([{node1, [node2, node1]},
-                  {node2, [node2, node1]}], orddict:to_list(build_tree(2, [node1, node2], [cycles]))),
-    ?assertEqual([{node1, [node2, node3]},
-                  {node2, [node1, node2]},
-                  {node3, [node3, node1]}], orddict:to_list(build_tree(2, [node1, node2, node3], [cycles]))),
-    ?assertEqual([{node1, [node2, node3]},
-                  {node2, [node4, node1]},
-                  {node3, [node2, node3]},
-                  {node4, [node4, node1]}], orddict:to_list(build_tree(2, [node1, node2,
-                                                                           node3, node4], [cycles]))),
-    ?assertEqual([{node1, [node2, node3]},
-                  {node2, [node4, node5]},
-                  {node3, [node1, node2]},
-                  {node4, [node3, node4]},
-                  {node5, [node5, node1]}], orddict:to_list(build_tree(2, [node1, node2,
-                                                                           node3, node4,
-                                                                           node5], [cycles]))),
-    ?assertEqual([{node1, [node2, node3]},
-                  {node2, [node4, node5]},
-                  {node3, [node6, node1]},
-                  {node4, [node2, node3]},
-                  {node5, [node4, node5]},
-                  {node6, [node6, node1]}], orddict:to_list(build_tree(2, [node1, node2,
-                                                               node3, node4,
-                                                               node5, node6], [cycles]))),
+    ?assertEqual(
+        [{node1, [node1, node1]}],
+        orddict:to_list(build_tree(2, [node1], [cycles]))
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node1]},
+            {node2, [node2, node1]}
+        ],
+        orddict:to_list(build_tree(2, [node1, node2], [cycles]))
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node3]},
+            {node2, [node1, node2]},
+            {node3, [node3, node1]}
+        ],
+        orddict:to_list(build_tree(2, [node1, node2, node3], [cycles]))
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node3]},
+            {node2, [node4, node1]},
+            {node3, [node2, node3]},
+            {node4, [node4, node1]}
+        ],
+        orddict:to_list(
+            build_tree(
+                2,
+                [
+                    node1,
+                    node2,
+                    node3,
+                    node4
+                ],
+                [cycles]
+            )
+        )
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node3]},
+            {node2, [node4, node5]},
+            {node3, [node1, node2]},
+            {node4, [node3, node4]},
+            {node5, [node5, node1]}
+        ],
+        orddict:to_list(
+            build_tree(
+                2,
+                [
+                    node1,
+                    node2,
+                    node3,
+                    node4,
+                    node5
+                ],
+                [cycles]
+            )
+        )
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node3]},
+            {node2, [node4, node5]},
+            {node3, [node6, node1]},
+            {node4, [node2, node3]},
+            {node5, [node4, node5]},
+            {node6, [node6, node1]}
+        ],
+        orddict:to_list(
+            build_tree(
+                2,
+                [
+                    node1,
+                    node2,
+                    node3,
+                    node4,
+                    node5,
+                    node6
+                ],
+                [cycles]
+            )
+        )
+    ),
 
     %% 3-ary tree
-    ?assertEqual([{node1, [node1, node1, node1]}], orddict:to_list(build_tree(3, [node1], [cycles]))),
-    ?assertEqual([{node1, [node2, node1, node2]},
-                  {node2, [node1, node2, node1]}], orddict:to_list(build_tree(3, [node1, node2], [cycles]))),
-    ?assertEqual([{node1, [node2, node3, node1]},
-                  {node2, [node2, node3, node1]},
-                  {node3, [node2, node3, node1]}], orddict:to_list(build_tree(3, [node1, node2, node3], [cycles]))),
-    ?assertEqual([{node1, [node2, node3, node4]},
-                  {node2, [node1, node2, node3]},
-                  {node3, [node4, node1, node2]},
-                  {node4, [node3, node4, node1]}], orddict:to_list(build_tree(3, [node1, node2,
-                                                                                  node3, node4], [cycles]))),
-    ?assertEqual([{node1, [node2, node3, node4]},
-                  {node2, [node5, node1, node2]},
-                  {node3, [node3, node4, node5]},
-                  {node4, [node1, node2, node3]},
-                  {node5, [node4, node5, node1]}], orddict:to_list(build_tree(3, [node1, node2,
-                                                                                  node3, node4,
-                                                                                  node5], [cycles]))),
-    ?assertEqual([{node1, [node2, node3, node4]},
-                  {node2, [node5, node6, node1]},
-                  {node3, [node2, node3, node4]},
-                  {node4, [node5, node6, node1]},
-                  {node5, [node2, node3, node4]},
-                  {node6, [node5, node6, node1]}], orddict:to_list(build_tree(3, [node1, node2,
-                                                                                  node3, node4,
-                                                                                  node5, node6], [cycles]))).
+    ?assertEqual(
+        [{node1, [node1, node1, node1]}],
+        orddict:to_list(build_tree(3, [node1], [cycles]))
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node1, node2]},
+            {node2, [node1, node2, node1]}
+        ],
+        orddict:to_list(build_tree(3, [node1, node2], [cycles]))
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node3, node1]},
+            {node2, [node2, node3, node1]},
+            {node3, [node2, node3, node1]}
+        ],
+        orddict:to_list(build_tree(3, [node1, node2, node3], [cycles]))
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node3, node4]},
+            {node2, [node1, node2, node3]},
+            {node3, [node4, node1, node2]},
+            {node4, [node3, node4, node1]}
+        ],
+        orddict:to_list(
+            build_tree(
+                3,
+                [
+                    node1,
+                    node2,
+                    node3,
+                    node4
+                ],
+                [cycles]
+            )
+        )
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node3, node4]},
+            {node2, [node5, node1, node2]},
+            {node3, [node3, node4, node5]},
+            {node4, [node1, node2, node3]},
+            {node5, [node4, node5, node1]}
+        ],
+        orddict:to_list(
+            build_tree(
+                3,
+                [
+                    node1,
+                    node2,
+                    node3,
+                    node4,
+                    node5
+                ],
+                [cycles]
+            )
+        )
+    ),
+    ?assertEqual(
+        [
+            {node1, [node2, node3, node4]},
+            {node2, [node5, node6, node1]},
+            {node3, [node2, node3, node4]},
+            {node4, [node5, node6, node1]},
+            {node5, [node2, node3, node4]},
+            {node6, [node5, node6, node1]}
+        ],
+        orddict:to_list(
+            build_tree(
+                3,
+                [
+                    node1,
+                    node2,
+                    node3,
+                    node4,
+                    node5,
+                    node6
+                ],
+                [cycles]
+            )
+        )
+    ).
 -endif.

@@ -21,13 +21,12 @@
 %% -----------------------------------------------------------------------------
 -module(partisan_interval_sets).
 
--type interval()    ::  {integer(), integer()}.
--type element()     ::  integer() | interval().
--type t()           ::  [element()].
+-type interval() :: {integer(), integer()}.
+-type element() :: integer() | interval().
+-type t() :: [element()].
 
 -export_type([interval/0]).
 -export_type([t/0]).
-
 
 -export([add_element/2]).
 -export([del_element/2]).
@@ -52,7 +51,6 @@
 -export([min/1]).
 -export([max/1]).
 
-
 -ifdef(TEST).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -73,14 +71,9 @@
 
 -endif.
 
-
-
-
 %% =============================================================================
 %% API
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Return a new empty offset.
@@ -90,21 +83,17 @@
 new() ->
     [].
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Return 'true' if Set is an ordered set of elements, else 'false'.
 %% -----------------------------------------------------------------------------
 -spec is_type(t()) -> boolean().
 
-is_type([E|Es]) ->
+is_type([E | Es]) ->
     is_element_type(E) andalso is_type(Es, E);
-
 is_type([]) ->
     true;
-
 is_type(_) ->
     false.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Return the number of elements in OrdSet.
@@ -113,7 +102,6 @@ is_type(_) ->
 
 size(S) ->
     length(S).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Return the number of points in the Ordset.
@@ -130,7 +118,6 @@ flat_size(S) ->
         S
     ).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Return 'true' if OrdSet is an empty set, otherwise 'false'.
 %% -----------------------------------------------------------------------------
@@ -139,18 +126,15 @@ flat_size(S) ->
 is_empty(S) ->
     S =:= [].
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Returns the minimum integer value contained in the set.
 %% -----------------------------------------------------------------------------
 -spec min(t()) -> integer().
 
-min([{H, _}|_]) ->
+min([{H, _} | _]) ->
     H;
-
-min([N|_]) ->
+min([N | _]) ->
     N.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the maximum integer value contained in the set.
@@ -163,7 +147,6 @@ max(S) ->
         N -> N
     end.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Return the elements in OrdSet as a list.
 %% -----------------------------------------------------------------------------
@@ -171,7 +154,6 @@ max(S) ->
 
 to_list(S) ->
     S.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Return the points in OrdSet as a list.
@@ -182,16 +164,14 @@ to_flat_list(Set) ->
     List = lists:foldl(
         fun
             ({H, T}, Acc) ->
-                [lists:seq(H, T)|Acc];
+                [lists:seq(H, T) | Acc];
             (N, Acc) ->
-                [N|Acc]
+                [N | Acc]
         end,
         [],
         Set
     ),
     lists:flatten(lists:reverse(List)).
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Build an ordered set from the elements in List.
@@ -205,28 +185,26 @@ from_list(L0) ->
                 ok = validate_element(E1),
                 ok = validate_element(E2),
                 V2 =< V3 orelse V1 =< V3;
-
             ({V1, _} = E1, E2) when is_integer(E2) ->
                 ok = validate_element(E1),
                 V1 =< E2;
-
             (E1, {V1, _} = E2) when is_integer(E1) ->
                 ok = validate_element(E2),
                 E1 =< V1;
-
             (E1, E2) when is_integer(E1), is_integer(E2), E1 < E2 ->
                 true;
-
             (E1, E2) ->
                 ok = validate_element(E1),
                 ok = validate_element(E2),
                 false
-
         end,
         L0
     ),
     compact(L1).
 
+from_list(List) ->
+    ok = lists:foreach(fun(E) -> validate_element(E) end, List),
+    compact(lists:usort(fun(A, B) -> compare_lex(A, B) end)).
 
 %% -----------------------------------------------------------------------------
 %% @doc Return 'true' if Element is an element of Sets, else 'false'.
@@ -237,28 +215,19 @@ is_element(Element, Sets) ->
     ok = validate_element(Element),
     do_is_element(Element, Sets).
 
-
-
-do_is_element(A, [B|Es]) ->
-    (not element_starts_before(A, B) andalso not element_precedes(A, B))
-    andalso (
-        element_included(A, B)
-        orelse (
-            element_succeeds(A, B) andalso do_is_element(A, Es)
-        )
-    );
-
+do_is_element(A, [B | Es]) ->
+    (not element_starts_before(A, B) andalso not element_precedes(A, B)) andalso
+        (element_included(A, B) orelse
+            (element_succeeds(A, B) andalso do_is_element(A, Es)));
 do_is_element(_, []) ->
     false.
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Return OrdSet with Element inserted in it.
 %% -----------------------------------------------------------------------------
 -spec add_element(Element :: element(), Set1 :: t()) -> Set2 :: t().
 
-add_element(A, [B|Es] = Set) ->
+add_element(A, [B | Es] = Set) ->
     ok = validate_element(A),
 
     case equal(A, B) of
@@ -272,11 +241,11 @@ add_element(A, [B|Es] = Set) ->
                 false ->
                     case element_precedes(A, B) of
                         true ->
-                            [simplify(A)|Set];
+                            [simplify(A) | Set];
                         false ->
                             case element_succeeds(A, B) of
                                 true ->
-                                    [B|add_element(A, Es)];
+                                    [B | add_element(A, Es)];
                                 false ->
                                     case element_overlaps(A, B) of
                                         true ->
@@ -289,19 +258,16 @@ add_element(A, [B|Es] = Set) ->
                     end
             end
     end;
-
 add_element(E, []) ->
     ok = validate_element(E),
     [E].
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Return OrdSet but with Element removed.
 %% -----------------------------------------------------------------------------
 -spec del_element(Element :: element(), Set1 :: t()) -> Set2 :: t().
 
-del_element(A, [B|Es] = Set) ->
+del_element(A, [B | Es] = Set) ->
     ok = validate_element(A),
 
     case equal(A, B) of
@@ -314,14 +280,14 @@ del_element(A, [B|Es] = Set) ->
                 false ->
                     case element_succeeds(A, B) of
                         true ->
-                            [B|del_element(A, Es)];
+                            [B | del_element(A, Es)];
                         false ->
                             case element_overlaps(A, B) of
                                 true ->
                                     I = element_intersection(A, B),
                                     New = [
                                         simplify(X)
-                                        || X <- element_subtract(B, I)
+                                     || X <- element_subtract(B, I)
                                     ],
                                     R = element_subtract(A, I),
                                     New ++ del_element(R, Es);
@@ -331,10 +297,8 @@ del_element(A, [B|Es] = Set) ->
                     end
             end
     end;
-
 del_element(_, []) ->
     [].
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Return the union of IntervalSet1 and IntervalSet2.
@@ -353,7 +317,6 @@ union(Set1, Set2) ->
 % union([], Es2) -> Es2;
 % union(Es1, []) -> Es1.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Return the union of the list of interval sets.
 %% -----------------------------------------------------------------------------
@@ -362,7 +325,6 @@ union(Set1, Set2) ->
 union(SetsList) ->
     compact(lists:umerge([to_flat_list(Set) || Set <- SetsList])).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Return the intersection of IntervalSet1 and IntervalSet2.
 %% -----------------------------------------------------------------------------
@@ -370,7 +332,6 @@ union(SetsList) ->
 
 intersection(Set1, Set2) ->
     compact(ordsets:intersection(to_flat_list(Set1), to_flat_list(Set2))).
-
 
 % intersection([E1|Es1], [E2|_]=Set2) when E1 < E2 ->
 %     intersection(Es1, Set2);
@@ -383,24 +344,20 @@ intersection(Set1, Set2) ->
 % intersection(_, []) ->
 %     [].
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Return the intersection of the list of interval sets.
 %% -----------------------------------------------------------------------------
 -spec intersection(SetsList :: [t()]) -> Set :: t().
 
-intersection([S1,S2|Ss]) ->
+intersection([S1, S2 | Ss]) ->
     intersection1(intersection(S1, S2), Ss);
-
 intersection([S]) ->
     S.
 
-intersection1(S1, [S2|Ss]) ->
+intersection1(S1, [S2 | Ss]) ->
     intersection1(intersection(S1, S2), Ss);
-
 intersection1(S1, []) ->
     S1.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Check whether IntervalSet1 and IntervalSet2 are disjoint.
@@ -420,7 +377,6 @@ is_disjoint(Set1, Set2) ->
 %     true;
 % is_disjoint(_, []) ->
 %     true.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Return all and only the elements of IntervalSet1 which are not also in
@@ -446,7 +402,6 @@ subtract(Set1, Set2) ->
 % subtract(Es1, []) ->
 %     Es1.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Return 'true' when every element of IntervalSet1 is also a member of
 %%  IntervalSet2, else 'false'.
@@ -465,272 +420,206 @@ is_subset(Set1, Set2) ->
 % is_subset([], _) -> true;
 % is_subset(_, []) -> false.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Fold function Fun over all elements in OrdSet and return Accumulator.
 %% -----------------------------------------------------------------------------
 -spec fold(Function, Acc0, Sets) -> Acc1 when
-      Function :: fun((Element :: element(), AccIn :: term()) -> AccOut :: term()),
-      Sets :: t(),
-      Acc0 :: term(),
-      Acc1 :: term().
+    Function :: fun(
+        (Element :: element(), AccIn :: term()) -> AccOut :: term()
+    ),
+    Sets :: t(),
+    Acc0 :: term(),
+    Acc1 :: term().
 
 fold(F, Acc, Set) ->
     lists:foldl(F, Acc, Set).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Filter OrdSet with Fun.
 %% -----------------------------------------------------------------------------
 -spec filter(Pred, Set1) -> Set2 when
-      Pred :: fun((Element :: element()) -> boolean()),
-      Set1 :: t(),
-      Set2 :: t().
+    Pred :: fun((Element :: element()) -> boolean()),
+    Set1 :: t(),
+    Set2 :: t().
 
 filter(F, Set) ->
     lists:filter(F, Set).
-
-
 
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
 
-
-
 %% @private
 interval({_, _} = E) ->
     E;
-
 interval(N) ->
     {N, N}.
-
 
 %% @private
 simplify({N, N}) ->
     N;
-
 simplify(E) ->
     E.
-
 
 %% @private
 equal({_, _} = A, A) ->
     true;
-
 equal(N, {N, N}) ->
     true;
-
 equal({N, N}, N) ->
     true;
-
 equal(N, N) ->
     true;
-
 equal(_, _) ->
     false.
 
-
 %% @private
-is_type([{E3, _} = E|Es], {_, E2}) when E2 =< E3 ->
+is_type([{E3, _} = E | Es], {_, E2}) when E2 =< E3 ->
     is_type(Es, E);
-
-is_type([{_, _}|_], {_, _}) ->
+is_type([{_, _} | _], {_, _}) ->
     false;
-
-is_type([{E2, _} = E|Es], E1) when E1 =< E2 ->
+is_type([{E2, _} = E | Es], E1) when E1 =< E2 ->
     is_type(Es, E);
-
-is_type([{_, _}|_], _) ->
+is_type([{_, _} | _], _) ->
     false;
-
-is_type([E3|Es], {_, E2}) when is_integer(E3), E2 =< E3 ->
+is_type([E3 | Es], {_, E2}) when is_integer(E3), E2 =< E3 ->
     is_type(Es, E2);
-
-is_type([_|_], {_, _}) ->
+is_type([_ | _], {_, _}) ->
     false;
-
-is_type([E2|Es], E1) when E1 < E2 ->
+is_type([E2 | Es], E1) when E1 < E2 ->
     is_type(Es, E2);
-
-is_type([_|_], _) ->
+is_type([_ | _], _) ->
     false;
-
 is_type([], _) ->
     true.
-
 
 %% @private
 is_element_type(X) when is_integer(X) ->
     true;
-
 is_element_type({X, Y}) when is_integer(X), is_integer(Y), X =< Y ->
     true;
-
 is_element_type(_) ->
     false.
-
 
 %% @private
 validate_element(E) ->
     is_element_type(E) orelse error({badarg, E}),
     ok.
 
-
 %% @private
 compact(L) ->
     compact(L, []).
 
-
 %% @private
 compact([], _Acc) ->
     [];
-compact([E1|Es], Acc) ->
+compact([E1 | Es], Acc) ->
     compact(Es, Acc, E1).
 
-
 %% @private
-compact([E|Es], Acc, E) ->
+compact([E | Es], Acc, E) ->
     compact(Es, Acc, E);
-
-compact([{V3, V4}|Es], Acc, {V1, V2}) when V2 + 1 >= V3, V2 =< V4 ->
+compact([{V3, V4} | Es], Acc, {V1, V2}) when V2 + 1 >= V3, V2 =< V4 ->
     E = {V1, V4},
     compact(Es, Acc, E);
-
-compact([{V3, V4}|Es], Acc, {V1, V2}) when V2 + 1 >= V3, V2 > V4 ->
+compact([{V3, V4} | Es], Acc, {V1, V2}) when V2 + 1 >= V3, V2 > V4 ->
     E = {V1, V2},
     compact(Es, Acc, E);
-
-compact([{_, _} = E2|Es], Acc, {_, _} = E1) ->
+compact([{_, _} = E2 | Es], Acc, {_, _} = E1) ->
     %% There is a gap between E1 and E2
-    compact(Es, [simplify(E1)|Acc], E2);
-
-compact([{V1, V2}|Es], Acc, E1) when E1 + 1 >= V1, E1 =< V2 ->
+    compact(Es, [simplify(E1) | Acc], E2);
+compact([{V1, V2} | Es], Acc, E1) when E1 + 1 >= V1, E1 =< V2 ->
     E = {E1, V2},
     compact(Es, Acc, E);
-
-compact([{_, _} = E2|Es], Acc, E1) ->
+compact([{_, _} = E2 | Es], Acc, E1) ->
     %% There is a gap between E1 and E2
-    compact(Es, [simplify(E1)|Acc], E2);
-
-compact([E2|Es], Acc, {V1, V2}) when E2 - 1 =< V2 ->
+    compact(Es, [simplify(E1) | Acc], E2);
+compact([E2 | Es], Acc, {V1, V2}) when E2 - 1 =< V2 ->
     %% E2 is covered by the interval or is next(V2)
     E = {V1, max(E2, V2)},
     compact(Es, Acc, E);
-
-compact([E2|Es], Acc, {_, V2} = E1) when E2 =< V2 ->
+compact([E2 | Es], Acc, {_, V2} = E1) when E2 =< V2 ->
     %% There is a gap between E1 and E2
-    compact(Es, [simplify(E1)|Acc], E2);
-
-compact([E2|Es], Acc, E1) when E1 + 1 == E2 ->
+    compact(Es, [simplify(E1) | Acc], E2);
+compact([E2 | Es], Acc, E1) when E1 + 1 == E2 ->
     E = {E1, E2},
     compact(Es, Acc, E);
-
-compact([E2|Es], Acc, E1) ->
+compact([E2 | Es], Acc, E1) ->
     %% There is a gap between E1 and E2
-    compact(Es, [simplify(E1)|Acc], E2);
-
+    compact(Es, [simplify(E1) | Acc], E2);
 compact([], Acc, E) ->
-    lists:reverse([simplify(E)|Acc]).
-
+    lists:reverse([simplify(E) | Acc]).
 
 %% @private
 element_includes({H1, T1}, {H2, T2}) ->
     H1 =< H2 andalso T1 >= T2;
-
 element_includes({H, T}, N) ->
     H =< N andalso T >= N;
-
 element_includes(N, {N, N}) ->
     true;
-
 element_includes(_, {_, _}) ->
     false;
-
 element_includes(N, M) ->
     N =:= M.
-
 
 %% @private
 element_included(A, B) ->
     element_includes(B, A).
 
-
 %% @private
 element_precedes({_, T1}, {H2, _}) ->
     T1 < H2;
-
 element_precedes({_, T}, N) ->
     T < N;
-
 element_precedes(N, {H, _}) ->
     N < H;
-
 element_precedes(N, M) ->
     N < M.
-
 
 %% @private
 element_succeeds(A, B) ->
     element_precedes(B, A).
 
-
 %% @private
 element_starts_before({H1, _}, {H2, _}) ->
     H1 < H2;
-
 element_starts_before({H, _}, N) ->
     H < N;
-
 element_starts_before(N, {H, _}) ->
     N < H;
-
 element_starts_before(N, M) ->
     N < M.
-
 
 %% @private
 element_overlaps({H1, T1}, {H2, T2}) ->
     H1 =< T2 andalso H2 =< T1;
-
 element_overlaps({_, _} = A, N) ->
     element_overlaps(A, interval(N));
-
 element_overlaps(N, {_, _} = B) ->
     element_overlaps(interval(N), B);
-
 element_overlaps(A, B) ->
     A =:= B.
 
-
 %% @private
 element_meets({H1, T1} = A, {H2, T2} = B) ->
-    (element_precedes(A, B) andalso H2 =:= T1 + 1)
-        orelse (element_precedes(B, A) andalso H1 =:= T2 + 1);
-
+    (element_precedes(A, B) andalso H2 =:= T1 + 1) orelse
+        (element_precedes(B, A) andalso H1 =:= T2 + 1);
 element_meets({_, _} = A, N) ->
     element_meets(A, interval(N));
-
 element_meets(N, {_, _} = B) ->
     element_meets(interval(N), B);
-
 element_meets(A, B) ->
     abs(A - B) == 1.
-
 
 %% private
 unsafe_element_union({H1, T1}, {H2, T2}) ->
     {min(H1, H2), max(T1, T2)};
-
 unsafe_element_union({_, _} = A, N) ->
     unsafe_element_union(A, interval(N));
-
 unsafe_element_union(N, {_, _} = B) ->
     unsafe_element_union(interval(N), B);
-
 unsafe_element_union(N, B) ->
     unsafe_element_union(interval(N), B).
-
 
 %% private
 element_intersection({_, _} = A, {_, _} = B) ->
@@ -740,37 +629,29 @@ element_intersection({_, _} = A, {_, _} = B) ->
         false ->
             error(badarg)
     end;
-
 element_intersection({_, _} = A, N) ->
     element_intersection(A, interval(N));
-
 element_intersection(N, {_, _} = B) ->
     element_intersection(interval(N), B);
-
 element_intersection(N, B) ->
     element_intersection(interval(N), B).
-
 
 %% private
 unsafe_element_intersection({H1, T1}, {H2, T2}) ->
     {max(H1, H2), min(T1, T2)};
-
 unsafe_element_intersection({_, _} = A, N) ->
     unsafe_element_intersection(A, interval(N));
-
 unsafe_element_intersection(N, {_, _} = B) ->
     unsafe_element_intersection(interval(N), B);
-
 unsafe_element_intersection(N, B) ->
     unsafe_element_intersection(interval(N), B).
-
 
 %% private
 element_subtract(A, B) ->
     Empty =
-        element_precedes(A, B)
-        orelse element_included(A, B)
-        orelse element_succeeds(A, B),
+        element_precedes(A, B) orelse
+            element_included(A, B) orelse
+            element_succeeds(A, B),
 
     case Empty of
         true ->
@@ -781,24 +662,29 @@ element_subtract(A, B) ->
 
 do_element_subtract({H1, T1}, {H2, T2}) when H1 >= H2, T1 > T2 ->
     [{max(T2 + 1, H1), T1}];
-
 do_element_subtract({H1, T1}, {H2, T2}) when H1 < H2, T1 =< T2 ->
     [{H1, min(H2 - 1, T1)}];
-
 do_element_subtract({H1, T1}, {H2, T2}) when H1 < H2, T1 > T2 ->
     %% A includes B
     [{H1, H2 - 1}, {T2 + 1, T1}];
-
 do_element_subtract({_, _} = A, N) when is_integer(N) ->
     do_element_subtract(A, interval(N));
-
 do_element_subtract(N, {_, _} = B) when is_integer(N) ->
     do_element_subtract(interval(N), B);
-
 do_element_subtract(_, _) ->
     error(badarg).
 
+compare_lex({H1, T1}, {H2, T2}) ->
+    (H1 < H2) or (H1 == H2 and T1 =< T2);
 
+compare_lex({H, T}, N) when is_integer(N) ->
+    (H < N) or (H == N and T =< N);
+
+compare_lex(N, {H, T}) when is_integer(N) ->
+    (N < H) or (N == H and H =< T);
+
+compare_lex(E1, E2) when is_integer(E1) andalso is_integer(E2) ->
+    E1 =< E2.
 
 %% =============================================================================
 %% EUNIT
@@ -806,38 +692,26 @@ do_element_subtract(_, _) ->
 
 -ifdef(TEST).
 
-
-
 element_merges(A, B) ->
     element_overlaps(A, B) orelse element_meets(A, B).
 
-
 element_begins({H1, T1}, {H2, _} = B) ->
     H1 =:= H2 andalso is_element(T1, [B]);
-
 element_begins({_, _} = A, N) ->
     element_begins(A, interval(N));
-
 element_begins(N, {_, _} = B) ->
     element_begins(interval(N), B);
-
 element_begins(_, _) ->
     false.
 
-
-
 element_ends({H1, T1}, {_, T2} = B) ->
     T1 =:= T2 andalso is_element(H1, [B]);
-
 element_ends({_, _} = A, N) ->
     element_ends(A, interval(N));
-
 element_ends(N, {_, _} = B) ->
     element_ends(interval(N), B);
-
 element_ends(_, _) ->
     false.
-
 
 %% private
 element_union({_, _} = A, {_, _} = B) ->
@@ -847,17 +721,12 @@ element_union({_, _} = A, {_, _} = B) ->
         false ->
             error(badarg)
     end;
-
 element_union({_, _} = A, N) ->
     element_union(A, interval(N));
-
 element_union(N, {_, _} = B) ->
     element_union(interval(N), B);
-
 element_union(N, B) ->
     element_union(interval(N), B).
-
-
 
 from_list_test_() ->
     Expected = [{1, 2}, 4, {6, 10}],
@@ -869,7 +738,6 @@ from_list_test_() ->
         ?_assertEqual(Expected, from_list(Expected))
     ].
 
-
 to_flat_list_test_() ->
     Expected = [1, 2, 4, 6, 7, 8, 9, 10],
     [
@@ -878,7 +746,6 @@ to_flat_list_test_() ->
         ?_assertEqual(Expected, to_flat_list([{1, 2}, 4, {6, 7}, 8, 9, 10])),
         ?_assertEqual(Expected, to_flat_list([{1, 2}, 4, {6, 10}]))
     ].
-
 
 is_type_test_() ->
     [
@@ -891,7 +758,6 @@ is_type_test_() ->
         ?_assert(false =:= is_type([atom])),
         ?_assert(false =:= is_type([<<>>]))
     ].
-
 
 is_element_test_() ->
     [
@@ -906,12 +772,11 @@ is_element_test_() ->
         ?_assert(true =:= is_element(9, [{1, 2}, 4, {6, 10}])),
         ?_assert(true =:= is_element(10, [{1, 2}, 4, {6, 10}])),
         ?_assert(false =:= is_element(11, [{1, 2}, 4, {6, 10}])),
-        ?_assert(false =:= is_element({1,6}, [{1, 2}, 4, {6, 10}])),
-        ?_assert(true =:= is_element({6,7}, [{1, 2}, 4, {6, 10}])),
-        ?_assert(true =:= is_element({7,10}, [{1, 2}, 4, {6, 10}])),
-        ?_assert(false =:= is_element({8,11}, [{1, 2}, 4, {6, 10}]))
+        ?_assert(false =:= is_element({1, 6}, [{1, 2}, 4, {6, 10}])),
+        ?_assert(true =:= is_element({6, 7}, [{1, 2}, 4, {6, 10}])),
+        ?_assert(true =:= is_element({7, 10}, [{1, 2}, 4, {6, 10}])),
+        ?_assert(false =:= is_element({8, 11}, [{1, 2}, 4, {6, 10}]))
     ].
-
 
 flat_size_test_() ->
     [
@@ -1005,9 +870,8 @@ add_element_test_() ->
                 to_flat_list(add_element(Element, Set))
             )
         ]
-        || {Expected, Element, Set} <- Cases
+     || {Expected, Element, Set} <- Cases
     ]).
-
 
 del_element_test_() ->
     Cases = [
@@ -1028,8 +892,7 @@ del_element_test_() ->
                 to_flat_list(del_element(Element, Set))
             )
         ]
-        || {Expected, Element, Set} <- Cases
+     || {Expected, Element, Set} <- Cases
     ]).
-
 
 -endif.

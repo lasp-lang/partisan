@@ -1,4 +1,3 @@
-
 -define(TIMEOUT, 10000).
 -define(CLIENT_NUMBER, 3).
 -define(HIGH_CLIENT_NUMBER, 10).

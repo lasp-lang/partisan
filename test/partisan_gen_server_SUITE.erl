@@ -21,78 +21,177 @@
 
 -compile([{parse_transform, partisan_transform}]).
 
-
 -include_lib("common_test/include/ct.hrl").
 -include_lib("kernel/include/inet.hrl").
 
-
 -export([init_per_testcase/2, end_per_testcase/2]).
 
--export([all/0, suite/0,groups/0,init_per_suite/1, end_per_suite/1, 
-     init_per_group/2,end_per_group/2]).
--export([start/1, crash/1, call/1, send_request/1, cast/1, cast_fast/1,
-     continue/1, info/1, abcast/1, multicall/1, multicall_down/1,
-     call_remote1/1, call_remote2/1, call_remote3/1,
-     call_remote_n1/1, call_remote_n2/1, call_remote_n3/1, spec_init/1,
-     spec_init_local_registered_parent/1, 
-     spec_init_global_registered_parent/1,
-     otp_5854/1, hibernate/1, auto_hibernate/1, otp_7669/1, call_format_status/1,
-     error_format_status/1, terminate_crash_format/1,
-     get_state/1, replace_state/1, call_with_huge_message_queue/1,
-     undef_handle_call/1, undef_handle_cast/1, undef_handle_info/1,
-     undef_init/1, undef_code_change/1, undef_terminate1/1,
-     undef_terminate2/1, undef_in_terminate/1, undef_in_handle_info/1,
-     undef_handle_continue/1,
+-export([
+    all/0,
+    suite/0,
+    groups/0,
+    init_per_suite/1,
+    end_per_suite/1,
+    init_per_group/2,
+    end_per_group/2
+]).
+-export([
+    start/1,
+    crash/1,
+    call/1,
+    send_request/1,
+    cast/1,
+    cast_fast/1,
+    continue/1,
+    info/1,
+    abcast/1,
+    multicall/1,
+    multicall_down/1,
+    call_remote1/1,
+    call_remote2/1,
+    call_remote3/1,
+    call_remote_n1/1,
+    call_remote_n2/1,
+    call_remote_n3/1,
+    spec_init/1,
+    spec_init_local_registered_parent/1,
+    spec_init_global_registered_parent/1,
+    otp_5854/1,
+    hibernate/1,
+    auto_hibernate/1,
+    otp_7669/1,
+    call_format_status/1,
+    error_format_status/1,
+    terminate_crash_format/1,
+    get_state/1,
+    replace_state/1,
+    call_with_huge_message_queue/1,
+    undef_handle_call/1,
+    undef_handle_cast/1,
+    undef_handle_info/1,
+    undef_init/1,
+    undef_code_change/1,
+    undef_terminate1/1,
+    undef_terminate2/1,
+    undef_in_terminate/1,
+    undef_in_handle_info/1,
+    undef_handle_continue/1,
 
-         format_log_1/1, format_log_2/1,
-         reply_by_alias_with_payload/1
-    ]).
+    format_log_1/1,
+    format_log_2/1,
+    reply_by_alias_with_payload/1
+]).
 
--export([stop1/1, stop2/1, stop3/1, stop4/1, stop5/1, stop6/1, stop7/1,
-     stop8/1, stop9/1, stop10/1]).
+-export([
+    stop1/1,
+    stop2/1,
+    stop3/1,
+    stop4/1,
+    stop5/1,
+    stop6/1,
+    stop7/1,
+    stop8/1,
+    stop9/1,
+    stop10/1
+]).
 
 %% spawn export
--export([spec_init_local/2, spec_init_global/2, spec_init_via/2,
-     spec_init_default_timeout/2, spec_init_global_default_timeout/2,
-         spec_init_anonymous/1,
-     spec_init_anonymous_default_timeout/1,
-     spec_init_not_proc_lib/1, cast_fast_messup/0]).
-
+-export([
+    spec_init_local/2,
+    spec_init_global/2,
+    spec_init_via/2,
+    spec_init_default_timeout/2,
+    spec_init_global_default_timeout/2,
+    spec_init_anonymous/1,
+    spec_init_anonymous_default_timeout/1,
+    spec_init_not_proc_lib/1,
+    cast_fast_messup/0
+]).
 
 %% The partisan_gen_server behaviour
--export([init/1, handle_call/3, handle_cast/2, handle_continue/2,
-     handle_info/2, code_change/3, terminate/2, format_status/2]).
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_continue/2,
+    handle_info/2,
+    code_change/3,
+    terminate/2,
+    format_status/2
+]).
 
 suite() ->
-    [{ct_hooks,[ts_install_cth]},
-     {timetrap,{minutes,1}}].
+    [
+        {ct_hooks, [ts_install_cth]},
+        {timetrap, {minutes, 1}}
+    ].
 
-all() -> 
-    [start, {group,stop}, crash, call, send_request, cast, cast_fast, info, abcast,
-     continue, multicall, multicall_down,
-     call_remote1, call_remote2, call_remote3,
-     call_remote_n1,
-     call_remote_n2,
-     call_remote_n3, spec_init,
-     spec_init_local_registered_parent,
-     spec_init_global_registered_parent,
-     otp_5854, hibernate, auto_hibernate,
-     otp_7669,
-     call_format_status, error_format_status, terminate_crash_format,
-     get_state, replace_state,
-     call_with_huge_message_queue, {group, undef_callbacks},
-     undef_in_terminate, undef_in_handle_info,
-     format_log_1, format_log_2, reply_by_alias_with_payload].
+all() ->
+    [
+        start,
+        {group, stop},
+        crash,
+        call,
+        send_request,
+        cast,
+        cast_fast,
+        info,
+        abcast,
+        continue,
+        multicall,
+        multicall_down,
+        call_remote1,
+        call_remote2,
+        call_remote3,
+        call_remote_n1,
+        call_remote_n2,
+        call_remote_n3,
+        spec_init,
+        spec_init_local_registered_parent,
+        spec_init_global_registered_parent,
+        otp_5854,
+        hibernate,
+        auto_hibernate,
+        otp_7669,
+        call_format_status,
+        error_format_status,
+        terminate_crash_format,
+        get_state,
+        replace_state,
+        call_with_huge_message_queue,
+        {group, undef_callbacks},
+        undef_in_terminate,
+        undef_in_handle_info,
+        format_log_1,
+        format_log_2,
+        reply_by_alias_with_payload
+    ].
 
-groups() -> 
-    [{stop, [],
-      [stop1, stop2, stop3, stop4, stop5,
-      stop6, stop7, stop8, stop9,stop10
-      ]},
-     {undef_callbacks, [],
-      [undef_handle_call, undef_handle_cast, undef_handle_info, undef_handle_continue,
-       undef_init, undef_code_change, undef_terminate1, undef_terminate2]}].
-
+groups() ->
+    [
+        {stop, [], [
+            stop1,
+            stop2,
+            stop3,
+            stop4,
+            stop5,
+            stop6,
+            stop7,
+            stop8,
+            stop9,
+            stop10
+        ]},
+        {undef_callbacks, [], [
+            undef_handle_call,
+            undef_handle_cast,
+            undef_handle_info,
+            undef_handle_continue,
+            undef_init,
+            undef_code_change,
+            undef_terminate1,
+            undef_terminate2
+        ]}
+    ].
 
 init_per_suite(Config) ->
     Config.
@@ -113,24 +212,24 @@ end_per_group(_GroupName, Config) ->
     partisan_support_otp:stop_all_nodes(),
     Config.
 
-
-init_per_testcase(Case, Config) when Case == call_remote1;
-                     Case == call_remote2;
-                     Case == call_remote3;
-                     Case == call_remote_n1;
-                     Case == call_remote_n2;
-                     Case == call_remote_n3 ->
-                     %% Case == send_request ->
+init_per_testcase(Case, Config) when
+    Case == call_remote1;
+    Case == call_remote2;
+    Case == call_remote3;
+    Case == call_remote_n1;
+    Case == call_remote_n2;
+    Case == call_remote_n3
+->
+    %% Case == send_request ->
     partisan_support:start_disterl(),
     erlang:is_alive() orelse ct:fail("Runner not in distribution mode"),
     application:ensure_all_started(partisan),
 
-    {ok,Node} = partisan_support_otp:start_node(Case),
+    {ok, Node} = partisan_support_otp:start_node(Case),
     ok = partisan_support:cluster(Node),
     timer:sleep(2000),
 
-    [{node,Node} | Config];
-
+    [{node, Node} | Config];
 init_per_testcase(_Case, Config) ->
     %% we start disterl and partisan at runner so that we can join the peers
     partisan_support:start_disterl(),
@@ -146,10 +245,12 @@ end_per_testcase(_Case, _Config) ->
     %%     test_server:stop_node(N)
     %% end,
     %% ok.
-    partisan_support_otp:stop_all_nodes(), % stop all peers
-    application:stop(partisan), % stop partisan at runner
-    ok.
 
+    % stop all peers
+    partisan_support_otp:stop_all_nodes(),
+    % stop partisan at runner
+    application:stop(partisan),
+    ok.
 
 %% --------------------------------------
 %% Start and stop a partisan_gen_server.
@@ -162,89 +263,123 @@ start(Config) when is_list(Config) ->
     {ok, Pid0} = partisan_gen_server:start(partisan_gen_server_SUITE, [], []),
     ok = partisan_gen_server:call(Pid0, started_p),
     ok = partisan_gen_server:call(Pid0, stop),
-    busy_wait_for_process(Pid0,600),
-    {'EXIT', {noproc,_}} = (catch partisan_gen_server:call(Pid0, started_p, 1)),
+    busy_wait_for_process(Pid0, 600),
+    {'EXIT', {noproc, _}} =
+        (catch partisan_gen_server:call(Pid0, started_p, 1)),
 
     %% anonymous with timeout
-    {ok, Pid00} = partisan_gen_server:start(partisan_gen_server_SUITE, [],
-                   [{timeout,1000}]),
+    {ok, Pid00} = partisan_gen_server:start(
+        partisan_gen_server_SUITE,
+        [],
+        [{timeout, 1000}]
+    ),
     ok = partisan_gen_server:call(Pid00, started_p),
     ok = partisan_gen_server:call(Pid00, stop),
-    {error, timeout} = partisan_gen_server:start(partisan_gen_server_SUITE, sleep,
-                    [{timeout,100}]),
+    {error, timeout} = partisan_gen_server:start(
+        partisan_gen_server_SUITE,
+        sleep,
+        [{timeout, 100}]
+    ),
 
     %% anonymous with ignore
     ignore = partisan_gen_server:start(partisan_gen_server_SUITE, ignore, []),
 
     %% anonymous with stop
-    {error, stopped} = partisan_gen_server:start(partisan_gen_server_SUITE, stop, []),
+    {error, stopped} = partisan_gen_server:start(
+        partisan_gen_server_SUITE, stop, []
+    ),
 
     %% anonymous linked
     {ok, Pid1} =
-    partisan_gen_server:start_link(partisan_gen_server_SUITE, [], []),
+        partisan_gen_server:start_link(partisan_gen_server_SUITE, [], []),
     ok = partisan_gen_server:call(Pid1, started_p),
     ok = partisan_gen_server:call(Pid1, stop),
     receive
-    {'EXIT', Pid1, stopped} ->
-        ok
+        {'EXIT', Pid1, stopped} ->
+            ok
     after 5000 ->
         ct:fail(not_stopped)
     end,
 
     %% anonymous monitored
     {ok, {Pid1b, Mon1b}} =
-    partisan_gen_server:start_monitor(partisan_gen_server_SUITE, [], []),
+        partisan_gen_server:start_monitor(partisan_gen_server_SUITE, [], []),
     ok = partisan_gen_server:call(Pid1b, started_p),
     ok = partisan_gen_server:call(Pid1b, stop),
     receive
-    {'DOWN', Mon1b, process, Pid1b, stopped} ->
-        ok
+        {'DOWN', Mon1b, process, Pid1b, stopped} ->
+            ok
     after 5000 ->
         ct:fail(not_stopped)
     end,
 
     %% local register
     {ok, Pid2} =
-    partisan_gen_server:start({local, my_test_name},
-             partisan_gen_server_SUITE, [], []),
+        partisan_gen_server:start(
+            {local, my_test_name},
+            partisan_gen_server_SUITE,
+            [],
+            []
+        ),
     ok = partisan_gen_server:call(my_test_name, started_p),
     {error, {already_started, Pid2}} =
-    partisan_gen_server:start({local, my_test_name},
-             partisan_gen_server_SUITE, [], []),
+        partisan_gen_server:start(
+            {local, my_test_name},
+            partisan_gen_server_SUITE,
+            [],
+            []
+        ),
     ok = partisan_gen_server:call(my_test_name, stop),
 
-    busy_wait_for_process(Pid2,600),
+    busy_wait_for_process(Pid2, 600),
 
-    {'EXIT', {noproc,_}} = (catch partisan_gen_server:call(Pid2, started_p, 10)),
+    {'EXIT', {noproc, _}} =
+        (catch partisan_gen_server:call(Pid2, started_p, 10)),
 
     %% local register linked
     {ok, Pid3} =
-    partisan_gen_server:start_link({local, my_test_name},
-                  partisan_gen_server_SUITE, [], []),
+        partisan_gen_server:start_link(
+            {local, my_test_name},
+            partisan_gen_server_SUITE,
+            [],
+            []
+        ),
     ok = partisan_gen_server:call(my_test_name, started_p),
     {error, {already_started, Pid3}} =
-    partisan_gen_server:start({local, my_test_name},
-             partisan_gen_server_SUITE, [], []),
+        partisan_gen_server:start(
+            {local, my_test_name},
+            partisan_gen_server_SUITE,
+            [],
+            []
+        ),
     ok = partisan_gen_server:call(my_test_name, stop),
     receive
-    {'EXIT', Pid3, stopped} ->
-        ok
+        {'EXIT', Pid3, stopped} ->
+            ok
     after 5000 ->
         ct:fail(not_stopped)
     end,
 
     %% local register monitored
     {ok, {Pid3b, Mon3b}} =
-    partisan_gen_server:start_monitor({local, my_test_name},
-                                 partisan_gen_server_SUITE, [], []),
+        partisan_gen_server:start_monitor(
+            {local, my_test_name},
+            partisan_gen_server_SUITE,
+            [],
+            []
+        ),
     ok = partisan_gen_server:call(my_test_name, started_p),
     {error, {already_started, Pid3b}} =
-    partisan_gen_server:start_monitor({local, my_test_name},
-                                 partisan_gen_server_SUITE, [], []),
+        partisan_gen_server:start_monitor(
+            {local, my_test_name},
+            partisan_gen_server_SUITE,
+            [],
+            []
+        ),
     ok = partisan_gen_server:call(my_test_name, stop),
     receive
-    {'DOWN', Mon3b, process, Pid3b, stopped} ->
-        ok
+        {'DOWN', Mon3b, process, Pid3b, stopped} ->
+            ok
     after 5000 ->
         ct:fail(not_stopped)
     end,
@@ -299,34 +434,51 @@ start(Config) when is_list(Config) ->
     %% via register
     dummy_via:reset(),
     {ok, Pid6} =
-    partisan_gen_server:start({via, dummy_via, my_test_name},
-             partisan_gen_server_SUITE, [], []),
+        partisan_gen_server:start(
+            {via, dummy_via, my_test_name},
+            partisan_gen_server_SUITE,
+            [],
+            []
+        ),
     ok = partisan_gen_server:call({via, dummy_via, my_test_name}, started_p),
     {error, {already_started, Pid6}} =
-    partisan_gen_server:start({via, dummy_via, my_test_name},
-             partisan_gen_server_SUITE, [], []),
+        partisan_gen_server:start(
+            {via, dummy_via, my_test_name},
+            partisan_gen_server_SUITE,
+            [],
+            []
+        ),
     ok = partisan_gen_server:call({via, dummy_via, my_test_name}, stop),
-    busy_wait_for_process(Pid6,600),
-    {'EXIT', {noproc,_}} = (catch partisan_gen_server:call(Pid6, started_p, 10)),
+    busy_wait_for_process(Pid6, 600),
+    {'EXIT', {noproc, _}} =
+        (catch partisan_gen_server:call(Pid6, started_p, 10)),
 
     %% via register linked
     dummy_via:reset(),
     {ok, Pid7} =
-    partisan_gen_server:start_link({via, dummy_via, my_test_name},
-                  partisan_gen_server_SUITE, [], []),
+        partisan_gen_server:start_link(
+            {via, dummy_via, my_test_name},
+            partisan_gen_server_SUITE,
+            [],
+            []
+        ),
     ok = partisan_gen_server:call({via, dummy_via, my_test_name}, started_p),
     {error, {already_started, Pid7}} =
-    partisan_gen_server:start({via, dummy_via, my_test_name},
-             partisan_gen_server_SUITE, [], []),
+        partisan_gen_server:start(
+            {via, dummy_via, my_test_name},
+            partisan_gen_server_SUITE,
+            [],
+            []
+        ),
     ok = partisan_gen_server:call({via, dummy_via, my_test_name}, stop),
     receive
-    {'EXIT', Pid7, stopped} ->
-        ok
+        {'EXIT', Pid7, stopped} ->
+            ok
     after 5000 ->
         ct:fail(not_stopped)
     end,
     receive
-    Msg -> ct:fail({unexpected,Msg})
+        Msg -> ct:fail({unexpected, Msg})
     after 1 -> ok
     end,
 
@@ -338,20 +490,21 @@ stop1(_Config) ->
     {ok, Pid} = partisan_gen_server:start(?MODULE, [], []),
     ok = partisan_gen_server:stop(Pid),
     false = erlang:is_process_alive(Pid),
-    {'EXIT',noproc} = (catch partisan_gen_server:stop(Pid)),
+    {'EXIT', noproc} = (catch partisan_gen_server:stop(Pid)),
     ok.
 
 %% Anonymous, other reason
 stop2(_Config) ->
-    {ok,Pid} = partisan_gen_server:start(?MODULE, [], []),
+    {ok, Pid} = partisan_gen_server:start(?MODULE, [], []),
     ok = partisan_gen_server:stop(Pid, other_reason, infinity),
     false = erlang:is_process_alive(Pid),
     ok.
 
 %% Anonymous, invalid timeout
 stop3(_Config) ->
-    {ok,Pid} = partisan_gen_server:start(?MODULE, [], []),
-    {'EXIT',_} = (catch partisan_gen_server:stop(Pid, other_reason, invalid_timeout)),
+    {ok, Pid} = partisan_gen_server:start(?MODULE, [], []),
+    {'EXIT', _} =
+        (catch partisan_gen_server:stop(Pid, other_reason, invalid_timeout)),
     true = erlang:is_process_alive(Pid),
     ok = partisan_gen_server:stop(Pid),
     false = erlang:is_process_alive(Pid),
@@ -359,87 +512,100 @@ stop3(_Config) ->
 
 %% Registered name
 stop4(_Config) ->
-    {ok,Pid} = partisan_gen_server:start({local,to_stop},?MODULE, [], []),
+    {ok, Pid} = partisan_gen_server:start({local, to_stop}, ?MODULE, [], []),
     ok = partisan_gen_server:stop(to_stop),
     false = erlang:is_process_alive(Pid),
-    {'EXIT',noproc} = (catch partisan_gen_server:stop(to_stop)),
+    {'EXIT', noproc} = (catch partisan_gen_server:stop(to_stop)),
     ok.
 
 %% Registered name and local node
 stop5(_Config) ->
-    {ok,Pid} = partisan_gen_server:start({local,to_stop},?MODULE, [], []),
-    ok = partisan_gen_server:stop({to_stop,partisan:node()}),
+    {ok, Pid} = partisan_gen_server:start({local, to_stop}, ?MODULE, [], []),
+    ok = partisan_gen_server:stop({to_stop, partisan:node()}),
     false = erlang:is_process_alive(Pid),
-    {'EXIT',noproc} = (catch partisan_gen_server:stop({to_stop,partisan:node()})),
+    {'EXIT', noproc} =
+        (catch partisan_gen_server:stop({to_stop, partisan:node()})),
     ok.
 
 %% Globally registered name
 stop6(_Config) ->
     {ok, Pid} = partisan_gen_server:start({global, to_stop}, ?MODULE, [], []),
-    ok = partisan_gen_server:stop({global,to_stop}),
+    ok = partisan_gen_server:stop({global, to_stop}),
     false = erlang:is_process_alive(Pid),
-    {'EXIT',noproc} = (catch partisan_gen_server:stop({global,to_stop})),
+    {'EXIT', noproc} = (catch partisan_gen_server:stop({global, to_stop})),
     ok.
 
 %% 'via' registered name
 stop7(_Config) ->
     dummy_via:reset(),
-    {ok, Pid} = partisan_gen_server:start({via, dummy_via, to_stop},
-                 ?MODULE, [], []),
+    {ok, Pid} = partisan_gen_server:start(
+        {via, dummy_via, to_stop},
+        ?MODULE,
+        [],
+        []
+    ),
     ok = partisan_gen_server:stop({via, dummy_via, to_stop}),
     false = erlang:is_process_alive(Pid),
-    {'EXIT',noproc} = (catch partisan_gen_server:stop({via, dummy_via, to_stop})),
+    {'EXIT', noproc} =
+        (catch partisan_gen_server:stop({via, dummy_via, to_stop})),
     ok.
 
 %% Anonymous on remote node
 stop8(_Config) ->
-    {ok,Node} = partisan_support_otp:start_node(?FUNCTION_NAME),
+    {ok, Node} = partisan_support_otp:start_node(?FUNCTION_NAME),
     ok = partisan_support:cluster(Node),
     timer:sleep(2000),
 
     Dir = filename:dirname(code:which(?MODULE)),
-    partisan_rpc:call(Node,code,add_path,[Dir]),
-    {ok, Pid} = partisan_rpc:call(Node,partisan_gen_server,start,[?MODULE,[],[]]),
+    partisan_rpc:call(Node, code, add_path, [Dir]),
+    {ok, Pid} = partisan_rpc:call(Node, partisan_gen_server, start, [
+        ?MODULE, [], []
+    ]),
     ok = partisan_gen_server:stop(Pid),
-    false = partisan_rpc:call(Node,partisan,is_process_alive,[Pid]),
-    {'EXIT',noproc} = (catch partisan_gen_server:stop(Pid)),
+    false = partisan_rpc:call(Node, partisan, is_process_alive, [Pid]),
+    {'EXIT', noproc} = (catch partisan_gen_server:stop(Pid)),
     partisan_support_otp:stop_node(Node),
-    {'EXIT',{{nodedown,Node},_}} = (catch partisan_gen_server:stop(Pid)),
+    {'EXIT', {{nodedown, Node}, _}} = (catch partisan_gen_server:stop(Pid)),
     ok.
 
 %% Registered name on remote node
 stop9(_Config) ->
-    {ok,Node} = partisan_support_otp:start_node(?FUNCTION_NAME),
+    {ok, Node} = partisan_support_otp:start_node(?FUNCTION_NAME),
     partisan_support:cluster(Node),
     timer:sleep(2000),
 
     Dir = filename:dirname(code:which(?MODULE)),
-    partisan_rpc:call(Node,code,add_path,[Dir]),
-    {ok, Pid} = partisan_rpc:call(Node,partisan_gen_server,start,[{local,to_stop},?MODULE,[],[]]),
-    ok = partisan_gen_server:stop({to_stop,Node}),
-    undefined = partisan_rpc:call(Node,erlang,whereis,[to_stop]),
-    false = partisan_rpc:call(Node,partisan,is_process_alive,[Pid]),
-    {'EXIT',noproc} = (catch partisan_gen_server:stop({to_stop,Node})),
+    partisan_rpc:call(Node, code, add_path, [Dir]),
+    {ok, Pid} = partisan_rpc:call(Node, partisan_gen_server, start, [
+        {local, to_stop}, ?MODULE, [], []
+    ]),
+    ok = partisan_gen_server:stop({to_stop, Node}),
+    undefined = partisan_rpc:call(Node, erlang, whereis, [to_stop]),
+    false = partisan_rpc:call(Node, partisan, is_process_alive, [Pid]),
+    {'EXIT', noproc} = (catch partisan_gen_server:stop({to_stop, Node})),
     partisan_support_otp:stop_node(Node),
-    {'EXIT',{{nodedown,Node},_}} = (catch partisan_gen_server:stop({to_stop,Node})),
+    {'EXIT', {{nodedown, Node}, _}} =
+        (catch partisan_gen_server:stop({to_stop, Node})),
     ok.
 
 %% Globally registered name on remote node
 stop10(_Config) ->
-    {ok,Node} = partisan_support_otp:start_node(?FUNCTION_NAME),
+    {ok, Node} = partisan_support_otp:start_node(?FUNCTION_NAME),
     partisan_support:cluster(Node),
     timer:sleep(2000),
 
     Dir = filename:dirname(code:which(?MODULE)),
-    partisan_rpc:call(Node,code,add_path,[Dir]),
-    {ok, Pid} = partisan_rpc:call(Node,partisan_gen_server,start,[{global,to_stop},?MODULE,[],[]]),
+    partisan_rpc:call(Node, code, add_path, [Dir]),
+    {ok, Pid} = partisan_rpc:call(Node, partisan_gen_server, start, [
+        {global, to_stop}, ?MODULE, [], []
+    ]),
     ok = global:sync(),
-    ok = partisan_gen_server:stop({global,to_stop}),
-    false = partisan_rpc:call(Node,partisan,is_process_alive,[Pid]),
-    {'EXIT',noproc} = (catch partisan_gen_server:stop({global,to_stop})),
+    ok = partisan_gen_server:stop({global, to_stop}),
+    false = partisan_rpc:call(Node, partisan, is_process_alive, [Pid]),
+    {'EXIT', noproc} = (catch partisan_gen_server:stop({global, to_stop})),
 
     partisan_support_otp:stop_node(Node),
-    {'EXIT',noproc} = (catch partisan_gen_server:stop({global,to_stop})),
+    {'EXIT', noproc} = (catch partisan_gen_server:stop({global, to_stop})),
     ok.
 
 crash(Config) when is_list(Config) ->
@@ -448,62 +614,78 @@ crash(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
 
     %% This crash should not generate a crash report.
-    {ok,Pid0} = partisan_gen_server:start_link(?MODULE, [], []),
-    {'EXIT',{{shutdown,reason},_}} =
-    (catch partisan_gen_server:call(Pid0, shutdown_reason)),
-    receive {'EXIT',Pid0,{shutdown,reason}} -> ok end,
+    {ok, Pid0} = partisan_gen_server:start_link(?MODULE, [], []),
+    {'EXIT', {{shutdown, reason}, _}} =
+        (catch partisan_gen_server:call(Pid0, shutdown_reason)),
+    receive
+        {'EXIT', Pid0, {shutdown, reason}} -> ok
+    end,
 
     %% This crash should not generate a crash report.
-    {ok,Pid1} = partisan_gen_server:start_link(?MODULE, {state,state1}, []),
-    {'EXIT',{{shutdown,stop_reason},_}} =
-    (catch partisan_gen_server:call(Pid1, stop_shutdown_reason)),
-    receive {'EXIT',Pid1,{shutdown,stop_reason}} -> ok end,
+    {ok, Pid1} = partisan_gen_server:start_link(?MODULE, {state, state1}, []),
+    {'EXIT', {{shutdown, stop_reason}, _}} =
+        (catch partisan_gen_server:call(Pid1, stop_shutdown_reason)),
+    receive
+        {'EXIT', Pid1, {shutdown, stop_reason}} -> ok
+    end,
 
     %% This crash should not generate a crash report.
-    {ok,Pid2} = partisan_gen_server:start_link(?MODULE, [], []),
-    {'EXIT',{shutdown,_}} =
-    (catch partisan_gen_server:call(Pid2, exit_shutdown)),
-    receive {'EXIT',Pid2,shutdown} -> ok end,
+    {ok, Pid2} = partisan_gen_server:start_link(?MODULE, [], []),
+    {'EXIT', {shutdown, _}} =
+        (catch partisan_gen_server:call(Pid2, exit_shutdown)),
+    receive
+        {'EXIT', Pid2, shutdown} -> ok
+    end,
 
     %% This crash should not generate a crash report.
-    {ok,Pid3} = partisan_gen_server:start_link(?MODULE, {state,state3}, []),
-    {'EXIT',{shutdown,_}} =
-    (catch partisan_gen_server:call(Pid3, stop_shutdown)),
-    receive {'EXIT',Pid3,shutdown} -> ok end,
+    {ok, Pid3} = partisan_gen_server:start_link(?MODULE, {state, state3}, []),
+    {'EXIT', {shutdown, _}} =
+        (catch partisan_gen_server:call(Pid3, stop_shutdown)),
+    receive
+        {'EXIT', Pid3, shutdown} -> ok
+    end,
 
     process_flag(trap_exit, false),
 
     %% This crash should generate a crash report and a report
     %% from partisan_gen_server.
-    {ok,Pid4} = partisan_gen_server:start(?MODULE, {state,state4}, []),
-    {'EXIT',{crashed,_}} = (catch partisan_gen_server:call(Pid4, crash)),
+    {ok, Pid4} = partisan_gen_server:start(?MODULE, {state, state4}, []),
+    {'EXIT', {crashed, _}} = (catch partisan_gen_server:call(Pid4, crash)),
     ClientPid = self(),
     receive
-    {error,_GroupLeader4,{Pid4,
-                  "** Generic server"++_,
-                  [Pid4,crash,{formatted, state4},
-                   {crashed,[{?MODULE,handle_call,3,_}
-                     |_Stacktrace]},
-                   ClientPid, [_|_] = _ClientStack]}} ->
-        ok;
-    Other4a ->
-        ct:pal("Unexpected: ~p", [Other4a]),
-        ct:pal("Expected, Pid: ~p, ClientPid:~p", [Pid4, ClientPid]),
-        ct:fail(failed)
+        {error, _GroupLeader4,
+            {Pid4, "** Generic server" ++ _, [
+                Pid4,
+                crash,
+                {formatted, state4},
+                {crashed, [
+                    {?MODULE, handle_call, 3, _}
+                    | _Stacktrace
+                ]},
+                ClientPid,
+                [_ | _] = _ClientStack
+            ]}} ->
+            ok;
+        Other4a ->
+            ct:pal("Unexpected: ~p", [Other4a]),
+            ct:pal("Expected, Pid: ~p, ClientPid:~p", [Pid4, ClientPid]),
+            ct:fail(failed)
     end,
     receive
-    {error_report,_,{Pid4,crash_report,[List4|_]}} ->
-        {exit,crashed,[{?MODULE, handle_call, 3, _}|_]} = proplists:get_value(error_info, List4),
-        Pid4 = proplists:get_value(pid, List4);
-    Other4 ->
-        ct:pal("Unexpected: ~p", [Other4]),
-        ct:fail(failed)
+        {error_report, _, {Pid4, crash_report, [List4 | _]}} ->
+            {exit, crashed, [{?MODULE, handle_call, 3, _} | _]} = proplists:get_value(
+                error_info, List4
+            ),
+            Pid4 = proplists:get_value(pid, List4);
+        Other4 ->
+            ct:pal("Unexpected: ~p", [Other4]),
+            ct:fail(failed)
     end,
 
     receive
-    Any ->
-        ct:pal("Unexpected: ~p", [Any]),
-        ct:fail(failed)
+        Any ->
+            ct:pal("Unexpected: ~p", [Any]),
+            ct:fail(failed)
     after 500 ->
         ok
     end,
@@ -520,11 +702,15 @@ call(Config) when is_list(Config) ->
     OldFl = process_flag(trap_exit, true),
 
     {ok, _Pid} =
-    partisan_gen_server:start_link({local, my_test_name},
-                  partisan_gen_server_SUITE, [], []),
+        partisan_gen_server:start_link(
+            {local, my_test_name},
+            partisan_gen_server_SUITE,
+            [],
+            []
+        ),
 
     ok = partisan_gen_server:call(my_test_name, started_p),
-    delayed = partisan_gen_server:call(my_test_name, {delayed_answer,1}),
+    delayed = partisan_gen_server:call(my_test_name, {delayed_answer, 1}),
 
     %% two requests within a specified time.
     ok = partisan_gen_server:call(my_test_name, {call_within, 1000}),
@@ -535,13 +721,13 @@ call(Config) when is_list(Config) ->
     false = partisan_gen_server:call(my_test_name, next_call),
 
     %% timeout call.
-    delayed = partisan_gen_server:call(my_test_name, {delayed_answer,1}, 30),
-    {'EXIT',{timeout,_}} =
-    (catch partisan_gen_server:call(my_test_name, {delayed_answer,30}, 1)),
+    delayed = partisan_gen_server:call(my_test_name, {delayed_answer, 1}, 30),
+    {'EXIT', {timeout, _}} =
+        (catch partisan_gen_server:call(my_test_name, {delayed_answer, 30}, 1)),
 
     %% bad return value in the partisan_gen_server loop from handle_call.
-    {'EXIT',{{bad_return_value, badreturn},_}} =
-    (catch partisan_gen_server:call(my_test_name, badreturn)),
+    {'EXIT', {{bad_return_value, badreturn}, _}} =
+        (catch partisan_gen_server:call(my_test_name, badreturn)),
 
     process_flag(trap_exit, OldFl),
     ok.
@@ -553,58 +739,74 @@ call(Config) when is_list(Config) ->
 send_request(Config) when is_list(Config) ->
     _OldFl = process_flag(trap_exit, true),
 
-    {ok, Pid} = partisan_gen_server:start_link({local, my_test_name},
-                                      partisan_gen_server_SUITE, [], []),
+    {ok, Pid} = partisan_gen_server:start_link(
+        {local, my_test_name},
+        partisan_gen_server_SUITE,
+        [],
+        []
+    ),
 
     Async = fun(Process, Req) ->
-                    try
-                        Promise = partisan_gen_server:send_request(Process, Req),
-                        partisan_gen_server:wait_response(Promise, infinity)
-                    catch _:Reason:ST ->
-                            {'did_exit', Reason, ST}
-                    end
-            end,
-    {reply,ok} = Async(my_test_name, started_p),
+        try
+            Promise = partisan_gen_server:send_request(Process, Req),
+            partisan_gen_server:wait_response(Promise, infinity)
+        catch
+            _:Reason:ST ->
+                {'did_exit', Reason, ST}
+        end
+    end,
+    {reply, ok} = Async(my_test_name, started_p),
 
-    {reply,delayed} = Async(Pid, {delayed_answer,1}),
+    {reply, delayed} = Async(Pid, {delayed_answer, 1}),
 
     %% two requests within a specified time.
-    Promise1 = partisan_gen_server:send_request(my_test_name, {call_within, 1000}),
+    Promise1 = partisan_gen_server:send_request(
+        my_test_name, {call_within, 1000}
+    ),
     Promise2 = partisan_gen_server:send_request(my_test_name, next_call),
     {reply, ok} = partisan_gen_server:wait_response(Promise1, infinity),
     {reply, ok} = partisan_gen_server:wait_response(Promise2, infinity),
 
-    Promise3 = partisan_gen_server:send_request(my_test_name, {call_within, 1000}),
+    Promise3 = partisan_gen_server:send_request(
+        my_test_name, {call_within, 1000}
+    ),
     no_reply = partisan_gen_server:check_response({foo, bar}, Promise3),
-    receive {[alias|Ref],_} = Msg ->
+    receive
+        {[alias | Ref], _} = Msg ->
             partisan:is_reference(Ref) orelse ct:fail({bad_ref, Ref}),
             {reply, ok} = partisan_gen_server:check_response(Msg, Promise3)
     after 1000 ->
-            %% Format changed which is ok. This test is just to make you
-            %% aware that you have changed it
-            exit(message_format_changed)
+        %% Format changed which is ok. This test is just to make you
+        %% aware that you have changed it
+        exit(message_format_changed)
     end,
     timer:sleep(1500),
 
     {reply, false} = Async(my_test_name, next_call),
 
     %% timeout
-    Promise5 = partisan_gen_server:send_request(my_test_name, {delayed_answer,50}),
+    Promise5 = partisan_gen_server:send_request(
+        my_test_name, {delayed_answer, 50}
+    ),
     timeout = partisan_gen_server:wait_response(Promise5, 0),
     {reply, delayed} = partisan_gen_server:wait_response(Promise5, infinity),
 
     %% bad return value in the partisan_gen_server loop from handle_call.
-    {error,{{bad_return_value, badreturn},_}} = Async(my_test_name, badreturn),
+    {error, {{bad_return_value, badreturn}, _}} = Async(
+        my_test_name, badreturn
+    ),
 
     %% Test other error cases
-    {error, {noproc,_}} = Async(Pid, started_p),
-    {error, {noproc,_}} = Async(my_test_name, started_p),
+    {error, {noproc, _}} = Async(Pid, started_p),
+    {error, {noproc, _}} = Async(my_test_name, started_p),
     {error, {noconnection, _}} = Async({my_test_name, foo@node}, started_p),
 
-    {error, {noproc,_}} = Async({global, non_existing}, started_p),
+    {error, {noproc, _}} = Async({global, non_existing}, started_p),
     catch exit(whereis(dummy_via), foo),
-    {'EXIT', {badarg,_}} =
-        (catch partisan_gen_server:send_request({via, dummy_via, non_existing}, started_p)),
+    {'EXIT', {badarg, _}} =
+        (catch partisan_gen_server:send_request(
+            {via, dummy_via, non_existing}, started_p
+        )),
 
     %% Remote nodes
     %% >>>>> Commented as partisan doesn't currently support global <<<<<
@@ -631,13 +833,14 @@ send_request(Config) when is_list(Config) ->
     %% process_flag(trap_exit, OldFl),
     ok.
 
-
 %% --------------------------------------
 %% Test handle_continue.
 %% --------------------------------------
 
 continue(Config) when is_list(Config) ->
-    {ok, Pid} = partisan_gen_server:start_link(partisan_gen_server_SUITE, {continue, self()}, []),
+    {ok, Pid} = partisan_gen_server:start_link(
+        partisan_gen_server_SUITE, {continue, self()}, []
+    ),
     [{Ref1, continue}, {Ref1, after_continue}] = read_replies(Pid),
     partisan:is_local_pid(Ref1, Pid) orelse ct:fail(continue),
 
@@ -660,7 +863,9 @@ continue(Config) when is_list(Config) ->
 
     %% Pid ! {continue_continue, self()},
     partisan:send(Pid, {continue_continue, partisan:self()}),
-    [{Ref6, before_continue}, {Ref6, continue}, {Ref6, after_continue}] = read_replies(Pid),
+    [{Ref6, before_continue}, {Ref6, continue}, {Ref6, after_continue}] = read_replies(
+        Pid
+    ),
     partisan:is_local_pid(Ref6, Pid) orelse ct:fail(continue),
 
     Ref = monitor(process, Pid),
@@ -670,18 +875,16 @@ continue(Config) when is_list(Config) ->
 
 read_replies(Pid) ->
     receive
-    {Ref, ack} ->
-        partisan:is_local_pid(Ref, Pid) orelse ct:fail({continue, ack}),
-        read_replies()
-    after
-    1000 -> ct:fail({continue, ack})
+        {Ref, ack} ->
+            partisan:is_local_pid(Ref, Pid) orelse ct:fail({continue, ack}),
+            read_replies()
+    after 1000 -> ct:fail({continue, ack})
     end.
 
 read_replies() ->
     receive
-    Msg -> [Msg | read_replies()]
-    after
-    0 -> []
+        Msg -> [Msg | read_replies()]
+    after 0 -> []
     end.
 
 %% --------------------------------------
@@ -690,39 +893,63 @@ read_replies() ->
 
 call_remote1(Config) when is_list(Config) ->
     N = hubba,
-    Node = proplists:get_value(node,Config),
-    {ok, Pid} = partisan_rpc:call(Node, partisan_gen_server, start,
-             [{global, N}, ?MODULE, [], []]),
+    Node = proplists:get_value(node, Config),
+    {ok, Pid} = partisan_rpc:call(
+        Node,
+        partisan_gen_server,
+        start,
+        [{global, N}, ?MODULE, [], []]
+    ),
     ok = (catch partisan_gen_server:call({global, N}, started_p, infinity)),
     partisan:exit(Pid, boom),
-    {'EXIT', {Reason, _}} = (catch partisan_gen_server:call({global, N},
-                           started_p, infinity)),
+    {'EXIT', {Reason, _}} =
+        (catch partisan_gen_server:call(
+            {global, N},
+            started_p,
+            infinity
+        )),
     true = (Reason == noproc) orelse (Reason == boom),
     ok.
 
 call_remote2(Config) when is_list(Config) ->
     N = hubba,
-    Node = proplists:get_value(node,Config),
+    Node = proplists:get_value(node, Config),
 
-    {ok, Pid} = partisan_rpc:call(Node, partisan_gen_server, start,
-             [{global, N}, ?MODULE, [], []]),
+    {ok, Pid} = partisan_rpc:call(
+        Node,
+        partisan_gen_server,
+        start,
+        [{global, N}, ?MODULE, [], []]
+    ),
     ok = (catch partisan_gen_server:call(Pid, started_p, infinity)),
     partisan:exit(Pid, boom),
-    {'EXIT', {Reason, _}} = (catch partisan_gen_server:call(Pid,
-                           started_p, infinity)),
+    {'EXIT', {Reason, _}} =
+        (catch partisan_gen_server:call(
+            Pid,
+            started_p,
+            infinity
+        )),
     true = (Reason == noproc) orelse (Reason == boom),
     ok.
 
 call_remote3(Config) when is_list(Config) ->
-    Node = proplists:get_value(node,Config),
+    Node = proplists:get_value(node, Config),
 
-    {ok, Pid} = partisan_rpc:call(Node, partisan_gen_server, start,
-             [{local, piller}, ?MODULE, [], []]),
+    {ok, Pid} = partisan_rpc:call(
+        Node,
+        partisan_gen_server,
+        start,
+        [{local, piller}, ?MODULE, [], []]
+    ),
     ok = (catch partisan_gen_server:call({piller, Node}, started_p, infinity)),
     partisan:exit(Pid, boom),
     timer:sleep(2000),
-    {'EXIT', {Reason, _}} = (catch partisan_gen_server:call({piller, Node},
-                           started_p, infinity)),
+    {'EXIT', {Reason, _}} =
+        (catch partisan_gen_server:call(
+            {piller, Node},
+            started_p,
+            infinity
+        )),
     true = (Reason == noproc) orelse (Reason == boom),
     ok.
 
@@ -732,38 +959,58 @@ call_remote3(Config) when is_list(Config) ->
 
 call_remote_n1(Config) when is_list(Config) ->
     N = hubba,
-    Node = proplists:get_value(node,Config),
-    {ok, _Pid} = partisan_rpc:call(Node, partisan_gen_server, start,
-              [{global, N}, ?MODULE, [], []]),
+    Node = proplists:get_value(node, Config),
+    {ok, _Pid} = partisan_rpc:call(
+        Node,
+        partisan_gen_server,
+        start,
+        [{global, N}, ?MODULE, [], []]
+    ),
 
-    partisan_support_otp:stop_node(proplists:get_value(node,Config)),
+    partisan_support_otp:stop_node(proplists:get_value(node, Config)),
     {'EXIT', {noproc, _}} =
-    (catch partisan_gen_server:call({global, N}, started_p, infinity)),
+        (catch partisan_gen_server:call({global, N}, started_p, infinity)),
 
     ok.
 
 call_remote_n2(Config) when is_list(Config) ->
     N = hubba,
-    Node = proplists:get_value(node,Config),
+    Node = proplists:get_value(node, Config),
 
-    {ok, Pid} = partisan_rpc:call(Node, partisan_gen_server, start,
-             [{global, N}, ?MODULE, [], []]),
+    {ok, Pid} = partisan_rpc:call(
+        Node,
+        partisan_gen_server,
+        start,
+        [{global, N}, ?MODULE, [], []]
+    ),
 
-    partisan_support_otp:stop_node(proplists:get_value(node,Config)),
-    {'EXIT', {{nodedown, Node}, _}} = (catch partisan_gen_server:call(Pid,
-                                 started_p, infinity)),
+    partisan_support_otp:stop_node(proplists:get_value(node, Config)),
+    {'EXIT', {{nodedown, Node}, _}} =
+        (catch partisan_gen_server:call(
+            Pid,
+            started_p,
+            infinity
+        )),
 
     ok.
 
 call_remote_n3(Config) when is_list(Config) ->
-    Node = proplists:get_value(node,Config),
+    Node = proplists:get_value(node, Config),
 
-    {ok, _Pid} = partisan_rpc:call(Node, partisan_gen_server, start,
-              [{local, piller}, ?MODULE, [], []]),
+    {ok, _Pid} = partisan_rpc:call(
+        Node,
+        partisan_gen_server,
+        start,
+        [{local, piller}, ?MODULE, [], []]
+    ),
 
-    partisan_support_otp:stop_node(proplists:get_value(node,Config)),
-    {'EXIT', {{nodedown, Node}, _}} = (catch partisan_gen_server:call({piller, Node},
-                                 started_p, infinity)),
+    partisan_support_otp:stop_node(proplists:get_value(node, Config)),
+    {'EXIT', {{nodedown, Node}, _}} =
+        (catch partisan_gen_server:call(
+            {piller, Node},
+            started_p,
+            infinity
+        )),
 
     ok.
 
@@ -775,40 +1022,44 @@ call_remote_n3(Config) when is_list(Config) ->
 
 cast(Config) when is_list(Config) ->
     {ok, Pid} =
-    partisan_gen_server:start({local, my_test_name},
-             partisan_gen_server_SUITE, [], []),
+        partisan_gen_server:start(
+            {local, my_test_name},
+            partisan_gen_server_SUITE,
+            [],
+            []
+        ),
 
     ok = partisan_gen_server:call(my_test_name, started_p),
 
-    ok = partisan_gen_server:cast(my_test_name, {self(),handle_cast}),
+    ok = partisan_gen_server:cast(my_test_name, {self(), handle_cast}),
 
     Pref = partisan_remote_ref:from_term(Pid),
 
     receive
-    {Pid, handled_cast} ->
-        ok;
-    {Pref, handled_cast} ->
-        ok
+        {Pid, handled_cast} ->
+            ok;
+        {Pref, handled_cast} ->
+            ok
     after 1000 ->
         ct:fail(handle_cast)
     end,
 
-    ok = partisan_gen_server:cast(my_test_name, {self(),delayed_cast,1}),
+    ok = partisan_gen_server:cast(my_test_name, {self(), delayed_cast, 1}),
     receive
-    {Pid, delayed} ->
-        ok;
-    {Pref, delayed} ->
-        ok
+        {Pid, delayed} ->
+            ok;
+        {Pref, delayed} ->
+            ok
     after 1000 ->
         ct:fail(delayed_cast)
     end,
 
-    ok = partisan_gen_server:cast(my_test_name, {self(),stop}),
+    ok = partisan_gen_server:cast(my_test_name, {self(), stop}),
     receive
-    {Pid, stopped} ->
-        ok;
-    {Pref, stopped} ->
-        ok
+        {Pid, stopped} ->
+            ok;
+        {Pref, stopped} ->
+            ok
     after 1000 ->
         ct:fail(stop)
     end,
@@ -816,36 +1067,45 @@ cast(Config) when is_list(Config) ->
 
 %% Test that cast really return immediately.
 cast_fast(Config) when is_list(Config) ->
-    {ok,Node} = partisan_support_otp:start_node(?FUNCTION_NAME),
+    {ok, Node} = partisan_support_otp:start_node(?FUNCTION_NAME),
     ok = partisan_support:cluster(Node),
     timer:sleep(2000),
 
-    {_,"@"++Host} = lists:splitwith(fun ($@) -> false; (_) -> true end,
-                    atom_to_list(Node)),
-    FalseNode = list_to_atom("hopp@"++Host),
+    {_, "@" ++ Host} = lists:splitwith(
+        fun
+            ($@) -> false;
+            (_) -> true
+        end,
+        atom_to_list(Node)
+    ),
+    FalseNode = list_to_atom("hopp@" ++ Host),
     %% true = partisan_rpc:cast(Node, ?MODULE, cast_fast_messup, []),
     ok = partisan_erpc:cast(Node, ?MODULE, cast_fast_messup, []),
     ct:sleep(1000),
     [Node] = partisan:nodes(),
-    {Time,ok} = timer:tc(fun() ->
-                 partisan_gen_server:cast({hopp,FalseNode}, hopp)
-             end),
+    {Time, ok} = timer:tc(fun() ->
+        partisan_gen_server:cast({hopp, FalseNode}, hopp)
+    end),
 
     partisan_support_otp:stop_node(Node),
-    if Time > 1000000 ->       % Default listen timeout is about 7.0 s
-        ct:fail(hanging_cast);
-       true ->
-        ok
+    % Default listen timeout is about 7.0 s
+    if
+        Time > 1000000 ->
+            ct:fail(hanging_cast);
+        true ->
+            ok
     end.
 
 cast_fast_messup() ->
     %% Register a false node: hopp@hostname
     unregister(erl_epmd),
     {ok, _} = erl_epmd:start_link(),
-    {ok,S} = gen_tcp:listen(0, []),
-    {ok,P} = inet:port(S),
-    {ok,_Creation} = erl_epmd:register_node(hopp, P),
-    receive after infinity -> ok end.
+    {ok, S} = gen_tcp:listen(0, []),
+    {ok, P} = inet:port(S),
+    {ok, _Creation} = erl_epmd:register_node(hopp, P),
+    receive
+    after infinity -> ok
+    end.
 
 %% --------------------------------------
 %% Test handle_info.
@@ -853,8 +1113,12 @@ cast_fast_messup() ->
 
 info(Config) when is_list(Config) ->
     {ok, Pid} =
-    partisan_gen_server:start({local, my_test_name},
-             partisan_gen_server_SUITE, [], []),
+        partisan_gen_server:start(
+            {local, my_test_name},
+            partisan_gen_server_SUITE,
+            [],
+            []
+        ),
 
     ok = partisan_gen_server:call(my_test_name, started_p),
 
@@ -862,8 +1126,8 @@ info(Config) when is_list(Config) ->
     partisan:send(Pid, {self(), handle_info}),
 
     receive
-    {Pid, handled_info} ->
-        ok
+        {Pid, handled_info} ->
+            ok
     after 1000 ->
         ct:fail(handle_info)
     end,
@@ -871,8 +1135,8 @@ info(Config) when is_list(Config) ->
     %% Pid ! {self(),delayed_info,1},
     partisan:send(Pid, {partisan:self(), delayed_info, 1}),
     receive
-    {Pid, delayed_info} ->
-        ok
+        {Pid, delayed_info} ->
+            ok
     after 1000 ->
         ct:fail(delayed_info)
     end,
@@ -880,8 +1144,8 @@ info(Config) when is_list(Config) ->
     %% Pid ! {self(),stop},
     partisan:send(Pid, {partisan:self(), stop}),
     receive
-    {Pid, stopped_info} ->
-        ok
+        {Pid, stopped_info} ->
+            ok
     after 1000 ->
         ct:fail(stop_info)
     end,
@@ -890,70 +1154,90 @@ info(Config) when is_list(Config) ->
 hibernate(Config) when is_list(Config) ->
     OldFl = process_flag(trap_exit, true),
     {ok, Pid0} =
-    partisan_gen_server:start_link({local, my_test_name_hibernate0},
-                  partisan_gen_server_SUITE, hibernate, []),
+        partisan_gen_server:start_link(
+            {local, my_test_name_hibernate0},
+            partisan_gen_server_SUITE,
+            hibernate,
+            []
+        ),
     is_in_erlang_hibernate(Pid0),
     ok = partisan_gen_server:call(my_test_name_hibernate0, stop),
-    receive 
-    {'EXIT', Pid0, stopped} ->
-        ok
+    receive
+        {'EXIT', Pid0, stopped} ->
+            ok
     after 5000 ->
         ct:fail(partisan_gen_server_did_not_die)
     end,
 
     {ok, Pid} =
-    partisan_gen_server:start_link({local, my_test_name_hibernate},
-                  partisan_gen_server_SUITE, [], []),
+        partisan_gen_server:start_link(
+            {local, my_test_name_hibernate},
+            partisan_gen_server_SUITE,
+            [],
+            []
+        ),
 
     ok = partisan_gen_server:call(my_test_name_hibernate, started_p),
     true = partisan_gen_server:call(my_test_name_hibernate, hibernate),
     is_in_erlang_hibernate(Pid),
     Parent = self(),
     Fun = fun() ->
-          receive go -> ok end,
-          receive after 1000 -> ok end,
-          X = erlang:process_info(Pid, current_function),
-          %% Pid ! continue,
-          %% Parent ! {result,X}
-          partisan:send(Pid, continue),
-          partisan:send(Parent, {result,X})
-      end,
+        receive
+            go -> ok
+        end,
+        receive
+        after 1000 -> ok
+        end,
+        X = erlang:process_info(Pid, current_function),
+        %% Pid ! continue,
+        %% Parent ! {result,X}
+        partisan:send(Pid, continue),
+        partisan:send(Parent, {result, X})
+    end,
     Pid2 = spawn_link(Fun),
-    true = partisan_gen_server:call(my_test_name_hibernate, {hibernate_noreply,Pid2}),
+    true = partisan_gen_server:call(
+        my_test_name_hibernate, {hibernate_noreply, Pid2}
+    ),
 
     partisan_gen_server:cast(my_test_name_hibernate, hibernate_later),
-    true = ({current_function,{erlang,hibernate,3}} =/=
-        erlang:process_info(Pid, current_function)),
+    true =
+        ({current_function, {erlang, hibernate, 3}} =/=
+            erlang:process_info(Pid, current_function)),
     is_in_erlang_hibernate(Pid),
     ok = partisan_gen_server:call(my_test_name_hibernate, started_p),
-    true = ({current_function,{erlang,hibernate,3}} =/=
-        erlang:process_info(Pid, current_function)),
+    true =
+        ({current_function, {erlang, hibernate, 3}} =/=
+            erlang:process_info(Pid, current_function)),
 
     partisan_gen_server:cast(my_test_name_hibernate, hibernate_now),
     is_in_erlang_hibernate(Pid),
     ok = partisan_gen_server:call(my_test_name_hibernate, started_p),
-    true = ({current_function,{erlang,hibernate,3}} =/=
-        erlang:process_info(Pid, current_function)),
+    true =
+        ({current_function, {erlang, hibernate, 3}} =/=
+            erlang:process_info(Pid, current_function)),
 
     %% Pid ! hibernate_later,
     partisan:send(Pid, hibernate_later),
-    true = ({current_function,{erlang,hibernate,3}} =/=
-        erlang:process_info(Pid, current_function)),
+    true =
+        ({current_function, {erlang, hibernate, 3}} =/=
+            erlang:process_info(Pid, current_function)),
     is_in_erlang_hibernate(Pid),
     ok = partisan_gen_server:call(my_test_name_hibernate, started_p),
-    true = ({current_function,{erlang,hibernate,3}} =/=
-        erlang:process_info(Pid, current_function)),
+    true =
+        ({current_function, {erlang, hibernate, 3}} =/=
+            erlang:process_info(Pid, current_function)),
 
     %% Pid ! hibernate_now,
     partisan:send(Pid, hibernate_now),
     is_in_erlang_hibernate(Pid),
     ok = partisan_gen_server:call(my_test_name_hibernate, started_p),
-    true = ({current_function,{erlang,hibernate,3}} =/=
-        erlang:process_info(Pid, current_function)),
+    true =
+        ({current_function, {erlang, hibernate, 3}} =/=
+            erlang:process_info(Pid, current_function)),
     receive
-    {result,R} ->
-        {current_function, MFA0} = R,
-        true = is_hibernating_mfa(MFA0)
+        {result, R} ->
+            {current_function, MFA0} = R,
+            true = is_hibernating_mfa(MFA0)
     end,
 
     true = partisan_gen_server:call(my_test_name_hibernate, hibernate),
@@ -963,12 +1247,14 @@ hibernate(Config) when is_list(Config) ->
     partisan_sys:resume(my_test_name_hibernate),
     is_in_erlang_hibernate(Pid),
     ok = partisan_gen_server:call(my_test_name_hibernate, started_p),
-    true = ({current_function,{erlang,hibernate,3}} =/= erlang:process_info(Pid,current_function)),
+    true =
+        ({current_function, {erlang, hibernate, 3}} =/=
+            erlang:process_info(Pid, current_function)),
 
     ok = partisan_gen_server:call(my_test_name_hibernate, stop),
-    receive 
-    {'EXIT', Pid, stopped} ->
-        ok
+    receive
+        {'EXIT', Pid, stopped} ->
+            ok
     after 5000 ->
         ct:fail(partisan_gen_server_did_not_die)
     end,
@@ -980,8 +1266,12 @@ auto_hibernate(Config) when is_list(Config) ->
     HibernateAfterTimeout = 100,
     State = {auto_hibernate_state},
     {ok, Pid} =
-        partisan_gen_server:start_link({local, my_test_name_auto_hibernate},
-            partisan_gen_server_SUITE, {state,State}, [{hibernate_after, HibernateAfterTimeout}]),
+        partisan_gen_server:start_link(
+            {local, my_test_name_auto_hibernate},
+            partisan_gen_server_SUITE,
+            {state, State},
+            [{hibernate_after, HibernateAfterTimeout}]
+        ),
     %% After init test
     is_not_in_erlang_hibernate(Pid),
     timer:sleep(HibernateAfterTimeout),
@@ -995,7 +1285,9 @@ auto_hibernate(Config) when is_list(Config) ->
     timer:sleep(HibernateAfterTimeout),
     is_in_erlang_hibernate(Pid),
     %% Cast test
-    ok = partisan_gen_server:cast(my_test_name_auto_hibernate, {self(),handle_cast}),
+    ok = partisan_gen_server:cast(my_test_name_auto_hibernate, {
+        self(), handle_cast
+    }),
     receive
         {Pid, handled_cast} ->
             ok
@@ -1029,35 +1321,43 @@ auto_hibernate(Config) when is_list(Config) ->
     ok.
 
 is_in_erlang_hibernate(Pid) ->
-    receive after 1 -> ok end,
+    receive
+    after 1 -> ok
+    end,
     is_in_erlang_hibernate_1(200, Pid).
 
 is_in_erlang_hibernate_1(0, Pid) ->
     io:format("~p\n", [erlang:process_info(Pid, current_function)]),
     ct:fail(not_in_erlang_hibernate_3);
 is_in_erlang_hibernate_1(N, Pid) ->
-    {current_function,MFA} = erlang:process_info(Pid, current_function),
+    {current_function, MFA} = erlang:process_info(Pid, current_function),
     case is_hibernating_mfa(MFA) of
-    true ->
-        ok;
-    false ->
-        receive after 10 -> ok end,
-        is_in_erlang_hibernate_1(N-1, Pid)
+        true ->
+            ok;
+        false ->
+            receive
+            after 10 -> ok
+            end,
+            is_in_erlang_hibernate_1(N - 1, Pid)
     end.
 
 is_not_in_erlang_hibernate(Pid) ->
-    receive after 1 -> ok end,
+    receive
+    after 1 -> ok
+    end,
     is_not_in_erlang_hibernate_1(200, Pid).
 
 is_not_in_erlang_hibernate_1(0, Pid) ->
     io:format("~p\n", [erlang:process_info(Pid, current_function)]),
     ct:fail(not_in_erlang_hibernate_3);
 is_not_in_erlang_hibernate_1(N, Pid) ->
-    {current_function,MFA} = erlang:process_info(Pid, current_function),
+    {current_function, MFA} = erlang:process_info(Pid, current_function),
     case is_hibernating_mfa(MFA) of
         true ->
-            receive after 10 -> ok end,
-            is_not_in_erlang_hibernate_1(N-1, Pid);
+            receive
+            after 10 -> ok
+            end,
+            is_not_in_erlang_hibernate_1(N - 1, Pid);
         false ->
             ok
     end.
@@ -1078,35 +1378,42 @@ is_hibernating_mfa(_) -> false.
 
 abcast(Config) when is_list(Config) ->
     {ok, Pid} =
-    partisan_gen_server:start({local, my_test_name},
-             partisan_gen_server_SUITE, [], []),
+        partisan_gen_server:start(
+            {local, my_test_name},
+            partisan_gen_server_SUITE,
+            [],
+            []
+        ),
 
     ok = partisan_gen_server:call(my_test_name, started_p),
 
-    abcast = partisan_gen_server:abcast(my_test_name, {self(),handle_cast}),
+    abcast = partisan_gen_server:abcast(my_test_name, {self(), handle_cast}),
     receive
-    {Ref1, handled_cast} ->
-        partisan:is_local_pid(Ref1, Pid) orelse ct:fail(abcast),
-        ok
+        {Ref1, handled_cast} ->
+            partisan:is_local_pid(Ref1, Pid) orelse ct:fail(abcast),
+            ok
     after 1000 ->
         ct:fail(abcast)
     end,
 
-    abcast = partisan_gen_server:abcast([partisan:node()], my_test_name,
-                   {self(),delayed_cast,1}),
+    abcast = partisan_gen_server:abcast(
+        [partisan:node()],
+        my_test_name,
+        {self(), delayed_cast, 1}
+    ),
     receive
-    {Ref2, delayed} ->
-        partisan:is_local_pid(Ref2, Pid) orelse ct:fail(delayed_abcast),
-        ok
+        {Ref2, delayed} ->
+            partisan:is_local_pid(Ref2, Pid) orelse ct:fail(delayed_abcast),
+            ok
     after 1000 ->
         ct:fail(delayed_abcast)
     end,
 
-    abcast = partisan_gen_server:abcast(my_test_name, {self(),stop}),
+    abcast = partisan_gen_server:abcast(my_test_name, {self(), stop}),
     receive
-    {Ref3, stopped} ->
-        partisan:is_local_pid(Ref3, Pid) orelse ct:fail(abcast_stop),
-        ok
+        {Ref3, stopped} ->
+            partisan:is_local_pid(Ref3, Pid) orelse ct:fail(abcast_stop),
+            ok
     after 1000 ->
         ct:fail(abcast_stop)
     end,
@@ -1122,34 +1429,42 @@ multicall(Config) when is_list(Config) ->
     OldFl = process_flag(trap_exit, true),
 
     {ok, Pid} =
-    partisan_gen_server:start_link({local, my_test_name},
-                  partisan_gen_server_SUITE, [], []),
+        partisan_gen_server:start_link(
+            {local, my_test_name},
+            partisan_gen_server_SUITE,
+            [],
+            []
+        ),
 
     ok = partisan_gen_server:call(my_test_name, started_p),
     Nodes = partisan:nodes(),
     Node = partisan:node(),
-    {[{Node,delayed}],Nodes} =
-    partisan_gen_server:multi_call(my_test_name, {delayed_answer,1}),
+    {[{Node, delayed}], Nodes} =
+        partisan_gen_server:multi_call(my_test_name, {delayed_answer, 1}),
 
     %% two requests within a specified time.
-    {[{Node,ok}],[]} =
-    partisan_gen_server:multi_call([Node], my_test_name, {call_within, 1000}),
+    {[{Node, ok}], []} =
+        partisan_gen_server:multi_call(
+            [Node], my_test_name, {call_within, 1000}
+        ),
     timer:sleep(500),
-    {[{Node,ok}],[]} =
-    partisan_gen_server:multi_call([Node], my_test_name, next_call),
-    {[{Node,ok}],[]} =
-    partisan_gen_server:multi_call([Node], my_test_name, {call_within, 1000}),
+    {[{Node, ok}], []} =
+        partisan_gen_server:multi_call([Node], my_test_name, next_call),
+    {[{Node, ok}], []} =
+        partisan_gen_server:multi_call(
+            [Node], my_test_name, {call_within, 1000}
+        ),
     timer:sleep(1500),
-    {[{Node,false}],[]} =
-    partisan_gen_server:multi_call([Node],my_test_name, next_call),
+    {[{Node, false}], []} =
+        partisan_gen_server:multi_call([Node], my_test_name, next_call),
 
     %% Stop the server.
-    {[{Node,ok}],[]} =
-    partisan_gen_server:multi_call([Node],my_test_name, stop),
+    {[{Node, ok}], []} =
+        partisan_gen_server:multi_call([Node], my_test_name, stop),
     receive
-    {'EXIT', Ref, stopped} ->
-        partisan:is_local_pid(Ref, Pid) orelse ct:fail(multicall_stop),
-        ok
+        {'EXIT', Ref, stopped} ->
+            partisan:is_local_pid(Ref, Pid) orelse ct:fail(multicall_stop),
+            ok
     after 1000 ->
         ct:fail(multicall_stop)
     end,
@@ -1172,46 +1487,47 @@ multicall_down(Config) when is_list(Config) ->
     %% Calling global will not work cause it is a gen_server and will not be
     %% able to deal with the From expressed as a partisan_remote_ref,
     %% so we use the partisan_test_server
-    {Good, Bad} = partisan_gen_server:multi_call([Name, partisan:node()],
-                    partisan_test_server,
-                    call,
-                    3000),
+    {Good, Bad} = partisan_gen_server:multi_call(
+        [Name, partisan:node()],
+        partisan_test_server,
+        call,
+        3000
+    ),
     io:format("good = ~p, bad = ~p~n", [Good, Bad]),
     [Name] = Bad,
     ok.
 
-busy_wait_for_process(Pid,N) ->
+busy_wait_for_process(Pid, N) ->
     case erlang:is_process_alive(Pid) of
-    true ->
-        receive
-        after 100 ->
+        true ->
+            receive
+            after 100 ->
+                ok
+            end,
+            busy_wait_for_process(Pid, N - 1);
+        _ ->
             ok
-        end,
-        busy_wait_for_process(Pid,N-1);
-    _ ->
-        ok
     end.
 %%--------------------------------------------------------------
 %% Test partisan_gen_server:enter_loop/[3,4,5]. Used when you want to write
 %% your own special init-phase.
 spec_init(Config) when is_list(Config) ->
-
     OldFlag = process_flag(trap_exit, true),
 
     {ok, Pid0} = start_link(spec_init_local, [{ok, my_server}, []]),
     ok = partisan_gen_server:call(Pid0, started_p),
     ok = partisan_gen_server:call(Pid0, stop),
-    receive 
-    {'EXIT', Pid0, stopped} ->
-        ok
+    receive
+        {'EXIT', Pid0, stopped} ->
+            ok
     after 5000 ->
         ct:fail(partisan_gen_server_did_not_die)
     end,
 
     {ok, Pid01} = start_link(spec_init_local, [{not_ok, my_server}, []]),
-    receive 
-    {'EXIT', Pid01, process_not_registered} ->
-        ok
+    receive
+        {'EXIT', Pid01, process_not_registered} ->
+            ok
     after 5000 ->
         ct:fail(partisan_gen_server_did_not_die)
     end,
@@ -1219,19 +1535,19 @@ spec_init(Config) when is_list(Config) ->
     {ok, Pid1} = start_link(spec_init_global, [{ok, my_server}, []]),
     ok = partisan_gen_server:call(Pid1, started_p),
     ok = partisan_gen_server:call(Pid1, stop),
-    receive 
-    {'EXIT', Pid1, stopped} ->
-        ok
+    receive
+        {'EXIT', Pid1, stopped} ->
+            ok
     after 5000 ->
         ct:fail(partisan_gen_server_did_not_die)
     end,
 
     {ok, Pid11} =
-    start_link(spec_init_global, [{not_ok, my_server}, []]),
+        start_link(spec_init_global, [{not_ok, my_server}, []]),
 
-    receive 
-    {'EXIT', Pid11, process_not_registered_globally} ->
-        ok
+    receive
+        {'EXIT', Pid11, process_not_registered_globally} ->
+            ok
     after 5000 ->
         ct:fail(partisan_gen_server_did_not_die)
     end,
@@ -1239,9 +1555,9 @@ spec_init(Config) when is_list(Config) ->
     {ok, Pid2} = start_link(spec_init_anonymous, [[]]),
     ok = partisan_gen_server:call(Pid2, started_p),
     ok = partisan_gen_server:call(Pid2, stop),
-    receive 
-    {'EXIT', Pid2, stopped} ->
-        ok
+    receive
+        {'EXIT', Pid2, stopped} ->
+            ok
     after 5000 ->
         ct:fail(partisan_gen_server_did_not_die)
     end,
@@ -1249,20 +1565,20 @@ spec_init(Config) when is_list(Config) ->
     {ok, Pid3} = start_link(spec_init_anonymous_default_timeout, [[]]),
     ok = partisan_gen_server:call(Pid3, started_p),
     ok = partisan_gen_server:call(Pid3, stop),
-    receive 
-    {'EXIT', Pid3, stopped} ->
-        ok
+    receive
+        {'EXIT', Pid3, stopped} ->
+            ok
     after 5000 ->
         ct:fail(partisan_gen_server_did_not_die)
     end,
 
     {ok, Pid4} =
-    start_link(spec_init_default_timeout, [{ok, my_server}, []]),
+        start_link(spec_init_default_timeout, [{ok, my_server}, []]),
     ok = partisan_gen_server:call(Pid4, started_p),
     ok = partisan_gen_server:call(Pid4, stop),
-    receive 
-    {'EXIT', Pid4, stopped} ->
-        ok
+    receive
+        {'EXIT', Pid4, stopped} ->
+            ok
     after 5000 ->
         ct:fail(partisan_gen_server_did_not_die)
     end,
@@ -1271,15 +1587,15 @@ spec_init(Config) when is_list(Config) ->
     %% was generated as the spawned process crashed because a {global, Name}
     %% was matched as a timeout value instead of matching on scope.
     {ok, _PidHurra} =
-    start_link(spec_init_global_default_timeout, [{ok, hurra}, []]),
+        start_link(spec_init_global_default_timeout, [{ok, hurra}, []]),
     timer:sleep(1000),
     ok = partisan_gen_server:call(_PidHurra, started_p),
 
     Pid5 =
-    erlang:spawn_link(?MODULE, spec_init_not_proc_lib, [[]]),
-    receive 
-    {'EXIT', Pid5, process_was_not_started_by_proc_lib} ->
-        ok
+        erlang:spawn_link(?MODULE, spec_init_not_proc_lib, [[]]),
+    receive
+        {'EXIT', Pid5, process_was_not_started_by_proc_lib} ->
+            ok
     after 5000 ->
         ct:fail(partisan_gen_server_did_not_die)
     end,
@@ -1290,17 +1606,16 @@ spec_init(Config) when is_list(Config) ->
 %% OTP-4820. Test that terminate is run when the parent is a locally
 %% registered process.
 spec_init_local_registered_parent(Config) when is_list(Config) ->
-
     register(foobar, self()),
     process_flag(trap_exit, true),
 
     {ok, Pid} = start_link(spec_init_local, [{ok, my_server}, []]),
 
-    ok = partisan_gen_server:cast(my_server, {self(),stop}),
+    ok = partisan_gen_server:cast(my_server, {self(), stop}),
     receive
-    {Ref, stopped} ->
-        partisan:is_local_pid(Ref, Pid) orelse ct:fail(stop),
-        ok
+        {Ref, stopped} ->
+            partisan:is_local_pid(Ref, Pid) orelse ct:fail(stop),
+            ok
     after 1000 ->
         ct:fail(stop)
     end,
@@ -1311,19 +1626,18 @@ spec_init_local_registered_parent(Config) when is_list(Config) ->
 %% OTP-4820. Test that terminate is run when the parent is a global registered
 %% process.
 spec_init_global_registered_parent(Config) when is_list(Config) ->
-
     global:register_name(foobar, self()),
     process_flag(trap_exit, true),
 
     {ok, Pid} = start_link(spec_init_global, [{ok, my_server}, []]),
 
     ok = partisan_gen_server:call(Pid, started_p),
-    ok = partisan_gen_server:cast(Pid, {self(),stop}),
+    ok = partisan_gen_server:cast(Pid, {self(), stop}),
 
     receive
-    {Ref, stopped} ->
-        partisan:is_local_pid(Ref, Pid) orelse ct:fail(stop),
-        ok
+        {Ref, stopped} ->
+            partisan:is_local_pid(Ref, Pid) orelse ct:fail(stop),
+            ok
     after 1000 ->
         ct:fail(stop)
     end,
@@ -1343,10 +1657,10 @@ otp_5854(Config) when is_list(Config) ->
     %% registered under that name
     register(armitage, self()),
     {ok, Pid1} =
-    start_link(spec_init_local, [{not_ok, armitage}, []]),
+        start_link(spec_init_local, [{not_ok, armitage}, []]),
     receive
-    {'EXIT', Pid1, process_not_registered} ->
-        ok
+        {'EXIT', Pid1, process_not_registered} ->
+            ok
     after 1000 ->
         ct:fail(partisan_gen_server_started)
     end,
@@ -1357,10 +1671,10 @@ otp_5854(Config) when is_list(Config) ->
     %% registered under that name
     global:register_name(armitage, self()),
     {ok, Pid2} =
-    start_link(spec_init_global, [{not_ok, armitage}, []]),
+        start_link(spec_init_global, [{not_ok, armitage}, []]),
     receive
-    {'EXIT', Pid2, process_not_registered_globally} ->
-        ok
+        {'EXIT', Pid2, process_not_registered_globally} ->
+            ok
     after 1000 ->
         ct:fail(partisan_gen_server_started)
     end,
@@ -1369,10 +1683,10 @@ otp_5854(Config) when is_list(Config) ->
     %% (same for {via, Mod, Name})
     dummy_via:register_name(armitage, self()),
     {ok, Pid3} =
-    start_link(spec_init_via, [{not_ok, armitage}, []]),
+        start_link(spec_init_via, [{not_ok, armitage}, []]),
     receive
-    {'EXIT', Pid3, {process_not_registered_via, dummy_via}} ->
-        ok
+        {'EXIT', Pid3, {process_not_registered_via, dummy_via}} ->
+            ok
     after 1000 ->
         ct:fail(partisan_gen_server_started)
     end,
@@ -1389,47 +1703,63 @@ otp_7669(Config) when is_list(Config) ->
     do_times(100, fun do_otp_7669_local_ignore/0),
     do_times(100, fun do_otp_7669_global_ignore/0),
     do_times(10, fun do_otp_7669_stop/0),
-    ok.    
+    ok.
 
 do_times(0, _) ->
     ok;
 do_times(N, Fun) ->
     Fun(),
-    do_times(N-1, Fun).
+    do_times(N - 1, Fun).
 
 do_otp_7669_local_ignore() ->
     %% The name should never be registered after the return
     %% from partisan_gen_server:start/3.
-    ignore = partisan_gen_server:start({local,?MODULE}, ?MODULE, ignore, []),
+    ignore = partisan_gen_server:start({local, ?MODULE}, ?MODULE, ignore, []),
     undefined = whereis(?MODULE),
-    ignore = partisan_gen_server:start({local,?MODULE}, ?MODULE, ignore, []),
+    ignore = partisan_gen_server:start({local, ?MODULE}, ?MODULE, ignore, []),
     undefined = whereis(?MODULE),
-    ignore = partisan_gen_server:start_link({local,?MODULE}, ?MODULE, ignore, []),
+    ignore = partisan_gen_server:start_link(
+        {local, ?MODULE}, ?MODULE, ignore, []
+    ),
     undefined = whereis(?MODULE).
 
 do_otp_7669_global_ignore() ->
-    ignore = partisan_gen_server:start({global,?MODULE}, ?MODULE, ignore, []),
+    ignore = partisan_gen_server:start({global, ?MODULE}, ?MODULE, ignore, []),
     undefined = global:whereis_name(?MODULE),
-    ignore = partisan_gen_server:start_link({global,?MODULE}, ?MODULE, ignore, []),
+    ignore = partisan_gen_server:start_link(
+        {global, ?MODULE}, ?MODULE, ignore, []
+    ),
     undefined = global:whereis_name(?MODULE).
 
 do_otp_7669_stop() ->
     %% The name should never be registered after the return
     %% from partisan_gen_server:start/3.
-    {error,stopped} = partisan_gen_server:start({local,?MODULE},
-                       ?MODULE, stop, []),
+    {error, stopped} = partisan_gen_server:start(
+        {local, ?MODULE},
+        ?MODULE,
+        stop,
+        []
+    ),
     undefined = whereis(?MODULE),
 
-    {error,stopped} = partisan_gen_server:start({global,?MODULE},
-                       ?MODULE, stop, []),
+    {error, stopped} = partisan_gen_server:start(
+        {global, ?MODULE},
+        ?MODULE,
+        stop,
+        []
+    ),
     undefined = global:whereis_name(?MODULE).
 
 %% Verify that partisan_sys:get_status correctly calls our format_status/1,2 fun.
 call_format_status(Config) when is_list(Config) ->
     Parent = self(),
 
-    {ok, Pid} = partisan_gen_server:start_link({local, call_format_status},
-                      ?MODULE, [], []),
+    {ok, Pid} = partisan_gen_server:start_link(
+        {local, call_format_status},
+        ?MODULE,
+        [],
+        []
+    ),
     Status1 = partisan_sys:get_status(call_format_status),
     {status, Pid, Mod, [_Pdict1, running, Parent, _, Data1]} = Status1,
     [format_status_called | _] = lists:reverse(Data1),
@@ -1464,23 +1794,29 @@ error_format_status(Config) when is_list(Config) ->
     OldFl = process_flag(trap_exit, true),
     State = "called format_status",
     {ok, Pid} = partisan_gen_server:start_link(?MODULE, {state, State}, []),
-    {'EXIT',{crashed,_}} = (catch partisan_gen_server:call(Pid, crash)),
+    {'EXIT', {crashed, _}} = (catch partisan_gen_server:call(Pid, crash)),
     receive
-    {'EXIT', Pid, crashed} ->
-        ok
+        {'EXIT', Pid, crashed} ->
+            ok
     end,
     ClientPid = self(),
     receive
-    {error,_GroupLeader,{Pid,
-                 "** Generic server"++_,
-                 [Pid,crash,{formatted, State},
-                  {crashed,[{?MODULE,handle_call,3,_}
-                    |_Stacktrace]},
-                   ClientPid, [_|_] = _ClientStack]}} ->
-        ok;
-    Other ->
-        ct:pal("Unexpected: ~p", [Other]),
-        ct:fail(failed)
+        {error, _GroupLeader,
+            {Pid, "** Generic server" ++ _, [
+                Pid,
+                crash,
+                {formatted, State},
+                {crashed, [
+                    {?MODULE, handle_call, 3, _}
+                    | _Stacktrace
+                ]},
+                ClientPid,
+                [_ | _] = _ClientStack
+            ]}} ->
+            ok;
+        Other ->
+            ct:pal("Unexpected: ~p", [Other]),
+            ct:fail(failed)
     end,
     process_flag(trap_exit, OldFl),
     ok.
@@ -1493,19 +1829,24 @@ terminate_crash_format(Config) when is_list(Config) ->
     State = crash_terminate,
     {ok, Pid} = partisan_gen_server:start_link(?MODULE, {state, State}, []),
     partisan_gen_server:call(Pid, stop),
-    receive {'EXIT', Pid, {crash, terminate}} -> ok end,
+    receive
+        {'EXIT', Pid, {crash, terminate}} -> ok
+    end,
     ClientPid = self(),
     receive
-    {error,_GroupLeader,{Pid,
-                 "** Generic server"++_,
-                 [Pid,stop, {formatted, State},
-                  {{crash, terminate},
-                   [{?MODULE,terminate,2,_}|_Stacktrace]},
-                   ClientPid, [_|_] = _ClientStack]}} ->
-        ok;
-    Other ->
-        io:format("Unexpected: ~p", [Other]),
-        ct:fail(failed)
+        {error, _GroupLeader,
+            {Pid, "** Generic server" ++ _, [
+                Pid,
+                stop,
+                {formatted, State},
+                {{crash, terminate}, [{?MODULE, terminate, 2, _} | _Stacktrace]},
+                ClientPid,
+                [_ | _] = _ClientStack
+            ]}} ->
+            ok;
+        Other ->
+            io:format("Unexpected: ~p", [Other]),
+            ct:fail(failed)
     after 5000 ->
         io:format("Timeout: expected error logger msg", []),
         ct:fail(failed)
@@ -1516,11 +1857,15 @@ terminate_crash_format(Config) when is_list(Config) ->
 %% Verify that partisan_sys:get_state correctly returns partisan_gen_server state
 get_state(Config) when is_list(Config) ->
     State = self(),
-    {ok, _Pid} = partisan_gen_server:start_link({local, get_state},
-                       ?MODULE, {state,State}, []),
+    {ok, _Pid} = partisan_gen_server:start_link(
+        {local, get_state},
+        ?MODULE,
+        {state, State},
+        []
+    ),
     State = partisan_sys:get_state(get_state),
     State = partisan_sys:get_state(get_state, 5000),
-    {ok, Pid} = partisan_gen_server:start_link(?MODULE, {state,State}, []),
+    {ok, Pid} = partisan_gen_server:start_link(?MODULE, {state, State}, []),
     State = partisan_sys:get_state(Pid),
     State = partisan_sys:get_state(Pid, 5000),
     ok = partisan_sys:suspend(Pid),
@@ -1531,14 +1876,18 @@ get_state(Config) when is_list(Config) ->
 %% Verify that partisan_sys:replace_state correctly replaces partisan_gen_server state
 replace_state(Config) when is_list(Config) ->
     State = self(),
-    {ok, _Pid} = partisan_gen_server:start_link({local, replace_state},
-                       ?MODULE, {state,State}, []),
+    {ok, _Pid} = partisan_gen_server:start_link(
+        {local, replace_state},
+        ?MODULE,
+        {state, State},
+        []
+    ),
     State = partisan_sys:get_state(replace_state),
     NState1 = "replaced",
     Replace1 = fun(_) -> NState1 end,
     NState1 = partisan_sys:replace_state(replace_state, Replace1),
     NState1 = partisan_sys:get_state(replace_state),
-    {ok, Pid} = partisan_gen_server:start_link(?MODULE, {state,NState1}, []),
+    {ok, Pid} = partisan_gen_server:start_link(?MODULE, {state, NState1}, []),
     NState1 = partisan_sys:get_state(Pid),
     Suffix = " again",
     NState2 = NState1 ++ Suffix,
@@ -1547,9 +1896,12 @@ replace_state(Config) when is_list(Config) ->
     NState2 = partisan_sys:get_state(Pid, 5000),
     %% verify no change in state if replace function crashes
     Replace3 = fun(_) -> throw(fail) end,
-    {'EXIT',{{callback_failed,
-          {partisan_gen_server,system_replace_state},{throw,fail}},_}} =
-    (catch partisan_sys:replace_state(Pid, Replace3)),
+    {'EXIT', {
+        {callback_failed, {partisan_gen_server, system_replace_state},
+            {throw, fail}},
+        _
+    }} =
+        (catch partisan_sys:replace_state(Pid, Replace3)),
     NState2 = partisan_sys:get_state(Pid, 5000),
     %% verify state replaced if process sys suspended
     ok = partisan_sys:suspend(Pid),
@@ -1566,40 +1918,41 @@ replace_state(Config) when is_list(Config) ->
 call_with_huge_message_queue(Config) when is_list(Config) ->
     Pid = spawn_link(fun echo_loop/0),
 
-    {Time,ok} = tc(fun() -> calls(10000, Pid) end),
+    {Time, ok} = tc(fun() -> calls(10000, Pid) end),
 
-    _ = [self() ! {msg,N} || N <- lists:seq(1, 500000)],
+    _ = [self() ! {msg, N} || N <- lists:seq(1, 500000)],
     erlang:garbage_collect(),
-    {NewTime,ok} = tc(fun() -> calls(10000, Pid) end),
+    {NewTime, ok} = tc(fun() -> calls(10000, Pid) end),
     io:format("Time for empty message queue: ~p", [Time]),
     io:format("Time for huge message queue: ~p", [NewTime]),
 
     IsCover = test_server:is_cover(),
-    case (NewTime+1) / (Time+1) of
-    Q when Q < 10; IsCover ->
-        ok;
-    Q ->
-        io:format("Q = ~p", [Q]),
-        ct:fail(failed)
+    case (NewTime + 1) / (Time + 1) of
+        Q when Q < 10; IsCover ->
+            ok;
+        Q ->
+            io:format("Q = ~p", [Q]),
+            ct:fail(failed)
     end,
     ok.
 
-calls(0, _) -> ok;
+calls(0, _) ->
+    ok;
 calls(N, Pid) ->
-    {ultimate_answer,42} = call(Pid, {ultimate_answer,42}),
-    calls(N-1, Pid).
+    {ultimate_answer, 42} = call(Pid, {ultimate_answer, 42}),
+    calls(N - 1, Pid).
 
 call(Pid, Msg) ->
     partisan_gen_server:call(Pid, Msg, infinity).
 
 tc(Fun) ->
-    timer:tc(erlang, apply, [Fun,[]]).
+    timer:tc(erlang, apply, [Fun, []]).
 
 echo_loop() ->
     receive
-    {'$gen_call',{Pid,Ref},Msg} ->
-        partisan:send(Pid, {Ref,Msg}),
-        echo_loop()
+        {'$gen_call', {Pid, Ref}, Msg} ->
+            partisan:send(Pid, {Ref, Msg}),
+            echo_loop()
     end.
 
 %% Test the default implementation of terminate if the callback module
@@ -1623,10 +1976,10 @@ undef_terminate2(Config) when is_list(Config) ->
 %% synchronously without ever fully spawning the server, so no `{'EXIT', _, _}'
 %% message is delivered to the trap_exit caller.
 undef_init(_Config) ->
-    {error, {undef, [{oc_init_server, init, [_], _}|_]}} =
+    {error, {undef, [{oc_init_server, init, [_], _} | _]}} =
         partisan_gen_server:start(oc_init_server, [], []),
     process_flag(trap_exit, true),
-    {error, {undef, [{oc_init_server, init, [_], _}|_]}} =
+    {error, {undef, [{oc_init_server, init, [_], _} | _]}} =
         (catch partisan_gen_server:start_link(oc_init_server, [], [])),
     receive
         Msg ->
@@ -1639,8 +1992,8 @@ undef_init(_Config) ->
 %% but not exported, but the server should continue with the old code
 undef_code_change(Config) when is_list(Config) ->
     {ok, Server} = oc_server:start(),
-    {error, {'EXIT', {undef, [{oc_server, code_change, [_, _, _], _}|_]}}}
-        = fake_upgrade(Server, ?MODULE),
+    {error, {'EXIT', {undef, [{oc_server, code_change, [_, _, _], _} | _]}}} =
+        fake_upgrade(Server, ?MODULE),
     true = is_process_alive(Server).
 
 %% The server should crash if the handle_call callback is
@@ -1650,9 +2003,12 @@ undef_handle_call(_Config) ->
     try
         partisan_gen_server:call(Server, call_msg),
         ct:fail(should_crash)
-    catch exit:{{undef, [{oc_server, handle_call, _, _}|_]},
-                {partisan_gen_server, call, _}} ->
-        ok
+    catch
+        exit:{
+            {undef, [{oc_server, handle_call, _, _} | _]},
+            {partisan_gen_server, call, _}
+        } ->
+            ok
     end.
 
 %% The server should crash if the handle_cast callback is
@@ -1682,7 +2038,7 @@ undef_handle_info(Config) when is_list(Config) ->
     true = is_process_alive(Server),
     receive
         {warning_msg, _GroupLeader,
-         {Server, "** Undefined handle_info in " ++ _, [oc_server, hej]}} ->
+            {Server, "** Undefined handle_info in " ++ _, [oc_server, hej]}} ->
             ok;
         Other ->
             io:format("Unexpected: ~p", [Other]),
@@ -1698,18 +2054,18 @@ undef_in_terminate(Config) when is_list(Config) ->
         ok = partisan_gen_server:stop(Server),
         ct:fail(failed)
     catch
-        exit:{undef, [{oc_server, terminate, [], _}|_]} ->
+        exit:{undef, [{oc_server, terminate, [], _} | _]} ->
             ok
     end.
 
 %% Test that the default implementation of handle_info isn't catching the
 %% wrong undef error
 undef_in_handle_info(Config) when is_list(Config) ->
-     {ok, Server} = partisan_gen_server:start(?MODULE, [], []),
-     MRef = monitor(process, Server),
-     Server ! {call_undef_fun, ?MODULE, handle_info},
-     verify_undef_down(MRef, Server, ?MODULE, handle_info),
-     ok.
+    {ok, Server} = partisan_gen_server:start(?MODULE, [], []),
+    MRef = monitor(process, Server),
+    Server ! {call_undef_fun, ?MODULE, handle_info},
+    verify_undef_down(MRef, Server, ?MODULE, handle_info),
+    ok.
 
 verify_down_reason(MRef, Server, Reason) ->
     receive
@@ -1720,13 +2076,13 @@ verify_down_reason(MRef, Server, Reason) ->
     end.
 
 verify_undef_down(MRef, Pid, Mod, Fun) ->
-    ok = receive
-        {'DOWN', MRef, process, Pid,
-         {undef, [{Mod, Fun, _, _}|_]}} ->
-            ok
-    after 5000 ->
-        ct:fail(should_crash)
-    end.
+    ok =
+        receive
+            {'DOWN', MRef, process, Pid, {undef, [{Mod, Fun, _, _} | _]}} ->
+                ok
+        after 5000 ->
+            ct:fail(should_crash)
+        end.
 
 fake_upgrade(Pid, Mod) ->
     partisan_sys:suspend(Pid),
@@ -1742,210 +2098,248 @@ wait_until_processed(Pid, Message, N) ->
     case lists:member(Message, Messages) of
         true ->
             timer:sleep(100),
-            wait_until_processed(Pid, Message, N-1);
+            wait_until_processed(Pid, Message, N - 1);
         false ->
             ok
     end.
 
 %% Test report callback for Logger handler error_logger
 format_log_1(_Config) ->
-    FD = application:get_env(kernel,error_logger_format_depth),
-    application:unset_env(kernel,error_logger_format_depth),
-    Term = lists:seq(1,15),
+    FD = application:get_env(kernel, error_logger_format_depth),
+    application:unset_env(kernel, error_logger_format_depth),
+    Term = lists:seq(1, 15),
     Name = self(),
-    Report = #{label=>{partisan_gen_server,terminate},
-               name=>Name,
-               last_message=>Term,
-               state=>Term,
-               log=>[],
-               reason=>Term,
-               client_info=>{self(),{clientname,[]}},
-               process_label=>undefined},
-    {F1,A1} = partisan_gen_server:format_log(Report),
-    FExpected1 = "** Generic server ~tp terminating \n"
+    Report = #{
+        label => {partisan_gen_server, terminate},
+        name => Name,
+        last_message => Term,
+        state => Term,
+        log => [],
+        reason => Term,
+        client_info => {self(), {clientname, []}},
+        process_label => undefined
+    },
+    {F1, A1} = partisan_gen_server:format_log(Report),
+    FExpected1 =
+        "** Generic server ~tp terminating \n"
         "** Last message in was ~tp~n"
         "** When Server state == ~tp~n"
         "** Reason for termination ==~n** ~tp~n"
         "** Client ~tp stacktrace~n"
         "** ~tp~n",
-    ct:log("F1: ~ts~nA1: ~tp",[F1,A1]),
-    FExpected1=F1,
-    [Name,Term,Term,Term,clientname,[]] = A1,
+    ct:log("F1: ~ts~nA1: ~tp", [F1, A1]),
+    FExpected1 = F1,
+    [Name, Term, Term, Term, clientname, []] = A1,
 
-    Warning = #{label=>{partisan_gen_server,no_handle_info},
-                module=>?MODULE,
-                message=>Term},
-    {WF1,WA1} = partisan_gen_server:format_log(Warning),
-    WFExpected1 = "** Undefined handle_info in ~p~n"
+    Warning = #{
+        label => {partisan_gen_server, no_handle_info},
+        module => ?MODULE,
+        message => Term
+    },
+    {WF1, WA1} = partisan_gen_server:format_log(Warning),
+    WFExpected1 =
+        "** Undefined handle_info in ~p~n"
         "** Unhandled message: ~tp~n",
-    ct:log("WF1: ~ts~nWA1: ~tp",[WF1,WA1]),
-    WFExpected1=WF1,
-    [?MODULE,Term] = WA1,
+    ct:log("WF1: ~ts~nWA1: ~tp", [WF1, WA1]),
+    WFExpected1 = WF1,
+    [?MODULE, Term] = WA1,
 
     Depth = 10,
-    ok = application:set_env(kernel,error_logger_format_depth,Depth),
-    Limited = [1,2,3,4,5,6,7,8,9,'...'],
-    {F2,A2} = partisan_gen_server:format_log(#{label=>{partisan_gen_server,terminate},
-                                      name=>Name,
-                                      last_message=>Term,
-                                      state=>Term,
-                                      log=>[],
-                                      reason=>Term,
-                                      client_info=>{self(),{clientname,[]}},
-                                      process_label=>undefined}),
-    FExpected2 = "** Generic server ~tP terminating \n"
+    ok = application:set_env(kernel, error_logger_format_depth, Depth),
+    Limited = [1, 2, 3, 4, 5, 6, 7, 8, 9, '...'],
+    {F2, A2} = partisan_gen_server:format_log(#{
+        label => {partisan_gen_server, terminate},
+        name => Name,
+        last_message => Term,
+        state => Term,
+        log => [],
+        reason => Term,
+        client_info => {self(), {clientname, []}},
+        process_label => undefined
+    }),
+    FExpected2 =
+        "** Generic server ~tP terminating \n"
         "** Last message in was ~tP~n"
         "** When Server state == ~tP~n"
         "** Reason for termination ==~n** ~tP~n"
         "** Client ~tP stacktrace~n"
         "** ~tP~n",
-    ct:log("F2: ~ts~nA2: ~tp",[F2,A2]),
-    FExpected2=F2,
-    [Name,Depth,Limited,Depth,Limited,Depth,Limited,Depth,
-     clientname,Depth,[],Depth] = A2,
+    ct:log("F2: ~ts~nA2: ~tp", [F2, A2]),
+    FExpected2 = F2,
+    [
+        Name,
+        Depth,
+        Limited,
+        Depth,
+        Limited,
+        Depth,
+        Limited,
+        Depth,
+        clientname,
+        Depth,
+        [],
+        Depth
+    ] = A2,
 
-    {WF2,WA2} = partisan_gen_server:format_log(Warning),
-    WFExpected2 = "** Undefined handle_info in ~p~n"
+    {WF2, WA2} = partisan_gen_server:format_log(Warning),
+    WFExpected2 =
+        "** Undefined handle_info in ~p~n"
         "** Unhandled message: ~tP~n",
-    ct:log("WF2: ~ts~nWA2: ~tp",[WF2,WA2]),
-    WFExpected2=WF2,
-    [?MODULE,Limited,Depth] = WA2,
+    ct:log("WF2: ~ts~nWA2: ~tp", [WF2, WA2]),
+    WFExpected2 = WF2,
+    [?MODULE, Limited, Depth] = WA2,
 
     case FD of
         undefined ->
-            application:unset_env(kernel,error_logger_format_depth);
+            application:unset_env(kernel, error_logger_format_depth);
         _ ->
-            application:set_env(kernel,error_logger_format_depth,FD)
+            application:set_env(kernel, error_logger_format_depth, FD)
     end,
     ok.
 
 %% Test report callback for any Logger handler
 format_log_2(_Config) ->
-    Term = lists:seq(1,15),
+    Term = lists:seq(1, 15),
     Name = self(),
     NameStr = pid_to_list(Name),
-    Report = #{label=>{partisan_gen_server,terminate},
-               name=>Name,
-               last_message=>Term,
-               state=>Term,
-               log=>[],
-               reason=>Term,
-               client_info=>{self(),{clientname,[]}},
-               process_label=>undefined},
+    Report = #{
+        label => {partisan_gen_server, terminate},
+        name => Name,
+        last_message => Term,
+        state => Term,
+        log => [],
+        reason => Term,
+        client_info => {self(), {clientname, []}},
+        process_label => undefined
+    },
     FormatOpts1 = #{},
-    Str1 = flatten_format_log(Report,FormatOpts1),
+    Str1 = flatten_format_log(Report, FormatOpts1),
     L1 = length(Str1),
-    Expected1 = "** Generic server "++NameStr++" terminating \n"
-        "** Last message in was ",
-    ct:log("Str1: ~ts",[Str1]),
-    ct:log("length(Str1): ~p",[L1]),
-    true = lists:prefix(Expected1,Str1),
+    Expected1 =
+        "** Generic server " ++ NameStr ++
+            " terminating \n"
+            "** Last message in was ",
+    ct:log("Str1: ~ts", [Str1]),
+    ct:log("length(Str1): ~p", [L1]),
+    true = lists:prefix(Expected1, Str1),
 
-    Warning = #{label=>{partisan_gen_server,no_handle_info},
-                module=>?MODULE,
-                message=>Term},
-    WStr1 = flatten_format_log(Warning,FormatOpts1),
+    Warning = #{
+        label => {partisan_gen_server, no_handle_info},
+        module => ?MODULE,
+        message => Term
+    },
+    WStr1 = flatten_format_log(Warning, FormatOpts1),
     WL1 = length(WStr1),
-    WExpected1 = "** Undefined handle_info in partisan_gen_server_SUITE\n"
+    WExpected1 =
+        "** Undefined handle_info in partisan_gen_server_SUITE\n"
         "** Unhandled message: ",
-    ct:log("WStr1: ~ts",[WStr1]),
-    ct:log("length(WStr1): ~p",[WL1]),
-    true = lists:prefix(WExpected1,WStr1),
+    ct:log("WStr1: ~ts", [WStr1]),
+    ct:log("length(WStr1): ~p", [WL1]),
+    true = lists:prefix(WExpected1, WStr1),
 
     Depth = 10,
-    FormatOpts2 = #{depth=>Depth},
-    Str2 = flatten_format_log(Report,FormatOpts2),
+    FormatOpts2 = #{depth => Depth},
+    Str2 = flatten_format_log(Report, FormatOpts2),
     L2 = length(Str2),
-    Expected2 = "** Generic server "++NameStr++" terminating \n"
-        "** Last message in was ",
-    ct:log("Str2: ~ts",[Str2]),
-    ct:log("length(Str2): ~p",[L2]),
-    true = lists:prefix(Expected2,Str2),
-    true = L2<L1,
+    Expected2 =
+        "** Generic server " ++ NameStr ++
+            " terminating \n"
+            "** Last message in was ",
+    ct:log("Str2: ~ts", [Str2]),
+    ct:log("length(Str2): ~p", [L2]),
+    true = lists:prefix(Expected2, Str2),
+    true = L2 < L1,
 
-    WStr2 = flatten_format_log(Warning,FormatOpts2),
+    WStr2 = flatten_format_log(Warning, FormatOpts2),
     WL2 = length(WStr2),
-    WExpected2 = "** Undefined handle_info in partisan_gen_server_SUITE\n"
+    WExpected2 =
+        "** Undefined handle_info in partisan_gen_server_SUITE\n"
         "** Unhandled message: ",
-    ct:log("WStr2: ~ts",[WStr2]),
-    ct:log("length(WStr2): ~p",[WL2]),
-    true = lists:prefix(WExpected2,WStr2),
-    true = WL2<WL1,
+    ct:log("WStr2: ~ts", [WStr2]),
+    ct:log("length(WStr2): ~p", [WL2]),
+    true = lists:prefix(WExpected2, WStr2),
+    true = WL2 < WL1,
 
-    FormatOpts3 = #{chars_limit=>200},
-    Str3 = flatten_format_log(Report,FormatOpts3),
+    FormatOpts3 = #{chars_limit => 200},
+    Str3 = flatten_format_log(Report, FormatOpts3),
     L3 = length(Str3),
-    Expected3 = "** Generic server "++NameStr++" terminating \n"
-        "** Last message in was ",
-    ct:log("Str3: ~ts",[Str3]),
-    ct:log("length(Str3): ~p",[L3]),
-    true = lists:prefix(Expected3,Str3),
-    true = L3<L1,
+    Expected3 =
+        "** Generic server " ++ NameStr ++
+            " terminating \n"
+            "** Last message in was ",
+    ct:log("Str3: ~ts", [Str3]),
+    ct:log("length(Str3): ~p", [L3]),
+    true = lists:prefix(Expected3, Str3),
+    true = L3 < L1,
 
-    WFormatOpts3 = #{chars_limit=>80},
-    WStr3 = flatten_format_log(Warning,WFormatOpts3),
+    WFormatOpts3 = #{chars_limit => 80},
+    WStr3 = flatten_format_log(Warning, WFormatOpts3),
     WL3 = length(WStr3),
-    WExpected3 = "** Undefined handle_info in partisan_gen_server_SUITE\n"
+    WExpected3 =
+        "** Undefined handle_info in partisan_gen_server_SUITE\n"
         "** Unhandled message: ",
-    ct:log("WStr3: ~ts",[WStr3]),
-    ct:log("length(WStr3): ~p",[WL3]),
-    true = lists:prefix(WExpected3,WStr3),
-    true = WL3<WL1,
+    ct:log("WStr3: ~ts", [WStr3]),
+    ct:log("length(WStr3): ~p", [WL3]),
+    true = lists:prefix(WExpected3, WStr3),
+    true = WL3 < WL1,
 
-    FormatOpts4 = #{single_line=>true},
-    Str4 = flatten_format_log(Report,FormatOpts4),
+    FormatOpts4 = #{single_line => true},
+    Str4 = flatten_format_log(Report, FormatOpts4),
     L4 = length(Str4),
-    Expected4 = "Generic server "++NameStr++" terminating. Reason: ",
-    ct:log("Str4: ~ts",[Str4]),
-    ct:log("length(Str4): ~p",[L4]),
-    true = lists:prefix(Expected4,Str4),
-    true = L4<L1,
+    Expected4 = "Generic server " ++ NameStr ++ " terminating. Reason: ",
+    ct:log("Str4: ~ts", [Str4]),
+    ct:log("length(Str4): ~p", [L4]),
+    true = lists:prefix(Expected4, Str4),
+    true = L4 < L1,
 
-    WStr4 = flatten_format_log(Warning,FormatOpts4),
+    WStr4 = flatten_format_log(Warning, FormatOpts4),
     WL4 = length(WStr4),
-    WExpected4 = "Undefined handle_info in partisan_gen_server_SUITE. "
+    WExpected4 =
+        "Undefined handle_info in partisan_gen_server_SUITE. "
         "Unhandled message: ",
-    ct:log("WStr4: ~ts",[WStr4]),
-    ct:log("length(WStr4): ~p",[WL4]),
-    true = lists:prefix(WExpected4,WStr4),
-    true = WL4<WL1,
+    ct:log("WStr4: ~ts", [WStr4]),
+    ct:log("length(WStr4): ~p", [WL4]),
+    true = lists:prefix(WExpected4, WStr4),
+    true = WL4 < WL1,
 
-    FormatOpts5 = #{single_line=>true, depth=>Depth},
-    Str5 = flatten_format_log(Report,FormatOpts5),
+    FormatOpts5 = #{single_line => true, depth => Depth},
+    Str5 = flatten_format_log(Report, FormatOpts5),
     L5 = length(Str5),
-    Expected5 = "Generic server "++NameStr++" terminating. Reason: ",
-    ct:log("Str5: ~ts",[Str5]),
-    ct:log("length(Str5): ~p",[L5]),
-    true = lists:prefix(Expected5,Str5),
-    true = L5<L4,
+    Expected5 = "Generic server " ++ NameStr ++ " terminating. Reason: ",
+    ct:log("Str5: ~ts", [Str5]),
+    ct:log("length(Str5): ~p", [L5]),
+    true = lists:prefix(Expected5, Str5),
+    true = L5 < L4,
 
-    WStr5 = flatten_format_log(Warning,FormatOpts5),
+    WStr5 = flatten_format_log(Warning, FormatOpts5),
     WL5 = length(WStr5),
-    WExpected5 = "Undefined handle_info in partisan_gen_server_SUITE. "
+    WExpected5 =
+        "Undefined handle_info in partisan_gen_server_SUITE. "
         "Unhandled message: ",
-    ct:log("WStr5: ~ts",[WStr5]),
-    ct:log("length(WStr5): ~p",[WL5]),
-    true = lists:prefix(WExpected5,WStr5),
-    true = WL5<WL4,
+    ct:log("WStr5: ~ts", [WStr5]),
+    ct:log("length(WStr5): ~p", [WL5]),
+    true = lists:prefix(WExpected5, WStr5),
+    true = WL5 < WL4,
 
-    FormatOpts6 = #{single_line=>true, chars_limit=>200},
-    Str6 = flatten_format_log(Report,FormatOpts6),
+    FormatOpts6 = #{single_line => true, chars_limit => 200},
+    Str6 = flatten_format_log(Report, FormatOpts6),
     L6 = length(Str6),
-    Expected6 = "Generic server "++NameStr++" terminating. Reason: ",
-    ct:log("Str6: ~ts",[Str6]),
-    ct:log("length(Str6): ~p",[L6]),
-    true = lists:prefix(Expected6,Str6),
-    true = L6<L4,
+    Expected6 = "Generic server " ++ NameStr ++ " terminating. Reason: ",
+    ct:log("Str6: ~ts", [Str6]),
+    ct:log("length(Str6): ~p", [L6]),
+    true = lists:prefix(Expected6, Str6),
+    true = L6 < L4,
 
-    WFormatOpts6 = #{single_line=>true, chars_limit=>80},
-    WStr6 = flatten_format_log(Warning,WFormatOpts6),
+    WFormatOpts6 = #{single_line => true, chars_limit => 80},
+    WStr6 = flatten_format_log(Warning, WFormatOpts6),
     WL6 = length(WStr6),
-    WExpected6 = "Undefined handle_info in partisan_gen_server_SUITE. "
+    WExpected6 =
+        "Undefined handle_info in partisan_gen_server_SUITE. "
         "Unhandled message: ",
-    ct:log("WStr6: ~ts",[WStr6]),
-    ct:log("length(WStr6): ~p",[WL6]),
-    true = lists:prefix(WExpected6,WStr6),
-    true = WL6<WL4,
+    ct:log("WStr6: ~ts", [WStr6]),
+    ct:log("length(WStr6): ~p", [WL6]),
+    true = lists:prefix(WExpected6, WStr6),
+    true = WL6 < WL4,
 
     ok.
 
@@ -1959,25 +2353,29 @@ reply_by_alias_with_payload(Config) when is_list(Config) ->
     %% Whitebox...
     Reply = make_ref(),
     Alias = alias(),
-    Tag = [[alias|Alias], "payload"],
-    spawn_link(fun () ->
-                       partisan_gen_server:reply({undefined, Tag},
-                                        Reply)
-               end),
+    Tag = [[alias | Alias], "payload"],
+    spawn_link(fun() ->
+        partisan_gen_server:reply(
+            {undefined, Tag},
+            Reply
+        )
+    end),
     receive
-        {[[alias|Alias]|_] = Tag, Reply} ->
+        {[[alias | Alias] | _] = Tag, Reply} ->
             ok
     end,
     %% Check gen:reply/2 as well...
     Reply2 = make_ref(),
     Alias2 = alias(),
-    Tag2 = [[alias|Alias2], "payload"],
-    spawn_link(fun () ->
-                       gen:reply({undefined, Tag2},
-                                 Reply2)
-               end),
+    Tag2 = [[alias | Alias2], "payload"],
+    spawn_link(fun() ->
+        gen:reply(
+            {undefined, Tag2},
+            Reply2
+        )
+    end),
     receive
-        {[[alias|Alias2]|_] = Tag2, Reply2} ->
+        {[[alias | Alias2] | _] = Tag2, Reply2} ->
             ok
     end.
 
@@ -1991,41 +2389,56 @@ spec_init_local({ok, Name}, Options) ->
     register(Name, self()),
     partisan_proc_lib:init_ack({ok, self()}),
     %% Supervised init can occur here  ...
-    partisan_gen_server:enter_loop(?MODULE, Options, {}, {local, Name}, infinity);
-
+    partisan_gen_server:enter_loop(
+        ?MODULE, Options, {}, {local, Name}, infinity
+    );
 spec_init_local({not_ok, Name}, Options) ->
     process_flag(trap_exit, true),
     partisan_proc_lib:init_ack({ok, self()}),
     %% Supervised init can occur here  ...
-    partisan_gen_server:enter_loop(?MODULE, Options, {}, {local, Name}, infinity).
+    partisan_gen_server:enter_loop(
+        ?MODULE, Options, {}, {local, Name}, infinity
+    ).
 
 spec_init_global({ok, Name}, Options) ->
     process_flag(trap_exit, true),
     global:register_name(Name, self()),
     partisan_proc_lib:init_ack({ok, self()}),
     %% Supervised init can occur here  ...
-    partisan_gen_server:enter_loop(?MODULE, Options, {}, {global, Name}, infinity);
-
+    partisan_gen_server:enter_loop(
+        ?MODULE, Options, {}, {global, Name}, infinity
+    );
 spec_init_global({not_ok, Name}, Options) ->
     process_flag(trap_exit, true),
     partisan_proc_lib:init_ack({ok, self()}),
     %% Supervised init can occur here  ...
-    partisan_gen_server:enter_loop(?MODULE, Options, {}, {global, Name}, infinity).
+    partisan_gen_server:enter_loop(
+        ?MODULE, Options, {}, {global, Name}, infinity
+    ).
 
 spec_init_via({ok, Name}, Options) ->
     process_flag(trap_exit, true),
     dummy_via:register_name(Name, self()),
     partisan_proc_lib:init_ack({ok, self()}),
     %% Supervised init can occur here  ...
-    partisan_gen_server:enter_loop(?MODULE, Options, {},
-              {via, dummy_via, Name}, infinity);
-
+    partisan_gen_server:enter_loop(
+        ?MODULE,
+        Options,
+        {},
+        {via, dummy_via, Name},
+        infinity
+    );
 spec_init_via({not_ok, Name}, Options) ->
     process_flag(trap_exit, true),
     partisan_proc_lib:init_ack({ok, self()}),
     %% Supervised init can occur here  ...
-    partisan_gen_server:enter_loop(?MODULE, Options, {},
-              {via, dummy_via, Name}, infinity).
+    partisan_gen_server:enter_loop(
+        ?MODULE,
+        Options,
+        {},
+        {via, dummy_via, Name},
+        infinity
+    ).
 
 spec_init_default_timeout({ok, Name}, Options) ->
     process_flag(trap_exit, true),
@@ -2069,44 +2482,44 @@ init(ignore) ->
 init(stop) ->
     {stop, stopped};
 init(hibernate) ->
-    {ok,[],hibernate};
+    {ok, [], hibernate};
 init(sleep) ->
     ct:sleep(1000),
     {ok, []};
 init({continue, Pid}) ->
     self() ! {after_continue, Pid},
     {ok, [], {continue, {message, Pid}}};
-init({state,State}) ->
-    {ok,State}.
+init({state, State}) ->
+    {ok, State}.
 
 handle_call(started_p, _From, State) ->
     io:format("FROZ"),
-    {reply,ok,State};
+    {reply, ok, State};
 handle_call({delayed_answer, T}, From, State) ->
-    {noreply,{reply_to,From,State},T};
+    {noreply, {reply_to, From, State}, T};
 handle_call({call_within, T}, _From, _) ->
-    {reply,ok,call_within,T};
+    {reply, ok, call_within, T};
 handle_call(next_call, _From, call_within) ->
-    {reply,ok,[]};
+    {reply, ok, []};
 handle_call(next_call, _From, State) ->
-    {reply,false,State};
+    {reply, false, State};
 handle_call(badreturn, _From, _State) ->
     badreturn;
 handle_call(hibernate, _From, _State) ->
-    {reply,true,[],hibernate};
-handle_call({hibernate_noreply,Pid}, From, _State) ->
+    {reply, true, [], hibernate};
+handle_call({hibernate_noreply, Pid}, From, _State) ->
     Pid ! go,
-    {noreply,From,hibernate};
+    {noreply, From, hibernate};
 handle_call(stop, _From, State) ->
-    {stop,stopped,ok,State};
+    {stop, stopped, ok, State};
 handle_call(crash, _From, _State) ->
     exit(crashed);
 handle_call(exit_shutdown, _From, _State) ->
     exit(shutdown);
 handle_call(stop_shutdown, _From, State) ->
-    {stop,shutdown,State};
+    {stop, shutdown, State};
 handle_call(shutdown_reason, _From, _State) ->
-    exit({shutdown,reason});
+    exit({shutdown, reason});
 handle_call({call_undef_fun, Mod, Fun}, _From, State) ->
     Mod:Fun(),
     {reply, ok, State};
@@ -2117,17 +2530,17 @@ handle_call({continue_noreply, Pid}, From, State) ->
     self() ! {after_continue, Pid},
     {noreply, State, {continue, {message, Pid, From}}};
 handle_call(stop_shutdown_reason, _From, State) ->
-    {stop,{shutdown,stop_reason},State}.
+    {stop, {shutdown, stop_reason}, State}.
 
-handle_cast({From,handle_cast}, State) ->
+handle_cast({From, handle_cast}, State) ->
     From ! {self(), handled_cast},
     {noreply, State};
-handle_cast({From,delayed_cast,T}, _State) ->
-    {noreply, {delayed_cast,From}, T};
+handle_cast({From, delayed_cast, T}, _State) ->
+    {noreply, {delayed_cast, From}, T};
 handle_cast(hibernate_now, _State) ->
     {noreply, [], hibernate};
 handle_cast(hibernate_later, _State) ->
-    {ok, _} = timer:send_after(1000,self(),hibernate_now),
+    {ok, _} = timer:send_after(1000, self(), hibernate_now),
     {noreply, []};
 handle_cast({call_undef_fun, Mod, Fun}, State) ->
     Mod:Fun(),
@@ -2137,17 +2550,19 @@ handle_cast({continue_noreply, Pid}, State) ->
     {noreply, State, {continue, {message, Pid}}};
 handle_cast({From, stop}, State) ->
     io:format("BAZ"),
-    {stop, {From,stopped}, State}.
+    {stop, {From, stopped}, State}.
 
 handle_info(timeout, {reply_to, From, State}) ->
     partisan_gen_server:reply(From, delayed),
     {noreply, State};
-handle_info(timeout, hibernate_me) -> % Arrive here from 
-                        % handle_info(hibernate_later,...)
+% Arrive here from
+handle_info(timeout, hibernate_me) ->
+    % handle_info(hibernate_later,...)
     {noreply, [], hibernate};
-handle_info(hibernate_now, _State) ->  % Arrive here from 
-                        % handle_cast({_,hibernate_later},...)
-                        % and by direct ! from testcase
+% Arrive here from
+handle_info(hibernate_now, _State) ->
+    % handle_cast({_,hibernate_later},...)
+    % and by direct ! from testcase
     {noreply, [], hibernate};
 handle_info(hibernate_later, _State) ->
     {noreply, hibernate_me, 1000};
@@ -2181,10 +2596,10 @@ handle_info({From, handle_info}, _State) ->
 handle_info({From, delayed_info, T}, _State) ->
     {noreply, {delayed_info, From}, T};
 handle_info(continue, From) ->
-    partisan_gen_server:reply(From,true),
+    partisan_gen_server:reply(From, true),
     {noreply, []};
 handle_info({From, stop}, State) ->
-    {stop, {From,stopped_info}, State};
+    {stop, {From, stopped_info}, State};
 handle_info({after_continue, Pid}, State) ->
     %% Pid ! {self(), after_continue},
     %% Pid ! {self(), ack},
@@ -2218,9 +2633,11 @@ handle_continue({message, Pid, From}, State) ->
     partisan_gen_server:reply(From, ok),
     {noreply, State}.
 
-code_change(_OldVsn,
-            {new, {undef_in_code_change, {Mod, Fun}}} = State,
-            _Extra) ->
+code_change(
+    _OldVsn,
+    {new, {undef_in_code_change, {Mod, Fun}}} = State,
+    _Extra
+) ->
     Mod:Fun(),
     {ok, State}.
 

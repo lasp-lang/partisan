@@ -26,13 +26,15 @@
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
--export([clients/1,
-         servers/1,
-         upload_artifact/3,
-         download_artifact/2]).
+-export([
+    clients/1,
+    servers/1,
+    upload_artifact/3,
+    download_artifact/2
+]).
 
 %% @private
-upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Payload) ->
+upload_artifact(#orchestration_strategy_state{eredis = Eredis}, Node, Payload) ->
     {ok, <<"OK">>} = eredis:q(Eredis, ["SET", Node, Payload]),
 
     ?LOG_TRACE(#{
@@ -58,7 +60,7 @@ upload_artifact(#orchestration_strategy_state{eredis=Eredis}, Node, Payload) ->
     ok.
 
 %% @private
-download_artifact(#orchestration_strategy_state{eredis=Eredis}, Node) ->
+download_artifact(#orchestration_strategy_state{eredis = Eredis}, Node) ->
     try
         case eredis:q(Eredis, ["GET", Node]) of
             {ok, Payload} ->
@@ -67,7 +69,7 @@ download_artifact(#orchestration_strategy_state{eredis=Eredis}, Node) ->
                     node => Node
                 }),
                 Payload;
-            {error,no_connection} ->
+            {error, no_connection} ->
                 undefined
         end
     catch
@@ -90,7 +92,7 @@ servers(State) ->
     retrieve_keys(State, "server").
 
 %% @private
-retrieve_keys(#orchestration_strategy_state{eredis=Eredis}, Tag) ->
+retrieve_keys(#orchestration_strategy_state{eredis = Eredis}, Tag) ->
     case eredis:q(Eredis, ["KEYS", prefix(Tag ++ "/*")]) of
         {ok, Nodes} when is_list(Nodes) ->
             Nodes1 = lists:map(
@@ -98,14 +100,17 @@ retrieve_keys(#orchestration_strategy_state{eredis=Eredis}, Tag) ->
                 Nodes
             ),
 
-            Nodes2 = lists:flatmap(fun(N) ->
+            Nodes2 = lists:flatmap(
+                fun(N) ->
                     case eredis:q(Eredis, ["GET", N]) of
                         {ok, Myself} when is_binary(Myself) ->
                             [binary_to_term(Myself)];
                         _ ->
                             []
                     end
-                end, Nodes1),
+                end,
+                Nodes1
+            ),
 
             ?LOG_TRACE(#{
                 description => "Received keys from Redis",
@@ -122,4 +127,5 @@ retrieve_keys(#orchestration_strategy_state{eredis=Eredis}, Tag) ->
 prefix(File) ->
     EvalIdentifier = partisan_config:get(evaluation_identifier, undefined),
     EvalTimestamp = partisan_config:get(evaluation_timestamp, 0),
-    "partisan" ++ "/" ++ atom_to_list(EvalIdentifier) ++ "/" ++ integer_to_list(EvalTimestamp) ++ "/" ++ File.
+    "partisan" ++ "/" ++ atom_to_list(EvalIdentifier) ++ "/" ++
+        integer_to_list(EvalTimestamp) ++ "/" ++ File.

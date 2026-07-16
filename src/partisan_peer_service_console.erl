@@ -36,4 +36,3 @@ print_members(Members) ->
     _ = [io:format("~p~n", [Node]) || Node <- Members],
     _ = io:format("~79..=s~n", [""]),
     ok.
-

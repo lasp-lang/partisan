@@ -23,60 +23,70 @@
 
 %% Test event handler for gen_event_SUITE.erl
 
--export([init/1, handle_event/2, handle_call/2, handle_info/2,
-	 terminate/2, format_status/1]).
+-export([
+    init/1,
+    handle_event/2,
+    handle_call/2,
+    handle_info/2,
+    terminate/2,
+    format_status/1
+]).
 
 init(make_error) ->
     {error, my_error};
 init({state, State}) ->
     {ok, State};
 init([Parent]) ->
-    {ok, Parent};  %% We will send special responses for every handled event.
-init([Parent,hibernate]) ->
-    {ok, Parent, hibernate}.  %% We will send special responses for every handled event.
+    %% We will send special responses for every handled event.
+    {ok, Parent};
+init([Parent, hibernate]) ->
+    %% We will send special responses for every handled event.
+    {ok, Parent, hibernate}.
 
-handle_event({swap_event,Mod,Args}, State) ->
+handle_event({swap_event, Mod, Args}, State) ->
     {swap_handler, swap, State, Mod, Args};
 handle_event(error_event, _State) ->
     {return, faulty};
 handle_event(do_crash, _State) ->
-    erlang:error({badmatch,4});
+    erlang:error({badmatch, 4});
 handle_event(hibernate, _State) ->
-   {ok,[],hibernate};
+    {ok, [], hibernate};
 handle_event(wakeup, _State) ->
-    {ok,[]};
+    {ok, []};
 handle_event({From, handle_event}, _State) ->
     From ! handled_event,
-    {ok,[]};
+    {ok, []};
 handle_event(Event, Parent) ->
     Parent ! {dummy_h, Event},
     {ok, Parent}.
 
 handle_call(hejsan, State) ->
     {ok, {ok, hejhopp}, State};
-handle_call({swap_call,Mod,Args}, State) ->
+handle_call({swap_call, Mod, Args}, State) ->
     {swap_handler, {ok, swapped}, swap, State, Mod, Args};
 handle_call(error_call, _State) ->
     {return, faulty};
 handle_call(exit_call, _State) ->
-    erlang:error({badmatch,4});
+    erlang:error({badmatch, 4});
 handle_call(hibernate, _State) ->
-    {ok,true,[],hibernate};
+    {ok, true, [], hibernate};
 handle_call(hibernate_later, _State) ->
-    timer:send_after(1000,sleep),
-    {ok,later,[]};
+    timer:send_after(1000, sleep),
+    {ok, later, []};
 handle_call({delayed_answer, T}, State) ->
-    receive after T -> ok end,
+    receive
+    after T -> ok
+    end,
     {ok, delayed, State};
 handle_call(_Query, State) ->
     {ok, ok, State}.
 
-handle_info({swap_info,Mod,Args}, State) ->
+handle_info({swap_info, Mod, Args}, State) ->
     {swap_handler, swap, State, Mod, Args};
 handle_info(error_info, _State) ->
     {return, faulty};
 handle_info(do_crash, _State) ->
-    erlang:error({badmatch,4});
+    erlang:error({badmatch, 4});
 handle_info(sleep, _State) ->
     {ok, [], hibernate};
 handle_info(wake, _State) ->
@@ -102,5 +112,5 @@ terminate(_Reason, {undef_in_terminate, {Mod, Fun}}) ->
 terminate(_Reason, _State) ->
     ok.
 
-format_status(#{ state := _State } = S) ->
-    S#{ state := "dummy1_h handler state" }.
+format_status(#{state := _State} = S) ->
+    S#{state := "dummy1_h handler state"}.

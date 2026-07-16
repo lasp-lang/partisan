@@ -57,15 +57,19 @@
 
 %% public api
 
--export([start_link/2,
-         start_link/3,
-         accept_socket/3,
-         which_sockets/1]).
+-export([
+    start_link/2,
+    start_link/3,
+    accept_socket/3,
+    which_sockets/1
+]).
 
 %% supervisor api
 
--export([which_children/1,
-         count_children/1]).
+-export([
+    which_children/1,
+    count_children/1
+]).
 
 %% gen_server api
 
@@ -77,51 +81,67 @@
 %% -export([format_status/2]).
 -export([terminate/2]).
 
--type pool() :: pid() | atom() | {atom(), node()} | {via, module(), any()} |
-                {global, any()}.
+-type pool() ::
+    pid()
+    | atom()
+    | {atom(), node()}
+    | {via, module(), any()}
+    | {global, any()}.
 
--type pool_flags() :: #{intensity => non_neg_integer(),
-                        period => pos_integer()}.
+-type pool_flags() :: #{
+    intensity => non_neg_integer(),
+    period => pos_integer()
+}.
 
--type acceptor_spec() :: #{id := term(),
-                           start := {module(), any(), [acceptor:option()]},
-                           restart => transient | temporary,
-                           shutdown => timeout() | brutal_kill,
-                           grace => timeout(),
-                           type => worker | supervisor,
-                           modules => [module()] | dynamic}.
+-type acceptor_spec() :: #{
+    id := term(),
+    start := {module(), any(), [acceptor:option()]},
+    restart => transient | temporary,
+    shutdown => timeout() | brutal_kill,
+    grace => timeout(),
+    type => worker | supervisor,
+    modules => [module()] | dynamic
+}.
 
 -type name() ::
     {inet:ip_address(), inet:port_number()} | inet:returned_non_ip_address().
 
--export_type([pool/0,
-              pool_flags/0,
-              acceptor_spec/0,
-              name/0]).
+-export_type([
+    pool/0,
+    pool_flags/0,
+    acceptor_spec/0,
+    name/0
+]).
 
--record(state, {name,
-                mod :: module(),
-                args :: any(),
-                id :: term(),
-                start :: {module(), any(), [acceptor:option()]},
-                restart :: transient | temporary,
-                shutdown :: timeout() | brutal_kill,
-                grace :: timeout(),
-                type :: worker | supervisor,
-                modules :: [module()] | dynamic,
-                intensity :: non_neg_integer(),
-                period :: pos_integer(),
-                restarts = queue:new() :: queue:queue(integer()),
-                sockets = #{} :: #{reference() =>
-                                   {module(), name(), gen_tcp:socket()}},
-                acceptors = #{} :: #{pid() =>
-                                     {reference(), name(), reference()}},
-                conns = #{} :: #{pid() => {name(), name(), reference()}}}).
+-record(state, {
+    name,
+    mod :: module(),
+    args :: any(),
+    id :: term(),
+    start :: {module(), any(), [acceptor:option()]},
+    restart :: transient | temporary,
+    shutdown :: timeout() | brutal_kill,
+    grace :: timeout(),
+    type :: worker | supervisor,
+    modules :: [module()] | dynamic,
+    intensity :: non_neg_integer(),
+    period :: pos_integer(),
+    restarts = queue:new() :: queue:queue(integer()),
+    sockets = #{} :: #{
+        reference() =>
+            {module(), name(), gen_tcp:socket()}
+    },
+    acceptors = #{} :: #{
+        pid() =>
+            {reference(), name(), reference()}
+    },
+    conns = #{} :: #{pid() => {name(), name(), reference()}}
+}).
 
 -callback init(Args) -> {ok, {PoolFlags, [AcceptorSpec, ...]}} | ignore when
-      Args :: any(),
-      PoolFlags :: pool_flags(),
-      AcceptorSpec :: acceptor_spec().
+    Args :: any(),
+    PoolFlags :: pool_flags(),
+    AcceptorSpec :: acceptor_spec().
 
 %% public api
 
@@ -130,10 +150,10 @@
 %%
 %% @see start_link/3
 -spec start_link(Module, Args) -> {ok, Pid} | ignore | {error, Reason} when
-      Module :: module(),
-      Args :: any(),
-      Pid :: pid(),
-      Reason :: any().
+    Module :: module(),
+    Args :: any(),
+    Pid :: pid(),
+    Reason :: any().
 start_link(Module, Args) ->
     gen_server:start_link(?MODULE, {self, Module, Args}, []).
 
@@ -145,12 +165,13 @@ start_link(Module, Args) ->
 %%
 %% @see supervisor:start_link/3
 -spec start_link(Name, Module, Args) ->
-    {ok, Pid} | ignore | {error, Reason} when
-      Name :: {local, atom()} | {via, module, any()} | {global, any()},
-      Module :: module(),
-      Args :: any(),
-      Pid :: pid(),
-      Reason :: any().
+    {ok, Pid} | ignore | {error, Reason}
+when
+    Name :: {local, atom()} | {via, module, any()} | {global, any()},
+    Module :: module(),
+    Args :: any(),
+    Pid :: pid(),
+    Reason :: any().
 start_link(Name, Module, Args) ->
     gen_server:start_link(Name, ?MODULE, {Name, Module, Args}, []).
 
@@ -160,28 +181,29 @@ start_link(Name, Module, Args) ->
 %% Returns `{ok, Ref}' on success or `{error, Reason}' on failure. If acceptors
 %% fail to accept connections an exit signal is sent `Sock'.
 -spec accept_socket(Pool, Sock, Acceptors) -> {ok, Ref} | {error, Reason} when
-      Pool :: pool(),
-      Sock :: gen_tcp:socket(),
-      Acceptors :: pos_integer(),
-      Ref :: reference(),
-      Reason :: inet:posix().
-accept_socket(Pool, Sock, Acceptors)
-  when is_port(Sock), is_integer(Acceptors), Acceptors > 0 ->
+    Pool :: pool(),
+    Sock :: gen_tcp:socket(),
+    Acceptors :: pos_integer(),
+    Ref :: reference(),
+    Reason :: inet:posix().
+accept_socket(Pool, Sock, Acceptors) when
+    is_port(Sock), is_integer(Acceptors), Acceptors > 0
+->
     case gen_server:call(Pool, {accept_socket, Sock, Acceptors}, infinity) of
         {ok, SockRef, SockPid} ->
             ok = gen_tcp:controlling_process(Sock, SockPid),
             {ok, SockRef};
-        {error, _}=E ->
+        {error, _} = E ->
             E
     end.
 
 %% @doc List the listen sockets being used by the `acceptor_pool'.
 -spec which_sockets(Pool) -> [{SockModule, SockName, Sock, Ref}] when
-      Pool :: pool(),
-      SockModule :: module(),
-      SockName :: name(),
-      Sock :: gen_tcp:socket(),
-      Ref :: reference().
+    Pool :: pool(),
+    SockModule :: module(),
+    SockName :: name(),
+    Sock :: gen_tcp:socket(),
+    Ref :: reference().
 which_sockets(Pool) ->
     gen_server:call(Pool, which_sockets, infinity).
 
@@ -195,12 +217,12 @@ which_sockets(Pool) ->
 %%
 %% @see supervisor:which_children/1.
 -spec which_children(Pool) -> [{Id, Child, Type, Modules}] when
-      Pool :: pool(),
-      Id ::
+    Pool :: pool(),
+    Id ::
         {term(), PeerName :: name(), SockName :: name(), Ref :: reference()},
-      Child :: pid(),
-      Type :: worker | supervisor,
-      Modules :: [module()] | dynamic.
+    Child :: pid(),
+    Type :: worker | supervisor,
+    Modules :: [module()] | dynamic.
 which_children(Pool) ->
     gen_server:call(Pool, which_children, infinity).
 
@@ -210,8 +232,8 @@ which_children(Pool) ->
 %%
 %% @see supervisor:count_children/1.
 -spec count_children(Pool) -> Counts when
-      Pool :: pool(),
-      Counts :: [{spec | active | workers | supervisors, non_neg_integer()}].
+    Pool :: pool(),
+    Counts :: [{spec | active | workers | supervisors, non_neg_integer()}].
 count_children(Pool) ->
     gen_server:call(Pool, count_children, infinity).
 
@@ -241,14 +263,18 @@ handle_call({accept_socket, Sock, NumAcceptors}, _, State) ->
             demonitor(SockRef, [flush]),
             {reply, Error, State}
     end;
-handle_call(which_sockets, _, #state{sockets=Sockets} = State) ->
-    Reply = [{SockMod, SockName, Sock, SockRef} ||
-             {SockRef, {SockMod, SockName, Sock}} <- maps:to_list(Sockets)],
+handle_call(which_sockets, _, #state{sockets = Sockets} = State) ->
+    Reply = [
+        {SockMod, SockName, Sock, SockRef}
+     || {SockRef, {SockMod, SockName, Sock}} <- maps:to_list(Sockets)
+    ],
     {reply, Reply, State};
 handle_call(which_children, _, State) ->
-    #state{conns=Conns, id=Id, type=Type, modules=Modules} = State,
-    Children = [{{Id, PeerName, SockName, Ref}, Pid, Type, Modules} ||
-                {Pid, {PeerName, SockName, Ref}} <- maps:to_list(Conns)],
+    #state{conns = Conns, id = Id, type = Type, modules = Modules} = State,
+    Children = [
+        {{Id, PeerName, SockName, Ref}, Pid, Type, Modules}
+     || {Pid, {PeerName, SockName, Ref}} <- maps:to_list(Conns)
+    ],
     {reply, Children, State};
 handle_call(count_children, _, State) ->
     {reply, count(State), State}.
@@ -261,17 +287,17 @@ handle_cast(Req, State) ->
 handle_info({'EXIT', Conn, Reason}, State) ->
     handle_exit(Conn, Reason, State);
 handle_info({'ACCEPT', Pid, AcceptRef, PeerName}, State) ->
-    #state{acceptors=Acceptors, conns=Conns} = State,
+    #state{acceptors = Acceptors, conns = Conns} = State,
     case maps:take(Pid, Acceptors) of
         {{SockRef, ListenSockName, AcceptRef}, NAcceptors} ->
             NAcceptors2 = start_acceptor(SockRef, NAcceptors, State),
             NConns = Conns#{Pid => {PeerName, ListenSockName, AcceptRef}},
-            {noreply, State#state{acceptors=NAcceptors2, conns=NConns}};
+            {noreply, State#state{acceptors = NAcceptors2, conns = NConns}};
         error ->
             {noreply, State}
     end;
 handle_info({'ACCEPT', Pid, AcceptRef, SockName, PeerName}, State) ->
-    #state{acceptors=Acceptors, conns=Conns} = State,
+    #state{acceptors = Acceptors, conns = Conns} = State,
     case maps:take(Pid, Acceptors) of
         %% we ignore the sock name from the acceptor, because it could
         %% be {0,0,0,0}, and we want to know which interface the
@@ -279,37 +305,37 @@ handle_info({'ACCEPT', Pid, AcceptRef, SockName, PeerName}, State) ->
         {{SockRef, _ListenSockName, AcceptRef}, NAcceptors} ->
             NAcceptors2 = start_acceptor(SockRef, NAcceptors, State),
             NConns = Conns#{Pid => {PeerName, SockName, AcceptRef}},
-            {noreply, State#state{acceptors=NAcceptors2, conns=NConns}};
+            {noreply, State#state{acceptors = NAcceptors2, conns = NConns}};
         error ->
             {noreply, State}
     end;
-handle_info({'CANCEL', Pid, AcceptRef}, #state{acceptors=Acceptors} = State) ->
+handle_info({'CANCEL', Pid, AcceptRef}, #state{acceptors = Acceptors} = State) ->
     case Acceptors of
         #{Pid := {SockRef, SockName, AcceptRef}} ->
             NAcceptors = start_acceptor(SockRef, Acceptors, State),
             PidInfo = {undefined, SockName, AcceptRef},
-            {noreply, State#state{acceptors=NAcceptors#{Pid := PidInfo}}};
+            {noreply, State#state{acceptors = NAcceptors#{Pid := PidInfo}}};
         _ ->
             {noreply, State}
     end;
-handle_info({'IGNORE', Pid, AcceptRef}, #state{acceptors=Acceptors} = State) ->
+handle_info({'IGNORE', Pid, AcceptRef}, #state{acceptors = Acceptors} = State) ->
     case maps:take(Pid, Acceptors) of
         {{SockRef, _, AcceptRef}, NAcceptors} ->
             NAcceptors2 = start_acceptor(SockRef, NAcceptors, State),
-            {noreply, State#state{acceptors=NAcceptors2}};
+            {noreply, State#state{acceptors = NAcceptors2}};
         error ->
             {noreply, State}
     end;
-handle_info({'DOWN', SockRef, port, _, _}, #state{sockets=Sockets} = State) ->
-    {noreply, State#state{sockets=maps:remove(SockRef, Sockets)}};
-handle_info(Msg, #state{name=Name} = State) ->
+handle_info({'DOWN', SockRef, port, _, _}, #state{sockets = Sockets} = State) ->
+    {noreply, State#state{sockets = maps:remove(SockRef, Sockets)}};
+handle_info(Msg, #state{name = Name} = State) ->
     error_logger:error_msg("~p received unexpected message: ~p~n", [Name, Msg]),
     {noreply, State}.
 
 %% @private
-code_change(_, #state{mod=Mod, args=Args} = State, _) ->
+code_change(_, #state{mod = Mod, args = Args} = State, _) ->
     try Mod:init(Args) of
-        Result       -> change_init(Result, State)
+        Result -> change_init(Result, State)
     catch
         throw:Result -> change_init(Result, State)
     end.
@@ -322,9 +348,17 @@ code_change(_, #state{mod=Mod, args=Args} = State, _) ->
 
 %% @private
 terminate(_, State) ->
-    #state{conns=Conns, acceptors=Acceptors, grace=Grace, shutdown=Shutdown,
-           restart=Restart, name=Name, id=Id, start={AMod, _, _},
-           type=Type} = State,
+    #state{
+        conns = Conns,
+        acceptors = Acceptors,
+        grace = Grace,
+        shutdown = Shutdown,
+        restart = Restart,
+        name = Name,
+        id = Id,
+        start = {AMod, _, _},
+        type = Type
+    } = State,
     Pids = maps:keys(Acceptors) ++ maps:keys(Conns),
     MRefs = maps:from_list([{monitor(process, Pid), Pid} || Pid <- Pids]),
     Timer = grace_timer(Grace, Shutdown),
@@ -346,10 +380,20 @@ init(Name, Mod, Args, {ok, {#{} = Flags, [#{} = Spec]}}) ->
             Shutdown = maps:get(shutdown, Spec, shutdown_default(Type)),
             Grace = maps:get(grace, Spec, 0),
             Modules = maps:get(modules, Spec, [AMod]),
-            State = #state{name=Name, mod=Mod, args=Args, id=Id, start=Start,
-                           restart=Restart, shutdown=Shutdown, grace=Grace,
-                           type=Type, modules=Modules, intensity=Intensity,
-                           period=Period},
+            State = #state{
+                name = Name,
+                mod = Mod,
+                args = Args,
+                id = Id,
+                start = Start,
+                restart = Restart,
+                shutdown = Shutdown,
+                grace = Grace,
+                type = Type,
+                modules = Modules,
+                intensity = Intensity,
+                period = Period
+            },
             {ok, State};
         {error, Reason} ->
             {stop, Reason}
@@ -361,7 +405,7 @@ init(_, Mod, _, Other) ->
 
 validate_config(Flags, Spec) ->
     case validate_flags(Flags) of
-        ok                 -> validate_spec(Spec);
+        ok -> validate_spec(Spec);
         {error, _} = Error -> Error
     end.
 
@@ -369,15 +413,22 @@ validate_flags(Flags) ->
     validate(fun validate_flag/2, Flags).
 
 validate(Validate, Map) ->
-    maps:fold(fun(Key, Value, ok)           -> Validate(Key, Value);
-                 (_, _, {error, _} = Error) -> Error
-              end, ok, Map).
+    maps:fold(
+        fun
+            (Key, Value, ok) -> Validate(Key, Value);
+            (_, _, {error, _} = Error) -> Error
+        end,
+        ok,
+        Map
+    ).
 
-validate_flag(intensity, Intensity)
-  when is_integer(Intensity), Intensity >= 0 ->
+validate_flag(intensity, Intensity) when
+    is_integer(Intensity), Intensity >= 0
+->
     ok;
-validate_flag(period, Period)
-  when is_integer(Period), Period > 0 ->
+validate_flag(period, Period) when
+    is_integer(Period), Period > 0
+->
     ok;
 validate_flag(Key, Value) ->
     {error, {bad_flag, {Key, Value}}}.
@@ -385,21 +436,23 @@ validate_flag(Key, Value) ->
 validate_spec(Spec) ->
     case {maps:is_key(id, Spec), maps:is_key(start, Spec)} of
         {true, true} -> validate(fun validate_spec/2, Spec);
-        {false, _}   -> {error, {missing_spec, id}};
-        {_, false}   -> {error, {missing_spec, start}}
+        {false, _} -> {error, {missing_spec, id}};
+        {_, false} -> {error, {missing_spec, start}}
     end.
 
 validate_spec(id, _) ->
     ok;
 validate_spec(start, {AMod, _, Opts}) when is_atom(AMod), is_list(Opts) ->
     ok;
-validate_spec(restart, Restart)
-  when Restart == transient; Restart == temporary ->
+validate_spec(restart, Restart) when
+    Restart == transient; Restart == temporary
+->
     ok;
 validate_spec(shutdown, Shutdown) when is_integer(Shutdown), Shutdown >= 0 ->
     ok;
-validate_spec(shutdown, Shutdown)
-  when Shutdown == infinity; Shutdown == brutal_kill ->
+validate_spec(shutdown, Shutdown) when
+    Shutdown == infinity; Shutdown == brutal_kill
+->
     ok;
 validate_spec(grace, Grace) when is_integer(Grace), Grace >= 0 ->
     ok;
@@ -410,10 +463,10 @@ validate_spec(modules, Modules) when is_list(Modules); Modules == dynamic ->
 validate_spec(Key, Value) ->
     {error, {bad_spec, {Key, Value}}}.
 
-shutdown_default(worker)     -> 5000;
+shutdown_default(worker) -> 5000;
 shutdown_default(supervisor) -> infinity.
 
-count(#state{conns=Conns, acceptors=Acceptors, type=Type}) ->
+count(#state{conns = Conns, acceptors = Acceptors, type = Type}) ->
     Active = maps:size(Conns),
     Size = Active + maps:size(Acceptors),
     case Type of
@@ -425,29 +478,34 @@ count(#state{conns=Conns, acceptors=Acceptors, type=Type}) ->
 
 socket_info(Sock) ->
     case inet_db:lookup_socket(Sock) of
-        {ok, SockMod}      -> socket_info(SockMod, Sock);
+        {ok, SockMod} -> socket_info(SockMod, Sock);
         {error, _} = Error -> Error
     end.
 
 socket_info(SockMod, Sock) ->
     case inet:sockname(Sock) of
-        {ok, SockName}     -> {ok, {SockMod, SockName, Sock}};
+        {ok, SockName} -> {ok, {SockMod, SockName, Sock}};
         {error, _} = Error -> Error
     end.
 
 start_acceptors(SockRef, SockInfo, NumAcceptors, State) ->
-    #state{sockets=Sockets, acceptors=Acceptors} = State,
-    NState = State#state{sockets=Sockets#{SockRef => SockInfo}},
+    #state{sockets = Sockets, acceptors = Acceptors} = State,
+    NState = State#state{sockets = Sockets#{SockRef => SockInfo}},
     NAcceptors = start_loop(SockRef, NumAcceptors, Acceptors, NState),
-    NState#state{acceptors=NAcceptors}.
+    NState#state{acceptors = NAcceptors}.
 
 start_loop(_, 0, Acceptors, _) ->
     Acceptors;
 start_loop(SockRef, N, Acceptors, State) ->
-    start_loop(SockRef, N-1, start_acceptor(SockRef, Acceptors, State), State).
+    start_loop(
+        SockRef, N - 1, start_acceptor(SockRef, Acceptors, State), State
+    ).
 
-start_acceptor(SockRef, Acceptors,
-               #state{sockets=Sockets, start={Mod, Args, Opts}}) ->
+start_acceptor(
+    SockRef,
+    Acceptors,
+    #state{sockets = Sockets, start = {Mod, Args, Opts}}
+) ->
     case Sockets of
         #{SockRef := {SockMod, SockName, Sock}} ->
             {Pid, AcceptRef} =
@@ -457,10 +515,10 @@ start_acceptor(SockRef, Acceptors,
             Acceptors
     end.
 
-handle_exit(Pid, Reason, #state{conns=Conns} = State) ->
+handle_exit(Pid, Reason, #state{conns = Conns} = State) ->
     case maps:take(Pid, Conns) of
         {SockInfo, NConns} ->
-            child_exit(Pid, Reason, SockInfo, State#state{conns=NConns});
+            child_exit(Pid, Reason, SockInfo, State#state{conns = NConns});
         error ->
             acceptor_exit(Pid, Reason, State)
     end.
@@ -472,35 +530,46 @@ child_exit(_, shutdown, _, State) ->
     {noreply, State};
 child_exit(_, {shutdown, _}, _, State) ->
     {noreply, State};
-child_exit(Pid, Reason, SockInfo, #state{restart=temporary} = State) ->
+child_exit(Pid, Reason, SockInfo, #state{restart = temporary} = State) ->
     report(child_terminated, Pid, Reason, SockInfo, State),
     {noreply, State};
-child_exit(Pid, Reason, SockInfo, #state{restart=transient} = State) ->
+child_exit(Pid, Reason, SockInfo, #state{restart = transient} = State) ->
     report(child_terminated, Pid, Reason, SockInfo, State),
     add_restart(State).
 
 report(Context, Pid, Reason, {PeerName, SockName, Ref}, State) ->
-    #state{name=Name, id=Id, start={AMod, _, _}, restart=Restart,
-           shutdown=Shutdown, type=Type} = State,
-    Report = [{supervisor, Name},
-              {errorContext, Context},
-              {reason, Reason},
-              {offender, [{pid, Pid},
-                          {id, {Id, PeerName, SockName, Ref}},
-                          {mfargs, {AMod, acceptor_init, undefined}},
-                          {restart_type, Restart},
-                          {shutdown, Shutdown},
-                          {child_type, Type}]}],
+    #state{
+        name = Name,
+        id = Id,
+        start = {AMod, _, _},
+        restart = Restart,
+        shutdown = Shutdown,
+        type = Type
+    } = State,
+    Report = [
+        {supervisor, Name},
+        {errorContext, Context},
+        {reason, Reason},
+        {offender, [
+            {pid, Pid},
+            {id, {Id, PeerName, SockName, Ref}},
+            {mfargs, {AMod, acceptor_init, undefined}},
+            {restart_type, Restart},
+            {shutdown, Shutdown},
+            {child_type, Type}
+        ]}
+    ],
     error_logger:error_report(supervisor_report, Report).
 
 report(Context, Reason, State) ->
     SockInfo = {undefined, undefined, undefined},
     report(Context, undefined, Reason, SockInfo, State).
 
-acceptor_exit(Pid, Reason, #state{acceptors=Acceptors} = State) ->
+acceptor_exit(Pid, Reason, #state{acceptors = Acceptors} = State) ->
     case maps:take(Pid, Acceptors) of
-        {{SockRef, SockName, AcceptRef}, NAcceptors}
-          when SockRef /= undefined ->
+        {{SockRef, SockName, AcceptRef}, NAcceptors} when
+            SockRef /= undefined
+        ->
             SockInfo = {undefined, SockName, AcceptRef},
             report(start_error, Pid, Reason, SockInfo, State),
             restart_acceptor(SockRef, NAcceptors, State);
@@ -511,7 +580,7 @@ acceptor_exit(Pid, Reason, #state{acceptors=Acceptors} = State) ->
             % have sent exit signal to listen socket, hopefully isolating the
             % pool from a bad listen socket. With acceptor_terminate/2
             % crash the max intensity can still be reached.
-            NState = State#state{acceptors=NAcceptors},
+            NState = State#state{acceptors = NAcceptors},
             child_exit(Pid, Reason, SockInfo, NState);
         error ->
             {noreply, State}
@@ -521,16 +590,16 @@ restart_acceptor(SockRef, Acceptors, State) ->
     case add_restart(State) of
         {noreply, NState} ->
             NAcceptors = start_acceptor(SockRef, Acceptors, NState),
-            {noreply, NState#state{acceptors=NAcceptors}};
-        {stop, Reason,NState} ->
-            {stop, Reason, NState#state{acceptors=Acceptors}}
+            {noreply, NState#state{acceptors = NAcceptors}};
+        {stop, Reason, NState} ->
+            {stop, Reason, NState#state{acceptors = Acceptors}}
     end.
 
 add_restart(State) ->
-    #state{intensity=Intensity, period=Period, restarts=Restarts} = State,
+    #state{intensity = Intensity, period = Period, restarts = Restarts} = State,
     Now = erlang:monotonic_time(1),
     NRestarts = drop_restarts(Now - Period, queue:in(Now, Restarts)),
-    NState = State#state{restarts=NRestarts},
+    NState = State#state{restarts = NRestarts},
     case queue:len(NRestarts) of
         Len when Len =< Intensity ->
             {noreply, NState};
@@ -543,16 +612,27 @@ drop_restarts(Stale, Restarts) ->
     % Just inserted Now and Now > Stale so get/1 and drop/1 always succeed
     case queue:get(Restarts) of
         Time when Time >= Stale -> Restarts;
-        Time when Time < Stale  -> drop_restarts(Stale, queue:drop(Restarts))
+        Time when Time < Stale -> drop_restarts(Stale, queue:drop(Restarts))
     end.
 
 change_init(Result, State) ->
-    #state{name=Name, mod=Mod, args=Args, restarts=Restarts, sockets=Sockets,
-           acceptors=Acceptors, conns=Conns} = State,
+    #state{
+        name = Name,
+        mod = Mod,
+        args = Args,
+        restarts = Restarts,
+        sockets = Sockets,
+        acceptors = Acceptors,
+        conns = Conns
+    } = State,
     case init(Name, Mod, Args, Result) of
         {ok, NState} ->
-            {ok, NState#state{restarts=Restarts, sockets=Sockets,
-                              acceptors=Acceptors, conns=Conns}};
+            {ok, NState#state{
+                restarts = Restarts,
+                sockets = Sockets,
+                acceptors = Acceptors,
+                conns = Conns
+            }};
         ignore ->
             {ok, State};
         {stop, Reason} ->
@@ -615,7 +695,7 @@ down(MRef, Reason, Status, Restart, Reports, Exits, MRefs) ->
 check_reason(Pid, noproc, Exits) ->
     case maps:take(Pid, Exits) of
         {_, _} = Result -> Result;
-        error           -> {noproc, Exits}
+        error -> {noproc, Exits}
     end;
 check_reason(Pid, Reason, Exits) ->
     {Reason, maps:remove(Pid, Exits)}.
@@ -626,25 +706,29 @@ handle_down(Reason, Status, Restart, Reports) ->
         report -> dict:update_counter(Reason, 1, Reports)
     end.
 
-down_action(normal, _, _)             -> ignore;
-down_action(shutdown, _, _)           -> ignore;
-down_action({shutdown, _}, _, _)      -> ignore;
-down_action(killed, brutal_kill, _)   -> ignore;
-down_action(_, _, _)                  -> report.
+down_action(normal, _, _) -> ignore;
+down_action(shutdown, _, _) -> ignore;
+down_action({shutdown, _}, _, _) -> ignore;
+down_action(killed, brutal_kill, _) -> ignore;
+down_action(_, _, _) -> report.
 
 terminate_report(Name, Id, AMod, Restart, Shutdown, Type, Reports) ->
     ReportAll = fun(Reason, Count, Acc) ->
-                        Offender = [{pid, Count},
-                                    {id, {Id, undefined, undefined, undefined}},
-                                    {mfargs, {AMod, acceptor_init, undefined}},
-                                    {restart_type, Restart},
-                                    {shutdown, Shutdown},
-                                    {child_type, Type}],
-                        Report = [{supervisor, Name},
-                                  {errorContext, shutdown_error},
-                                  {reason, Reason},
-                                  {offender, Offender}],
-                        error_logger:error_report(supervisor_report, Report),
-                        Acc
-                end,
+        Offender = [
+            {pid, Count},
+            {id, {Id, undefined, undefined, undefined}},
+            {mfargs, {AMod, acceptor_init, undefined}},
+            {restart_type, Restart},
+            {shutdown, Shutdown},
+            {child_type, Type}
+        ],
+        Report = [
+            {supervisor, Name},
+            {errorContext, shutdown_error},
+            {reason, Reason},
+            {offender, Offender}
+        ],
+        error_logger:error_report(supervisor_report, Report),
+        Acc
+    end,
     dict:fold(ReportAll, ok, Reports).

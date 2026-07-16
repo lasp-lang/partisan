@@ -58,9 +58,9 @@ node_num_nodes() ->
 %% What node-specific operations should be called.
 node_commands() ->
     [
-     {call, ?MODULE, next_id, [node_name()]},
-    %  {call, ?MODULE, wait, [node_name()]},
-     {call, ?MODULE, sleep, []}
+        {call, ?MODULE, next_id, [node_name()]},
+        %  {call, ?MODULE, wait, [node_name()]},
+        {call, ?MODULE, sleep, []}
     ].
 
 %% Assertion commands.
@@ -74,7 +74,7 @@ node_global_functions() ->
 %% What should the initial node state be.
 node_initial_state() ->
     node_debug("initializing", []),
-    #node_state{counter=0, node_writes=dict:new()}.
+    #node_state{counter = 0, node_writes = dict:new()}.
 
 %% Names of the node functions so we kow when we can dispatch to the node
 %% pre- and postconditions.
@@ -92,40 +92,58 @@ node_precondition(_NodeState, _Command) ->
     false.
 
 %% Next state.
-node_next_state(_State, NodeState, {badrpc, _}, {call, ?MODULE, next_id, [_Node]}) ->
+node_next_state(
+    _State, NodeState, {badrpc, _}, {call, ?MODULE, next_id, [_Node]}
+) ->
     %% don't advance expected counter if a badrpc is generated.
     NodeState;
-node_next_state(_State, #node_state{counter=Counter, node_writes=NodeWrites0}=NodeState, _Value, {call, ?MODULE, next_id, [Node]}) ->
+node_next_state(
+    _State,
+    #node_state{counter = Counter, node_writes = NodeWrites0} = NodeState,
+    _Value,
+    {call, ?MODULE, next_id, [Node]}
+) ->
     NodeWrites = dict:update_counter(Node, 1, NodeWrites0),
-    NodeState#node_state{counter=Counter+1, node_writes=NodeWrites};
+    NodeState#node_state{counter = Counter + 1, node_writes = NodeWrites};
 node_next_state(_State, NodeState, _Response, _Command) ->
     NodeState.
 
 %% Postconditions for node commands.
-node_postcondition(#node_state{node_writes=NodeWrites, counter=Counter}, {call, ?MODULE, max_id, []}, Results) ->
+node_postcondition(
+    #node_state{node_writes = NodeWrites, counter = Counter},
+    {call, ?MODULE, max_id, []},
+    Results
+) ->
     node_debug("postcondition received ~p from max_id", [Results]),
 
     %% Find the crashed nodes.
-    CrashedNodes = lists:filter(fun({_Node, Result}) ->
-        case Result of
-            undefined ->
-                true;
-            _ ->
-                false
-        end
-    end, Results),
+    CrashedNodes = lists:filter(
+        fun({_Node, Result}) ->
+            case Result of
+                undefined ->
+                    true;
+                _ ->
+                    false
+            end
+        end,
+        Results
+    ),
 
     %% Find the number of writes done by crashed nodes.
-    ConditionalWrites = lists:foldl(fun({Node, _Results}, Writes) ->
-        case dict:find(Node, NodeWrites) of
-            {ok, Value} ->
-                node_debug("=> node ~p found writes ~p", [Node, Value]),
-                Writes + Value;
-            Other ->
-                node_debug("=> node ~p FOUND NO writes ~p", [Node, Other]),
-                Writes
-        end
-    end, 0, CrashedNodes),
+    ConditionalWrites = lists:foldl(
+        fun({Node, _Results}, Writes) ->
+            case dict:find(Node, NodeWrites) of
+                {ok, Value} ->
+                    node_debug("=> node ~p found writes ~p", [Node, Value]),
+                    Writes + Value;
+                Other ->
+                    node_debug("=> node ~p FOUND NO writes ~p", [Node, Other]),
+                    Writes
+            end
+        end,
+        0,
+        CrashedNodes
+    ),
 
     LowerBound = Counter - ConditionalWrites,
 
@@ -135,29 +153,36 @@ node_postcondition(#node_state{node_writes=NodeWrites, counter=Counter}, {call, 
     node_debug("LowerBound: ~p", [LowerBound]),
 
     %% Ensure that a majority of nodes account for all the writes.
-    CorrectNodes = lists:filter(fun({Node, Result}) ->
-        case Result of
-            undefined ->
-                false;
-            _ ->
-                case Result >= LowerBound of
-                    true ->
-                        true;
-                    false ->
-                        node_debug("=> node: ~p has wrong value: ~p, should be ~p", [Node, Result, Counter]),
-                        false
-                end
-        end
-    end, Results),
+    CorrectNodes = lists:filter(
+        fun({Node, Result}) ->
+            case Result of
+                undefined ->
+                    false;
+                _ ->
+                    case Result >= LowerBound of
+                        true ->
+                            true;
+                        false ->
+                            node_debug(
+                                "=> node: ~p has wrong value: ~p, should be ~p",
+                                [Node, Result, Counter]
+                            ),
+                            false
+                    end
+            end
+        end,
+        Results
+    ),
 
     AllResults = lists:map(fun({_Node, Result}) -> Result end, CorrectNodes),
 
-    Agreement = case lists:usort(AllResults) of
-        [_] ->
-            true;
-        _ ->
-            false
-    end,
+    Agreement =
+        case lists:usort(AllResults) of
+            [_] ->
+                true;
+            _ ->
+                false
+        end,
 
     node_debug("lists:usort(AllResults): ~p", [lists:usort(AllResults)]),
     node_debug("AllResults: ~p", [AllResults]),
@@ -178,19 +203,30 @@ node_postcondition(_NodeState, {call, ?MODULE, wait, [_Node]}, _Result) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, sleep, []}, _Result) ->
     true;
-node_postcondition(_NodeState, {call, ?MODULE, next_id, [_Node]}, {badrpc,timeout}) ->
+node_postcondition(
+    _NodeState, {call, ?MODULE, next_id, [_Node]}, {badrpc, timeout}
+) ->
     case os:getenv("MODEL_CHECKING") of
         "true" ->
             true;
         _ ->
             false
     end;
-node_postcondition(#node_state{counter=Counter}, {call, ?MODULE, next_id, [_Node]}, Value) ->
-    node_debug("postcondition received ~p from next_id when value should be: ~p", [Value, Counter + 1]),
+node_postcondition(
+    #node_state{counter = Counter}, {call, ?MODULE, next_id, [_Node]}, Value
+) ->
+    node_debug(
+        "postcondition received ~p from next_id when value should be: ~p", [
+            Value, Counter + 1
+        ]
+    ),
 
     case Counter + 1 =:= Value of
         false ->
-            node_debug("postcondition: sequence has been duplicated: value is ~p should be ~p", [Value, Counter + 1]),
+            node_debug(
+                "postcondition: sequence has been duplicated: value is ~p should be ~p",
+                [Value, Counter + 1]
+            ),
             ok;
         true ->
             ok
@@ -198,8 +234,10 @@ node_postcondition(#node_state{counter=Counter}, {call, ?MODULE, next_id, [_Node
 
     true;
 node_postcondition(_NodeState, Command, Response) ->
-    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p",
-               [Command, Response]),
+    node_debug(
+        "generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p",
+        [Command, Response]
+    ),
     false.
 
 %%%===================================================================
@@ -212,7 +250,10 @@ node_postcondition(_NodeState, Command, Response) ->
 -define(RECEIVER, receiver).
 
 -define(ETS, prop_partisan).
--define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
+-define(NAME, fun(Name) ->
+    [{_, NodeName}] = ets:lookup(?ETS, Name),
+    NodeName
+end).
 
 %% @private
 wait(Node) ->
@@ -258,16 +299,21 @@ max_id() ->
 
     ?PROPERTY_MODULE:command_preamble(RunnerNode, [max_id]),
 
-    Results = lists:map(fun(Node) ->
-        case rpc:call(?NAME(Node), paxoid, max_id, [?GROUP], ?TIMEOUT) of
-            {ok, Result} ->
-                node_debug("node: ~p result of max_id: ~p~n", [Node, Result]),
-                {Node, Result};
-            {badrpc, _} ->
-                node_debug("node: ~p result of max_id undefined: crash", [Node]),
-                {Node, undefined}
-        end
-    end, names()),
+    Results = lists:map(
+        fun(Node) ->
+            case rpc:call(?NAME(Node), paxoid, max_id, [?GROUP], ?TIMEOUT) of
+                {ok, Result} ->
+                    node_debug("node: ~p result of max_id: ~p~n", [Node, Result]),
+                    {Node, Result};
+                {badrpc, _} ->
+                    node_debug("node: ~p result of max_id undefined: crash", [
+                        Node
+                    ]),
+                    {Node, undefined}
+            end
+        end,
+        names()
+    ),
 
     ?PROPERTY_MODULE:command_conclusion(RunnerNode, [max_id]),
 
@@ -306,38 +352,57 @@ node_begin_case() ->
     [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
 
     %% Enable pid encoding.
-    lists:foreach(fun({ShortName, _}) ->
-        % node_debug("enabling pid_encoding at node ~p", [ShortName]),
-        ok = rpc:call(?NAME(ShortName), partisan_config, set, [pid_encoding, true])
-    end, Nodes),
+    lists:foreach(
+        fun({ShortName, _}) ->
+            % node_debug("enabling pid_encoding at node ~p", [ShortName]),
+            ok = rpc:call(?NAME(ShortName), partisan_config, set, [
+                pid_encoding, true
+            ])
+        end,
+        Nodes
+    ),
 
     %% Enable register_pid_for_encoding.
-    lists:foreach(fun({ShortName, _}) ->
-        % node_debug("enabling register_pid_for_encoding at node ~p", [ShortName]),
-        ok = rpc:call(?NAME(ShortName), partisan_config, set, [register_pid_for_encoding, true])
-    end, Nodes),
+    lists:foreach(
+        fun({ShortName, _}) ->
+            % node_debug("enabling register_pid_for_encoding at node ~p", [ShortName]),
+            ok = rpc:call(?NAME(ShortName), partisan_config, set, [
+                register_pid_for_encoding, true
+            ])
+        end,
+        Nodes
+    ),
 
     %% Load, configure, and start paxoid.
-    lists:foreach(fun({ShortName, _}) ->
-        % node_debug("starting paxoid at node ~p", [ShortName]),
-        case rpc:call(?NAME(ShortName), application, load, [paxoid]) of
-            ok ->
-                ok;
-            {error, {already_loaded, paxoid}} ->
-                ok;
-            Other ->
-                exit({error, {load_failed, Other}})
+    lists:foreach(
+        fun({ShortName, _}) ->
+            % node_debug("starting paxoid at node ~p", [ShortName]),
+            case rpc:call(?NAME(ShortName), application, load, [paxoid]) of
+                ok ->
+                    ok;
+                {error, {already_loaded, paxoid}} ->
+                    ok;
+                Other ->
+                    exit({error, {load_failed, Other}})
+            end,
+
+            % node_debug("configuring paxoid at node ~p", [ShortName]),
+            ok = rpc:call(?NAME(ShortName), application, set_env, [
+                paxoid, predefined, [paxoid]
+            ]),
+
+            % node_debug("starting paxoid at node ~p", [ShortName]),
+            {ok, _} = rpc:call(
+                ?NAME(ShortName), application, ensure_all_started, [paxoid]
+            )
         end,
-
-        % node_debug("configuring paxoid at node ~p", [ShortName]),
-        ok = rpc:call(?NAME(ShortName), application, set_env, [paxoid, predefined, [paxoid]]),
-
-        % node_debug("starting paxoid at node ~p", [ShortName]),
-        {ok, _} = rpc:call(?NAME(ShortName), application, ensure_all_started, [paxoid])
-    end, Nodes),
+        Nodes
+    ),
 
     %% Join.
-    OtherNodes = lists:map(fun({ShortName, _}) -> ?NAME(ShortName) end, tl(Nodes)),
+    OtherNodes = lists:map(
+        fun({ShortName, _}) -> ?NAME(ShortName) end, tl(Nodes)
+    ),
     {FirstName, _} = hd(Nodes),
     % node_debug("joining all nodes with paxoid to first node: ~p: ~p", [FirstName, OtherNodes]),
     ok = rpc:call(?NAME(FirstName), paxoid, join, [?GROUP, OtherNodes]),
@@ -371,16 +436,19 @@ node_end_case() ->
 
     %% Stop paxoid.
     node_debug("stopping paxoid", []),
-    lists:foreach(fun({ShortName, _}) ->
-        node_debug("stopping paxoid on node ~p", [ShortName]),
-        case rpc:call(?NAME(ShortName), application, stop, [paxoid]) of
-            ok ->
-                ok;
-            {error, {not_started, paxoid}} ->
-                ok;
-            Other ->
-                ct:fail({error, Other})
-        end
-    end, Nodes),
+    lists:foreach(
+        fun({ShortName, _}) ->
+            node_debug("stopping paxoid on node ~p", [ShortName]),
+            case rpc:call(?NAME(ShortName), application, stop, [paxoid]) of
+                ok ->
+                    ok;
+                {error, {not_started, paxoid}} ->
+                    ok;
+                Other ->
+                    ct:fail({error, Other})
+            end
+        end,
+        Nodes
+    ),
 
     ok.

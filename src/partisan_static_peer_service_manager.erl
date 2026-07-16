@@ -55,25 +55,24 @@
 -export([update_members/1]).
 
 %% gen_server callbacks
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
-
-
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 -record(state, {
-    myself              :: partisan:node_spec(),
-    pending             :: pending(),
-    membership          :: membership()
+    myself :: partisan:node_spec(),
+    pending :: pending(),
+    membership :: membership()
 }).
 
--type state_t()         :: #state{}.
--type pending()         :: [partisan:node_spec()].
--type membership()      :: sets:set(partisan:node_spec()).
-
+-type state_t() :: #state{}.
+-type pending() :: [partisan:node_spec()].
+-type membership() :: sets:set(partisan:node_spec()).
 
 %%%===================================================================
 %%% partisan_peer_service_manager callbacks
@@ -86,7 +85,6 @@ start_link() ->
         {spawn_opt, ?PARALLEL_SIGNAL_OPTIMISATION([])}
     ],
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], Opts).
-
 
 %% @doc Return membership list.
 members() ->
@@ -122,13 +120,13 @@ send_message(Name, Message) ->
 %% -----------------------------------------------------------------------------
 -spec cast_message(
     Term :: partisan:any_pid() | partisan:any_name(),
-    MEssage :: partisan:message()) -> ok.
+    MEssage :: partisan:message()
+) -> ok.
 
 cast_message(Term, Message) ->
     FullMessage = {'$gen_cast', Message},
     _ = forward_message(Term, FullMessage, #{}),
     ok.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Cast a message to a remote gen_server.
@@ -136,7 +134,6 @@ cast_message(Term, Message) ->
 %% -----------------------------------------------------------------------------
 cast_message(Node, ServerRef, Message) ->
     cast_message(Node, ServerRef, Message, #{}).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Cast a message to a remote gen_server.
@@ -147,7 +144,6 @@ cast_message(Name, ServerRef, Message, Options) ->
     _ = forward_message(Name, ServerRef, FullMessage, Options),
     ok.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Gensym support for forwarding.
 %% @end
@@ -155,25 +151,21 @@ cast_message(Name, ServerRef, Message, Options) ->
 forward_message(Term, Message) ->
     forward_message(Term, Message, #{}).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Gensym support for forwarding.
 %% @end
 %% -----------------------------------------------------------------------------
 forward_message(Pid, Message, Opts) when is_pid(Pid) ->
     forward_message(partisan:node(Pid), Pid, Message, Opts);
-
 forward_message(RemoteRef, Message, Opts) ->
-    partisan_remote_ref:is_pid(RemoteRef)
-        orelse partisan_remote_ref:is_name(RemoteRef)
-        orelse error(badarg),
+    partisan_remote_ref:is_pid(RemoteRef) orelse
+        partisan_remote_ref:is_name(RemoteRef) orelse
+        error(badarg),
 
     Node = partisan_remote_ref:node(RemoteRef),
     Target = partisan_remote_ref:target(RemoteRef),
 
     forward_message(Node, Target, Message, Opts).
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Forward message to registered process on the remote side.
@@ -181,7 +173,6 @@ forward_message(RemoteRef, Message, Opts) ->
 %% -----------------------------------------------------------------------------
 forward_message(Node, ServerRef, Message, Opts) when is_list(Opts) ->
     forward_message(Node, ServerRef, Message, maps:from_list(Opts));
-
 forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
     Channel = maps:get(channel, Opts, ?DEFAULT_CHANNEL),
     gen_server:call(
@@ -218,7 +209,6 @@ decode(State) ->
 reserve(Tag) ->
     gen_server:call(?MODULE, {reserve, Tag}, infinity).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -227,10 +217,8 @@ reserve(Tag) ->
 
 supports_capability(monitoring) ->
     false;
-
 supports_capability(_) ->
     false.
-
 
 %% @doc Inject a partition.
 inject_partition(_Origin, _TTL) ->
@@ -274,10 +262,8 @@ init([]) ->
 
 handle_call({reserve, _Tag}, _From, State) ->
     {reply, {error, no_available_slots}, State};
-
 handle_call({leave, _Node}, _From, State) ->
     {reply, error, State};
-
 handle_call({join, #{name := Node} = Spec}, _From, #state{} = State) ->
     %% eqwalizer:ignore
     ok = partisan_util:maybe_connect_disterl(Node),
@@ -290,33 +276,29 @@ handle_call({join, #{name := Node} = Spec}, _From, #state{} = State) ->
     ok = partisan_peer_service_manager:connect(Spec),
     %% eqwalizer:ignore
     {reply, ok, State#state{pending = Pending}};
-
 handle_call({send_message, Name, Message}, _From, #state{} = State) ->
     %% eqwalizer:ignore
     Result = do_send_message(Name, Message),
     {reply, Result, State};
-
 handle_call(
     {forward_message, Name, _Channel, ServerRef, Message, _Options},
     _From,
-    #state{} = State) ->
+    #state{} = State
+) ->
     %% eqwalizer:ignore
     Result = do_send_message(Name, {forward_message, ServerRef, Message}),
     {reply, Result, State};
-
 handle_call({receive_message, Channel, Message}, _From, State) ->
     handle_message(Message, Channel, State);
-
-handle_call(members, _From, #state{membership=Membership}=State) ->
+handle_call(members, _From, #state{membership = Membership} = State) ->
     Members = [P || #{name := P} <- members(Membership)],
     {reply, {ok, Members}, State};
-
-handle_call(members_for_orchestration, _From, #state{membership=Membership}=State) ->
+handle_call(
+    members_for_orchestration, _From, #state{membership = Membership} = State
+) ->
     {reply, {ok, Membership}, State};
-
-handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
+handle_call(get_local_state, _From, #state{membership = Membership} = State) ->
     {reply, {ok, Membership}, State};
-
 handle_call(Event, _From, State) ->
     ?LOG_WARNING(#{description => "Unhandled call event", event => Event}),
     {reply, ok, State}.
@@ -324,15 +306,19 @@ handle_call(Event, _From, State) ->
 %% @private
 -spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
 handle_cast(Event, State) ->
-    ?LOG_WARNING(#{description => "Unhandled cast event", event => Event}),    {noreply, State}.
+    ?LOG_WARNING(#{description => "Unhandled cast event", event => Event}),
+    {noreply, State}.
 
-handle_info({'EXIT', From, _Reason}, #state{}=State) ->
-    _  = catch partisan_peer_connections:prune(From),
+handle_info({'EXIT', From, _Reason}, #state{} = State) ->
+    _ = catch partisan_peer_connections:prune(From),
     {noreply, State};
-
-handle_info({connected, Node, _Channel, _Tag, _RemoteState},
-               #state{pending=Pending0,
-                      membership=Membership0}=State) ->
+handle_info(
+    {connected, Node, _Channel, _Tag, _RemoteState},
+    #state{
+        pending = Pending0,
+        membership = Membership0
+    } = State
+) ->
     case lists:member(Node, Pending0) of
         true ->
             %% Move out of pending.
@@ -357,11 +343,10 @@ handle_info({connected, Node, _Channel, _Tag, _RemoteState},
             }),
 
             %% Return.
-            {noreply, State#state{pending=Pending, membership=Membership}};
+            {noreply, State#state{pending = Pending, membership = Membership}};
         false ->
             {noreply, State}
     end;
-
 handle_info(Event, State) ->
     ?LOG_WARNING(#{description => "Unhandled info event", event => Event}),
     {noreply, State}.
@@ -370,21 +355,20 @@ handle_info(Event, State) ->
 -spec terminate(term(), state_t()) -> term().
 
 terminate(_Reason, #state{}) ->
-    Fun = fun
-        (_K, Pids) ->
-            lists:foreach(
-              fun({_ListenAddr, _Channel, Pid}) ->
+    Fun = fun(_K, Pids) ->
+        lists:foreach(
+            fun({_ListenAddr, _Channel, Pid}) ->
                 gen_server:stop(Pid, normal, infinity),
                 ok
-              end,
-              Pids
-            )
+            end,
+            Pids
+        )
     end,
     ok = partisan_peer_connections:foreach(Fun).
 
-
 %% @private
--spec code_change(term() | {down, term()}, state_t(), term()) -> {ok, state_t()}.
+-spec code_change(term() | {down, term()}, state_t(), term()) ->
+    {ok, state_t()}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
@@ -426,7 +410,9 @@ maybe_load_state_from_disk() ->
         Dir ->
             case filelib:is_regular(filename:join(Dir, "cluster_state")) of
                 true ->
-                    {ok, Bin} = file:read_file(filename:join(Dir, "cluster_state")),
+                    {ok, Bin} = file:read_file(
+                        filename:join(Dir, "cluster_state")
+                    ),
                     binary_to_term(Bin);
                 false ->
                     empty_membership()
@@ -452,11 +438,9 @@ establish_connections(Pending, Membership) ->
     lists:foreach(fun partisan_peer_service_manager:connect/1, AllPeers),
     ok.
 
-
 handle_message({forward_message, ServerRef, Message}, _Channel, State) ->
     partisan_peer_service_manager:deliver(ServerRef, Message),
     {reply, ok, State}.
-
 
 %% @private
 -spec do_send_message(Node :: partisan:node_spec(), Message :: term()) ->
@@ -467,7 +451,6 @@ do_send_message(Node, Message) ->
     case partisan_peer_connections:dispatch_pid(Node) of
         {ok, Pid} ->
             gen_server:cast(Pid, {send_message, Message});
-
         {error, _} = Error ->
             Error
     end.

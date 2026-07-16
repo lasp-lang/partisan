@@ -41,11 +41,9 @@
     peer_opts/1
 ]).
 
-
 %% =============================================================================
 %% API
 %% =============================================================================
-
 
 %% @doc Generate an adapted test suite from an OTP source file.
 %% SourceFile is the path to the OTP SUITE .erl file.
@@ -56,14 +54,12 @@
 generate_suite(SourceFile, OutDir) ->
     generate_module(SourceFile, OutDir, fun suite_module_name/1).
 
-
 %% @doc Generate an adapted helper module from an OTP test helper source file.
 %% Renames the module with a partisan_ prefix.
 -spec generate_helper(file:filename(), file:filename()) ->
     {ok, module()} | {error, term()}.
 generate_helper(SourceFile, OutDir) ->
     generate_module(SourceFile, OutDir, fun helper_module_name/1).
-
 
 %% @doc Generate an adapted helper, keeping the original module name.
 %% Applies the partisan rewrite (gen_server→partisan_gen_server, etc.)
@@ -72,7 +68,6 @@ generate_helper(SourceFile, OutDir) ->
     {ok, module()} | {error, term()}.
 generate_rewritten_helper(SourceFile, OutDir) ->
     generate_module(SourceFile, OutDir, fun(Name) -> Name end).
-
 
 %% @doc Generate all test suites and helpers for the current OTP version.
 %% Generates adapted SUITE beams and sets up data_dir directories with
@@ -95,9 +90,11 @@ generate_all_suites(OutDir) ->
     ok = filelib:ensure_dir(filename:join(OutDir, "dummy")),
 
     %% Generate adapted SUITE beams.
-    SuiteResults = [{F, generate_suite(filename:join(TestDir, F), OutDir)}
-                    || F <- Suites,
-                       filelib:is_file(filename:join(TestDir, F))],
+    SuiteResults = [
+        {F, generate_suite(filename:join(TestDir, F), OutDir)}
+     || F <- Suites,
+        filelib:is_file(filename:join(TestDir, F))
+    ],
 
     %% Copy helper source files into data_dir directories.
     %% CT computes data_dir from the suite name: partisan_gen_server_SUITE_data/
@@ -114,15 +111,19 @@ generate_all_suites(OutDir) ->
 
     case Errors of
         [] ->
-            io:format("Generated ~p adapted test suites: ~p~n",
-                      [length(Oks), Oks]),
+            io:format(
+                "Generated ~p adapted test suites: ~p~n",
+                [length(Oks), Oks]
+            ),
             ok;
         _ ->
-            io:format(standard_error,
-                      "Errors generating test suites:~n~p~n", [Errors]),
+            io:format(
+                standard_error,
+                "Errors generating test suites:~n~p~n",
+                [Errors]
+            ),
             {error, Errors}
     end.
-
 
 %% @doc Inject code path arguments into peer node options.
 %% Called at runtime by the adapted test suites when starting peer nodes
@@ -149,7 +150,6 @@ peer_opts(Opts) ->
             PaArgs ++ L
     end.
 
-
 %% @doc Path to the OTP source directory for the running OTP version.
 otp_src_dir() ->
     Vsn = erlang:system_info(otp_release),
@@ -159,7 +159,8 @@ otp_src_dir() ->
         filename:join(["otp_src", "otp_" ++ Vsn ++ ".*"])
     ],
     case find_existing_dir(Candidates) of
-        {ok, Dir} -> Dir;
+        {ok, Dir} ->
+            Dir;
         error ->
             %% Try with wildcard
             Pattern = "otp_src/otp_" ++ Vsn ++ "*",
@@ -169,11 +170,9 @@ otp_src_dir() ->
             end
     end.
 
-
 %% =============================================================================
 %% Internal
 %% =============================================================================
-
 
 generate_module(SourceFile, OutDir, NameFun) ->
     case parse_source(SourceFile) of
@@ -203,7 +202,9 @@ generate_module(SourceFile, OutDir, NameFun) ->
             %% attribute will be rewritten to the partisan name, but we've
             %% already set it to NewModule, and the rewrite's module attribute
             %% handler will overwrite it. We'll fix it again after.
-            RewrittenForms = partisan_otp_rewrite:transform(gen_server, RenamedForms),
+            RewrittenForms = partisan_otp_rewrite:transform(
+                gen_server, RenamedForms
+            ),
 
             %% The rewrite renamed the module to partisan_gen_server.
             %% Fix it back to our desired NewModule.
@@ -221,8 +222,11 @@ generate_module(SourceFile, OutDir, NameFun) ->
             %% Undo the rpc→partisan_rpc rename for test suites.
             %% OTP test suites use rpc:call to talk to peer nodes via
             %% standard disterl.
-            RewrittenForms4 = rename_atom(RewrittenForms3,
-                                          partisan_rpc, rpc),
+            RewrittenForms4 = rename_atom(
+                RewrittenForms3,
+                partisan_rpc,
+                rpc
+            ),
 
             %% Replace test_server:start_peer calls with our wrapper
             %% that injects code paths so peer nodes have partisan.
@@ -246,9 +250,17 @@ generate_module(SourceFile, OutDir, NameFun) ->
             FinalForms = inject_peer_opts_fun(FinalForms1),
 
             %% Compile to beam.
-            case compile:forms(FinalForms,
-                               [binary, return_errors, debug_info,
-                                {d, 'PARTISAN_TEST'}]) of
+            case
+                compile:forms(
+                    FinalForms,
+                    [
+                        binary,
+                        return_errors,
+                        debug_info,
+                        {d, 'PARTISAN_TEST'}
+                    ]
+                )
+            of
                 {ok, NewModule, Binary} ->
                     write_beam(OutDir, NewModule, Binary);
                 {ok, NewModule, Binary, _Warnings} ->
@@ -259,7 +271,6 @@ generate_module(SourceFile, OutDir, NameFun) ->
         {error, _} = Err ->
             Err
     end.
-
 
 parse_source(File) ->
     StdlibDir = code:lib_dir(stdlib),
@@ -274,11 +285,9 @@ parse_source(File) ->
         ]}
     ]).
 
-
 get_module_name([{attribute, _, module, Mod} | _]) -> Mod;
 get_module_name([_ | Rest]) -> get_module_name(Rest);
 get_module_name([]) -> error(no_module_attribute).
-
 
 rename_module([{attribute, Anno, module, _Old} | Rest], NewName) ->
     [{attribute, Anno, module, NewName} | Rest];
@@ -286,7 +295,6 @@ rename_module([Form | Rest], NewName) ->
     [Form | rename_module(Rest, NewName)];
 rename_module([], _) ->
     [].
-
 
 %% Renames for helper modules referenced by the test suites.
 %% NOTE: Callback helper modules (oc_server, format_status_server, etc.)
@@ -299,13 +307,14 @@ test_helper_renames() ->
 %% SUITE module renames. Used by helpers that reference the SUITE module
 %% as a callback (e.g., format_status_server calls gen_server_SUITE:init/1).
 suite_renames() ->
-    [{gen_server_SUITE, partisan_otp_gen_server_SUITE},
-     {supervisor_SUITE, partisan_otp_supervisor_SUITE},
-     {gen_statem_SUITE, partisan_otp_gen_statem_SUITE},
-     {gen_event_SUITE, partisan_otp_gen_event_SUITE},
-     {proc_lib_SUITE, partisan_otp_proc_lib_SUITE},
-     {sys_SUITE, partisan_otp_sys_SUITE}].
-
+    [
+        {gen_server_SUITE, partisan_otp_gen_server_SUITE},
+        {supervisor_SUITE, partisan_otp_supervisor_SUITE},
+        {gen_statem_SUITE, partisan_otp_gen_statem_SUITE},
+        {gen_event_SUITE, partisan_otp_gen_event_SUITE},
+        {proc_lib_SUITE, partisan_otp_proc_lib_SUITE},
+        {sys_SUITE, partisan_otp_sys_SUITE}
+    ].
 
 %% Strip the ts_install_cth CT hook from suite/0 return value.
 %% Replace module name substrings in string literals throughout the AST.
@@ -332,13 +341,14 @@ module_string_replacements() ->
     %% comparisons match the partisan-renamed module. The negative
     %% lookahead `(?!_)` prevents matching the `_data` directory suffix
     %% (e.g., "gen_event_SUITE_data" stays unchanged).
-    [{"gen_server_SUITE(?!_)", "partisan_otp_gen_server_SUITE"},
-     {"gen_statem_SUITE(?!_)", "partisan_otp_gen_statem_SUITE"},
-     {"gen_event_SUITE(?!_)", "partisan_otp_gen_event_SUITE"},
-     {"supervisor_SUITE(?!_)", "partisan_otp_supervisor_SUITE"},
-     {"proc_lib_SUITE(?!_)", "partisan_otp_proc_lib_SUITE"},
-     {"sys_SUITE(?!_)", "partisan_otp_sys_SUITE"}].
-
+    [
+        {"gen_server_SUITE(?!_)", "partisan_otp_gen_server_SUITE"},
+        {"gen_statem_SUITE(?!_)", "partisan_otp_gen_statem_SUITE"},
+        {"gen_event_SUITE(?!_)", "partisan_otp_gen_event_SUITE"},
+        {"supervisor_SUITE(?!_)", "partisan_otp_supervisor_SUITE"},
+        {"proc_lib_SUITE(?!_)", "partisan_otp_proc_lib_SUITE"},
+        {"sys_SUITE(?!_)", "partisan_otp_sys_SUITE"}
+    ].
 
 %% Inject a local partisan_peer_opts/1 function into the SUITE forms.
 %% This function adds all code paths to the peer start options.
@@ -352,11 +362,13 @@ inject_peer_opts_fun(Forms) ->
     {ok, Cwd} = file:get_cwd(),
     BuildPaths = [
         filename:absname(filename:join([Cwd, "_build/test/lib/partisan/test"])),
-        filename:absname(filename:join([Cwd, "_build/test/lib/partisan/test/otp"]))
+        filename:absname(
+            filename:join([Cwd, "_build/test/lib/partisan/test/otp"])
+        )
     ],
     AbsPaths = lists:usort(
         BuildPaths ++
-        [filename:absname(P) || P <- code:get_path(), filelib:is_dir(P)]
+            [filename:absname(P) || P <- code:get_path(), filelib:is_dir(P)]
     ),
     PaArgs = lists:flatmap(fun(P) -> ["-pa", P] end, AbsPaths),
     %% Also force partisan config on the peer so remote calls delegate
@@ -379,11 +391,15 @@ inject_peer_opts_fun(Forms) ->
     AllArgsStr = io_lib:format("~p", [AllArgs]),
     FunSrc = lists:flatten([
         "partisan_peer_opts(Opts) when is_map(Opts) ->\n"
-        "    PeerArgs = ", AllArgsStr, ",\n"
+        "    PeerArgs = ",
+        AllArgsStr,
+        ",\n"
         "    ExistingArgs = maps:get(args, Opts, []),\n"
         "    Opts#{args => PeerArgs ++ ExistingArgs};\n"
         "partisan_peer_opts(Opts) when is_list(Opts) ->\n"
-        "    PeerArgs = ", AllArgsStr, ",\n"
+        "    PeerArgs = ",
+        AllArgsStr,
+        ",\n"
         "    PeerArgs ++ Opts.\n"
         %% Pass-through wrapper around test_server:start_peer's return.
         %% When it succeeds with `{ok, _Peer, Node}', synchronously load
@@ -411,21 +427,21 @@ inject_peer_opts_fun(Forms) ->
     ).
 
 %% Parse a token stream into a list of function forms (for multiple defs).
-parse_funs([], Acc) -> lists:reverse(Acc);
+parse_funs([], Acc) ->
+    lists:reverse(Acc);
 parse_funs(Tokens, Acc) ->
     {Form, Rest} = parse_one_form(Tokens, []),
     case Form of
-        [] -> lists:reverse(Acc);
+        [] ->
+            lists:reverse(Acc);
         _ ->
             {ok, F} = erl_parse:parse_form(Form),
             parse_funs(Rest, [F | Acc])
     end.
 
 parse_one_form([], Acc) -> {lists:reverse(Acc), []};
-parse_one_form([{dot, _} = D | Rest], Acc) ->
-    {lists:reverse([D | Acc]), Rest};
-parse_one_form([T | Rest], Acc) ->
-    parse_one_form(Rest, [T | Acc]).
+parse_one_form([{dot, _} = D | Rest], Acc) -> {lists:reverse([D | Acc]), Rest};
+parse_one_form([T | Rest], Acc) -> parse_one_form(Rest, [T | Acc]).
 
 insert_before_eof([], FunForm) ->
     [FunForm];
@@ -434,7 +450,6 @@ insert_before_eof([{eof, _} = Eof], FunForm) ->
 insert_before_eof([H | T], FunForm) ->
     [H | insert_before_eof(T, FunForm)].
 
-
 %% Replace test_server:start_peer(Opts, Mod, Fun) calls so peer nodes
 %% get the code paths needed to load partisan modules.
 %% Wraps Opts with partisan_otp_test_gen:peer_opts(Opts).
@@ -442,14 +457,15 @@ replace_start_peer(Forms) ->
     [replace_start_peer_form(F) || F <- Forms].
 
 replace_start_peer_form({function, Anno, Name, Arity, Clauses}) ->
-    {function, Anno, Name, Arity,
-     [replace_start_peer_clause(C) || C <- Clauses]};
+    {function, Anno, Name, Arity, [
+        replace_start_peer_clause(C)
+     || C <- Clauses
+    ]};
 replace_start_peer_form(Other) ->
     Other.
 
 replace_start_peer_clause({clause, Anno, Pats, Guards, Body}) ->
-    {clause, Anno, Pats, Guards,
-     [replace_start_peer_expr(E) || E <- Body]}.
+    {clause, Anno, Pats, Guards, [replace_start_peer_expr(E) || E <- Body]}.
 
 %% Match: test_server:start_peer(Opts, Mod, Fun) →
 %%        partisan_start_peer(test_server:start_peer(partisan_peer_opts(Opts), Mod, Fun))
@@ -461,32 +477,29 @@ replace_start_peer_clause({clause, Anno, Pats, Guards, Body}) ->
 %% the race entirely.
 replace_start_peer_expr(
     {call, Anno,
-     {remote, Anno2,
-      {atom, Anno3, test_server},
-      {atom, Anno4, start_peer}},
-     [Opts | RestArgs]}) ->
-    WrappedOpts = {call, Anno,
-        {atom, Anno, partisan_peer_opts},
-        [Opts]},
+        {remote, Anno2, {atom, Anno3, test_server}, {atom, Anno4, start_peer}},
+        [Opts | RestArgs]}
+) ->
+    WrappedOpts = {call, Anno, {atom, Anno, partisan_peer_opts}, [Opts]},
     InnerCall =
         {call, Anno,
-         {remote, Anno2,
-          {atom, Anno3, test_server},
-          {atom, Anno4, start_peer}},
-         [WrappedOpts | RestArgs]},
-    {call, Anno,
-        {atom, Anno, partisan_post_peer_start},
-        [InnerCall]};
+            {remote, Anno2, {atom, Anno3, test_server},
+                {atom, Anno4, start_peer}},
+            [WrappedOpts | RestArgs]},
+    {call, Anno, {atom, Anno, partisan_post_peer_start}, [InnerCall]};
 %% Recurse into compound expressions
 replace_start_peer_expr({'case', Anno, Expr, Clauses}) ->
-    {'case', Anno, replace_start_peer_expr(Expr),
-     [replace_start_peer_clause(C) || C <- Clauses]};
+    {'case', Anno, replace_start_peer_expr(Expr), [
+        replace_start_peer_clause(C)
+     || C <- Clauses
+    ]};
 replace_start_peer_expr({'try', Anno, Body, Cases, Catches, After}) ->
-    {'try', Anno,
-     [replace_start_peer_expr(E) || E <- Body],
-     [replace_start_peer_clause(C) || C <- Cases],
-     [replace_start_peer_clause(C) || C <- Catches],
-     [replace_start_peer_expr(E) || E <- After]};
+    {'try', Anno, [replace_start_peer_expr(E) || E <- Body],
+        [replace_start_peer_clause(C) || C <- Cases],
+        [replace_start_peer_clause(C) || C <- Catches], [
+            replace_start_peer_expr(E)
+         || E <- After
+        ]};
 replace_start_peer_expr({block, Anno, Body}) ->
     {block, Anno, [replace_start_peer_expr(E) || E <- Body]};
 replace_start_peer_expr({match, Anno, P, E}) ->
@@ -496,8 +509,10 @@ replace_start_peer_expr({'fun', Anno, {clauses, Clauses}}) ->
 replace_start_peer_expr({named_fun, Anno, Name, Clauses}) ->
     {named_fun, Anno, Name, [replace_start_peer_clause(C) || C <- Clauses]};
 replace_start_peer_expr({call, Anno, Callee, Args}) ->
-    {call, Anno, replace_start_peer_expr(Callee),
-     [replace_start_peer_expr(A) || A <- Args]};
+    {call, Anno, replace_start_peer_expr(Callee), [
+        replace_start_peer_expr(A)
+     || A <- Args
+    ]};
 replace_start_peer_expr({lc, Anno, Expr, Quals}) ->
     {lc, Anno, replace_start_peer_expr(Expr), Quals};
 replace_start_peer_expr({tuple, Anno, Elems}) ->
@@ -506,7 +521,6 @@ replace_start_peer_expr({cons, Anno, H, T}) ->
     {cons, Anno, replace_start_peer_expr(H), replace_start_peer_expr(T)};
 replace_start_peer_expr(Other) ->
     Other.
-
 
 %% OTP test suites reference this internal hook which isn't available
 %% outside OTP's test framework. We remove the {ct_hooks, ...} tuple
@@ -532,7 +546,6 @@ strip_cth_expr({cons, Anno, Head, Tail}) ->
 strip_cth_expr(Other) ->
     Other.
 
-
 %% Replace all occurrences of an atom in the AST.
 %% Used to fix expanded ?MODULE references after renaming.
 rename_atom(Forms, OldAtom, NewAtom) when is_list(Forms) ->
@@ -540,30 +553,35 @@ rename_atom(Forms, OldAtom, NewAtom) when is_list(Forms) ->
 rename_atom({atom, Anno, OldAtom}, OldAtom, NewAtom) ->
     {atom, Anno, NewAtom};
 rename_atom(Tuple, OldAtom, NewAtom) when is_tuple(Tuple) ->
-    list_to_tuple([rename_atom(E, OldAtom, NewAtom)
-                   || E <- tuple_to_list(Tuple)]);
+    list_to_tuple([
+        rename_atom(E, OldAtom, NewAtom)
+     || E <- tuple_to_list(Tuple)
+    ]);
 rename_atom(Other, _, _) ->
     Other.
-
 
 %% Suite names: gen_server_SUITE → partisan_otp_gen_server_SUITE
 %% Prefix with "otp_" to avoid collision with existing partisan-specific
 %% test suites (test/partisan_gen_server_SUITE.erl, etc.).
-suite_module_name(gen_server_SUITE) -> partisan_otp_gen_server_SUITE;
-suite_module_name(supervisor_SUITE) -> partisan_otp_supervisor_SUITE;
-suite_module_name(gen_statem_SUITE) -> partisan_otp_gen_statem_SUITE;
-suite_module_name(gen_event_SUITE) -> partisan_otp_gen_event_SUITE;
-suite_module_name(proc_lib_SUITE) -> partisan_otp_proc_lib_SUITE;
-suite_module_name(sys_SUITE) -> partisan_otp_sys_SUITE;
+suite_module_name(gen_server_SUITE) ->
+    partisan_otp_gen_server_SUITE;
+suite_module_name(supervisor_SUITE) ->
+    partisan_otp_supervisor_SUITE;
+suite_module_name(gen_statem_SUITE) ->
+    partisan_otp_gen_statem_SUITE;
+suite_module_name(gen_event_SUITE) ->
+    partisan_otp_gen_event_SUITE;
+suite_module_name(proc_lib_SUITE) ->
+    partisan_otp_proc_lib_SUITE;
+suite_module_name(sys_SUITE) ->
+    partisan_otp_sys_SUITE;
 suite_module_name(Other) ->
     list_to_atom("partisan_otp_" ++ atom_to_list(Other)).
-
 
 %% Helper modules: keep the same name but prefix with partisan_
 %% (some helpers like oc_server, supervisor_1, etc.)
 helper_module_name(Mod) ->
     list_to_atom("partisan_" ++ atom_to_list(Mod)).
-
 
 write_beam(OutDir, Module, Binary) ->
     File = filename:join(OutDir, atom_to_list(Module) ++ ".beam"),
@@ -572,21 +590,20 @@ write_beam(OutDir, Module, Binary) ->
         {error, Reason} -> {error, {write_failed, File, Reason}}
     end.
 
-
 %% Copy OTP helper source files into the data_dir directories that CT expects.
 %% For partisan_gen_server_SUITE, data_dir = partisan_gen_server_SUITE_data/
 setup_data_dirs(TestDir, OutDir) ->
     DataDirMappings = [
         %% {OrigDataDir, NewDataDir, Files}
-        {"gen_server_SUITE_data",
-         "partisan_otp_gen_server_SUITE_data",
-         ["oc_server.erl", "format_status_server.erl"]},
-        {"gen_statem_SUITE_data",
-         "partisan_otp_gen_statem_SUITE_data",
-         ["oc_statem.erl", "format_status_statem.erl"]},
-        {"gen_event_SUITE_data",
-         "partisan_otp_gen_event_SUITE_data",
-         ["oc_event.erl"]}
+        {"gen_server_SUITE_data", "partisan_otp_gen_server_SUITE_data", [
+            "oc_server.erl", "format_status_server.erl"
+        ]},
+        {"gen_statem_SUITE_data", "partisan_otp_gen_statem_SUITE_data", [
+            "oc_statem.erl", "format_status_statem.erl"
+        ]},
+        {"gen_event_SUITE_data", "partisan_otp_gen_event_SUITE_data", [
+            "oc_event.erl"
+        ]}
     ],
     lists:foreach(
         fun({OrigSubDir, NewSubDir, Files}) ->
@@ -602,32 +619,42 @@ setup_data_dirs(TestDir, OutDir) ->
                             %% and write as .erl (init_per_suite compiles
                             %% from source via compile:file/1).
                             rewrite_helper_source(Src, Dst);
-                        false -> ok
+                        false ->
+                            ok
                     end
-                end, Files)
-        end, DataDirMappings),
+                end,
+                Files
+            )
+        end,
+        DataDirMappings
+    ),
     %% Stage the supervisor app_faulty fixture so
     %% supervisor_SUITE:faulty_application_shutdown/1 finds its data_dir.
     setup_app_faulty(TestDir, OutDir),
     ok.
 
-
 setup_app_faulty(TestDir, OutDir) ->
     SrcAppDir = filename:join([TestDir, "supervisor_SUITE_data", "app_faulty"]),
     case filelib:is_dir(SrcAppDir) of
-        false -> ok;
+        false ->
+            ok;
         true ->
-            DestRoot = filename:join([OutDir,
-                                      "partisan_otp_supervisor_SUITE_data",
-                                      "app_faulty"]),
+            DestRoot = filename:join([
+                OutDir,
+                "partisan_otp_supervisor_SUITE_data",
+                "app_faulty"
+            ]),
             DestEbin = filename:join(DestRoot, "ebin"),
             ok = filelib:ensure_dir(filename:join(DestEbin, "dummy")),
             %% Copy .app file as-is.
             AppSrc = filename:join([SrcAppDir, "ebin", "app_faulty.app"]),
             AppDst = filename:join(DestEbin, "app_faulty.app"),
             case filelib:is_file(AppSrc) of
-                true -> {ok, _} = file:copy(AppSrc, AppDst), ok;
-                false -> ok
+                true ->
+                    {ok, _} = file:copy(AppSrc, AppDst),
+                    ok;
+                false ->
+                    ok
             end,
             %% Compile each .erl source directly into ebin/.
             SrcDir = filename:join(SrcAppDir, "src"),
@@ -635,17 +662,22 @@ setup_app_faulty(TestDir, OutDir) ->
             lists:foreach(
                 fun(Erl) ->
                     case compile:file(Erl, [{outdir, DestEbin}, return]) of
-                        {ok, _} -> ok;
-                        {ok, _, _} -> ok;
+                        {ok, _} ->
+                            ok;
+                        {ok, _, _} ->
+                            ok;
                         Other ->
-                            io:format(standard_error,
-                                      "app_faulty compile of ~s failed: ~p~n",
-                                      [Erl, Other])
+                            io:format(
+                                standard_error,
+                                "app_faulty compile of ~s failed: ~p~n",
+                                [Erl, Other]
+                            )
                     end
-                end, ErlFiles),
+                end,
+                ErlFiles
+            ),
             ok
     end.
-
 
 %% Compile standalone helper modules (supervisor_1.erl, sys_sp1.erl, etc.)
 %% that are referenced by the suites but live alongside them, not in data_dir.
@@ -675,17 +707,21 @@ compile_standalone_helpers(TestDir, OutDir) ->
                     %% Apply partisan rewrite to the helper but keep
                     %% the original module name (SUITE references it).
                     case generate_rewritten_helper(Src, OutDir) of
-                        {ok, _Mod} -> ok;
+                        {ok, _Mod} ->
+                            ok;
                         {error, Reason} ->
-                            io:format("Warning: failed to compile ~s: ~p~n",
-                                      [File, Reason])
+                            io:format(
+                                "Warning: failed to compile ~s: ~p~n",
+                                [File, Reason]
+                            )
                     end;
                 false ->
                     ok
             end
-        end, Helpers),
+        end,
+        Helpers
+    ),
     ok.
-
 
 %% Rewrite a helper .erl source file with partisan module renames
 %% and write the result as a new .erl file.
@@ -711,12 +747,18 @@ rewrite_helper_source(SrcFile, DstFile) ->
             ),
             %% Pretty-print to source.
             Source = lists:map(
-                fun({eof, _}) -> "";
-                   (Form) ->
-                    try erl_pp:form(Form)
-                    catch _:_ -> ""
-                    end
-                end, Fixed),
+                fun
+                    ({eof, _}) ->
+                        "";
+                    (Form) ->
+                        try
+                            erl_pp:form(Form)
+                        catch
+                            _:_ -> ""
+                        end
+                end,
+                Fixed
+            ),
             ok = file:write_file(DstFile, Source);
         {error, _} ->
             %% Fallback: copy as-is.
@@ -724,8 +766,8 @@ rewrite_helper_source(SrcFile, DstFile) ->
             ok
     end.
 
-
-find_existing_dir([]) -> error;
+find_existing_dir([]) ->
+    error;
 find_existing_dir([Dir | Rest]) ->
     case filelib:is_dir(Dir) of
         true -> {ok, Dir};

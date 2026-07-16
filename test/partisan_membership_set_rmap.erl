@@ -31,38 +31,37 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
-
 -record(partisan_membership_set, {
-    version = 1         ::  integer(),
-    entries = #{}       ::  entries(),
-    deferred = #{}      ::  deferred(),
-    context             ::  context()
+    version = 1 :: integer(),
+    entries = #{} :: entries(),
+    deferred = #{} :: deferred(),
+    context :: context()
 }).
 
--opaque t()             :: #partisan_membership_set{}.
--type vclock()          :: partisan_vclock:vclock().
--type context()         :: vclock() | undefined.
--type entries()         :: #{nodename() => entry_value()}.
+-opaque t() :: #partisan_membership_set{}.
+-type vclock() :: partisan_vclock:vclock().
+-type context() :: vclock() | undefined.
+-type entries() :: #{nodename() => entry_value()}.
 %% Only field removals can be deferred.
--type deferred()        :: #{context() => [nodename()]}.
--type nodename()        :: atom().
+-type deferred() :: #{context() => [nodename()]}.
+-type nodename() :: atom().
 %% Only for present fields, ensures removes propagate
--type entry_value()     :: {dotmap(), tombstone()}.
--type dotmap()          :: #{dot() => value()}.
--type value()           :: node_value() | tombstone().
--type node_value()      :: {partisan:node_spec(), Ts :: non_neg_integer()}.
--type tombstone()       :: {undefined, 0}.
--type dot()             :: {Actor :: nodename(), pos_integer()}.
--type op()              :: {add, partisan:node_spec()}
-                            | {remove, partisan:node_spec()}.
--type not_member()      :: {not_member, nodename()}.
+-type entry_value() :: {dotmap(), tombstone()}.
+-type dotmap() :: #{dot() => value()}.
+-type value() :: node_value() | tombstone().
+-type node_value() :: {partisan:node_spec(), Ts :: non_neg_integer()}.
+-type tombstone() :: {undefined, 0}.
+-type dot() :: {Actor :: nodename(), pos_integer()}.
+-type op() ::
+    {add, partisan:node_spec()}
+    | {remove, partisan:node_spec()}.
+-type not_member() :: {not_member, nodename()}.
 
 -export_type([t/0]).
 -export_type([context/0]).
 -export_type([value/0]).
 -export_type([dot/0]).
 -export_type([op/0]).
-
 
 %% API
 -export([add/3]).
@@ -74,19 +73,13 @@
 -export([remove/3]).
 -export([to_list/1]).
 
-
 -export([precondition_context/1]).
 -export([stat/2]).
 -export([stats/1]).
 
-
-
 %% =============================================================================
 %% API
 %% =============================================================================
-
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Create a new, empty Map.
@@ -96,7 +89,6 @@
 
 new() ->
     #partisan_membership_set{context = partisan_vclock:fresh()}.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -108,7 +100,6 @@ encode(#partisan_membership_set{} = T) ->
     Opts = partisan_config:get('$membership_encoding_opts', [compressed]),
     erlang:term_to_binary(T, Opts).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -118,7 +109,6 @@ encode(#partisan_membership_set{} = T) ->
 decode(Binary) ->
     erlang:binary_to_term(Binary).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc get the current set of values for this Map
 %% @end
@@ -126,17 +116,16 @@ decode(Binary) ->
 -spec to_list(t()) -> [partisan:node_spec()].
 
 to_list(#partisan_membership_set{entries = Entries}) ->
-   lists:reverse(
-       maps:fold(
+    lists:reverse(
+        maps:fold(
             fun(_, {_DotMap, _Tombstone} = EntryValue, Acc) ->
                 {Value, _} = merge_entry_values(EntryValue),
-                [Value|Acc]
+                [Value | Acc]
             end,
             [],
             Entries
         )
     ).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc update the `t()' or a field in the `t()' by
@@ -156,7 +145,6 @@ to_list(#partisan_membership_set{entries = Entries}) ->
 add(#{name := _} = NodeSpec, ActorOrDot, T) ->
     update([{add, NodeSpec}], ActorOrDot, T, undefined).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% `{remove, `nodename()'}' where field is `{name, type}', results in
@@ -170,11 +158,8 @@ add(#{name := _} = NodeSpec, ActorOrDot, T) ->
 
 remove(#{name := Nodename}, ActorOrDot, T) ->
     remove(Nodename, ActorOrDot, T);
-
 remove(Nodename, ActorOrDot, T) ->
     update([{remove, Nodename}], ActorOrDot, T, undefined).
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc merge two `t()'s.
@@ -184,10 +169,10 @@ remove(Nodename, ActorOrDot, T) ->
 
 merge(T, T) ->
     T;
-
 merge(
     #partisan_membership_set{context = C1, entries = E1, deferred = D1},
-    #partisan_membership_set{context = C2, entries = E2, deferred = D2}) ->
+    #partisan_membership_set{context = C2, entries = E2, deferred = D2}
+) ->
     %% @TODO is there a way to optimise this, based on clocks maybe?
     Clock = partisan_vclock:merge([C1, C2]),
     {Common, Unique1, Unique2} = nodename_sets(E1, E2),
@@ -210,7 +195,6 @@ merge(
         Deferred
     ).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc compare two `t()'s for equality of structure Both
 %% schemas and value list must be equal. Performs a pariwise equals for
@@ -221,12 +205,11 @@ merge(
 
 equal(
     #partisan_membership_set{context = C1, entries = E1, deferred = D1},
-    #partisan_membership_set{context = C2, entries = E2, deferred = D2}) ->
-
-    partisan_vclock:equal(C1, C2)
-        andalso D1 == D2
-        andalso pairwise_equals(maps:to_list(E1), maps:to_list(E2)).
-
+    #partisan_membership_set{context = C2, entries = E2, deferred = D2}
+) ->
+    partisan_vclock:equal(C1, C2) andalso
+        D1 == D2 andalso
+        pairwise_equals(maps:to_list(E1), maps:to_list(E2)).
 
 %% -----------------------------------------------------------------------------
 %% @doc an opaque context that can be passed to `update/4' to ensure
@@ -239,7 +222,6 @@ equal(
 
 precondition_context(#partisan_membership_set{context = Clock}) ->
     Clock.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc stats on internal state of Map.
@@ -257,9 +239,8 @@ precondition_context(#partisan_membership_set{context = Clock}) ->
 stats(#partisan_membership_set{} = T) ->
     [
         {S, stat(S, T)}
-        || S <- [actor_count, member_count, duplication, deferred_length]
+     || S <- [actor_count, member_count, duplication, deferred_length]
     ].
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -269,34 +250,26 @@ stats(#partisan_membership_set{} = T) ->
 
 stat(actor_count, #partisan_membership_set{context = Clock}) ->
     length(Clock);
-
 stat(deferred_length, #partisan_membership_set{deferred = Map}) ->
     maps:size(Map);
-
 stat(duplication, #partisan_membership_set{entries = Map}) ->
     %% Number of duplicated fields
     {NodeCnt, Duplicates} = maps:fold(
-        fun(_Nodename, {DotMap ,_}, {FCnt, DCnt}) ->
+        fun(_Nodename, {DotMap, _}, {FCnt, DCnt}) ->
             {FCnt + 1, DCnt + maps:size(DotMap)}
         end,
         {0, 0},
         Map
     ),
     Duplicates - NodeCnt;
-
 stat(member_count, #partisan_membership_set{entries = Map}) ->
     maps:size(Map);
-
-stat(_,_) ->
+stat(_, _) ->
     undefined.
-
-
 
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -340,7 +313,6 @@ update(Ops, ActorOrDot, #partisan_membership_set{} = T0, Ctx) ->
             {error, Reason}
     end.
 
-
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc break the keys from an two maps out into three sets, the
@@ -359,22 +331,22 @@ nodename_sets(A, B) ->
         ordsets:subtract(BSet, ASet)
     }.
 
-
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
 -spec pairwise_equals(
-    [{nodename(), entry_value()}], [{nodename(), entry_value()}]) ->
+    [{nodename(), entry_value()}], [{nodename(), entry_value()}]
+) ->
     boolean().
 
 pairwise_equals([], []) ->
     true;
-
 pairwise_equals(
-    [{Nodename, {Dotmap1, Tomb1}}| Rest1],
-    [{Nodename, {Dotmap2, Tomb2}}|Rest2]) ->
+    [{Nodename, {Dotmap1, Tomb1}} | Rest1],
+    [{Nodename, {Dotmap2, Tomb2}} | Rest2]
+) ->
     %% Tombstones don't need to be equal. When we merge with a map
     %% where one side is absent, we take the absent sides clock, when
     %% we merge where both sides have a field, we merge the
@@ -389,10 +361,8 @@ pairwise_equals(
         _ ->
             false
     end;
-
 pairwise_equals(_, _) ->
     false.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -418,8 +388,6 @@ filter_dots(Dots, DotMap, Clock) ->
         DotMap
     ).
 
-
-
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc merge the common fields into a set of surviving dots and a
@@ -428,42 +396,41 @@ filter_dots(Dots, DotMap, Clock) ->
 %% @end
 %% -----------------------------------------------------------------------------
 merge_common(Nodenames, AEntries, BEntries, AClock, BClock, Acc) ->
-    ordsets:fold(fun(Nodename, Keep) ->
-        {ADotMap, ATomb} = maps:get(Nodename, AEntries),
-        {BDotMap, BTomb} = maps:get(Nodename, BEntries),
+    ordsets:fold(
+        fun(Nodename, Keep) ->
+            {ADotMap, ATomb} = maps:get(Nodename, AEntries),
+            {BDotMap, BTomb} = maps:get(Nodename, BEntries),
 
-        {CommonDots, AUnique, BUnique} = nodename_sets(ADotMap, BDotMap),
+            {CommonDots, AUnique, BUnique} = nodename_sets(ADotMap, BDotMap),
 
-        Tomb = merge_values(BTomb, ATomb),
+            Tomb = merge_values(BTomb, ATomb),
 
-        CommonSurviving = ordsets:fold(
-            fun(Dot, Common) ->
-                EntryValue = maps:get(Dot, ADotMap),
-                maps:put(Dot, EntryValue, Common)
-            end,
-            maps:new(),
-            CommonDots
-        ),
+            CommonSurviving = ordsets:fold(
+                fun(Dot, Common) ->
+                    EntryValue = maps:get(Dot, ADotMap),
+                    maps:put(Dot, EntryValue, Common)
+                end,
+                maps:new(),
+                CommonDots
+            ),
 
-        ASurviving = filter_dots(AUnique, ADotMap, BClock),
-        BSurviving = filter_dots(BUnique, BDotMap, AClock),
+            ASurviving = filter_dots(AUnique, ADotMap, BClock),
+            BSurviving = filter_dots(BUnique, BDotMap, AClock),
 
-        DotMap = maps:merge(
-            maps:merge(BSurviving, ASurviving), CommonSurviving
-        ),
+            DotMap = maps:merge(
+                maps:merge(BSurviving, ASurviving), CommonSurviving
+            ),
 
-        case maps:size(DotMap) of
-            0 ->
-                Keep;
-            _ ->
-                maps:put(Nodename, {DotMap, Tomb}, Keep)
-        end
-
-    end,
-    Acc,
-    Nodenames
-).
-
+            case maps:size(DotMap) of
+                0 ->
+                    Keep;
+                _ ->
+                    maps:put(Nodename, {DotMap, Tomb}, Keep)
+            end
+        end,
+        Acc,
+        Nodenames
+    ).
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -478,7 +445,6 @@ merge_deferred(A, B) ->
         A,
         B
     ).
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -496,7 +462,6 @@ remove_all(Nodenames, T, Ctx) ->
         Nodenames
     ).
 
-
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc update the clock, and get a dot for the operations. This
@@ -508,13 +473,10 @@ remove_all(Nodenames, T, Ctx) ->
 update_clock(Dot, Clock) when is_tuple(Dot) ->
     NewClock = partisan_vclock:merge([[Dot], Clock]),
     {Dot, NewClock};
-
 update_clock(Actor, Clock) ->
     NewClock = partisan_vclock:increment(Actor, Clock),
     Dot = {Actor, partisan_vclock:get_counter(Actor, NewClock)},
     {Dot, NewClock}.
-
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -526,33 +488,30 @@ update_clock(Actor, Clock) ->
 
 apply_ops([], _, T, _) ->
     T;
-
-apply_ops([{add, #{name := Nodename} = NodeSpec} | Rest], Dot, T0, Ctx)
-when is_tuple(Dot) ->
+apply_ops([{add, #{name := Nodename} = NodeSpec} | Rest], Dot, T0, Ctx) when
+    is_tuple(Dot)
+->
     Entries0 = T0#partisan_membership_set.entries,
 
     %% Merge entry for nodename is present or return new if not
-    EntryValue = case maps:find(Nodename, Entries0) of
-        {ok, {DotMap0, _Tomb0} = EntryValue0} ->
-            %% We have existing versions
-            Merged = merge_entry_values(EntryValue0),
-            Updated = update_value(NodeSpec, Merged),
-            DotMap = maps:put(Dot, Updated, DotMap0),
-            {DotMap, tombstone()};
-
-        error ->
-            {#{Dot => new_value(NodeSpec)}, tombstone()}
-    end,
+    EntryValue =
+        case maps:find(Nodename, Entries0) of
+            {ok, {DotMap0, _Tomb0} = EntryValue0} ->
+                %% We have existing versions
+                Merged = merge_entry_values(EntryValue0),
+                Updated = update_value(NodeSpec, Merged),
+                DotMap = maps:put(Dot, Updated, DotMap0),
+                {DotMap, tombstone()};
+            error ->
+                {#{Dot => new_value(NodeSpec)}, tombstone()}
+        end,
 
     Entries = maps:put(Nodename, EntryValue, Entries0),
     T = T0#partisan_membership_set{entries = Entries},
     apply_ops(Rest, Dot, T, Ctx);
-
 apply_ops([{remove, Node} | Rest], Dot, T0, Ctx) ->
     T1 = remove_node(Node, T0, Ctx),
     apply_ops(Rest, Dot, T1, Ctx).
-
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -570,8 +529,6 @@ merge_entry_values({DotMap0, Tomb0}) ->
     %% Merge with the tombstone to drop any removed dots
     merge_values(Tomb0, Merged0).
 
-
-
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc This is the Least Upper Bound function described in the literature.
@@ -581,16 +538,12 @@ merge_entry_values({DotMap0, Tomb0}) ->
 
 merge_values({Val1, TS1}, {_Val2, TS2}) when TS1 > TS2 ->
     {Val1, TS1};
-
 merge_values({_Val1, TS1}, {Val2, TS2}) when TS2 > TS1 ->
     {Val2, TS2};
-
 merge_values({_, _} = Val1, {_, _} = Val2) when Val1 >= Val2 ->
     Val1;
-
 merge_values({_, _}, {_, _} = Val2) ->
     Val2.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -602,7 +555,6 @@ merge_values({_, _}, {_, _} = Val2) ->
 tombstone() ->
     {undefined, 0}.
 
-
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc
@@ -613,8 +565,6 @@ tombstone() ->
 new_value(Nodespec) ->
     {Nodespec, erlang:system_time(microsecond)}.
 
-
-
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc
@@ -624,7 +574,6 @@ new_value(Nodespec) ->
 
 new_value(Nodespec, Timestamp) ->
     {Nodespec, Timestamp}.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -642,7 +591,6 @@ update_value(NodeSpec, {_, Ts} = OldValue) ->
         false ->
             OldValue
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -665,33 +613,30 @@ update_value(NodeSpec, {_, Ts} = OldValue) ->
 
 remove_node(#{name := Nodename}, T, Ctx) ->
     remove_node(Nodename, T, Ctx);
-
 remove_node(Nodename, #partisan_membership_set{} = T0, undefined) ->
     Entries0 = T0#partisan_membership_set.entries,
 
     case maps:take(Nodename, Entries0) of
         {_Removed, Entries} ->
             T0#partisan_membership_set{entries = Entries};
-
         error ->
             throw({not_member, Nodename})
     end;
-
 remove_node(Nodename, #partisan_membership_set{} = T0, Ctx) ->
     Entries0 = T0#partisan_membership_set.entries,
     Clock = T0#partisan_membership_set.context,
 
     T1 = defer_remove_node(Nodename, T0, Ctx),
 
-    Entries = case ctx_rem_node(Nodename, Entries0, Ctx, Clock) of
-        empty ->
-            maps:remove(Nodename, Entries0);
-        CRDTs ->
-            maps:put(Nodename, CRDTs, Entries0)
-    end,
+    Entries =
+        case ctx_rem_node(Nodename, Entries0, Ctx, Clock) of
+            empty ->
+                maps:remove(Nodename, Entries0);
+            CRDTs ->
+                maps:put(Nodename, CRDTs, Entries0)
+        end,
 
     T1#partisan_membership_set{entries = Entries}.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -726,11 +671,9 @@ ctx_rem_node(Nodename, Entries, Ctx, _Clock) ->
                     %% Update the tombstone with the GLB clock
                     {DotMap, merge_values(Tomb, Tomb0)}
             end;
-
         error ->
             empty
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -772,15 +715,14 @@ defer_remove_node(Nodename, T0, Ctx) ->
             T0#partisan_membership_set{deferred = Deferred}
     end.
 
-
-
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc filter the set of fields that are on one side of a merge only.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec filter_unique(
-    ordsets:ordset(), entries(), vclock(), entries()) -> entries().
+    ordsets:ordset(), entries(), vclock(), entries()
+) -> entries().
 
 filter_unique(Nodenames, Entries, Clock, Acc) ->
     ordsets:fold(
@@ -809,11 +751,10 @@ filter_unique(Nodenames, Entries, Clock, Acc) ->
                     Tombstone = merge_values(Tombstone0, tombstone()),
                     maps:put(Nodename, {DotMap, Tombstone}, IAcc)
             end
-    end,
-    Acc,
-    Nodenames
-).
-
+        end,
+        Acc,
+        Nodenames
+    ).
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -826,23 +767,17 @@ filter_unique(Nodenames, Entries, Clock, Acc) ->
 is_dot_unseen(Dot, Clock) ->
     not partisan_vclock:descends(Clock, [Dot]).
 
-
-
 %% =============================================================================
 %% EUNIT TESTS
 %% =============================================================================
-
-
 
 -ifdef(TEST).
 
 update(Actions, ActorOrDot, T) ->
     update(Actions, ActorOrDot, T, undefined).
 
-
 node_spec(Nodename) ->
-    node_spec(Nodename, {127,0,0,1}).
-
+    node_spec(Nodename, {127, 0, 0, 1}).
 
 node_spec(Nodename, IP) ->
     #{
@@ -902,7 +837,6 @@ concurrent_remove_update_test() ->
     B = A,
     {ok, B1} = add(Node2, b, B),
 
-
     ?assertEqual(
         [],
         to_list(A1)
@@ -917,7 +851,6 @@ concurrent_remove_update_test() ->
         to_list(merge(A1, B1))
     ).
 
-
 concurrent_updates_test() ->
     Nodename = 'node1@127.0.0.1',
     Node1 = node_spec(Nodename),
@@ -931,7 +864,6 @@ concurrent_updates_test() ->
         [Node2],
         to_list(merge(A, B))
     ).
-
 
 %% This fails on previous version of riak_dt_map
 assoc_test() ->
@@ -1013,16 +945,18 @@ present_but_removed_test() ->
     %% Both C and A have a 'Z', but when they merge, there should be
     %% no 'Z' as C's has been removed by A and A's has been removed by
     %% C.
-    Merged = lists:foldl(fun(Set, Acc) ->
-                                 merge(Set, Acc) end,
-                         %% the order matters, the two replicas that
-                         %% have 'Z' need to merge first to provoke
-                         %% the bug. You end up with 'Z' with two
-                         %% dots, when really it should be removed.
-                         A3,
-                         [C, B2]),
+    Merged = lists:foldl(
+        fun(Set, Acc) ->
+            merge(Set, Acc)
+        end,
+        %% the order matters, the two replicas that
+        %% have 'Z' need to merge first to provoke
+        %% the bug. You end up with 'Z' with two
+        %% dots, when really it should be removed.
+        A3,
+        [C, B2]
+    ),
     ?assertEqual([], to_list(Merged)).
-
 
 %% A bug EQC found where dropping the dots in merge was not enough if
 %% you then store the value with an empty clock (derp).
@@ -1030,9 +964,10 @@ no_dots_left_test() ->
     Name = 'node1@127.0.0.1',
     Node1 = node_spec(Name),
     Node2 = node_spec(Name, {192, 168, 0, 1}),
-    {ok, A} =  update([{add, Node1}], a, new()),
-    {ok, B} =  update([{add, Node2}], b, new()),
-    C = A, %% replicate A to empty C
+    {ok, A} = update([{add, Node1}], a, new()),
+    {ok, B} = update([{add, Node2}], b, new()),
+    %% replicate A to empty C
+    C = A,
     {ok, A2} = update([{remove, Name}], a, A),
     %% replicate B to A, now A has B's 'Z'
     A3 = merge(A2, B),
@@ -1042,10 +977,13 @@ no_dots_left_test() ->
     B3 = merge(B2, C),
     %% Merge everytyhing, without the fix You end up with 'Z' present,
     %% with no dots
-    Merged = lists:foldl(fun(Set, Acc) ->
-                                 merge(Set, Acc) end,
-                         A3,
-                         [B3, C]),
+    Merged = lists:foldl(
+        fun(Set, Acc) ->
+            merge(Set, Acc)
+        end,
+        A3,
+        [B3, C]
+    ),
     ?assertEqual([], to_list(Merged)).
 
 %% A reset-remove bug eqc found where dropping a superseded dot lost
@@ -1057,7 +995,7 @@ tombstone_remove_test() ->
     Node2 = node_spec(Name, {192, 168, 0, 1}),
     Node3 = node_spec(Name, {192, 168, 0, 2}),
 
-    A=B=new(),
+    A = B = new(),
     {ok, A1} = update([{add, Node1}], a, A),
 
     %% Replicate!
@@ -1126,7 +1064,6 @@ stat_test() ->
     Name2 = 'node2@127.0.0.1',
     Node2 = node_spec(Name2),
 
-
     {ok, Map1} = update([{add, Node1}], a1, Map),
     {ok, Map2} = update([{add, Node1}], a2, Map),
     {ok, Map3} = update([{add, Node1}], a3, Map),
@@ -1137,7 +1074,12 @@ stat_test() ->
     ?assertEqual([Node1, Node2], to_list(Map5)),
 
     ?assertEqual(
-        [{actor_count, 0}, {member_count, 0}, {duplication, 0}, {deferred_length, 0}],
+        [
+            {actor_count, 0},
+            {member_count, 0},
+            {duplication, 0},
+            {deferred_length, 0}
+        ],
         stats(Map)
     ),
     ?assertEqual(4, stat(actor_count, Map5)),
@@ -1145,12 +1087,10 @@ stat_test() ->
     ?assertEqual(undefined, stat(waste_pct, Map5)),
     ?assertEqual(2, stat(duplication, Map5)),
 
-
     {ok, Map6} = update([{remove, Name2}], a4, Map5),
     Map7 = merge(Map5, Map6),
     ?assertEqual(4, stat(actor_count, Map7)),
     ?assertEqual(1, stat(member_count, Map7)).
-
 
 equals_test() ->
     Name1 = 'node1@127.0.0.1',
@@ -1164,4 +1104,3 @@ equals_test() ->
     ?assert(equal(A, A)).
 
 -endif.
-

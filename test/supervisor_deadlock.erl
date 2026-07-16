@@ -1,25 +1,26 @@
 -module(supervisor_deadlock).
--compile([export_all,nowarn_export_all]).
-
+-compile([export_all, nowarn_export_all]).
 
 %%%-----------------------------------------------------------------
 %%% partisan_gen_server callbacks
 init([child]) ->
-    case ets:lookup(supervisor_deadlock,fail_start) of
+    case ets:lookup(supervisor_deadlock, fail_start) of
         [{fail_start, false}] ->
             %% we must not fail on the first init, otherwise supervisor
             %% terminates immediately
             {ok, []};
         [{fail_start, true}] ->
-        %% A restart frequency of MaxR=8, MaxT=10 should ensure
-        %% that restart intensity is not reached -> restart loop.
-        %% (Note that if we use simple_one_for_one, and start
-        %% 'many' child instances, the restart frequency must be
-        %% ajusted accordingly.)
-            timer:sleep(2000), % NOTE: this could be a partisan_gen_server call timeout
+            %% A restart frequency of MaxR=8, MaxT=10 should ensure
+            %% that restart intensity is not reached -> restart loop.
+            %% (Note that if we use simple_one_for_one, and start
+            %% 'many' child instances, the restart frequency must be
+            %% ajusted accordingly.)
+
+            % NOTE: this could be a partisan_gen_server call timeout
+            timer:sleep(2000),
 
             {stop, error}
-     end.
+    end.
 
 handle_call(_Req, _From, State) ->
     {reply, ok, State}.
@@ -36,7 +37,6 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-
 
 %%%-----------------------------------------------------------------
 %%% Start child

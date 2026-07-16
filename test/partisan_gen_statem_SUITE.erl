@@ -21,66 +21,114 @@
 
 -include_lib("common_test/include/ct.hrl").
 
-
 -compile([export_all, nowarn_export_all]).
 -behaviour(partisan_gen_statem).
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 suite() ->
-    [{ct_hooks,[ts_install_cth]},
-     {timetrap,{seconds,10}}].
+    [
+        {ct_hooks, [ts_install_cth]},
+        {timetrap, {seconds, 10}}
+    ].
 
 all() ->
-    [{group, start},
-     {group, start_handle_event},
-     {group, stop},
-     {group, stop_handle_event},
-     {group, abnormal},
-     {group, abnormal_handle_event},
-     shutdown, stop_and_reply, state_enter, event_order,
-     state_timeout, timeout_cancel_and_update,
-     event_types, generic_timers, code_change,
-     {group, sys},
-     hibernate, auto_hibernate, enter_loop, {group, undef_callbacks},
-     undef_in_terminate, {group, format_log},
-     reply_by_alias_with_payload].
+    [
+        {group, start},
+        {group, start_handle_event},
+        {group, stop},
+        {group, stop_handle_event},
+        {group, abnormal},
+        {group, abnormal_handle_event},
+        shutdown,
+        stop_and_reply,
+        state_enter,
+        event_order,
+        state_timeout,
+        timeout_cancel_and_update,
+        event_types,
+        generic_timers,
+        code_change,
+        {group, sys},
+        hibernate,
+        auto_hibernate,
+        enter_loop,
+        {group, undef_callbacks},
+        undef_in_terminate,
+        {group, format_log},
+        reply_by_alias_with_payload
+    ].
 
 groups() ->
-    [{start, [], tcs(start)},
-     {start_handle_event, [], tcs(start)},
-     {stop, [], tcs(stop)},
-     {stop_handle_event, [], tcs(stop)},
-     {abnormal, [], tcs(abnormal)},
-     {abnormal_handle_event, [], tcs(abnormal)},
-     {sys, [], tcs(sys)},
-     {sys_handle_event, [], tcs(sys)},
-     {undef_callbacks, [], tcs(undef_callbacks)},
-     {format_log, [], tcs(format_log)}].
+    [
+        {start, [], tcs(start)},
+        {start_handle_event, [], tcs(start)},
+        {stop, [], tcs(stop)},
+        {stop_handle_event, [], tcs(stop)},
+        {abnormal, [], tcs(abnormal)},
+        {abnormal_handle_event, [], tcs(abnormal)},
+        {sys, [], tcs(sys)},
+        {sys_handle_event, [], tcs(sys)},
+        {undef_callbacks, [], tcs(undef_callbacks)},
+        {format_log, [], tcs(format_log)}
+    ].
 
 tcs(start) ->
-    [start1, start2, start3, start4, start5, start6, start7,
-     start8, start9, start10, start11, start12, next_events];
+    [
+        start1,
+        start2,
+        start3,
+        start4,
+        start5,
+        start6,
+        start7,
+        start8,
+        start9,
+        start10,
+        start11,
+        start12,
+        next_events
+    ];
 tcs(stop) ->
-    [stop1, stop2, stop3, stop4, stop5, stop6, stop7
-    %% disabled till we implement partisan_rpc:block_call
-    %% ,
-    %% stop8,
-    %% stop9,
-    %% stop10
+    [
+        stop1,
+        stop2,
+        stop3,
+        stop4,
+        stop5,
+        stop6,
+        stop7
+        %% disabled till we implement partisan_rpc:block_call
+        %% ,
+        %% stop8,
+        %% stop9,
+        %% stop10
     ];
 tcs(abnormal) ->
-    [abnormal1, abnormal1clean, abnormal1dirty,
-     abnormal2, abnormal3, abnormal4];
+    [
+        abnormal1,
+        abnormal1clean,
+        abnormal1dirty,
+        abnormal2,
+        abnormal3,
+        abnormal4
+    ];
 tcs(sys) ->
-    [sys1, call_format_status,
-     error_format_status, terminate_crash_format,
-     get_state, replace_state];
+    [
+        sys1,
+        call_format_status,
+        error_format_status,
+        terminate_crash_format,
+        get_state,
+        replace_state
+    ];
 tcs(undef_callbacks) ->
-    [undef_code_change, undef_terminate1, undef_terminate2
-    %% broken for gen_server
-    %% ,pop_too_many
+    [
+        undef_code_change,
+        undef_terminate1,
+        undef_terminate2
+        %% broken for gen_server
+        %% ,pop_too_many
     ];
 tcs(format_log) ->
     [format_log_1, format_log_2].
@@ -91,12 +139,13 @@ init_per_suite(Config) ->
 end_per_suite(_Config) ->
     ok.
 
-init_per_group(GroupName, Config)
-  when GroupName =:= start_handle_event;
-       GroupName =:= stop_handle_event;
-       GroupName =:= abnormal_handle_event;
-       GroupName =:= sys_handle_event ->
-    [{callback_mode,handle_event_function}|Config];
+init_per_group(GroupName, Config) when
+    GroupName =:= start_handle_event;
+    GroupName =:= stop_handle_event;
+    GroupName =:= abnormal_handle_event;
+    GroupName =:= sys_handle_event
+->
+    [{callback_mode, handle_event_function} | Config];
 init_per_group(undef_callbacks, Config) ->
     %% try compile_oc_statem(Config)
     %% catch Class : Reason : Stacktrace ->
@@ -111,23 +160,25 @@ end_per_group(_GroupName, Config) ->
 
 init_per_testcase(_CaseName, Config) ->
     flush(),
-%%%    dbg:tracer(),
-%%%    dbg:p(all, c),
-%%%    dbg:tpl(partisan_gen_statem, cx),
-%%%    dbg:tpl(partisan_gen_statem, loop_receive, cx),
-%%%    dbg:tpl(partisan_gen_statem, loop_state_callback, cx),
-%%%    dbg:tpl(partisan_gen_statem, loop_callback_mode_result, cx),
-%%%    dbg:tpl(proc_lib, cx),
-%%%    dbg:tpl(gen, cx),
-%%%    dbg:tpl(sys, cx),
+    %%%    dbg:tracer(),
+    %%%    dbg:p(all, c),
+    %%%    dbg:tpl(partisan_gen_statem, cx),
+    %%%    dbg:tpl(partisan_gen_statem, loop_receive, cx),
+    %%%    dbg:tpl(partisan_gen_statem, loop_state_callback, cx),
+    %%%    dbg:tpl(partisan_gen_statem, loop_callback_mode_result, cx),
+    %%%    dbg:tpl(proc_lib, cx),
+    %%%    dbg:tpl(gen, cx),
+    %%%    dbg:tpl(sys, cx),
     partisan_support:start_disterl(),
     erlang:is_alive() orelse ct:fail("Runner not in distribution mode"),
     application:ensure_all_started(partisan),
     Config.
 
 end_per_testcase(_CaseName, Config) ->
-%%%    dbg:stop(),
-    application:stop(partisan), % stop partisan at runner
+    %%%    dbg:stop(),
+
+    % stop partisan at runner
+    application:stop(partisan),
     Config.
 
 %% compile_oc_statem(Config) ->
@@ -138,32 +189,41 @@ end_per_testcase(_CaseName, Config) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -define(EXPECT_FAILURE(Code, Reason),
-    try begin Code end of
+    try
+        begin
+            Code
+        end
+    of
         Reason ->
-        ct:fail({unexpected,Reason})
+            ct:fail({unexpected, Reason})
     catch
         error:Reason -> Reason;
         exit:Reason -> Reason
-    end).
+    end
+).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% anonymous
 start1(Config) ->
     %%OldFl = process_flag(trap_exit, true),
 
-    {ok,Pid0} =
-    partisan_gen_statem:start_link(?MODULE, start_arg(Config, []), [{debug,[trace]}]),
+    {ok, Pid0} =
+        partisan_gen_statem:start_link(?MODULE, start_arg(Config, []), [
+            {debug, [trace]}
+        ]),
     ok = do_func_test(Pid0),
     ok = do_sync_func_test(Pid0),
     stop_it(Pid0),
-%%    stopped = partisan_gen_statem:call(Pid0, stop),
-%%    timeout =
-%%  ?EXPECT_FAILURE(partisan_gen_statem:call(Pid0, hej), Reason),
+    %%    stopped = partisan_gen_statem:call(Pid0, stop),
+    %%    timeout =
+    %%  ?EXPECT_FAILURE(partisan_gen_statem:call(Pid0, hej), Reason),
 
     %%process_flag(trap_exit, OldFl),
     ok = verify_empty_msgq(),
 
-    {ok,{Pid1,Mon1}} = partisan_gen_statem:start_monitor(?MODULE, start_arg(Config, []), []),
+    {ok, {Pid1, Mon1}} = partisan_gen_statem:start_monitor(
+        ?MODULE, start_arg(Config, []), []
+    ),
     ok = do_func_test(Pid1),
     ok = do_sync_func_test(Pid1),
     stop_it(Pid1),
@@ -172,15 +232,15 @@ start1(Config) ->
             ok
     end,
     ok = verify_empty_msgq().
-    
+
 %% anonymous w. shutdown
 start2(Config) ->
     %% Dont link when shutdown
-    {ok,Pid0} =
-    partisan_gen_statem:start(?MODULE, start_arg(Config, []), []),
+    {ok, Pid0} =
+        partisan_gen_statem:start(?MODULE, start_arg(Config, []), []),
     ok = do_func_test(Pid0),
     ok = do_sync_func_test(Pid0),
-    stopped = partisan_gen_statem:call(Pid0, {stop,shutdown}),
+    stopped = partisan_gen_statem:call(Pid0, {stop, shutdown}),
     check_stopped(Pid0),
     ok = verify_empty_msgq().
 
@@ -188,15 +248,16 @@ start2(Config) ->
 start3(Config) ->
     %%OldFl = process_flag(trap_exit, true),
 
-    {ok,Pid0} =
-    partisan_gen_statem:start(?MODULE, start_arg(Config, []), [{timeout,5}]),
+    {ok, Pid0} =
+        partisan_gen_statem:start(?MODULE, start_arg(Config, []), [{timeout, 5}]),
     ok = do_func_test(Pid0),
     ok = do_sync_func_test(Pid0),
     stop_it(Pid0),
 
-    {error,timeout} =
-    partisan_gen_statem:start(
-      ?MODULE, start_arg(Config, sleep), [{timeout,5}]),
+    {error, timeout} =
+        partisan_gen_statem:start(
+            ?MODULE, start_arg(Config, sleep), [{timeout, 5}]
+        ),
 
     %%process_flag(trap_exit, OldFl),
     ok = verify_empty_msgq().
@@ -214,14 +275,18 @@ start4(Config) ->
 start5(Config) ->
     OldFl = process_flag(trap_exit, true),
 
-    {error,stopped} = partisan_gen_statem:start(?MODULE, start_arg(Config, stop), []),
+    {error, stopped} = partisan_gen_statem:start(
+        ?MODULE, start_arg(Config, stop), []
+    ),
 
     process_flag(trap_exit, OldFl),
     ok = verify_empty_msgq().
 
 %% anonymous linked
 start6(Config) ->
-    {ok,Pid} = partisan_gen_statem:start_link(?MODULE, start_arg(Config, []), []),
+    {ok, Pid} = partisan_gen_statem:start_link(
+        ?MODULE, start_arg(Config, []), []
+    ),
     ok = do_func_test(Pid),
     ok = do_sync_func_test(Pid),
     stop_it(Pid),
@@ -230,16 +295,18 @@ start6(Config) ->
 
 %% global register linked & monitored
 start7(Config) ->
-    STM = {global,my_stm},
+    STM = {global, my_stm},
 
-    {ok,Pid} =
-    partisan_gen_statem:start_link(STM, ?MODULE, start_arg(Config, []), []),
-    {error,{already_started,Pid}} =
-    partisan_gen_statem:start_link(STM, ?MODULE, start_arg(Config, []), []),
-    {error,{already_started,Pid}} =
-    partisan_gen_statem:start(STM, ?MODULE, start_arg(Config, []), []),
-    {error,{already_started,Pid}} =
-    partisan_gen_statem:start_monitor(STM, ?MODULE, start_arg(Config, []), []),
+    {ok, Pid} =
+        partisan_gen_statem:start_link(STM, ?MODULE, start_arg(Config, []), []),
+    {error, {already_started, Pid}} =
+        partisan_gen_statem:start_link(STM, ?MODULE, start_arg(Config, []), []),
+    {error, {already_started, Pid}} =
+        partisan_gen_statem:start(STM, ?MODULE, start_arg(Config, []), []),
+    {error, {already_started, Pid}} =
+        partisan_gen_statem:start_monitor(
+            STM, ?MODULE, start_arg(Config, []), []
+        ),
 
     ok = do_func_test(Pid),
     ok = do_sync_func_test(Pid),
@@ -249,14 +316,18 @@ start7(Config) ->
 
     ok = verify_empty_msgq(),
 
-    {ok,{Pid1,Mon1}} =
-    partisan_gen_statem:start_monitor(STM, ?MODULE, start_arg(Config, []), []),
-    {error,{already_started,Pid1}} =
-    partisan_gen_statem:start_link(STM, ?MODULE, start_arg(Config, []), []),
-    {error,{already_started,Pid1}} =
-    partisan_gen_statem:start(STM, ?MODULE, start_arg(Config, []), []),
-    {error,{already_started,Pid1}} =
-    partisan_gen_statem:start_monitor(STM, ?MODULE, start_arg(Config, []), []),
+    {ok, {Pid1, Mon1}} =
+        partisan_gen_statem:start_monitor(
+            STM, ?MODULE, start_arg(Config, []), []
+        ),
+    {error, {already_started, Pid1}} =
+        partisan_gen_statem:start_link(STM, ?MODULE, start_arg(Config, []), []),
+    {error, {already_started, Pid1}} =
+        partisan_gen_statem:start(STM, ?MODULE, start_arg(Config, []), []),
+    {error, {already_started, Pid1}} =
+        partisan_gen_statem:start_monitor(
+            STM, ?MODULE, start_arg(Config, []), []
+        ),
 
     ok = do_func_test(Pid1),
     ok = do_sync_func_test(Pid1),
@@ -271,17 +342,16 @@ start7(Config) ->
 
     ok = verify_empty_msgq().
 
-
 %% local register
 start8(Config) ->
     %%OldFl = process_flag(trap_exit, true),
     Name = my_stm,
-    STM = {local,Name},
+    STM = {local, Name},
 
-    {ok,Pid} =
-    partisan_gen_statem:start(STM, ?MODULE, start_arg(Config, []), []),
-    {error,{already_started,Pid}} =
-    partisan_gen_statem:start(STM, ?MODULE, start_arg(Config, []), []),
+    {ok, Pid} =
+        partisan_gen_statem:start(STM, ?MODULE, start_arg(Config, []), []),
+    {error, {already_started, Pid}} =
+        partisan_gen_statem:start(STM, ?MODULE, start_arg(Config, []), []),
 
     ok = do_func_test(Pid),
     ok = do_sync_func_test(Pid),
@@ -296,12 +366,12 @@ start8(Config) ->
 start9(Config) ->
     %%OldFl = process_flag(trap_exit, true),
     Name = my_stm,
-    STM = {local,Name},
+    STM = {local, Name},
 
-    {ok,Pid} =
-    partisan_gen_statem:start_link(STM, ?MODULE, start_arg(Config, []), []),
-    {error,{already_started,Pid}} =
-    partisan_gen_statem:start(STM, ?MODULE, start_arg(Config, []), []),
+    {ok, Pid} =
+        partisan_gen_statem:start_link(STM, ?MODULE, start_arg(Config, []), []),
+    {error, {already_started, Pid}} =
+        partisan_gen_statem:start(STM, ?MODULE, start_arg(Config, []), []),
 
     ok = do_func_test(Pid),
     ok = do_sync_func_test(Pid),
@@ -312,10 +382,14 @@ start9(Config) ->
     %%process_flag(trap_exit, OldFl),
     ok = verify_empty_msgq(),
 
-    {ok,{Pid1,Mon1}} =
-    partisan_gen_statem:start_monitor(STM, ?MODULE, start_arg(Config, []), []),
-    {error,{already_started,Pid1}} =
-    partisan_gen_statem:start_monitor(STM, ?MODULE, start_arg(Config, []), []),
+    {ok, {Pid1, Mon1}} =
+        partisan_gen_statem:start_monitor(
+            STM, ?MODULE, start_arg(Config, []), []
+        ),
+    {error, {already_started, Pid1}} =
+        partisan_gen_statem:start_monitor(
+            STM, ?MODULE, start_arg(Config, []), []
+        ),
 
     ok = do_func_test(Pid1),
     ok = do_sync_func_test(Pid1),
@@ -332,14 +406,14 @@ start9(Config) ->
 
 %% global register
 start10(Config) ->
-    STM = {global,my_stm},
+    STM = {global, my_stm},
 
-    {ok,Pid} =
-    partisan_gen_statem:start(STM, ?MODULE, start_arg(Config, []), []),
-    {error,{already_started,Pid}} =
-    partisan_gen_statem:start(STM, ?MODULE, start_arg(Config, []), []),
-    {error,{already_started,Pid}} =
-    partisan_gen_statem:start_link(STM, ?MODULE, start_arg(Config, []), []),
+    {ok, Pid} =
+        partisan_gen_statem:start(STM, ?MODULE, start_arg(Config, []), []),
+    {error, {already_started, Pid}} =
+        partisan_gen_statem:start(STM, ?MODULE, start_arg(Config, []), []),
+    {error, {already_started, Pid}} =
+        partisan_gen_statem:start_link(STM, ?MODULE, start_arg(Config, []), []),
 
     ok = do_func_test(Pid),
     ok = do_sync_func_test(Pid),
@@ -352,25 +426,35 @@ start10(Config) ->
 %% Stop registered processes
 start11(Config) ->
     Name = my_stm,
-    LocalSTM = {local,Name},
-    GlobalSTM = {global,Name},
+    LocalSTM = {local, Name},
+    GlobalSTM = {global, Name},
 
-    {ok,Pid} =
-    partisan_gen_statem:start_link(LocalSTM, ?MODULE, start_arg(Config, []), []),
+    {ok, Pid} =
+        partisan_gen_statem:start_link(
+            LocalSTM, ?MODULE, start_arg(Config, []), []
+        ),
     stop_it(Pid),
 
-    {ok,_Pid1} =
-    partisan_gen_statem:start_link(LocalSTM, ?MODULE, start_arg(Config, []), []),
+    {ok, _Pid1} =
+        partisan_gen_statem:start_link(
+            LocalSTM, ?MODULE, start_arg(Config, []), []
+        ),
     stop_it(Name),
 
-    {ok,Pid2} =
-    partisan_gen_statem:start(GlobalSTM, ?MODULE, start_arg(Config, []), []),
+    {ok, Pid2} =
+        partisan_gen_statem:start(
+            GlobalSTM, ?MODULE, start_arg(Config, []), []
+        ),
     stop_it(Pid2),
-    receive after 1 -> true end,
+    receive
+    after 1 -> true
+    end,
     Result =
-    partisan_gen_statem:start(GlobalSTM, ?MODULE, start_arg(Config, []), []),
-    ct:log("Result = ~p~n",[Result]),
-    {ok,_Pid3} = Result,
+        partisan_gen_statem:start(
+            GlobalSTM, ?MODULE, start_arg(Config, []), []
+        ),
+    ct:log("Result = ~p~n", [Result]),
+    {ok, _Pid3} = Result,
     stop_it(GlobalSTM),
 
     ok = verify_empty_msgq().
@@ -378,14 +462,14 @@ start11(Config) ->
 %% Via register linked
 start12(Config) ->
     dummy_via:reset(),
-    VIA = {via,dummy_via,my_stm},
+    VIA = {via, dummy_via, my_stm},
 
-    {ok,Pid} =
-    partisan_gen_statem:start_link(VIA, ?MODULE, start_arg(Config, []), []),
-    {error,{already_started,Pid}} =
-    partisan_gen_statem:start_link(VIA, ?MODULE, start_arg(Config, []), []),
-    {error,{already_started,Pid}} =
-    partisan_gen_statem:start(VIA, ?MODULE, start_arg(Config, []), []),
+    {ok, Pid} =
+        partisan_gen_statem:start_link(VIA, ?MODULE, start_arg(Config, []), []),
+    {error, {already_started, Pid}} =
+        partisan_gen_statem:start_link(VIA, ?MODULE, start_arg(Config, []), []),
+    {error, {already_started, Pid}} =
+        partisan_gen_statem:start(VIA, ?MODULE, start_arg(Config, []), []),
 
     ok = do_func_test(Pid),
     ok = do_sync_func_test(Pid),
@@ -395,29 +479,29 @@ start12(Config) ->
 
     ok = verify_empty_msgq().
 
-
 %% Anonymous, reason 'normal'
 stop1(Config) ->
-    {ok,Pid} = partisan_gen_statem:start(?MODULE, start_arg(Config, []), []),
+    {ok, Pid} = partisan_gen_statem:start(?MODULE, start_arg(Config, []), []),
     ok = partisan_gen_statem:stop(Pid),
     false = erlang:is_process_alive(Pid),
     noproc =
-    ?EXPECT_FAILURE(partisan_gen_statem:stop(Pid), Reason).
+        ?EXPECT_FAILURE(partisan_gen_statem:stop(Pid), Reason).
 
 %% Anonymous, other reason
 stop2(Config) ->
-    {ok,Pid} = partisan_gen_statem:start(?MODULE, start_arg(Config, []), []),
+    {ok, Pid} = partisan_gen_statem:start(?MODULE, start_arg(Config, []), []),
     ok = partisan_gen_statem:stop(Pid, other_reason, infinity),
     false = erlang:is_process_alive(Pid),
     ok.
 
 %% Anonymous, invalid timeout
 stop3(Config) ->
-    {ok,Pid} = partisan_gen_statem:start(?MODULE, start_arg(Config, []), []),
+    {ok, Pid} = partisan_gen_statem:start(?MODULE, start_arg(Config, []), []),
     _ =
-    ?EXPECT_FAILURE(
-       partisan_gen_statem:stop(Pid, other_reason, invalid_timeout),
-       Reason),
+        ?EXPECT_FAILURE(
+            partisan_gen_statem:stop(Pid, other_reason, invalid_timeout),
+            Reason
+        ),
     true = erlang:is_process_alive(Pid),
     ok = partisan_gen_statem:stop(Pid),
     false = erlang:is_process_alive(Pid),
@@ -425,125 +509,146 @@ stop3(Config) ->
 
 %% Registered name
 stop4(Config) ->
-    {ok,Pid} =
-    partisan_gen_statem:start(
-      {local,to_stop},?MODULE, start_arg(Config, []), []),
+    {ok, Pid} =
+        partisan_gen_statem:start(
+            {local, to_stop}, ?MODULE, start_arg(Config, []), []
+        ),
     ok = partisan_gen_statem:stop(to_stop),
     false = erlang:is_process_alive(Pid),
     noproc =
-    ?EXPECT_FAILURE(partisan_gen_statem:stop(to_stop), Reason),
+        ?EXPECT_FAILURE(partisan_gen_statem:stop(to_stop), Reason),
     ok.
 
 %% Registered name and local node
 stop5(Config) ->
     Name = to_stop,
-    {ok,Pid} =
-    partisan_gen_statem:start(
-      {local,Name},?MODULE, start_arg(Config, []), []),
-    ok = partisan_gen_statem:stop({Name,node()}),
+    {ok, Pid} =
+        partisan_gen_statem:start(
+            {local, Name}, ?MODULE, start_arg(Config, []), []
+        ),
+    ok = partisan_gen_statem:stop({Name, node()}),
     false = erlang:is_process_alive(Pid),
     noproc =
-    ?EXPECT_FAILURE(partisan_gen_statem:stop({Name,node()}), Reason),
+        ?EXPECT_FAILURE(partisan_gen_statem:stop({Name, node()}), Reason),
     ok.
 
 %% Globally registered name
 stop6(Config) ->
-    STM = {global,to_stop},
-    {ok,Pid} = partisan_gen_statem:start(STM, ?MODULE, start_arg(Config, []), []),
+    STM = {global, to_stop},
+    {ok, Pid} = partisan_gen_statem:start(
+        STM, ?MODULE, start_arg(Config, []), []
+    ),
     ok = partisan_gen_statem:stop(STM),
     false = erlang:is_process_alive(Pid),
     noproc =
-    ?EXPECT_FAILURE(partisan_gen_statem:stop(STM), Reason),
+        ?EXPECT_FAILURE(partisan_gen_statem:stop(STM), Reason),
     ok.
 
 %% 'via' registered name
 stop7(Config) ->
-    VIA = {via,dummy_via,to_stop},
+    VIA = {via, dummy_via, to_stop},
     dummy_via:reset(),
-    {ok,Pid} = partisan_gen_statem:start(VIA, ?MODULE, start_arg(Config, []), []),
+    {ok, Pid} = partisan_gen_statem:start(
+        VIA, ?MODULE, start_arg(Config, []), []
+    ),
     ok = partisan_gen_statem:stop(VIA),
     false = erlang:is_process_alive(Pid),
     noproc =
-    ?EXPECT_FAILURE(partisan_gen_statem:stop(VIA), Reason),
+        ?EXPECT_FAILURE(partisan_gen_statem:stop(VIA), Reason),
     ok.
 
 %% Anonymous on remote node
 stop8(Config) ->
     %% Node = partisan_gen_statem_stop8,
-    {ok,NodeName} = partisan_support_otp:start_node(?FUNCTION_NAME),
+    {ok, NodeName} = partisan_support_otp:start_node(?FUNCTION_NAME),
     ok = partisan_support:cluster(NodeName),
     timer:sleep(2000),
     Statem =
         try
             Dir = filename:dirname(code:which(?MODULE)),
             partisan_rpc:block_call(NodeName, code, add_path, [Dir]),
-            {ok,Pid} =
+            {ok, Pid} =
                 partisan_rpc:block_call(
-                  NodeName, partisan_gen_statem,start,
-                  [?MODULE,start_arg(Config, []),[]]),
+                    NodeName,
+                    partisan_gen_statem,
+                    start,
+                    [?MODULE, start_arg(Config, []), []]
+                ),
             ok = partisan_gen_statem:stop(Pid),
-            false = partisan_rpc:block_call(NodeName, erlang, is_process_alive, [Pid]),
+            false = partisan_rpc:block_call(
+                NodeName, erlang, is_process_alive, [Pid]
+            ),
             noproc =
                 ?EXPECT_FAILURE(partisan_gen_statem:stop(Pid), Reason1),
             Pid
         after
-
             partisan_support_otp:stop_all_nodes()
         end,
-    {{nodedown,NodeName},{partisan_sys,terminate,_}} =
-    ?EXPECT_FAILURE(partisan_gen_statem:stop(Statem), Reason2),
+    {{nodedown, NodeName}, {partisan_sys, terminate, _}} =
+        ?EXPECT_FAILURE(partisan_gen_statem:stop(Statem), Reason2),
     ok.
 
 %% Registered name on remote node
 stop9(Config) ->
     Name = to_stop,
-    LocalSTM = {local,Name},
+    LocalSTM = {local, Name},
     %% Node = partisan_gen_statem__stop9,
     %% {ok,NodeName} = ct_slave:start(Node),
-    {ok,NodeName} = partisan_support_otp:start_node(?FUNCTION_NAME),
+    {ok, NodeName} = partisan_support_otp:start_node(?FUNCTION_NAME),
     ok = partisan_support:cluster(NodeName),
     timer:sleep(2000),
     Statem =
         try
-            STM = {Name,NodeName},
+            STM = {Name, NodeName},
             Dir = filename:dirname(code:which(?MODULE)),
             partisan_rpc:block_call(NodeName, code, add_path, [Dir]),
-            {ok,Pid} =
+            {ok, Pid} =
                 partisan_rpc:block_call(
-                  NodeName, partisan_gen_statem, start,
-                  [LocalSTM,?MODULE,start_arg(Config, []),[]]),
+                    NodeName,
+                    partisan_gen_statem,
+                    start,
+                    [LocalSTM, ?MODULE, start_arg(Config, []), []]
+                ),
             ok = partisan_gen_statem:stop(STM),
-            undefined = partisan_rpc:block_call(NodeName,erlang,whereis,[Name]),
-            false = partisan_rpc:block_call(NodeName,erlang,is_process_alive,[Pid]),
+            undefined = partisan_rpc:block_call(NodeName, erlang, whereis, [
+                Name
+            ]),
+            false = partisan_rpc:block_call(
+                NodeName, erlang, is_process_alive, [Pid]
+            ),
             noproc =
                 ?EXPECT_FAILURE(partisan_gen_statem:stop(STM), Reason1),
             STM
         after
-
             partisan_support_otp:stop_all_nodes()
         end,
-    {{nodedown,NodeName},{partisan_sys,terminate,_}} =
-    ?EXPECT_FAILURE(partisan_gen_statem:stop(Statem), Reason2),
+    {{nodedown, NodeName}, {partisan_sys, terminate, _}} =
+        ?EXPECT_FAILURE(partisan_gen_statem:stop(Statem), Reason2),
     ok.
 
 %% Globally registered name on remote node
 stop10(Config) ->
     %% Node = partisan_gen_statem_stop10,
-    STM = {global,to_stop},
+    STM = {global, to_stop},
     %% {ok,NodeName} = ct_slave:start(Node),
-    {ok,NodeName} = partisan_support_otp:start_node(?FUNCTION_NAME),
+    {ok, NodeName} = partisan_support_otp:start_node(?FUNCTION_NAME),
     ok = partisan_support:cluster(NodeName),
     timer:sleep(2000),
     try
         Dir = filename:dirname(code:which(?MODULE)),
-        partisan_rpc:block_call(NodeName,code,add_path,[Dir]),
-        {ok,Pid} =
+        partisan_rpc:block_call(NodeName, code, add_path, [Dir]),
+        {ok, Pid} =
             partisan_rpc:block_call(
-              NodeName, partisan_gen_statem, start,
-              [STM,?MODULE,start_arg(Config, []),[]]),
+                NodeName,
+                partisan_gen_statem,
+                start,
+                [STM, ?MODULE, start_arg(Config, []), []]
+            ),
         global:sync(),
         ok = partisan_gen_statem:stop(STM),
-        false = partisan_rpc:block_call(NodeName, erlang, is_process_alive, [Pid]),
+        false = partisan_rpc:block_call(NodeName, erlang, is_process_alive, [
+            Pid
+        ]),
         noproc =
             ?EXPECT_FAILURE(partisan_gen_statem:stop(STM), Reason1)
     after
@@ -551,23 +656,24 @@ stop10(Config) ->
         partisan_support_otp:stop_all_nodes()
     end,
     noproc =
-    ?EXPECT_FAILURE(partisan_gen_statem:stop(STM), Reason2),
+        ?EXPECT_FAILURE(partisan_gen_statem:stop(STM), Reason2),
     ok.
 
 %% Check that time outs in calls work
 abnormal1(Config) ->
     Name = abnormal1,
-    LocalSTM = {local,Name},
+    LocalSTM = {local, Name},
 
     {ok, _Pid} =
-    partisan_gen_statem:start(LocalSTM, ?MODULE, start_arg(Config, []), []),
+        partisan_gen_statem:start(LocalSTM, ?MODULE, start_arg(Config, []), []),
 
     %% timeout call.
-    delayed = partisan_gen_statem:call(Name, {delayed_answer,100}, 2000),
-    {timeout,_} =
-    ?EXPECT_FAILURE(
-       partisan_gen_statem:call(Name, {delayed_answer,2000}, 100),
-       Reason),
+    delayed = partisan_gen_statem:call(Name, {delayed_answer, 100}, 2000),
+    {timeout, _} =
+        ?EXPECT_FAILURE(
+            partisan_gen_statem:call(Name, {delayed_answer, 2000}, 100),
+            Reason
+        ),
     ok = partisan_gen_statem:stop(Name),
     ct:sleep(1100),
     ok = verify_empty_msgq().
@@ -575,19 +681,23 @@ abnormal1(Config) ->
 %% Check that time outs in calls work
 abnormal1clean(Config) ->
     Name = abnormal1clean,
-    LocalSTM = {local,Name},
+    LocalSTM = {local, Name},
 
     {ok, _Pid} =
-    partisan_gen_statem:start(LocalSTM, ?MODULE, start_arg(Config, []), []),
+        partisan_gen_statem:start(LocalSTM, ?MODULE, start_arg(Config, []), []),
 
     %% timeout call.
     delayed =
-    partisan_gen_statem:call(Name, {delayed_answer,1}, {clean_timeout,100}),
-    {timeout,_} =
-    ?EXPECT_FAILURE(
-       partisan_gen_statem:call(
-         Name, {delayed_answer,1000}, {clean_timeout,10}),
-       Reason),
+        partisan_gen_statem:call(
+            Name, {delayed_answer, 1}, {clean_timeout, 100}
+        ),
+    {timeout, _} =
+        ?EXPECT_FAILURE(
+            partisan_gen_statem:call(
+                Name, {delayed_answer, 1000}, {clean_timeout, 10}
+            ),
+            Reason
+        ),
     ok = partisan_gen_statem:stop(Name),
     ct:sleep(1100),
     ok = verify_empty_msgq().
@@ -595,39 +705,44 @@ abnormal1clean(Config) ->
 %% Check that time outs in calls work
 abnormal1dirty(Config) ->
     Name = abnormal1dirty,
-    LocalSTM = {local,Name},
+    LocalSTM = {local, Name},
 
     {ok, _Pid} =
-    partisan_gen_statem:start(LocalSTM, ?MODULE, start_arg(Config, []), []),
+        partisan_gen_statem:start(LocalSTM, ?MODULE, start_arg(Config, []), []),
 
     %% timeout call.
     delayed =
-    partisan_gen_statem:call(Name, {delayed_answer,1}, {dirty_timeout,100}),
-    {timeout,_} =
-    ?EXPECT_FAILURE(
-       partisan_gen_statem:call(
-         Name, {delayed_answer,1000}, {dirty_timeout,10}),
-       Reason),
+        partisan_gen_statem:call(
+            Name, {delayed_answer, 1}, {dirty_timeout, 100}
+        ),
+    {timeout, _} =
+        ?EXPECT_FAILURE(
+            partisan_gen_statem:call(
+                Name, {delayed_answer, 1000}, {dirty_timeout, 10}
+            ),
+            Reason
+        ),
     ok = partisan_gen_statem:stop(Name),
     ct:sleep(1100),
     case flush() of
-    [] -> ok
+        [] -> ok
     end.
 
 %% Check that bad return values makes the stm crash. Note that we must
 %% trap exit since we must link to get the real bad_return_ error
 abnormal2(Config) ->
     OldFl = process_flag(trap_exit, true),
-    {ok,Pid} =
+    {ok, Pid} =
         partisan_gen_statem:start_link(
-          ?MODULE, start_arg(Config, []), [{debug,[log]}]),
+            ?MODULE, start_arg(Config, []), [{debug, [log]}]
+        ),
 
     %% bad return value in the partisan_gen_statem loop
     Cause = bad_return_from_state_function,
-    {{{Cause,badreturn},_},_} =
-    ?EXPECT_FAILURE(partisan_gen_statem:call(Pid, badreturn), Reason),
+    {{{Cause, badreturn}, _}, _} =
+        ?EXPECT_FAILURE(partisan_gen_statem:call(Pid, badreturn), Reason),
     receive
-    {'EXIT',Pid,{{Cause,badreturn},_}} -> ok
+        {'EXIT', Pid, {{Cause, badreturn}, _}} -> ok
     after 5000 ->
         ct:fail(partisan_gen_statem_did_not_die)
     end,
@@ -639,16 +754,17 @@ abnormal2(Config) ->
 %% trap exit since we must link to get the real bad_return_ error
 abnormal3(Config) ->
     OldFl = process_flag(trap_exit, true),
-    {ok,Pid} =
+    {ok, Pid} =
         partisan_gen_statem:start_link(
-          ?MODULE, start_arg(Config, []), [{debug,[log]}]),
+            ?MODULE, start_arg(Config, []), [{debug, [log]}]
+        ),
 
     %% bad return value in the partisan_gen_statem loop
     Cause = bad_action_from_state_function,
-    {{{Cause,badaction},_},_} =
-    ?EXPECT_FAILURE(partisan_gen_statem:call(Pid, badaction), Reason),
+    {{{Cause, badaction}, _}, _} =
+        ?EXPECT_FAILURE(partisan_gen_statem:call(Pid, badaction), Reason),
     receive
-    {'EXIT',Pid,{{Cause,badaction},_}} -> ok
+        {'EXIT', Pid, {{Cause, badaction}, _}} -> ok
     after 5000 ->
         ct:fail(partisan_gen_statem_did_not_die)
     end,
@@ -660,17 +776,20 @@ abnormal3(Config) ->
 %% trap exit since we must link to get the real bad_return_ error
 abnormal4(Config) ->
     OldFl = process_flag(trap_exit, true),
-    {ok,Pid} =
+    {ok, Pid} =
         partisan_gen_statem:start_link(
-          ?MODULE, start_arg(Config, []), [{debug,[log]}]),
+            ?MODULE, start_arg(Config, []), [{debug, [log]}]
+        ),
 
     %% bad return value in the partisan_gen_statem loop
-    BadTimeout = {badtimeout,4711,ouch},
+    BadTimeout = {badtimeout, 4711, ouch},
     Cause = bad_action_from_state_function,
-    {{{Cause,BadTimeout},_},_} =
-    ?EXPECT_FAILURE(partisan_gen_statem:call(Pid, {badtimeout,BadTimeout}), Reason),
+    {{{Cause, BadTimeout}, _}, _} =
+        ?EXPECT_FAILURE(
+            partisan_gen_statem:call(Pid, {badtimeout, BadTimeout}), Reason
+        ),
     receive
-    {'EXIT',Pid,{{Cause,BadTimeout},_}} -> ok
+        {'EXIT', Pid, {{Cause, BadTimeout}, _}} -> ok
     after 5000 ->
         ct:fail(partisan_gen_statem_did_not_die)
     end,
@@ -681,570 +800,623 @@ abnormal4(Config) ->
 shutdown(Config) ->
     process_flag(trap_exit, true),
 
-    {ok,Pid0} = partisan_gen_statem:start_link(?MODULE, start_arg(Config, []), []),
+    {ok, Pid0} = partisan_gen_statem:start_link(
+        ?MODULE, start_arg(Config, []), []
+    ),
     ok = do_func_test(Pid0),
     ok = do_sync_func_test(Pid0),
-    stopped = partisan_gen_statem:call(Pid0, {stop,{shutdown,reason}}),
-    receive {'EXIT',Pid0,{shutdown,reason}} -> ok end,
+    stopped = partisan_gen_statem:call(Pid0, {stop, {shutdown, reason}}),
+    receive
+        {'EXIT', Pid0, {shutdown, reason}} -> ok
+    end,
     process_flag(trap_exit, false),
 
-    {noproc,_} =
-    ?EXPECT_FAILURE(partisan_gen_statem:call(Pid0, hej), Reason),
+    {noproc, _} =
+        ?EXPECT_FAILURE(partisan_gen_statem:call(Pid0, hej), Reason),
 
     receive
-    Any ->
-        ct:log("Unexpected: ~p", [Any]),
-        ct:fail({unexpected,Any})
+        Any ->
+            ct:log("Unexpected: ~p", [Any]),
+            ct:fail({unexpected, Any})
     after 500 ->
         ok
     end.
-
-
 
 stop_and_reply(_Config) ->
     process_flag(trap_exit, true),
 
     Machine =
-    %% Abusing the internal format of From...
-    #{init =>
-          fun () ->
-              {ok,start,undefined}
-          end,
-      start =>
-          fun (cast, {echo,From1,Reply1}, undefined) ->
-              {next_state,wait,{reply,From1,Reply1}}
-          end,
-      wait =>
-          fun (cast, {stop_and_reply,Reason,From2,Reply2},R1) ->
-              {stop_and_reply,Reason,
-               [R1,{reply,From2,Reply2}]}
-          end},
-    {ok,STM} =
-    partisan_gen_statem:start_link(?MODULE, {map_statem,Machine,[]}, []),
+        %% Abusing the internal format of From...
+        #{
+            init =>
+                fun() ->
+                    {ok, start, undefined}
+                end,
+            start =>
+                fun(cast, {echo, From1, Reply1}, undefined) ->
+                    {next_state, wait, {reply, From1, Reply1}}
+                end,
+            wait =>
+                fun(cast, {stop_and_reply, Reason, From2, Reply2}, R1) ->
+                    {stop_and_reply, Reason, [R1, {reply, From2, Reply2}]}
+                end
+        },
+    {ok, STM} =
+        partisan_gen_statem:start_link(?MODULE, {map_statem, Machine, []}, []),
 
     Self = self(),
     Tag1 = make_ref(),
-    partisan_gen_statem:cast(STM, {echo,{Self,Tag1},reply1}),
+    partisan_gen_statem:cast(STM, {echo, {Self, Tag1}, reply1}),
     Tag2 = make_ref(),
-    partisan_gen_statem:cast(STM, {stop_and_reply,reason,{Self,Tag2},reply2}),
+    partisan_gen_statem:cast(
+        STM, {stop_and_reply, reason, {Self, Tag2}, reply2}
+    ),
     case flush() of
-    [{Tag1,reply1},{Tag2,reply2},{'EXIT',STM,reason}] ->
-        ok;
-    Other1 ->
-        ct:fail({unexpected,Other1})
+        [{Tag1, reply1}, {Tag2, reply2}, {'EXIT', STM, reason}] ->
+            ok;
+        Other1 ->
+            ct:fail({unexpected, Other1})
     end,
 
-    {noproc,_} =
-    ?EXPECT_FAILURE(partisan_gen_statem:call(STM, hej), Reason),
+    {noproc, _} =
+        ?EXPECT_FAILURE(partisan_gen_statem:call(STM, hej), Reason),
     case flush() of
-    [] ->
-        ok;
-    Other2 ->
-        ct:fail({unexpected,Other2})
+        [] ->
+            ok;
+        Other2 ->
+            ct:fail({unexpected, Other2})
     end.
-
-
 
 state_enter(_Config) ->
     process_flag(trap_exit, true),
     Self = self(),
 
     Machine =
-    %% Abusing the internal format of From...
-    #{init =>
-          fun () ->
-              {ok,start,1}
-          end,
-      start =>
-          fun (enter, Prev, N) ->
-              Self ! {N,enter,start,Prev},
-              {keep_state,N + 1};
-          (internal, Prev, N) ->
-              Self ! {N,internal,start,Prev},
-              {keep_state,N + 1};
-                  (timeout, M, N) ->
-                      {keep_state, N + 1,
-                       {reply, {Self,N}, {timeout,M}}};
-          ({call,From}, repeat, N) ->
-              {repeat_state,N + 1,
-               [{reply,From,{N,repeat,start}}]};
-          ({call,From}, echo, N) ->
-              {next_state,wait,N + 1,
-               [{reply,From,{N,echo,start}},{timeout,0,N}]};
-          ({call,From}, {stop,Reason}, N) ->
-              {stop_and_reply,Reason,
-               [{reply,From,{N,stop}}],N + 1}
-          end,
-      wait =>
-          fun (enter, Prev, N) when N < 5 ->
-              {repeat_state,N + 1,
-               [{reply,{Self,N},{enter,Prev}},
-                        {timeout,0,N},
-                        {state_timeout,0,N}]};
-          (enter, Prev, N) ->
-              Self ! {N,enter,wait,Prev},
-              {keep_state,N + 1,
-                       [{timeout,0,N},
-                        {state_timeout,0,N}]};
-                  (timeout, M, N) ->
-                      {keep_state, N + 1,
-                       {reply, {Self,N}, {timeout,M}}};
-                  (state_timeout, M, N) ->
-                      {keep_state, N + 1,
-                       {reply, {Self,N}, {state_timeout,M}}};
-          ({call,From}, repeat, N) ->
-              {repeat_state_and_data,
-               [{reply,From,{N,repeat,wait}},
-                        {timeout,0,N}]};
-          ({call,From}, echo, N) ->
-              {next_state,start,N + 1,
-               [{next_event,internal,wait},
-            {reply,From,{N,echo,wait}}]}
-          end},
-    {ok,STM} =
-    partisan_gen_statem:start_link(
-      ?MODULE, {map_statem,Machine,[state_enter]},
-          [{debug,[trace,{log,17}]}]),
+        %% Abusing the internal format of From...
+        #{
+            init =>
+                fun() ->
+                    {ok, start, 1}
+                end,
+            start =>
+                fun
+                    (enter, Prev, N) ->
+                        Self ! {N, enter, start, Prev},
+                        {keep_state, N + 1};
+                    (internal, Prev, N) ->
+                        Self ! {N, internal, start, Prev},
+                        {keep_state, N + 1};
+                    (timeout, M, N) ->
+                        {keep_state, N + 1, {reply, {Self, N}, {timeout, M}}};
+                    ({call, From}, repeat, N) ->
+                        {repeat_state, N + 1, [
+                            {reply, From, {N, repeat, start}}
+                        ]};
+                    ({call, From}, echo, N) ->
+                        {next_state, wait, N + 1, [
+                            {reply, From, {N, echo, start}}, {timeout, 0, N}
+                        ]};
+                    ({call, From}, {stop, Reason}, N) ->
+                        {stop_and_reply, Reason, [{reply, From, {N, stop}}],
+                            N + 1}
+                end,
+            wait =>
+                fun
+                    (enter, Prev, N) when N < 5 ->
+                        {repeat_state, N + 1, [
+                            {reply, {Self, N}, {enter, Prev}},
+                            {timeout, 0, N},
+                            {state_timeout, 0, N}
+                        ]};
+                    (enter, Prev, N) ->
+                        Self ! {N, enter, wait, Prev},
+                        {keep_state, N + 1, [
+                            {timeout, 0, N},
+                            {state_timeout, 0, N}
+                        ]};
+                    (timeout, M, N) ->
+                        {keep_state, N + 1, {reply, {Self, N}, {timeout, M}}};
+                    (state_timeout, M, N) ->
+                        {keep_state, N + 1,
+                            {reply, {Self, N}, {state_timeout, M}}};
+                    ({call, From}, repeat, N) ->
+                        {repeat_state_and_data, [
+                            {reply, From, {N, repeat, wait}},
+                            {timeout, 0, N}
+                        ]};
+                    ({call, From}, echo, N) ->
+                        {next_state, start, N + 1, [
+                            {next_event, internal, wait},
+                            {reply, From, {N, echo, wait}}
+                        ]}
+                end
+        },
+    {ok, STM} =
+        partisan_gen_statem:start_link(
+            ?MODULE,
+            {map_statem, Machine, [state_enter]},
+            [{debug, [trace, {log, 17}]}]
+        ),
     ok = partisan_sys:log(STM, false),
     ok = partisan_sys:log(STM, true),
 
-    [{1,enter,start,start}] = flush(),
-    {2,echo,start} = partisan_gen_statem:call(STM, echo),
-    [{3,{enter,start}},
-     {4,{enter,start}},
-     {5,enter,wait,start},
-     {6,{timeout,5}},
-     {7,{state_timeout,5}}] = flush(),
-    {wait,[8|_]} = partisan_sys:get_state(STM),
-    {8,repeat,wait} = partisan_gen_statem:call(STM, repeat),
-    [{8,enter,wait,wait},
-     {9,{timeout,8}},
-     {10,{state_timeout,8}}] = flush(),
-    {11,echo,wait} = partisan_gen_statem:call(STM, echo),
-    [{12,enter,start,wait},
-     {13,internal,start,wait}] = flush(),
-    {14,repeat,start} = partisan_gen_statem:call(STM, repeat),
-    [{15,enter,start,start}] = flush(),
+    [{1, enter, start, start}] = flush(),
+    {2, echo, start} = partisan_gen_statem:call(STM, echo),
+    [
+        {3, {enter, start}},
+        {4, {enter, start}},
+        {5, enter, wait, start},
+        {6, {timeout, 5}},
+        {7, {state_timeout, 5}}
+    ] = flush(),
+    {wait, [8 | _]} = partisan_sys:get_state(STM),
+    {8, repeat, wait} = partisan_gen_statem:call(STM, repeat),
+    [
+        {8, enter, wait, wait},
+        {9, {timeout, 8}},
+        {10, {state_timeout, 8}}
+    ] = flush(),
+    {11, echo, wait} = partisan_gen_statem:call(STM, echo),
+    [
+        {12, enter, start, wait},
+        {13, internal, start, wait}
+    ] = flush(),
+    {14, repeat, start} = partisan_gen_statem:call(STM, repeat),
+    [{15, enter, start, start}] = flush(),
 
-    {ok,Log} = partisan_sys:log(STM, get),
+    {ok, Log} = partisan_sys:log(STM, get),
     io:format("partisan_sys:log ~p~n", [Log]),
     ok = partisan_sys:log(STM, print),
 
-    {16,stop} = partisan_gen_statem:call(STM, {stop,bye}),
-    [{'EXIT',STM,bye}] = flush(),
+    {16, stop} = partisan_gen_statem:call(STM, {stop, bye}),
+    [{'EXIT', STM, bye}] = flush(),
 
-    {noproc,_} =
-    ?EXPECT_FAILURE(partisan_gen_statem:call(STM, hej), Reason),
+    {noproc, _} =
+        ?EXPECT_FAILURE(partisan_gen_statem:call(STM, hej), Reason),
     case flush() of
-    [] ->
-        ok;
-    Other2 ->
-        ct:fail({unexpected,Other2})
+        [] ->
+            ok;
+        Other2 ->
+            ct:fail({unexpected, Other2})
     end.
-
-
 
 event_order(_Config) ->
     process_flag(trap_exit, true),
 
     Machine =
-    %% Abusing the internal format of From...
-    #{init =>
-          fun () ->
-              {ok,start,undefined}
-          end,
-      start =>
-          fun (cast, _, _) ->
-              {keep_state_and_data,postpone}; %% Handled in 'buffer'
-          ({call,From}, {buffer,Pid,[Tag3,Tag4,Tag5]},
-           undefined) ->
-              {next_state,buffer,[],
-               [{next_event,internal,{reply,{Pid,Tag3},ok3}},
-            {next_event,internal,{reply,{Pid,Tag4},ok4}},
-            {timeout,0,{reply,{Pid,Tag5},ok5}},
-            %% The timeout should not happen since there
-            %% are events that cancel it i.e next_event
-            %% and postponed
-            {reply,From,ok}]}
-          end,
-      buffer =>
-          fun (internal, Reply, Replies) ->
-              {keep_state,[Reply|Replies]};
-          (timeout, Reply, Replies) ->
-              {keep_state,[Reply|Replies]};
-          (cast, Reply, Replies) ->
-              {keep_state,[Reply|Replies]};
-          ({call,From}, {stop,Reason}, Replies) ->
-              {next_state,stop,undefined,
-               lists:reverse(
-             Replies,
-             [{reply,From,ok},
-              {next_event,internal,{stop,Reason}}])}
-          end,
-      stop =>
-          fun (internal, Result, undefined) ->
-              Result
-          end},
+        %% Abusing the internal format of From...
+        #{
+            init =>
+                fun() ->
+                    {ok, start, undefined}
+                end,
+            start =>
+                fun
+                    (cast, _, _) ->
+                        %% Handled in 'buffer'
+                        {keep_state_and_data, postpone};
+                    (
+                        {call, From},
+                        {buffer, Pid, [Tag3, Tag4, Tag5]},
+                        undefined
+                    ) ->
+                        {next_state, buffer, [], [
+                            {next_event, internal, {reply, {Pid, Tag3}, ok3}},
+                            {next_event, internal, {reply, {Pid, Tag4}, ok4}},
+                            {timeout, 0, {reply, {Pid, Tag5}, ok5}},
+                            %% The timeout should not happen since there
+                            %% are events that cancel it i.e next_event
+                            %% and postponed
+                            {reply, From, ok}
+                        ]}
+                end,
+            buffer =>
+                fun
+                    (internal, Reply, Replies) ->
+                        {keep_state, [Reply | Replies]};
+                    (timeout, Reply, Replies) ->
+                        {keep_state, [Reply | Replies]};
+                    (cast, Reply, Replies) ->
+                        {keep_state, [Reply | Replies]};
+                    ({call, From}, {stop, Reason}, Replies) ->
+                        {next_state, stop, undefined,
+                            lists:reverse(
+                                Replies,
+                                [
+                                    {reply, From, ok},
+                                    {next_event, internal, {stop, Reason}}
+                                ]
+                            )}
+                end,
+            stop =>
+                fun(internal, Result, undefined) ->
+                    Result
+                end
+        },
 
-    {ok,STM} = partisan_gen_statem:start_link(?MODULE, {map_statem,Machine,[]}, []),
+    {ok, STM} = partisan_gen_statem:start_link(
+        ?MODULE, {map_statem, Machine, []}, []
+    ),
     Self = self(),
     Tag1 = make_ref(),
-    partisan_gen_statem:cast(STM, {reply,{Self,Tag1},ok1}),
+    partisan_gen_statem:cast(STM, {reply, {Self, Tag1}, ok1}),
     Tag2 = make_ref(),
-    partisan_gen_statem:cast(STM, {reply,{Self,Tag2},ok2}),
+    partisan_gen_statem:cast(STM, {reply, {Self, Tag2}, ok2}),
     Tag3 = make_ref(),
     Tag4 = make_ref(),
     Tag5 = make_ref(),
-    ok = partisan_gen_statem:call(STM, {buffer,Self,[Tag3,Tag4,Tag5]}),
-    ok = partisan_gen_statem:call(STM, {stop,reason}),
+    ok = partisan_gen_statem:call(STM, {buffer, Self, [Tag3, Tag4, Tag5]}),
+    ok = partisan_gen_statem:call(STM, {stop, reason}),
     case flush() of
-    [{Tag3,ok3},{Tag4,ok4},{Tag1,ok1},{Tag2,ok2},
-     {'EXIT',STM,reason}] ->
-        ok;
-    Other1 ->
-        ct:fail({unexpected,Other1})
+        [
+            {Tag3, ok3},
+            {Tag4, ok4},
+            {Tag1, ok1},
+            {Tag2, ok2},
+            {'EXIT', STM, reason}
+        ] ->
+            ok;
+        Other1 ->
+            ct:fail({unexpected, Other1})
     end,
 
-    {noproc,_} =
-    ?EXPECT_FAILURE(partisan_gen_statem:call(STM, hej), Reason),
+    {noproc, _} =
+        ?EXPECT_FAILURE(partisan_gen_statem:call(STM, hej), Reason),
     case flush() of
-    [] ->
-        ok;
-    Other2 ->
-        ct:fail({unexpected,Other2})
+        [] ->
+            ok;
+        Other2 ->
+            ct:fail({unexpected, Other2})
     end.
-
-
 
 state_timeout(_Config) ->
     process_flag(trap_exit, true),
 
     Machine =
-    #{init =>
-          fun () ->
-              {ok,start,0}
-          end,
-      start =>
-          fun
-          ({call,From}, {go,Time}, 0)  ->
-              self() ! message_to_self,
-              {next_state, state1, {Time,From},
-               %% Verify that internal events goes before external
-               [{timeout,Time,1}, % Exercise different cancel code path
-                        {state_timeout,Time,1},
-            {next_event,internal,1}]}
-          end,
-      state1 =>
-          fun
-          (internal, 1, Data) ->
-              %% Verify that a state change cancels timeout 1
-              {next_state, state2, Data,
-               [{timeout,0,2},
-            {state_timeout,0,2},
-            {next_event,internal,2}]}
-          end,
-      state2 =>
-          fun
-          (internal, 2, Data) ->
-              %% Verify that {state_timeout,0,_}
-              %% comes after next_event and that
-              %% {timeout,0,_} is cancelled by
-              %% pending {state_timeout,0,_}
-              {keep_state, {ok,2,Data},
-               [{timeout,0,3}]};
-          (state_timeout, 2, {ok,2,Data}) ->
-              %% Verify that timeout 0's are processed
-              %% in order
-              {keep_state, {ok,3,Data},
-               [{timeout,0,4},{state_timeout,0,5}]};
-          (timeout, 4, {ok,3,Data}) ->
-              %% Verify that timeout 0 is cancelled by
-              %% a state_timeout 0 event and that
-              %% state_timeout 0 can be restarted
-              {keep_state, {ok,4,Data},
-               [{state_timeout,0,6},{timeout,0,7}]};
-          (state_timeout, 6, {ok,4,{Time,From}}) ->
-              {next_state, state3, 6,
-               [{reply,From,ok},
-            {state_timeout,Time,8}]}
-          end,
-      state3 =>
-          fun
-          (info, message_to_self, 6) ->
-              {keep_state, 7};
-          ({call,From}, check, 7) ->
-              {keep_state, From};
-          (state_timeout, 8, From) ->
-              {stop_and_reply, normal,
-               {reply,From,ok}}
-          end},
+        #{
+            init =>
+                fun() ->
+                    {ok, start, 0}
+                end,
+            start =>
+                fun({call, From}, {go, Time}, 0) ->
+                    self() ! message_to_self,
+                    {next_state, state1, {Time, From},
+                        %% Verify that internal events goes before external
 
-    {ok,STM} =
+                        % Exercise different cancel code path
+                        [
+                            {timeout, Time, 1},
+                            {state_timeout, Time, 1},
+                            {next_event, internal, 1}
+                        ]}
+                end,
+            state1 =>
+                fun(internal, 1, Data) ->
+                    %% Verify that a state change cancels timeout 1
+                    {next_state, state2, Data, [
+                        {timeout, 0, 2},
+                        {state_timeout, 0, 2},
+                        {next_event, internal, 2}
+                    ]}
+                end,
+            state2 =>
+                fun
+                    (internal, 2, Data) ->
+                        %% Verify that {state_timeout,0,_}
+                        %% comes after next_event and that
+                        %% {timeout,0,_} is cancelled by
+                        %% pending {state_timeout,0,_}
+                        {keep_state, {ok, 2, Data}, [{timeout, 0, 3}]};
+                    (state_timeout, 2, {ok, 2, Data}) ->
+                        %% Verify that timeout 0's are processed
+                        %% in order
+                        {keep_state, {ok, 3, Data}, [
+                            {timeout, 0, 4}, {state_timeout, 0, 5}
+                        ]};
+                    (timeout, 4, {ok, 3, Data}) ->
+                        %% Verify that timeout 0 is cancelled by
+                        %% a state_timeout 0 event and that
+                        %% state_timeout 0 can be restarted
+                        {keep_state, {ok, 4, Data}, [
+                            {state_timeout, 0, 6}, {timeout, 0, 7}
+                        ]};
+                    (state_timeout, 6, {ok, 4, {Time, From}}) ->
+                        {next_state, state3, 6, [
+                            {reply, From, ok},
+                            {state_timeout, Time, 8}
+                        ]}
+                end,
+            state3 =>
+                fun
+                    (info, message_to_self, 6) ->
+                        {keep_state, 7};
+                    ({call, From}, check, 7) ->
+                        {keep_state, From};
+                    (state_timeout, 8, From) ->
+                        {stop_and_reply, normal, {reply, From, ok}}
+                end
+        },
+
+    {ok, STM} =
         partisan_gen_statem:start_link(
-          ?MODULE, {map_statem,Machine,[]}, [{debug,[trace]}]),
+            ?MODULE, {map_statem, Machine, []}, [{debug, [trace]}]
+        ),
     TRef = erlang:start_timer(1000, self(), kull),
-    ok = partisan_gen_statem:call(STM, {go,500}),
+    ok = partisan_gen_statem:call(STM, {go, 500}),
     ok = partisan_gen_statem:call(STM, check),
     receive
-    {timeout,TRef,kull} ->
-        ct:fail(late_timeout)
+        {timeout, TRef, kull} ->
+            ct:fail(late_timeout)
     after 0 ->
         receive
-        {timeout,TRef,kull} ->
-            ok
+            {timeout, TRef, kull} ->
+                ok
         after 1000 ->
             ct:fail(no_check_timeout)
         end
     end,
     receive
-    {'EXIT',STM,normal} ->
-        ok
+        {'EXIT', STM, normal} ->
+            ok
     after 500 ->
         ct:fail(did_not_stop)
     end,
 
     verify_empty_msgq().
-
-
 
 timeout_cancel_and_update(_Config) ->
     process_flag(trap_exit, true),
     %%
     Machine =
-    #{init =>
-          fun () ->
-              {ok,start,0}
-          end,
-      start =>
-          fun
-          ({call,From}, test, 0)  ->
-              self() ! message_to_self,
-              {next_state, state1, From,
-               %% Verify that internal events goes before external
-               [{state_timeout,17,1},
-            {next_event,internal,1}]}
-          end,
-      state1 =>
-          fun
-          (internal, 1, _) ->
-                      {keep_state_and_data,
-                       [{state_timeout,cancel},
-                        {{timeout,a},17,1}]};
-                  (info, message_to_self, _) ->
-                      {keep_state_and_data,
-                       [{{timeout,a},update,a}]};
-                  ({timeout,a}, a, Data) ->
-                      {next_state,state2,Data,
-                       [{state_timeout,17,2},
-                        {next_event,internal,2}]}
-              end,
-      state2 =>
-          fun
-          (internal, 2, _) ->
-                      receive after 50 -> ok end,
-                      %% Now state_timeout 17 should have triggered
-                      {keep_state_and_data,
-                       [{state_timeout,update,b},
-                        {timeout,17,2}]};
-                  (state_timeout, b, From) ->
-                      {next_state,state3,3,
-                       [{reply,From,ok},
-                        17000]}
-          end,
-          state3 =>
-              fun
-                  ({call,From}, stop, 3) ->
-                      {stop_and_reply, normal,
-                       [{reply,From,ok}]}
-              end
-         },
+        #{
+            init =>
+                fun() ->
+                    {ok, start, 0}
+                end,
+            start =>
+                fun({call, From}, test, 0) ->
+                    self() ! message_to_self,
+                    {next_state, state1, From,
+                        %% Verify that internal events goes before external
+                        [
+                            {state_timeout, 17, 1},
+                            {next_event, internal, 1}
+                        ]}
+                end,
+            state1 =>
+                fun
+                    (internal, 1, _) ->
+                        {keep_state_and_data, [
+                            {state_timeout, cancel},
+                            {{timeout, a}, 17, 1}
+                        ]};
+                    (info, message_to_self, _) ->
+                        {keep_state_and_data, [{{timeout, a}, update, a}]};
+                    ({timeout, a}, a, Data) ->
+                        {next_state, state2, Data, [
+                            {state_timeout, 17, 2},
+                            {next_event, internal, 2}
+                        ]}
+                end,
+            state2 =>
+                fun
+                    (internal, 2, _) ->
+                        receive
+                        after 50 -> ok
+                        end,
+                        %% Now state_timeout 17 should have triggered
+                        {keep_state_and_data, [
+                            {state_timeout, update, b},
+                            {timeout, 17, 2}
+                        ]};
+                    (state_timeout, b, From) ->
+                        {next_state, state3, 3, [
+                            {reply, From, ok},
+                            17000
+                        ]}
+                end,
+            state3 =>
+                fun({call, From}, stop, 3) ->
+                    {stop_and_reply, normal, [{reply, From, ok}]}
+                end
+        },
     %%
-    {ok,STM} =
+    {ok, STM} =
         partisan_gen_statem:start_link(
-          ?MODULE, {map_statem,Machine,[]}, [{debug,[trace]}]),
+            ?MODULE, {map_statem, Machine, []}, [{debug, [trace]}]
+        ),
     ok = partisan_gen_statem:call(STM, test),
-    {status, STM, {module,partisan_gen_statem}, Info} = partisan_sys:get_status(STM),
+    {status, STM, {module, partisan_gen_statem}, Info} = partisan_sys:get_status(
+        STM
+    ),
     ct:log("Status info: ~p~n", [Info]),
-    {_,Timeouts} = dig_data_tuple(Info),
-    {_, {1,[{timeout,17000}]}} = lists:keyfind("Time-outs", 1, Timeouts),
+    {_, Timeouts} = dig_data_tuple(Info),
+    {_, {1, [{timeout, 17000}]}} = lists:keyfind("Time-outs", 1, Timeouts),
     %%
     ok = partisan_gen_statem:call(STM, stop),
     receive
-    {'EXIT',STM,normal} ->
-        ok
+        {'EXIT', STM, normal} ->
+            ok
     after 500 ->
         ct:fail(did_not_stop)
     end,
     %%
     verify_empty_msgq().
 
-dig_data_tuple([{data,_} = DataTuple|_]) -> DataTuple;
-dig_data_tuple([H|T]) when is_list(H) ->
+dig_data_tuple([{data, _} = DataTuple | _]) ->
+    DataTuple;
+dig_data_tuple([H | T]) when is_list(H) ->
     case dig_data_tuple(H) of
         false -> dig_data_tuple(T);
         DataTuple -> DataTuple
     end;
-dig_data_tuple([_|T]) -> dig_data_tuple(T);
-dig_data_tuple([]) -> false.
-
-
+dig_data_tuple([_ | T]) ->
+    dig_data_tuple(T);
+dig_data_tuple([]) ->
+    false.
 
 %% Test that all event types can be sent with {next_event,EventType,_}
 event_types(_Config) ->
     process_flag(trap_exit, true),
 
     Machine =
-    %% Abusing the internal format of From...
-    #{init =>
-          fun () ->
-              {ok, start1, undefined,
-               [{next_event,internal,0}]}
-          end,
-      start1 =>
-          fun (internal, 0, undefined) ->
-              {next_state, start2, undefined}
-          end,
-      start2 =>
-          fun ({call,_} = Call, Req, undefined) ->
-              {next_state, state1, undefined,
-               [{next_event,internal,1},
-            {next_event,state_timeout,2},
-            {next_event,timeout,3},
-            {next_event,info,4},
-            {next_event,cast,5},
-            {next_event,{timeout,6}, 6},
-            {next_event,Call,Req}]}
-          end,
-      state1 =>
-          fun (internal, 1, undefined) ->
-              {next_state, state2, undefined}
-          end,
-      state2 =>
-          fun (state_timeout, 2, undefined) ->
-              {next_state, state3, undefined}
-          end,
-      state3 =>
-          fun (timeout, 3, undefined) ->
-              {next_state, state4, undefined}
-          end,
-      state4 =>
-          fun (info, 4, undefined) ->
-              {next_state, state5, undefined}
-          end,
-      state5 =>
-          fun (cast, 5, undefined) ->
-              {next_state, state6, undefined}
-          end,
-      state6 =>
-          fun ({timeout,6}, 6, undefined) ->
-              {next_state, state7, undefined}
-          end,
-      state7 =>
-          fun ({call,From}, stop, undefined) ->
-              {stop_and_reply, shutdown,
-               [{reply,From,stopped}]}
-          end},
-    {ok,STM} =
-    partisan_gen_statem:start_link(
-      ?MODULE, {map_statem,Machine,[]}, [{debug,[trace]}]),
+        %% Abusing the internal format of From...
+        #{
+            init =>
+                fun() ->
+                    {ok, start1, undefined, [{next_event, internal, 0}]}
+                end,
+            start1 =>
+                fun(internal, 0, undefined) ->
+                    {next_state, start2, undefined}
+                end,
+            start2 =>
+                fun({call, _} = Call, Req, undefined) ->
+                    {next_state, state1, undefined, [
+                        {next_event, internal, 1},
+                        {next_event, state_timeout, 2},
+                        {next_event, timeout, 3},
+                        {next_event, info, 4},
+                        {next_event, cast, 5},
+                        {next_event, {timeout, 6}, 6},
+                        {next_event, Call, Req}
+                    ]}
+                end,
+            state1 =>
+                fun(internal, 1, undefined) ->
+                    {next_state, state2, undefined}
+                end,
+            state2 =>
+                fun(state_timeout, 2, undefined) ->
+                    {next_state, state3, undefined}
+                end,
+            state3 =>
+                fun(timeout, 3, undefined) ->
+                    {next_state, state4, undefined}
+                end,
+            state4 =>
+                fun(info, 4, undefined) ->
+                    {next_state, state5, undefined}
+                end,
+            state5 =>
+                fun(cast, 5, undefined) ->
+                    {next_state, state6, undefined}
+                end,
+            state6 =>
+                fun({timeout, 6}, 6, undefined) ->
+                    {next_state, state7, undefined}
+                end,
+            state7 =>
+                fun({call, From}, stop, undefined) ->
+                    {stop_and_reply, shutdown, [{reply, From, stopped}]}
+                end
+        },
+    {ok, STM} =
+        partisan_gen_statem:start_link(
+            ?MODULE, {map_statem, Machine, []}, [{debug, [trace]}]
+        ),
 
     stopped = partisan_gen_statem:call(STM, stop),
     receive
-    {'EXIT',STM,shutdown} ->
-        ok
+        {'EXIT', STM, shutdown} ->
+            ok
     after 500 ->
         ct:fail(did_not_stop)
     end,
 
-    {noproc,_} =
-    ?EXPECT_FAILURE(partisan_gen_statem:call(STM, hej), Reason),
+    {noproc, _} =
+        ?EXPECT_FAILURE(partisan_gen_statem:call(STM, hej), Reason),
     case flush() of
-    [] ->
-        ok;
-    Other2 ->
-        ct:fail({unexpected,Other2})
+        [] ->
+            ok;
+        Other2 ->
+            ct:fail({unexpected, Other2})
     end.
-
-
 
 generic_timers(_Config) ->
     process_flag(trap_exit, true),
 
     Machine =
-    %% Abusing the internal format of From...
-    #{init =>
-          fun () ->
-              {ok, start, undefined}
-          end,
-      start =>
-          fun ({call,_} = Call, Req, undefined) ->
-              {next_state, state1, undefined,
-               [{{timeout,a},1500,1},
-            {state_timeout,1500,1},
-            {{timeout,b},1000,1},
-            {next_event,Call,Req}]}
-          end,
-      state1 =>
-          fun ({call,_} = Call, Req, undefined) ->
-              T = erlang:monotonic_time(millisecond) + 500,
-              {next_state, state2, undefined,
-               [{{timeout,c},T,2,{abs,true}},
-            {{timeout,d},0,2,[{abs,false}]},
-            {timeout,0,2},
-            {{timeout,b},infinity,2},
-            {{timeout,a},1000,{Call,Req}}]}
-          end,
-      state2 =>
-          fun ({timeout,d}, 2, undefined) ->
-              {next_state, state3, undefined}
-          end,
-      state3 =>
-          fun ({timeout,c}, 2, undefined) ->
-              {next_state, state4, undefined}
-          end,
-      state4 =>
-          fun ({timeout,a}, {{call,From},stop}, undefined) ->
-              {stop_and_reply, shutdown,
-               [{reply,From,stopped}]}
-          end},
-    {ok,STM} =
-    partisan_gen_statem:start_link(
-      ?MODULE, {map_statem,Machine,[]}, [{debug,[trace]}]),
+        %% Abusing the internal format of From...
+        #{
+            init =>
+                fun() ->
+                    {ok, start, undefined}
+                end,
+            start =>
+                fun({call, _} = Call, Req, undefined) ->
+                    {next_state, state1, undefined, [
+                        {{timeout, a}, 1500, 1},
+                        {state_timeout, 1500, 1},
+                        {{timeout, b}, 1000, 1},
+                        {next_event, Call, Req}
+                    ]}
+                end,
+            state1 =>
+                fun({call, _} = Call, Req, undefined) ->
+                    T = erlang:monotonic_time(millisecond) + 500,
+                    {next_state, state2, undefined, [
+                        {{timeout, c}, T, 2, {abs, true}},
+                        {{timeout, d}, 0, 2, [{abs, false}]},
+                        {timeout, 0, 2},
+                        {{timeout, b}, infinity, 2},
+                        {{timeout, a}, 1000, {Call, Req}}
+                    ]}
+                end,
+            state2 =>
+                fun({timeout, d}, 2, undefined) ->
+                    {next_state, state3, undefined}
+                end,
+            state3 =>
+                fun({timeout, c}, 2, undefined) ->
+                    {next_state, state4, undefined}
+                end,
+            state4 =>
+                fun({timeout, a}, {{call, From}, stop}, undefined) ->
+                    {stop_and_reply, shutdown, [{reply, From, stopped}]}
+                end
+        },
+    {ok, STM} =
+        partisan_gen_statem:start_link(
+            ?MODULE, {map_statem, Machine, []}, [{debug, [trace]}]
+        ),
 
     stopped = partisan_gen_statem:call(STM, stop),
     receive
-    {'EXIT',STM,shutdown} ->
-        ok
+        {'EXIT', STM, shutdown} ->
+            ok
     after 500 ->
         ct:fail(did_not_stop)
     end,
 
-    {noproc,_} =
-    ?EXPECT_FAILURE(partisan_gen_statem:call(STM, hej), Reason),
+    {noproc, _} =
+        ?EXPECT_FAILURE(partisan_gen_statem:call(STM, hej), Reason),
     case flush() of
-    [] ->
-        ok;
-    Other2 ->
-        ct:fail({unexpected,Other2})
+        [] ->
+            ok;
+        Other2 ->
+            ct:fail({unexpected, Other2})
     end.
 
-
-
 sys1(Config) ->
-    {ok,Pid} = partisan_gen_statem:start(?MODULE, start_arg(Config, []), []),
-    {status, Pid, {module,partisan_gen_statem}, Info} = partisan_sys:get_status(Pid),
+    {ok, Pid} = partisan_gen_statem:start(?MODULE, start_arg(Config, []), []),
+    {status, Pid, {module, partisan_gen_statem}, Info} = partisan_sys:get_status(
+        Pid
+    ),
     ct:log("Status info: ~p~n", [Info]),
     partisan_sys:suspend(Pid),
     Parent = self(),
     Tag = make_ref(),
     Caller =
-    spawn(
-      fun () ->
-          Parent ! {Tag,partisan_gen_statem:call(Pid, hej)}
-      end),
+        spawn(
+            fun() ->
+                Parent ! {Tag, partisan_gen_statem:call(Pid, hej)}
+            end
+        ),
     receive
-    {Tag,_} ->
-        ct:fail(should_be_suspended)
+        {Tag, _} ->
+            ct:fail(should_be_suspended)
     after 3000 ->
         exit(Caller, ok)
     end,
@@ -1255,95 +1427,104 @@ sys1(Config) ->
     stop_it(Pid).
 
 code_change(_Config) ->
-    {ok,Pid} =
-    partisan_gen_statem:start(
-      ?MODULE, {callback_mode,state_functions,[]}, []),
-    {idle,data} = partisan_sys:get_state(Pid),
+    {ok, Pid} =
+        partisan_gen_statem:start(
+            ?MODULE, {callback_mode, state_functions, []}, []
+        ),
+    {idle, data} = partisan_sys:get_state(Pid),
     partisan_sys:suspend(Pid),
     Mode = handle_event_function,
     partisan_sys:change_code(Pid, ?MODULE, old_vsn, Mode),
     partisan_sys:resume(Pid),
-    {idle,{old_vsn,data,Mode}} = partisan_sys:get_state(Pid),
+    {idle, {old_vsn, data, Mode}} = partisan_sys:get_state(Pid),
     Mode = partisan_gen_statem:call(Pid, get_callback_mode),
     stop_it(Pid).
 
 call_format_status(Config) ->
-    {ok,Pid} = partisan_gen_statem:start(?MODULE, start_arg(Config, []), []),
+    {ok, Pid} = partisan_gen_statem:start(?MODULE, start_arg(Config, []), []),
     Status = partisan_sys:get_status(Pid),
-    {status,Pid,_Mod,[_PDict,running,_,_, Data]} = Status,
-    [format_status_called|_] = lists:reverse(Data),
+    {status, Pid, _Mod, [_PDict, running, _, _, Data]} = Status,
+    [format_status_called | _] = lists:reverse(Data),
     stop_it(Pid),
 
     %% check that format_status can handle a name being an atom (pid is
     %% already checked by the previous test)
     {ok, Pid2} =
-    partisan_gen_statem:start(
-      {local, gstm}, ?MODULE, start_arg(Config, []), []),
+        partisan_gen_statem:start(
+            {local, gstm}, ?MODULE, start_arg(Config, []), []
+        ),
     Status2 = partisan_sys:get_status(gstm),
-    {status,Pid2,Mod,[_PDict2,running,_,_,Data2]} = Status2,
-    [format_status_called|_] = lists:reverse(Data2),
+    {status, Pid2, Mod, [_PDict2, running, _, _, Data2]} = Status2,
+    [format_status_called | _] = lists:reverse(Data2),
     stop_it(Pid2),
 
     %% check that format_status can handle a name being a term other than a
     %% pid or atom
-    GlobalName1 = {global,"CallFormatStatus"},
-    {ok,Pid3} =
-    partisan_gen_statem:start(
-      GlobalName1, ?MODULE, start_arg(Config, []), []),
+    GlobalName1 = {global, "CallFormatStatus"},
+    {ok, Pid3} =
+        partisan_gen_statem:start(
+            GlobalName1, ?MODULE, start_arg(Config, []), []
+        ),
     Status3 = partisan_sys:get_status(GlobalName1),
-    {status,Pid3,Mod,[_PDict3,running,_,_,Data3]} = Status3,
-    [format_status_called|_] = lists:reverse(Data3),
+    {status, Pid3, Mod, [_PDict3, running, _, _, Data3]} = Status3,
+    [format_status_called | _] = lists:reverse(Data3),
     stop_it(Pid3),
-    GlobalName2 = {global,{name, "term"}},
-    {ok,Pid4} =
-    partisan_gen_statem:start(
-      GlobalName2, ?MODULE, start_arg(Config, []), []),
+    GlobalName2 = {global, {name, "term"}},
+    {ok, Pid4} =
+        partisan_gen_statem:start(
+            GlobalName2, ?MODULE, start_arg(Config, []), []
+        ),
     Status4 = partisan_sys:get_status(GlobalName2),
-    {status,Pid4,Mod,[_PDict4,running,_,_, Data4]} = Status4,
-    [format_status_called|_] = lists:reverse(Data4),
+    {status, Pid4, Mod, [_PDict4, running, _, _, Data4]} = Status4,
+    [format_status_called | _] = lists:reverse(Data4),
     stop_it(Pid4),
 
     %% check that format_status can handle a name being a term other than a
     %% pid or atom
     dummy_via:reset(),
-    ViaName1 = {via,dummy_via,"CallFormatStatus"},
-    {ok,Pid5} = partisan_gen_statem:start(ViaName1, ?MODULE, start_arg(Config, []), []),
+    ViaName1 = {via, dummy_via, "CallFormatStatus"},
+    {ok, Pid5} = partisan_gen_statem:start(
+        ViaName1, ?MODULE, start_arg(Config, []), []
+    ),
     Status5 = partisan_sys:get_status(ViaName1),
-    {status,Pid5,Mod, [_PDict5,running,_,_, Data5]} = Status5,
-    [format_status_called|_] = lists:reverse(Data5),
+    {status, Pid5, Mod, [_PDict5, running, _, _, Data5]} = Status5,
+    [format_status_called | _] = lists:reverse(Data5),
     stop_it(Pid5),
-    ViaName2 = {via,dummy_via,{name,"term"}},
+    ViaName2 = {via, dummy_via, {name, "term"}},
     {ok, Pid6} =
-    partisan_gen_statem:start(
-      ViaName2, ?MODULE, start_arg(Config, []), []),
+        partisan_gen_statem:start(
+            ViaName2, ?MODULE, start_arg(Config, []), []
+        ),
     Status6 = partisan_sys:get_status(ViaName2),
-    {status,Pid6,Mod,[_PDict6,running,_,_,Data6]} = Status6,
-    [format_status_called|_] = lists:reverse(Data6),
+    {status, Pid6, Mod, [_PDict6, running, _, _, Data6]} = Status6,
+    [format_status_called | _] = lists:reverse(Data6),
     stop_it(Pid6).
-
-
 
 error_format_status(Config) ->
     error_logger_forwarder:register(),
     OldFl = process_flag(trap_exit, true),
     Data = "called format_status",
-    {ok,Pid} =
-    partisan_gen_statem:start(
-      ?MODULE, start_arg(Config, {data,Data}), []),
+    {ok, Pid} =
+        partisan_gen_statem:start(
+            ?MODULE, start_arg(Config, {data, Data}), []
+        ),
     %% bad return value in the partisan_gen_statem loop
-    {{{bad_return_from_state_function,badreturn},_},_} =
-    ?EXPECT_FAILURE(partisan_gen_statem:call(Pid, badreturn), Reason),
+    {{{bad_return_from_state_function, badreturn}, _}, _} =
+        ?EXPECT_FAILURE(partisan_gen_statem:call(Pid, badreturn), Reason),
     receive
-    {error,_,
-     {Pid,
-      "** State machine"++_,
-      [Pid,{{call,_},badreturn},
-       {formatted,idle,Data},
-       error,{bad_return_from_state_function,badreturn}|_]}} ->
-        ok;
-    Other when is_tuple(Other), element(1, Other) =:= error ->
-        error_logger_forwarder:unregister(),
-        ct:fail({unexpected,Other})
+        {error, _,
+            {Pid, "** State machine" ++ _, [
+                Pid,
+                {{call, _}, badreturn},
+                {formatted, idle, Data},
+                error,
+                {bad_return_from_state_function, badreturn}
+                | _
+            ]}} ->
+            ok;
+        Other when is_tuple(Other), element(1, Other) =:= error ->
+            error_logger_forwarder:unregister(),
+            ct:fail({unexpected, Other})
     after 1000 ->
         error_logger_forwarder:unregister(),
         ct:fail(timeout)
@@ -1351,9 +1532,9 @@ error_format_status(Config) ->
     process_flag(trap_exit, OldFl),
     error_logger_forwarder:unregister(),
     receive
-    %% Comes with SASL
-    {error_report,_,{Pid,crash_report,_}} ->
-        ok
+        %% Comes with SASL
+        {error_report, _, {Pid, crash_report, _}} ->
+            ok
     after 500 ->
         ok
     end,
@@ -1363,23 +1544,26 @@ terminate_crash_format(Config) ->
     error_logger_forwarder:register(),
     OldFl = process_flag(trap_exit, true),
     Data = crash_terminate,
-    {ok,Pid} =
-    partisan_gen_statem:start(
-      ?MODULE, start_arg(Config, {data,Data}), []),
+    {ok, Pid} =
+        partisan_gen_statem:start(
+            ?MODULE, start_arg(Config, {data, Data}), []
+        ),
     stop_it(Pid),
     Self = self(),
     receive
-    {error,_GroupLeader,
-     {Pid,
-      "** State machine"++_,
-      [Pid,
-       {{call,{Self,_}},stop},
-       {formatted,idle,Data},
-       exit,{crash,terminate}|_]}} ->
-        ok;
-    Other when is_tuple(Other), element(1, Other) =:= error ->
-        error_logger_forwarder:unregister(),
-        ct:fail({unexpected,Other})
+        {error, _GroupLeader,
+            {Pid, "** State machine" ++ _, [
+                Pid,
+                {{call, {Self, _}}, stop},
+                {formatted, idle, Data},
+                exit,
+                {crash, terminate}
+                | _
+            ]}} ->
+            ok;
+        Other when is_tuple(Other), element(1, Other) =:= error ->
+            error_logger_forwarder:unregister(),
+            ct:fail({unexpected, Other})
     after 1000 ->
         error_logger_forwarder:unregister(),
         ct:fail(timeout)
@@ -1387,40 +1571,42 @@ terminate_crash_format(Config) ->
     process_flag(trap_exit, OldFl),
     error_logger_forwarder:unregister(),
     receive
-    %% Comes with SASL
-    {error_report,_,{Pid,crash_report,_}} ->
-        ok
+        %% Comes with SASL
+        {error_report, _, {Pid, crash_report, _}} ->
+            ok
     after 500 ->
         ok
     end,
     ok = verify_empty_msgq().
 
-
 get_state(Config) ->
     State = self(),
-    {ok,Pid} =
-    partisan_gen_statem:start(
-      ?MODULE, start_arg(Config, {data,State}), []),
-    {idle,State} = partisan_sys:get_state(Pid),
-    {idle,State} = partisan_sys:get_state(Pid, 5000),
+    {ok, Pid} =
+        partisan_gen_statem:start(
+            ?MODULE, start_arg(Config, {data, State}), []
+        ),
+    {idle, State} = partisan_sys:get_state(Pid),
+    {idle, State} = partisan_sys:get_state(Pid, 5000),
     stop_it(Pid),
 
     %% check that get_state can handle a name being an atom (pid is
     %% already checked by the previous test)
-    {ok,Pid2} =
-    partisan_gen_statem:start(
-      {local,gstm}, ?MODULE, start_arg(Config, {data,State}), []),
-    {idle,State} = partisan_sys:get_state(gstm),
-    {idle,State} = partisan_sys:get_state(gstm, 5000),
+    {ok, Pid2} =
+        partisan_gen_statem:start(
+            {local, gstm}, ?MODULE, start_arg(Config, {data, State}), []
+        ),
+    {idle, State} = partisan_sys:get_state(gstm),
+    {idle, State} = partisan_sys:get_state(gstm, 5000),
     stop_it(Pid2),
 
     %% check that get_state works when pid is sys suspended
-    {ok,Pid3} =
-    partisan_gen_statem:start(
-      ?MODULE, start_arg(Config, {data,State}), []),
-    {idle,State} = partisan_sys:get_state(Pid3),
+    {ok, Pid3} =
+        partisan_gen_statem:start(
+            ?MODULE, start_arg(Config, {data, State}), []
+        ),
+    {idle, State} = partisan_sys:get_state(Pid3),
     ok = partisan_sys:suspend(Pid3),
-    {idle,State} = partisan_sys:get_state(Pid3, 5000),
+    {idle, State} = partisan_sys:get_state(Pid3, 5000),
     ok = partisan_sys:resume(Pid3),
     stop_it(Pid3),
     ok = verify_empty_msgq().
@@ -1428,31 +1614,32 @@ get_state(Config) ->
 replace_state(Config) ->
     State = self(),
     {ok, Pid} =
-    partisan_gen_statem:start(
-      ?MODULE, start_arg(Config, {data,State}), []),
-    {idle,State} = partisan_sys:get_state(Pid),
+        partisan_gen_statem:start(
+            ?MODULE, start_arg(Config, {data, State}), []
+        ),
+    {idle, State} = partisan_sys:get_state(Pid),
     NState1 = "replaced",
-    Replace1 = fun({StateName, _}) -> {StateName,NState1} end,
-    {idle,NState1} = partisan_sys:replace_state(Pid, Replace1),
-    {idle,NState1} = partisan_sys:get_state(Pid),
+    Replace1 = fun({StateName, _}) -> {StateName, NState1} end,
+    {idle, NState1} = partisan_sys:replace_state(Pid, Replace1),
+    {idle, NState1} = partisan_sys:get_state(Pid),
     NState2 = "replaced again",
-    Replace2 = fun({idle, _}) -> {state0,NState2} end,
-    {state0,NState2} = partisan_sys:replace_state(Pid, Replace2, 5000),
-    {state0,NState2} = partisan_sys:get_state(Pid),
+    Replace2 = fun({idle, _}) -> {state0, NState2} end,
+    {state0, NState2} = partisan_sys:replace_state(Pid, Replace2, 5000),
+    {state0, NState2} = partisan_sys:get_state(Pid),
     %% verify no change in state if replace function crashes
     Replace3 = fun(_) -> error(fail) end,
-    {callback_failed,
-     {partisan_gen_statem,system_replace_state},{error,fail}} =
-    ?EXPECT_FAILURE(partisan_sys:replace_state(Pid, Replace3), Reason),
+    {callback_failed, {partisan_gen_statem, system_replace_state},
+        {error, fail}} =
+        ?EXPECT_FAILURE(partisan_sys:replace_state(Pid, Replace3), Reason),
     {state0, NState2} = partisan_sys:get_state(Pid),
     %% verify state replaced if process sys suspended
     ok = partisan_sys:suspend(Pid),
     Suffix2 = " and again",
     NState3 = NState2 ++ Suffix2,
     Replace4 = fun({StateName, _}) -> {StateName, NState3} end,
-    {state0,NState3} = partisan_sys:replace_state(Pid, Replace4),
+    {state0, NState3} = partisan_sys:replace_state(Pid, Replace4),
     ok = partisan_sys:resume(Pid),
-    {state0,NState3} = partisan_sys:get_state(Pid, 5000),
+    {state0, NState3} = partisan_sys:get_state(Pid, 5000),
     stop_it(Pid),
     ok = verify_empty_msgq().
 
@@ -1460,21 +1647,23 @@ replace_state(Config) ->
 hibernate(Config) ->
     OldFl = process_flag(trap_exit, true),
 
-    {ok,Pid0} =
-    partisan_gen_statem:start_link(
-      ?MODULE, start_arg(Config, hiber_now), []),
+    {ok, Pid0} =
+        partisan_gen_statem:start_link(
+            ?MODULE, start_arg(Config, hiber_now), []
+        ),
     wait_erlang_hibernate(Pid0),
     stop_it(Pid0),
     receive
-    {'EXIT',Pid0,normal} -> ok
+        {'EXIT', Pid0, normal} -> ok
     after 5000 ->
         ct:fail(partisan_gen_statem_did_not_die)
     end,
 
-    {ok,Pid} =
-    partisan_gen_statem:start_link(?MODULE, start_arg(Config, hiber), []),
-    true = ({current_function,{erlang,hibernate,3}} =/=
-        erlang:process_info(Pid,current_function)),
+    {ok, Pid} =
+        partisan_gen_statem:start_link(?MODULE, start_arg(Config, hiber), []),
+    true =
+        ({current_function, {erlang, hibernate, 3}} =/=
+            erlang:process_info(Pid, current_function)),
     hibernating = partisan_gen_statem:call(Pid, hibernate_sync),
     wait_erlang_hibernate(Pid),
     good_morning = partisan_gen_statem:call(Pid, wakeup_sync),
@@ -1498,21 +1687,21 @@ hibernate(Config) ->
 
     Pid ! hibernate_later,
     true =
-    ({current_function,{erlang,hibernate,3}} =/=
-         erlang:process_info(Pid, current_function)),
+        ({current_function, {erlang, hibernate, 3}} =/=
+            erlang:process_info(Pid, current_function)),
     wait_erlang_hibernate(Pid),
 
     'alive!' = partisan_gen_statem:call(Pid, 'alive?'),
     true =
-    ({current_function,{erlang,hibernate,3}} =/=
-         erlang:process_info(Pid, current_function)),
+        ({current_function, {erlang, hibernate, 3}} =/=
+            erlang:process_info(Pid, current_function)),
     Pid ! hibernate_now,
     wait_erlang_hibernate(Pid),
 
     'alive!' = partisan_gen_statem:call(Pid, 'alive?'),
     true =
-    ({current_function,{erlang,hibernate,3}} =/=
-         erlang:process_info(Pid, current_function)),
+        ({current_function, {erlang, hibernate, 3}} =/=
+            erlang:process_info(Pid, current_function)),
 
     hibernating = partisan_gen_statem:call(Pid, hibernate_sync),
     wait_erlang_hibernate(Pid),
@@ -1526,7 +1715,7 @@ hibernate(Config) ->
     is_not_in_erlang_hibernate(Pid),
     ok = partisan_gen_statem:cast(Pid, hibernate_async),
     wait_erlang_hibernate(Pid),
-    ok  = partisan_gen_statem:cast(Pid, wakeup_async),
+    ok = partisan_gen_statem:cast(Pid, wakeup_async),
     is_not_in_erlang_hibernate(Pid),
     ok = partisan_gen_statem:cast(Pid, hibernate_async),
     wait_erlang_hibernate(Pid),
@@ -1541,15 +1730,17 @@ hibernate(Config) ->
     wait_erlang_hibernate(Pid),
     partisan_sys:resume(Pid),
     wait_erlang_hibernate(Pid),
-    receive after 1000 -> ok end,
+    receive
+    after 1000 -> ok
+    end,
     wait_erlang_hibernate(Pid),
 
-    good_morning  = partisan_gen_statem:call(Pid, wakeup_sync),
+    good_morning = partisan_gen_statem:call(Pid, wakeup_sync),
     is_not_in_erlang_hibernate(Pid),
     stop_it(Pid),
     process_flag(trap_exit, OldFl),
     receive
-    {'EXIT',Pid,normal} -> ok
+        {'EXIT', Pid, normal} -> ok
     after 5000 ->
         ct:fail(partisan_gen_statem_did_not_die)
     end,
@@ -1560,10 +1751,12 @@ auto_hibernate(Config) ->
     OldFl = process_flag(trap_exit, true),
     HibernateAfterTimeout = 1000,
 
-    {ok,Pid} =
+    {ok, Pid} =
         partisan_gen_statem:start_link(
-            ?MODULE, start_arg(Config, []),
-          [{hibernate_after, HibernateAfterTimeout}]),
+            ?MODULE,
+            start_arg(Config, []),
+            [{hibernate_after, HibernateAfterTimeout}]
+        ),
     %% After init test
     is_not_in_erlang_hibernate(Pid),
     timer:sleep(HibernateAfterTimeout),
@@ -1628,44 +1821,51 @@ auto_hibernate(Config) ->
     stop_it(Pid),
     process_flag(trap_exit, OldFl),
     receive
-        {'EXIT',Pid,normal} -> ok
+        {'EXIT', Pid, normal} -> ok
     after 5000 ->
         ct:fail(partisan_gen_statem_did_not_die)
     end,
     ok = verify_empty_msgq().
 
-
 wait_erlang_hibernate(Pid) ->
-    receive after 1 -> ok end,
+    receive
+    after 1 -> ok
+    end,
     wait_erlang_hibernate_1(200, Pid).
 
 wait_erlang_hibernate_1(0, Pid) ->
     ct:log("~p\n", [erlang:process_info(Pid, current_function)]),
     ct:fail(should_be_in_erlang_hibernate_3);
 wait_erlang_hibernate_1(N, Pid) ->
-    {current_function,MFA} = erlang:process_info(Pid, current_function),
+    {current_function, MFA} = erlang:process_info(Pid, current_function),
     case is_hibernating_mfa(MFA) of
-    true ->
-        ok;
-    false ->
-        receive after 10 -> ok end,
-        wait_erlang_hibernate_1(N-1, Pid)
+        true ->
+            ok;
+        false ->
+            receive
+            after 10 -> ok
+            end,
+            wait_erlang_hibernate_1(N - 1, Pid)
     end.
 
 is_not_in_erlang_hibernate(Pid) ->
-    receive after 1 -> ok end,
+    receive
+    after 1 -> ok
+    end,
     is_not_in_erlang_hibernate_1(200, Pid).
 
 is_not_in_erlang_hibernate_1(0, _Pid) ->
     ct:fail(should_not_be_in_erlang_hibernate_3);
 is_not_in_erlang_hibernate_1(N, Pid) ->
-    {current_function,MFA} = erlang:process_info(Pid, current_function),
+    {current_function, MFA} = erlang:process_info(Pid, current_function),
     case is_hibernating_mfa(MFA) of
-    true ->
-        receive after 10 -> ok end,
-        is_not_in_erlang_hibernate_1(N-1, Pid);
-    false ->
-        ok
+        true ->
+            receive
+            after 10 -> ok
+            end,
+            is_not_in_erlang_hibernate_1(N - 1, Pid);
+        false ->
+            ok
     end.
 
 %% OTP 28's gen_statem (and the rewritten partisan_gen_statem) parks a
@@ -1676,88 +1876,89 @@ is_hibernating_mfa({partisan_gen_statem, loop_hibernate, _}) -> true;
 is_hibernating_mfa({gen_statem, loop_hibernate, _}) -> true;
 is_hibernating_mfa(_) -> false.
 
-
 enter_loop(_Config) ->
     OldFlag = process_flag(trap_exit, true),
 
     dummy_via:reset(),
 
     %% Locally registered process + {local,Name}
-    {ok,Pid1a} =
-    partisan_proc_lib:start_link(
-          ?MODULE, enter_loop, [local,local,[{debug,[{log,7}]}]]),
+    {ok, Pid1a} =
+        partisan_proc_lib:start_link(
+            ?MODULE, enter_loop, [local, local, [{debug, [{log, 7}]}]]
+        ),
     yes = partisan_gen_statem:call(Pid1a, 'alive?'),
     stopped = partisan_gen_statem:call(Pid1a, stop),
     receive
-    {'EXIT',Pid1a,normal} ->
-        ok
+        {'EXIT', Pid1a, normal} ->
+            ok
     after 5000 ->
         ct:fail(partisan_gen_statem_did_not_die)
     end,
 
     %% Unregistered process + {local,Name}
-    {ok,Pid1b} =
-    partisan_proc_lib:start_link(
-          ?MODULE, enter_loop, [anon,local,[{debug,[log]}]]),
+    {ok, Pid1b} =
+        partisan_proc_lib:start_link(
+            ?MODULE, enter_loop, [anon, local, [{debug, [log]}]]
+        ),
     receive
-    {'EXIT',Pid1b,process_not_registered} ->
-        ok
+        {'EXIT', Pid1b, process_not_registered} ->
+            ok
     after 5000 ->
         ct:fail(partisan_gen_statem_did_not_die)
     end,
 
     %% Globally registered process + {global,Name}
-    {ok,Pid2a} =
-    partisan_proc_lib:start_link(?MODULE, enter_loop, [global,global]),
+    {ok, Pid2a} =
+        partisan_proc_lib:start_link(?MODULE, enter_loop, [global, global]),
     yes = partisan_gen_statem:call(Pid2a, 'alive?'),
     stopped = partisan_gen_statem:call(Pid2a, stop),
     receive
-    {'EXIT',Pid2a,normal} ->
-        ok
+        {'EXIT', Pid2a, normal} ->
+            ok
     after 5000 ->
         ct:fail(partisan_gen_statem_did_not_die)
     end,
 
     %% Unregistered process + {global,Name}
-    {ok,Pid2b} =
-    partisan_proc_lib:start_link(?MODULE, enter_loop, [anon,global]),
+    {ok, Pid2b} =
+        partisan_proc_lib:start_link(?MODULE, enter_loop, [anon, global]),
     receive
-    {'EXIT',Pid2b,process_not_registered_globally} ->
-        ok
+        {'EXIT', Pid2b, process_not_registered_globally} ->
+            ok
     after 5000 ->
         ct:fail(partisan_gen_statem_did_not_die)
     end,
 
     %% Unregistered process + no name
-    {ok,Pid3} =
-    partisan_proc_lib:start_link(?MODULE, enter_loop, [anon,anon]),
+    {ok, Pid3} =
+        partisan_proc_lib:start_link(?MODULE, enter_loop, [anon, anon]),
     yes = partisan_gen_statem:call(Pid3, 'alive?'),
     stopped = partisan_gen_statem:call(Pid3, stop),
     receive
-    {'EXIT',Pid3,normal} ->
-        ok
+        {'EXIT', Pid3, normal} ->
+            ok
     after 5000 ->
         ct:fail(partisan_gen_statem_did_not_die)
     end,
 
     %% Process not started using proc_lib
-    Pid4 = spawn_link(partisan_gen_statem, enter_loop, [?MODULE,[],state0,[]]),
+    Pid4 = spawn_link(partisan_gen_statem, enter_loop, [?MODULE, [], state0, []]),
     receive
-    {'EXIT',Pid4,process_was_not_started_by_proc_lib} ->
-        ok
+        {'EXIT', Pid4, process_was_not_started_by_proc_lib} ->
+            ok
     after 5000 ->
         ct:fail(partisan_gen_statem_did_not_die)
     end,
 
     %% Make sure I am the parent, ie that ordering a shutdown will
     %% result in the process terminating with Reason==shutdown
-    {ok,Pid5} =
-    partisan_proc_lib:start_link(?MODULE, enter_loop, [anon,anon]),
+    {ok, Pid5} =
+        partisan_proc_lib:start_link(?MODULE, enter_loop, [anon, anon]),
     yes = partisan_gen_statem:call(Pid5, 'alive?'),
     exit(Pid5, shutdown),
     receive
-    {'EXIT',Pid5,shutdown} ->
-        ok
+        {'EXIT', Pid5, shutdown} ->
+            ok
     after 5000 ->
         ct:fail(partisan_gen_statem_did_not_die)
     end,
@@ -1766,11 +1967,11 @@ enter_loop(_Config) ->
     %% when it's another process than the calling one which is
     %% registered under that name
     register(armitage, self()),
-    {ok,Pid6a} =
-    partisan_proc_lib:start_link(?MODULE, enter_loop, [anon,local]),
+    {ok, Pid6a} =
+        partisan_proc_lib:start_link(?MODULE, enter_loop, [anon, local]),
     receive
-    {'EXIT',Pid6a,process_not_registered} ->
-        ok
+        {'EXIT', Pid6a, process_not_registered} ->
+            ok
     after 1000 ->
         ct:fail(partisan_gen_statem_started)
     end,
@@ -1780,26 +1981,26 @@ enter_loop(_Config) ->
     %% when it's another process than the calling one which is
     %% registered under that name
     global:register_name(armitage, self()),
-    {ok,Pid6b} =
-    partisan_proc_lib:start_link(?MODULE, enter_loop, [anon,global]),
+    {ok, Pid6b} =
+        partisan_proc_lib:start_link(?MODULE, enter_loop, [anon, global]),
     receive
-    {'EXIT',Pid6b,process_not_registered_globally} ->
-        ok
+        {'EXIT', Pid6b, process_not_registered_globally} ->
+            ok
     after 1000 ->
         ct:fail(partisan_gen_statem_started)
     end,
     global:unregister_name(armitage),
 
     dummy_via:register_name(armitage, self()),
-    {ok,Pid6c} =
-    partisan_proc_lib:start_link(?MODULE, enter_loop, [anon,via]),
+    {ok, Pid6c} =
+        partisan_proc_lib:start_link(?MODULE, enter_loop, [anon, via]),
     receive
-    {'EXIT',Pid6c,{process_not_registered_via,dummy_via}} ->
-        ok
+        {'EXIT', Pid6c, {process_not_registered_via, dummy_via}} ->
+            ok
     after 1000 ->
         ct:fail(
-          {partisan_gen_statem_started,
-           process_info(self(), messages)})
+            {partisan_gen_statem_started, process_info(self(), messages)}
+        )
     end,
     dummy_via:unregister_name(armitage),
 
@@ -1812,31 +2013,33 @@ enter_loop(Reg1, Reg2) ->
 enter_loop(Reg1, Reg2, Opts) ->
     process_flag(trap_exit, true),
     case Reg1 of
-    local -> register(armitage, self());
-    global -> global:register_name(armitage, self());
-    via -> dummy_via:register_name(armitage, self());
-    anon -> ignore
+        local -> register(armitage, self());
+        global -> global:register_name(armitage, self());
+        via -> dummy_via:register_name(armitage, self());
+        anon -> ignore
     end,
     partisan_proc_lib:init_ack({ok, self()}),
     case Reg2 of
-    local ->
-        partisan_gen_statem:enter_loop(
-          ?MODULE, Opts, state0, [], {local,armitage});
-    global ->
-        partisan_gen_statem:enter_loop(
-          ?MODULE, Opts, state0, [], {global,armitage});
-    via ->
-        partisan_gen_statem:enter_loop(
-          ?MODULE, Opts, state0, [], {via, dummy_via, armitage});
-    anon ->
-        partisan_gen_statem:enter_loop(?MODULE, Opts, state0, [])
+        local ->
+            partisan_gen_statem:enter_loop(
+                ?MODULE, Opts, state0, [], {local, armitage}
+            );
+        global ->
+            partisan_gen_statem:enter_loop(
+                ?MODULE, Opts, state0, [], {global, armitage}
+            );
+        via ->
+            partisan_gen_statem:enter_loop(
+                ?MODULE, Opts, state0, [], {via, dummy_via, armitage}
+            );
+        anon ->
+            partisan_gen_statem:enter_loop(?MODULE, Opts, state0, [])
     end.
 
 undef_code_change(_Config) ->
     {ok, Statem} = partisan_gen_statem:start(oc_statem, [], [{debug, [trace]}]),
-    {error, {'EXIT',
-             {undef, [{oc_statem, code_change, [_, _, _, _], _}|_]}}}
-        = fake_upgrade(Statem, oc_statem).
+    {error, {'EXIT', {undef, [{oc_statem, code_change, [_, _, _, _], _} | _]}}} =
+        fake_upgrade(Statem, oc_statem).
 
 fake_upgrade(Pid, Mod) ->
     partisan_sys:suspend(Pid),
@@ -1846,7 +2049,7 @@ fake_upgrade(Pid, Mod) ->
     Ret.
 
 undef_terminate1(_Config) ->
-    {ok, Statem} = partisan_gen_statem:start(oc_statem, [], [{debug,[trace]}]),
+    {ok, Statem} = partisan_gen_statem:start(oc_statem, [], [{debug, [trace]}]),
     MRef = monitor(process, Statem),
     ok = partisan_gen_statem:stop(Statem),
     verify_down(Statem, MRef, normal),
@@ -1854,21 +2057,22 @@ undef_terminate1(_Config) ->
 
 undef_terminate2(_Config) ->
     Reason = {error, test},
-    {ok, Statem} = oc_statem:start([{debug,[trace]}]),
+    {ok, Statem} = oc_statem:start([{debug, [trace]}]),
     MRef = monitor(process, Statem),
     ok = partisan_gen_statem:stop(Statem, Reason, infinity),
     verify_down(Statem, MRef, Reason).
 
 undef_in_terminate(_Config) ->
-    Data =  {undef_in_terminate, {?MODULE, terminate}},
+    Data = {undef_in_terminate, {?MODULE, terminate}},
     {ok, Statem} =
         partisan_gen_statem:start(
-          ?MODULE, {data, Data}, [{debug,[log]}]),
+            ?MODULE, {data, Data}, [{debug, [log]}]
+        ),
     try
         partisan_gen_statem:stop(Statem),
         ct:fail(should_crash)
     catch
-        exit:{undef, [{?MODULE, terminate, _, _}|_]} ->
+        exit:{undef, [{?MODULE, terminate, _, _} | _]} ->
             ok
     end.
 
@@ -1880,49 +2084,69 @@ verify_down(Statem, MRef, Reason) ->
         ct:fail(default_terminate_failed)
     end.
 
-
 pop_too_many(_Config) ->
     _ = process_flag(trap_exit, true),
 
     Machine =
-    #{init =>
-          fun () ->
-              {ok,state_1,undefined}
-          end,
-      state_1 =>
-          fun (enter, state_2, undefined) ->
-                      {keep_state, enter}; % OTP-18239, should not be called
-                  ({call, From}, {change_callback_module, _Module} = Action,
-                   undefined = Data) ->
-                      {next_state, state_2, Data,
-                       [Action,
-                        {reply,From,ok}]};
-                  ({call, From}, {verify, ?MODULE},
-                   undefined = _Data) ->
-              {keep_state_and_data,
-                       [{reply,From,ok}]};
-                  ({call, From}, pop_callback_module = Action,
-                   undefined = Data) ->
-                      {next_state, state_2, Data,
-                       [Action,
-                        {reply,From,ok}]}
-          end},
+        #{
+            init =>
+                fun() ->
+                    {ok, state_1, undefined}
+                end,
+            state_1 =>
+                fun
+                    (enter, state_2, undefined) ->
+                        % OTP-18239, should not be called
+                        {keep_state, enter};
+                    (
+                        {call, From},
+                        {change_callback_module, _Module} = Action,
+                        undefined = Data
+                    ) ->
+                        {next_state, state_2, Data, [
+                            Action,
+                            {reply, From, ok}
+                        ]};
+                    (
+                        {call, From},
+                        {verify, ?MODULE},
+                        undefined = _Data
+                    ) ->
+                        {keep_state_and_data, [{reply, From, ok}]};
+                    (
+                        {call, From},
+                        pop_callback_module = Action,
+                        undefined = Data
+                    ) ->
+                        {next_state, state_2, Data, [
+                            Action,
+                            {reply, From, ok}
+                        ]}
+                end
+        },
     {ok, STM} =
-    partisan_gen_statem:start_link(
-          ?MODULE,
-          {map_statem, Machine, []},
-          [{debug, [trace]}]),
+        partisan_gen_statem:start_link(
+            ?MODULE,
+            {map_statem, Machine, []},
+            [{debug, [trace]}]
+        ),
 
-    ok    = partisan_gen_statem:call(STM, {change_callback_module, oc_statem}),
+    ok = partisan_gen_statem:call(STM, {change_callback_module, oc_statem}),
     %% enter = partisan_gen_statem:call(STM, get_data), % OTP-18239
-    undefined = partisan_gen_statem:call(STM, get_data), % OTP-18239
-    ok    = partisan_gen_statem:call(STM, {push_callback_module, ?MODULE}),
-    ok    = partisan_gen_statem:call(STM, {verify, ?MODULE}),
-    ok    = partisan_gen_statem:call(STM, pop_callback_module),
+
+    % OTP-18239
+    undefined = partisan_gen_statem:call(STM, get_data),
+    ok = partisan_gen_statem:call(STM, {push_callback_module, ?MODULE}),
+    ok = partisan_gen_statem:call(STM, {verify, ?MODULE}),
+    ok = partisan_gen_statem:call(STM, pop_callback_module),
     BadAction = {bad_action_from_state_function, pop_callback_module},
-    {{BadAction, _},
-     {partisan_gen_statem,call,[STM,pop_callback_module,infinity]}} =
-        ?EXPECT_FAILURE(partisan_gen_statem:call(STM, pop_callback_module), Reason),
+    {
+        {BadAction, _},
+        {partisan_gen_statem, call, [STM, pop_callback_module, infinity]}
+    } =
+        ?EXPECT_FAILURE(
+            partisan_gen_statem:call(STM, pop_callback_module), Reason
+        ),
 
     receive
         {'EXIT', STM, {BadAction, _}} ->
@@ -1931,41 +2155,41 @@ pop_too_many(_Config) ->
             ct:fail({surprise, Other})
     end.
 
-
 %% Test the order for multiple {next_event,T,C}
 next_events(Config) ->
-    {ok,Pid} = partisan_gen_statem:start(?MODULE, start_arg(Config, []), []),
+    {ok, Pid} = partisan_gen_statem:start(?MODULE, start_arg(Config, []), []),
     ok = partisan_gen_statem:cast(Pid, next_event),
-    {state,next_events,[]} = partisan_gen_statem:call(Pid, get),
+    {state, next_events, []} = partisan_gen_statem:call(Pid, get),
     ok = partisan_gen_statem:stop(Pid),
     false = erlang:is_process_alive(Pid),
     noproc =
-    ?EXPECT_FAILURE(partisan_gen_statem:stop(Pid), Reason).
-
+        ?EXPECT_FAILURE(partisan_gen_statem:stop(Pid), Reason).
 
 %% Test report callback for Logger handler error_logger
 format_log_1(_Config) ->
     FD = application:get_env(kernel, error_logger_format_depth),
     application:unset_env(kernel, error_logger_format_depth),
-    Term = lists:seq(1,15),
+    Term = lists:seq(1, 15),
     Name = self(),
-    Reason = {bad_reply_action_from_state_function,[]},
+    Reason = {bad_reply_action_from_state_function, []},
     Report1 = simple_report(Name, Term, Reason),
     Report2 = elaborate_report(Name, Term, Reason),
 
-    {F1,A1} = partisan_gen_statem:format_log(Report1),
-    ct:log("F1: ~ts~nA1: ~tp",[F1,A1]),
-    FExpected1 = "** State machine ~tp terminating~n"
+    {F1, A1} = partisan_gen_statem:format_log(Report1),
+    ct:log("F1: ~ts~nA1: ~tp", [F1, A1]),
+    FExpected1 =
+        "** State machine ~tp terminating~n"
         "** When server state  = ~tp~n"
         "** Reason for termination = ~tp:~tp~n"
         "** Callback modules = ~tp~n"
         "** Callback mode = ~tp~n",
     FExpected1 = F1,
-    [Name,Term,error,Reason,[?MODULE],state_functions] = A1,
+    [Name, Term, error, Reason, [?MODULE], state_functions] = A1,
 
-    {F3,A3} = partisan_gen_statem:format_log(Report2),
-    ct:log("F3: ~ts~nA3: ~tp",[F3,A3]),
-    FExpected3 = "** State machine ~tp terminating~n"
+    {F3, A3} = partisan_gen_statem:format_log(Report2),
+    ct:log("F3: ~ts~nA3: ~tp", [F3, A3]),
+    FExpected3 =
+        "** State machine ~tp terminating~n"
         "** Last event = ~tp~n"
         "** When server state  = ~tp~n"
         "** Reason for termination = ~tp:~tp~n"
@@ -1980,26 +2204,54 @@ format_log_1(_Config) ->
         "** ~tp~n",
     FExpected3 = F3,
     Stacktrace = stacktrace(),
-    [Name,Term,Term,error,Reason,[?MODULE],[state_functions,state_enter],[Term],
-     [{internal,Term}],Stacktrace,{1,[{timeout,message}]},[Term],Name,[]] = A3,
+    [
+        Name,
+        Term,
+        Term,
+        error,
+        Reason,
+        [?MODULE],
+        [state_functions, state_enter],
+        [Term],
+        [{internal, Term}],
+        Stacktrace,
+        {1, [{timeout, message}]},
+        [Term],
+        Name,
+        []
+    ] = A3,
 
     Depth = 10,
     ok = application:set_env(kernel, error_logger_format_depth, Depth),
-    Limited = [1,2,3,4,5,6,7,8,9,'...'],
-    {F2,A2} = partisan_gen_statem:format_log(Report1),
-    ct:log("F2: ~ts~nA2: ~tp",[F2,A2]),
-    FExpected2 = "** State machine ~tP terminating~n"
+    Limited = [1, 2, 3, 4, 5, 6, 7, 8, 9, '...'],
+    {F2, A2} = partisan_gen_statem:format_log(Report1),
+    ct:log("F2: ~ts~nA2: ~tp", [F2, A2]),
+    FExpected2 =
+        "** State machine ~tP terminating~n"
         "** When server state  = ~tP~n"
         "** Reason for termination = ~tP:~tP~n"
         "** Callback modules = ~tP~n"
         "** Callback mode = ~tP~n",
     FExpected2 = F2,
-    [Name,Depth,Limited,Depth,error,Depth,Reason,Depth,
-     [?MODULE],Depth,state_functions,Depth] = A2,
+    [
+        Name,
+        Depth,
+        Limited,
+        Depth,
+        error,
+        Depth,
+        Reason,
+        Depth,
+        [?MODULE],
+        Depth,
+        state_functions,
+        Depth
+    ] = A2,
 
-    {F4,A4} = partisan_gen_statem:format_log(Report2),
-    ct:log("F4: ~ts~nA4: ~tp",[F4,A4]),
-    FExpected4 = "** State machine ~tP terminating~n"
+    {F4, A4} = partisan_gen_statem:format_log(Report2),
+    ct:log("F4: ~ts~nA4: ~tp", [F4, A4]),
+    FExpected4 =
+        "** State machine ~tP terminating~n"
         "** Last event = ~tP~n"
         "** When server state  = ~tP~n"
         "** Reason for termination = ~tP:~tP~n"
@@ -2013,13 +2265,39 @@ format_log_1(_Config) ->
         "** Client ~tP stacktrace~n"
         "** ~tP~n",
     FExpected4 = F4,
-    LimitedPostponed = [{internal,[1,2,3,4,5,6,'...']}],
+    LimitedPostponed = [{internal, [1, 2, 3, 4, 5, 6, '...']}],
     LimitedStacktrace = io_lib:limit_term(Stacktrace, Depth),
     LimitedQueue = io_lib:limit_term([Term], Depth),
-    [Name,Depth,Limited,Depth,Limited,Depth,error,Depth,Reason,Depth,
-     [?MODULE],Depth,[state_functions,state_enter],Depth,LimitedQueue,Depth,
-     LimitedPostponed,Depth,LimitedStacktrace,Depth,{1,[{timeout,message}]},
-     Depth,[Limited],Depth,Name,Depth,[],Depth] = A4,
+    [
+        Name,
+        Depth,
+        Limited,
+        Depth,
+        Limited,
+        Depth,
+        error,
+        Depth,
+        Reason,
+        Depth,
+        [?MODULE],
+        Depth,
+        [state_functions, state_enter],
+        Depth,
+        LimitedQueue,
+        Depth,
+        LimitedPostponed,
+        Depth,
+        LimitedStacktrace,
+        Depth,
+        {1, [{timeout, message}]},
+        Depth,
+        [Limited],
+        Depth,
+        Name,
+        Depth,
+        [],
+        Depth
+    ] = A4,
 
     case FD of
         undefined ->
@@ -2039,74 +2317,90 @@ format_log_2_simple() ->
     FD = application:get_env(kernel, error_logger_format_depth),
     application:unset_env(kernel, error_logger_format_depth),
 
-    Term = lists:seq(1,15),
+    Term = lists:seq(1, 15),
     Name = self(),
     NameStr = pid_to_list(Name),
-    Reason = {bad_reply_action_from_state_function,[]},
+    Reason = {bad_reply_action_from_state_function, []},
     Report = simple_report(Name, Term, Reason),
 
     FormatOpts1 = #{},
     Str1 = flatten_format_log(Report, FormatOpts1),
     L1 = length(Str1),
-    Expected1 = "** State machine " ++ NameStr ++ " terminating\n"
-        "** When server state  = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]\n"
-        "** Reason for termination = "
-           "error:{bad_reply_action_from_state_function,[]}\n"
-        "** Callback modules = ["?MODULE_STRING"]\n"
-        "** Callback mode = state_functions\n",
+    Expected1 =
+        "** State machine " ++ NameStr ++
+            " terminating\n"
+            "** When server state  = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]\n"
+            "** Reason for termination = "
+            "error:{bad_reply_action_from_state_function,[]}\n"
+            "** Callback modules = ["
+            ?MODULE_STRING
+            "]\n"
+            "** Callback mode = state_functions\n",
     ct:log("Str1: ~ts", [Str1]),
     ct:log("length(Str1): ~p", [L1]),
     Expected1 = Str1,
 
     Depth = 10,
-    FormatOpts2 = #{depth=>Depth},
+    FormatOpts2 = #{depth => Depth},
     Str2 = flatten_format_log(Report, FormatOpts2),
     L2 = length(Str2),
-    Expected2 = "** State machine " ++ NameStr ++ " terminating\n"
-        "** When server state  = [1,2,3,4,5,6,7,8,9|...]\n"
-        "** Reason for termination = "
-           "error:{bad_reply_action_from_state_function,[]}\n"
-        "** Callback modules = ["?MODULE_STRING"]\n"
-        "** Callback mode = state_functions\n",
+    Expected2 =
+        "** State machine " ++ NameStr ++
+            " terminating\n"
+            "** When server state  = [1,2,3,4,5,6,7,8,9|...]\n"
+            "** Reason for termination = "
+            "error:{bad_reply_action_from_state_function,[]}\n"
+            "** Callback modules = ["
+            ?MODULE_STRING
+            "]\n"
+            "** Callback mode = state_functions\n",
     ct:log("Str2: ~ts", [Str2]),
     ct:log("length(Str2): ~p", [L2]),
     true = Expected2 =:= Str2,
 
-    FormatOpts3 = #{chars_limit=>200},
+    FormatOpts3 = #{chars_limit => 200},
     Str3 = flatten_format_log(Report, FormatOpts3),
     L3 = length(Str3),
-    Expected3 = "** State machine " ++ NameStr ++ " terminating\n"
-        "** When server state  = [",
+    Expected3 =
+        "** State machine " ++ NameStr ++
+            " terminating\n"
+            "** When server state  = [",
     ct:log("Str3: ~ts", [Str3]),
     ct:log("length(Str3): ~p", [L3]),
     true = lists:prefix(Expected3, Str3),
     true = L3 < L1,
 
-    FormatOpts4 = #{single_line=>true},
+    FormatOpts4 = #{single_line => true},
     Str4 = flatten_format_log(Report, FormatOpts4),
     L4 = length(Str4),
-    Expected4 = "State machine " ++ NameStr ++ " terminating. "
-        "Reason: {bad_reply_action_from_state_function,[]}. "
-        "State: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15].",
+    Expected4 =
+        "State machine " ++ NameStr ++
+            " terminating. "
+            "Reason: {bad_reply_action_from_state_function,[]}. "
+            "State: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15].",
     ct:log("Str4: ~ts", [Str4]),
     ct:log("length(Str4): ~p", [L4]),
     Expected4 = Str4,
 
-    FormatOpts5 = #{single_line=>true, depth=>Depth},
+    FormatOpts5 = #{single_line => true, depth => Depth},
     Str5 = flatten_format_log(Report, FormatOpts5),
     L5 = length(Str5),
-    Expected5 = "State machine " ++ NameStr ++ " terminating. "
-        "Reason: {bad_reply_action_from_state_function,[]}. "
-        "State: [1,2,3,4,5,6,7,8,9|...].",
+    Expected5 =
+        "State machine " ++ NameStr ++
+            " terminating. "
+            "Reason: {bad_reply_action_from_state_function,[]}. "
+            "State: [1,2,3,4,5,6,7,8,9|...].",
     ct:log("Str5: ~ts", [Str5]),
     ct:log("length(Str5): ~p", [L5]),
     Expected5 = Str5,
 
-    FormatOpts6 = #{single_line=>true, chars_limit=>100},
+    FormatOpts6 = #{single_line => true, chars_limit => 100},
     Str6 = flatten_format_log(Report, FormatOpts6),
     L6 = length(Str6),
-    Expected6 = "State machine " ++ NameStr ++ " terminating. "
-        "Reason: ",
+    Expected6 =
+        "State machine " ++ NameStr ++
+            " terminating. "
+            "Reason: ",
     ct:log("Str6: ~ts", [Str6]),
     ct:log("length(Str6): ~p", [L6]),
     true = lists:prefix(Expected6, Str6),
@@ -2124,87 +2418,102 @@ format_log_2_elaborate() ->
     FD = application:get_env(kernel, error_logger_format_depth),
     application:unset_env(kernel, error_logger_format_depth),
 
-    Term = lists:seq(1,15),
+    Term = lists:seq(1, 15),
     Name = self(),
     NameStr = pid_to_list(Name),
-    Reason = {bad_reply_action_from_state_function,[]},
+    Reason = {bad_reply_action_from_state_function, []},
     Report = elaborate_report(Name, Term, Reason),
     FormatOpts1 = #{},
     Str1 = flatten_format_log(Report, FormatOpts1),
     L1 = length(Str1),
-    Expected1 = "** State machine " ++ NameStr ++ " terminating\n"
-        "** Last event = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]\n",
+    Expected1 =
+        "** State machine " ++ NameStr ++
+            " terminating\n"
+            "** Last event = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]\n",
     ct:log("Str1: ~ts", [Str1]),
     ct:log("length(Str1): ~p", [L1]),
     true = lists:prefix(Expected1, Str1),
 
     Depth = 10,
-    FormatOpts2 = #{depth=>Depth},
+    FormatOpts2 = #{depth => Depth},
     Str2 = flatten_format_log(Report, FormatOpts2),
     L2 = length(Str2),
-    Expected2 = "** State machine " ++ NameStr ++ " terminating\n"
-        "** Last event = [1,2,3,4,5,6,7,8,9|...]\n"
-        "** When server state  = [1,2,3,4,5,6,7,8,9|...]\n"
-        "** Reason for termination = "
-           "error:{bad_reply_action_from_state_function,[]}\n"
-        "** Callback modules = ["?MODULE_STRING"]\n"
-        "** Callback mode = [state_functions,state_enter]\n"
-        "** Queued = [[1,2,3,4,5,6,7,8|...]]\n"
-        "** Postponed = [{internal,[1,2,3,4,5,6|...]}]\n"
-        "** Stacktrace =\n"
-        "**  [{m,f,1,[1,2,3,4|...]}]\n"
-        "** Time-outs: {1,[{timeout,message}]}\n"
-        "** Log =\n"
-        "**  [[1,2,3,4,5,6,7,8|...]]\n"
-        "** Client "++NameStr ++ " stacktrace\n"
-        "** []\n",
+    Expected2 =
+        "** State machine " ++ NameStr ++
+            " terminating\n"
+            "** Last event = [1,2,3,4,5,6,7,8,9|...]\n"
+            "** When server state  = [1,2,3,4,5,6,7,8,9|...]\n"
+            "** Reason for termination = "
+            "error:{bad_reply_action_from_state_function,[]}\n"
+            "** Callback modules = ["
+            ?MODULE_STRING
+            "]\n"
+            "** Callback mode = [state_functions,state_enter]\n"
+            "** Queued = [[1,2,3,4,5,6,7,8|...]]\n"
+            "** Postponed = [{internal,[1,2,3,4,5,6|...]}]\n"
+            "** Stacktrace =\n"
+            "**  [{m,f,1,[1,2,3,4|...]}]\n"
+            "** Time-outs: {1,[{timeout,message}]}\n"
+            "** Log =\n"
+            "**  [[1,2,3,4,5,6,7,8|...]]\n"
+            "** Client " ++ NameStr ++
+            " stacktrace\n"
+            "** []\n",
     ct:log("Str2: ~ts", [Str2]),
     ct:log("length(Str2): ~p", [L2]),
     Expected2 = Str2,
 
-    FormatOpts3 = #{chars_limit=>300},
+    FormatOpts3 = #{chars_limit => 300},
     Str3 = flatten_format_log(Report, FormatOpts3),
     L3 = length(Str3),
-    Expected3 = "** State machine " ++ NameStr ++ " terminating\n"
-        "** Last event = ",
+    Expected3 =
+        "** State machine " ++ NameStr ++
+            " terminating\n"
+            "** Last event = ",
     ct:log("Str3: ~ts", [Str3]),
     ct:log("length(Str3): ~p", [L3]),
     true = lists:prefix(Expected3, Str3),
     true = L3 < L1,
 
-    FormatOpts4 = #{single_line=>true},
+    FormatOpts4 = #{single_line => true},
     Str4 = flatten_format_log(Report, FormatOpts4),
     L4 = length(Str4),
-    Expected4 = "State machine " ++ NameStr ++ " terminating. "
-        "Reason: {bad_reply_action_from_state_function,[]}. "
-        "Stack: [{m,f,1,[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]}]. "
-        "Last event: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]. "
-        "State: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]. "
-        "Log: [[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]]. "
-        "Client " ++ NameStr ++ " stacktrace: [].",
+    Expected4 =
+        "State machine " ++ NameStr ++
+            " terminating. "
+            "Reason: {bad_reply_action_from_state_function,[]}. "
+            "Stack: [{m,f,1,[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]}]. "
+            "Last event: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]. "
+            "State: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]. "
+            "Log: [[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]]. "
+            "Client " ++ NameStr ++ " stacktrace: [].",
     ct:log("Str4: ~ts", [Str4]),
     ct:log("length(Str4): ~p", [L4]),
     Expected4 = Str4,
 
-    FormatOpts5 = #{single_line=>true, depth=>Depth},
+    FormatOpts5 = #{single_line => true, depth => Depth},
     Str5 = flatten_format_log(Report, FormatOpts5),
     L5 = length(Str5),
-    Expected5 = "State machine " ++ NameStr ++ " terminating. "
-        "Reason: {bad_reply_action_from_state_function,[]}. "
-        "Stack: [{m,f,1,[1,2,3,4|...]}]. "
-        "Last event: [1,2,3,4,5,6,7,8,9|...]. "
-        "State: [1,2,3,4,5,6,7,8,9|...]. "
-        "Log: [[1,2,3,4,5,6,7,8|...]]. "
-        "Client " ++ NameStr ++ " stacktrace: [].",
+    Expected5 =
+        "State machine " ++ NameStr ++
+            " terminating. "
+            "Reason: {bad_reply_action_from_state_function,[]}. "
+            "Stack: [{m,f,1,[1,2,3,4|...]}]. "
+            "Last event: [1,2,3,4,5,6,7,8,9|...]. "
+            "State: [1,2,3,4,5,6,7,8,9|...]. "
+            "Log: [[1,2,3,4,5,6,7,8|...]]. "
+            "Client " ++ NameStr ++ " stacktrace: [].",
     ct:log("Str5: ~ts", [Str5]),
     ct:log("length(Str5): ~p", [L5]),
     Expected5 = Str5,
 
-    FormatOpts6 = #{single_line=>true, chars_limit=>300},
+    FormatOpts6 = #{single_line => true, chars_limit => 300},
     Str6 = flatten_format_log(Report, FormatOpts6),
     L6 = length(Str6),
-    Expected6 = "State machine " ++ NameStr ++ " terminating. "
-        "Reason:",
+    Expected6 =
+        "State machine " ++ NameStr ++
+            " terminating. "
+            "Reason:",
     ct:log("Str6: ~ts", [Str6]),
     ct:log("length(Str6): ~p", [L6]),
     true = lists:prefix(Expected6, Str6),
@@ -2219,37 +2528,41 @@ format_log_2_elaborate() ->
     ok.
 
 simple_report(Name, Term, Reason) ->
-    #{label=>{partisan_gen_statem,terminate},
-      name=>Name,
-      queue=>[],
-      postponed=>[],
-      modules=>[?MODULE],
-      callback_mode=>state_functions,
-      state_enter=>false,
-      state=>Term,
-      timeouts=>{0,[]},
-      log=>[],
-      reason=>{error,Reason,[]},
-      client_info=>undefined,
-      process_label=>undefined}.
+    #{
+        label => {partisan_gen_statem, terminate},
+        name => Name,
+        queue => [],
+        postponed => [],
+        modules => [?MODULE],
+        callback_mode => state_functions,
+        state_enter => false,
+        state => Term,
+        timeouts => {0, []},
+        log => [],
+        reason => {error, Reason, []},
+        client_info => undefined,
+        process_label => undefined
+    }.
 
 elaborate_report(Name, Term, Reason) ->
-    #{label=>{partisan_gen_statem,terminate},
-      name=>Name,
-      queue=>[Term,Term],
-      postponed=>[{internal,Term}],
-      modules=>[?MODULE],
-      callback_mode=>state_functions,
-      state_enter=>true,
-      state=>Term,
-      timeouts=>{1,[{timeout,message}]},
-      log=>[Term],
-      reason=>{error,Reason,stacktrace()},
-      client_info=>{self(),{self(),[]}},
-      process_label=>undefined}.
+    #{
+        label => {partisan_gen_statem, terminate},
+        name => Name,
+        queue => [Term, Term],
+        postponed => [{internal, Term}],
+        modules => [?MODULE],
+        callback_mode => state_functions,
+        state_enter => true,
+        state => Term,
+        timeouts => {1, [{timeout, message}]},
+        log => [Term],
+        reason => {error, Reason, stacktrace()},
+        client_info => {self(), {self(), []}},
+        process_label => undefined
+    }.
 
 stacktrace() ->
-    [{m,f,1,lists:seq(1, 15)}].
+    [{m, f, 1, lists:seq(1, 15)}].
 
 flatten_format_log(Report, Format) ->
     lists:flatten(partisan_gen_statem:format_log(Report, Format)).
@@ -2261,13 +2574,15 @@ reply_by_alias_with_payload(Config) when is_list(Config) ->
     %% Whitebox...
     Reply = make_ref(),
     Alias = alias(),
-    Tag = [[alias|Alias], "payload"],
-    spawn_link(fun () ->
-                       partisan_gen_statem:reply({undefined, Tag},
-                                        Reply)
-               end),
+    Tag = [[alias | Alias], "payload"],
+    spawn_link(fun() ->
+        partisan_gen_statem:reply(
+            {undefined, Tag},
+            Reply
+        )
+    end),
     receive
-        {[[alias|Alias]|_] = Tag, Reply} ->
+        {[[alias | Alias] | _] = Tag, Reply} ->
             ok
     end.
 
@@ -2277,67 +2592,63 @@ reply_by_alias_with_payload(Config) when is_list(Config) ->
 
 wfor(Msg) ->
     receive
-    Msg -> ok
+        Msg -> ok
     after 5000 ->
         error(timeout)
     end.
-
 
 stop_it(STM) ->
     stopped = partisan_gen_statem:call(STM, stop),
     check_stopped(STM).
 
-
 check_stopped(STM) ->
     Call = there_you_are,
-    {_,{partisan_gen_statem,call,[_,Call,infinity]}} =
-    ?EXPECT_FAILURE(partisan_gen_statem:call(STM, Call), Reason),
+    {_, {partisan_gen_statem, call, [_, Call, infinity]}} =
+        ?EXPECT_FAILURE(partisan_gen_statem:call(STM, Call), Reason),
     ok.
 
-
 do_func_test(STM) ->
-    ok = partisan_gen_statem:cast(STM, {'alive?',self()}),
+    ok = partisan_gen_statem:cast(STM, {'alive?', self()}),
     wfor(yes),
     ok = do_connect(STM),
-    ok = partisan_gen_statem:cast(STM, {'alive?',self()}),
+    ok = partisan_gen_statem:cast(STM, {'alive?', self()}),
     wfor(yes),
     test_server:do_times(3, ?MODULE, do_msg, [STM]),
-    ok = partisan_gen_statem:cast(STM, {'alive?',self()}),
+    ok = partisan_gen_statem:cast(STM, {'alive?', self()}),
     wfor(yes),
     ok = do_disconnect(STM),
-    ok = partisan_gen_statem:cast(STM, {'alive?',self()}),
+    ok = partisan_gen_statem:cast(STM, {'alive?', self()}),
     P0 = partisan_gen_statem:send_request(STM, 'alive?'),
     timeout = partisan_gen_statem:wait_response(P0, 0),
     wfor(yes),
     {reply, yes} = partisan_gen_statem:wait_response(P0, infinity),
     _ = flush(),
     P1 = partisan_gen_statem:send_request(STM, 'alive?'),
-    receive Msg ->
+    receive
+        Msg ->
             no_reply = partisan_gen_statem:check_response(Msg, P0),
             {reply, yes} = partisan_gen_statem:check_response(Msg, P1)
     after 1000 -> exit(timeout)
     end,
     ok.
 
-
 do_connect(STM) ->
     check_state(STM, idle),
-    partisan_gen_statem:cast(STM, {connect,self()}),
+    partisan_gen_statem:cast(STM, {connect, self()}),
     wfor(accept),
     check_state(STM, wfor_conf),
     Tag = make_ref(),
-    partisan_gen_statem:cast(STM, {ping,self(),Tag}),
+    partisan_gen_statem:cast(STM, {ping, self(), Tag}),
     partisan_gen_statem:cast(STM, confirm),
-    wfor({pong,Tag}),
+    wfor({pong, Tag}),
     check_state(STM, connected),
     ok.
 
 do_msg(STM) ->
     check_state(STM, connected),
     R = make_ref(),
-    ok = partisan_gen_statem:cast(STM, {msg,self(),R}),
-    wfor({ack,R}).
-
+    ok = partisan_gen_statem:cast(STM, {msg, self(), R}),
+    wfor({ack, R}).
 
 do_disconnect(STM) ->
     ok = partisan_gen_statem:cast(STM, disconnect),
@@ -2345,7 +2656,7 @@ do_disconnect(STM) ->
 
 check_state(STM, State) ->
     case partisan_gen_statem:call(STM, get) of
-    {state, State, _} -> ok
+        {state, State, _} -> ok
     end.
 
 do_sync_func_test(STM) ->
@@ -2357,33 +2668,31 @@ do_sync_func_test(STM) ->
     ok = do_sync_disconnect(STM),
     yes = partisan_gen_statem:call(STM, 'alive?'),
     check_state(STM, idle),
-    ok = partisan_gen_statem:call(STM, {timeout,200}),
+    ok = partisan_gen_statem:call(STM, {timeout, 200}),
     yes = partisan_gen_statem:call(STM, 'alive?'),
     check_state(STM, idle),
     ok.
-
 
 do_sync_connect(STM) ->
     check_state(STM, idle),
     accept = partisan_gen_statem:call(STM, connect),
     check_state(STM, wfor_conf),
     Tag = make_ref(),
-    partisan_gen_statem:cast(STM, {ping,self(),Tag}),
+    partisan_gen_statem:cast(STM, {ping, self(), Tag}),
     yes = partisan_gen_statem:call(STM, confirm),
-    wfor({pong,Tag}),
+    wfor({pong, Tag}),
     check_state(STM, connected),
     ok.
 
 do_sync_msg(STM) ->
     check_state(STM, connected),
     R = make_ref(),
-    {ack,R} = partisan_gen_statem:call(STM, {msg,R}),
+    {ack, R} = partisan_gen_statem:call(STM, {msg, R}),
     ok.
 
 do_sync_disconnect(STM) ->
     yes = partisan_gen_statem:call(STM, disconnect),
     check_state(STM, idle).
-
 
 verify_empty_msgq() ->
     [] = flush(),
@@ -2391,10 +2700,10 @@ verify_empty_msgq() ->
 
 start_arg(Config, Arg) ->
     case lists:keyfind(callback_mode, 1, Config) of
-    {_,CallbackMode} ->
-        {callback_mode,CallbackMode,Arg};
-    false ->
-        Arg
+        {_, CallbackMode} ->
+            {callback_mode, CallbackMode, Arg};
+        false ->
+            Arg
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -2406,35 +2715,35 @@ start_arg(Config, Arg) ->
 init(ignore) ->
     ignore;
 init(stop) ->
-    {stop,stopped};
+    {stop, stopped};
 init(stop_shutdown) ->
-    {stop,shutdown};
+    {stop, shutdown};
 init(sleep) ->
     ct:sleep(1000),
-    init_sup({ok,idle,data});
+    init_sup({ok, idle, data});
 init(hiber) ->
-    init_sup({ok,hiber_idle,[]});
+    init_sup({ok, hiber_idle, []});
 init(hiber_now) ->
-    init_sup({ok,hiber_idle,[],[hibernate]});
+    init_sup({ok, hiber_idle, [], [hibernate]});
 init({data, Data}) ->
-    init_sup({ok,idle,Data});
-init({callback_mode,CallbackMode,Arg}) ->
-    ets:new(?MODULE, [named_table,private]),
-    ets:insert(?MODULE, {callback_mode,CallbackMode}),
+    init_sup({ok, idle, Data});
+init({callback_mode, CallbackMode, Arg}) ->
+    ets:new(?MODULE, [named_table, private]),
+    ets:insert(?MODULE, {callback_mode, CallbackMode}),
     init(Arg);
-init({map_statem,#{init := Init}=Machine,Modes}) ->
-    ets:new(?MODULE, [named_table,private]),
-    ets:insert(?MODULE, {callback_mode,[handle_event_function|Modes]}),
+init({map_statem, #{init := Init} = Machine, Modes}) ->
+    ets:new(?MODULE, [named_table, private]),
+    ets:insert(?MODULE, {callback_mode, [handle_event_function | Modes]}),
     case Init() of
-    {ok,State,Data,Ops} ->
-        init_sup({ok,State,[Data|Machine],Ops});
-    {ok,State,Data} ->
-        init_sup({ok,State,[Data|Machine]});
-    Other ->
-        init_sup(Other)
+        {ok, State, Data, Ops} ->
+            init_sup({ok, State, [Data | Machine], Ops});
+        {ok, State, Data} ->
+            init_sup({ok, State, [Data | Machine]});
+        Other ->
+            init_sup(Other)
     end;
 init([]) ->
-    init_sup({ok,idle,data}).
+    init_sup({ok, idle, data}).
 
 %% Supervise state machine parent i.e the test case, and if it dies
 %% (fails due to some reason), kill the state machine,
@@ -2445,288 +2754,288 @@ init_sup(Result) ->
     Statem = self(),
     _Supervisor =
         spawn(
-          fun () ->
-                  StatemRef = monitor(process, Statem),
-                  ParentRef = monitor(process, Parent),
-                  receive
-                      {'DOWN', StatemRef, _, _, Reason} ->
-                          exit(Reason);
-                      {'DOWN', ParentRef, _, _, _} ->
-                          exit(Statem, kill)
-                  end
-          end),
+            fun() ->
+                StatemRef = monitor(process, Statem),
+                ParentRef = monitor(process, Parent),
+                receive
+                    {'DOWN', StatemRef, _, _, Reason} ->
+                        exit(Reason);
+                    {'DOWN', ParentRef, _, _, _} ->
+                        exit(Statem, kill)
+                end
+            end
+        ),
     Result.
 
 callback_mode() ->
     try ets:lookup(?MODULE, callback_mode) of
-    [{callback_mode,CallbackMode}] ->
-        CallbackMode
+        [{callback_mode, CallbackMode}] ->
+            CallbackMode
     catch
-    error:badarg ->
-        state_functions
+        error:badarg ->
+            state_functions
     end.
 
 terminate(_, _State, crash_terminate) ->
-    exit({crash,terminate});
+    exit({crash, terminate});
 terminate(_, _State, {undef_in_terminate, {Mod, Fun}}) ->
     Mod:Fun(),
     ok;
-terminate({From,stopped}, State, _Data) ->
-    From ! {self(),{stopped,State}},
+terminate({From, stopped}, State, _Data) ->
+    From ! {self(), {stopped, State}},
     ok;
 terminate(_Reason, _State, _Data) ->
     ok.
 
-
 %% State functions
 
-idle(info, {hping,Pid}, _Data) ->
+idle(info, {hping, Pid}, _Data) ->
     Pid ! {self(), hpong},
     keep_state_and_data;
-idle(cast, {hping,Pid}, Data) ->
+idle(cast, {hping, Pid}, Data) ->
     Pid ! {self(), hpong},
     {keep_state, Data};
 idle({call, From}, hping, _Data) ->
     {keep_state_and_data, [{reply, From, hpong}]};
 idle({call, From}, {start_htimer, Pid, Timeout}, _Data) ->
-    {keep_state_and_data, [{reply, From, ok}, {timeout, Timeout, {htimer, Pid}}]};
+    {keep_state_and_data, [
+        {reply, From, ok}, {timeout, Timeout, {htimer, Pid}}
+    ]};
 idle(timeout, {htimer, Pid}, _Data) ->
     Pid ! {self(), htimer_timeout},
     keep_state_and_data;
-idle(cast, {connect,Pid}, Data) ->
+idle(cast, {connect, Pid}, Data) ->
     Pid ! accept,
-    {next_state,wfor_conf,Data,infinity}; % NoOp timeout just to test API
-idle({call,From}, connect, Data) ->
+    % NoOp timeout just to test API
+    {next_state, wfor_conf, Data, infinity};
+idle({call, From}, connect, Data) ->
     partisan_gen_statem:reply(From, accept),
-    {next_state,wfor_conf,Data,infinity}; % NoOp timeout just to test API
-idle({call,_From}, badreturn, _Data) ->
+    % NoOp timeout just to test API
+    {next_state, wfor_conf, Data, infinity};
+idle({call, _From}, badreturn, _Data) ->
     badreturn;
-idle({call,_From}, badaction, Data) ->
+idle({call, _From}, badaction, Data) ->
     {keep_state, Data, [badaction]};
-idle({call,_From}, {badtimeout,BadTimeout}, Data) ->
+idle({call, _From}, {badtimeout, BadTimeout}, Data) ->
     {keep_state, Data, BadTimeout};
-idle({call,From}, {delayed_answer,T}, Data) ->
+idle({call, From}, {delayed_answer, T}, Data) ->
     receive
     after T ->
-        partisan_gen_statem:reply({reply,From,delayed}),
-        throw({keep_state,Data})
+        partisan_gen_statem:reply({reply, From, delayed}),
+        throw({keep_state, Data})
     end;
-idle({call,From}, {timeout,Time}, _Data) ->
+idle({call, From}, {timeout, Time}, _Data) ->
     AbsTime = erlang:monotonic_time(millisecond) + Time,
-    {next_state,timeout,{From,Time},
-     {timeout,AbsTime,idle,[{abs,true}]}};
+    {next_state, timeout, {From, Time},
+        {timeout, AbsTime, idle, [{abs, true}]}};
 idle(cast, next_event, _Data) ->
-    {next_state,next_events,[a,b,c],
-     [{next_event,internal,a},
-      {next_event,internal,b},
-      {next_event,internal,c}]};
+    {next_state, next_events, [a, b, c], [
+        {next_event, internal, a},
+        {next_event, internal, b},
+        {next_event, internal, c}
+    ]};
 idle(Type, Content, Data) ->
     case handle_common_events(Type, Content, idle, Data) of
-    undefined ->
-        case Type of
-        {call,From} ->
-            throw({keep_state,Data,[{reply,From,'eh?'}]});
-        _ ->
-            throw(
-              {stop,{unexpected,idle,Type,Content}})
-        end;
-    Result ->
-        Result
+        undefined ->
+            case Type of
+                {call, From} ->
+                    throw({keep_state, Data, [{reply, From, 'eh?'}]});
+                _ ->
+                    throw(
+                        {stop, {unexpected, idle, Type, Content}}
+                    )
+            end;
+        Result ->
+            Result
     end.
 
-timeout(timeout, idle, {From,Time}) ->
+timeout(timeout, idle, {From, Time}) ->
     TRef = erlang:start_timer(Time, self(), ok),
-    {keep_state,{From,TRef},0}; % Immediate timeout 0
-timeout(timeout, 0, {From,TRef}) ->
-    {next_state,timeout2,{From,TRef},
-     [{timeout,1,should_be_cancelled},
-      postpone]}; % Should cancel state timeout
+    % Immediate timeout 0
+    {keep_state, {From, TRef}, 0};
+timeout(timeout, 0, {From, TRef}) ->
+    {next_state, timeout2, {From, TRef}, [
+        {timeout, 1, should_be_cancelled},
+        % Should cancel state timeout
+        postpone
+    ]};
 timeout(_, _, _) ->
     keep_state_and_data.
 
 timeout2(timeout, 0, _) ->
     keep_state_and_data;
 timeout2(timeout, Reason, _) ->
-    {stop,Reason};
-timeout2(info, {timeout,TRef,Result}, {From,TRef}) ->
-    partisan_gen_statem:reply([{reply,From,Result}]),
-    {next_state,idle,state};
+    {stop, Reason};
+timeout2(info, {timeout, TRef, Result}, {From, TRef}) ->
+    partisan_gen_statem:reply([{reply, From, Result}]),
+    {next_state, idle, state};
 timeout2(_, _, _) ->
-    {keep_state_and_data,[]}.
+    {keep_state_and_data, []}.
 
-wfor_conf({call,From}, confirm, Data) ->
-    {next_state,connected,Data,
-     {reply,From,yes}};
-wfor_conf(cast, {ping,_,_}, _) ->
-    {keep_state_and_data,[postpone]};
+wfor_conf({call, From}, confirm, Data) ->
+    {next_state, connected, Data, {reply, From, yes}};
+wfor_conf(cast, {ping, _, _}, _) ->
+    {keep_state_and_data, [postpone]};
 wfor_conf(cast, confirm, Data) ->
-    {next_state,connected,Data};
+    {next_state, connected, Data};
 wfor_conf(Type, Content, Data) ->
     case handle_common_events(Type, Content, wfor_conf, Data) of
-    undefined ->
-        case Type of
-        {call,From} ->
-            {next_state,idle,Data,
-             [{reply,From,'eh?'}]};
-        _ ->
-            throw(keep_state_and_data)
-        end;
-    Result ->
-        Result
+        undefined ->
+            case Type of
+                {call, From} ->
+                    {next_state, idle, Data, [{reply, From, 'eh?'}]};
+                _ ->
+                    throw(keep_state_and_data)
+            end;
+        Result ->
+            Result
     end.
 
-connected({call,From}, {msg,Ref}, Data) ->
-    {keep_state,Data,
-     {reply,From,{ack,Ref}}};
-connected(cast, {msg,From,Ref}, Data) ->
-    From ! {ack,Ref},
-    {keep_state,Data};
-connected({call,From}, disconnect, Data) ->
-    {next_state,idle,Data,
-     [{reply,From,yes}]};
+connected({call, From}, {msg, Ref}, Data) ->
+    {keep_state, Data, {reply, From, {ack, Ref}}};
+connected(cast, {msg, From, Ref}, Data) ->
+    From ! {ack, Ref},
+    {keep_state, Data};
+connected({call, From}, disconnect, Data) ->
+    {next_state, idle, Data, [{reply, From, yes}]};
 connected(cast, disconnect, Data) ->
-    {next_state,idle,Data};
-connected(cast, {ping,Pid,Tag}, Data) ->
-    Pid ! {pong,Tag},
-    {keep_state,Data};
+    {next_state, idle, Data};
+connected(cast, {ping, Pid, Tag}, Data) ->
+    Pid ! {pong, Tag},
+    {keep_state, Data};
 connected(Type, Content, Data) ->
     case handle_common_events(Type, Content, connected, Data) of
-    undefined ->
-        case Type of
-        {call,From} ->
-            {keep_state,Data,
-             [{reply,From,'eh?'}]};
-        _ ->
-            {keep_state,Data}
-        end;
-    Result ->
-        Result
+        undefined ->
+            case Type of
+                {call, From} ->
+                    {keep_state, Data, [{reply, From, 'eh?'}]};
+                _ ->
+                    {keep_state, Data}
+            end;
+        Result ->
+            Result
     end.
 
-state0({call,From}, stop, Data) ->
-    {stop_and_reply,normal,[{reply,From,stopped}],Data};
+state0({call, From}, stop, Data) ->
+    {stop_and_reply, normal, [{reply, From, stopped}], Data};
 state0(Type, Content, Data) ->
     case handle_common_events(Type, Content, state0, Data) of
-    undefined ->
-        {keep_state,Data};
-    Result ->
-        Result
+        undefined ->
+            {keep_state, Data};
+        Result ->
+            Result
     end.
 
-hiber_idle({call,From}, 'alive?', Data) ->
-    {keep_state,Data,
-     [{reply,From,'alive!'}]};
-hiber_idle({call,From}, hibernate_sync, Data) ->
-    {next_state,hiber_wakeup,Data,
-     [{reply,From,hibernating},
-      hibernate]};
+hiber_idle({call, From}, 'alive?', Data) ->
+    {keep_state, Data, [{reply, From, 'alive!'}]};
+hiber_idle({call, From}, hibernate_sync, Data) ->
+    {next_state, hiber_wakeup, Data, [
+        {reply, From, hibernating},
+        hibernate
+    ]};
 hiber_idle(info, hibernate_later, _) ->
     Tref = erlang:start_timer(1000, self(), hibernate),
-    {keep_state,Tref};
+    {keep_state, Tref};
 hiber_idle(info, hibernate_now, Data) ->
-    {keep_state,Data,
-     [hibernate]};
-hiber_idle(info, {timeout,Tref,hibernate}, Tref) ->
-    {keep_state,[],
-     [hibernate]};
+    {keep_state, Data, [hibernate]};
+hiber_idle(info, {timeout, Tref, hibernate}, Tref) ->
+    {keep_state, [], [hibernate]};
 hiber_idle(cast, hibernate_async, Data) ->
-    {next_state,hiber_wakeup,Data,
-     [hibernate]};
+    {next_state, hiber_wakeup, Data, [hibernate]};
 hiber_idle(Type, Content, Data) ->
     case handle_common_events(Type, Content, hiber_idle, Data) of
-    undefined ->
-        {keep_state,Data};
-    Result ->
-        Result
+        undefined ->
+            {keep_state, Data};
+        Result ->
+            Result
     end.
 
-hiber_wakeup({call,From}, wakeup_sync, Data) ->
-    {next_state,hiber_idle,Data,
-     [{reply,From,good_morning}]};
-hiber_wakeup({call,From}, snooze_sync, Data) ->
-    {keep_state,Data,
-     [{reply,From,please_just_five_more},
-      hibernate]};
+hiber_wakeup({call, From}, wakeup_sync, Data) ->
+    {next_state, hiber_idle, Data, [{reply, From, good_morning}]};
+hiber_wakeup({call, From}, snooze_sync, Data) ->
+    {keep_state, Data, [
+        {reply, From, please_just_five_more},
+        hibernate
+    ]};
 hiber_wakeup(cast, wakeup_async, Data) ->
-    {next_state,hiber_idle,Data};
+    {next_state, hiber_idle, Data};
 hiber_wakeup(cast, snooze_async, Data) ->
-    {keep_state,Data,
-     [hibernate]};
+    {keep_state, Data, [hibernate]};
 hiber_wakeup(Type, Content, Data) ->
     case handle_common_events(Type, Content, hiber_wakeup, Data) of
-    undefined ->
-        {keep_state,Data};
-    Result ->
-        Result
+        undefined ->
+            {keep_state, Data};
+        Result ->
+            Result
     end.
 
-next_events(internal, Msg, [Msg|Msgs]) ->
-    {keep_state,Msgs};
+next_events(internal, Msg, [Msg | Msgs]) ->
+    {keep_state, Msgs};
 next_events(Type, Content, Data) ->
     case handle_common_events(Type, Content, next_events, Data) of
-    undefined ->
-        {keep_state,Data};
-    Result ->
-        Result
+        undefined ->
+            {keep_state, Data};
+        Result ->
+            Result
     end.
 
-
-handle_common_events({call,From}, get_callback_mode, _, _) ->
-    {keep_state_and_data,{reply,From,state_functions}};
-handle_common_events({call,From}, get, State, Data) ->
-    {keep_state,Data,
-     [{reply,From,{state,State,Data}}]};
-handle_common_events(cast, {get,Pid}, State, Data) ->
-    Pid ! {state,State,Data},
-    {keep_state,Data};
-handle_common_events({call,From}, stop, _, Data) ->
-    {stop_and_reply,normal,[{reply,From,stopped}],Data};
+handle_common_events({call, From}, get_callback_mode, _, _) ->
+    {keep_state_and_data, {reply, From, state_functions}};
+handle_common_events({call, From}, get, State, Data) ->
+    {keep_state, Data, [{reply, From, {state, State, Data}}]};
+handle_common_events(cast, {get, Pid}, State, Data) ->
+    Pid ! {state, State, Data},
+    {keep_state, Data};
+handle_common_events({call, From}, stop, _, Data) ->
+    {stop_and_reply, normal, [{reply, From, stopped}], Data};
 handle_common_events(cast, stop, _, _) ->
     stop;
-handle_common_events({call,From}, {stop,Reason}, _, Data) ->
-    {stop_and_reply,Reason,{reply,From,stopped},Data};
-handle_common_events(cast, {stop,Reason}, _, _) ->
-    {stop,Reason};
-handle_common_events({call,From}, 'alive?', _, Data) ->
-    {keep_state,Data,
-     [{reply,From,yes}]};
-handle_common_events(cast, {'alive?',Pid}, _, Data) ->
+handle_common_events({call, From}, {stop, Reason}, _, Data) ->
+    {stop_and_reply, Reason, {reply, From, stopped}, Data};
+handle_common_events(cast, {stop, Reason}, _, _) ->
+    {stop, Reason};
+handle_common_events({call, From}, 'alive?', _, Data) ->
+    {keep_state, Data, [{reply, From, yes}]};
+handle_common_events(cast, {'alive?', Pid}, _, Data) ->
     Pid ! yes,
-    {keep_state,Data};
+    {keep_state, Data};
 handle_common_events(_, _, _, _) ->
     undefined.
 
-handle_event({call,From}, get_callback_mode, _, _) ->
-    {keep_state_and_data,{reply,From,handle_event_function}};
+handle_event({call, From}, get_callback_mode, _, _) ->
+    {keep_state_and_data, {reply, From, handle_event_function}};
 %% Wrapper state machine that uses a map state machine spec
 handle_event(
-  Type, Event, State, [Data|Machine])
-  when is_map(Machine) ->
+    Type, Event, State, [Data | Machine]
+) when
+    is_map(Machine)
+->
     #{State := HandleEvent} = Machine,
     case
-    try HandleEvent(Type, Event, Data) of
-        Result ->
-        Result
-    catch
-        Result ->
-        Result
-    end of
-    {stop,Reason,NewData} ->
-        {stop,Reason,[NewData|Machine]};
-    {next_state,NewState,NewData} ->
-        {next_state,NewState,[NewData|Machine]};
-    {next_state,NewState,NewData,Ops} ->
-        {next_state,NewState,[NewData|Machine],Ops};
-    {keep_state,NewData} ->
-        {keep_state,[NewData|Machine]};
-    {keep_state,NewData,Ops} ->
-        {keep_state,[NewData|Machine],Ops};
-    {repeat_state,NewData} ->
-        {repeat_state,[NewData|Machine]};
-    {repeat_state,NewData,Ops} ->
-        {repeat_state,[NewData|Machine],Ops};
-    Other ->
-        Other
+        try HandleEvent(Type, Event, Data) of
+            Result ->
+                Result
+        catch
+            Result ->
+                Result
+        end
+    of
+        {stop, Reason, NewData} ->
+            {stop, Reason, [NewData | Machine]};
+        {next_state, NewState, NewData} ->
+            {next_state, NewState, [NewData | Machine]};
+        {next_state, NewState, NewData, Ops} ->
+            {next_state, NewState, [NewData | Machine], Ops};
+        {keep_state, NewData} ->
+            {keep_state, [NewData | Machine]};
+        {keep_state, NewData, Ops} ->
+            {keep_state, [NewData | Machine], Ops};
+        {repeat_state, NewData} ->
+            {repeat_state, [NewData | Machine]};
+        {repeat_state, NewData, Ops} ->
+            {repeat_state, [NewData | Machine], Ops};
+        Other ->
+            Other
     end;
 %%
 %% Dispatcher to test callback_mode handle_event_function
@@ -2737,12 +3046,13 @@ handle_event(
 handle_event(Type, Event, State, Data) ->
     StateName = unwrap_state(State),
     try ?MODULE:StateName(Type, Event, Data) of
-    Result ->
-        wrap_result(Result)
+        Result ->
+            wrap_result(Result)
     catch
-    throw:Result:Stacktrace ->
-        erlang:raise(
-          throw, wrap_result(Result), Stacktrace)
+        throw:Result:Stacktrace ->
+            erlang:raise(
+                throw, wrap_result(Result), Stacktrace
+            )
     end.
 
 unwrap_state([State]) ->
@@ -2752,33 +3062,33 @@ unwrap_state(State) ->
 
 wrap_result(Result) ->
     case Result of
-    {next_state,NewState,NewData} ->
-        {next_state,[NewState],NewData};
-    {next_state,NewState,NewData,StateOps} ->
-        {next_state,[NewState],NewData,StateOps};
-    Other ->
-        Other
+        {next_state, NewState, NewData} ->
+            {next_state, [NewState], NewData};
+        {next_state, NewState, NewData, StateOps} ->
+            {next_state, [NewState], NewData, StateOps};
+        Other ->
+            Other
     end.
-
-
 
 code_change(OldVsn, State, Data, CallbackMode) ->
     io:format(
-      "code_change(~p, ~p, ~p, ~p)~n", [OldVsn,State,Data,CallbackMode]),
-    ets:insert(?MODULE, {callback_mode,CallbackMode}),
+        "code_change(~p, ~p, ~p, ~p)~n", [OldVsn, State, Data, CallbackMode]
+    ),
+    ets:insert(?MODULE, {callback_mode, CallbackMode}),
     io:format(
-      "code_change(~p, ~p, ~p, ~p)~n", [OldVsn,State,Data,CallbackMode]),
-    {ok,State,{OldVsn,Data,CallbackMode}}.
+        "code_change(~p, ~p, ~p, ~p)~n", [OldVsn, State, Data, CallbackMode]
+    ),
+    {ok, State, {OldVsn, Data, CallbackMode}}.
 
-format_status(terminate, [_Pdict,State,Data]) ->
-    {formatted,State,Data};
-format_status(normal, [_Pdict,_State,_Data]) ->
+format_status(terminate, [_Pdict, State, Data]) ->
+    {formatted, State, Data};
+format_status(normal, [_Pdict, _State, _Data]) ->
     [format_status_called].
 
 flush() ->
     receive
-    Msg ->
-        [Msg|flush()]
+        Msg ->
+            [Msg | flush()]
     after 500 ->
         []
     end.

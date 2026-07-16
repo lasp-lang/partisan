@@ -29,7 +29,6 @@
     end
 ).
 
-
 -define(LOG_TRACE_IF(F, A),
     case F of
         true ->

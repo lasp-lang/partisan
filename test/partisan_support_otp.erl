@@ -1,12 +1,9 @@
 -module(partisan_support_otp).
 
-
 -compile([nowarn_export_all, export_all]).
-
 
 start_node(Name) ->
     start_node(Name, []).
-
 
 start_node(Name, Config) ->
     Prefix = string:join([atom_to_list(Name), "server"], "_"),
@@ -23,10 +20,8 @@ start_node(Name, Config) ->
             {ok, PeerNode}
     end.
 
-
 stop_node(Name) ->
     stop_nodes([Name]).
-
 
 stop_nodes(ToStop) ->
     case get({?MODULE, nodes}) of
@@ -39,7 +34,6 @@ stop_nodes(ToStop) ->
             ok
     end.
 
-
 stop_all_nodes() ->
     case get({?MODULE, nodes}) of
         undefined ->
@@ -49,4 +43,3 @@ stop_all_nodes() ->
             _ = erase({?MODULE, nodes}),
             ok
     end.
-

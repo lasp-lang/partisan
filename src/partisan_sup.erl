@@ -63,24 +63,16 @@
     modules => [dynamic]
 }).
 
-
-
 %% =============================================================================
 %% API
 %% =============================================================================
 
-
-
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
-
-
 
 %% =============================================================================
 %% SUPERVISO CALLBACKS
 %% =============================================================================
-
-
 
 init([]) ->
     %% Make sure we always call this function first.
@@ -103,8 +95,8 @@ init([]) ->
 
     CausalBackendFun = fun(Label) ->
         {partisan_causality_backend,
-     {partisan_causality_backend, start_link, [Label]},
-          permanent, 5000, worker, [partisan_causality_backend]}
+            {partisan_causality_backend, start_link, [Label]}, permanent, 5000,
+            worker, [partisan_causality_backend]}
     end,
 
     CausalBackends = lists:map(CausalBackendFun, CausalLabels),

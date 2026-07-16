@@ -25,9 +25,13 @@
 -export([register/0, unregister/0]).
 
 %% Internal export for error_logger.
--export([init/1,
-	 handle_event/2, handle_call/2, handle_info/2,
-	 terminate/2]).
+-export([
+    init/1,
+    handle_event/2,
+    handle_call/2,
+    handle_info/2,
+    terminate/2
+]).
 
 %% Any crash report messages generated will be forwarded
 %% to the current process (the one doing the call to register/0).
@@ -40,16 +44,16 @@ unregister() ->
     Self = error_logger:delete_report_handler(?MODULE).
 
 init(Tester) ->
-    {ok,Tester}.
-    
+    {ok, Tester}.
+
 handle_event(Event, Tester) ->
     Tester ! Event,
-    {ok,Tester}.
+    {ok, Tester}.
 
 handle_info(_, State) ->
-    {ok,State}.
+    {ok, State}.
 
-handle_call(_Query, State) -> {ok,{error,bad_query},State}.
+handle_call(_Query, State) -> {ok, {error, bad_query}, State}.
 
 terminate(_Reason, State) ->
     State.

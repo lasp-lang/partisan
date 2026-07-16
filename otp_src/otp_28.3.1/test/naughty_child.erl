@@ -16,4 +16,6 @@ start_link(SupPid) ->
     {ok, Pid}.
 
 loop() ->
-    receive _ -> loop() end.
+    receive
+        _ -> loop()
+    end.

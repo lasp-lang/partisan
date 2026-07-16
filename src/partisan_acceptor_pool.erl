@@ -23,8 +23,10 @@
 
 -behaviour(acceptor_pool).
 
--export([start_link/0,
-         accept_socket/2]).
+-export([
+    start_link/0,
+    accept_socket/2
+]).
 
 -export([init/1]).
 
@@ -39,7 +41,10 @@ accept_socket(Socket, Acceptors) ->
 %% acceptor_pool api
 
 init([]) ->
-    Conn = #{id => partisan_peer_service_server,
-             start => {partisan_peer_service_server, [], []},
-             grace => 5000}, % Give connections 5000ms to close before shutdown
+    Conn = #{
+        id => partisan_peer_service_server,
+        start => {partisan_peer_service_server, [], []},
+        % Give connections 5000ms to close before shutdown
+        grace => 5000
+    },
     {ok, {#{}, [Conn]}}.

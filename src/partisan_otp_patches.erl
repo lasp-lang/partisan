@@ -32,35 +32,35 @@
 
 -export([apply_patches/2]).
 
-
 %% =============================================================================
 %% API
 %% =============================================================================
-
 
 %% @doc Apply all structural patches for OrigModule to the given forms.
 apply_patches(OrigModule, Forms) ->
     Patches = patches(OrigModule),
     lists:foldl(fun apply_patch/2, Forms, Patches).
 
-
 %% =============================================================================
 %% INTERNAL: Patch dispatch
 %% =============================================================================
 
-
-patches(gen_server) -> gen_server_patches();
-patches(gen) -> gen_patches();
-patches(proc_lib) -> proc_lib_patches();
-patches(sys) -> [];
-patches(supervisor) -> supervisor_patches(partisan_gen_transform:otp_major_version());
-patches(_) -> [].
-
+patches(gen_server) ->
+    gen_server_patches();
+patches(gen) ->
+    gen_patches();
+patches(proc_lib) ->
+    proc_lib_patches();
+patches(sys) ->
+    [];
+patches(supervisor) ->
+    supervisor_patches(partisan_gen_transform:otp_major_version());
+patches(_) ->
+    [].
 
 %% =============================================================================
 %% INTERNAL: gen_server patches
 %% =============================================================================
-
 
 gen_server_patches() ->
     [
@@ -71,7 +71,6 @@ gen_server_patches() ->
         {add_function, send_request, 3, send_request_3_source()},
         {add_export, [{cast, 3}, {send_request, 3}]}
     ].
-
 
 do_send_source() ->
     "do_send(Dest, Msg) when is_pid(Dest) orelse is_reference(Dest) ->\n"
@@ -86,7 +85,6 @@ do_send_source() ->
     "    end;\n"
     "do_send(Dest, Msg) ->\n"
     "    partisan:send(Dest, Msg, partisan_gen:get_opts()).\n".
-
 
 client_stacktrace_source() ->
     "client_stacktrace(undefined) ->\n"
@@ -112,27 +110,22 @@ client_stacktrace_source() ->
     "            {From, remote}\n"
     "    end.\n".
 
-
 cast_catch_all_source() ->
     "cast(PartisanDest, Request) ->\n"
     "    do_cast(PartisanDest, Request).\n".
-
 
 cast_3_source() ->
     "cast(ServerRef, Request, Opts) when is_list(Opts) ->\n"
     "    partisan_gen:set_opts(Opts),\n"
     "    cast(ServerRef, Request).\n".
 
-
 send_request_3_source() ->
     "send_request(Name, Request, Opts) ->\n"
     "    partisan_gen:send_request(Name, '$gen_call', Request, Opts).\n".
 
-
 %% =============================================================================
 %% INTERNAL: gen patches
 %% =============================================================================
-
 
 gen_patches() ->
     [
@@ -150,10 +143,14 @@ gen_patches() ->
         {add_function, get_opts, 1, get_opts_1_source()},
         {add_function, erase_opts, 0, erase_opts_source()},
         {add_function, send_request, 4, gen_send_request_4_source()},
-        {add_export, [{set_opts, 1}, {get_opts, 0}, {get_opts, 1},
-                      {erase_opts, 0}, {send_request, 4}]}
+        {add_export, [
+            {set_opts, 1},
+            {get_opts, 0},
+            {get_opts, 1},
+            {erase_opts, 0},
+            {send_request, 4}
+        ]}
     ].
-
 
 do_send_request_source() ->
     "do_send_request(Process, Label, Request)\n"
@@ -194,7 +191,6 @@ do_send_request_source() ->
     "            Mref\n"
     "    end.\n".
 
-
 reply_source() ->
     "reply({_To, [alias|Alias] = Tag}, Reply) when is_reference(Alias) ->\n"
     "    Alias ! {Tag, Reply}, ok;\n"
@@ -202,7 +198,6 @@ reply_source() ->
     "    Alias ! {Tag, Reply}, ok;\n"
     "reply({To, Tag}, Reply) ->\n"
     "    try partisan:forward_message(To, {Tag, Reply}) catch _:_ -> ok end.\n".
-
 
 monitor_return_source() ->
     "monitor_return({{ok, Pid}, Mon}) when is_pid(Pid), is_reference(Mon) ->\n"
@@ -223,12 +218,10 @@ monitor_return_source() ->
     "            error(function_clause)\n"
     "    end.\n".
 
-
 init_it2_source() ->
     "init_it2(GenMod, Starter, Parent, Name, Mod, Args, Options) ->\n"
     "    ok = set_opts(Options),\n"
     "    GenMod:init_it(Starter, Parent, Name, Mod, Args, Options).\n".
-
 
 get_node_source() ->
     "get_node(Process) ->\n"
@@ -237,7 +230,6 @@ get_node_source() ->
     "        _ when is_pid(Process) -> node(Process);\n"
     "        _ -> partisan:node(Process)\n"
     "    end.\n".
-
 
 do_for_proc_source() ->
     "do_for_proc(Pid, Fun) when is_pid(Pid) ->\n"
@@ -271,7 +263,6 @@ do_for_proc_source() ->
     "    partisan_remote_ref:is_pid(ProcessRef) orelse error(function_clause),\n"
     "    Fun(ProcessRef).\n".
 
-
 call_4_source() ->
     "call(Process, Label, Request, Opts0) when is_list(Opts0) ->\n"
     "    case lists:keytake(timeout, 1, Opts0) of\n"
@@ -295,7 +286,6 @@ call_4_source() ->
     "            Fun = fun(Arg) -> do_call(Arg, Label, Request, Timeout) end,\n"
     "            do_for_proc(Process, Fun)\n"
     "    end.\n".
-
 
 do_call_source() ->
     "do_call(Process, _Label, _Request, _Timeout) when Process =:= self() ->\n"
@@ -335,7 +325,6 @@ do_call_source() ->
     "        end\n"
     "    end.\n".
 
-
 get_parent_source() ->
     "get_parent() ->\n"
     "    case get('$ancestors') of\n"
@@ -346,7 +335,6 @@ get_parent_source() ->
     "        _ ->\n"
     "            exit(process_was_not_started_by_proc_lib)\n"
     "    end.\n".
-
 
 set_opts_source() ->
     "set_opts(Options) when is_list(Options) ->\n"
@@ -360,7 +348,6 @@ set_opts_source() ->
     "    _ = erlang:put(partisan_gen_opts, PartisanOpts),\n"
     "    ok.\n".
 
-
 get_opts_0_source() ->
     "get_opts() ->\n"
     "    case erlang:get(partisan_gen_opts) of\n"
@@ -371,28 +358,23 @@ get_opts_0_source() ->
     "            Opts\n"
     "    end.\n".
 
-
 get_opts_1_source() ->
     "get_opts(Opts) ->\n"
     "    lists:keymerge(1, get_opts(), lists:keysort(1, Opts)).\n".
-
 
 erase_opts_source() ->
     "erase_opts() ->\n"
     "    _ = erlang:erase(partisan_gen_opts),\n"
     "    ok.\n".
 
-
 gen_send_request_4_source() ->
     "send_request(Process, Label, Request, Opts) ->\n"
     "    set_opts(Opts),\n"
     "    send_request(Process, Label, Request).\n".
 
-
 %% =============================================================================
 %% INTERNAL: proc_lib patches
 %% =============================================================================
-
 
 proc_lib_patches() ->
     [
@@ -400,7 +382,6 @@ proc_lib_patches() ->
         {add_function, do_stop, 2, proc_lib_do_stop_source()},
         {replace, proc_info, 2, proc_lib_proc_info_source()}
     ].
-
 
 proc_lib_stop_source() ->
     %% Mirror OTP's `proc_lib:stop/3' with the `partisan_sys' atom. `Reason'
@@ -440,7 +421,6 @@ proc_lib_stop_source() ->
     "        exit(timeout)\n"
     "    end.\n".
 
-
 proc_lib_do_stop_source() ->
     "do_stop(Process, Reason) ->\n"
     "    fun() ->\n"
@@ -451,7 +431,6 @@ proc_lib_do_stop_source() ->
     "                exit(ExitReason)\n"
     "        end\n"
     "    end.\n".
-
 
 proc_lib_proc_info_source() ->
     "proc_info(Pid, Item) when node(Pid) =:= node() ->\n"
@@ -484,11 +463,9 @@ proc_lib_proc_info_source() ->
     "            end\n"
     "    end.\n".
 
-
 %% =============================================================================
 %% INTERNAL: supervisor patches
 %% =============================================================================
-
 
 supervisor_patches(OtpVsn) ->
     [
@@ -516,7 +493,6 @@ supervisor_patches(OtpVsn) ->
         %% The format strings ("Supervisor: ", "    supervisor: ~tp~n") are
         %% human-readable labels that should stay as-is.
     ].
-
 
 %% OTP 28 supervisor: do_start_child/3 has case guards `when is_pid(Pid)`.
 %% Move the is_pid check to body context using partisan:is_pid/1.
@@ -548,7 +524,6 @@ sup_do_start_child_source() ->
     "            Other\n"
     "    end.\n".
 
-
 %% OTP 28 supervisor: do_start_child_i/3 has case guards `when is_pid(Pid)`.
 sup_do_start_child_i_source() ->
     "do_start_child_i(M, F, A) ->\n"
@@ -573,7 +548,6 @@ sup_do_start_child_i_source() ->
     "            {error, What}\n"
     "    end.\n".
 
-
 %% OTP 28 supervisor: handle_call/3 uses `not is_pid(Id)` in function clause
 %% guards. Replace with body-level check via partisan:is_pid/1.
 %% NOTE: After mechanical rewrite, atoms are already renamed
@@ -585,7 +559,8 @@ sup_handle_call_source(OtpVsn) ->
     %% For OTP 27, we strip it out since supervisor replies are 3-tuples.
     Source = sup_handle_call_source_28(),
     case OtpVsn >= 28 of
-        true -> Source;
+        true ->
+            Source;
         false ->
             %% Remove hibernate_after_action(State) from all reply tuples.
             %% Handles both same-line (", hibernate_after_action(State)")
@@ -775,7 +750,6 @@ sup_handle_call_source_28() ->
     "             {supervisors, Supers}, {workers, Workers}],\n"
     "    {reply, Reply, State, hibernate_after_action(State)}.\n".
 
-
 %% handle_start_child/2: guard `is_pid(OldChild#child.pid)` → body check.
 sup_handle_start_child_source() ->
     "handle_start_child(Child, State) ->\n"
@@ -805,7 +779,6 @@ sup_handle_start_child_source() ->
     "            end\n"
     "    end.\n".
 
-
 %% restarting/1: guard `is_pid(Pid)` → body check.
 sup_restarting_source() ->
     "restarting(Pid) ->\n"
@@ -813,7 +786,6 @@ sup_restarting_source() ->
     "        true -> {restarting, Pid};\n"
     "        false -> Pid\n"
     "    end.\n".
-
 
 %% do_terminate/2: guard `is_pid(Child#child.pid)` → body check.
 sup_do_terminate_source() ->
@@ -858,7 +830,6 @@ sup_do_terminate_source() ->
     "        false ->\n"
     "            ok\n"
     "    end.\n".
-
 
 %% terminate_dynamic_children/1: fun clause guard `is_pid(P)` → body check.
 %% Also uses exit/2 and monitor/2 which are handled by auto-import rewrites,
@@ -922,7 +893,6 @@ sup_terminate_dynamic_children_source() ->
     "            end\n"
     "        end, EStack).\n".
 
-
 %% find_child/2: guard `is_pid(Pid)` → body check.
 sup_find_child_source() ->
     "find_child(Pid, State)\n"
@@ -949,7 +919,6 @@ sup_find_child_source() ->
     "find_child(Id, #state{children = {_Ids, Db}}) ->\n"
     "    maps:find(Id, Db).\n".
 
-
 %% find_child_and_args/2: guard `is_pid(Pid)` → body check.
 sup_find_child_and_args_source() ->
     "find_child_and_args(Pid, State)\n"
@@ -968,7 +937,6 @@ sup_find_child_and_args_source() ->
     "            #state{children = {_Ids, Db}} = State,\n"
     "            maps:find(Pid, Db)\n"
     "    end.\n".
-
 
 %% unlink_flush/2: add catch-all for non-native pids (partisan remote refs).
 sup_unlink_flush_source() ->
@@ -991,7 +959,6 @@ sup_unlink_flush_source() ->
     "    ExitReason;\n"
     "unlink_flush(_, _) ->\n"
     "    normal.\n".
-
 
 %% shutdown/1: uses exit/2 and monitor/2 in body context. The auto-import
 %% rewrite handles exit/2 → partisan:exit/2 and monitor/2 → partisan:monitor/2.
@@ -1042,7 +1009,6 @@ sup_shutdown_source() ->
     "        end\n"
     "    end.\n".
 
-
 %% count_child/2: uses `is_pid(Pid) andalso is_process_alive(Pid)` in body.
 %% The auto-import rewrite would handle this, but since this is body context
 %% we need to use partisan: calls explicitly in the patch.
@@ -1061,7 +1027,6 @@ sup_count_child_source() ->
     "        false -> {Specs + 1, Active, Supers + 1, Workers}\n"
     "    end.\n".
 
-
 %% validChildType/1: accept both `supervisor` and `partisan_gen_supervisor`.
 %% Users pass `type => supervisor` in child specs, but the rewrite renames the
 %% atom `supervisor` to `partisan_gen_supervisor` in the code. We must accept
@@ -1071,7 +1036,6 @@ sup_validChildType_source() ->
     "validChildType(partisan_gen_supervisor) -> true;\n"
     "validChildType(worker) -> true;\n"
     "validChildType(What) -> throw({invalid_child_type, What}).\n".
-
 
 %% do_check_childspec/2: The mechanical rewrite changes pattern matches on
 %% `#{type := supervisor}` to `#{type := partisan_gen_supervisor}`. We need
@@ -1121,34 +1085,27 @@ sup_do_check_childspec_source() ->
     "               significant = Significant, shutdown = Shutdown,\n"
     "               child_type = ChildType, modules = Mods}}.\n".
 
-
 %% =============================================================================
 %% INTERNAL: Patch application
 %% =============================================================================
-
 
 %% Apply a single patch to the list of forms.
 apply_patch({replace, FunName, Arity, Source}, Forms) ->
     NewForm = parse_function(Source),
     replace_function(FunName, Arity, NewForm, Forms);
-
 apply_patch({add_function, _FunName, _Arity, Source}, Forms) ->
     NewForm = parse_function(Source),
     insert_before_eof(NewForm, Forms);
-
 apply_patch({add_export, FunArities}, Forms) ->
     add_exports(FunArities, Forms);
-
 apply_patch({append_clause, FunName, Arity, Source}, Forms) ->
     NewForm = parse_function(Source),
     {function, _, _, _, NewClauses} = NewForm,
     append_clauses(FunName, Arity, NewClauses, Forms).
 
-
 %% =============================================================================
 %% INTERNAL: Form manipulation helpers
 %% =============================================================================
-
 
 %% Parse an Erlang function source string into an abstract form.
 parse_function(Source) ->
@@ -1156,20 +1113,19 @@ parse_function(Source) ->
     {ok, Form} = erl_parse:parse_form(Tokens),
     Form.
 
-
 %% Replace a function by name and arity with a new form.
 replace_function(FunName, Arity, NewForm, Forms) ->
     lists:map(
         fun
-            ({function, _Anno, Name, Ar, _Clauses})
-              when Name =:= FunName, Ar =:= Arity ->
+            ({function, _Anno, Name, Ar, _Clauses}) when
+                Name =:= FunName, Ar =:= Arity
+            ->
                 NewForm;
             (Other) ->
                 Other
         end,
         Forms
     ).
-
 
 %% Insert a form before the eof tuple, or append if no eof is found.
 insert_before_eof(NewForm, Forms) ->
@@ -1180,7 +1136,6 @@ insert_before_eof(NewForm, Forms) ->
             Forms ++ [NewForm]
     end.
 
-
 %% Add function name/arity pairs to the first export attribute found.
 add_exports(FunArities, Forms) ->
     ExportEntries = [{FN, FA} || {FN, FA} <- FunArities],
@@ -1188,19 +1143,24 @@ add_exports(FunArities, Forms) ->
 
 add_exports_to_first(_Entries, [], _Found) ->
     [];
-add_exports_to_first(Entries, [{attribute, Anno, export, Existing} | Rest], false) ->
+add_exports_to_first(
+    Entries, [{attribute, Anno, export, Existing} | Rest], false
+) ->
     NewExport = Existing ++ Entries,
-    [{attribute, Anno, export, NewExport} | add_exports_to_first(Entries, Rest, true)];
+    [
+        {attribute, Anno, export, NewExport}
+        | add_exports_to_first(Entries, Rest, true)
+    ];
 add_exports_to_first(Entries, [Form | Rest], Found) ->
     [Form | add_exports_to_first(Entries, Rest, Found)].
-
 
 %% Append clauses to an existing function matched by name and arity.
 append_clauses(FunName, Arity, NewClauses, Forms) ->
     lists:map(
         fun
-            ({function, Anno, Name, Ar, Clauses})
-              when Name =:= FunName, Ar =:= Arity ->
+            ({function, Anno, Name, Ar, Clauses}) when
+                Name =:= FunName, Ar =:= Arity
+            ->
                 {function, Anno, Name, Ar, Clauses ++ NewClauses};
             (Other) ->
                 Other

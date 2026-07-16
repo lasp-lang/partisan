@@ -38,14 +38,9 @@
 
 -compile([{parse_transform, partisan_transform}]).
 
-
-
-
 %% =============================================================================
 %% API
 %% =============================================================================
-
-
 
 local_send(Message) ->
     Pid = self(),
@@ -56,19 +51,15 @@ local_send(Message) ->
     receive
         Message ->
             Message
-    after
-        1000 ->
-            error
+    after 1000 ->
+        error
     end.
-
 
 get_pid() ->
     self().
 
-
 send_to_pid(Pid, Message) when is_pid(Pid) ->
     Pid ! Message;
-
 send_to_pid(Ref, Message) ->
     Node = partisan_remote_ref:node(Ref),
 

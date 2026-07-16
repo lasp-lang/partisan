@@ -20,11 +20,10 @@
 
 -module(partisan_opts).
 
--type t()   :: [opt()].
+-type t() :: [opt()].
 -type opt() :: {timeout, integer()}.
 
 -export_type([t/0]).
-
 
 -export([get/2]).
 -export([take/2]).
@@ -32,7 +31,6 @@
 %% =============================================================================
 %% API
 %% =============================================================================
-
 
 -spec get([opt()], atom()) -> {ok, term()} | error.
 
@@ -42,7 +40,6 @@ get(Opts, Key) when is_list(Opts) ->
         false -> error
     end.
 
-
 -spec take([opt()], atom()) -> {ok, {term(), list()}} | error.
 
 take(Opts0, Key) when is_list(Opts0) ->
@@ -50,7 +47,3 @@ take(Opts0, Key) when is_list(Opts0) ->
         {value, {Key, Val}, Opts} -> {Val, Opts};
         false -> error
     end.
-
-
-
-

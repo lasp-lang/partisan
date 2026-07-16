@@ -43,28 +43,26 @@
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
 
-
 -record(state, {
-    node                    ::  node(),
-    epoch                   ::  integer(),
-    monotonic = 0           ::  non_neg_integer()
+    node :: node(),
+    epoch :: integer(),
+    monotonic = 0 :: non_neg_integer()
 }).
 
--type state()   ::  #state{}.
+-type state() :: #state{}.
 
 -record(broadcast, {
-    timestamp               :: timestamp()
+    timestamp :: timestamp()
 }).
 
--type broadcast_message()   :: #broadcast{}.
--type timestamp()           :: {
-                                    Node :: node(),
-                                    Epoch :: integer(),
-                                    Monotonic :: integer()
-                                }.
--type broadcast_id()        :: timestamp().
--type broadcast_payload()   :: timestamp().
-
+-type broadcast_message() :: #broadcast{}.
+-type timestamp() :: {
+    Node :: node(),
+    Epoch :: integer(),
+    Monotonic :: integer()
+}.
+-type broadcast_id() :: timestamp().
+-type broadcast_payload() :: timestamp().
 
 %% API
 -export([start_link/0]).
@@ -90,13 +88,9 @@
 -export([terminate/2]).
 -export([code_change/3]).
 
-
-
 %% =============================================================================
 %% API
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Same as start_link([]).
@@ -107,16 +101,14 @@
 start_link() ->
     start_link([]).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Start and link to calling process.
 %% @end
 %% -----------------------------------------------------------------------------
--spec start_link(list())-> {ok, pid()} | ignore | {error, term()}.
+-spec start_link(list()) -> {ok, pid()} | ignore | {error, term()}.
 
 start_link(Opts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns all the timestamps.
@@ -137,38 +129,31 @@ timestamps() ->
             []
     end.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
 extract_log_type_and_payload({prune, Root, From}) ->
     [{broadcast_protocol, {Root, From}}];
-
-extract_log_type_and_payload({ignored_i_have, MessageId, _Mod, Round, Root, From}) ->
+extract_log_type_and_payload(
+    {ignored_i_have, MessageId, _Mod, Round, Root, From}
+) ->
     [{broadcast_protocol, {MessageId, Round, Root, From}}];
-
 extract_log_type_and_payload({graft, MessageId, _Mod, Round, Root, From}) ->
     [{broadcast_protocol, {MessageId, Round, Root, From}}];
-
 extract_log_type_and_payload(
-    {broadcast, MessageId, Timestamp, _Mod, Round, Root, From}) ->
+    {broadcast, MessageId, Timestamp, _Mod, Round, Root, From}
+) ->
     [{broadcast_protocol, {Timestamp, MessageId, Round, Root, From}}];
-
 extract_log_type_and_payload({i_have, MessageId, _Mod, Round, Root, From}) ->
     [{broadcast_protocol, {MessageId, Round, Root, From}}];
-
 extract_log_type_and_payload(Message) ->
     ?LOG_INFO("No match for extracted payload: ~p", [Message]),
     [].
 
-
-
 %% =============================================================================
 %% PARTISAN_PLUMTREE_BROADCAST_HANDLER CALLBACKS
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the channel to be used when broadcasting a message
@@ -179,7 +164,6 @@ extract_log_type_and_payload(Message) ->
 
 broadcast_channel() ->
     ?MEMBERSHIP_CHANNEL.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns from the broadcast message the identifier and the payload.
@@ -194,7 +178,6 @@ broadcast_channel() ->
 broadcast_data(#broadcast{timestamp = Timestamp}) ->
     {Timestamp, Timestamp}.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Perform a merge of an incoming object with an object in the
 %% local datastore.
@@ -208,12 +191,10 @@ merge(Timestamp, Timestamp) ->
     case is_stale(Timestamp) of
         true ->
             false;
-
         false ->
             gen_server:call(?MODULE, {merge, Timestamp}, infinity),
             true
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Use the clock on the object to determine if this message is
@@ -230,19 +211,15 @@ is_stale({Node, Epoch, Monotonic}) ->
     try ets:lookup(?MODULE, Node) of
         [] ->
             false;
-
         [{_, Epoch, ISet}] ->
             partisan_interval_sets:is_element(Monotonic, ISet);
-
         [{_, Epoch0, _}] ->
             Epoch0 > Epoch
-
     catch
         _:_ ->
             %% we return true so that merge is not called
             true
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Given a message identifier and a clock, return a given message.
@@ -259,7 +236,6 @@ graft({Node, Epoch, Monotonic} = Timestamp) ->
                 timestamp => Timestamp
             }),
             not_found(Timestamp);
-
         [{Node, Epoch, ISet}] ->
             case partisan_interval_sets:is_element(Monotonic, ISet) of
                 true ->
@@ -267,18 +243,14 @@ graft({Node, Epoch, Monotonic} = Timestamp) ->
                 false ->
                     not_found(Timestamp)
             end;
-
         [{_, Epoch0, _}] when Epoch0 > Epoch ->
             stale;
-
-         [{_, Epoch0, _}] when Epoch0 < Epoch ->
+        [{_, Epoch0, _}] when Epoch0 < Epoch ->
             not_found(Timestamp)
-
     catch
         _:_ ->
             not_found(Timestamp)
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns `ignore`.
@@ -292,13 +264,9 @@ graft({Node, Epoch, Monotonic} = Timestamp) ->
 exchange(_Peer) ->
     ignore.
 
-
-
 %% =============================================================================
 %% GEN_SERVER CALLBACKS
 %% =============================================================================
-
-
 
 -spec init([]) -> {ok, state()}.
 
@@ -318,25 +286,21 @@ init([]) ->
     },
     {ok, State}.
 
-
 -spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()}.
 
 handle_call({merge, {_, _, _} = Timestamp}, _From, State) ->
     true = add_timestamp(Timestamp),
     {reply, ok, State};
-
 handle_call(Event, _From, State) ->
     ?LOG_WARNING(#{description => "Unhandled call event", event => Event}),
     {reply, ok, State}.
-
 
 -spec handle_cast(term(), state()) -> {noreply, state()}.
 
 handle_cast(Event, State) ->
     ?LOG_WARNING(#{description => "Unhandled cast event", event => Event}),
     {noreply, State}.
-
 
 handle_info(heartbeat, State) ->
     %% Generate message with monotonically increasing integer.
@@ -366,17 +330,14 @@ handle_info(heartbeat, State) ->
     schedule_heartbeat(),
 
     {noreply, State#state{monotonic = Monotonic}};
-
 handle_info(Event, State) ->
     ?LOG_WARNING(#{description => "Unhandled info event", event => Event}),
     {noreply, State}.
-
 
 -spec terminate(term(), state()) -> term().
 
 terminate(_Reason, _State) ->
     ok.
-
 
 -spec code_change(term() | {down, term()}, state(), term()) ->
     {ok, state()}.
@@ -384,17 +345,13 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-
-
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
 
-
 %% @private
 not_found(Timestamp) ->
     {error, {not_found, Timestamp}}.
-
 
 %% @private
 add_timestamp({Node, Epoch, Monotonic}) ->
@@ -402,20 +359,16 @@ add_timestamp({Node, Epoch, Monotonic}) ->
         [] ->
             ISet = partisan_interval_sets:from_list([Monotonic]),
             true = ets:insert(?MODULE, [{Node, Epoch, ISet}]);
-
         [{_, Epoch0, _}] when Epoch0 < Epoch ->
             ISet = partisan_interval_sets:from_list([Monotonic]),
             true = ets:insert(?MODULE, [{Node, Epoch, ISet}]);
-
         [{_, Epoch, ISet0}] ->
             ISet = partisan_interval_sets:add_element(Monotonic, ISet0),
             true = ets:insert(?MODULE, [{Node, Epoch, ISet}]);
-
         [{_, Epoch0, _}] when Epoch0 > Epoch ->
             %% We ignore as it is an old message
             true
     end.
-
 
 %% @private
 schedule_heartbeat() ->
@@ -426,4 +379,3 @@ schedule_heartbeat() ->
         false ->
             ok
     end.
-

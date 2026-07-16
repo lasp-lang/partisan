@@ -25,7 +25,6 @@
 
 -include("partisan_logger.hrl").
 
-
 %% API
 -export([start_link/0]).
 -export([call/0]).
@@ -39,12 +38,14 @@
 -export([reply_crash/0]).
 
 %% partisan_gen_server callbacks
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 -record(state, {}).
 
@@ -73,10 +74,9 @@ cast(ReplyTo) ->
 cast(ServerRef, ReplyTo) ->
     partisan_gen_server:cast(ServerRef, {cast, ReplyTo}).
 
-
 is_alive(Pid) ->
-    Pid == whereis(?MODULE)
-        orelse error({badarg, pid_to_list(Pid), whereis(?MODULE)}),
+    Pid == whereis(?MODULE) orelse
+        error({badarg, pid_to_list(Pid), whereis(?MODULE)}),
     erlang:is_process_alive(Pid).
 
 crash() ->
@@ -84,10 +84,6 @@ crash() ->
 
 reply_crash() ->
     partisan_gen_server:cast(?MODULE, reply_crash).
-
-
-
-
 
 %%%===================================================================
 %%% partisan_gen_server callbacks
@@ -101,14 +97,21 @@ init([]) ->
 
 %% @private
 handle_call(delayed_reply_call, From, State) ->
-    ?LOG_INFO("Received delayed_reply_call message from ~p in the handle_call handler.", [From]),
+    ?LOG_INFO(
+        "Received delayed_reply_call message from ~p in the handle_call handler.",
+        [From]
+    ),
     partisan_gen_server:reply(From, ok),
     {noreply, State};
 handle_call(call, From, State) ->
-    ?LOG_INFO("Received call message from ~p in the handle_call handler.", [From]),
+    ?LOG_INFO("Received call message from ~p in the handle_call handler.", [
+        From
+    ]),
     {reply, ok, State};
 handle_call({sleep, T}, From, State) ->
-    ?LOG_INFO("Received call message from ~p in the handle_call handler.", [From]),
+    ?LOG_INFO("Received call message from ~p in the handle_call handler.", [
+        From
+    ]),
     timer:sleep(T),
     {reply, ok, State};
 handle_call(_Msg, _From, State) ->
@@ -116,7 +119,10 @@ handle_call(_Msg, _From, State) ->
 
 %% @private
 handle_cast({cast, ServerRef}, State) ->
-    ?LOG_INFO("Received cast message with server_ref: ~p in the handle_call handler.", [ServerRef]),
+    ?LOG_INFO(
+        "Received cast message with server_ref: ~p in the handle_call handler.",
+        [ServerRef]
+    ),
     partisan:send(ServerRef, ok),
     {noreply, State};
 handle_cast(_Msg, State) ->

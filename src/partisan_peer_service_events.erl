@@ -27,32 +27,30 @@
 -include("partisan.hrl").
 
 %% API
--export([start_link/0,
-         add_handler/2,
-         add_sup_handler/2,
-         add_callback/1,
-         add_sup_callback/1,
-         update/1]).
-
-
+-export([
+    start_link/0,
+    add_handler/2,
+    add_sup_handler/2,
+    add_callback/1,
+    add_sup_callback/1,
+    update/1
+]).
 
 %% gen_event callbacks
--export([init/1,
-         handle_event/2,
-         handle_call/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([
+    init/1,
+    handle_event/2,
+    handle_call/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 -record(state, {callback}).
-
-
 
 %% =============================================================================
 %% API
 %% =============================================================================
-
-
 
 start_link() ->
     gen_event:start_link({local, ?MODULE}).
@@ -69,45 +67,34 @@ add_callback(Fn) when is_function(Fn) ->
 add_sup_callback(Fn) when is_function(Fn) ->
     gen_event:add_sup_handler(?MODULE, {?MODULE, make_ref()}, [Fn]).
 
-
 %% @todo Change back to non.
 update(LocalState) ->
     gen_event:sync_notify(?MODULE, {update, LocalState}).
-
-
 
 %% =============================================================================
 %% GEN_EVENT CALLBACK
 %% =============================================================================
 
-
-
 init([Fn]) ->
-    {ok, #state{callback=Fn}}.
-
+    {ok, #state{callback = Fn}}.
 
 handle_event({update, LocalState}, State) ->
     (State#state.callback)(LocalState),
     {ok, State};
-
 handle_event(Event, State) ->
     ?LOG_WARNING(#{description => "Unhandled event", event => Event}),
     {ok, State}.
-
 
 handle_call(Event, State) ->
     ?LOG_WARNING(#{description => "Unhandled call event", event => Event}),
     {ok, ok, State}.
 
-
 handle_info(Event, State) ->
     ?LOG_WARNING(#{description => "Unhandled info event", event => Event}),
     {ok, State}.
 
-
 terminate(_Reason, _State) ->
     ok.
-
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.

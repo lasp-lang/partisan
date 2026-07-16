@@ -27,13 +27,9 @@
 
 -export([start/2, stop/1]).
 
-
-
 %% =============================================================================
 %% API
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Starts the application.
@@ -47,7 +43,6 @@ start(_StartType, _StartArgs) ->
         Other ->
             {error, Other}
     end.
-
 
 %% @private
 %% Ensure the generated OTP modules (partisan_gen_server, etc.) are loaded.
@@ -65,11 +60,9 @@ ensure_otp_modules() ->
             %% generated modules — that is a build-time error.
             case partisan_gen_transform:generate_all() of
                 ok -> ok;
-                {error, Errors} ->
-                    error({partisan_otp_modules_missing, Errors})
+                {error, Errors} -> error({partisan_otp_modules_missing, Errors})
             end
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Stop the application.

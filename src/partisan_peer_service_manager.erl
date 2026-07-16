@@ -29,41 +29,44 @@
 -include("partisan_logger.hrl").
 -include("partisan.hrl").
 
+-type server_ref() ::
+    partisan:any_pid()
+    | partisan:any_name()
+    | partisan_remote_ref:encoded_pid()
+    | partisan_remote_ref:encoded_name()
+    | {RegName :: atom(), node()}
+    | {global, RegName :: atom()}
+    | {via, module(), ViaName :: atom()}.
 
--type server_ref()      ::  partisan:any_pid()
-                            | partisan:any_name()
-                            | partisan_remote_ref:encoded_pid()
-                            | partisan_remote_ref:encoded_name()
-                            | {RegName :: atom(), node()}
-                            | {global, RegName :: atom()}
-                            | {via, module(), ViaName :: atom()}.
+-type forward_opts() ::
+    #{
+        ack => boolean(),
+        retransmission => boolean(),
+        causal_label => atom(),
+        channel => partisan:channel(),
+        clock => any(),
+        partition_key => non_neg_integer(),
+        transitive => boolean(),
+        %% To allow erlang opts
+        atom() => any()
+    }
+    | [
+        {ack, boolean()}
+        | {causal_label, atom()}
+        | {channel, partisan:channel()}
+        | {clock, any()}
+        | {partition_key, non_neg_integer()}
+        | {transitive, boolean()}
+        %% To allow erlang opts
+        | {atom(), any()}
+    ].
 
-
--type forward_opts()    ::  #{
-                                ack => boolean(),
-                                retransmission => boolean(),
-                                causal_label => atom(),
-                                channel => partisan:channel(),
-                                clock => any(),
-                                partition_key => non_neg_integer(),
-                                transitive => boolean(),
-                                atom() => any() %% To allow erlang opts
-                            } |
-                            [
-                                {ack, boolean()}
-                                | {causal_label, atom()}
-                                | {channel, partisan:channel()}
-                                | {clock, any()}
-                                | {partition_key, non_neg_integer()}
-                                | {transitive, boolean()}
-                                | {atom(), any()} %% To allow erlang opts
-                            ].
-
--type connect_opts()        ::  #{prune => boolean()}.
--type partitions()          ::  [{reference(), partisan:node_spec()}].
--type on_event_fun()        ::  fun(() -> ok)
-                                | fun((node()) -> ok)
-                                | fun((node(), partisan:channel()) -> ok).
+-type connect_opts() :: #{prune => boolean()}.
+-type partitions() :: [{reference(), partisan:node_spec()}].
+-type on_event_fun() ::
+    fun(() -> ok)
+    | fun((node()) -> ok)
+    | fun((node(), partisan:channel()) -> ok).
 
 -export_type([connect_opts/0]).
 -export_type([forward_opts/0]).
@@ -82,17 +85,14 @@
 -export([send_message/2]).
 -export([supports_capability/2]).
 
-
-
 %% =============================================================================
 %% BEHAVIOUR CALLBACKS
 %% =============================================================================
 
-
-
 -callback start_link() -> {ok, pid()} | ignore | {error, term()}.
 
--callback members() -> [node()]. %% TODO: Deprecate me.
+%% TODO: Deprecate me.
+-callback members() -> [node()].
 
 -callback members_for_orchestration() -> [partisan:node_spec()].
 
@@ -123,33 +123,39 @@
 
 -callback cast_message(
     ServerRef :: server_ref(),
-    Msg :: partisan:message()) -> ok.
+    Msg :: partisan:message()
+) -> ok.
 
 -callback cast_message(
     ServerRef :: server_ref(),
     Msg :: partisan:message(),
-    Opts :: forward_opts()) -> ok.
+    Opts :: forward_opts()
+) -> ok.
 
 -callback cast_message(
     Node :: node(),
     ServerRef :: server_ref(),
     Msg :: partisan:message(),
-    Opts :: forward_opts()) -> ok.
+    Opts :: forward_opts()
+) -> ok.
 
 -callback forward_message(
     ServerRef :: server_ref(),
-    Msg :: partisan:message()) -> ok.
+    Msg :: partisan:message()
+) -> ok.
 
 -callback forward_message(
     ServerRef :: server_ref(),
     Msg :: partisan:message(),
-    Opts :: forward_opts()) -> ok.
+    Opts :: forward_opts()
+) -> ok.
 
 -callback forward_message(
     Node :: node(),
     ServerRef :: server_ref(),
     Msg :: partisan:message(),
-    Opts :: forward_opts()) -> ok.
+    Opts :: forward_opts()
+) -> ok.
 
 -callback receive_message(node(), partisan:channel(), any()) -> ok.
 
@@ -170,13 +176,9 @@
 -optional_callbacks([on_up/3]).
 -optional_callbacks([on_down/3]).
 
-
-
 %% =============================================================================
 %% API
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc If `Mod' implements callback `supports_capability/1' returns the result
@@ -193,7 +195,6 @@ supports_capability(Mod, Arg) ->
             false
     end.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Tries to create a new connection to a node, but only if required.
 %% If successful it stores the new connection record in the
@@ -206,7 +207,6 @@ supports_capability(Mod, Arg) ->
 
 connect(NodeSpec) ->
     connect(NodeSpec, #{prune => false}).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Create a new connection to a node specified by `NodeSpec' and
@@ -244,7 +244,6 @@ connect(#{listen_addrs := ListenAddrs} = NodeSpec, #{prune := true}) ->
         ListenAddrs
     ),
     {ok, ToPrune};
-
 connect(#{listen_addrs := ListenAddrs} = NodeSpec, #{prune := false}) ->
     %% eqwalizer:ignore
     ok = lists:foreach(
@@ -254,7 +253,6 @@ connect(#{listen_addrs := ListenAddrs} = NodeSpec, #{prune := false}) ->
         ListenAddrs
     ).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Kill all connections with node in `Nodes' and for each call function
 %% `Fun' passing the node as argument
@@ -262,7 +260,6 @@ connect(#{listen_addrs := ListenAddrs} = NodeSpec, #{prune := false}) ->
 %% -----------------------------------------------------------------------------
 disconnect(Nodes) when is_list(Nodes) ->
     disconnect(Nodes, fun(_) -> ok end).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Kill all connections with node in `Nodes' and for each call function
@@ -273,18 +270,19 @@ disconnect(Nodes, Fun) when is_list(Nodes), is_function(Fun, 1) ->
     Node = partisan:node(),
     _ = [
         begin
-            _ = case partisan_config:get(connect_disterl, false) of
-                true ->
-                    net_kernel:disconnect(N);
-                false ->
-                    ok
-            end,
+            _ =
+                case partisan_config:get(connect_disterl, false) of
+                    true ->
+                        net_kernel:disconnect(N);
+                    false ->
+                        ok
+                end,
             ok = partisan_peer_connections:kill(N),
             catch Fun(N)
-        end || N <- Nodes, N =/= Node
+        end
+     || N <- Nodes, N =/= Node
     ],
     ok.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Send a message to a remote peer_service_manager.
@@ -294,7 +292,6 @@ disconnect(Nodes, Fun) when is_list(Nodes), is_function(Fun, 1) ->
 
 send_message(Node, Message) ->
     ?PEER_SERVICE_MANAGER:send_message(Node, Message).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Internal function used by peer_service manager implementations to
@@ -323,13 +320,11 @@ deliver(ServerRef, Msg) ->
             ok
     end.
 
-
 %% @deprecated use {@link partisan:node_spec/0} instead
 -spec myself() -> partisan:node_spec().
 
 myself() ->
     partisan:node_spec().
-
 
 %% @deprecated use {@link partisan:node/0} instead
 -spec mynode() -> atom().
@@ -337,13 +332,9 @@ myself() ->
 mynode() ->
     partisan:node().
 
-
-
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -418,7 +409,6 @@ maybe_connect(#{name := Node} = NodeSpec, ListenAddr, Acc) ->
             maybe_connect(ChannelsList, NodeSpec, ListenAddr, Acc)
     end.
 
-
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc This function is called by maybe_connect/3 only when the Node in
@@ -426,8 +416,7 @@ maybe_connect(#{name := Node} = NodeSpec, ListenAddr, Acc) ->
 %% @end
 %% -----------------------------------------------------------------------------
 
-
-maybe_connect([{Channel, ChannelOpts}|T], NodeSpec, ListenAddr, Acc) ->
+maybe_connect([{Channel, ChannelOpts} | T], NodeSpec, ListenAddr, Acc) ->
     %% There is at least one connection for Node.
     Parallelism = get_opt(parallelism, ChannelOpts),
 
@@ -453,7 +442,6 @@ maybe_connect([{Channel, ChannelOpts}|T], NodeSpec, ListenAddr, Acc) ->
                         NodeSpec, Pid, Channel, ListenAddr
                     ),
                     Acc;
-
                 {error, Reason} when Count == 0 ->
                     %% The connection we have must have been created using a
                     %% different partisan:node_spec() for Node. Since we have a
@@ -468,7 +456,6 @@ maybe_connect([{Channel, ChannelOpts}|T], NodeSpec, ListenAddr, Acc) ->
                     maybe_stale(
                         NodeSpec, Channel, ListenAddr, Acc, Count, Reason
                     );
-
                 Error ->
                     %% We have some connections to this ListenAddr already
                     ?LOG_ERROR(#{
@@ -481,7 +468,6 @@ maybe_connect([{Channel, ChannelOpts}|T], NodeSpec, ListenAddr, Acc) ->
                     }),
                     Acc
             end;
-
         Count when Count == Parallelism ->
             Acc
     end,
@@ -492,16 +478,13 @@ maybe_connect([{Channel, ChannelOpts}|T], NodeSpec, ListenAddr, Acc) ->
     %% It is fairer this way, so that we can get connections one channel at a
     %% time.
     maybe_connect(T, NodeSpec, ListenAddr, Acc);
-
 maybe_connect([], _, _, Acc) ->
     Acc.
-
 
 %% @private
 maybe_stale(_, _, _, ok = Acc, 0, _) ->
     %% Options.prune == false
     Acc;
-
 maybe_stale(NodeSpec, Channel, ListenAddr, Acc, 0, Reason) ->
     Node = maps:get(name, NodeSpec),
     %% TODO check is we are already connected using connection_count
@@ -515,7 +498,6 @@ maybe_stale(NodeSpec, Channel, ListenAddr, Acc, 0, Reason) ->
     %% If not, then we cannot rule out the NodeSpec as valid.
     ListenAddrCount =
         partisan_peer_connections:count(Node, Channel, ListenAddr),
-
 
     case ListenAddrCount > 0 of
         true ->
@@ -539,7 +521,6 @@ maybe_stale(NodeSpec, Channel, ListenAddr, Acc, 0, Reason) ->
                         channel => Channel
                     }),
                     Acc;
-
                 #{listen_addrs := L} when L == ListenAddrs ->
                     %% The specs differ on channels or parallelism
                     ?LOG_DEBUG(#{
@@ -550,7 +531,6 @@ maybe_stale(NodeSpec, Channel, ListenAddr, Acc, 0, Reason) ->
                         channel => Channel
                     }),
                     Acc;
-
                 Connected ->
                     %% Listen addresses differ!
                     %% TODO use info and connections timestamps
@@ -575,35 +555,28 @@ maybe_stale(NodeSpec, Channel, ListenAddr, Acc, 0, Reason) ->
                                 node_spec => NodeSpec,
                                 active => Connected
                             }),
-                            [NodeSpec|Acc]
+                            [NodeSpec | Acc]
                     end
             end;
-
         false ->
             Acc
     end.
 
-
 %% @private
 get_opt(parallelism, #{parallelism := Value}) ->
     Value;
-
 get_opt(parallelism, #{}) ->
     partisan_config:parallelism().
-
-
 
 %% @private
 do_deliver({global, Name}, Message) ->
     Pid = global:whereis_name(Name),
     Pid ! Message,
     ok;
-
 do_deliver({via, Module, Name}, Message) ->
     Pid = Module:whereis_name(Name),
     Pid ! Message,
     ok;
-
 do_deliver(Pid, Message) when is_pid(Pid) ->
     Pid ! Message,
 
@@ -614,7 +587,6 @@ do_deliver(Pid, Message) when is_pid(Pid) ->
     ),
 
     ok;
-
 do_deliver(Name, Message) when is_atom(Name) ->
     Name ! Message,
 
@@ -628,7 +600,6 @@ do_deliver(Name, Message) when is_atom(Name) ->
     ),
 
     ok;
-
 do_deliver(ServerRef, Message) ->
     ?LOG_DEBUG(
         "node ~p received message ~p for ~p",
@@ -639,11 +610,11 @@ do_deliver(ServerRef, Message) ->
         Pid when is_pid(Pid) ->
             ?LOG_TRACE_IF(
                 not is_process_alive(Pid),
-                "Process ~p is NOT ALIVE for message: ~p", [ServerRef, Message]
+                "Process ~p is NOT ALIVE for message: ~p",
+                [ServerRef, Message]
             ),
             Pid ! Message,
             ok;
-
         Name when is_atom(Name) ->
             Name ! Message,
             ok

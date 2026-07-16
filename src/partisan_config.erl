@@ -18,7 +18,6 @@
 %%
 %% -------------------------------------------------------------------
 
-
 -module(partisan_config).
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
@@ -369,19 +368,17 @@ Use `{remote_ref_format, uri}' instead
 
 -compile({no_auto_import, [get/1]}).
 -compile({no_auto_import, [set/2]}).
--compile({inline,[{channel_opts,1}]}).
--compile({inline,[{channels,0}]}).
--compile({inline,[{default_channel,0}]}).
--compile({inline,[{get,1}]}).
--compile({inline,[{get,2}]}).
--compile({inline,[{get_with_opts,2}]}).
--compile({inline,[{get_with_opts,3}]}).
-
+-compile({inline, [{channel_opts, 1}]}).
+-compile({inline, [{channels, 0}]}).
+-compile({inline, [{default_channel, 0}]}).
+-compile({inline, [{get, 1}]}).
+-compile({inline, [{get, 2}]}).
+-compile({inline, [{get_with_opts, 2}]}).
+-compile({inline, [{get_with_opts, 3}]}).
 
 %% =============================================================================
 %% API
 %% =============================================================================
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Initialises the configuration from the application environment.
@@ -443,8 +440,9 @@ init() ->
     DefaultPeerIP = try_get_peer_ip(),
     DefaultPeerPort = random_port(),
 
-    [env_or_default(Key, Default) ||
-        {Key, Default} <- [
+    [
+        env_or_default(Key, Default)
+     || {Key, Default} <- [
             %% WARNING:
             %% This list should be exhaustive, anything key missing from this
             %% list will not be read from the application environment.
@@ -484,9 +482,11 @@ init() ->
             {parallelism, ?PARALLELISM},
             {peer_discovery, #{enabled => false}},
             {peer_service_manager, PeerService},
-            {peer_ip, DefaultPeerIP}, % deprecated, use listen_ip
+            % deprecated, use listen_ip
+            {peer_ip, DefaultPeerIP},
             {listen_ip, DefaultPeerIP},
-            {peer_port, DefaultPeerPort}, % deprecated, use listen_port
+            % deprecated, use listen_port
+            {peer_port, DefaultPeerPort},
             {listen_port, DefaultPeerPort},
             %% IMPORTANT! listen_addrs should be after peer_port and peer_ip
             {listen_addrs, []},
@@ -508,7 +508,7 @@ init() ->
             {tls_server_options, []},
             {tracing, false},
             {transmission_logging_mfa, undefined}
-       ]
+        ]
     ],
 
     %% Setup channels
@@ -529,15 +529,12 @@ init() ->
             ok
     end.
 
-
-
 %% -----------------------------------------------------------------------------
 %% @doc Seed the process.
 %% @end
 %% -----------------------------------------------------------------------------
 seed(Seed) ->
     rand:seed(exsplus, Seed).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Seed the process.
@@ -552,7 +549,6 @@ seed() ->
     }),
     rand:seed(exsplus, RandomSeed).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Return a random seed, either from the environment or one that's
 %% generated for the run.
@@ -561,11 +557,14 @@ seed() ->
 random_seed() ->
     case get(random_seed, undefined) of
         undefined ->
-            {erlang:phash2([partisan:node()]), erlang:monotonic_time(), erlang:unique_integer()};
+            {
+                erlang:phash2([partisan:node()]),
+                erlang:monotonic_time(),
+                erlang:unique_integer()
+            };
         Other ->
             Other
     end.
-
 
 trace(Message, Args) ->
     ?LOG_TRACE(#{
@@ -574,21 +573,17 @@ trace(Message, Args) ->
         args => Args
     }).
 
-
 get(broadcast_start_exchange_limit = Key) ->
     %% If there is no limit defined we assume a limit of 1 per module, as we
     %% This works because partisan_plumtree_broadcast will never run more than
     %% one exchange per module anyway.
     Default = length(get(broadcast_mods, [])),
     get(Key, Default);
-
 get(Key) ->
     persistent_term:get(?KEY(maybe_rename(Key))).
 
-
 get(Key, Default) ->
     persistent_term:get(?KEY(maybe_rename(Key)), Default).
-
 
 ?DOC("""
 Returns the value for `Key' in `Opts', if found. Otherwise, calls `get/1`.
@@ -598,7 +593,6 @@ get_with_opts(Key, Opts) when is_map(Opts); is_list(Opts) ->
         {ok, Val} -> Val;
         error -> get(Key)
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the value for `Key' in `Opts', if found. Otherwise, calls
@@ -611,17 +605,14 @@ get_with_opts(Key, Opts, Default) when is_map(Opts); is_list(Opts) ->
         error -> get(Key, Default)
     end.
 
-
 set(listen_addrs, Value0) when is_list(Value0) ->
     %% We make sure they are sorted so that we can compare them (specially when
     %% part of the node_spec()).
     Value = lists:usort(validate_listen_addrs(Value0)),
     do_set(listen_addrs, Value);
-
 set(peer_ip, Value) when is_list(Value) ->
     ParsedIP = partisan_util:parse_ip_address(Value),
     do_set(peer_ip, ParsedIP);
-
 set(channels, Arg) when is_list(Arg) orelse is_map(Arg) ->
     %% We coerse any defined channel to channel spec map representations and
     %% build a
@@ -665,7 +656,6 @@ set(channels, Arg) when is_list(Arg) orelse is_map(Arg) ->
     ),
 
     do_set(channels, Channels);
-
 set(broadcast_mods, L0) ->
     is_list(L0) orelse error({badarg, [broadcast_mods, L0]}),
     Map = fun
@@ -676,7 +666,6 @@ set(broadcast_mods, L0) ->
                 error:_ ->
                     ToAtom({error, Mod})
             end;
-
         ToAtom({error, Mod}) ->
             ?LOG_ERROR(#{
                 description => "Configuration error. Broadcast module ignored",
@@ -684,36 +673,27 @@ set(broadcast_mods, L0) ->
                 module => Mod
             }),
             false;
-
         ToAtom(Mod) when is_atom(Mod), Mod =/= undefined ->
             true;
-
         ToAtom(Mod) ->
             ToAtom({error, Mod})
-
     end,
     L = lists:filtermap(Map, L0),
     %% We always add the mods required by partisan itself.
     do_set(broadcast_mods, lists:usort(L ++ ?BROADCAST_MODS));
-
 set(hyparview, Value) ->
     set_hyparview_config(Value);
-
 set(membership_binary_compression, true) ->
     do_set(membership_binary_compression, true),
     do_set('$membership_encoding_opts', [compressed]);
-
 set(membership_binary_compression, N) when is_integer(N), N >= 0, N =< 9 ->
     do_set(membership_binary_compression, N),
     do_set('$membership_encoding_opts', [{compressed, N}]);
-
 set(membership_binary_compression, Val) ->
     do_set(membership_binary_compression, Val),
     do_set('$membership_encoding_opts', []);
-
 set(forward_options, Opts) when is_list(Opts) ->
     set(forward_options, maps:from_list(Opts));
-
 set(tls_client_options, Opts0) when is_list(Opts0) ->
     case lists:keytake(hostname_verification, 1, Opts0) of
         {value, {hostname_verification, wildcard}, Opts1} ->
@@ -721,21 +701,16 @@ set(tls_client_options, Opts0) when is_list(Opts0) ->
             Check = {customize_hostname_check, [{match_fun, Match}]},
             Opts = lists:keystore(customize_hostname_check, 1, Opts1, Check),
             do_set(tls_client_options, Opts);
-
         {value, {hostname_verification, _}, Opts1} ->
             do_set(tls_client_options, Opts1);
-
         false ->
             do_set(tls_client_options, Opts0)
     end;
-
 set(Key, Value) ->
     do_set(maybe_rename(Key), Value).
 
-
 listen_addrs() ->
     get(listen_addrs).
-
 
 -spec channel_opts(Name :: partisan:channel()) -> partisan:channel_opts().
 
@@ -747,7 +722,6 @@ channel_opts(Name) when is_atom(Name) ->
             error(badarg)
     end.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc The spec of the default channel.
 %% @end
@@ -756,7 +730,6 @@ channel_opts(Name) when is_atom(Name) ->
 
 default_channel_opts() ->
     channel_opts(default_channel()).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc The name of the default channel.
@@ -767,23 +740,17 @@ default_channel_opts() ->
 default_channel() ->
     ?DEFAULT_CHANNEL.
 
-
 -spec channels() -> #{partisan:channel() => partisan:channel_opts()}.
 
 channels() ->
     get(channels).
 
-
 parallelism() ->
     get(parallelism, ?PARALLELISM).
-
-
 
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -793,10 +760,9 @@ parallelism() ->
 cleanup() ->
     _ = [
         persistent_term:erase(Key)
-        || {Key, _} <- persistent_term:get(), ?IS_KEY(Key)
+     || {Key, _} <- persistent_term:get(), ?IS_KEY(Key)
     ],
     ok.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -809,7 +775,6 @@ maybe_set_node_name() ->
             %% We read directly from the env (not our cache)
             UserDefined = application:get_env(partisan, name, undefined),
             set_node_name(UserDefined);
-
         Nodename ->
             %% Name already set
             ?LOG_NOTICE(#{
@@ -820,7 +785,6 @@ maybe_set_node_name() ->
             }),
             ok
     end.
-
 
 %% @private
 set_node_name(UserDefined) ->
@@ -835,7 +799,6 @@ set_node_name(UserDefined) ->
                     disterl_enabled => false
                 }),
                 Generated;
-
             nonode@nohost when UserDefined =/= undefined ->
                 ?LOG_NOTICE(#{
                     description => "Partisan node name configured",
@@ -843,7 +806,6 @@ set_node_name(UserDefined) ->
                     disterl_enabled => false
                 }),
                 UserDefined;
-
             Other ->
                 ?LOG_NOTICE(#{
                     description => "Partisan node name configured",
@@ -857,7 +819,6 @@ set_node_name(UserDefined) ->
     set(name, Name),
     set(nodestring, atom_to_binary(Name, utf8)).
 
-
 %% @private
 gen_node_name() ->
     {UUID, _UUIDState} = uuid:get_v1(uuid:new(self())),
@@ -868,14 +829,11 @@ gen_node_name() ->
             undefined ->
                 {ok, Val} = inet:gethostname(),
                 Val;
-
             Val ->
                 address_to_string(partisan_util:parse_ip_address(Val))
         end,
 
     list_to_atom(StringUUID ++ "@" ++ Host).
-
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -884,16 +842,10 @@ gen_node_name() ->
 %% -----------------------------------------------------------------------------
 address_to_string(IPAddress) when ?IS_IP(IPAddress) ->
     inet:ntoa(IPAddress);
-
 address_to_string(Address) when is_binary(Address) ->
     binary_to_list(Address);
-
 address_to_string(Address) when is_list(Address) ->
     Address.
-
-
-
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -904,21 +856,17 @@ env_or_default(Key, Default) ->
     Value = application:get_env(partisan, Key, Default),
     set(Key, Value).
 
-
 %% @private
 do_set(Key, MergeFun) when is_function(MergeFun, 1) ->
     OldValue = persistent_term:get(?KEY(Key), undefined),
     do_set(Key, MergeFun(OldValue));
-
 do_set(Key, Value) ->
     application:set_env(?APP, Key, Value),
     persistent_term:put(?KEY(Key), Value).
 
-
 %% @private
 set_hyparview_config(Config) when is_map(Config) ->
     set_hyparview_config(maps:to_list(Config));
-
 set_hyparview_config(Config) when is_list(Config) ->
     %% We rename keys
     M = lists:foldl(
@@ -931,7 +879,6 @@ set_hyparview_config(Config) when is_list(Config) ->
     %% We merge with defaults
     do_set(hyparview, maps:merge(get(hyparview, ?HYPARVIEW_DEFAULTS), M)).
 
-
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc Rename keys
@@ -940,43 +887,32 @@ set_hyparview_config(Config) when is_list(Config) ->
 maybe_rename(arwl) ->
     % hyparview
     active_rwl;
-
 maybe_rename(prwl) ->
     % hyparview
     passive_rwl;
-
 maybe_rename(max_active_size) ->
     % hyparview
     active_max_size;
-
 maybe_rename(min_active_size) ->
     % hyparview
     active_min_size;
-
 maybe_rename(max_passive_size) ->
     % hyparview
     passive_max_size;
-
 maybe_rename(passive_view_shuffle_period) ->
     % hyparview
     shuffle_interval;
-
 maybe_rename(random_promotion_period) ->
     % hyparview
     random_promotion_interval;
-
 maybe_rename(partisan_peer_service_manager) ->
     peer_service_manager;
-
 maybe_rename(peer_ip) ->
     listen_ip;
-
 maybe_rename(peer_port) ->
     listen_port;
-
 maybe_rename(Key) ->
     Key.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -992,8 +928,6 @@ validate_listen_addrs(Addrs) ->
         Addrs
     ).
 
-
-
 %% @private
 random_port() ->
     {ok, Socket} = gen_tcp:listen(0, []),
@@ -1001,17 +935,14 @@ random_port() ->
     ok = gen_tcp:close(Socket),
     Port.
 
-
 %% @private
 try_get_peer_ip() ->
     case application:get_env(partisan, peer_ip) of
         {ok, Value} when is_list(Value) orelse ?IS_IP(Value) ->
             partisan_util:parse_ip_address(Value);
-
         undefined ->
             get_peer_ip()
     end.
-
 
 %% @private
 get_peer_ip() ->
@@ -1030,7 +961,6 @@ get_peer_ip() ->
     receive
         {ok, Addr} ->
             Addr;
-
         {spawn_reply, ReqId, error, Reason} ->
             ?LOG_INFO(#{
                 description =>
@@ -1039,19 +969,16 @@ get_peer_ip() ->
                 reason => Reason
             }),
             ?LOCALHOST
-
-    after
-        5000 ->
-            _ = spawn_request_abandon(ReqId),
-            ?LOG_INFO(#{
-                description =>
-                    "Cannot resolve IP address for host, using 127.0.0.1",
-                host => Host,
-                reason => timeout
-            }),
-            ?LOCALHOST
+    after 5000 ->
+        _ = spawn_request_abandon(ReqId),
+        ?LOG_INFO(#{
+            description =>
+                "Cannot resolve IP address for host, using 127.0.0.1",
+            host => Host,
+            reason => timeout
+        }),
+        ?LOCALHOST
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -1062,19 +989,19 @@ get_peer_ip() ->
     inet:ip_address().
 
 get_ip_addr(Host) ->
-    Families = case is_inet6_supported() of
-        true -> [inet6, inet];
-        false -> [inet]
-    end,
+    Families =
+        case is_inet6_supported() of
+            true -> [inet6, inet];
+            false -> [inet]
+        end,
     get_ip_addr(Host, Families, undefined).
-
 
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
-get_ip_addr(Host, [H|T], _) ->
+get_ip_addr(Host, [H | T], _) ->
     case inet:getaddr(Host, H) of
         {ok, Addr} ->
             ?LOG_NOTICE(#{
@@ -1084,11 +1011,9 @@ get_ip_addr(Host, [H|T], _) ->
                 addr => Addr
             }),
             Addr;
-
         {error, Reason} ->
             get_ip_addr(Host, T, Reason)
     end;
-
 get_ip_addr(Host, [], Reason) ->
     %% Fallback, as we could't resolve Host
     ?LOG_NOTICE(#{
@@ -1097,7 +1022,6 @@ get_ip_addr(Host, [], Reason) ->
         reason => partisan_util:format_posix_error(Reason)
     }),
     {127, 0, 0, 1}.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -1109,11 +1033,9 @@ is_inet6_supported() ->
         {ok, Socket} ->
             ok = gen_tcp:close(Socket),
             true;
-
         _Error ->
             false
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -1126,10 +1048,10 @@ to_channels_map(L) when is_list(L) ->
             begin
                 Channel = to_channel_spec(E),
                 {maps:get(name, Channel), maps:without([name], Channel)}
-            end || E <- L
+            end
+         || E <- L
         ]
     );
-
 to_channels_map(M) when is_map(M) ->
     %% This is the case where a user has passed
     %% #{channel() => channel_opts()}
@@ -1141,7 +1063,6 @@ to_channels_map(M) when is_map(M) ->
         M
     ).
 
-
 %% @private
 init_channel_opts() ->
     #{
@@ -1149,7 +1070,6 @@ init_channel_opts() ->
         monotonic => false,
         compression => false
     }.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -1159,29 +1079,26 @@ init_channel_opts() ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec to_channel_spec(
-    Arg ::  map()
-            | partisan:channel()
-            | {partisan:channel(), partisan:channel_opts()}
-            | {monotonic, partisan:channel()}) ->
+    Arg ::
+        map()
+        | partisan:channel()
+        | {partisan:channel(), partisan:channel_opts()}
+        | {monotonic, partisan:channel()}
+) ->
     Spec :: map() | no_return().
 
-to_channel_spec(#{name := Name, parallelism := N, monotonic := M} = Spec)
-when is_atom(Name) andalso is_integer(N) andalso N >= 1 andalso is_boolean(M) ->
+to_channel_spec(#{name := Name, parallelism := N, monotonic := M} = Spec) when
+    is_atom(Name) andalso is_integer(N) andalso N >= 1 andalso is_boolean(M)
+->
     Spec;
-
 to_channel_spec(Name) when is_atom(Name) ->
     to_channel_spec(#{name => Name});
-
 to_channel_spec({monotonic, Name}) when is_atom(Name) ->
     %% We support the legacy syntax
     to_channel_spec(#{name => Name, monotonic => true});
-
 to_channel_spec({Name, Opts}) when is_atom(Name), is_map(Opts) ->
     to_channel_spec(Opts#{name => Name});
-
 to_channel_spec(#{name := _} = Map) when is_map(Map) ->
     to_channel_spec(maps:merge(init_channel_opts(), Map));
-
 to_channel_spec(_) ->
     error(badarg).
-

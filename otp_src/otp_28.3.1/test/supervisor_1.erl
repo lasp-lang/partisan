@@ -20,7 +20,7 @@
 %% %CopyrightEnd%
 %%
 %% Description: Simulates the behaviour that a child process may have.
-%% Is used by the supervisor_SUITE test suite.  
+%% Is used by the supervisor_SUITE test suite.
 -module(supervisor_1).
 
 -export([start_child/0, start_child/1, init/1]).
@@ -29,24 +29,22 @@
 
 start_child(ignore) ->
     case get(child_ignored) of
-	true ->
-	    start_child();
-	_ ->
-	    put(child_ignored, true),
-	    ignore
+        true ->
+            start_child();
+        _ ->
+            put(child_ignored, true),
+            ignore
     end;
-
 start_child(error) ->
     case get(start_child_error) of
-	undefined ->
-	    put(start_child_error, set),
-	    start_child();
-	set -> gen_server:start_link(?MODULE, error, [])
+        undefined ->
+            put(start_child_error, set),
+            start_child();
+        set ->
+            gen_server:start_link(?MODULE, error, [])
     end;
-
 start_child({return, Term}) ->
     Term;
-
 start_child(Extra) ->
     {ok, Pid} = gen_server:start_link(?MODULE, normal, []),
     {ok, Pid, Extra}.
@@ -63,28 +61,19 @@ handle_call(Req, _From, State) ->
 
 handle_info(die, State) ->
     {stop, died, State};
-
 handle_info(stop, State) ->
     {stop, normal, State};
-
-handle_info({'EXIT',_,shutdown}, State) ->
+handle_info({'EXIT', _, shutdown}, State) ->
     {stop, shutdown, State};
-
-handle_info({'EXIT',_,{shutdown,Term}}, State) ->
-    {stop, {shutdown,Term}, State};
-
+handle_info({'EXIT', _, {shutdown, Term}}, State) ->
+    {stop, {shutdown, Term}, State};
 handle_info({sleep, Time}, State) ->
     io:format("FOO: ~p~n", [Time]),
     timer:sleep(Time),
     io:format("FOO: sleept~n", []),
     handle_info({sleep, Time}, State);
-
 handle_info(_, State) ->
     {noreply, State}.
 
 terminate(_Reason, _State) ->
     ok.
-
-
-
-

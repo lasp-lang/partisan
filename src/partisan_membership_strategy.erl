@@ -28,9 +28,9 @@
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
--type outgoing_message()    ::  {node(), partisan:message()}.
--type outgoing_messages()   ::  [outgoing_message()].
--type membership_list()     ::  [partisan:node_spec()].
+-type outgoing_message() :: {node(), partisan:message()}.
+-type outgoing_messages() :: [outgoing_message()].
+-type membership_list() :: [partisan:node_spec()].
 
 -export_type([outgoing_message/0]).
 -export_type([outgoing_messages/0]).
@@ -44,13 +44,9 @@
 -export([periodic/2]).
 -export([handle_message/3]).
 
-
-
 %% =============================================================================
 %% CALLBACKS
 %% =============================================================================
-
-
 
 -callback init(partisan:actor()) ->
     {ok, membership_list(), State :: any()}.
@@ -58,13 +54,14 @@
 -callback join(
     NodeSpec :: partisan:node_spec(),
     PeerState :: any(),
-    LocalState :: any()) ->
+    LocalState :: any()
+) ->
     {ok, membership_list(), outgoing_messages(), NewState :: any()}.
 
 -callback periodic(State :: any()) ->
     {ok, membership_list(), outgoing_messages(), NewState :: any()}.
 
--callback compare(Members :: membership_list(),  State :: any()) ->
+-callback compare(Members :: membership_list(), State :: any()) ->
     {Joiners :: membership_list(), Leavers :: membership_list()}.
 
 -callback handle_message(partisan:message(), State :: any()) ->
@@ -76,13 +73,9 @@
 -callback prune([NodeSpec :: partisan:node_spec()], State :: any()) ->
     {ok, membership_list(), NewState :: any()}.
 
-
-
 %% =============================================================================
 %% API
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -94,7 +87,6 @@
 init(Mod, Actor) ->
     Mod:init(Actor).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -103,12 +95,12 @@ init(Mod, Actor) ->
     Mod :: module(),
     NodeSpec :: partisan:node_spec(),
     PeerState :: any(),
-    LocalState :: any()) ->
+    LocalState :: any()
+) ->
     {ok, membership_list(), outgoing_messages(), NewState :: any()}.
 
 join(Mod, NodeSpec, PeerState, LocalState) ->
     Mod:join(NodeSpec, PeerState, LocalState).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -120,7 +112,6 @@ join(Mod, NodeSpec, PeerState, LocalState) ->
 periodic(Mod, State) ->
     Mod:periodic(State).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -130,7 +121,6 @@ periodic(Mod, State) ->
 
 handle_message(Mod, Msg, State) ->
     Mod:handle_message(Msg, State).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -142,7 +132,6 @@ handle_message(Mod, Msg, State) ->
 leave(Mod, NodeSpec, State) ->
     Mod:leave(NodeSpec, State).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -152,7 +141,3 @@ leave(Mod, NodeSpec, State) ->
 
 prune(Mod, NodeSpecs, State) ->
     Mod:prune(NodeSpecs, State).
-
-
-
-

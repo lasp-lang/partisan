@@ -95,25 +95,26 @@
 -define(SEP, $:).
 -define(PADDING_START, $\31).
 
--type t()               ::  p() | r() | n().
--type format()          ::  improper_list | tuple | uri.
--type p()               ::  [node()|binary()]
-                            | tuple_ref(encoded_pid())
-                            | uri().
--type r()               ::  [node()|binary()]
-                            | tuple_ref(encoded_ref())
-                            | uri().
--type n()               ::  [node()|binary()]
-                            | tuple_ref(encoded_name())
-                            | uri().
--type uri()             ::  <<_:64, _:_*8>>.
--type tuple_ref(T)      ::  {?MODULE, node(), T}.
--type target()          ::  encoded_pid() | encoded_ref() | encoded_name().
--type encoded_pid()     ::  {encoded_pid, list()}.
--type encoded_name()    ::  {encoded_name, list()}.
--type encoded_ref()     ::  {encoded_ref, list()}.
-
-
+-type t() :: p() | r() | n().
+-type format() :: improper_list | tuple | uri.
+-type p() ::
+    [node() | binary()]
+    | tuple_ref(encoded_pid())
+    | uri().
+-type r() ::
+    [node() | binary()]
+    | tuple_ref(encoded_ref())
+    | uri().
+-type n() ::
+    [node() | binary()]
+    | tuple_ref(encoded_name())
+    | uri().
+-type uri() :: <<_:64, _:_*8>>.
+-type tuple_ref(T) :: {?MODULE, node(), T}.
+-type target() :: encoded_pid() | encoded_ref() | encoded_name().
+-type encoded_pid() :: {encoded_pid, list()}.
+-type encoded_name() :: {encoded_name, list()}.
+-type encoded_ref() :: {encoded_ref, list()}.
 
 -export_type([t/0]).
 -export_type([p/0]).
@@ -122,7 +123,6 @@
 -export_type([encoded_pid/0]).
 -export_type([encoded_name/0]).
 -export_type([encoded_ref/0]).
-
 
 -export([from_term/1]).
 -export([from_term/2]).
@@ -149,8 +149,6 @@
 -export([to_reference/1]).
 -export([to_term/1]).
 
-
-
 -compile({no_auto_import, [is_pid/1]}).
 -compile({no_auto_import, [is_reference/1]}).
 -compile({no_auto_import, [node/1]}).
@@ -159,12 +157,9 @@
 
 -dialyzer([{nowarn_function, encode/3}, no_improper_lists]).
 
-
 %% =============================================================================
 %% API
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the partisan-encoded representation of a process identifier,
@@ -179,11 +174,10 @@
 
 from_term({Name, Node}) ->
     from_term(Name, Node);
-
-from_term(Term)
-when is_atom(Term); erlang:is_pid(Term); erlang:is_reference(Term) ->
+from_term(Term) when
+    is_atom(Term); erlang:is_pid(Term); erlang:is_reference(Term)
+->
     encode(Term, partisan:node()).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the partisan-encoded representation of a registered name `Name'
@@ -194,15 +188,14 @@ when is_atom(Term); erlang:is_pid(Term); erlang:is_reference(Term) ->
 -spec from_term(Term :: pid() | reference() | atom(), Node :: node()) ->
     t() | no_return().
 
-from_term(Term, Node)
-when is_atom(Node) andalso (
-    erlang:is_pid(Term)
-    orelse erlang:is_reference(Term) orelse is_atom(Term)) ->
+from_term(Term, Node) when
+    is_atom(Node) andalso
+        (erlang:is_pid(Term) orelse
+            erlang:is_reference(Term) orelse is_atom(Term))
+->
     encode(Term, Node);
-
 from_term(_, _) ->
     error(badarg).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -226,7 +219,6 @@ to_term(Ref) ->
             erlang:error(badarg, [Ref], [{error_info, Info}])
     end.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Calls {@link to_term/1} and returns the result if it is a local pid().
 %% Otherwise fails with `badarg'
@@ -242,7 +234,6 @@ to_pid(Arg) ->
             Info = #{cause => #{1 => "not a partisan_remote_ref:p()."}},
             erlang:error(badarg, [Arg], [{error_info, Info}])
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Calls {@link to_term/1} and returns the result if it is an local
@@ -260,7 +251,6 @@ to_name(Arg) ->
             erlang:error(badarg, [Arg], [{error_info, Info}])
     end.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Calls {@link to_term/1} and returns the result if it is an local
 %% name i.e. atom() or local pid(). Otherwise fails with `badarg'
@@ -275,12 +265,14 @@ to_pid_or_name(Arg) ->
         Term when erlang:is_pid(Term) ->
             Term;
         _ ->
-            Info = #{cause => #{
-                1 => "not a partisan_remote_ref:p() or partisan_remote_ref:n()."
-            }},
+            Info = #{
+                cause => #{
+                    1 =>
+                        "not a partisan_remote_ref:p() or partisan_remote_ref:n()."
+                }
+            },
             erlang:error(badarg, [Arg], [{error_info, Info}])
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Calls {@link to_term/1} and returns the result if it is a local
@@ -298,7 +290,6 @@ to_reference(Arg) ->
             erlang:error(badarg, [Arg], [{error_info, Info}])
     end.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -308,37 +299,28 @@ to_reference(Arg) ->
 target(Ref) ->
     decode_target(Ref).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
 -spec node(PRef :: t()) -> node() | no_return().
 
-node([Node|<<"#Pid", _/binary>>]) when is_atom(Node) ->
+node([Node | <<"#Pid", _/binary>>]) when is_atom(Node) ->
     Node;
-
-node([Node|<<"#Ref", _/binary>>]) when is_atom(Node) ->
+node([Node | <<"#Ref", _/binary>>]) when is_atom(Node) ->
     Node;
-
-node([Node|<<"#Name", _/binary>>]) when is_atom(Node) ->
+node([Node | <<"#Name", _/binary>>]) when is_atom(Node) ->
     Node;
-
 node(<<"partisan:pid:", Rest/binary>>) ->
     get_node(Rest);
-
 node(<<"partisan:ref:", Rest/binary>>) ->
     get_node(Rest);
-
 node(<<"partisan:name:", Rest/binary>>) ->
     get_node(Rest);
-
 node({?MODULE, Node, _}) when is_atom(Node) ->
     Node;
-
 node(_) ->
     error(badarg).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -346,31 +328,22 @@ node(_) ->
 %% -----------------------------------------------------------------------------
 -spec nodestring(PRef :: t()) -> binary() | no_return().
 
-nodestring([Node|<<"#Pid", _/binary>>]) when is_atom(Node) ->
+nodestring([Node | <<"#Pid", _/binary>>]) when is_atom(Node) ->
     atom_to_binary(Node, utf8);
-
-nodestring([Node|<<"#Ref", _/binary>>]) when is_atom(Node) ->
+nodestring([Node | <<"#Ref", _/binary>>]) when is_atom(Node) ->
     atom_to_binary(Node, utf8);
-
-nodestring([Node|<<"#Name", _/binary>>]) when is_atom(Node) ->
+nodestring([Node | <<"#Name", _/binary>>]) when is_atom(Node) ->
     atom_to_binary(Node, utf8);
-
 nodestring(<<"partisan:pid:", Rest/binary>>) ->
     get_nodestring(Rest);
-
 nodestring(<<"partisan:ref:", Rest/binary>>) ->
     get_nodestring(Rest);
-
 nodestring(<<"partisan:name:", Rest/binary>>) ->
     get_nodestring(Rest);
-
 nodestring({?MODULE, Node, _}) ->
     atom_to_binary(Node, utf8);
-
 nodestring(_) ->
     error(badarg).
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -378,30 +351,22 @@ nodestring(_) ->
 %% -----------------------------------------------------------------------------
 -spec is_local(PRef :: t()) -> boolean() | no_return().
 
-is_local([Node|<<"#Pid", _/binary>>]) when is_atom(Node) ->
+is_local([Node | <<"#Pid", _/binary>>]) when is_atom(Node) ->
     Node =:= partisan:node();
-
-is_local([Node|<<"#Ref", _/binary>>]) when is_atom(Node) ->
+is_local([Node | <<"#Ref", _/binary>>]) when is_atom(Node) ->
     Node =:= partisan:node();
-
-is_local([Node|<<"#Name", _/binary>>]) when is_atom(Node) ->
+is_local([Node | <<"#Name", _/binary>>]) when is_atom(Node) ->
     Node =:= partisan:node();
-
 is_local(<<"partisan:pid:", Rest/binary>>) ->
     do_is_local(Rest);
-
 is_local(<<"partisan:ref:", Rest/binary>>) ->
     do_is_local(Rest);
-
 is_local(<<"partisan:name:", Rest/binary>>) ->
     do_is_local(Rest);
-
 is_local({?MODULE, Node, _}) ->
     Node =:= partisan:node();
-
 is_local(Arg) ->
     error({badarg, Arg}).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -409,18 +374,14 @@ is_local(Arg) ->
 %% -----------------------------------------------------------------------------
 -spec is_local_pid(PRef :: t()) -> boolean() | no_return().
 
-is_local_pid([Node|<<"#Pid", _/binary>>]) when is_atom(Node) ->
+is_local_pid([Node | <<"#Pid", _/binary>>]) when is_atom(Node) ->
     Node =:= partisan:node();
-
 is_local_pid(<<"partisan:pid:", Rest/binary>>) ->
     do_is_local(Rest);
-
 is_local_pid({?MODULE, Node, {encoded_pid, _}}) ->
     Node =:= partisan:node();
-
 is_local_pid(_) ->
     false.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -428,20 +389,20 @@ is_local_pid(_) ->
 %% -----------------------------------------------------------------------------
 -spec is_local_pid(PRef :: t(), Pid :: pid()) -> boolean() | no_return().
 
-is_local_pid([Node|<<"#Pid", Rest/binary>>], Pid)
-when is_atom(Node), erlang:is_pid(Pid) ->
-    Node =:= partisan:node()
-        andalso Rest =:= list_to_binary(pid_to_list(Pid));
-
-is_local_pid(<<"partisan:pid:", Rest/binary>>, Pid)
-when erlang:is_pid(Pid) ->
+is_local_pid([Node | <<"#Pid", Rest/binary>>], Pid) when
+    is_atom(Node), erlang:is_pid(Pid)
+->
+    Node =:= partisan:node() andalso
+        Rest =:= list_to_binary(pid_to_list(Pid));
+is_local_pid(<<"partisan:pid:", Rest/binary>>, Pid) when
+    erlang:is_pid(Pid)
+->
     PidAsBin = list_to_binary(pid_to_list(Pid)),
     do_is_local(Rest, partisan:nodestring(), PidAsBin);
-
-is_local_pid({?MODULE, Node, {encoded_pid, PidAsList}}, Pid)
-when erlang:is_pid(Pid) ->
+is_local_pid({?MODULE, Node, {encoded_pid, PidAsList}}, Pid) when
+    erlang:is_pid(Pid)
+->
     PidAsList =:= pid_to_list(Pid) andalso Node =:= partisan:node();
-
 is_local_pid(Process, Pid) when erlang:is_pid(Pid) ->
     try to_term(Process) of
         Name when is_atom(Name) ->
@@ -453,26 +414,20 @@ is_local_pid(Process, Pid) when erlang:is_pid(Pid) ->
             false
     end.
 
-
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
 -spec is_local_reference(PRef :: t()) -> boolean() | no_return().
 
-is_local_reference([Node|<<"#Ref", _/binary>>]) when is_atom(Node) ->
+is_local_reference([Node | <<"#Ref", _/binary>>]) when is_atom(Node) ->
     Node =:= partisan:node();
-
 is_local_reference(<<"partisan:ref:", Rest/binary>>) ->
     do_is_local(Rest);
-
 is_local_reference({?MODULE, Node, {encoded_ref, _}}) ->
     Node =:= partisan:node();
-
 is_local_reference(_) ->
     false.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -481,23 +436,22 @@ is_local_reference(_) ->
 -spec is_local_reference(PRef :: t(), LocalRef :: reference()) ->
     boolean() | no_return().
 
-is_local_reference([Node|<<"#Ref", _/binary>> = Bin], Ref)
-when is_atom(Node), erlang:is_reference(Ref) ->
-    Node =:= partisan:node()
-        andalso Bin =:= list_to_binary(ref_to_list(Ref));
-
-is_local_reference(<<"partisan:ref:", Rest/binary>>, Ref)
-when erlang:is_reference(Ref) ->
+is_local_reference([Node | <<"#Ref", _/binary>> = Bin], Ref) when
+    is_atom(Node), erlang:is_reference(Ref)
+->
+    Node =:= partisan:node() andalso
+        Bin =:= list_to_binary(ref_to_list(Ref));
+is_local_reference(<<"partisan:ref:", Rest/binary>>, Ref) when
+    erlang:is_reference(Ref)
+->
     RefAsBin = list_to_binary(ref_to_list(Ref)),
     do_is_local(Rest, partisan:nodestring(), RefAsBin);
-
-is_local_reference({?MODULE, Node, {encoded_ref, RefAsList}}, Ref)
-when erlang:is_reference(Ref) ->
+is_local_reference({?MODULE, Node, {encoded_ref, RefAsList}}, Ref) when
+    erlang:is_reference(Ref)
+->
     RefAsList =:= ref_to_list(Ref) andalso Node =:= partisan:node();
-
 is_local_reference(_, _) ->
     false.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -505,18 +459,14 @@ is_local_reference(_, _) ->
 %% -----------------------------------------------------------------------------
 -spec is_local_name(PRef :: t()) -> boolean() | no_return().
 
-is_local_name([Node|<<"#Name", _/binary>>]) when is_atom(Node) ->
+is_local_name([Node | <<"#Name", _/binary>>]) when is_atom(Node) ->
     Node =:= partisan:node();
-
 is_local_name(<<"partisan:name:", Rest/binary>>) ->
     do_is_local(Rest);
-
 is_local_name({?MODULE, Node, {encoded_name, _}}) ->
     Node =:= partisan:node();
-
 is_local_name(_) ->
     false.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -524,22 +474,18 @@ is_local_name(_) ->
 %% -----------------------------------------------------------------------------
 -spec is_local_name(PRef :: t(), Name :: atom()) -> boolean() | no_return().
 
-is_local_name([Node|<<"#Name", Rest/binary>>], Name)
-when is_atom(Node), is_atom(Name) ->
-    Node =:= partisan:node()
-        andalso Rest =:= atom_to_binary(Name, utf8);
-
+is_local_name([Node | <<"#Name", Rest/binary>>], Name) when
+    is_atom(Node), is_atom(Name)
+->
+    Node =:= partisan:node() andalso
+        Rest =:= atom_to_binary(Name, utf8);
 is_local_name(<<"partisan:name:", Rest/binary>>, Name) ->
     NameAsBin = atom_to_binary(Name, utf8),
     do_is_local(Rest, partisan:nodestring(), NameAsBin);
-
 is_local_name({?MODULE, Node, {encoded_name, NameAsList}}, Name) ->
     NameAsList =:= atom_to_list(Name) andalso Node =:= partisan:node();
-
 is_local_name(_, _) ->
     false.
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns true if reference `Ref' is located in node `Node'.
@@ -547,30 +493,22 @@ is_local_name(_, _) ->
 %% -----------------------------------------------------------------------------
 -spec is_local(PRef :: t(), Node :: node()) -> boolean() | no_return().
 
-is_local([Node|<<"#Pid", _/binary>>], OtherNode) when is_atom(OtherNode) ->
+is_local([Node | <<"#Pid", _/binary>>], OtherNode) when is_atom(OtherNode) ->
     Node =:= OtherNode;
-
-is_local([Node|<<"#Ref", _/binary>>], OtherNode) when is_atom(OtherNode) ->
+is_local([Node | <<"#Ref", _/binary>>], OtherNode) when is_atom(OtherNode) ->
     Node =:= OtherNode;
-
-is_local([Node|<<"#Name", _/binary>>], OtherNode) when is_atom(OtherNode) ->
+is_local([Node | <<"#Name", _/binary>>], OtherNode) when is_atom(OtherNode) ->
     Node =:= OtherNode;
-
 is_local(<<"partisan:pid:", Rest/binary>>, Node) when is_atom(Node) ->
     do_is_local(Rest, Node);
-
 is_local(<<"partisan:ref:", Rest/binary>>, Node) when is_atom(Node) ->
     do_is_local(Rest, Node);
-
 is_local(<<"partisan:name:", Rest/binary>>, Node) when is_atom(Node) ->
     do_is_local(Rest, Node);
-
 is_local({?MODULE, Node, _}, OtherNode) when is_atom(OtherNode) ->
     Node =:= OtherNode;
-
 is_local(_, _) ->
     error(badarg).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -580,9 +518,8 @@ is_local(_, _) ->
 
 is_type(Term) ->
     is_pid(Term) orelse
-    is_reference(Term) orelse
-    is_name(Term).
-
+        is_reference(Term) orelse
+        is_name(Term).
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -590,21 +527,16 @@ is_type(Term) ->
 %% -----------------------------------------------------------------------------
 -spec is_pid(any()) -> boolean().
 
-is_pid([Node|<<"#Pid", _/binary>>]) when is_atom(Node) ->
+is_pid([Node | <<"#Pid", _/binary>>]) when is_atom(Node) ->
     true;
-
 is_pid(<<"partisan:pid:", _/binary>>) ->
     true;
-
 is_pid({?MODULE, _Node, Term}) ->
     is_pid(Term);
-
 is_pid({encoded_pid, _}) ->
     true;
-
 is_pid(_) ->
     false.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -612,21 +544,16 @@ is_pid(_) ->
 %% -----------------------------------------------------------------------------
 -spec is_reference(any()) -> boolean().
 
-is_reference([Node|<<"#Ref", _/binary>>]) when is_atom(Node) ->
+is_reference([Node | <<"#Ref", _/binary>>]) when is_atom(Node) ->
     true;
-
 is_reference(<<"partisan:ref:", _/binary>>) ->
     true;
-
 is_reference({?MODULE, _, Term}) ->
     is_reference(Term);
-
 is_reference({encoded_ref, _}) ->
     true;
-
 is_reference(_) ->
     false.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -634,21 +561,16 @@ is_reference(_) ->
 %% -----------------------------------------------------------------------------
 -spec is_name(any()) -> boolean().
 
-is_name([Node|<<"#Name", _/binary>>]) when is_atom(Node) ->
+is_name([Node | <<"#Name", _/binary>>]) when is_atom(Node) ->
     true;
-
 is_name(<<"partisan:name:", _/binary>>) ->
     true;
-
 is_name({?MODULE, _, Term}) ->
     is_name(Term);
-
 is_name({encoded_name, _}) ->
     true;
-
 is_name(_) ->
     false.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -656,10 +578,10 @@ is_name(_) ->
 %% -----------------------------------------------------------------------------
 -spec is_name(Ref :: any(), Name :: atom()) -> boolean().
 
-is_name([Node|<<"#Name", Rest/binary>>], Name)
-when is_atom(Node), is_atom(Name) ->
+is_name([Node | <<"#Name", Rest/binary>>], Name) when
+    is_atom(Node), is_atom(Name)
+->
     Rest == atom_to_binary(Name, utf8);
-
 is_name(<<"partisan:name:", Rest/binary>>, Name) when is_atom(Name) ->
     NameStr = atom_to_binary(Name, utf8),
     case binary:split(Rest, <<?SEP>>, [global]) of
@@ -668,16 +590,12 @@ is_name(<<"partisan:name:", Rest/binary>>, Name) when is_atom(Name) ->
         _ ->
             false
     end;
-
 is_name({?MODULE, _, Term}, Name) when is_atom(Name) ->
     is_name(Term, Name);
-
 is_name({encoded_name, NameStr}, Name) when is_atom(Name) ->
     NameStr == atom_to_list(Name);
-
 is_name(_, _) ->
     false.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Checks two refs for identity. Two refs are identical if the are
@@ -691,7 +609,6 @@ is_name(_, _) ->
 
 is_identical(A, A) ->
     true;
-
 is_identical(A, B) ->
     case node(A) == node(B) of
         true ->
@@ -707,13 +624,9 @@ is_identical(A, B) ->
             false
     end.
 
-
-
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -729,7 +642,6 @@ encode(Term, Node) ->
         false ->
             error(badarg)
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -757,7 +669,7 @@ encode(Pid, Node, Format) when erlang:is_pid(Pid) ->
     case Format of
         improper_list ->
             %% eqwalizer:ignore improper_list
-            [Node|list_to_binary("#Pid" ++ PidStr)];
+            [Node | list_to_binary("#Pid" ++ PidStr)];
         uri ->
             PidBin = untag(PidStr),
             Nodestr = atom_to_binary(Node, utf8),
@@ -766,39 +678,31 @@ encode(Pid, Node, Format) when erlang:is_pid(Pid) ->
             Target = {encoded_pid, PidStr},
             {?MODULE, Node, Target}
     end;
-
 encode(Ref, Node, improper_list) when erlang:is_reference(Ref) ->
     Node =:= partisan:node() orelse error(badarg),
     %% eqwalizer:ignore improper_list
-    [Node|list_to_binary(ref_to_list(Ref))];
-
+    [Node | list_to_binary(ref_to_list(Ref))];
 encode(Ref, Node, uri) when erlang:is_reference(Ref) ->
     %% We do not support reference rewriting
     Node =:= partisan:node() orelse error(badarg),
     <<"#Ref", RefBin/binary>> = untag(ref_to_list(Ref)),
     Nodestring = atom_to_binary(Node, utf8),
     maybe_pad(<<"partisan:ref:", Nodestring/binary, ?SEP, RefBin/binary>>);
-
 encode(Ref, Node, tuple) when erlang:is_reference(Ref) ->
     %% We do not support reference rewriting
     Node =:= partisan:node() orelse error(badarg),
     Target = {encoded_ref, erlang:ref_to_list(Ref)},
     {?MODULE, Node, Target};
-
 encode(Name, Node, improper_list) when is_atom(Name) ->
     %% eqwalizer:ignore improper_list
-    [Node|list_to_binary("#Name" ++ atom_to_list(Name))];
-
+    [Node | list_to_binary("#Name" ++ atom_to_list(Name))];
 encode(Name, Node, uri) when is_atom(Name) ->
     NameBin = atom_to_binary(Name, utf8),
     Nodestring = atom_to_binary(Node, utf8),
     maybe_pad(<<"partisan:name:", Nodestring/binary, ?SEP, NameBin/binary>>);
-
 encode(Name, Node, tuple) when is_atom(Name) ->
     Target = {encoded_name, atom_to_list(Name)},
     {?MODULE, Node, Target}.
-
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -807,18 +711,15 @@ encode(Name, Node, tuple) when is_atom(Name) ->
 %% -----------------------------------------------------------------------------
 -spec decode_term(t() | target()) -> pid() | reference() | atom() | no_return().
 
-decode_term([Node|<<"#Pid", Rest/binary>>]) when is_atom(Node) ->
+decode_term([Node | <<"#Pid", Rest/binary>>]) when is_atom(Node) ->
     Node == partisan:node() orelse throw(badarg),
     to_local_pid(binary_to_list(Rest));
-
-decode_term([Node|<<"#Ref", _/binary>> = Bin]) when is_atom(Node) ->
+decode_term([Node | <<"#Ref", _/binary>> = Bin]) when is_atom(Node) ->
     Node == partisan:node() orelse throw(badarg),
     list_to_ref(binary_to_list(Bin));
-
-decode_term([Node|<<"#Name", Rest/binary>>]) when is_atom(Node) ->
+decode_term([Node | <<"#Name", Rest/binary>>]) when is_atom(Node) ->
     Node == partisan:node() orelse throw(badarg),
     binary_to_existing_atom(Rest, utf8);
-
 decode_term(<<"partisan:", Rest0/binary>>) ->
     ThisNode = partisan:nodestring(),
 
@@ -837,35 +738,24 @@ decode_term(<<"partisan:", Rest0/binary>>) ->
     %% e.g. to encode metadata (but we will provide functions to extract the
     %% metadata, here we don't need it)
     case binary:split(Rest, <<?SEP>>, [global]) of
-
         [<<"pid">>, Node, Term | _] when Node == ThisNode ->
             to_local_pid(tag(Term));
-
         [<<"ref">>, Node, Term | _] when Node == ThisNode ->
             list_to_ref("#Ref" ++ tag(Term));
-
         [<<"name">>, Node, Term | _] when Node == ThisNode ->
             binary_to_existing_atom(Term, utf8);
-
         _ ->
             throw(badarg)
     end;
-
 decode_term({?MODULE, Node, Target}) ->
     Node =:= partisan:node() orelse throw(badarg),
     decode_term(Target);
-
 decode_term({encoded_pid, Value}) ->
     list_to_pid(Value);
-
 decode_term({encoded_ref, Value}) ->
     list_to_ref(Value);
-
 decode_term({encoded_name, Value}) ->
     list_to_existing_atom(Value).
-
-
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -874,15 +764,12 @@ decode_term({encoded_name, Value}) ->
 %% -----------------------------------------------------------------------------
 -spec decode_target(t() | target()) -> target() | no_return().
 
-decode_target([Node|<<"#Pid", Rest/binary>>]) when is_atom(Node) ->
+decode_target([Node | <<"#Pid", Rest/binary>>]) when is_atom(Node) ->
     {encoded_pid, binary_to_list(Rest)};
-
-decode_target([Node|<<"#Ref", _/binary>> = Bin]) when is_atom(Node) ->
+decode_target([Node | <<"#Ref", _/binary>> = Bin]) when is_atom(Node) ->
     {encoded_ref, binary_to_list(Bin)};
-
-decode_target([Node|<<"#Name", Rest/binary>>]) when is_atom(Node) ->
+decode_target([Node | <<"#Name", Rest/binary>>]) when is_atom(Node) ->
     {encoded_name, binary_to_list(Rest)};
-
 decode_target(<<"partisan:", Rest0/binary>>) ->
     %% We remove padding
     Rest =
@@ -899,35 +786,24 @@ decode_target(<<"partisan:", Rest0/binary>>) ->
     %% e.g. to encode metadata (but we will provide functions to extract the
     %% metadata, here we don't need it)
     case binary:split(Rest, <<?SEP>>, [global]) of
-
         [<<"pid">>, _, Term | _] ->
             {encoded_pid, tag(Term)};
-
         [<<"ref">>, _, Term | _] ->
             {encoded_ref, "#Ref" ++ tag(Term)};
-
         [<<"name">>, _, Term | _] ->
             {encoded_name, binary_to_list(Term)};
-
-
         _ ->
             throw(badarg)
     end;
-
 decode_target({?MODULE, Node, {_, _} = Target}) ->
     Node =:= partisan:node() orelse throw(badarg),
     decode_target(Target);
-
 decode_target({encoded_pid, _} = Target) ->
     Target;
-
 decode_target({encoded_ref, _} = Target) ->
     Target;
-
-
 decode_target({encoded_name, _} = Target) ->
     Target.
-
 
 %% @private
 get_node(Bin) ->
@@ -937,26 +813,22 @@ get_node(Bin) ->
     %% take the risk.
     binary_to_atom(Nodestring, utf8).
 
-
 %% @private
 get_nodestring(Bin) ->
     case binary:split(Bin, <<?SEP>>) of
-        [Node | _]  ->
+        [Node | _] ->
             Node;
         _ ->
             error(badarg)
     end.
 
-
 %% @private
 do_is_local(Bin) ->
     do_is_local(Bin, partisan:nodestring(), undefined).
 
-
 %% @private
 do_is_local(Bin, Nodestring) ->
     do_is_local(Bin, Nodestring, undefined).
-
 
 %% @private
 do_is_local(Bin, Nodestring, undefined) ->
@@ -967,24 +839,25 @@ do_is_local(Bin, Nodestring, undefined) ->
         _ ->
             false
     end;
-
 do_is_local(Bin, Nodestring, TargetAsBin) ->
     case Bin of
         <<
-            Nodestring:(byte_size(Nodestring))/binary, ?SEP,
+            Nodestring:(byte_size(Nodestring))/binary,
+            ?SEP,
             TargetAsBin:(byte_size(TargetAsBin))/binary
         >> ->
             true;
         <<
-            Nodestring:(byte_size(Nodestring))/binary, ?SEP,
-            TargetAsBin:(byte_size(TargetAsBin))/binary, ?SEP,
+            Nodestring:(byte_size(Nodestring))/binary,
+            ?SEP,
+            TargetAsBin:(byte_size(TargetAsBin))/binary,
+            ?SEP,
             _/binary
         >> ->
             true;
         _ ->
             false
     end.
-
 
 %% @private
 -spec untag(string()) -> binary().
@@ -994,16 +867,13 @@ untag(String0) ->
     %% eqwalizer:ignore String1
     iolist_to_binary(string:replace(String1, ">", "")).
 
-
 %% @private
 -spec tag(binary() | list()) -> list().
 
 tag(Bin) when is_binary(Bin) ->
     tag(binary_to_list(Bin));
-
 tag(String) when is_list(String) ->
     lists:append(["<", String, ">"]).
-
 
 %% @private
 maybe_pad(Bin) when byte_size(Bin) < 65 ->
@@ -1027,15 +897,12 @@ maybe_pad(Bin) when byte_size(Bin) < 65 ->
         false ->
             Bin
     end;
-
 maybe_pad(Bin) ->
     Bin.
-
 
 %% @private
 to_local_pid_list("<0." ++ _ = Value) ->
     Value;
-
 to_local_pid_list(Value) ->
     case string:split(Value, ".", all) of
         [_, B, C] ->
@@ -1044,11 +911,9 @@ to_local_pid_list(Value) ->
             error(badarg)
     end.
 
-
 %% @private
 to_local_pid(Value) ->
     list_to_pid(to_local_pid_list(Value)).
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -1065,7 +930,6 @@ maybe_register_pid(Pid, Node, Mode) ->
             false
     end.
 
-
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc
@@ -1078,20 +942,22 @@ register_local_pid(Pid) ->
     %% This code was in partisan_util in previous versions
     Unique = erlang:unique_integer([monotonic, positive]),
 
-    Name = case process_info(Pid, registered_name) of
-        {registered_name, Name0} ->
-            ?LOG_DEBUG("unregistering pid: ~p name: ~p", [Pid, Name0]),
-            %% TODO: Race condition on unregister/register.
-            unregister(Name0),
-            Name0;
-        [] ->
-            list_to_atom("partisan_registered_name_" ++ integer_to_list(Unique))
-    end,
+    Name =
+        case process_info(Pid, registered_name) of
+            {registered_name, Name0} ->
+                ?LOG_DEBUG("unregistering pid: ~p name: ~p", [Pid, Name0]),
+                %% TODO: Race condition on unregister/register.
+                unregister(Name0),
+                Name0;
+            [] ->
+                list_to_atom(
+                    "partisan_registered_name_" ++ integer_to_list(Unique)
+                )
+        end,
 
     ?LOG_DEBUG("registering pid: ~p name: ~p", [Pid, Name]),
 
     register(Name, Pid).
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -1105,15 +971,16 @@ register_remote_pid(Pid, Node) ->
     NewName = "partisan_registered_name_" ++ integer_to_list(Unique),
 
     Register = fun() ->
-        Name = case process_info(Pid, registered_name) of
-            {registered_name, Name0} ->
-                ?LOG_DEBUG("unregistering pid: ~p name: ~p", [Pid, Name0]),
-                %% TODO: Race condition on unregister/register.
-                unregister(Name0),
-                Name0;
-            [] ->
-                list_to_atom(NewName)
-        end,
+        Name =
+            case process_info(Pid, registered_name) of
+                {registered_name, Name0} ->
+                    ?LOG_DEBUG("unregistering pid: ~p name: ~p", [Pid, Name0]),
+                    %% TODO: Race condition on unregister/register.
+                    unregister(Name0),
+                    Name0;
+                [] ->
+                    list_to_atom(NewName)
+            end,
         ?LOG_DEBUG(
             "registering pid: ~p name: ~p at node: ~p",
             [Pid, NewName, Node]
@@ -1125,12 +992,9 @@ register_remote_pid(Pid, Node) ->
     _ = partisan_rpc:call(Node, erlang, spawn, [Register], 5000),
     true.
 
-
 %% =============================================================================
 %% EUNIT TESTS
 %% =============================================================================
-
-
 
 -ifdef(TEST).
 
@@ -1142,7 +1006,6 @@ init_test() ->
     partisan_config:set(name, 'test@127.0.0.1'),
     partisan_config:set(nodestring, <<"test@127.0.0.1">>),
     ok.
-
 
 local_pid_test_improper_list_test() ->
     partisan_config:set(remote_ref_format, improper_list),
@@ -1156,7 +1019,6 @@ local_pid_test_uri_test() ->
     partisan_config:set(remote_ref_format, uri),
     test_local_pid().
 
-
 local_name_test_improper_list_test() ->
     partisan_config:set(remote_ref_format, improper_list),
     test_local_name().
@@ -1169,7 +1031,6 @@ local_name_test_uri_test() ->
     partisan_config:set(remote_ref_format, uri),
     test_local_name().
 
-
 local_ref_test_improper_list_test() ->
     partisan_config:set(remote_ref_format, improper_list),
     test_local_ref().
@@ -1181,7 +1042,6 @@ local_ref_test_tuple_test() ->
 local_ref_test_uri_test() ->
     partisan_config:set(remote_ref_format, uri),
     test_local_ref().
-
 
 test_local_pid() ->
     UriRef = from_term(self()),
@@ -1202,7 +1062,6 @@ test_local_pid() ->
         target(UriRef)
     ).
 
-
 test_local_name() ->
     Ref = from_term(foo),
     ?assert(not is_pid(Ref)),
@@ -1222,7 +1081,6 @@ test_local_name() ->
         target(Ref)
     ).
 
-
 test_local_ref() ->
     ERef = make_ref(),
     Ref = from_term(ERef),
@@ -1239,7 +1097,6 @@ test_local_ref() ->
         to_term(Ref)
     ).
 
-
 remote_name_test() ->
     Ref = from_term(foo, 'othernode@127.0.0.1'),
     ?assertEqual(
@@ -1251,9 +1108,8 @@ remote_name_test() ->
         is_name(Ref)
     ).
 
-
 non_local_target_test() ->
-    Ref =  <<"partisan:pid:othernode@127.0.0.1:0.800.0">>,
+    Ref = <<"partisan:pid:othernode@127.0.0.1:0.800.0">>,
     ?assertError(
         badarg,
         to_term(Ref)
@@ -1262,7 +1118,6 @@ non_local_target_test() ->
         {encoded_pid, "<0.800.0>"},
         target(Ref)
     ).
-
 
 identical_test() ->
     true = erlang:register(foo, self()),
@@ -1284,7 +1139,6 @@ identical_test() ->
         is_identical(A, from_term(bar))
     ).
 
-
 is_name_test() ->
     ?assertEqual(
         true,
@@ -1298,6 +1152,5 @@ is_name_test() ->
         false,
         is_name(from_term(self()), bar)
     ).
-
 
 -endif.

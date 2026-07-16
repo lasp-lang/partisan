@@ -21,7 +21,7 @@
 -module(partisan_orchestration_strategy).
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
--callback(clients(term()) -> term()).
--callback(servers(term()) -> term()).
--callback(download_artifact(term(), node()) -> term()).
--callback(upload_artifact(term(), node(), term()) -> term()).
+-callback clients(term()) -> term().
+-callback servers(term()) -> term().
+-callback download_artifact(term(), node()) -> term().
+-callback upload_artifact(term(), node(), term()) -> term().

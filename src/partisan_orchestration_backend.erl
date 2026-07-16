@@ -29,50 +29,49 @@
 -define(TIMEOUT, infinity).
 
 %% API
--export([start_link/0,
-         start_link/1,
-         graph/0,
-         tree/0,
-         orchestration/0,
-         orchestrated/0,
-         was_connected/0,
-         servers/0,
-         nodes/0]).
+-export([
+    start_link/0,
+    start_link/1,
+    graph/0,
+    tree/0,
+    orchestration/0,
+    orchestrated/0,
+    was_connected/0,
+    servers/0,
+    nodes/0
+]).
 
 %% gen_server callbacks
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 %% debug functions
 
 -define(REFRESH_INTERVAL, 1000).
--define(REFRESH_MESSAGE,  refresh).
+-define(REFRESH_MESSAGE, refresh).
 
 -define(BUILD_GRAPH_INTERVAL, 5000).
--define(BUILD_GRAPH_MESSAGE,  build_graph).
+-define(BUILD_GRAPH_MESSAGE, build_graph).
 
 -define(ARTIFACT_INTERVAL, 1000).
--define(ARTIFACT_MESSAGE,  artifact).
+-define(ARTIFACT_MESSAGE, artifact).
 
--callback(clients(term()) -> term()).
--callback(servers(term()) -> term()).
--callback(download_artifact(term(), node()) -> term()).
--callback(upload_artifact(term(), node(), term()) -> term()).
-
+-callback clients(term()) -> term().
+-callback servers(term()) -> term().
+-callback download_artifact(term(), node()) -> term().
+-callback upload_artifact(term(), node(), term()) -> term().
 
 -eqwalizer({nowarn_function, breadth_first/3}).
-
-
 
 %% =============================================================================
 %% API
 %% =============================================================================
-
-
 
 %% @doc Same as start_link([]).
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
@@ -80,7 +79,7 @@ start_link() ->
     start_link([]).
 
 %% @doc Start and link to calling process.
--spec start_link(list())-> {ok, pid()} | ignore | {error, term()}.
+-spec start_link(list()) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Opts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
 
@@ -114,12 +113,16 @@ nodes() ->
 %% @private
 -spec init([]) -> {ok, #orchestration_strategy_state{}}.
 init([]) ->
-    OrchestrationStrategy = partisan_config:get(orchestration_strategy, ?DEFAULT_ORCHESTRATION_STRATEGY),
+    OrchestrationStrategy = partisan_config:get(
+        orchestration_strategy, ?DEFAULT_ORCHESTRATION_STRATEGY
+    ),
     PeerService = ?PEER_SERVICE_MANAGER,
 
     case OrchestrationStrategy of
         undefined ->
-            ?LOG_INFO(#{description => "Not using container orchestration; disabling."}),
+            ?LOG_INFO(#{
+                description => "Not using container orchestration; disabling."
+            }),
             ok;
         OrchestrationStrategy ->
             ?LOG_INFO("OrchestrationStrategy: ~p", [OrchestrationStrategy]),
@@ -145,108 +148,136 @@ init([]) ->
             schedule_membership_refresh()
     end,
 
-    Servers = case OrchestrationStrategy of
-        undefined ->
-            %% TODO: What am I?
-            case partisan_config:get(lasp_server, undefined) of
-                undefined ->
-                    [];
-                Server ->
-                    [Server]
-            end;
-        _ ->
-            []
-    end,
+    Servers =
+        case OrchestrationStrategy of
+            undefined ->
+                %% TODO: What am I?
+                case partisan_config:get(lasp_server, undefined) of
+                    undefined ->
+                        [];
+                    Server ->
+                        [Server]
+                end;
+            _ ->
+                []
+        end,
 
-    Nodes = case OrchestrationStrategy of
-        undefined ->
-            members_for_orchestration();
-        _ ->
-            []
-    end,
+    Nodes =
+        case OrchestrationStrategy of
+            undefined ->
+                members_for_orchestration();
+            _ ->
+                []
+        end,
 
-    Eredis = case OrchestrationStrategy of
-        partisan_kubernetes_orchestration_strategy ->
-            RedisHost = os:getenv("REDIS_SERVICE_HOST", "127.0.0.1"),
-            RedisPort = os:getenv("REDIS_SERVICE_PORT", "6379"),
-            {ok, C} = eredis:start_link(RedisHost, list_to_integer(RedisPort)),
-            C;
-        partisan_compose_orchestration_strategy ->
-            RedisHost = os:getenv("REDIS_SERVICE_HOST", "127.0.0.1"),
-            RedisPort = os:getenv("REDIS_SERVICE_PORT", "6379"),
-            {ok, C} = eredis:start_link(RedisHost, list_to_integer(RedisPort)),
-            C;
-        _ ->
-            undefined
-    end,
+    Eredis =
+        case OrchestrationStrategy of
+            partisan_kubernetes_orchestration_strategy ->
+                RedisHost = os:getenv("REDIS_SERVICE_HOST", "127.0.0.1"),
+                RedisPort = os:getenv("REDIS_SERVICE_PORT", "6379"),
+                {ok, C} = eredis:start_link(
+                    RedisHost, list_to_integer(RedisPort)
+                ),
+                C;
+            partisan_compose_orchestration_strategy ->
+                RedisHost = os:getenv("REDIS_SERVICE_HOST", "127.0.0.1"),
+                RedisPort = os:getenv("REDIS_SERVICE_PORT", "6379"),
+                {ok, C} = eredis:start_link(
+                    RedisHost, list_to_integer(RedisPort)
+                ),
+                C;
+            _ ->
+                undefined
+        end,
 
     {ok, #orchestration_strategy_state{
-                eredis=Eredis,
-                nodes=Nodes,
-                peer_service=PeerService,
-                servers=Servers,
-                is_connected=false,
-                was_connected=false,
-                orchestration_strategy=OrchestrationStrategy,
-                attempted_nodes=sets:new(),
-                graph=digraph:new(),
-                tree=digraph:new()}}.
+        eredis = Eredis,
+        nodes = Nodes,
+        peer_service = PeerService,
+        servers = Servers,
+        is_connected = false,
+        was_connected = false,
+        orchestration_strategy = OrchestrationStrategy,
+        attempted_nodes = sets:new(),
+        graph = digraph:new(),
+        tree = digraph:new()
+    }}.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #orchestration_strategy_state{}) ->
     {reply, term(), #orchestration_strategy_state{}}.
 
-handle_call(nodes, _From, #orchestration_strategy_state{nodes=Nodes}=State) ->
+handle_call(nodes, _From, #orchestration_strategy_state{nodes = Nodes} = State) ->
     {reply, {ok, Nodes}, State};
-
-handle_call(servers, _From, #orchestration_strategy_state{servers=Servers}=State) ->
+handle_call(
+    servers, _From, #orchestration_strategy_state{servers = Servers} = State
+) ->
     {reply, {ok, Servers}, State};
-
-handle_call(orchestration, _From, #orchestration_strategy_state{orchestration_strategy=OrchestrationStrategy}=State) ->
-    Result = case OrchestrationStrategy of
-        undefined ->
-            false;
-        partisan_kubernetes_orchestration_strategy ->
-            kubernetes
-    end,
+handle_call(
+    orchestration,
+    _From,
+    #orchestration_strategy_state{
+        orchestration_strategy = OrchestrationStrategy
+    } = State
+) ->
+    Result =
+        case OrchestrationStrategy of
+            undefined ->
+                false;
+            partisan_kubernetes_orchestration_strategy ->
+                kubernetes
+        end,
     {reply, {ok, Result}, State};
-
-handle_call(orchestrated, _From, #orchestration_strategy_state{orchestration_strategy=OrchestrationStrategy}=State) ->
-    Result = case OrchestrationStrategy of
-        undefined ->
-            false;
-        _ ->
-            true
-    end,
+handle_call(
+    orchestrated,
+    _From,
+    #orchestration_strategy_state{
+        orchestration_strategy = OrchestrationStrategy
+    } = State
+) ->
+    Result =
+        case OrchestrationStrategy of
+            undefined ->
+                false;
+            _ ->
+                true
+        end,
     {reply, Result, State};
-
-handle_call(was_connected, _From, #orchestration_strategy_state{was_connected=WasConnected}=State) ->
+handle_call(
+    was_connected,
+    _From,
+    #orchestration_strategy_state{was_connected = WasConnected} = State
+) ->
     {reply, {ok, WasConnected}, State};
-
-handle_call(graph, _From, #orchestration_strategy_state{graph=Graph}=State) ->
+handle_call(graph, _From, #orchestration_strategy_state{graph = Graph} = State) ->
     {Vertices, Edges} = vertices_and_edges(Graph),
     {reply, {ok, {Vertices, Edges}}, State};
-
-handle_call(tree, _From, #orchestration_strategy_state{tree=Tree}=State) ->
+handle_call(tree, _From, #orchestration_strategy_state{tree = Tree} = State) ->
     {Vertices, Edges} = vertices_and_edges(Tree),
     {reply, {ok, {Vertices, Edges}}, State};
-
 handle_call(Event, _From, State) ->
     ?LOG_WARNING(#{description => "Unhandled call event", event => Event}),
     {reply, ok, State}.
 
 %% @private
 -spec handle_cast(term(), #orchestration_strategy_state{}) ->
-{noreply, #orchestration_strategy_state{}}.
+    {noreply, #orchestration_strategy_state{}}.
 
 handle_cast(Event, State) ->
-    ?LOG_WARNING(#{description => "Unhandled cast event", event => Event}),    {noreply, State}.
+    ?LOG_WARNING(#{description => "Unhandled cast event", event => Event}),
+    {noreply, State}.
 
 %% @private
--spec handle_info(term(), #orchestration_strategy_state{}) -> {noreply, #orchestration_strategy_state{}}.
-handle_info(?REFRESH_MESSAGE, #orchestration_strategy_state{orchestration_strategy=OrchestrationStrategy,
-                                     peer_service=PeerService,
-                                     attempted_nodes=SeenNodes}=State) ->
+-spec handle_info(term(), #orchestration_strategy_state{}) ->
+    {noreply, #orchestration_strategy_state{}}.
+handle_info(
+    ?REFRESH_MESSAGE,
+    #orchestration_strategy_state{
+        orchestration_strategy = OrchestrationStrategy,
+        peer_service = PeerService,
+        attempted_nodes = SeenNodes
+    } = State
+) ->
     Tag = partisan_config:get(tag, client),
     PeerServiceManager = ?PEER_SERVICE_MANAGER,
 
@@ -260,36 +291,41 @@ handle_info(?REFRESH_MESSAGE, #orchestration_strategy_state{orchestration_strate
     %% because HyParView doesn't guarantee graph connectivity: it is
     %% only probabilistic.
     %%
-    ToConnectNodes = case {Tag, PeerServiceManager} of
-        {_, partisan_pluggable_peer_service_manager} ->
-            %% By default, full connectivity; but,
-            %% connect all nodes to all other nodes for now.
-            sets:union(Servers, Clients);
-        {client, partisan_client_server_peer_service_manager} ->
-            %% If we're a client, and we're in client/server mode, then
-            %% always connect with the server.
-            Servers;
-        {server, partisan_client_server_peer_service_manager} ->
-            %% If we're a server, and we're in client/server mode, then
-            %% always initiate connections with clients.
-            Clients;
-        {client, partisan_hyparview_peer_service_manager} ->
-            %% If we're the server, and we're in HyParView, clients will
-            %% ask the server to join the overlay and force outbound
-            %% connections to the clients.
-            Servers;
-        {server, partisan_hyparview_peer_service_manager} ->
-            %% If we're in HyParView, and we're a client, only ever
-            %% do nothing -- force all connection to go through the
-            %% server.
-            sets:new();
-        {Tag, PeerServiceManager} ->
-            %% Catch all.
-            ?LOG_INFO(#{description => "Invalid mode: not connecting to any nodes."}),
-            ?LOG_INFO("Tag: ~p; PeerServiceManager: ~p",
-                       [Tag, PeerServiceManager]),
-            sets:new()
-    end,
+    ToConnectNodes =
+        case {Tag, PeerServiceManager} of
+            {_, partisan_pluggable_peer_service_manager} ->
+                %% By default, full connectivity; but,
+                %% connect all nodes to all other nodes for now.
+                sets:union(Servers, Clients);
+            {client, partisan_client_server_peer_service_manager} ->
+                %% If we're a client, and we're in client/server mode, then
+                %% always connect with the server.
+                Servers;
+            {server, partisan_client_server_peer_service_manager} ->
+                %% If we're a server, and we're in client/server mode, then
+                %% always initiate connections with clients.
+                Clients;
+            {client, partisan_hyparview_peer_service_manager} ->
+                %% If we're the server, and we're in HyParView, clients will
+                %% ask the server to join the overlay and force outbound
+                %% connections to the clients.
+                Servers;
+            {server, partisan_hyparview_peer_service_manager} ->
+                %% If we're in HyParView, and we're a client, only ever
+                %% do nothing -- force all connection to go through the
+                %% server.
+                sets:new();
+            {Tag, PeerServiceManager} ->
+                %% Catch all.
+                ?LOG_INFO(#{
+                    description => "Invalid mode: not connecting to any nodes."
+                }),
+                ?LOG_INFO(
+                    "Tag: ~p; PeerServiceManager: ~p",
+                    [Tag, PeerServiceManager]
+                ),
+                sets:new()
+        end,
 
     %% Attempt to connect nodes that are not connected.
     AttemptedNodes = maybe_connect(PeerService, ToConnectNodes, SeenNodes),
@@ -300,11 +336,11 @@ handle_info(?REFRESH_MESSAGE, #orchestration_strategy_state{orchestration_strate
 
     schedule_membership_refresh(),
 
-    {noreply, State#orchestration_strategy_state
-                          {nodes=Nodes,
-                          servers=ServerNames,
-                          attempted_nodes=AttemptedNodes}};
-
+    {noreply, State#orchestration_strategy_state{
+        nodes = Nodes,
+        servers = ServerNames,
+        attempted_nodes = AttemptedNodes
+    }};
 handle_info(?ARTIFACT_MESSAGE, State) ->
     %% Get current membership.
     Nodes = members_for_orchestration(),
@@ -320,11 +356,15 @@ handle_info(?ARTIFACT_MESSAGE, State) ->
     schedule_artifact_upload(),
 
     {noreply, State};
-handle_info(?BUILD_GRAPH_MESSAGE, #orchestration_strategy_state{
-                                         orchestration_strategy=OrchestrationStrategy,
-                                         graph=Graph0,
-                                         tree=Tree0,
-                                         was_connected=WasConnected0}=State) ->
+handle_info(
+    ?BUILD_GRAPH_MESSAGE,
+    #orchestration_strategy_state{
+        orchestration_strategy = OrchestrationStrategy,
+        graph = Graph0,
+        tree = Tree0,
+        was_connected = WasConnected0
+    } = State
+) ->
     % _ = ?LOG_INFO(#{description => "Beginning graph analysis."}),
 
     %% Delete existing graphs to prevent ets table leak.
@@ -359,7 +399,9 @@ handle_info(?BUILD_GRAPH_MESSAGE, #orchestration_strategy_state{
     Graph = digraph:new(),
     Orphaned = populate_graph(State, Nodes, Graph),
 
-    {SymmetricViews, VisitedNames} = breadth_first(partisan:node(), Graph, ordsets:new()),
+    {SymmetricViews, VisitedNames} = breadth_first(
+        partisan:node(), Graph, ordsets:new()
+    ),
     AllNodesVisited = length(Nodes) == length(VisitedNames),
 
     Connected = SymmetricViews andalso AllNodesVisited,
@@ -397,11 +439,11 @@ handle_info(?BUILD_GRAPH_MESSAGE, #orchestration_strategy_state{
     schedule_build_graph(),
 
     {noreply, State#orchestration_strategy_state{
-                          is_connected=Connected,
-                          was_connected=WasConnected,
-                          graph=Graph,
-                          tree=Tree}};
-
+        is_connected = Connected,
+        was_connected = WasConnected,
+        graph = Graph,
+        tree = Tree
+    }};
 handle_info(Event, State) ->
     ?LOG_WARNING(#{description => "Unhandled info event", event => Event}),
     {noreply, State}.
@@ -412,7 +454,9 @@ terminate(_Reason, _State) ->
     ok.
 
 %% @private
--spec code_change(term() | {down, term()}, #orchestration_strategy_state{}, term()) -> {ok, #orchestration_strategy_state{}}.
+-spec code_change(
+    term() | {down, term()}, #orchestration_strategy_state{}, term()
+) -> {ok, #orchestration_strategy_state{}}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
@@ -430,12 +474,13 @@ maybe_connect(PeerService, Nodes, SeenNodes) ->
     Membership1 = Membership0 -- [partisan:node()],
     Isolated = length(Membership1) == 0,
 
-    ToConnect = case Isolated of
-        true ->
-            Nodes;
-        false ->
-            sets:subtract(Nodes, SeenNodes)
-    end,
+    ToConnect =
+        case Isolated of
+            true ->
+                Nodes;
+            false ->
+                sets:subtract(Nodes, SeenNodes)
+        end,
 
     case sets:to_list(ToConnect) of
         [] ->
@@ -445,7 +490,9 @@ maybe_connect(PeerService, Nodes, SeenNodes) ->
     end,
 
     %% Attempt connection to any new nodes.
-    sets:fold(fun(Node, Acc) -> [connect(PeerService, Node) | Acc] end, [], ToConnect),
+    sets:fold(
+        fun(Node, Acc) -> [connect(PeerService, Node) | Acc] end, [], ToConnect
+    ),
 
     %% Return list of seen nodes with the new node.
     sets:union(Nodes, SeenNodes).
@@ -454,14 +501,14 @@ maybe_connect(PeerService, Nodes, SeenNodes) ->
 connect(PeerService, Node) ->
     PeerService:join(Node).
 
-
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
 -spec breadth_first(
-    Root :: node(), Graph :: digraph:graph(), ordsets:ordset(node())) ->
+    Root :: node(), Graph :: digraph:graph(), ordsets:ordset(node())
+) ->
     {boolean(), ordsets:ordset(node())}.
 
 breadth_first(Root, Graph, Visited0) when is_atom(Root) ->
@@ -476,23 +523,22 @@ breadth_first(Root, Graph, Visited0) when is_atom(Root) ->
         true ->
             {SymmetricViews, VisitedNodes} =
                 ordsets:fold(
-                    fun
-                        (Peer, {IsSymmetric0, VisitedNodes0})
-                        when is_boolean(IsSymmetric0), is_atom(Peer) ->
-                            {IsSymmetric1, VisitedNodes1} = breadth_first(
-                                Peer, Graph, VisitedNodes0
-                            ),
-                            IsSymmetric2 = IsSymmetric0 andalso IsSymmetric1,
-                            {
-                                IsSymmetric2,
-                                ordsets:union(VisitedNodes0, VisitedNodes1)
-                            }
+                    fun(Peer, {IsSymmetric0, VisitedNodes0}) when
+                        is_boolean(IsSymmetric0), is_atom(Peer)
+                    ->
+                        {IsSymmetric1, VisitedNodes1} = breadth_first(
+                            Peer, Graph, VisitedNodes0
+                        ),
+                        IsSymmetric2 = IsSymmetric0 andalso IsSymmetric1,
+                        {
+                            IsSymmetric2,
+                            ordsets:union(VisitedNodes0, VisitedNodes1)
+                        }
                     end,
                     {true, Visited1},
                     ordsets:subtract(Out, Visited1)
                 ),
             {SymmetricViews, ordsets:union(VisitedNodes, Out)};
-
         false ->
             ?LOG_INFO(
                 "Non symmetric views for node ~p. In ~p; Out ~p",
@@ -503,9 +549,12 @@ breadth_first(Root, Graph, Visited0) when is_atom(Root) ->
 
 %% @private
 prefix(File) ->
-    DeploymentIdentifier = partisan_config:get(deployment_identifier, undefined),
+    DeploymentIdentifier = partisan_config:get(
+        deployment_identifier, undefined
+    ),
     DeploymentTimestamp = partisan_config:get(deployment_timestamp, 0),
-    "partisan" ++ "/" ++ atom_to_list(DeploymentIdentifier) ++ "/" ++ integer_to_list(DeploymentTimestamp) ++ "/" ++ File.
+    "partisan" ++ "/" ++ atom_to_list(DeploymentIdentifier) ++ "/" ++
+        integer_to_list(DeploymentTimestamp) ++ "/" ++ File.
 
 %% @private
 schedule_build_graph() ->
@@ -540,10 +589,10 @@ vertices_and_edges(Graph) ->
 %% @private
 node_names([]) ->
     [];
-node_names([#{name := Name}|T]) ->
-    [Name|node_names(T)];
-node_names([Name|T]) ->
-    [Name|node_names(T)].
+node_names([#{name := Name} | T]) ->
+    [Name | node_names(T)];
+node_names([Name | T]) ->
+    [Name | node_names(T)].
 
 %% @private
 populate_graph(State, Nodes, Graph) ->
@@ -560,9 +609,11 @@ populate_graph(State, Nodes, Graph) ->
                         case Payload of
                             {_NodeMyself, [Node]} ->
                                 add_edges(Node, [], Graph),
-                                [Node|OrphanedNodes];
+                                [Node | OrphanedNodes];
                             {_NodeMyself, NodeMembership} ->
-                                add_edges(Node, node_names(NodeMembership), Graph),
+                                add_edges(
+                                    Node, node_names(NodeMembership), Graph
+                                ),
                                 OrphanedNodes
                         end
                 end
@@ -609,13 +660,23 @@ add_edges(Name, Membership, Graph) ->
     ).
 
 %% @private
-upload_artifact(#orchestration_strategy_state{orchestration_strategy=OrchestrationStrategy}=State, Node, Payload) ->
+upload_artifact(
+    #orchestration_strategy_state{
+        orchestration_strategy = OrchestrationStrategy
+    } = State,
+    Node,
+    Payload
+) ->
     OrchestrationStrategy:upload_artifact(State, Node, Payload).
 
 %% @private
-download_artifact(#orchestration_strategy_state{orchestration_strategy=OrchestrationStrategy}=State, Node) ->
+download_artifact(
+    #orchestration_strategy_state{
+        orchestration_strategy = OrchestrationStrategy
+    } = State,
+    Node
+) ->
     OrchestrationStrategy:download_artifact(State, Node).
-
 
 %% @private
 members_for_orchestration() ->

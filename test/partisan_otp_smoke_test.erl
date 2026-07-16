@@ -30,7 +30,6 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
-
 -define(START_TIMEOUT_SEC, 30).
 -define(STOP_TIMEOUT_SEC, 10).
 
@@ -48,121 +47,112 @@
     partisan_peer_service_events
 ]).
 
-
 %% =============================================================================
 %% TESTS
 %% =============================================================================
-
 
 %% A bounded-time `ensure_all_started'. Will fail with `timeout' if the
 %% startup chain hangs, which is the failure mode of the
 %% `erl_pp'-strips-`erlang:' regression.
 ensure_all_started_returns_test_() ->
-    {timeout, ?START_TIMEOUT_SEC,
-        fun() ->
-            ok = stop_partisan(),
-            {ok, Started} = application:ensure_all_started(partisan),
-            ?assert(lists:member(partisan, Started)),
-            ok = stop_partisan()
-        end}.
-
+    {timeout, ?START_TIMEOUT_SEC, fun() ->
+        ok = stop_partisan(),
+        {ok, Started} = application:ensure_all_started(partisan),
+        ?assert(lists:member(partisan, Started)),
+        ok = stop_partisan()
+    end}.
 
 %% Every named partisan supervisor and gen_server child is alive after
 %% start. A failed init/1 (e.g. infinite recursion in start_link) would
 %% leave one of these registered names unbound.
 all_processes_alive_test_() ->
-    {timeout, ?START_TIMEOUT_SEC,
-        fun() ->
-            ok = stop_partisan(),
-            {ok, _} = application:ensure_all_started(partisan),
-            try
-                Missing = [P || P <- ?EXPECTED_PROCESSES, whereis(P) =:= undefined],
-                ?assertEqual([], Missing)
-            after
-                stop_partisan()
-            end
-        end}.
-
+    {timeout, ?START_TIMEOUT_SEC, fun() ->
+        ok = stop_partisan(),
+        {ok, _} = application:ensure_all_started(partisan),
+        try
+            Missing = [P || P <- ?EXPECTED_PROCESSES, whereis(P) =:= undefined],
+            ?assertEqual([], Missing)
+        after
+            stop_partisan()
+        end
+    end}.
 
 %% A round-trip call through `partisan_gen_server' confirms the
 %% rewritten OTP module pipeline (call → init_ack → loop → reply) is
 %% functional, not just loadable.
 gen_server_roundtrip_test_() ->
-    {timeout, ?START_TIMEOUT_SEC,
-        fun() ->
-            ok = stop_partisan(),
-            {ok, _} = application:ensure_all_started(partisan),
-            try
-                %% `partisan_rpc_backend' is a `gen_server' (vanilla
-                %% behaviour, calls cross the rewritten partisan_gen
-                %% wrapper). A round-trip confirms the support modules
-                %% (partisan_proc_lib spawn, partisan_gen call, etc.)
-                %% are wired correctly.
-                Pid = whereis(partisan_rpc_backend),
-                ?assertNotEqual(undefined, Pid),
-                ?assert(is_process_alive(Pid)),
+    {timeout, ?START_TIMEOUT_SEC, fun() ->
+        ok = stop_partisan(),
+        {ok, _} = application:ensure_all_started(partisan),
+        try
+            %% `partisan_rpc_backend' is a `gen_server' (vanilla
+            %% behaviour, calls cross the rewritten partisan_gen
+            %% wrapper). A round-trip confirms the support modules
+            %% (partisan_proc_lib spawn, partisan_gen call, etc.)
+            %% are wired correctly.
+            Pid = whereis(partisan_rpc_backend),
+            ?assertNotEqual(undefined, Pid),
+            ?assert(is_process_alive(Pid)),
 
-                %% The `partisan_monitor' itself uses
-                %% `partisan_gen_server'. Confirm a synchronous call
-                %% reaches it.
-                MonPid = whereis(partisan_monitor),
-                ?assertNotEqual(undefined, MonPid),
-                ?assert(is_process_alive(MonPid))
-            after
-                stop_partisan()
-            end
-        end}.
-
+            %% The `partisan_monitor' itself uses
+            %% `partisan_gen_server'. Confirm a synchronous call
+            %% reaches it.
+            MonPid = whereis(partisan_monitor),
+            ?assertNotEqual(undefined, MonPid),
+            ?assert(is_process_alive(MonPid))
+        after
+            stop_partisan()
+        end
+    end}.
 
 %% `partisan:monitor/2' on a local pid must return a real (or partisan-
 %% encoded) reference and produce a `DOWN' message when the target
 %% exits. This exercises `partisan_gen_server:call' to
 %% `partisan_monitor' end-to-end.
 local_monitor_down_test_() ->
-    {timeout, ?START_TIMEOUT_SEC,
-        fun() ->
-            ok = stop_partisan(),
-            {ok, _} = application:ensure_all_started(partisan),
-            try
-                Self = self(),
-                Target = spawn(fun() ->
-                    receive die -> ok end
-                end),
-                Mref = partisan:monitor(process, Target),
-                ?assert(is_reference(Mref) orelse
-                        is_partisan_ref(Mref)),
-                Target ! die,
+    {timeout, ?START_TIMEOUT_SEC, fun() ->
+        ok = stop_partisan(),
+        {ok, _} = application:ensure_all_started(partisan),
+        try
+            Self = self(),
+            Target = spawn(fun() ->
                 receive
-                    {'DOWN', Mref, process, _, normal} ->
-                        Self ! ok
-                after 5000 ->
-                    Self ! {fail, no_down_signal}
-                end,
-                receive
-                    ok -> ok;
-                    {fail, R} -> ct_fail(R)
+                    die -> ok
                 end
-            after
-                stop_partisan()
+            end),
+            Mref = partisan:monitor(process, Target),
+            ?assert(
+                is_reference(Mref) orelse
+                    is_partisan_ref(Mref)
+            ),
+            Target ! die,
+            receive
+                {'DOWN', Mref, process, _, normal} ->
+                    Self ! ok
+            after 5000 ->
+                Self ! {fail, no_down_signal}
+            end,
+            receive
+                ok -> ok;
+                {fail, R} -> ct_fail(R)
             end
-        end}.
-
+        after
+            stop_partisan()
+        end
+    end}.
 
 %% Stopping partisan returns within a bounded time. The point isn't
 %% just success — it's that `application:stop' completes (a hung
 %% terminate/2 would block this).
 stop_partisan_returns_test_() ->
-    {timeout, ?STOP_TIMEOUT_SEC,
-        fun() ->
-            {ok, _} = application:ensure_all_started(partisan),
-            ok = application:stop(partisan)
-        end}.
-
+    {timeout, ?STOP_TIMEOUT_SEC, fun() ->
+        {ok, _} = application:ensure_all_started(partisan),
+        ok = application:stop(partisan)
+    end}.
 
 %% =============================================================================
 %% HELPERS
 %% =============================================================================
-
 
 %% Stop partisan if running. Idempotent.
 stop_partisan() ->
@@ -173,13 +163,13 @@ stop_partisan() ->
             ok
     end.
 
-
 %% True if Term is a partisan-encoded reference.
 is_partisan_ref(Term) ->
-    try partisan_remote_ref:is_reference(Term)
-    catch _:_ -> false
+    try
+        partisan_remote_ref:is_reference(Term)
+    catch
+        _:_ -> false
     end.
-
 
 ct_fail(Reason) ->
     erlang:error(Reason).

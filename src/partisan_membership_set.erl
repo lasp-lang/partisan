@@ -69,7 +69,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--opaque t()   ::  state_orset:state_orset().
+-opaque t() :: state_orset:state_orset().
 
 -export_type([t/0]).
 
@@ -85,7 +85,6 @@
 -export([to_list/1]).
 -export([to_peer_list/1]).
 
-
 -eqwalizer({nowarn_function, add_remove_test/0}).
 -eqwalizer({nowarn_function, one_side_updates_test/0}).
 -eqwalizer({nowarn_function, concurrent_updates_test/0}).
@@ -98,13 +97,9 @@
 -eqwalizer({nowarn_function, no_dots_left_test/0}).
 -eqwalizer({nowarn_function, equals_test/0}).
 
-
-
 %% =============================================================================
 %% API
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -114,7 +109,6 @@
 
 new() ->
     state_orset:new().
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -126,7 +120,6 @@ add(#{name := _} = NodeSpec, Actor, T0) ->
     {ok, T} = state_orset:mutate({add, NodeSpec}, Actor, T0),
     T.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -136,7 +129,6 @@ add(#{name := _} = NodeSpec, Actor, T0) ->
 remove(#{name := _} = NodeSpec, Actor, T) ->
     {ok, T1} = state_orset:mutate({rmv, NodeSpec}, Actor, T),
     T1.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the tuple `{Joiners, Leavers}' where `Joiners' is the list of
@@ -150,7 +142,6 @@ remove(#{name := _} = NodeSpec, Actor, T) ->
 
 compare([], _) ->
     {[], []};
-
 compare(List, T) when is_list(List) ->
     Set = sets:from_list(List),
     Members = state_orset:query(T),
@@ -159,7 +150,6 @@ compare(List, T) when is_list(List) ->
     Leavers = sets:to_list(sets:subtract(Members, Intersection)),
     %% eqwalizer:ignore these are [partisan:node_spec()]
     {Joiners, Leavers}.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -170,7 +160,6 @@ compare(List, T) when is_list(List) ->
 merge(T1, T2) ->
     state_orset:merge(T1, T2).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -179,7 +168,6 @@ merge(T1, T2) ->
 
 equal(T1, T2) ->
     state_orset:equal(T1, T2).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -190,7 +178,6 @@ equal(T1, T2) ->
 to_list(T) ->
     %% eqwalizer:ignore state_orset:query returns [partisan:node_spec()]
     lists:sort(sets:to_list(state_orset:query(T))).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns a list of node specifications but omitting the specification
@@ -215,7 +202,6 @@ to_peer_list(T) ->
     %% eqwalizer:ignore Peers :: [partisan:node_spec()]
     lists:reverse(Peers).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -226,7 +212,6 @@ encode(T) ->
     Opts = partisan_config:get('$membership_encoding_opts', [compressed]),
     erlang:term_to_binary(T, Opts).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -236,20 +221,14 @@ encode(T) ->
 decode(Binary) ->
     erlang:binary_to_term(Binary).
 
-
-
 %% =============================================================================
 %% EUNIT TESTS
 %% =============================================================================
 
-
-
 -ifdef(TEST).
 
-
 node_spec(Nodename) ->
-    node_spec(Nodename, {127,0,0,1}).
-
+    node_spec(Nodename, {127, 0, 0, 1}).
 
 node_spec(Nodename, IP) ->
     #{
@@ -262,7 +241,6 @@ node_spec(Nodename, IP) ->
             }
         }
     }.
-
 
 add_remove_test() ->
     Nodename = 'node1@127.0.0.1',
@@ -290,7 +268,6 @@ one_side_updates_test() ->
 
     A1 = add(Node1, a, A),
 
-
     ?assertEqual(
         [Node1],
         to_list(A1)
@@ -311,7 +288,6 @@ concurrent_updates_test() ->
     A1 = add(Node1, a, A),
 
     B1 = add(Node2, b, B),
-
 
     ?assertEqual(
         [Node1],
@@ -337,7 +313,6 @@ compare_test() ->
     S1 = add(Node1, a, S0),
     S2 = add(Node2, a, S1),
 
-
     ?assertEqual(
         {[], []},
         compare([], S2)
@@ -358,7 +333,6 @@ compare_test() ->
         compare([Node1, Node3], S2)
     ).
 
-
 concurrent_remove_update_test() ->
     Nodename = 'node1@127.0.0.1',
     Node1 = node_spec(Nodename, {127, 0, 0, 1}),
@@ -367,9 +341,9 @@ concurrent_remove_update_test() ->
     A = add(Node1, a, new()),
     A1 = remove(Node1, a, A),
 
-    B = A, %% not A1
+    %% not A1
+    B = A,
     B1 = add(Node2, b, B),
-
 
     ?assertEqual(
         [Node1],
@@ -390,7 +364,6 @@ concurrent_remove_update_test() ->
         [Node2],
         to_list(merge(A1, B1))
     ).
-
 
 %% This fails on previous version of riak_dt_map
 assoc_test() ->
@@ -420,7 +393,6 @@ assoc_test() ->
         merge(merge(A, B2), C3)
     ).
 
-
 clock_test() ->
     Nodename = 'node1@127.0.0.1',
     Node1 = node_spec(Nodename),
@@ -436,7 +408,6 @@ clock_test() ->
 
     %% LWW
     ?assertEqual([Node2], to_list(AB)).
-
 
 remfield_test() ->
     Name = 'node1@127.0.0.1',
@@ -472,16 +443,18 @@ present_but_removed_test() ->
     %% Both C and A have a 'Z', but when they merge, there should be
     %% no 'Z' as C's has been removed by A and A's has been removed by
     %% C.
-    Merged = lists:foldl(fun(Set, Acc) ->
-                                 merge(Set, Acc) end,
-                         %% the order matters, the two replicas that
-                         %% have 'Z' need to merge first to provoke
-                         %% the bug. You end up with 'Z' with two
-                         %% dots, when really it should be removed.
-                         A3,
-                         [C, B2]),
+    Merged = lists:foldl(
+        fun(Set, Acc) ->
+            merge(Set, Acc)
+        end,
+        %% the order matters, the two replicas that
+        %% have 'Z' need to merge first to provoke
+        %% the bug. You end up with 'Z' with two
+        %% dots, when really it should be removed.
+        A3,
+        [C, B2]
+    ),
     ?assertEqual([], to_list(Merged)).
-
 
 %% A bug EQC found where dropping the dots in merge was not enough if
 %% you then store the value with an empty clock (derp).
@@ -489,9 +462,10 @@ no_dots_left_test() ->
     Name = 'node1@127.0.0.1',
     Node1 = node_spec(Name),
     Node2 = node_spec(Name, {192, 168, 0, 1}),
-    A =  add(Node1, a, new()),
-    B =  add(Node2, b, new()),
-    C = A, %% replicate A to empty C
+    A = add(Node1, a, new()),
+    B = add(Node2, b, new()),
+    %% replicate A to empty C
+    C = A,
     A2 = remove(Node1, a, A),
     %% replicate B to A, now A has B's 'Z'
     A3 = merge(A2, B),
@@ -501,12 +475,14 @@ no_dots_left_test() ->
     B3 = merge(B2, C),
     %% Merge everytyhing, without the fix You end up with 'Z' present,
     %% with no dots
-    Merged = lists:foldl(fun(Set, Acc) ->
-                                 merge(Set, Acc) end,
-                         A3,
-                         [B3, C]),
+    Merged = lists:foldl(
+        fun(Set, Acc) ->
+            merge(Set, Acc)
+        end,
+        A3,
+        [B3, C]
+    ),
     ?assertEqual([], to_list(Merged)).
-
 
 equals_test() ->
     Name1 = 'node1@127.0.0.1',
@@ -520,5 +496,3 @@ equals_test() ->
     ?assert(equal(A, A)).
 
 -endif.
-
-

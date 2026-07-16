@@ -31,12 +31,14 @@
 
 %% gen_server api
 
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         code_change/3,
-         terminate/2]).
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    code_change/3,
+    terminate/2
+]).
 
 %% public api
 
@@ -49,8 +51,15 @@ init([PeerIP, PeerPort]) ->
     AcceptorPoolSize = application:get_env(partisan, acceptor_pool_size, 10),
     % Trapping exit so can close socket in terminate/2
     _ = process_flag(trap_exit, true),
-    Opts = [{active, once}, {mode, binary}, {ip, PeerIP}, {packet, 4},
-            {reuseaddr, true}, {nodelay, true}, {keepalive, true}],
+    Opts = [
+        {active, once},
+        {mode, binary},
+        {ip, PeerIP},
+        {packet, 4},
+        {reuseaddr, true},
+        {nodelay, true},
+        {keepalive, true}
+    ],
     case gen_tcp:listen(PeerPort, Opts) of
         {ok, Socket} ->
             %% if the port is to be system allocated we need to set
@@ -98,12 +107,19 @@ maybe_update_port_config(PeerIP, 0, Socket) ->
             % search the listen addrs map for the provided ip Address
             % and update the port key
             ListenAddrs0 = partisan_config:get(listen_addrs),
-            ListenAddrs = lists:map(fun(#{ip := IP} = Map) when PeerIP =:= IP ->
-                                        maps:update(port, Port, Map);
-                                       (Map) -> Map
-                                    end, ListenAddrs0),
+            ListenAddrs = lists:map(
+                fun
+                    (#{ip := IP} = Map) when PeerIP =:= IP ->
+                        maps:update(port, Port, Map);
+                    (Map) ->
+                        Map
+                end,
+                ListenAddrs0
+            ),
             partisan_config:set(listen_addrs, ListenAddrs),
             ok;
-        _ -> ok
+        _ ->
+            ok
     end;
-maybe_update_port_config(_, _, _) -> ok.
+maybe_update_port_config(_, _, _) ->
+    ok.
