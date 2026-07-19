@@ -138,6 +138,29 @@ start(Case, Config, Options) ->
             5000
         ),
 
+        %% Repair HyParView active-view symmetry more often than a deployed
+        %% cluster requires.
+        %%
+        %% The convergence assertions allow twelve seconds for a cluster to
+        %% settle. Symmetry repair otherwise follows the random-promotion
+        %% cadence of five seconds, which fits two attempts into that window; a
+        %% single NEIGHBOR that is dropped, or sent before the reverse
+        %% connection is established, then leaves little margin, and on a loaded
+        %% host the high-fanout cases fail intermittently. Half a second fits
+        %% roughly two dozen attempts into the same window.
+        %%
+        %% This belongs here rather than in ?HYPARVIEW_DEFAULTS, which supplies
+        %% the deployed default. Five seconds is a reasonable steady-state
+        %% cadence for a real cluster, and a test deadline is not a reason to
+        %% shorten it there.
+        ok = rpc:call(
+            Node,
+            application,
+            set_env,
+            [partisan, active_view_maintenance_interval, 500],
+            5000
+        ),
+
         ok = rpc:call(
             Node,
             application,

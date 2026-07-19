@@ -1,9 +1,8 @@
 <img alt="Partisan" width="600" src="https://github.com/lasp-lang/partisan/blob/e4ec25b547c4d50000250b904690b26594b3e72e/assets/partisan_logo_black.png?raw=true">
 
 ![Version](https://img.shields.io/badge/version-6.0.0-blue?style=for-the-badge)  
-![Core Test Suite](https://img.shields.io/github/actions/workflow/status/lasp-lang/partisan/build_and_test.yml?&branch=master&label=core-test-suite&style=for-the-badge)
-![OTP Test Suite](https://img.shields.io/github/actions/workflow/status/lasp-lang/partisan/otp-test.yml?&branch=master&label=otp-test-suite&style=for-the-badge)
-![Alt Test Suite](https://img.shields.io/github/actions/workflow/status/lasp-lang/partisan/alt-test.yml?&branch=master&label=alt-test-suite&style=for-the-badge)
+![Build and Test](https://img.shields.io/github/actions/workflow/status/lasp-lang/partisan/build_and_test.yml?&branch=master&label=build-and-test&style=for-the-badge)
+![Heavy Test Suite](https://img.shields.io/github/actions/workflow/status/lasp-lang/partisan/fly-test.yml?&branch=master&label=heavy-test-suite&style=for-the-badge)
 
 # Partisan
 
@@ -104,7 +103,7 @@ Partisan was designed to increase scalability, reduce latency and improve failur
 
 ## Requirements
 
-* Erlang/OTP 27+
+* Erlang/OTP 27+ (tested on 27, 28 and 29)
 
 ## Who is using Partisan
 

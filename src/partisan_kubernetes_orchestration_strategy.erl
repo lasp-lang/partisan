@@ -71,7 +71,9 @@ servers(_State) ->
 
 %% @private
 pods_from_kubernetes(LabelSelector) ->
-    DecodeFun = fun(Body) -> jsx:decode(Body, [return_maps]) end,
+    %% OTP 27+ ships `json'; it decodes to binary-keyed maps, matching what
+    %% generate_pod_nodes/1 expects (and what jsx's `return_maps' produced).
+    DecodeFun = fun(Body) -> json:decode(Body) end,
 
     case get_request(generate_pods_url(LabelSelector), DecodeFun) of
         {ok, PodList} ->

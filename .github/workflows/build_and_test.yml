@@ -11,9 +11,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        otp: ['27.3', '28.3']
+        otp: ['27.3', '28.3', '29.0']
         rebar3: ['3.24']
-        test_target: ['compile', 'eunit', 'otp-compat-test', 'otp-test']
+        test_target: ['compile', 'eunit', 'otp-compat-test']
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,7 +38,3 @@ jobs:
       - name: OTP Compatibility Tests
         if: matrix.test_target == 'otp-compat-test'
         run: make otp-compat-test
-
-      - name: OTP behaviour suites
-        if: matrix.test_target == 'otp-test'
-        run: make otp-test

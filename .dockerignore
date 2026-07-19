@@ -1,5 +1,12 @@
-# Keep the Fly build context small. Do NOT exclude src/ include/ test/ priv/
-# otp_src/ config/ rebar.* Makefile — the suite (esp. otp-compat-test) needs them.
+# Keeps the build context small. The suites need src/, include/, test/, priv/,
+# otp_src/, config/, protocols/, rebar.* and the Makefile, so none of those may
+# be excluded here.
+#
+# protocols/ in particular: the `test' profile compiles it through
+# {extra_src_dirs, ["protocols", "test/otp"]}, and it holds the gossip and
+# consensus backends, among them the one the property suites broadcast through.
+# Excluding it yields an image in which those modules do not exist, and the
+# suites that call them fail as undefined.
 _build/
 deps/
 doc/
@@ -8,7 +15,6 @@ doc/
 _notes/
 .claude/
 old-bin/
-protocols/
 analysis/
 annotations/
 *.dump

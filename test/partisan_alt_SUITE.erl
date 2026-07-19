@@ -144,9 +144,15 @@ gossip_demers_direct_mail_test(Config) ->
     ),
 
     %% Start gossip backend on all nodes.
+    %% `start/0' rather than `start_link/0'. Linking would bind the backend to
+    %% the short-lived worker serving this remote call, and that worker signals
+    %% its result by exiting with a reason of the form `{Ref, return, {ok, Pid}}'.
+    %% Being neither `normal' nor `shutdown', the exit travels along the link and
+    %% stops the backend, whose registered name is then gone by the time the
+    %% broadcast below looks it up.
     lists:foreach(
         fun({_Name, Node}) ->
-            case rpc:call(Node, demers_direct_mail, start_link, []) of
+            case rpc:call(Node, demers_direct_mail, start, []) of
                 {ok, Pid} ->
                     ct:pal(
                         "Started gossip backend on node ~p (~p)",

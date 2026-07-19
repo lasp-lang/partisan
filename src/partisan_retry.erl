@@ -118,9 +118,9 @@ init(Id, Opts) ->
         BackoffOpts ->
             case maps:get(enabled, BackoffOpts, false) of
                 true ->
-                    Min = maps:get(min, Opts, 10),
-                    Max = maps:get(max, Opts, 120000),
-                    Type = maps:get(type, Opts, jitter),
+                    Min = maps:get(min, BackoffOpts, 10),
+                    Max = maps:get(max, BackoffOpts, 120000),
+                    Type = maps:get(type, BackoffOpts, jitter),
                     Backoff = backoff:type(backoff:init(Min, Max), Type),
                     State0#partisan_retry{backoff = Backoff};
                 false ->

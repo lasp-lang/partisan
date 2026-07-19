@@ -211,7 +211,10 @@ begin_case() ->
     lists:foreach(
         fun({ShortName, _}) ->
             node_debug("starting ~p at node ~p", [?PB_MODULE, ShortName]),
-            {ok, _Pid} = rpc:call(?NAME(ShortName), ?PB_MODULE, start_link, [])
+            %% `start/0' rather than `start_link/0': linking would bind the
+            %% backend to the short-lived worker serving this remote call,
+            %% whose exit reason carries its result and so stops the backend.
+            {ok, _Pid} = rpc:call(?NAME(ShortName), ?PB_MODULE, start, [])
         end,
         Nodes
     ),

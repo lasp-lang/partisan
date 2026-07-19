@@ -34,7 +34,67 @@ fly auth whoami >/dev/null 2>&1 || { echo "Not logged in — run: fly auth login
 # Ensure the app exists (idempotent; created under your private org from .env).
 fly apps list 2>/dev/null | grep -qw "$APP" || fly apps create "$APP" --org "$ORG"
 
+# Destroy any machine left from an earlier run before deploying.
+#
+# The machine runs one suite and stops, since its restart policy is "never".
+# Deploying over a stopped machine updates its configuration and leaves it
+# stopped, which reports success without running anything. Only creating a
+# machine starts it, so any existing one is removed first.
+STALE="$(fly machines list -a "$APP" -q 2>/dev/null || true)"
+if [ -n "$STALE" ]; then
+  echo "==> destroying previous machine(s): $(echo "$STALE" | tr '\n' ' ')"
+  for m in $STALE; do
+    fly machine destroy -f "$m" -a "$APP" >/dev/null 2>&1 || true
+  done
+fi
+
 echo "==> fly deploy $APP  (make ${TARGET})"
-# --remote-only builds on Fly; -e overrides the suite target from fly.toml.
-# Watch the run with:  fly logs -a $APP
-exec fly deploy --remote-only --ha=false --env "TEST_TARGET=${TARGET}"
+# --remote-only builds on Fly; --env overrides the suite target from fly.toml.
+fly deploy --remote-only --ha=false --env "TEST_TARGET=${TARGET}"
+
+# `fly machines list -q' pads the id with spaces and a trailing blank line. The
+# id is taken from the first non-blank line with all whitespace removed, since
+# every later status query needs it verbatim.
+MACHINE="$(fly machines list -a "$APP" -q 2>/dev/null \
+  | awk 'NF { gsub(/[[:space:]]/, ""); print; exit }')"
+[ -n "$MACHINE" ] || { echo "no machine after deploy"; exit 1; }
+
+# Record the whole run locally. `fly logs --no-tail' replays only a short recent
+# window, too little to identify a failing case, and the machine's own Common
+# Test logs are destroyed with the machine. Following the stream from the start
+# keeps the only durable copy.
+LOGFILE="fly-${TARGET}-$(date -u +%Y%m%dT%H%M%SZ).log"
+echo "==> streaming logs to ${LOGFILE}  (machine ${MACHINE})"
+fly logs -a "$APP" > "$LOGFILE" 2>&1 &
+LOGPID=$!
+cleanup() { kill "$LOGPID" 2>/dev/null || true; }
+trap cleanup EXIT INT TERM
+
+machine_state() { fly machine status "$MACHINE" -a "$APP" 2>/dev/null | sed -n 's/^State: *//p' | head -1; }
+
+# Wait for it to actually start (deploy returns as soon as the machine is created).
+for _ in $(seq 1 60); do
+  [ "$(machine_state)" = "started" ] && break
+  sleep 5
+done
+echo "==> running (make ${TARGET}); this takes ~25-40 min for ci-heavy"
+while [ "$(machine_state)" = "started" ]; do sleep 30; done
+
+sleep 5            # let the last log lines flush
+cleanup; trap - EXIT INT TERM
+
+# The machine's exit status is the suite's exit status.
+EXIT_INFO="$(fly machine status "$MACHINE" -a "$APP" 2>/dev/null | grep -m1 -o 'exit_code=[0-9]*' || true)"
+RC="${EXIT_INFO#exit_code=}"; RC="${RC:-1}"
+
+echo ""
+echo "===================== SUITE RESULT (exit ${RC}) ====================="
+# Select this machine's lines. `fly logs' replays recent history for the whole
+# application, so an unfiltered search reports an earlier run's results as this
+# run's.
+grep -a "$MACHINE" "$LOGFILE" \
+  | grep -aE "TEST COMPLETE|Total:|OK: Passed|properties passed|\*\*\* FAILED|failed on line|make.*Error|CT DIAGNOSIS|END DIAGNOSIS" \
+  | tail -40
+echo "===================================================================="
+echo "Full log: ${LOGFILE}"
+exit "$RC"

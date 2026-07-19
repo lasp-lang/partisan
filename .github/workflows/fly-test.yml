@@ -36,23 +36,52 @@ jobs:
           flyctl apps list | grep -qw "$APP" \
             || flyctl apps create "$APP" --org "${{ secrets.FLY_ORG }}"
 
+          # Destroy any machine left behind by a cancelled or timed-out run.
+          # Load-bearing: our machine is a one-shot runner
+          # (`[[restart]] policy = "never"`), so it ends every run in `stopped'.
+          # `flyctl deploy` against an existing STOPPED machine performs a
+          # rolling CONFIG UPDATE and leaves it stopped — it exits 0 having run
+          # nothing, so the job would report success without testing anything.
+          # Only machine CREATION starts a machine, so we must delete first.
+          for m in $(flyctl machines list --app "$APP" -q 2>/dev/null || true); do
+            echo "destroying stale machine $m"
+            flyctl machine destroy -f "$m" --app "$APP" || true
+          done
+
           # `fly deploy` (not `machine run`) is required — it initialises the
           # app registry and builds with the repo as context (root fly.toml).
           flyctl deploy --remote-only --ha=false --env "TEST_TARGET=$TARGET"
 
           # deploy returns once the machine STARTS; poll for its exit code so
           # this job gates on the actual test result.
-          ID=$(flyctl machine list --app "$APP" --json | jq -r '.[0].id')
+          #
+          # NOTE: `flyctl machine status` has NO --json flag (checked against
+          # flyctl v0.4.71) — passing it errors with "unknown flag: --json",
+          # which under `set -e` kills this step. State AND exit_code are both
+          # available from `machines list --json`, so use only that.
+          ID=$(flyctl machines list --app "$APP" --json | jq -r '.[0].id')
           echo "machine=$ID"
           flyctl logs --app "$APP" --machine "$ID" &
           LOGS=$!
+
+          state_of() {
+            flyctl machines list --app "$APP" --json \
+              | jq -r --arg id "$ID" '.[] | select(.id==$id) | .state'
+          }
+
+          # Wait for it to actually enter `started' before watching for `stopped',
+          # so we cannot mistake the pre-start moment for a finished run.
+          for _ in $(seq 1 60); do
+            [ "$(state_of)" = "started" ] && break
+            sleep 5
+          done
+
           CODE=""
           for _ in $(seq 1 480); do        # up to ~2h
             sleep 15
-            STATE=$(flyctl machine status "$ID" --app "$APP" --json | jq -r '.state')
-            if [ "$STATE" = "stopped" ]; then
-              # NOTE: verify the exit-code JSON path for your flyctl version.
-              CODE=$(flyctl machine status "$ID" --app "$APP" --json | jq -r '.exit_code // empty')
+            if [ "$(state_of)" = "stopped" ]; then
+              CODE=$(flyctl machines list --app "$APP" --json \
+                | jq -r --arg id "$ID" '.[] | select(.id==$id) | .exit_code // empty')
               break
             fi
           done

@@ -919,7 +919,12 @@ start_or_reload_nodes() ->
 
     %% Cluster and start options.
     Options = [
-        {partisan_peer_service_manager, ?MANAGER},
+        %% Key must be `peer_service_manager' — that is what partisan_support
+        %% (and partisan_SUITE) read from Options; the old
+        %% `partisan_peer_service_manager' key resolved to `undefined', which
+        %% made partisan_peer_service_sup try to start `undefined:start_link/0'
+        %% on each peer and crash the whole partisan app start.
+        {peer_service_manager, ?MANAGER},
         {num_nodes, node_num_nodes()},
         {cluster_nodes, ?CLUSTER_NODES}
     ],
@@ -991,7 +996,10 @@ start_or_reload_nodes() ->
                             {badrpc, nodedown} ->
                                 ok;
                             {ok, InterpositionFuns0} ->
-                                InterpositionFuns = dict:to_list(
+                                %% partisan_pluggable_peer_service_manager stores
+                                %% interposition funs as a map (interposition_map/1),
+                                %% not a dict — use maps:to_list/1.
+                                InterpositionFuns = maps:to_list(
                                     InterpositionFuns0
                                 ),
                                 % fault_debug("=> ~p", [InterpositionFuns]),
@@ -1079,6 +1087,24 @@ start_or_reload_nodes() ->
 
     %% Deterministically seed the random number generator.
     partisan_config:seed(),
+
+    %% Anonymous funs distributed to the peers (tracing / fault interposition,
+    %% plus this module's own $tracing funs) do NOT auto-load their defining
+    %% module when applied: an anonymous fun applied on a node that merely has
+    %% the module on its code path but hasn't LOADED it crashes with `badfun'.
+    %% partisan_trace_orchestrator, prop_partisan and the system model are not
+    %% otherwise loaded on the peers, so force-load them before tracing starts.
+    lists:foreach(
+        fun({_Name, Node}) when is_atom(Node) ->
+            lists:foreach(
+                fun(M) ->
+                    _ = rpc:call(Node, code, ensure_loaded, [M])
+                end,
+                [partisan_trace_orchestrator, prop_partisan, system_model()]
+            )
+        end,
+        Nodes
+    ),
 
     %% Reset trace.
     ok = partisan_trace_orchestrator:reset(),
@@ -1480,6 +1506,18 @@ node_next_state(PropertyState, NodeState, Response, Call) ->
 
 %% @private
 node_begin_property() ->
+    %% The prop runner does not start the partisan application, so
+    %% partisan_config (normally initialised by partisan_sup on app start) is
+    %% unset on this node. Initialise it before any system-model setup, which
+    %% starts the trace orchestrator whose init/1 calls partisan:node() ->
+    %% partisan_config:get(name) and would otherwise crash with `badarg'.
+    _ =
+        case partisan_config:get(name, undefined) of
+            undefined ->
+                ok = partisan_config:init();
+            _ ->
+                ok
+        end,
     SystemModel = system_model(),
     SystemModel:node_begin_property().
 

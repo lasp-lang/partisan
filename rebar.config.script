@@ -5,12 +5,17 @@
 %% CONFIG is a special variable injected by rebar3.
 Vsn = erlang:system_info(otp_release),
 
-%% Check minimum OTP version.
-CheckOtpVersion = fun
-    (V, Acc) when V >= "27" ->
-        Acc;
-    (V, _) ->
-        exit("OTP version " ++ V ++ " not supported by Partisan. Requires OTP 27+.")
+%% Check minimum OTP version. Compare as an integer: `erlang:system_info(
+%% otp_release)' is a string like "27", and a lexicographic string compare is
+%% wrong across digit counts (e.g. "9" >= "27" is `true', "100" >= "27" is
+%% `false').
+CheckOtpVersion = fun(V, Acc) ->
+    case catch list_to_integer(V) of
+        N when is_integer(N), N >= 27 ->
+            Acc;
+        _ ->
+            exit("OTP version " ++ V ++ " not supported by Partisan. Requires OTP 27+.")
+    end
 end,
 
 %% NOTE: the post_hook that generates the partisan OTP modules

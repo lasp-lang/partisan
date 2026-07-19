@@ -28,6 +28,7 @@
 
 %% API
 -export([start_link/0,
+         start/0,
          stop/0,
          timeout/0,
          write/2,
@@ -52,6 +53,17 @@
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+%% @doc Starts the server without linking it to the calling process.
+%%
+%% The property harness starts this backend through `rpc:call' and ends it
+%% explicitly, so it needs a server that outlives the call. `start_link/0' is
+%% unsuitable there: it links the server to the short-lived worker that serves
+%% the remote call, and that worker signals its result by exiting with a reason
+%% of the form `{Ref, return, {ok, Pid}}'. Being neither `normal' nor
+%% `shutdown', the exit travels along the link and stops the new server.
+start() ->
+    gen_server:start({local, ?MODULE}, ?MODULE, [], []).
 
 stop() ->
     gen_server:stop(?MODULE).

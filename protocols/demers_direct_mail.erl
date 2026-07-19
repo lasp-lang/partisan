@@ -28,6 +28,7 @@
 
 %% API
 -export([start_link/0,
+         start/0,
          stop/0,
          broadcast/2,
          update/1]).
@@ -48,6 +49,14 @@
 
 start_link() ->
     partisan_gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+%% @doc Start UNLINKED. Used by the property harness, which starts the backend
+%% via `rpc:call' and owns its lifecycle explicitly (node_begin_case/
+%% node_end_case). `start_link' would link the server to the ephemeral erpc
+%% worker, which exits with a non-normal result-carrying reason and would take
+%% the server down with it.
+start() ->
+    partisan_gen_server:start({local, ?MODULE}, ?MODULE, [], []).
 
 stop() ->
     partisan_gen_server:stop(?MODULE).

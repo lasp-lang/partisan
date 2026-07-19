@@ -437,30 +437,44 @@ forward_message({global, _} = ServerRef, Message, _Opts) ->
     partisan_peer_service_manager:deliver(ServerRef, Message);
 forward_message({via, _, _} = ServerRef, Message, _Opts) ->
     partisan_peer_service_manager:deliver(ServerRef, Message);
-forward_message(RemoteRef, Message, Opts) ->
+forward_message(RemoteRef, Message, Opts0) ->
     partisan_remote_ref:is_pid(RemoteRef) orelse
         partisan_remote_ref:is_name(RemoteRef) orelse
         error(badarg),
 
+    %% `forward_opts()' is `map() | proplist()'. Normalise before use — the
+    %% short-circuit test below reads `Opts' with `maps:is_key/2', and the
+    %% generated `partisan_gen' code calls this with a proplist
+    %% (`partisan_gen:get_opts()' returns `[{channel, _}]'). `/4' also accepts
+    %% either form.
+    Opts =
+        case is_list(Opts0) of
+            true -> maps:from_list(Opts0);
+            false -> Opts0
+        end,
+
     Node = partisan_remote_ref:node(RemoteRef),
-    %% When `connect_disterl' is true, prefer disterl: send directly to the
-    %% native pid/name. Otherwise route through the encoded target so the
-    %% partisan transport handles it.
-    case partisan_config:get(connect_disterl, false) of
-        true ->
-            case partisan:remote_ref_to_disterl(RemoteRef) of
-                {ok, Pid} when is_pid(Pid) ->
-                    _ = (catch erlang:send(Pid, Message, [noconnect])),
-                    ok;
-                {ok, {Name, _Node} = NN} when is_atom(Name) ->
-                    _ = (catch erlang:send(NN, Message, [noconnect])),
-                    ok;
-                _ ->
-                    Target = partisan_remote_ref:target(RemoteRef),
-                    forward_message(Node, Target, Message, Opts)
-            end;
-        false ->
-            Target = partisan_remote_ref:target(RemoteRef),
+    Target = partisan_remote_ref:target(RemoteRef),
+    %% Prefer disterl only when it is both safe and correct: the caller opted
+    %% in (`connect_disterl'), the target is on a *different* node that is
+    %% actually reachable over disterl, and the caller has not requested any
+    %% partisan-specific delivery feature (ack / causal delivery) — those need
+    %% the full partisan path. Only name refs are disterl-usable: an encoded
+    %% pid cannot be reconstructed as a remote pid (see
+    %% `remote_ref_to_disterl/1'), so it always falls through to the partisan
+    %% transport. Otherwise route through the encoded target.
+    ShortCircuit =
+        partisan_config:get(connect_disterl, false) andalso
+            Node =/= partisan:node() andalso
+            lists:member(Node, erlang:nodes()) andalso
+            not maps:is_key(ack, Opts) andalso
+            not maps:is_key(causal_label, Opts),
+
+    case ShortCircuit andalso partisan:remote_ref_to_disterl(RemoteRef) of
+        {ok, {Name, _Node} = NN} when is_atom(Name) ->
+            _ = (catch erlang:send(NN, Message, [noconnect])),
+            ok;
+        _ ->
             forward_message(Node, Target, Message, Opts)
     end.
 

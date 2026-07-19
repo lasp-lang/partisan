@@ -39,12 +39,175 @@
 transform(OrigModule, Forms) ->
     RenameMap = rename_map(),
     PartisanModule = maps:get(OrigModule, RenameMap),
-    lists:filtermap(
+    Rewritten = lists:filtermap(
         fun(Form) ->
             transform_form(Form, OrigModule, PartisanModule, RenameMap)
         end,
         Forms
+    ),
+    lift_is_pid_guards(OrigModule, Rewritten).
+
+%% =============================================================================
+%% INTERNAL: is_pid guard lifting (supervisor only)
+%%
+%% Erlang guards cannot call `partisan:is_pid/1', so OTP supervisor functions
+%% that select a clause with an `is_pid/1' guard cannot be used verbatim for
+%% Partisan (whose pids may be remote references). Rather than hand-copy such
+%% functions from OTP source into `partisan_otp_patches' (which re-introduces
+%% the "OTP N+1 silently breaks our frozen fork" bug class), we mechanically
+%% lift the guard into a body-level `partisan:is_pid/1' check so the function
+%% body still comes from the installed OTP source.
+%%
+%% The transform is deliberately NARROW and only fires on a provably-sound
+%% shape: a two-clause function whose first clause has irrefutable (all
+%% variable) patterns and a single `is_pid(Expr)' guard, and whose second
+%% clause is an irrefutable, unguarded catch-all. For such a function the ONLY
+%% thing that selects between the two clauses is the guard, so:
+%%
+%%     f(P1..) when is_pid(E) -> Body1;
+%%     f(P2..)               -> Body2.
+%%
+%% is exactly equivalent to:
+%%
+%%     f(P1..) ->
+%%         case partisan:is_pid(E) of
+%%             true  -> Body1;
+%%             false -> Body2'    %% Body2 with P2 vars renamed to P1 vars
+%%         end.
+%%
+%% (Both heads are irrefutable, so C1's head accepts every value C2's would;
+%% the guard is the sole discriminator, and its failure falls through to C2.)
+%% Scoped to `supervisor' only to keep the blast radius minimal. Any supervisor
+%% function that does NOT match this exact shape is left untouched and stays
+%% covered by an explicit patch in `partisan_otp_patches'.
+%% =============================================================================
+
+lift_is_pid_guards(supervisor, Forms) ->
+    [lift_form(F) || F <- Forms];
+lift_is_pid_guards(_OrigModule, Forms) ->
+    Forms.
+
+lift_form({function, Anno, Name, Arity, Clauses} = Form) ->
+    case liftable_clauses(Clauses) of
+        {true, Lifted} -> {function, Anno, Name, Arity, [Lifted]};
+        false -> Form
+    end;
+lift_form(Form) ->
+    Form.
+
+%% Recognise the narrow, provably-sound two-clause shape and build the lifted
+%% single clause. Returns {true, Clause} or false.
+liftable_clauses([
+    {clause, A1, P1s, [[{call, GA, {atom, _, is_pid}, [Arg]}]], Body1},
+    {clause, _A2, P2s, [], Body2}
+]) ->
+    case all_vars(P1s) andalso all_vars(P2s) of
+        true ->
+            Renames = var_renames(P2s, P1s),
+            case capture_safe(Renames, Body2) of
+                true ->
+                    Body2r = rename_vars(Body2, Renames),
+                    IsPid =
+                        {call, GA,
+                            {remote, GA, {atom, GA, partisan},
+                                {atom, GA, is_pid}},
+                            [Arg]},
+                    Case =
+                        {'case', A1, IsPid, [
+                            {clause, A1, [{atom, A1, true}], [], Body1},
+                            {clause, A1, [{atom, A1, false}], [], Body2r}
+                        ]},
+                    {true, {clause, A1, P1s, [], [Case]}};
+                false ->
+                    %% Renaming would introduce a guarded-clause head variable
+                    %% name that is already bound inside the catch-all body,
+                    %% fusing two distinct bindings into one (variable capture
+                    %% -> miscompile). Refuse to lift and leave the function
+                    %% untouched; if the lift was actually required, the
+                    %% fail-loud build guard in `partisan_otp_patches'
+                    %% (assert_is_pid_guards_lifted/2) flags it loudly rather
+                    %% than letting a native `is_pid/1' guard survive silently.
+                    false
+            end;
+        false ->
+            false
+    end;
+liftable_clauses(_Clauses) ->
+    false.
+
+all_vars(Patterns) ->
+    lists:all(
+        fun
+            ({var, _, _}) -> true;
+            (_) -> false
+        end,
+        Patterns
     ).
+
+%% Build a variable rename map from the catch-all clause's positional variables
+%% (which its body may reference) to the guarded clause's positional variables
+%% (which become the sole clause head). Underscore/anonymous and identical
+%% names are skipped.
+var_renames(FromPatterns, ToPatterns) ->
+    lists:foldl(
+        fun
+            ({{var, _, From}, {var, _, To}}, Acc) when
+                From =/= To, From =/= '_', To =/= '_'
+            ->
+                Acc#{From => To};
+            (_, Acc) ->
+                Acc
+        end,
+        #{},
+        lists:zip(FromPatterns, ToPatterns)
+    ).
+
+%% Rename variable occurrences according to Renames. Applied to the catch-all
+%% body only, whose free variables are all bound by the (irrefutable) clause
+%% head we are collapsing into.
+rename_vars({var, Anno, Name}, Renames) ->
+    {var, Anno, maps:get(Name, Renames, Name)};
+rename_vars(T, Renames) when is_tuple(T) ->
+    list_to_tuple([rename_vars(E, Renames) || E <- tuple_to_list(T)]);
+rename_vars(L, Renames) when is_list(L) ->
+    [rename_vars(E, Renames) || E <- L];
+rename_vars(Other, _Renames) ->
+    Other.
+
+%% A lift is capture-safe only if none of the variable names we are about to
+%% introduce into the catch-all body (the *range* of the rename map — the
+%% guarded clause's head vars) already occurs as a variable in that body. If
+%% one does, the uniform rename fuses two distinct bindings into a single
+%% variable and changes the function's meaning (e.g. `X = A + 1' under a rename
+%% A -> X becomes the self-referential `X = X + 1'). We check ALL range names
+%% (not only those whose source occurs in the body) so the guard is
+%% conservative: a false "unsafe" merely leaves the function unlifted (caught,
+%% if needed, by the fail-loud assert), whereas a false "safe" miscompiles.
+capture_safe(Renames, Body2) ->
+    Introduced = maps:values(Renames),
+    BodyVars = body_var_names(Body2),
+    not lists:any(fun(V) -> lists:member(V, BodyVars) end, Introduced).
+
+%% Collect the set (as a deduped list) of every variable NAME occurring
+%% anywhere in an AST fragment — heads, nested binds, comprehensions, funs.
+%% Anonymous `_' is ignored. Deliberately scope-blind: over-collecting can only
+%% make `capture_safe/2' refuse a lift, never wrongly approve one.
+body_var_names(AST) ->
+    body_var_names(AST, []).
+
+body_var_names({var, _, '_'}, Acc) ->
+    Acc;
+body_var_names({var, _, Name}, Acc) ->
+    case lists:member(Name, Acc) of
+        true -> Acc;
+        false -> [Name | Acc]
+    end;
+body_var_names(T, Acc) when is_tuple(T) ->
+    body_var_names(tuple_to_list(T), Acc);
+body_var_names([H | T], Acc) ->
+    body_var_names(T, body_var_names(H, Acc));
+body_var_names(_Other, Acc) ->
+    Acc.
 
 %% =============================================================================
 %% INTERNAL: Rename maps

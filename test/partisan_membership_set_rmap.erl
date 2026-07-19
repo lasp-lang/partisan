@@ -582,15 +582,23 @@ new_value(Nodespec, Timestamp) ->
 %% -----------------------------------------------------------------------------
 -spec update_value(value(), value()) -> value().
 
-update_value(NodeSpec, {_, Ts} = OldValue) ->
-    Now = erlang:system_time(microsecond),
-
-    case Now > Ts of
-        true ->
-            new_value(NodeSpec, Now);
-        false ->
-            OldValue
-    end.
+update_value(NodeSpec, {_, Ts}) ->
+    %% An update supersedes the value it observed, so its timestamp advances
+    %% past `Ts' instead of being taken directly from the clock.
+    %%
+    %% Reading the clock alone would lose updates in two ways. Two updates can
+    %% fall within the same microsecond, leaving the newer one no later than the
+    %% value it replaces. And `erlang:system_time/1' follows wall time, which
+    %% can step backwards when the system clock is corrected; every update to
+    %% this key would be older than the stored value until wall time caught up.
+    %%
+    %% Advancing past `Ts' removes both. The timestamp still tracks wall time
+    %% while the clock behaves, so `merge_values/2' continues to resolve
+    %% concurrent values across replicas by recency, but a value can never tie
+    %% with or precede the one it supersedes. Note that `merge_values/2' already
+    %% orders equal timestamps by term, and so is commutative; ordering here is
+    %% what makes a local update take effect.
+    new_value(NodeSpec, max(erlang:system_time(microsecond), Ts + 1)).
 
 %% -----------------------------------------------------------------------------
 %% @private

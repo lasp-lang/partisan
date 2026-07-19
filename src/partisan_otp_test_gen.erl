@@ -90,10 +90,16 @@ generate_all_suites(OutDir) ->
     ok = filelib:ensure_dir(filename:join(OutDir, "dummy")),
 
     %% Generate adapted SUITE beams.
+    %% Every suite in `Suites' must be present. Omitting an absent one would
+    %% narrow compatibility coverage while still reporting a successful run, so
+    %% a missing source aborts generation instead.
+    Missing = [F || F <- Suites, not filelib:is_file(filename:join(TestDir, F))],
+    Missing == [] orelse
+        error({otp_test_sources_incomplete, TestDir, {missing, Missing}}),
+
     SuiteResults = [
         {F, generate_suite(filename:join(TestDir, F), OutDir)}
-     || F <- Suites,
-        filelib:is_file(filename:join(TestDir, F))
+     || F <- Suites
     ],
 
     %% Copy helper source files into data_dir directories.
@@ -150,24 +156,62 @@ peer_opts(Opts) ->
             PaArgs ++ L
     end.
 
-%% @doc Path to the OTP source directory for the running OTP version.
+%% @doc Returns the directory holding the OTP test sources for the running OTP
+%% version, fetching them when the local cache is incomplete.
+%%
+%% An installed OTP release ships module sources but not its own test suites.
+%% The compatibility suites therefore cannot read `gen_server_SUITE.erl' and its
+%% siblings from the installed tree, the way `partisan_gen_transform' reads
+%% module beams. They come instead from the `OTP-<version>' tag and are cached
+%% under `otp_src/otp_<version>/', which version control ignores.
+%%
+%% A directory matching the running OTP major takes precedence, so an offline or
+%% hermetic build can pre-seed the cache and avoid the network entirely.
 otp_src_dir() ->
-    Vsn = erlang:system_info(otp_release),
-    %% Try versioned dirs, fall back to generic
-    Candidates = [
-        filename:join(["otp_src", "otp_" ++ Vsn]),
-        filename:join(["otp_src", "otp_" ++ Vsn ++ ".*"])
-    ],
-    case find_existing_dir(Candidates) of
-        {ok, Dir} ->
-            Dir;
-        error ->
-            %% Try with wildcard
-            Pattern = "otp_src/otp_" ++ Vsn ++ "*",
-            case filelib:wildcard(Pattern) of
-                [Dir | _] -> Dir;
-                [] -> error({otp_src_not_found, Vsn, Candidates})
-            end
+    Major = erlang:system_info(otp_release),
+    Full = otp_full_version(),
+    Dir =
+        case filelib:wildcard("otp_src/otp_" ++ Major ++ "*") of
+            [Existing | _] -> Existing;
+            [] -> filename:join("otp_src", "otp_" ++ Full)
+        end,
+    %% The fetch runs on every call, because the presence of a directory does
+    %% not establish that its contents are complete. An incomplete cache would
+    %% otherwise satisfy this lookup while leaving suites and helper modules
+    %% absent, and the file guards downstream would omit them from the run
+    %% rather than fail. The script compares the cache file by file: it does
+    %% nothing when the cache is complete and restores the missing files when
+    %% it is not.
+    ok = fetch_otp_test_sources(Full, Dir),
+    Dir.
+
+%% @private Returns the full OTP version, for example "29.0.3", which selects
+%% the `OTP-<version>' tag to fetch from. Returns the major release alone when
+%% the OTP_VERSION file is unavailable.
+otp_full_version() ->
+    Major = erlang:system_info(otp_release),
+    File = filename:join([code:root_dir(), "releases", Major, "OTP_VERSION"]),
+    case file:read_file(File) of
+        {ok, Bin} -> string:trim(binary_to_list(Bin));
+        {error, _} -> Major
+    end.
+
+%% @private Fetches the OTP test sources for `Vsn' into `Dir' and confirms the
+%% result. `os:cmd/1' reports no exit status, so success is established by
+%% checking for a suite the fetch must have produced; the script's output is
+%% included in the error when that check fails.
+fetch_otp_test_sources(Vsn, Dir) ->
+    Script = "test/fetch_otp_test_sources.sh",
+    Cmd = lists:flatten(
+        io_lib:format("~s ~s ~s 2>&1", [Script, Vsn, Dir])
+    ),
+    Out = os:cmd(Cmd),
+    Sentinel = filename:join([Dir, "test", "gen_server_SUITE.erl"]),
+    case filelib:is_file(Sentinel) of
+        true ->
+            ok;
+        false ->
+            error({otp_test_sources_fetch_failed, Vsn, Dir, Out})
     end.
 
 %% =============================================================================
@@ -764,12 +808,4 @@ rewrite_helper_source(SrcFile, DstFile) ->
             %% Fallback: copy as-is.
             {ok, _} = file:copy(SrcFile, DstFile),
             ok
-    end.
-
-find_existing_dir([]) ->
-    error;
-find_existing_dir([Dir | Rest]) ->
-    case filelib:is_dir(Dir) of
-        true -> {ok, Dir};
-        false -> find_existing_dir(Rest)
     end.

@@ -47,6 +47,18 @@
     perform_preloads/1
 ]).
 
+%% Interposition functions installed on peer nodes. These are exported so they
+%% can be referenced as NAMED funs (`fun ?MODULE:F/1'): an interposition fun is
+%% shipped to a peer and applied there, and an ANONYMOUS fun is bound to the
+%% defining module's md5 — so it becomes `badfun' on any node whose copy of this
+%% module differs. That happens routinely when the runner is cover-compiled
+%% (`{cover_enabled, true}') while the peers load the plain beam. A named fun is
+%% resolved by name on the target node and is immune to that skew.
+-export([
+    faulted_interposition/1,
+    faulted_for_background_interposition/1
+]).
+
 %% gen_server callbacks
 -export([
     init/1,
@@ -115,6 +127,131 @@ perform_preloads(Nodes) ->
     replay_debug("preloads finished.", []),
 
     ok.
+
+%% @doc Interposition applied on a peer while that peer is `faulted', dropping
+%% the message. It is installed as a named fun, `fun ?MODULE:F/A', which the
+%% receiving node resolves by name; an anonymous fun would instead be bound to
+%% the exact module the installer loaded and would fail to apply on a node whose
+%% copy of this module differs.
+faulted_interposition({forward_message, _N, M}) ->
+    %% Default: a node with no `faulted' setting is simply not faulted.
+    %% `get/1' would raise badarg when the key was never set on this peer.
+    case partisan_config:get(faulted, false) of
+        true ->
+            case M of
+                undefined ->
+                    undefined;
+                _ ->
+                    replay_debug(
+                        "~p: faulted during forward_message of background message, message ~p should be dropped.",
+                        [partisan:node(), M]
+                    ),
+                    undefined
+            end;
+        _ ->
+            M
+    end;
+faulted_interposition({receive_message, _N, M}) ->
+    %% Default: a node with no `faulted' setting is simply not faulted.
+    %% `get/1' would raise badarg when the key was never set on this peer.
+    case partisan_config:get(faulted, false) of
+        true ->
+            case M of
+                undefined ->
+                    undefined;
+                _ ->
+                    replay_debug(
+                        "~p: faulted during receive_message of background message, message ~p should be dropped.",
+                        [partisan:node(), M]
+                    ),
+                    undefined
+            end;
+        _ ->
+            M
+    end.
+
+%% @doc Interposition applied on a peer while that peer is
+%% `faulted_for_background', dropping only messages annotated as background.
+%% The annotations are read from the peer's own `partisan_config', where the
+%% installer places them, rather than captured from the enclosing scope, which
+%% is what allows this to be a named fun.
+faulted_for_background_interposition({forward_message, _N, M}) ->
+    replay_debug("~p: interposition called for message: ~p", [
+        partisan:node(), M
+    ]),
+
+    %% Default as above: unset means "not faulted for background".
+    case partisan_config:get(faulted_for_background, false) of
+        true ->
+            case M of
+                undefined ->
+                    undefined;
+                _ ->
+                    MessageType = message_type(forward_message, M),
+
+                    case
+                        lists:member(
+                            element(2, MessageType),
+                            background_annotations_for_node()
+                        )
+                    of
+                        true ->
+                            ?LOG_INFO(
+                                "~p: faulted_for_background during forward_message of background message, message ~p should be dropped.",
+                                [partisan:node(), M]
+                            ),
+                            undefined;
+                        false ->
+                            ?LOG_INFO(
+                                "~p: faulted_for_background, but forward_message payload is not background message: ~p, message_type: ~p",
+                                [partisan:node(), M, MessageType]
+                            ),
+                            M
+                    end
+            end;
+        _ ->
+            M
+    end;
+faulted_for_background_interposition({receive_message, _N, M}) ->
+    %% Default as above: unset means "not faulted for background".
+    case partisan_config:get(faulted_for_background, false) of
+        true ->
+            case M of
+                undefined ->
+                    undefined;
+                _ ->
+                    MessageType = message_type(receive_message, M),
+
+                    case
+                        lists:member(
+                            element(2, MessageType),
+                            background_annotations_for_node()
+                        )
+                    of
+                        true ->
+                            ?LOG_INFO(
+                                "~p: faulted_for_background during receive_message of background message, message ~p should be dropped.",
+                                [partisan:node(), M]
+                            ),
+                            undefined;
+                        false ->
+                            ?LOG_INFO(
+                                "~p: faulted_for_background, but receive_message payload is not background message: ~p, message_type: ~p",
+                                [partisan:node(), M, MessageType]
+                            ),
+                            M
+                    end
+            end;
+        _ ->
+            M
+    end.
+
+%% @private Background annotations as seen by THIS node. The orchestrator ships
+%% them into each peer's partisan_config when installing the interposition,
+%% because background_annotations/0 resolves a file relative to the caller's
+%% CWD and would yield [] on a peer.
+background_annotations_for_node() ->
+    partisan_config:get(background_annotations, []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -751,7 +888,10 @@ write_trace(Trace) ->
 
 %% Should we do replay debugging?
 replay_debug(Line, Args) ->
-    case partisan_config:get(replay_debug) of
+    %% Default: replay debugging off. This runs on PEER nodes too (via the
+    %% interposition funs), where the key is typically never set — `get/1'
+    %% would raise badarg and take the peer's peer-service manager down.
+    case partisan_config:get(replay_debug, false) of
         true ->
             ?LOG_INFO("~p: " ++ Line, [?MODULE] ++ Args);
         _ ->
@@ -891,47 +1031,12 @@ preload_omissions(Nodes) ->
     %% Install faulted tracing interposition function.
     lists:foreach(
         fun({_, Node}) ->
-            InterpositionFun = fun
-                ({forward_message, _N, M}) ->
-                    case partisan_config:get(faulted) of
-                        true ->
-                            case M of
-                                undefined ->
-                                    undefined;
-                                _ ->
-                                    replay_debug(
-                                        "~p: faulted during forward_message of background message, message ~p should be dropped.",
-                                        [partisan:node(), M]
-                                    ),
-                                    undefined
-                            end;
-                        _ ->
-                            M
-                    end;
-                ({receive_message, _N, M}) ->
-                    case partisan_config:get(faulted) of
-                        true ->
-                            case M of
-                                undefined ->
-                                    undefined;
-                                _ ->
-                                    replay_debug(
-                                        "~p: faulted during receive_message of background message, message ~p should be dropped.",
-                                        [partisan:node(), M]
-                                    ),
-                                    undefined
-                            end;
-                        _ ->
-                            M
-                    end
-            end,
-
-            %% Install function.
+            %% A named fun, for the reason given at faulted_interposition/1.
             replay_debug("installing faulted pre-interposition for node: ~p", [
                 Node
             ]),
             ok = rpc:call(Node, ?MANAGER, add_interposition_fun, [
-                {faulted, Node}, InterpositionFun
+                {faulted, Node}, fun ?MODULE:faulted_interposition/1
             ])
         end,
         Nodes
@@ -940,88 +1045,14 @@ preload_omissions(Nodes) ->
     %% Install faulted_for_background tracing interposition function.
     lists:foreach(
         fun({_, Node}) ->
-            InterpositionFun = fun
-                ({forward_message, _N, M}) ->
-                    replay_debug("~p: interposition called for message: ~p", [
-                        partisan:node(), M
-                    ]),
-
-                    case partisan_config:get(faulted_for_background) of
-                        true ->
-                            case M of
-                                undefined ->
-                                    undefined;
-                                _ ->
-                                    MessageType = message_type(
-                                        forward_message, M
-                                    ),
-
-                                    case
-                                        lists:member(
-                                            element(2, MessageType),
-                                            BackgroundAnnotations
-                                        )
-                                    of
-                                        true ->
-                                            ?LOG_INFO(
-                                                "~p: faulted_for_background during forward_message of background message, message ~p should be dropped.",
-                                                [partisan:node(), M]
-                                            ),
-                                            undefined;
-                                        false ->
-                                            ?LOG_INFO(
-                                                "~p: faulted_for_background, but forward_message payload is not background message: ~p, message_type: ~p",
-                                                [
-                                                    partisan:node(),
-                                                    M,
-                                                    MessageType
-                                                ]
-                                            ),
-                                            M
-                                    end
-                            end;
-                        _ ->
-                            M
-                    end;
-                ({receive_message, _N, M}) ->
-                    case partisan_config:get(faulted_for_background) of
-                        true ->
-                            case M of
-                                undefined ->
-                                    undefined;
-                                _ ->
-                                    MessageType = message_type(
-                                        receive_message, M
-                                    ),
-
-                                    case
-                                        lists:member(
-                                            element(2, MessageType),
-                                            BackgroundAnnotations
-                                        )
-                                    of
-                                        true ->
-                                            ?LOG_INFO(
-                                                "~p: faulted_for_background during receive_message of background message, message ~p should be dropped.",
-                                                [partisan:node(), M]
-                                            ),
-                                            undefined;
-                                        false ->
-                                            ?LOG_INFO(
-                                                "~p: faulted_for_background, but receive_message payload is not background message: ~p, message_type: ~p",
-                                                [
-                                                    partisan:node(),
-                                                    M,
-                                                    MessageType
-                                                ]
-                                            ),
-                                            M
-                                    end
-                            end;
-                        _ ->
-                            M
-                    end
-            end,
+            %% The annotations are computed on this node, since
+            %% background_annotations/0 reads a file relative to the current
+            %% working directory. They are placed in the peer's partisan_config
+            %% rather than captured, so that the interposition can be a named
+            %% fun; see faulted_for_background_interposition/1.
+            ok = rpc:call(Node, partisan_config, set, [
+                background_annotations, BackgroundAnnotations
+            ]),
 
             %% Install function.
             replay_debug(
@@ -1029,7 +1060,8 @@ preload_omissions(Nodes) ->
                 [Node]
             ),
             ok = rpc:call(Node, ?MANAGER, add_interposition_fun, [
-                {faulted_for_background, Node}, InterpositionFun
+                {faulted_for_background, Node},
+                fun ?MODULE:faulted_for_background_interposition/1
             ])
         end,
         Nodes

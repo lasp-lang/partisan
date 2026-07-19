@@ -169,7 +169,6 @@
 -export([forward_message/4]).
 -export([is_connected/1]).
 -export([is_connected/2]).
--export([is_disterl_connected/1]).
 -export([is_fully_connected/1]).
 -export([is_local/1]).
 -export([is_local_name/1]).
@@ -395,7 +394,14 @@ monitor(process, {RegisteredName, Node}, Opts) when
         true ->
             erlang:monitor(process, RegisteredName, to_erl_monitor_opts(Opts));
         false ->
-            case partisan_config:get(connect_disterl, false) of
+            %% Only use native disterl monitoring when the peer is actually
+            %% reachable over disterl; otherwise `erlang:monitor' fabricates an
+            %% immediate `noconnection' DOWN for a process still reachable over
+            %% the partisan overlay.
+            case
+                partisan_config:get(connect_disterl, false) andalso
+                    lists:member(Node, erlang:nodes())
+            of
                 true ->
                     erlang:monitor(
                         process,
@@ -412,12 +418,19 @@ monitor(process, {RegisteredName, Node}, Opts) when
 monitor(process, Term, Opts) when erlang:is_pid(Term) orelse is_atom(Term) ->
     erlang:monitor(process, Term, to_erl_monitor_opts(Opts));
 monitor(process, RemoteRef, Opts) ->
-    %% When `connect_disterl' is true the test harness explicitly opted into
-    %% disterl-only routing — decode the remote-ref and use `erlang:monitor'
-    %% so DOWN messages fire promptly when the peer drops. Otherwise use the
-    %% partisan transport's own monitor (the default behaviour).
+    %% When `connect_disterl' is true AND the peer is actually reachable over
+    %% disterl, decode the remote-ref and use `erlang:monitor' so DOWN fires
+    %% promptly. If the peer is not disterl-reachable, native `erlang:monitor'
+    %% would fabricate an immediate `noconnection' DOWN for a process still
+    %% reachable over the partisan overlay, so fall back to the partisan
+    %% transport's own monitor (also the default when `connect_disterl' is off).
+    %% Note: only name refs are disterl-usable; encoded pids cannot be
+    %% reconstructed as remote pids (see `remote_ref_to_disterl/1').
     case
         partisan_config:get(connect_disterl, false) andalso
+            lists:member(
+                partisan_remote_ref:node(RemoteRef), erlang:nodes()
+            ) andalso
             remote_ref_to_disterl(RemoteRef)
     of
         {ok, {Name, _Node} = NN} when is_atom(Name) ->
@@ -1633,28 +1646,6 @@ process_exit_reason(not_yet_connected) ->
 process_exit_reason(_) ->
     noproc.
 
-%% -----------------------------------------------------------------------------
-%% @doc Returns `true' if `Target' resides on the local node or on a node to
-%% which this node currently holds an Erlang distribution (disterl) connection;
-%% otherwise `false'. With `connect_disterl' enabled this lets a caller decide
-%% whether a target can be reached/monitored over disterl (which detects
-%% `noconnection' promptly) rather than over the Partisan overlay. `Target' is a
-%% pid or a `{RegisteredName, Node}' tuple; any other term returns `false'.
-%% @end
-%% -----------------------------------------------------------------------------
--spec is_disterl_connected(Target :: pid() | {atom(), node()} | term()) ->
-    boolean().
-
-is_disterl_connected(Pid) when erlang:is_pid(Pid) ->
-    Node = erlang:node(Pid),
-    Node =:= erlang:node() orelse
-        lists:member(Node, erlang:nodes());
-is_disterl_connected({Name, Node}) when is_atom(Name), is_atom(Node) ->
-    Node =:= erlang:node() orelse
-        lists:member(Node, erlang:nodes());
-is_disterl_connected(_) ->
-    false.
-
 %% @private
 %% When `connect_disterl' is set, convert a partisan_remote_ref to a
 %% disterl-usable form: a foreign pid (via `list_to_pid/1') for encoded pids,
@@ -1665,7 +1656,16 @@ remote_ref_to_disterl(Ref) ->
         Node = partisan_remote_ref:node(Ref),
         case partisan_remote_ref:target(Ref) of
             {encoded_pid, Str} ->
-                {ok, list_to_pid(Str)};
+                %% A partisan-encoded pid is stored in node-localised
+                %% "<0.X.Y>" form; `list_to_pid/1' rebuilds it as a pid on the
+                %% LOCAL node, silently discarding the origin node. Only a
+                %% genuinely-local pid can be reconstructed this way; a remote
+                %% pid has no disterl-usable form, so the caller must fall back
+                %% to the partisan transport.
+                case Node =:= partisan:node() of
+                    true -> {ok, list_to_pid(Str)};
+                    false -> error
+                end;
             {encoded_name, Str} ->
                 {ok, {list_to_existing_atom(Str), Node}};
             _ ->

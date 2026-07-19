@@ -38,6 +38,7 @@
 
 %% @doc Apply all structural patches for OrigModule to the given forms.
 apply_patches(OrigModule, Forms) ->
+    ok = validate_source_shape(OrigModule, Forms),
     Patches = patches(OrigModule),
     lists:foldl(fun apply_patch/2, Forms, Patches).
 
@@ -473,14 +474,21 @@ supervisor_patches(OtpVsn) ->
         {replace, do_start_child_i, 3, sup_do_start_child_i_source()},
         {replace, handle_call, 3, sup_handle_call_source(OtpVsn)},
         {replace, handle_start_child, 2, sup_handle_start_child_source()},
-        {replace, restarting, 1, sup_restarting_source()},
-        {replace, do_terminate, 2, sup_do_terminate_source()},
+        %% NOTE: restarting/1 and do_terminate/2 are NO LONGER patched. They
+        %% were frozen solely because of an `is_pid/1' clause guard, which the
+        %% mechanical rewrite now lifts to a body-level `partisan:is_pid/1'
+        %% check (see partisan_otp_rewrite:lift_is_pid_guards/2). Their bodies
+        %% now come from the installed OTP source, so OTP upgrades are picked
+        %% up automatically instead of silently drifting from a hand-copy.
         {replace, terminate_dynamic_children, 1,
             sup_terminate_dynamic_children_source()},
         {replace, find_child, 2, sup_find_child_source()},
         {replace, find_child_and_args, 2, sup_find_child_and_args_source()},
         {replace, unlink_flush, 2, sup_unlink_flush_source()},
-        {replace, shutdown, 1, sup_shutdown_source()},
+        %% NOTE: shutdown/1 is NO LONGER patched. Its only Partisan-specific
+        %% needs (monitor/2 and exit/2 → partisan:monitor/2, partisan:exit/2)
+        %% are already handled by the auto-import rewrite, so the mechanically
+        %% rewritten source is byte-identical to the previous hand-copy.
         {replace, count_child, 2, sup_count_child_source()},
         %% Child type validation: accept both `supervisor` and
         %% `partisan_gen_supervisor` since the rewrite renames the atom but
@@ -493,6 +501,215 @@ supervisor_patches(OtpVsn) ->
         %% The format strings ("Supervisor: ", "    supervisor: ~tp~n") are
         %% human-readable labels that should stay as-is.
     ].
+
+%% =============================================================================
+%% INTERNAL: build-time shape validation (fail loud, not silent)
+%%
+%% The supervisor patches above hand-copy several OTP-28 functions and freeze
+%% assumptions about the shape of the installed `supervisor.erl' (most notably
+%% the exact set of `handle_call/3' message tags the frozen dispatcher knows).
+%% If a future OTP release changes that shape (e.g. OTP 29 adds a new
+%% `handle_call' message), the frozen copies would silently drift and could
+%% `function_clause'-crash a running supervisor at RUNTIME.
+%%
+%% To convert that malignant silent-runtime failure into a benign loud
+%% BUILD-time failure, we assert here that (a) we are on an OTP major version
+%% whose supervisor internals have been reviewed against these patches, and
+%% (b) the installed `handle_call/3' still dispatches on exactly the set of
+%% message tags the frozen dispatcher handles. Either check failing raises a
+%% clear `{supervisor_patches_need_review_for_otp, ...}' error with the action
+%% required: review partisan_otp_patches against the new supervisor.erl and,
+%% once validated, extend the reviewed-version list / expected-tag set below.
+%% =============================================================================
+
+%% OTP major versions whose supervisor.erl has been reviewed against the
+%% frozen patches in this module. Bump ONLY after review.
+%% How the copies below relate to OTP 29's supervisor, which differs from OTP
+%% 28's in five of the functions this module freezes or asserts over:
+%%
+%%   * handle_call/3        — OTP 29 dispatches a leading clause that wakes a
+%%                            hibernating supervisor. `sup_handle_call_source/1'
+%%                            emits that clause, since replacing handle_call/3
+%%                            wholesale would otherwise drop it.
+%%   * do_start_child_i/3   — OTP 29 expresses the start result with try/catch
+%%                            and a helper. The copy here keeps the equivalent
+%%                            `catch' form: `catch' maps a throw to its value,
+%%                            an error to `{'EXIT', {Reason, Stack}}' and an
+%%                            exit to `{'EXIT', Reason}', which is the
+%%                            partition OTP 29 spells out. This equivalence
+%%                            rests on reading both forms rather than on a
+%%                            test over the start-result shapes.
+%%   * do_check_childspec/2 — OTP 29 matches `true' on each validation helper.
+%%                            The helpers throw on invalid input, so the match
+%%                            guards a case that cannot arise and the copy here
+%%                            behaves identically.
+%%   * do_terminate/2 and terminate_dynamic_children/1 — differ only in the
+%%                            line number carried in a log report.
+-define(REVIEWED_OTP_VERSIONS, [27, 28, 29]).
+
+%% The message tags the installed supervisor's handle_call/3 must dispatch on,
+%% keyed by reviewed OTP major. OTP 28 ADDED a `which_child' clause that OTP 27
+%% does not have, so the expected set is version-dependent — hardcoding the
+%% OTP-28 set breaks the build on OTP 27 (the min supported / pinned version).
+%% The frozen handle_call patch is written for OTP 28 and always carries the
+%% `which_child' clause; on OTP 27 that is a harmless extra dispatch clause
+%% (its helpers find_dynamic_child/find_child exist in both), so only this
+%% pre-patch shape check needs to distinguish the versions.
+%% OTP 29 dispatches a leading `handle_call(Msg, From,
+%% #state{hibernating = true})' clause, which `handle_call_tags/1' reports as
+%% the `$non_literal' sentinel; the expected set includes it from 29 onwards.
+expected_handle_call_tags(OtpVsn) when OtpVsn >= 29 ->
+    ['$non_literal' | expected_handle_call_tags(28)];
+expected_handle_call_tags(OtpVsn) when OtpVsn >= 28 ->
+    [
+        count_children,
+        delete_child,
+        get_childspec,
+        restart_child,
+        start_child,
+        terminate_child,
+        which_child,
+        which_children
+    ];
+expected_handle_call_tags(_OtpVsn) ->
+    [
+        count_children,
+        delete_child,
+        get_childspec,
+        restart_child,
+        start_child,
+        terminate_child,
+        which_children
+    ].
+
+%% Supervisor functions we DE-FROZE (removed from supervisor_patches/1) on the
+%% basis that `partisan_otp_rewrite:lift_is_pid_guards/2' rewrites their
+%% `is_pid/1' clause guard into a body-level `partisan:is_pid/1' check. If a
+%% future OTP changes their clause shape, the lifter conservatively refuses
+%% (see partisan_otp_rewrite:capture_safe/2) and the native `is_pid/1' guard
+%% survives — which, for a Partisan remote pid, would silently take the wrong
+%% branch. We assert here that each of these functions still exists AND carries
+%% no native `is_pid/1' guard, converting that silent runtime mis-branch into a
+%% loud build failure.
+-define(GUARD_LIFTED_FUNCTIONS, [{restarting, 1}, {do_terminate, 2}]).
+
+validate_source_shape(supervisor, Forms) ->
+    OtpVsn = partisan_gen_transform:otp_major_version(),
+    ok = assert_reviewed_otp_version(OtpVsn),
+    ok = assert_handle_call_tags(OtpVsn, Forms),
+    ok = assert_is_pid_guards_lifted(OtpVsn, Forms),
+    ok;
+validate_source_shape(_OrigModule, _Forms) ->
+    ok.
+
+assert_reviewed_otp_version(OtpVsn) ->
+    case lists:member(OtpVsn, ?REVIEWED_OTP_VERSIONS) of
+        true ->
+            ok;
+        false ->
+            error(
+                {supervisor_patches_need_review_for_otp, OtpVsn,
+                    {reviewed_versions, ?REVIEWED_OTP_VERSIONS}}
+            )
+    end.
+
+assert_handle_call_tags(OtpVsn, Forms) ->
+    Got = handle_call_tags(Forms),
+    Expected = lists:sort(expected_handle_call_tags(OtpVsn)),
+    case Got =:= Expected of
+        true ->
+            ok;
+        false ->
+            error(
+                {supervisor_patches_need_review_for_otp, OtpVsn,
+                    {handle_call_tags, {got, Got}, {expected, Expected}}}
+            )
+    end.
+
+%% Extract the sorted, de-duplicated set of first-argument message tags from the
+%% installed supervisor's handle_call/3 clauses. A tag is either the atom in a
+%% `handle_call(Tag, ...)' clause or the first element of a
+%% `handle_call({Tag, ...}, ...)' tuple clause.
+handle_call_tags(Forms) ->
+    Clauses = lists:append(
+        [Cs || {function, _, handle_call, 3, Cs} <- Forms]
+    ),
+    Tags = lists:map(
+        fun({clause, _, [Pattern | _], _, _}) ->
+            case Pattern of
+                {atom, _, Tag} ->
+                    Tag;
+                {tuple, _, [{atom, _, Tag} | _]} ->
+                    Tag;
+                _ ->
+                    %% A clause that dispatches on a variable or a record
+                    %% pattern rather than a literal tag, such as OTP 29's
+                    %% `handle_call(Msg, From, #state{hibernating = true})'.
+                    %% Such clauses carry no tag to report, so they are counted
+                    %% under a sentinel: the expected set must then change when
+                    %% one is added or removed, which is what makes the
+                    %% assertion below sensitive to them.
+                    '$non_literal'
+            end
+        end,
+        Clauses
+    ),
+    lists:usort(Tags).
+
+%% Assert every function in ?GUARD_LIFTED_FUNCTIONS (a) is present in the
+%% rewritten forms and (b) carries no native `is_pid/1' guard — i.e. the lift
+%% in partisan_otp_rewrite actually fired. `Forms' here are POST-rewrite (this
+%% runs from apply_patches/2 on the rewritten forms) and PRE-patch, and none of
+%% these functions are patched, so what we inspect is exactly the lifter's
+%% output for the installed OTP source.
+assert_is_pid_guards_lifted(OtpVsn, Forms) ->
+    lists:foreach(
+        fun({Name, Arity}) ->
+            case
+                [Cs || {function, _, N, A, Cs} <- Forms, N =:= Name, A =:= Arity]
+            of
+                [Clauses] ->
+                    case clauses_have_is_pid_guard(Clauses) of
+                        false ->
+                            ok;
+                        true ->
+                            error(
+                                {supervisor_patches_need_review_for_otp, OtpVsn,
+                                    {is_pid_guard_not_lifted, {Name, Arity}}}
+                            )
+                    end;
+                _ ->
+                    error(
+                        {supervisor_patches_need_review_for_otp, OtpVsn,
+                            {guard_lifted_function_missing, {Name, Arity}}}
+                    )
+            end
+        end,
+        ?GUARD_LIFTED_FUNCTIONS
+    ).
+
+%% True if any clause carries a native `is_pid/1' (bare or `erlang:'-qualified)
+%% call anywhere in its guard sequence.
+clauses_have_is_pid_guard(Clauses) ->
+    lists:any(
+        fun({clause, _, _Head, GuardSeq, _Body}) ->
+            lists:any(fun has_is_pid_call/1, lists:append(GuardSeq))
+        end,
+        Clauses
+    ).
+
+has_is_pid_call({call, _, {atom, _, is_pid}, [_]}) ->
+    true;
+has_is_pid_call(
+    {call, _, {remote, _, {atom, _, erlang}, {atom, _, is_pid}}, [_]}
+) ->
+    true;
+has_is_pid_call(T) when is_tuple(T) ->
+    lists:any(fun has_is_pid_call/1, tuple_to_list(T));
+has_is_pid_call(L) when is_list(L) ->
+    lists:any(fun has_is_pid_call/1, L);
+has_is_pid_call(_) ->
+    false.
 
 %% OTP 28 supervisor: do_start_child/3 has case guards `when is_pid(Pid)`.
 %% Move the is_pid check to body context using partisan:is_pid/1.
@@ -554,10 +771,24 @@ sup_do_start_child_i_source() ->
 %% (supervisor -> partisan_gen_supervisor, gen_server -> partisan_gen_server).
 %% The patch source uses the REWRITTEN names.
 sup_handle_call_source(OtpVsn) ->
-    %% The handle_call replacement is written for OTP 28+ which uses
-    %% hibernate_after_action(State) as the 4th reply element.
-    %% For OTP 27, we strip it out since supervisor replies are 3-tuples.
-    Source = sup_handle_call_source_28(),
+    %% The replacement is written against OTP 28 and later, whose supervisor
+    %% replies carry `hibernate_after_action(State)' as a fourth element. OTP 27
+    %% replies are three-tuples, so that element is removed below.
+    Source0 = sup_handle_call_source_28(),
+    %% From OTP 29 the supervisor may hibernate, and a leading clause wakes it
+    %% before the call is dispatched. This replacement supplies handle_call/3 in
+    %% full, so it must carry that clause: without it a hibernating supervisor
+    %% never wakes. The corresponding clauses in handle_cast/2 and handle_info/2
+    %% are not replaced here and arrive through the mechanical rewrite, as do
+    %% `wakeup/1' and the `hibernating' field they depend on.
+    Source =
+        case OtpVsn >= 29 of
+            true ->
+                "handle_call(Msg, From, #state{hibernating = true} = State) ->\n"
+                "    handle_call(Msg, From, wakeup(State));\n" ++ Source0;
+            false ->
+                Source0
+        end,
     case OtpVsn >= 28 of
         true ->
             Source;
@@ -748,7 +979,16 @@ sup_handle_call_source_28() ->
     "            {0, 0, 0, 0}, State#state.children),\n"
     "    Reply = [{specs, Specs}, {active, Active},\n"
     "             {supervisors, Supers}, {workers, Workers}],\n"
-    "    {reply, Reply, State, hibernate_after_action(State)}.\n".
+    "    {reply, Reply, State, hibernate_after_action(State)};\n"
+    %% Defense in depth: this dispatcher is a hand-frozen copy of OTP's
+    %% handle_call/3. If a future OTP adds a new supervisor call message, this
+    %% catch-all degrades it to a safe error reply instead of a
+    %% `function_clause' crash that would take down the running supervisor.
+    %% (The build-time `assert_handle_call_tags/2' check is the primary guard;
+    %% this is the runtime backstop.)
+    "handle_call(Req, _From, State) ->\n"
+    "    {reply, {error, {unsupported_call, Req}}, State,\n"
+    "     hibernate_after_action(State)}.\n".
 
 %% handle_start_child/2: guard `is_pid(OldChild#child.pid)` → body check.
 sup_handle_start_child_source() ->
@@ -777,58 +1017,6 @@ sup_handle_start_child_source() ->
     "                false ->\n"
     "                    {{error, already_present}, State}\n"
     "            end\n"
-    "    end.\n".
-
-%% restarting/1: guard `is_pid(Pid)` → body check.
-sup_restarting_source() ->
-    "restarting(Pid) ->\n"
-    "    case partisan:is_pid(Pid) of\n"
-    "        true -> {restarting, Pid};\n"
-    "        false -> Pid\n"
-    "    end.\n".
-
-%% do_terminate/2: guard `is_pid(Child#child.pid)` → body check.
-sup_do_terminate_source() ->
-    "do_terminate(Child, SupName) ->\n"
-    "    case partisan:is_pid(Child#child.pid) of\n"
-    "        true ->\n"
-    "            case shutdown(Child) of\n"
-    "                ok ->\n"
-    "                    ok;\n"
-    "                {error, OtherReason} ->\n"
-    "                    case logger:allow(error, partisan_gen_supervisor) of\n"
-    "                        true ->\n"
-    "                            apply(logger, macro_log,\n"
-    "                                [#{mfa => {partisan_gen_supervisor,\n"
-    "                                           do_terminate, 2},\n"
-    "                                   line => 0,\n"
-    "                                   file => \"supervisor.erl\"},\n"
-    "                                 error,\n"
-    "                                 #{label => {partisan_gen_supervisor,\n"
-    "                                             shutdown_error},\n"
-    "                                   report =>\n"
-    "                                       [{partisan_gen_supervisor, SupName},\n"
-    "                                        {errorContext, shutdown_error},\n"
-    "                                        {reason, OtherReason},\n"
-    "                                        {offender,\n"
-    "                                         extract_child(Child)}]},\n"
-    "                                 #{domain => [otp, sasl],\n"
-    "                                   report_cb =>\n"
-    "                                       fun partisan_gen_supervisor:format_log/2,\n"
-    "                                   logger_formatter =>\n"
-    "                                       #{title => \"SUPERVISOR REPORT\"},\n"
-    "                                   error_logger =>\n"
-    "                                       #{tag => error_report,\n"
-    "                                         type => supervisor_report,\n"
-    "                                         report_cb =>\n"
-    "                                             fun partisan_gen_supervisor:format_log/1}}]);\n"
-    "                        false ->\n"
-    "                            ok\n"
-    "                    end\n"
-    "            end,\n"
-    "            ok;\n"
-    "        false ->\n"
-    "            ok\n"
     "    end.\n".
 
 %% terminate_dynamic_children/1: fun clause guard `is_pid(P)` → body check.
@@ -960,55 +1148,6 @@ sup_unlink_flush_source() ->
     "unlink_flush(_, _) ->\n"
     "    normal.\n".
 
-%% shutdown/1: uses exit/2 and monitor/2 in body context. The auto-import
-%% rewrite handles exit/2 → partisan:exit/2 and monitor/2 → partisan:monitor/2.
-%% But we need to explicitly use partisan: calls since this is a patch
-%% (patches bypass rewrite).
-sup_shutdown_source() ->
-    "shutdown(#child{pid = Pid, shutdown = brutal_kill} = Child) ->\n"
-    "    Mon = partisan:monitor(process, Pid),\n"
-    "    partisan:exit(Pid, kill),\n"
-    "    receive\n"
-    "        {'DOWN', Mon, process, Pid, Reason0} ->\n"
-    "            case unlink_flush(Pid, Reason0) of\n"
-    "                killed -> ok;\n"
-    "                shutdown\n"
-    "                    when not (Child#child.restart_type =:= permanent) -> ok;\n"
-    "                {shutdown, _}\n"
-    "                    when not (Child#child.restart_type =:= permanent) -> ok;\n"
-    "                normal\n"
-    "                    when not (Child#child.restart_type =:= permanent) -> ok;\n"
-    "                Reason -> {error, Reason}\n"
-    "            end\n"
-    "    end;\n"
-    "shutdown(#child{pid = Pid, shutdown = Time} = Child) ->\n"
-    "    Mon = partisan:monitor(process, Pid),\n"
-    "    partisan:exit(Pid, shutdown),\n"
-    "    receive\n"
-    "        {'DOWN', Mon, process, Pid, Reason0} ->\n"
-    "            case unlink_flush(Pid, Reason0) of\n"
-    "                shutdown -> ok;\n"
-    "                {shutdown, _}\n"
-    "                    when not (Child#child.restart_type =:= permanent) -> ok;\n"
-    "                normal\n"
-    "                    when not (Child#child.restart_type =:= permanent) -> ok;\n"
-    "                Reason -> {error, Reason}\n"
-    "            end\n"
-    "    after Time ->\n"
-    "        partisan:exit(Pid, kill),\n"
-    "        receive\n"
-    "            {'DOWN', Mon, process, Pid, Reason0} ->\n"
-    "                case unlink_flush(Pid, Reason0) of\n"
-    "                    shutdown -> ok;\n"
-    "                    {shutdown, _}\n"
-    "                        when not (Child#child.restart_type =:= permanent) -> ok;\n"
-    "                    normal\n"
-    "                        when not (Child#child.restart_type =:= permanent) -> ok;\n"
-    "                    Reason -> {error, Reason}\n"
-    "                end\n"
-    "        end\n"
-    "    end.\n".
-
 %% count_child/2: uses `is_pid(Pid) andalso is_process_alive(Pid)` in body.
 %% The auto-import rewrite would handle this, but since this is body context
 %% we need to use partisan: calls explicitly in the patch.
@@ -1041,17 +1180,16 @@ sup_validChildType_source() ->
 %% `#{type := supervisor}` to `#{type := partisan_gen_supervisor}`. We need
 %% to handle both atoms. This is a full replacement of the function.
 sup_do_check_childspec_source() ->
-    %% Normalize the `supervisor' atom to `partisan_gen_supervisor' (instead
-    %% of the other direction): downstream guards in this module have been
-    %% rewritten to `=:= partisan_gen_supervisor', so the stored value must
-    %% match. `get_childspec' will also return `partisan_gen_supervisor',
-    %% which is what the (rewritten) test source expects.
-    "do_check_childspec(#{restart := RestartType, type := ChildType0} = ChildSpec,\n"
+    %% Preserve the child_type atom EXACTLY as the user supplied it (OTP
+    %% compatibility): a child declared `type => supervisor' must read back as
+    %% `supervisor' from `get_childspec'/`which_children', matching plain OTP.
+    %% We do NOT normalize to `partisan_gen_supervisor' — every downstream
+    %% child_type guard in this module already accepts both atoms
+    %% (`CT =:= supervisor; CT =:= partisan_gen_supervisor'), and the two
+    %% branches that case on it are identical, so storing the original atom is
+    %% behaviourally equivalent internally while keeping the public API faithful.
+    "do_check_childspec(#{restart := RestartType, type := ChildType} = ChildSpec,\n"
     "                   AutoShutdown) ->\n"
-    "    ChildType = case ChildType0 of\n"
-    "        supervisor -> partisan_gen_supervisor;\n"
-    "        Other0 -> Other0\n"
-    "    end,\n"
     "    Id = case ChildSpec of\n"
     "        #{id := I} -> I;\n"
     "        _ -> throw(missing_id)\n"

@@ -53,7 +53,10 @@
     monitor_tag_storage/1,
     unexpected_alias_at_demonitor_gh5310/1,
     down_on_alias_gh5310/1,
-    monitor_3_noproc_gh6185/1
+    monitor_3_noproc_gh6185/1,
+    exactly_one_down_on_race/1,
+    channel_bound_down/1,
+    caller_gc/1
 ]).
 
 -export([y2/1, g/1, g0/0, g1/0, large_exit_sub/1]).
@@ -89,7 +92,10 @@ all() ->
         monitor_tag_storage,
         unexpected_alias_at_demonitor_gh5310,
         down_on_alias_gh5310,
-        monitor_3_noproc_gh6185
+        monitor_3_noproc_gh6185,
+        exactly_one_down_on_race,
+        channel_bound_down,
+        caller_gc
     ].
 
 groups() ->
@@ -1549,6 +1555,267 @@ monitor_3_noproc_gh6185_exit_test(AliasTest, TagTest) ->
         {'DOWN', M6, process, P6, bang} -> ok
     end,
     ok.
+
+%% =============================================================================
+%% CHANNEL / F1 (at-most-once) / F4 (caller GC) REGRESSION TESTS
+%%
+%% These are whitebox: they read the ETS tables owned by partisan_monitor and
+%% inject signals into the monitor server. The table names and row layouts are
+%% kept in sync with the ?PROC_MON_OUT / ?NODE_TYPE_MON macros and the
+%% #partisan_proc_mon_out{} / #partisan_node_type_mon{} records in
+%% partisan_monitor.erl.
+%% =============================================================================
+
+-define(PROC_MON_OUT_TAB, partisan_proc_mon_out).
+-define(PROC_MON_IN_TAB, partisan_proc_mon_in).
+-define(NODE_TYPE_MON_TAB, partisan_node_type_mon).
+
+%% F1 regression gate.
+%%
+%% Monitoring a remote process on a channel must deliver EXACTLY ONE DOWN,
+%% even when the monitored process exits at the same time the node/channel
+%% goes down. Before the fix the process-DOWN could be delivered by the
+%% direct-delivery path *and* fabricated a second time by the
+%% nodedown/channeldown path for the same reference. Post-fix the two paths
+%% both claim the proc_mon_out entry atomically, so at most one wins.
+exactly_one_down_on_race(Config) when is_list(Config) ->
+    {ok, N} = partisan_support_otp:start_node(?FUNCTION_NAME),
+    partisan_support:cluster(N),
+    timer:sleep(2000),
+
+    %% Monitor several long-lived remote processes on the (default) channel.
+    %% Several processes give the race more chances to manifest in one node
+    %% lifecycle.
+    Ps = [partisan:spawn(N, timer, sleep, [100000]) || _ <- lists:seq(1, 10)],
+    Refs = [partisan:monitor(process, P) || P <- Ps],
+
+    %% Each process exits, then we immediately drop the node. This races the
+    %% per-process DOWN relayed on the channel against the nodedown-driven
+    %% fabrication running on our monitoring server.
+    _ = [partisan:exit(P, kill) || P <- Ps],
+    ok = partisan_support_otp:stop_node(N),
+
+    %% Every reference must see EXACTLY ONE DOWN.
+    Counts = collect_down_counts(Refs, 20000, 2000),
+    lists:foreach(
+        fun(R) ->
+            case maps:get(R, Counts, 0) of
+                1 -> ok;
+                C -> ct:fail({expected_exactly_one_down, R, C})
+            end
+        end,
+        Refs
+    ),
+    ok.
+
+%% Channel-bound DOWN.
+%%
+%% A monitor bound to a channel must fire a DOWN with reason `noconnection'
+%% when *that* channel goes down, even if the node stays reachable on other
+%% channels. A single-channel test cluster cannot drop one channel without
+%% dropping the whole node, so we drive the `channeldown' signal straight
+%% into the monitor server (the same message the peer-service manager's
+%% channel-down callback would send).
+channel_bound_down(Config) when is_list(Config) ->
+    {ok, N} = partisan_support_otp:start_node(?FUNCTION_NAME),
+    partisan_support:cluster(N),
+    timer:sleep(2000),
+
+    P = partisan:spawn(N, timer, sleep, [100000]),
+    R = partisan:monitor(process, P),
+
+    %% Bookkeeping for the monitor exists (bound to the default channel).
+    [_] = ets:lookup(?PROC_MON_OUT_TAB, R),
+
+    %% The monitor's channel goes down while the node is otherwise still up.
+    Server = whereis(partisan_monitor),
+    true = is_pid(Server),
+    Server ! {channeldown, N, undefined},
+
+    %% Exactly one DOWN with reason noconnection, and the bookkeeping is gone.
+    receive
+        {'DOWN', R, process, _, noconnection} -> ok
+    after 5000 ->
+        ct:fail(missing_channel_down)
+    end,
+    ok = wait_until_true(
+        fun() -> ets:lookup(?PROC_MON_OUT_TAB, R) =:= [] end, 5000
+    ),
+    %% No duplicate for the same reference.
+    receive
+        {'DOWN', R, process, _, _} = Dup ->
+            ct:fail({unexpected_duplicate_down, Dup})
+    after 500 ->
+        ok
+    end,
+
+    ok = partisan_support_otp:stop_node(N),
+    ok.
+
+%% F4 regression gate.
+%%
+%% A local caller that installs monitors and then dies must have all of its
+%% monitor state reclaimed by the server (otherwise an unbounded ETS leak and
+%% a growing dead-pid fan-out). Here the caller subscribes to node status
+%% (node_type_mon) and monitors a remote process (proc_mon_out); after it
+%% dies both must be gone.
+caller_gc(Config) when is_list(Config) ->
+    {ok, N} = partisan_support_otp:start_node(?FUNCTION_NAME),
+    partisan_support:cluster(N),
+    timer:sleep(2000),
+
+    P = partisan:spawn(N, timer, sleep, [100000]),
+    Self = self(),
+
+    %% Baseline count of proc_mon_in rows on the *monitored* node N, before we
+    %% install our monitor. Used to prove the remote half is reclaimed too.
+    InBefore = count_proc_mon_in_on(N),
+
+    Caller = spawn(fun() ->
+        ok = partisan:monitor_nodes(true, []),
+        _ = partisan:monitor(process, P),
+        Self ! {ready, self()},
+        receive
+            stop -> ok
+        end
+    end),
+    receive
+        {ready, Caller} -> ok
+    after 5000 ->
+        ct:fail(caller_not_ready)
+    end,
+
+    %% The caller's local rows are present (and the server has had time to
+    %% install its own monitor on the caller via the monitor_caller cast), AND
+    %% the monitored node N has installed the companion proc_mon_in row + its
+    %% native erlang:monitor.
+    ok = wait_until_true(
+        fun() ->
+            count_node_type_mon(Caller) >= 1 andalso
+                count_proc_mon_out(Caller) >= 1 andalso
+                count_proc_mon_in_on(N) > InBefore
+        end,
+        5000
+    ),
+
+    %% Caller dies.
+    exit(Caller, kill),
+
+    %% The server reclaims every row the caller owned locally AND — the B1
+    %% remote-leak fix — asks N to drop its half, so N's proc_mon_in row and
+    %% native monitor are released. Without the remote demonitor in
+    %% purge_caller/1, count_proc_mon_in_on(N) would stay above the baseline
+    %% forever and this wait would time out.
+    ok = wait_until_true(
+        fun() ->
+            count_node_type_mon(Caller) =:= 0 andalso
+                count_proc_mon_out(Caller) =:= 0 andalso
+                count_proc_mon_in_on(N) =:= InBefore
+        end,
+        5000
+    ),
+
+    ok = partisan_support_otp:stop_node(N),
+    ok.
+
+%% Count node_type_mon rows owned by Caller.
+%% Row layout: {partisan_node_type_mon, {Pid, Hash}, NodeType, NodedownReason}.
+count_node_type_mon(Caller) ->
+    ets:select_count(?NODE_TYPE_MON_TAB, [
+        {{partisan_node_type_mon, {Caller, '_'}, '_', '_'}, [], [true]}
+    ]).
+
+%% Count proc_mon_out rows owned by Caller.
+%% Row layout: {partisan_proc_mon_out, Ref, Monitored, Monitor, Channel}.
+count_proc_mon_out(Caller) ->
+    ets:select_count(?PROC_MON_OUT_TAB, [
+        {{partisan_proc_mon_out, '_', '_', Caller, '_'}, [], [true]}
+    ]).
+
+%% Count proc_mon_in rows on a remote (monitored) node. Used to prove the
+%% remote half of a monitor is reclaimed when the local caller dies.
+count_proc_mon_in_on(Node) ->
+    case rpc:call(Node, ets, info, [?PROC_MON_IN_TAB, size]) of
+        Size when is_integer(Size) -> Size;
+        _ -> 0
+    end.
+
+%% Bounded poll until Fun() returns true; fails on timeout.
+wait_until_true(Fun, Timeout) ->
+    Deadline = erlang:monotonic_time(millisecond) + Timeout,
+    wait_until_true_loop(Fun, Deadline).
+
+wait_until_true_loop(Fun, Deadline) ->
+    case (catch Fun()) of
+        true ->
+            ok;
+        _ ->
+            case erlang:monotonic_time(millisecond) < Deadline of
+                true ->
+                    timer:sleep(100),
+                    wait_until_true_loop(Fun, Deadline);
+                false ->
+                    ct:fail(wait_until_true_timeout)
+            end
+    end.
+
+%% Tally DOWN messages per reference. Wait up to FirstTimeout ms for every
+%% reference to see at least one DOWN, then drain an extra Grace ms to catch
+%% any duplicate. Returns a map Ref => Count.
+collect_down_counts(Refs, FirstTimeout, Grace) ->
+    RefSet = maps:from_list([{R, true} || R <- Refs]),
+    Init = maps:from_list([{R, 0} || R <- Refs]),
+    Deadline = erlang:monotonic_time(millisecond) + FirstTimeout,
+    Counts1 = collect_until_all(RefSet, Init, length(Refs), Deadline),
+    GraceDeadline = erlang:monotonic_time(millisecond) + Grace,
+    collect_grace(RefSet, Counts1, GraceDeadline).
+
+collect_until_all(RefSet, Counts, NRefs, Deadline) ->
+    Seen = length([1 || {_, C} <- maps:to_list(Counts), C >= 1]),
+    case Seen >= NRefs of
+        true ->
+            Counts;
+        false ->
+            Remaining = Deadline - erlang:monotonic_time(millisecond),
+            case Remaining =< 0 of
+                true ->
+                    Counts;
+                false ->
+                    receive
+                        {'DOWN', Ref, process, _, _} when
+                            is_map_key(Ref, RefSet)
+                        ->
+                            collect_until_all(
+                                RefSet,
+                                maps:update_with(
+                                    Ref, fun(C) -> C + 1 end, Counts
+                                ),
+                                NRefs,
+                                Deadline
+                            )
+                    after Remaining ->
+                        Counts
+                    end
+            end
+    end.
+
+collect_grace(RefSet, Counts, Deadline) ->
+    Remaining = Deadline - erlang:monotonic_time(millisecond),
+    case Remaining =< 0 of
+        true ->
+            Counts;
+        false ->
+            receive
+                {'DOWN', Ref, process, _, _} when is_map_key(Ref, RefSet) ->
+                    collect_grace(
+                        RefSet,
+                        maps:update_with(Ref, fun(C) -> C + 1 end, Counts),
+                        Deadline
+                    )
+            after Remaining ->
+                Counts
+            end
+    end.
 
 %%
 %% ...

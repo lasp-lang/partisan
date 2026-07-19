@@ -460,6 +460,12 @@ init() ->
             %% The following keys are missing on purpose
             %% as we need to process them after: [channels].
             %% Also do not change the sort order of this list.
+            %% Cadence of the HyParView active-view symmetry repair.
+            %% `undefined' selects the random-promotion cadence, which is the
+            %% default; any other value sets the cadence directly. The key is
+            %% listed here so that it is read from the application environment,
+            %% as the note above requires.
+            {active_view_maintenance_interval, undefined},
             {binary_padding, false},
             {broadcast, false},
             {broadcast_mods, [partisan_plumtree_backend]},

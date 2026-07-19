@@ -767,6 +767,9 @@ init([]) ->
             %% Schedule periodic random promotion when it is enabled.
             schedule_random_promotion(State),
 
+            %% Schedule periodic active-view symmetry repair.
+            schedule_active_view_maintenance(State),
+
             {ok, State}
     end.
 
@@ -1035,6 +1038,44 @@ handle_info(passive_view_maintenance, State0) ->
     schedule_passive_view_maintenance(State),
 
     {noreply, State};
+handle_info(active_view_maintenance, State0) ->
+    %% Repair active-view symmetry. HyParView requires that if node A holds peer
+    %% B in its active view then B holds A as well. During churn a NEIGHBOR can
+    %% race a not-yet-established reverse connection: the receiver's is_connected
+    %% check is momentarily false, so it silently drops the add while the
+    %% connection stays up — a stable one-sided view that nothing repairs (a lost
+    %% NEIGHBOR_ACCEPTED leaves the same state). We periodically re-assert our
+    %% membership to each active peer using the ordinary NEIGHBOR message: the
+    %% peer (re)adds us if it is missing us, and treats it as a no-op if it
+    %% already has us. Because this runs periodically, a message lost in one
+    %% round is simply retried in the next. Uses no new wire message, so it is
+    %% safe for peers running older releases.
+    %%
+    %% We send best-effort over the existing connection to an active peer and do
+    %% NOT call connect/1 here: a blocking connect fanned out across the whole
+    %% active view would stall this single manager process during exactly the
+    %% churn this repair targets. An unreachable peer is removed by the
+    %% connection-exit path ({'EXIT', ...}) instead.
+    Myself = State0#state.node_spec,
+    Tag = State0#state.tag,
+    RecvMessageMap = State0#state.recv_message_map,
+
+    ok = lists:foreach(
+        fun(Peer) ->
+            LastDisconnectId = get_current_id(Peer, RecvMessageMap),
+            _ = do_send_message(
+                Peer,
+                {neighbor, Myself, Tag, LastDisconnectId, Peer}
+            ),
+            ok
+        end,
+        peers(State0)
+    ),
+
+    %% Reschedule.
+    schedule_active_view_maintenance(State0),
+
+    {noreply, State0};
 % handle optimization using xbot algorithm
 handle_info(xbot_execution, #state{} = State) ->
     Active = State#state.active,
@@ -1283,8 +1324,16 @@ handle_message(
 
                 case partisan_peer_connections:is_connected(Peer) of
                     true ->
-                        %% Add node into the active view.
-                        State1 = add_to_active_view(
+                        %% Add the peer to our active view, but do NOT evict a
+                        %% third party to make room. This handler also receives
+                        %% the periodic symmetry re-assertions
+                        %% (active_view_maintenance); an evicting add would let a
+                        %% re-assertion displace a healthy neighbour on a timer.
+                        %% When our view is full and we don't already hold the
+                        %% peer we instead tell it to drop us, so any asymmetry
+                        %% heals by the *holder* dropping rather than by us
+                        %% ejecting an innocent neighbour.
+                        State1 = add_to_active_view_or_reject(
                             Peer, PeerTag, State0
                         ),
                         ?LOG_DEBUG(#{
@@ -1300,8 +1349,15 @@ handle_message(
                 State0
         end,
 
-    %% Notify with event.
-    notify(State),
+    %% Only emit a membership-changed event when the active view actually
+    %% changed. Periodic symmetry re-assertions (active_view_maintenance) land
+    %% here and are no-ops for peers we already hold; firing an event every
+    %% round would needlessly wake downstream subscribers (e.g. anti-entropy).
+    _ =
+        case State =/= State0 of
+            true -> notify(State);
+            false -> ok
+        end,
 
     {noreply, State};
 handle_message(
@@ -2405,6 +2461,52 @@ add_to_active_view(
 
 %% -----------------------------------------------------------------------------
 %% @private
+%% @doc Add `Peer' to the active view WITHOUT ever evicting a third party.
+%% Used by the NEIGHBOR handler, which also receives the periodic symmetry
+%% re-assertions (`active_view_maintenance'). Behaviour:
+%% <ul>
+%%   <li>already a neighbour — no-op;</li>
+%%   <li>room available — add (mutual, no eviction);</li>
+%%   <li>full and not held — refuse without displacing anyone, and reply with a
+%%   DISCONNECT asking `Peer' to drop us. Any asymmetry then heals by the
+%%   *holder* dropping rather than by us ejecting a healthy neighbour, so no
+%%   eviction cascade is triggered.</li>
+%% </ul>
+%% Contrast `add_to_active_view/3' (high-priority neighbor_request / join
+%% paths) which DOES evict to make room.
+%% @end
+%% -----------------------------------------------------------------------------
+add_to_active_view_or_reject(
+    Peer,
+    Tag,
+    #state{
+        node_spec = Myself,
+        active = Active0,
+        reserved = Reserved0,
+        epoch = Epoch0,
+        sent_message_map = SentMessageMap0
+    } = State0
+) ->
+    case sets:is_element(Peer, Active0) of
+        true ->
+            State0;
+        false ->
+            ActiveMaxSize = config_get(active_max_size, State0),
+            case is_full({active, Active0, Reserved0}, ActiveMaxSize) of
+                false ->
+                    add_to_active_view(Peer, Tag, State0);
+                true ->
+                    NextId = get_next_id(Peer, Epoch0, SentMessageMap0),
+                    SentMessageMap = maps:put(
+                        Peer, NextId, SentMessageMap0
+                    ),
+                    do_send_message(Peer, {disconnect, Myself, NextId}),
+                    State0#state{sent_message_map = SentMessageMap}
+            end
+    end.
+
+%% -----------------------------------------------------------------------------
+%% @private
 %% @doc Add to the passive view.
 %% @end
 %% -----------------------------------------------------------------------------
@@ -2863,6 +2965,18 @@ schedule_tree_refresh(_State) ->
 schedule_passive_view_maintenance(State) ->
     Time = config_get(shuffle_interval, State),
     erlang:send_after(Time, ?MODULE, passive_view_maintenance).
+
+%% @private
+schedule_active_view_maintenance(State) ->
+    %% Defaults to the random-promotion cadence; overridable independently via
+    %% the `active_view_maintenance_interval' application env.
+    Default = config_get(random_promotion_interval, State),
+    Time =
+        case partisan_config:get(active_view_maintenance_interval, undefined) of
+            undefined -> Default;
+            Val -> Val
+        end,
+    erlang:send_after(Time, ?MODULE, active_view_maintenance).
 
 %% @private
 schedule_random_promotion(#state{config = #{random_promotion := true} = C}) ->

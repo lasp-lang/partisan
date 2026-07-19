@@ -75,14 +75,33 @@ accept(TCPSocket) ->
             %% succeed depending on timing.
             inet:setopts(TCPSocket, [{active, false}]),
             HSTimeout = partisan_config:get(tls_handshake_timeout),
-            {ok, TLSSocket} = ssl:handshake(TCPSocket, TLSOpts, HSTimeout),
-            %% restore the expected active once setting
-            ssl:setopts(TLSSocket, [{active, once}]),
-            #partisan_peer_socket{
-                socket = TLSSocket,
-                transport = ssl,
-                control = ssl
-            };
+            case ssl:handshake(TCPSocket, TLSOpts, HSTimeout) of
+                {ok, TLSSocket} ->
+                    %% restore the expected active once setting
+                    ssl:setopts(TLSSocket, [{active, once}]),
+                    #partisan_peer_socket{
+                        socket = TLSSocket,
+                        transport = ssl,
+                        control = ssl
+                    };
+                {error, Reason} ->
+                    %% A failed or timed-out handshake must not crash the
+                    %% acceptor worker: a strict `{ok, _} =' match raises
+                    %% `badmatch' and emits a crash report per failed handshake,
+                    %% which a slowloris-style flood or a misconfigured peer can
+                    %% turn into a log flood and acceptor-pool exhaustion (each
+                    %% worker blocked up to `tls_handshake_timeout'). Close the
+                    %% TCP socket and terminate this acceptor *normally* — the
+                    %% pool simply replaces it — with only a debug log.
+                    _ = (catch gen_tcp:close(TCPSocket)),
+                    logger:debug(#{
+                        description =>
+                            "TLS handshake failed on inbound peer "
+                            "connection; closing.",
+                        reason => Reason
+                    }),
+                    exit(normal)
+            end;
         _ ->
             #partisan_peer_socket{
                 socket = TCPSocket,

@@ -18,6 +18,13 @@
 _build/
 _checkouts.old/
 _checkouts/
+# Log of a heavy-suite run, written by test/fly/run.sh.
+/fly-*.log
+# Cache of the OTP test suites, fetched per OTP version by
+# test/fetch_otp_test_sources.sh. An OTP release does not ship these suites, and
+# they are fetched rather than committed so that a new OTP version needs no new
+# copy here.
+/otp_src/
 build
 current_counterexample.eqc
 data-root*/

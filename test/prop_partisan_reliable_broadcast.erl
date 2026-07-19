@@ -355,8 +355,12 @@ node_begin_case() ->
     lists:foreach(
         fun({ShortName, _}) ->
             % node_debug("starting ~p at node ~p with node list ~p ", [broadcast_module(), ShortName, SublistNodeProjection]),
+            %% Start UNLINKED: rpc:call runs on an ephemeral erpc worker that
+            %% exits with a non-normal (result-carrying) reason, which would
+            %% take a `start_link'ed server down with it. The harness owns the
+            %% backend's lifecycle explicitly (stopped in node_end_case/0).
             {ok, Pid} = rpc:call(
-                ?NAME(ShortName), broadcast_module(), start_link, []
+                ?NAME(ShortName), broadcast_module(), start, []
             ),
             node_debug("backend started with pid ~p at node ~p", [
                 Pid, ShortName

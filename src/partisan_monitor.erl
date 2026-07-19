@@ -59,6 +59,15 @@
 -define(DUMMY_MREF_KEY, {?MODULE, monitor_ref}).
 -define(IS_ENABLED, persistent_term:get({?MODULE, enabled})).
 
+%% Process-dictionary key (in the *caller's* process) recording which
+%% partisan_monitor incarnation we have already asked to watch us, so a caller
+%% that installs many monitors only casts `{monitor_caller, self()}' once. We
+%% store the server pid (not a bare boolean) so that if the singleton server
+%% crashes and restarts — dropping its `callers' map and native monitors — the
+%% next monitor establishment observes the new pid and re-registers, keeping
+%% caller-death GC correct across a server restart.
+-define(REGISTERED_CALLER_KEY, {?MODULE, registered_caller}).
+
 %% Table to record remote processes monitoring a local process
 %% stores proc_mon_in() records
 -define(PROC_MON_IN, partisan_proc_mon_in).
@@ -72,13 +81,24 @@
 %% For every record in ?PROC_MON_IN we have companion record in this table,
 %% This is to be able to send a signal to the local monitoring process
 %% when the remote node crashes or connection is lost.
-%% contains objects of type proc_mon_out()
+%% contains #partisan_proc_mon_out{} records
 -define(PROC_MON_OUT, partisan_proc_mon_out).
 
 %% An index over ?PROC_MON_OUT
 %% refs grouped by node, used to notify/cleanup on a nodedown signal
-%% contains objects of typeproc_mon_in_idx()
+%% contains objects of type proc_mon_out_idx()
 -define(PROC_MON_OUT_IDX, partisan_proc_mon_out_idx).
+
+%% An index over ?PROC_MON_OUT by the monitoring *caller* pid. Lets us reclaim
+%% a dead local caller's rows in O(that caller's monitors) instead of scanning
+%% the whole ?PROC_MON_OUT table (purge_caller/1 runs on the singleton server
+%% on every caller death — a full scan there is O(callers x total_monitors)).
+%% Maintained in lockstep with ?PROC_MON_OUT via add_proc_mon_out/1 and
+%% take_proc_mon_out/1 (the only two ?PROC_MON_OUT mutation points besides
+%% purge_caller/1). Bag keyed by caller pid; each object is
+%% {Caller, {Mref, Node, Channel}} carrying exactly what purge_caller/1 needs
+%% to also drop the {Node, Channel} index entry and demonitor the remote half.
+-define(PROC_MON_OUT_CALLER_IDX, partisan_proc_mon_out_caller_idx).
 
 %% Table to record local processes monitoring nodes
 %% contains objects of type node_mon()
@@ -98,7 +118,13 @@
     %% notify the subscriptions. This is the set of nodes we are currently
     %% connected to. Also this might be a partial view of the whole cluster,
     %% dependending on the peer_service_manager backend topology.
-    nodes :: sets:set(node())
+    nodes :: sets:set(node()),
+    %% Local callers of monitor/2, monitor_node/2 and monitor_nodes/2 that
+    %% we `erlang:monitor' so we can reclaim their monitor state
+    %% (proc_mon_out / node_mon / node_type_mon rows) when they die. Maps
+    %% each monitored caller pid to the reference we hold for it, so we
+    %% install at most one native monitor per caller.
+    callers = #{} :: #{pid() => reference()}
 }).
 
 -record(partisan_proc_mon_in, {
@@ -127,7 +153,15 @@
     %% DOWN with reason `noconnection' when this specific channel goes down
     %% (independently of the rest of the node), and (b) preserve FIFO with
     %% the user's traffic on the same channel.
-    channel :: partisan:channel()
+    channel :: partisan:channel(),
+    %% First element of the DOWN signal delivered to `monitor', set by the
+    %% `{tag, UserDefinedTag}' option of `erlang:monitor/3' and defaulting to
+    %% `DOWN'. The tag concerns only the process that requested the monitor, so
+    %% it is held on the monitoring side and applied at delivery; the signal
+    %% sent between nodes always carries the plain `DOWN' envelope.
+    %% `gen_server:multi_call/2,3,4' depends on this option, monitoring with
+    %% `{tag, Alias}' and receiving only signals bearing that tag.
+    tag = 'DOWN' :: term()
 }).
 
 -record(partisan_node_type_mon, {
@@ -138,7 +172,6 @@
 
 -type proc_mon_in() :: #partisan_proc_mon_in{}.
 -type proc_mon_in_idx() :: {{node(), partisan:channel()}, reference()}.
--type proc_mon_out() :: #partisan_proc_mon_out{}.
 -type proc_mon_out_idx() :: {
     {node(), partisan:channel()}, partisan:remote_reference()
 }.
@@ -367,14 +400,21 @@ demonitor(MPRef, Opts) ->
         false ->
             Node = partisan_remote_ref:node(MPRef),
 
-            %% We remove the local references. The proc_mon_out record holds
-            %% the channel we need to clean its index entry.
-            case take_proc_mon_out(MPRef) of
-                #partisan_proc_mon_out{channel = Channel} ->
-                    ok = del_proc_mon_out_idx(Node, Channel, MPRef);
-                error ->
-                    ok
-            end,
+            %% Remove the local references. The proc_mon_out record supplies
+            %% both the channel, needed to clear the index entry, and the tag
+            %% the DOWN signal carries. `flush' below matches on that tag: a
+            %% monitor created with `{tag, T}' delivers `{T, ...}', which a
+            %% pattern fixed to `DOWN' would leave in the caller's mailbox.
+            %% Where the record is already gone there is no signal of ours to
+            %% flush, and the default tag applies.
+            Tag =
+                case take_proc_mon_out(MPRef) of
+                    #partisan_proc_mon_out{channel = Channel} = M ->
+                        ok = del_proc_mon_out_idx(Node, Channel, MPRef),
+                        M#partisan_proc_mon_out.tag;
+                    error ->
+                        'DOWN'
+                end,
 
             %% We call the remote node to demonitor.
             %% If the remote server is unreachable we assume we lost connection
@@ -384,7 +424,7 @@ demonitor(MPRef, Opts) ->
                     case lists:member(flush, Opts) of
                         true ->
                             receive
-                                {_, MPRef, _, _, _} ->
+                                {Tag, MPRef, process, _, _} ->
                                     Bool
                             after 0 ->
                                 Bool
@@ -439,11 +479,12 @@ demonitor(MPRef, Opts) ->
 monitor_node(#{name := Node}, Flag) ->
     monitor_node(Node, Flag);
 monitor_node(Node, Flag) when is_atom(Node) ->
-    %% TODO WE need the server to monitor the caller, so that we can cleanup if
-    %% caller crashes!! Or store them in process dictionary
     case partisan_peer_connections:is_connected(Node) of
         true when Flag == true ->
-            add_node_monitor(Node, self());
+            _ = add_node_monitor(Node, self()),
+            %% Have the server monitor us so it can GC this row if we die.
+            ok = register_caller(),
+            true;
         false when Flag == true ->
             %% The node is down.
             %% We don't record the request and immediately send a
@@ -515,7 +556,10 @@ monitor_nodes(Flag, Opts0) when is_boolean(Flag), is_list(Opts0) ->
                     %% Do nothing as we do not have hidden nodes in Partisan
                     ok;
                 Opts when Flag == true ->
-                    add_node_type_mon(self(), Opts);
+                    ok = add_node_type_mon(self(), Opts),
+                    %% Have the server monitor us so it can GC this row if
+                    %% we die (unbounded leak otherwise for subscribers).
+                    register_caller();
                 Opts when Flag == false ->
                     del_note_type_mon(self(), Opts)
             end;
@@ -560,6 +604,7 @@ init([]) ->
     _ = ets:new(?PROC_MON_IN_IDX, [bag, {keypos, 1} | TabOpts]),
     _ = ets:new(?PROC_MON_OUT, [set, {keypos, 2} | TabOpts]),
     _ = ets:new(?PROC_MON_OUT_IDX, [bag, {keypos, 1} | TabOpts]),
+    _ = ets:new(?PROC_MON_OUT_CALLER_IDX, [bag, {keypos, 1} | TabOpts]),
 
     %% Tables for node status monitoring
     _ = ets:new(?NODE_MON, [duplicate_bag, {keypos, 1} | TabOpts]),
@@ -568,7 +613,8 @@ init([]) ->
     State = #state{
         enabled = Enabled,
         requests = #{},
-        nodes = sets:new([{version, 2}])
+        nodes = sets:new([{version, 2}]),
+        callers = #{}
     },
 
     {ok, State}.
@@ -645,12 +691,19 @@ handle_call({demonitor, RemoteRef, Opts}, {_Monitor, _}, State) ->
 handle_call(_Msg, _From, State) ->
     {reply, {error, unsupported_call}, State}.
 
+handle_cast({monitor_caller, Caller}, State) when is_pid(Caller) ->
+    %% A local caller of monitor/2, monitor_node/2 or monitor_nodes/2 asks
+    %% us to watch it so we can reclaim its monitor state when it dies.
+    {noreply, ensure_caller_monitored(Caller, State)};
 handle_cast({gc_proc_mon_out, Mref}, State) ->
-    %% Companion to the direct-DOWN delivery: the remote partisan_monitor has
-    %% already delivered the DOWN signal directly to the local monitor on the
-    %% user's channel. We just GC our `proc_mon_out' bookkeeping here. This
-    %% cast does not need to be ordered with the DOWN — it only releases an
-    %% ETS entry — so any stragglers are harmless.
+    %% Backwards-compat companion to a remote peer's *direct* DOWN delivery:
+    %% a partisan_monitor running the pre-(server-routed) code delivers the
+    %% DOWN straight to the local monitor and then asks us (via this cast) to
+    %% GC our `proc_mon_out' bookkeeping. We claim the entry with
+    %% `take_proc_mon_out/1' so this stays mutually exclusive with the
+    %% nodedown/channeldown fabrication path. Kept only for mixed-version
+    %% clusters; homogeneous v6 clusters route the DOWN through the
+    %% handle_cast({'DOWN', _}, _) clause below instead.
     case take_proc_mon_out(Mref) of
         #partisan_proc_mon_out{channel = Channel, monitored = Monitored} ->
             Node = partisan_remote_ref:node(Monitored),
@@ -660,11 +713,16 @@ handle_cast({gc_proc_mon_out, Mref}, State) ->
     end,
     {noreply, State};
 handle_cast({'DOWN', Mref, process, _Process, Reason}, State) ->
-    %% Backwards-compat path: a remote partisan_monitor running pre-(direct
-    %% delivery) code sends the DOWN signal as a cast to us, expecting us to
-    %% relay it to the local monitor. We do the work inline (no `spawn') to
-    %% keep DOWN signals in the order we received them on this channel —
-    %% that matches what disterl gives us for same-sender signals.
+    %% Primary delivery path. The monitored node's partisan_monitor relays
+    %% the process DOWN to us — the *monitoring* node — as a cast on the
+    %% user's channel. We atomically claim our `proc_mon_out' entry with
+    %% `take_proc_mon_out/1' and, if we win it, deliver the DOWN to the
+    %% local monitor (last hop local). Because this handler and the
+    %% nodedown/channeldown fabrication both run inline in this gen_server
+    %% and both claim the entry via `take_proc_mon_out/1', at most one DOWN
+    %% is ever delivered for a given reference (the F1 at-most-once
+    %% guarantee). Done inline (no `spawn') to keep DOWN signals in the order
+    %% we received them on this channel.
     case take_proc_mon_out(Mref) of
         #partisan_proc_mon_out{channel = Channel} = M ->
             Monitor = M#partisan_proc_mon_out.monitor,
@@ -673,8 +731,10 @@ handle_cast({'DOWN', Mref, process, _Process, Reason}, State) ->
 
             ok = del_proc_mon_out_idx(Node, Channel, Mref),
 
+            %% Apply the caller's tag. The signal received from the peer
+            %% carries the plain `DOWN' envelope used between nodes.
             Down = {
-                'DOWN',
+                M#partisan_proc_mon_out.tag,
                 Mref,
                 process,
                 Monitored,
@@ -686,67 +746,93 @@ handle_cast({'DOWN', Mref, process, _Process, Reason}, State) ->
             ok
     end,
     {noreply, State};
+handle_cast({demonitor, RemoteRef, Opts}, State) ->
+    %% Best-effort remote cleanup requested by a peer whose local caller died
+    %% (see purge_caller/1 -> demonitor_remote/3). Same effect as the
+    %% `{demonitor, _, _}' handle_call, but async: the peer cannot block on us
+    %% and expects no reply. Skip the dummy ref exactly like the handle_call
+    %% path (a monitor on this server itself has no proc_mon_in row); otherwise
+    %% drop our `proc_mon_in' row + native monitor for RemoteRef. An
+    %% already-removed ref is a no-op inside do_demonitor/2.
+    case RemoteRef == persistent_term:get(?DUMMY_MREF_KEY) of
+        true ->
+            ok;
+        false ->
+            _ = do_demonitor(RemoteRef, Opts)
+    end,
+    {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info(_, #state{enabled = false} = State) ->
     %% Functionality disabled
     {noreply, State};
-handle_info({'DOWN', Mref, process, _Process, Reason}, State) ->
-    %% A process we monitor on behalf of a remote node has terminated.
-    %%
-    %% We deliver the DOWN signal *directly* to the remote monitor on the
-    %% same channel the user picked at monitor establishment, instead of
-    %% routing through the remote partisan_monitor server. This preserves
-    %% FIFO ordering between this DOWN and any user traffic on that channel
-    %% — i.e. the disterl guarantee that messages from the dying process
-    %% are delivered before its DOWN signal.
-    %%
-    %% The work is done inline (no `spawn') to keep consecutive DOWN
-    %% signals ordered on the wire as they were received from the local
-    %% runtime.
-    case take_proc_mon_in(Mref) of
-        #partisan_proc_mon_in{} = M ->
-            Monitored0 = M#partisan_proc_mon_in.monitored,
-            Monitor = M#partisan_proc_mon_in.monitor,
-            Channel = M#partisan_proc_mon_in.channel,
-
-            Node = partisan:node(Monitor),
-            del_proc_mon_in_idx(Node, Channel, Mref),
-
-            %% Encode local refs as remote refs the way the user would see
-            %% them.
-            EncMref = partisan_remote_ref:from_term(Mref),
-            EncMonitored = partisan_remote_ref:from_term(Monitored0),
-            Down = {
-                'DOWN',
-                EncMref,
-                process,
-                EncMonitored,
-                Reason
-            },
-
-            %% (1) Direct delivery on the user's channel.
-            _ = partisan:forward_message(
-                Monitor, Down, #{channel => Channel}
-            ),
-
-            %% (2) Companion cast asking the remote partisan_monitor to GC
-            %% its proc_mon_out entry. This need not be ordered with the
-            %% DOWN — it only releases an ETS entry.
-            try
-                partisan_gen_server:cast(
-                    {?MODULE, Node},
-                    {gc_proc_mon_out, EncMref},
-                    [{channel, Channel}]
-                )
-            catch
-                exit:noproc -> ok
-            end;
+handle_info({'DOWN', Mref, process, Process, Reason}, State) ->
+    %% This DOWN is one of two things:
+    %%   (a) a LOCAL caller of monitor/2, monitor_node/2 or monitor_nodes/2
+    %%       that we `erlang:monitor' (see the {monitor_caller, _} cast) has
+    %%       died and we must reclaim all of its monitor state, or
+    %%   (b) a process we monitor on behalf of a REMOTE node has terminated
+    %%       and we must relay the DOWN to that remote monitor.
+    case take_monitored_caller(Process, Mref, State) of
+        {ok, State1} ->
+            %% (a) A local caller died. GC every row it owns.
+            ok = purge_caller(Process),
+            {noreply, State1};
         error ->
-            ok
-    end,
-    {noreply, State};
+            %% (b) Relay the DOWN to the *monitoring* node's
+            %% partisan_monitor server on the channel the monitor was bound
+            %% to, and let that server atomically take its `proc_mon_out'
+            %% entry and deliver the signal to the local monitor (last hop
+            %% local).
+            %%
+            %% Routing through that server — instead of delivering the DOWN
+            %% directly to the monitor and GC'ing our peer's `proc_mon_out'
+            %% via a separate cast — is what guarantees at-most-once
+            %% delivery: on the monitoring node the relay (handle_cast
+            %% {'DOWN', _}), the nodedown and the channeldown handlers all
+            %% run inline in the same gen_server and all claim the entry via
+            %% `take_proc_mon_out/1', so exactly one of them ever delivers a
+            %% DOWN for a given reference. Sending on the user's channel
+            %% preserves FIFO ordering with the dying process's last
+            %% messages on that channel (the disterl "messages before DOWN"
+            %% guarantee). Done inline (no `spawn') to keep consecutive DOWN
+            %% signals in the order the local runtime produced them.
+            case take_proc_mon_in(Mref) of
+                #partisan_proc_mon_in{} = M ->
+                    Monitored0 = M#partisan_proc_mon_in.monitored,
+                    Monitor = M#partisan_proc_mon_in.monitor,
+                    Channel = M#partisan_proc_mon_in.channel,
+
+                    Node = partisan:node(Monitor),
+                    del_proc_mon_in_idx(Node, Channel, Mref),
+
+                    %% Encode local refs as remote refs the way the user
+                    %% would see them.
+                    EncMref = partisan_remote_ref:from_term(Mref),
+                    EncMonitored = partisan_remote_ref:from_term(Monitored0),
+                    Down = {
+                        'DOWN',
+                        EncMref,
+                        process,
+                        EncMonitored,
+                        Reason
+                    },
+
+                    try
+                        partisan_gen_server:cast(
+                            {?MODULE, Node},
+                            Down,
+                            [{channel, Channel}]
+                        )
+                    catch
+                        exit:noproc -> ok
+                    end;
+                error ->
+                    ok
+            end,
+            {noreply, State}
+    end;
 handle_info({nodeup, Node}, State0) ->
     %% Either a net_kernel or Partisan signal
 
@@ -919,23 +1005,39 @@ monitor(Process, Opts, {connected, true}) ->
             %% fabricate a process DOWN signal locally when this channel
             %% (or the whole node) goes down. Indexing by `{Node, Channel}'
             %% lets a single-channel disconnection notify only the monitors
-            %% bound to that channel.
-            ok = add_proc_mon_out(Mref, Process, self(), Channel),
+            %% bound to that channel. The tag is recorded with the entry and
+            %% applied wherever the DOWN signal is delivered.
+            Tag = get_option(tag, Opts, 'DOWN'),
+            ok = add_proc_mon_out(Mref, Process, self(), Channel, Tag),
             ok = add_proc_mon_out_idx(Node, Channel, Mref),
+            %% Have the server monitor us so it can GC these rows if we die.
+            ok = register_caller(),
             Mref;
         {error, timeout} ->
-            %% partisan transport hasn't yet noticed the peer dropped, but
-            %% disterl may already know. If the target node is no longer in
-            %% `erlang:nodes()' (and never was — we never had a connection
-            %% — or has been removed), fire `noconnection' immediately
-            %% rather than reporting `timeout' (which callers compare to
-            %% `nodedown'-style reasons).
-            Status =
+            %% A monitor-establishment RPC timeout is normalised to
+            %% `noconnection' so the fabricated DOWN only ever carries the
+            %% standard `erlang:monitor' reasons (noproc | noconnection |
+            %% ExitReason). Delivering a non-standard `timeout' reason would
+            %% hang callers that follow the `erlang:monitor' contract and
+            %% only match those reasons (e.g. a gen_server/gen_statem peer).
+            %% We still probe reachability to log a diagnostic that
+            %% distinguishes "peer gone" from "peer reachable but the remote
+            %% monitor server did not answer in time".
+            _ =
                 case is_node_reachable(Node) of
-                    false -> noconnection;
-                    true -> timeout
+                    false ->
+                        ok;
+                    true ->
+                        ?LOG_WARNING(#{
+                            description =>
+                                "monitor establishment timed out while the "
+                                "node still appears reachable; delivering "
+                                "DOWN with reason noconnection",
+                            node => Node,
+                            process => Process
+                        })
                 end,
-            monitor(Process, Opts, Status);
+            monitor(Process, Opts, noconnection);
         {error, noproc} ->
             monitor(Process, Opts, noproc);
         {error, {nodedown, _}} ->
@@ -946,13 +1048,17 @@ monitor(Process, Opts, {connected, true}) ->
     end;
 monitor(Process, Opts, {connected, false}) ->
     monitor(Process, Opts, noconnection);
-monitor(Process, _Opts, Reason) ->
+monitor(Process, Opts, Reason) ->
     %% We reply a transient ref and we immediately send a DOWN signal
     Mref = partisan:make_ref(),
 
+    %% No monitor is established on this path, so no record carries the tag and
+    %% the option is read directly from `Opts'.
+    Tag = get_option(tag, Opts, 'DOWN'),
+
     %% Because this is performed in the caller's process the signal can only be
     %% received after we return.
-    Down = {'DOWN', Mref, process, Process, Reason},
+    Down = {Tag, Mref, process, Process, Reason},
     self() ! Down,
 
     Mref.
@@ -1158,25 +1264,32 @@ notify_proc_mon_out(Node, Channel, Reason) ->
 notify_proc_mon_out_indices(Indices, Reason) ->
     lists:foreach(
         fun({{Node, Channel}, Mref}) ->
-            case proc_mon_out(Mref) of
-                [] ->
-                    ok;
-                [#partisan_proc_mon_out{} = M] ->
+            %% Atomically claim the entry. Using `take_proc_mon_out/1'
+            %% (rather than lookup-then-delete) makes this fabrication path
+            %% mutually exclusive with the relay/gc paths that also claim the
+            %% entry with `take_proc_mon_out/1': whoever claims it delivers,
+            %% so a DOWN already delivered by the relay can never be
+            %% fabricated a second time here (F1 at-most-once).
+            case take_proc_mon_out(Mref) of
+                #partisan_proc_mon_out{} = M ->
                     Monitored = M#partisan_proc_mon_out.monitored,
                     Monitor = M#partisan_proc_mon_out.monitor,
 
-                    ok = del_proc_mon_out(M),
                     ok = del_proc_mon_out_idx(Node, Channel, Mref),
 
+                    %% A DOWN raised for a lost node or channel carries the
+                    %% caller's tag, as one raised by an exit does.
                     Down = {
-                        'DOWN',
+                        M#partisan_proc_mon_out.tag,
                         Mref,
                         process,
                         Monitored,
                         Reason
                     },
 
-                    Monitor ! Down
+                    Monitor ! Down;
+                error ->
+                    ok
             end
         end,
         Indices
@@ -1233,6 +1346,161 @@ parse_nodemon_opts(Opts0) when is_list(Opts0) ->
         end,
     InclReason = lists:member(nodedown_reason, Opts0),
     {Type, InclReason}.
+
+%% =============================================================================
+%% PRIVATE: LOCAL CALLER GC
+%% =============================================================================
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc Ask the local partisan_monitor server to `erlang:monitor' the calling
+%% process. Called (in the caller's process) whenever the caller installs a
+%% monitor/node-monitor/node-type-monitor, so that if the caller dies the
+%% server can reclaim all the ETS rows it owns instead of leaking them and
+%% fanning out signals to a dead pid.
+%%
+%% Best-effort, asynchronous cast: it never blocks the monitor operation and
+%% cannot deadlock (the caller may itself be a gen_server). If the caller
+%% dies before or right after the cast, the server still reclaims its rows —
+%% `erlang:monitor/2' on an already-dead pid produces an immediate DOWN.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec register_caller() -> ok.
+
+register_caller() ->
+    %% Dedup in the caller so a process that installs many monitors casts once,
+    %% keeping this load off the singleton server. Key the memo on the server
+    %% pid: if the server crashed and restarted (new pid, empty `callers'), the
+    %% memo no longer matches and we re-register, so caller-death GC stays
+    %% correct across a restart.
+    Server = erlang:whereis(?MODULE),
+    case Server =/= undefined andalso get(?REGISTERED_CALLER_KEY) =:= Server of
+        true ->
+            ok;
+        false ->
+            _ = partisan_gen_server:cast(?MODULE, {monitor_caller, self()}),
+            _ = Server =/= undefined andalso
+                put(?REGISTERED_CALLER_KEY, Server),
+            ok
+    end.
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc Idempotently install a native monitor on a local caller. We keep at
+%% most one monitor per caller (a caller may install many partisan monitors),
+%% and never monitor the server itself.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec ensure_caller_monitored(pid(), #state{}) -> #state{}.
+
+ensure_caller_monitored(Caller, #state{callers = Callers} = State) ->
+    case Caller =:= self() orelse maps:is_key(Caller, Callers) of
+        true ->
+            State;
+        false ->
+            Ref = erlang:monitor(process, Caller),
+            State#state{callers = maps:put(Caller, Ref, Callers)}
+    end.
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc If `Pid' is a local caller we are monitoring and `Ref' is the exact
+%% monitor reference we hold for it, forget it and return the updated state.
+%% Returns `error' for any DOWN that is not one of our caller monitors (e.g.
+%% a DOWN for a process we monitor on behalf of a remote node), so the caller
+%% can fall through to the normal relay path.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec take_monitored_caller(pid() | atom(), reference(), #state{}) ->
+    {ok, #state{}} | error.
+
+take_monitored_caller(Pid, Ref, #state{callers = Callers} = State) ->
+    case maps:find(Pid, Callers) of
+        {ok, Ref} ->
+            {ok, State#state{callers = maps:remove(Pid, Callers)}};
+        _ ->
+            error
+    end.
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc Reclaim every piece of monitor state owned by a now-dead local caller
+%% across the three tables it can appear in. Uses `ets:select'/
+%% `ets:select_delete' with match specifications (never tab2list + filter).
+%% @end
+%% -----------------------------------------------------------------------------
+-spec purge_caller(pid()) -> ok.
+
+purge_caller(Caller) ->
+    %% (1) proc_mon_out rows this caller installed. Look them up by caller via
+    %% the caller index — O(this caller's monitors), not a full-table scan.
+    %% For each row we (a) drop the {Node, Channel} index entry, (b) delete the
+    %% row itself, and (c) ask the monitored node to drop its half of the
+    %% monitor (the proc_mon_in row + the native erlang:monitor it holds). Step
+    %% (c) is the remote cleanup that was previously missing: without it a
+    %% dead caller leaks a proc_mon_in row and a native monitor on every node
+    %% it was monitoring a process on.
+    Rows = ets:lookup(?PROC_MON_OUT_CALLER_IDX, Caller),
+    _ = [
+        begin
+            ok = del_proc_mon_out_idx(Node, Channel, Ref),
+            %% Delete the row by key directly (not take_proc_mon_out/1): we
+            %% clear the whole caller-index key in one shot below, so there is
+            %% no per-row companion object to reconcile. Serialised with the
+            %% DOWN-delivery/fabrication handlers in this singleton, so this
+            %% cannot race them (F1 at-most-once is preserved).
+            _ = ets:delete(?PROC_MON_OUT, Ref),
+            ok = demonitor_remote(Node, Ref, Channel)
+        end
+     || {_Caller, {Ref, Node, Channel}} <- Rows
+    ],
+    _ = ets:delete(?PROC_MON_OUT_CALLER_IDX, Caller),
+
+    %% (2) node_mon rows: {Node, Caller}
+    _ = ets:select_delete(?NODE_MON, [{{'_', Caller}, [], [true]}]),
+
+    %% (3) node_type_mon rows: key = {Caller, _}
+    _ = ets:select_delete(?NODE_TYPE_MON, [
+        {
+            #partisan_node_type_mon{
+                key = {Caller, '_'},
+                node_type = '_',
+                nodedown_reason = '_'
+            },
+            [],
+            [true]
+        }
+    ]),
+    ok.
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc Best-effort, asynchronous request to the peer's `partisan_monitor' to
+%% drop its half of a monitor (the `proc_mon_in' row + the native
+%% `erlang:monitor' it holds) for `Ref'. This mirrors the remote demonitor
+%% that `demonitor/2' performs, but as a cast rather than a blocking call:
+%% `purge_caller/1' runs inside this server, so a blocking round-trip could
+%% deadlock or stall the singleton. The cast travels on the monitor's channel
+%% so it is ordered behind any traffic already queued for the peer. If the
+%% peer is unreachable the cast is dropped — that is fine, connection loss
+%% already triggers the peer's own nodedown cleanup of the same row.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec demonitor_remote(
+    node(), partisan:remote_reference(), partisan:channel()
+) -> ok.
+
+demonitor_remote(Node, Ref, Channel) ->
+    try
+        _ = partisan_gen_server:cast(
+            {?MODULE, Node},
+            {demonitor, Ref, []},
+            [{channel, Channel}]
+        ),
+        ok
+    catch
+        exit:noproc -> ok
+    end.
 
 %% =============================================================================
 %% PRIVATE: STORAGE OPS
@@ -1352,19 +1620,27 @@ proc_mon_in_indices(Node, Channel) ->
     Mref :: partisan:remote_reference(),
     Monitored :: partisan:remote_pid() | partisan:remote_name(),
     Monitor :: pid(),
-    Channel :: partisan:channel()
+    Channel :: partisan:channel(),
+    Tag :: term()
 ) -> ok.
 
-add_proc_mon_out(Mref, Monitored, Monitor, Channel) when
+add_proc_mon_out(Mref, Monitored, Monitor, Channel, Tag) when
     (is_pid(Monitor) orelse is_atom(Monitor)), is_atom(Channel)
 ->
     Obj = #partisan_proc_mon_out{
         ref = Mref,
         monitored = Monitored,
         monitor = Monitor,
-        channel = Channel
+        channel = Channel,
+        tag = Tag
     },
     _ = ets:insert(?PROC_MON_OUT, Obj),
+    %% Companion caller-index entry, kept in lockstep so purge_caller/1 can
+    %% reclaim by caller without scanning ?PROC_MON_OUT (see the table doc).
+    Node = partisan_remote_ref:node(Monitored),
+    _ = ets:insert(
+        ?PROC_MON_OUT_CALLER_IDX, {Monitor, {Mref, Node, Channel}}
+    ),
     ok.
 
 %% -----------------------------------------------------------------------------
@@ -1375,34 +1651,19 @@ add_proc_mon_out(Mref, Monitored, Monitor, Channel) when
 take_proc_mon_out(Mref) ->
     case ets:take(?PROC_MON_OUT, Mref) of
         [#partisan_proc_mon_out{ref = Mref} = M] ->
+            %% Keep the caller index in lockstep: whoever claims the row here
+            %% (delivery, GC, demonitor, or nodedown/channeldown fabrication)
+            %% also removes its companion caller-index object.
+            Monitor = M#partisan_proc_mon_out.monitor,
+            Node = partisan_remote_ref:node(M#partisan_proc_mon_out.monitored),
+            Channel = M#partisan_proc_mon_out.channel,
+            _ = ets:delete_object(
+                ?PROC_MON_OUT_CALLER_IDX, {Monitor, {Mref, Node, Channel}}
+            ),
             M;
         [] ->
             error
     end.
-
-%% -----------------------------------------------------------------------------
-%% @private
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
--spec del_proc_mon_out(proc_mon_out() | partisan:remote_reference()) -> ok.
-
-del_proc_mon_out(#partisan_proc_mon_out{} = Obj) ->
-    true = ets:delete_object(?PROC_MON_OUT, Obj),
-    ok;
-del_proc_mon_out(Mref) ->
-    true = ets:delete(?PROC_MON_OUT, Mref),
-    ok.
-
-%% -----------------------------------------------------------------------------
-%% @private
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
--spec proc_mon_out(partisan:remote_reference()) -> [proc_mon_out()].
-
-proc_mon_out(Ref) ->
-    ets:lookup(?PROC_MON_OUT, Ref).
 
 %% -----------------------------------------------------------------------------
 %% @private

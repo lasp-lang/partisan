@@ -53,14 +53,36 @@ start(_StartType, _StartArgs) ->
 %% This runtime check handles cases where the compile-time hook couldn't
 %% write to the correct ebin (e.g., checkout dependencies).
 ensure_otp_modules() ->
-    case code:ensure_loaded(partisan_gen_server) of
-        {module, _} ->
+    %% Check the WHOLE generated set, not just one representative: a partial
+    %% ebin (interrupted build, selective load) would otherwise pass here and
+    %% surface later as an `undef' at first use instead of at app start.
+    %% Keep in sync with the modules `partisan_gen_transform' generates.
+    Generated = [
+        partisan_gen,
+        partisan_proc_lib,
+        partisan_sys,
+        partisan_gen_server,
+        partisan_gen_event,
+        partisan_gen_statem,
+        partisan_gen_supervisor
+    ],
+    AllLoaded = lists:all(
+        fun(M) ->
+            case code:ensure_loaded(M) of
+                {module, _} -> true;
+                {error, _} -> false
+            end
+        end,
+        Generated
+    ),
+    case AllLoaded of
+        true ->
             ok;
-        {error, _} ->
-            %% Modules not found on code path. Try to generate them.
-            %% This will fail in a release where OTP source is unavailable,
-            %% which indicates the release was assembled without the
-            %% generated modules — that is a build-time error.
+        false ->
+            %% One or more modules not found on the code path. Try to generate
+            %% them. This will fail in a release where OTP source is
+            %% unavailable, which indicates the release was assembled without
+            %% the generated modules — that is a build-time error.
             case partisan_gen_transform:generate_all() of
                 ok -> ok;
                 {error, Errors} -> error({partisan_otp_modules_missing, Errors})

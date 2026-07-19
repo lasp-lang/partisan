@@ -257,8 +257,8 @@ maybe_enable_ping(State, #{enabled := true} = PingOpts) ->
             % disable, use max_retries only
             deadline => 0,
             interval => Timeout,
-            max_retries => Attempts,
-            backoff_enabled => false
+            max_retries => Attempts
+            %% No `backoff' key => fixed-interval retry (see partisan_retry).
         }
     ),
 
