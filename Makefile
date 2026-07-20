@@ -108,47 +108,21 @@ alt-test: setup-tls
 ## Run OTP compatibility test suites.
 ## These are adapted versions of OTP's own gen_server_SUITE, supervisor_SUITE, etc.
 ## that validate the generated partisan modules behave identically to OTP.
+## The -eval expressions MUST each stay on one physical line: GNU Make >= 3.82
+## passes backslash-newlines through to the shell, which keeps them literal
+## inside single quotes, and erl_parse rejects the resulting '\' tokens.
+## (GNU Make 3.81, as shipped by macOS, strips them — which is why a multi-line
+## eval works locally but breaks on CI runners.)
 otp-compat-test:
 	${REBAR} as test compile
-	## ct:run_test/1 requires its logdir to exist and reports an enoent error
-	## for every suite when it does not.
-	mkdir -p _build/test/logs
-	erl -noshell -pa _build/test/lib/*/ebin -eval ' \
-		OutDir = "_build/test/lib/partisan/test", \
-		partisan_otp_test_gen:generate_all_suites(OutDir), \
-		halt(0).'
+	erl -noshell -pa _build/test/lib/*/ebin \
+		-eval 'case partisan_otp_test_gen:generate_all_suites("_build/test/lib/partisan/test") of ok -> halt(0); _ -> halt(1) end.'
 	erl -noshell -sname partisan_ct_runner \
 		-pa _build/test/lib/*/ebin \
 		-pa _build/test/lib/partisan/test \
 		-pa _build/test/lib/partisan/test/otp \
 		-partisan connect_disterl true \
-		-eval ' \
-		application:set_env(partisan, connect_disterl, true), \
-		application:ensure_all_started(partisan), \
-		partisan_config:set(connect_disterl, true), \
-		[code:ensure_loaded(M) || M <- [partisan_gen, partisan_proc_lib, partisan_sys, \
-			partisan_gen_server, partisan_gen_event, partisan_gen_statem, \
-			partisan_gen_supervisor]], \
-		Suites = [partisan_otp_gen_server_SUITE, partisan_otp_supervisor_SUITE, \
-			partisan_otp_gen_statem_SUITE, partisan_otp_gen_event_SUITE, \
-			partisan_otp_proc_lib_SUITE, partisan_otp_sys_SUITE], \
-		Results = lists:map(fun(Suite) -> \
-			R = ct:run_test([ \
-				{dir, "_build/test/lib/partisan/test"}, \
-				{suite, Suite}, \
-				{logdir, "_build/test/logs"}, \
-				{auto_compile, false}, \
-				{multiply_timetraps, 5}]), \
-			io:format("~p: ~p~n", [Suite, R]), \
-			{Suite, R} \
-		end, Suites), \
-		TotalOk = lists:sum([Ok || {_, {Ok, _, _}} <- Results]), \
-		TotalFail = lists:sum([F || {_, {_, F, _}} <- Results]), \
-		Errored = [S || {S, R} <- Results, not (is_tuple(R) andalso tuple_size(R) =:= 3)], \
-		io:format("~nTotal: ~p ok, ~p failed, errored: ~p~n", \
-			[TotalOk, TotalFail, Errored]), \
-		case TotalFail =:= 0 andalso Errored =:= [] andalso TotalOk > 0 of \
-			true -> halt(0); false -> halt(1) end.'
+		-eval 'case partisan_otp_test_gen:run_all_suites("_build/test/lib/partisan/test", "_build/test/logs") of ok -> halt(0); _ -> halt(1) end.'
 
 
 setup-tls:

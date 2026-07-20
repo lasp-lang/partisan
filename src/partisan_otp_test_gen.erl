@@ -37,6 +37,7 @@
     generate_helper/2,
     generate_rewritten_helper/2,
     generate_all_suites/1,
+    run_all_suites/2,
     otp_src_dir/0,
     peer_opts/1
 ]).
@@ -78,14 +79,7 @@ generate_all_suites(OutDir) ->
     SrcDir = otp_src_dir(),
     TestDir = filename:join(SrcDir, "test"),
 
-    Suites = [
-        "gen_server_SUITE.erl",
-        "supervisor_SUITE.erl",
-        "gen_statem_SUITE.erl",
-        "gen_event_SUITE.erl",
-        "proc_lib_SUITE.erl",
-        "sys_SUITE.erl"
-    ],
+    Suites = suite_sources(),
 
     ok = filelib:ensure_dir(filename:join(OutDir, "dummy")),
 
@@ -132,6 +126,58 @@ generate_all_suites(OutDir) ->
                 [Errors]
             ),
             {error, Errors}
+    end.
+
+%% @doc Run every generated compatibility suite under Common Test and print a
+%% summary. Returns `ok' only when each suite completed with zero failures and
+%% at least one case ran, so callers can map the result onto an exit status
+%% (see the `otp-compat-test' Makefile target).
+%% `Dir' holds the suite beams produced by generate_all_suites/1. `LogDir' is
+%% created when absent: ct:run_test/1 requires its logdir to exist and reports
+%% an enoent error for every suite when it does not.
+-spec run_all_suites(file:filename(), file:filename()) -> ok | error.
+run_all_suites(Dir, LogDir) ->
+    ok = filelib:ensure_path(LogDir),
+    application:set_env(partisan, connect_disterl, true),
+    {ok, _} = application:ensure_all_started(partisan),
+    partisan_config:set(connect_disterl, true),
+    Behaviours = [
+        partisan_gen,
+        partisan_proc_lib,
+        partisan_sys,
+        partisan_gen_server,
+        partisan_gen_event,
+        partisan_gen_statem,
+        partisan_gen_supervisor
+    ],
+    _ = [code:ensure_loaded(M) || M <- Behaviours],
+    Results = lists:map(
+        fun(Suite) ->
+            R = ct:run_test([
+                {dir, Dir},
+                {suite, Suite},
+                {logdir, LogDir},
+                {auto_compile, false},
+                {multiply_timetraps, 5}
+            ]),
+            io:format("~p: ~p~n", [Suite, R]),
+            {Suite, R}
+        end,
+        suite_modules()
+    ),
+    TotalOk = lists:sum([Ok || {_, {Ok, _, _}} <- Results]),
+    TotalFail = lists:sum([F || {_, {_, F, _}} <- Results]),
+    Errored = [
+        S
+     || {S, R} <- Results, not (is_tuple(R) andalso tuple_size(R) =:= 3)
+    ],
+    io:format(
+        "~nTotal: ~p ok, ~p failed, errored: ~p~n",
+        [TotalOk, TotalFail, Errored]
+    ),
+    case TotalFail =:= 0 andalso Errored =:= [] andalso TotalOk > 0 of
+        true -> ok;
+        false -> error
     end.
 
 %% @doc Inject code path arguments into peer node options.
@@ -606,6 +652,24 @@ rename_atom(Tuple, OldAtom, NewAtom) when is_tuple(Tuple) ->
     ]);
 rename_atom(Other, _, _) ->
     Other.
+
+%% The OTP suite sources adapted by generate_all_suites/1.
+suite_sources() ->
+    [
+        "gen_server_SUITE.erl",
+        "supervisor_SUITE.erl",
+        "gen_statem_SUITE.erl",
+        "gen_event_SUITE.erl",
+        "proc_lib_SUITE.erl",
+        "sys_SUITE.erl"
+    ].
+
+%% The generated module names for `suite_sources/0'.
+suite_modules() ->
+    [
+        suite_module_name(list_to_atom(filename:basename(F, ".erl")))
+     || F <- suite_sources()
+    ].
 
 %% Suite names: gen_server_SUITE → partisan_otp_gen_server_SUITE
 %% Prefix with "otp_" to avoid collision with existing partisan-specific
