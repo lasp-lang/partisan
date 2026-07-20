@@ -93,7 +93,10 @@ generate_all_suites(OutDir) ->
     %% Every suite in `Suites' must be present. Omitting an absent one would
     %% narrow compatibility coverage while still reporting a successful run, so
     %% a missing source aborts generation instead.
-    Missing = [F || F <- Suites, not filelib:is_file(filename:join(TestDir, F))],
+    Missing = [
+        F
+     || F <- Suites, not filelib:is_file(filename:join(TestDir, F))
+    ],
     Missing == [] orelse
         error({otp_test_sources_incomplete, TestDir, {missing, Missing}}),
 

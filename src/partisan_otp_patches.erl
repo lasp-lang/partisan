@@ -666,7 +666,10 @@ assert_is_pid_guards_lifted(OtpVsn, Forms) ->
     lists:foreach(
         fun({Name, Arity}) ->
             case
-                [Cs || {function, _, N, A, Cs} <- Forms, N =:= Name, A =:= Arity]
+                [
+                    Cs
+                 || {function, _, N, A, Cs} <- Forms, N =:= Name, A =:= Arity
+                ]
             of
                 [Clauses] ->
                     case clauses_have_is_pid_guard(Clauses) of

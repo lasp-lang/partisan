@@ -1379,8 +1379,9 @@ register_caller() ->
             ok;
         false ->
             _ = partisan_gen_server:cast(?MODULE, {monitor_caller, self()}),
-            _ = Server =/= undefined andalso
-                put(?REGISTERED_CALLER_KEY, Server),
+            _ =
+                Server =/= undefined andalso
+                    put(?REGISTERED_CALLER_KEY, Server),
             ok
     end.
 
