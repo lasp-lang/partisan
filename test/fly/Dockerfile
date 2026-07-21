@@ -19,7 +19,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # Pin rebar3 to the version CI uses, for reproducibility.
-ARG REBAR3_VERSION=3.24.0
+ARG REBAR3_VERSION=3.27.0
 RUN curl -fsSL -o /usr/local/bin/rebar3 \
       "https://github.com/erlang/rebar3/releases/download/${REBAR3_VERSION}/rebar3" \
  && chmod +x /usr/local/bin/rebar3
