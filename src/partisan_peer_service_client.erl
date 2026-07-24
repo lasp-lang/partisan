@@ -34,7 +34,7 @@
     ping_idle_timeout :: non_neg_integer(),
     ping_tref :: optional(partisan_remote_ref:r()),
     ping_retry :: optional(partisan_retry:t()),
-    ping_id :: optional(partisan:reference())
+    ping_id :: optional(partisan:any_reference())
 }).
 
 -type state() :: #state{}.

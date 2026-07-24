@@ -468,6 +468,7 @@ init() ->
             {active_view_maintenance_interval, undefined},
             {binary_padding, false},
             {broadcast, false},
+            {broadcast_groups, []},
             {broadcast_mods, [partisan_plumtree_backend]},
             {causal_labels, []},
             {channel_fallback, true},

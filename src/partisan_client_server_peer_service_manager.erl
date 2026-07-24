@@ -572,7 +572,9 @@ handle_info(
                             true ->
                                 ok;
                             false ->
-                                partisan_peer_service_events:update(Membership)
+                                MemberList = sets:to_list(Membership),
+                                ok = partisan_membership:set(MemberList),
+                                ok = partisan_membership:notify(MemberList)
                         end,
 
                     ?LOG_DEBUG(#{

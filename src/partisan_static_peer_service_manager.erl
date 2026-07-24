@@ -323,7 +323,9 @@ handle_info(
             Membership = sets:add_element(Node, Membership0),
 
             %% Announce to the peer service.
-            partisan_peer_service_events:update(Membership),
+            MemberList = sets:to_list(Membership),
+            ok = partisan_membership:set(MemberList),
+            ok = partisan_membership:notify(MemberList),
 
             %% Establish any new connections.
             ok = establish_connections(Pending, Membership),

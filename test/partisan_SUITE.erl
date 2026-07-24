@@ -2008,6 +2008,31 @@ hyparview_manager_high_active_test(Config) ->
             )
     end,
 
+    %% PDDR-000003: every manager must feed the lock-free membership snapshot,
+    %% so a broadcast group under the hyparview manager sees a non-empty
+    %% membership (the Phase-2 gap). Assert the snapshot is populated on each node.
+    SnapshotFun = fun() ->
+        Empties = [
+            N
+         || {_, N} <- Nodes,
+            [] =:= rpc:call(N, partisan_membership, node_names, [])
+        ],
+        case Empties of
+            [] -> true;
+            _ -> {false, {snapshot_empty_on, Empties}}
+        end
+    end,
+    case wait_until(SnapshotFun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, {false, {snapshot_empty_on, EmptyNodes}}} ->
+            ct:fail(
+                "Membership snapshot empty on ~p under the hyparview manager "
+                "(PDDR-000003 snapshot-propagation gap)",
+                [EmptyNodes]
+            )
+    end,
+
     %% Verify forward message functionality.
     lists:foreach(
         fun({_Name, Node}) ->
@@ -2214,6 +2239,31 @@ hyparview_manager_high_client_test(Config) ->
                 "(ie. node1 has node2 in it's view but vice-versa is not true) "
                 " between the following pairs of nodes: ~p",
                 [ConnectedFails, SymmetryFails]
+            )
+    end,
+
+    %% PDDR-000003: every manager must feed the lock-free membership snapshot,
+    %% so a broadcast group under the hyparview manager sees a non-empty
+    %% membership (the Phase-2 gap). Assert the snapshot is populated on each node.
+    SnapshotFun = fun() ->
+        Empties = [
+            N
+         || {_, N} <- Nodes,
+            [] =:= rpc:call(N, partisan_membership, node_names, [])
+        ],
+        case Empties of
+            [] -> true;
+            _ -> {false, {snapshot_empty_on, Empties}}
+        end
+    end,
+    case wait_until(SnapshotFun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, {false, {snapshot_empty_on, EmptyNodes}}} ->
+            ct:fail(
+                "Membership snapshot empty on ~p under the hyparview manager "
+                "(PDDR-000003 snapshot-propagation gap)",
+                [EmptyNodes]
             )
     end,
 

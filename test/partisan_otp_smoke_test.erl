@@ -43,8 +43,7 @@
     partisan_acknowledgement_backend,
     partisan_orchestration_backend,
     partisan_plumtree_backend,
-    partisan_plumtree_broadcast,
-    partisan_peer_service_events
+    partisan_plumtree_broadcast
 ]).
 
 %% =============================================================================

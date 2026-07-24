@@ -805,6 +805,9 @@ init([]) ->
     {ok, Members, MState} =
         partisan_membership_strategy:init(MStrategy, Actor),
 
+    %% Seed the lock-free membership snapshot before any reader starts.
+    ok = partisan_membership:set(Members),
+
     {ok, #state{
         name = Name,
         node_spec = partisan:node_spec(),
@@ -1528,7 +1531,8 @@ handle_info(
                         true ->
                             ok;
                         false ->
-                            partisan_peer_service_events:update(Members)
+                            ok = partisan_membership:set(Members),
+                            ok = partisan_membership:notify(Members)
                     end,
 
                 %% notify subscribers
@@ -1695,7 +1699,8 @@ handle_message(
         true ->
             ok;
         false ->
-            partisan_peer_service_events:update(Members)
+            ok = partisan_membership:set(Members),
+            ok = partisan_membership:notify(Members)
     end,
 
     %% Send outgoing messages.
@@ -2027,7 +2032,8 @@ internal_leave(#{name := Name} = Node, State0) ->
         OutgoingMessages
     ),
 
-    partisan_peer_service_events:update(State#state.members),
+    ok = partisan_membership:set(State#state.members),
+    ok = partisan_membership:notify(State#state.members),
 
     State.
 

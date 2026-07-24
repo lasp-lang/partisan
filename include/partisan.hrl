@@ -128,6 +128,10 @@
 %% =============================================================================
 
 -define(PLUMTREE_OUTSTANDING, partisan_plumtree_broadcast).
+%% Public, lock-free snapshot of the oracle's membership (PDDR-000001 Phase 2).
+%% Created/owned by partisan_sup; written by the peer service manager on each
+%% membership change; read by broadcast groups (no gen_event fan-out).
+-define(PARTISAN_MEMBERS, partisan_membership).
 -define(BROADCAST_MODS, [partisan_plumtree_backend]).
 
 %% =============================================================================

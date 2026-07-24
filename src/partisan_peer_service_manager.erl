@@ -73,6 +73,7 @@
 -export_type([on_event_fun/0]).
 -export_type([partitions/0]).
 -export_type([server_ref/0]).
+-export_type([ttl/0]).
 
 %% API
 -export([connect/1]).

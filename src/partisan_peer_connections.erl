@@ -301,7 +301,7 @@ count() ->
 %% @doc Returns the number of connections for node `Node'.
 %%
 %% When passed a `partisan:node_spec()' as `Arg' it is equivalent to calling
-%% {@link connection_count/2} with a wildcard as a second argument i.e. '_'.
+%% {@link count/2} with a wildcard as a second argument i.e. '_'.
 %% However, when passed a `node()` as `Arg' is uses the more efficient `ets`
 %% `lookup_element' operation.
 %% @end

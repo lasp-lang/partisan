@@ -43,6 +43,12 @@
 -include("partisan.hrl").
 
 -export([add_sup_callback/1]).
+
+-deprecated(
+    {add_sup_callback, 1,
+        "use partisan_membership:subscribe/0 (push) or "
+        "partisan_membership:members/0 (pull)"}
+).
 -export([broadcast_members/0]).
 -export([broadcast_members/1]).
 -export([cancel_exchanges/1]).
@@ -346,10 +352,32 @@ get_local_state() ->
 
 %% -----------------------------------------------------------------------------
 %% @doc Adds a supervised callback to receive peer service membership updates.
+%%
+%% Deprecated: prefer {@link partisan_membership:subscribe/0} —
+%% receive `{partisan_membership, Members}' in your own process — or poll
+%% {@link partisan_membership:members/0}. This is now a compatibility shim over
+%% the membership snapshot's push feed: it spawns a relay process, linked to the
+%% caller, that invokes `Function' with the current member specs on each change.
+%% The callback now runs asynchronously, in its own process — it no longer blocks
+%% the membership path, and a crashing callback no longer affects others.
 %% @end
 %% -----------------------------------------------------------------------------
-add_sup_callback(Function) ->
-    partisan_peer_service_events:add_sup_callback(Function).
+-spec add_sup_callback(fun(([partisan:node_spec()]) -> any())) -> ok.
+
+add_sup_callback(Function) when is_function(Function, 1) ->
+    _ = spawn_link(fun() ->
+        ok = partisan_membership:subscribe(),
+        sup_callback_loop(Function)
+    end),
+    ok.
+
+%% @private
+sup_callback_loop(Function) ->
+    receive
+        {partisan_membership, Members} ->
+            _ = (catch Function(Members)),
+            sup_callback_loop(Function)
+    end.
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the broadcast servers view of full cluster membership.
@@ -359,7 +387,10 @@ add_sup_callback(Function) ->
 -spec broadcast_members() -> ordsets:ordset(node()).
 
 broadcast_members() ->
-    partisan_plumtree_broadcast:broadcast_members().
+    %% Answered from the oracle's lock-free membership snapshot, not from a
+    %% broadcast process : with multiple broadcast groups there is
+    %% no single "the broadcast server" to ask.
+    partisan_membership:node_names().
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the broadcast servers view of full cluster membership.
@@ -368,8 +399,10 @@ broadcast_members() ->
 %% -----------------------------------------------------------------------------
 -spec broadcast_members(infinity | pos_integer()) -> ordsets:ordset(node()).
 
-broadcast_members(Timeout) ->
-    partisan_plumtree_broadcast:broadcast_members(Timeout).
+broadcast_members(_Timeout) ->
+    %% Lock-free snapshot read; the timeout is now irrelevant (kept for API
+    %% compatibility).
+    partisan_membership:node_names().
 
 %% -----------------------------------------------------------------------------
 %% @doc return a list of exchanges, started by broadcast on thisnode, that are

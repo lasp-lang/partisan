@@ -18,201 +18,108 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc This module realises the {@link partisan_peer_service_manager}
-%% behaviour implementing a peer-to-peer partial mesh topology using the
-%% protocol described in the paper
-%% <a href="https://asc.di.fct.unl.pt/~jleitao/pdf/dsn07-leitao.pdf">HyParView:
-%% a membership protocol for reliable gossip-based broadcast</a>
-%% by João Leitão, José Pereira and Luís Rodrigues.
-%%
-%% The following content contains abstracts from the paper.
-%%
-%% == Characteristics ==
-%% <ul>
-%% <li>Uses TCP/IP as an unreliable failure detector (unreliable because it can
-%% generate false positives e.g. when the network becomes suddenly
-%% congested).</li>
-%% <li>It can sustain high level of node failres while ensuring connectivity
-%% of the overlay. Nodes are considered "failed" when the TCP/IP connection is
-%% dropped.</li>
-%% <li>Nodes maintain partial views of the network. Every node will contain and
-%% <em>active view</em> that forms a connected grah, and a
-%% <em>passive view</em> of backup links that
-%% are used to repair graph connectivity under failure. Some links to passive
-%% nodes are kept open for fast replacement of failed nodes in the active
-%% view. So the view is probabilistic, meaning that the protocol doesn't
-%% prevent (nor detects) the cluter to be split into several subclusters with
-%% no connections to each other.</li>
-%% <li>HyParView sacrificies strong membership for high availability and
-%% connectivity: the algorithm constantly works towards and ensures that
-%% eventually the clsuter membership is a fully-connected component.
-%% However, at any point in time different nodes may have different,
-%% inconsistent views of the cluster membership. As a consequence, HyParView is
-%% not designed to work with systems that require strong membership properties,
-%% eg. consensus protocols like Paxos or Raft.</li>
-%% <li>Point-to-point messaging for connected nodes with a minimum of 1 hop via
-%% transitive message delivery (as not all nodes directly connected). Delivery
-%% is probabilistic.</li>
-%% <li>No explicit leave operation, because the overlay is able to react fast
-%% enough to node failures. Hence when a node wishes to leave the system it is
-%% simply treated as if the node have failed.</li>
-%% <li>Scalability to up-to 2,000 nodes.</li>
-%% </ul>
-%%
-%% == HyParView Membership Protocol ==
-%%
-%% == Partial View ==
-%% A partial view is a small subset of the entire system (cluster) membership,
-%% a set of node specifications maintained locally at each node.
-%%
-%% A node specification i.e. `partisan:node_spec()' allows a node to be
-%% reached by other nodes.
-%%
-%% A membership protocol is in charge of initializing and maintaining the
-%% partial views at each node in face of dynamic changes in the system. For
-%% instance, when a new node joins the system, its identifier should be added
-%% to the partial view of (some) other nodes and it has to create its own
-%% partial view, including identifiers of nodes already in the system. Also, if
-%% a node fails or leaves the system, its identifier should be removed from all
-%% partial views as soon as possible.
-%%
-%% Partial views establish neighboring associations among nodes. Therefore,
-%% partial views define an overlay network, in other words, partial views
-%% establish an directed graph that captures the neighbor relation between all
-%% nodes executing the protocol. In this graph nodes are represented by a
-%% vertex while a neighbor relation is represented by an arc from the node who
-%% contains the target node in his partial view.
-%%
-%% == Membership Protocol ==
-%% The Hybrid Partial View (HyParView) membership protocol is in charge of
-%% maintaining two distinct views at each node: a small active view, of size
-%% `log(n) + c', and a larger passive view, of size `k(log(n) + c)'.
-%%
-%% It then selects which members of this view should be promoted to the active
-%% view.
-%%
-%% === Active View ===
-%% Each node maintains a small symmetric ctive view the size of fanout + 1.
-%% Being symmetric means means that if node <b>q</b> is in the active view of
-%% node <b>p</b> then node <b>p</b> is also in the active view of node <b>q</b>.
-%%
-%% The active views af all cluster nodes create an overlay that is used for
-%% message dissemination. Each node keeps an open TCP connection to every other
-%% node in its active view.
-%%
-%% Broadcast is performed deterministically by flooding the graph defined by
-%% the active views across the cluster. When a node receives a message for the
-%% first time, it broadcasts the message to all nodes of its active view (
-%% except, obviously, to the node that has sent the message).
-%% While this graph is generated at random, gossip is deterministic as long as
-%% the graph remains unchanged.
-%%
-%% ==== Active View Management ====
-%% A reactive strategy is used to maintain the active view. Nodes can be added
-%% to the active view when they join the system. Also, nodes are removed from
-%% the active view when they fail. When a node <b>p</b> suspects that one of the
-%% nodes present in its active view has failed (by either disconnecting or
-%% blocking), it selects a random node <b>q</b> from its passive view and attempts
-%% to establish a TCP connection with <b>q</b>. If the connection fails to
-%% establish, node <b>q</b> is considered failed and removed from <b>p’s</b>
-%% passive view; another node <b>q′</b> is selected at random and a new attempt
-%% is made.
-%%
-%% When the connection is established with success, p sends to q a Neighbor
-%% request with its own identifier and a priority level. The priority level of
-%% the request may take two values, depending on the number of nodes present in
-%% the active view of p: if p has no elements in its active view the priority
-%% is high; the priority is low otherwise.
-%%
-%% A node q that receives a high priority neighbor request will always accept
-%% the request, even if it has to drop a random member from its active view (
-%% again, the member that is dropped will receive a Disconnect notification).
-%% If a node q receives a low priority Neighbor request, it will only accept
-%% the request if it has a free slot in its active view, otherwise it will
-%% refuse the request.
-%%
-%% If the node q accepts the Neighbor request, p will remove q’s identifier
-%% from its passive view and add it to the active view. If q rejects the
-%% Neighbor request, the initiator will select another node from its passive
-%% view and repeat the whole procedure (without removing q from its passive
-%% view).
-%%
-%% Each node tests its entire active view every
-%% time it forwards a message. Therefore, the entire broadcast overlay is
-%% implicitly tested at every broadcast, which allows a very fast failure
-%% detection.
-%%
-%% === Passive View ===
-%% In addition to the active view, each node maintains a larger passive view
-%% of backup nodes that can be promoted to the active view when one of the
-%% nodes in the active view fails.
-%%
-%% The passive view is not used for message dissemination. Instead, the goal of
-%% the passive view is to maintain a list of nodes that can be used to replace
-%% failed members of the active view. The passive view is maintained using a
-%% cyclic strategy. Periodically, each node performs a shuffle operation with
-%% one of its neighbors in order to update its passive view.
-%%
-%% ==== Passive View Management ====
-%%
-%% The passive view is maintained using a cyclic strategy. Periodically, each
-%% node perform a shuffle operation with one of its peers at random. The
-%% purpose of the shuffle operation is to update the passive views of the nodes
-%% involved in the exchange. The node p that initiates the exchange creates an
-%% exchange list with the following contents: p’s own identifier, ka nodes from
-%% its active view and kp nodes from its passive view (where ka and kp are
-%% protocol parameters). It then sends the list in a Shuffle request to a
-%% random neighbor of its active view. Shuffle requests are propagated using a
-%% random walk and have an associated “time to live”, just like the ForwardJoin
-%% requests.
-%%
-%% A node q that receives a Shuffle request will first decrease its time to
-%% live. If the time to live of the message is greater than zero and the number
-%% of nodes in q’s active view is greater than 1, the node will select a random
-%% node from its active view, different from the one he received this shuffle
-%% message from, and simply forwards the Shuffle request. Otherwise, node q
-%% accepts the Shuffle request and send back, using a temporary TCP connection,
-%% a ShuffleReply message that includes a number of nodes selected at random
-%% from q’s passive view equal to the number of nodes received in the Shuffle
-%% request.
-%%
-%% Then, both nodes integrate the elements they received in the Shuffle/
-%% ShuffleReply mes- sage into their passive views (naturally, they exclude
-%% their own identifier and nodes that are part of the active or passive
-%% views). Because the passive view has a fixed length, it might get full; in
-%% that case, some identifiers will have to be removed in order to free space
-%% to include the new ones. A node will first attempt to remove identifiers
-%% sent to the peer. If no such identifiers remain in the passive view, it will
-%% remove identifiers at random.
-%%
-%% == Configuration ==
-%% The following are the HyParView configuration parameters managed by
-%% {@link partisan_config}. The params are passed as `{hyparview, Config}'
-%% where `Config' is a property list or map where the keys are the following:
-%%
-%% <dl>
-%% <dt>`active_max_size'</dt><dd>Defaults to 6.</dd>
-%% <dt>`active_min_size'</dt><dd>Defaults to 3.</dd>
-%% <dt>`active_rwl'</dt><dd>Active View Random Walk Length. Defaults
-%% to 6.</dd>
-%% <dt>`passive_max_size'</dt><dd>Defaults to 30.</dd>
-%% <dt>`passive_rwl'</dt><dd>Passive View Random Walk Length.
-%% Defaults to 6.</dd>
-%% <dt>`random_promotion'</dt><dd>A boolean indicating if random promotion is
-%% enabled. Defaults `true'.</dd>
-%% <dt>`random_promotion_interval'</dt><dd>Time after which the
-%% protocol attempts to promote a node in the passive view to the active
-%% view.Defaults to 5000.</dd>
-%% <dt>`shuffle_interval'</dt><dd>Defaults to 10000.</dd>
-%% <dt>`shuffle_k_active'</dt><dd>Number of peers to include in the
-%% shuffle exchange. Defaults to 3.</dd>
-%% <dt>`shuffle_k_passive'</dt><dd>Number of peers to include in the
-%% shuffle exchange. Defaults to 4.</dd>
-%% </dl>
-%%
-%% @end
-%% -----------------------------------------------------------------------------
 -module(partisan_hyparview_peer_service_manager).
+
+-moduledoc """
+HyParView membership — a reliable partial-view overlay for gossip that stays
+connected under high node-failure rates (Leitão, Pereira & Rodrigues, _HyParView: a
+Membership Protocol for Reliable Gossip-Based Broadcast_, DSN 2007). This module
+implements the `partisan_peer_service_manager` behaviour.
+
+## The problem it solves
+
+Gossip and epidemic broadcast need every node to know a set of peers to talk to. A
+full membership view does not scale; a random partial view can silently split the
+cluster into disconnected components. HyParView keeps two partial views of different
+sizes and roles so the overlay stays a single connected graph, with high probability,
+even as many nodes fail at once. The failure detector is just TCP: a dropped
+connection is treated as a failed peer, which makes it *unreliable* — a congestion
+spike can look like a failure — so the whole design is built to tolerate false
+positives.
+
+## The two views
+
+- **Active view** (`active_max_size`, default 6) — a small, **symmetric** set of peers
+  this node holds a live connection to. The active views of all nodes, together, form
+  the connected dissemination overlay that broadcast forwards over. *Symmetric* means
+  if A holds B active then B holds A — the invariant the overlay's connectivity rests
+  on.
+- **Passive view** (`passive_max_size`, default 30) — a larger set of backup peers,
+  not connected, kept fresh so a failed active peer can be replaced at once. When the
+  active view has a free slot the node promotes a passive peer with a `neighbor`
+  request; a `neighbor_request` carries a priority, so a node with an empty active view
+  can insist.
+
+The views are probabilistic: the protocol does not *prevent* a partition, it makes one
+unlikely and repairs it reactively.
+
+## Joining and view construction
+
+- **`join`** — a new node contacts a contact node, which adds it to its active view and
+  starts a **`forward_join`** random walk. The walk carries the *active random-walk
+  length* (ARWL) as a TTL; as it is forwarded hop by hop with decreasing TTL, nodes add
+  the joiner to their active view, and at the *passive random-walk length* (PRWL) to
+  their passive view — spreading knowledge of the joiner across the overlay rather than
+  clustering it at the contact node.
+- **`neighbor` / `neighbor_request`** — promote a passive peer into a free active slot.
+- **`disconnect`** — sent when a node leaves or drops a peer, so the other side moves
+  it from active to passive.
+
+## Passive-view maintenance: shuffle
+
+Periodically (`shuffle_interval`, default 10 s) a node runs a **`shuffle`** with a
+random active peer: it sends a sample of its own identity plus `shuffle_k_active`
+active and `shuffle_k_passive` passive peers; the peer merges them into its passive
+view and answers with a `shuffle_reply` sample of its own. This keeps every node's
+passive view a fresh, well-mixed sample of the cluster, so replacements for failed
+active peers are current rather than stale.
+
+## Failure handling and self-healing
+
+A dropped connection removes a peer from the active view; the node immediately promotes
+a passive peer to refill the slot, holding the active view at size and the overlay
+connected. Because the detector is unreliable, a wrongly-dropped peer is simply re-added
+later — correctness never depends on the detector being right.
+
+## X-BOT — optimising the overlay
+
+On top of plain HyParView this module implements **X-BOT** (Leitão, Marques, Pereira &
+Rodrigues, _X-BOT: A Protocol for Resilient Optimization of Unstructured Overlay
+Networks_): a node periodically tries to swap an active-view link for a better one — by
+a configurable cost such as latency — through a four-node handshake that preserves both
+connectivity and the active-view size throughout. It improves the overlay's shape
+without weakening the resilience HyParView guarantees.
+
+## Partisan additions to the paper
+
+- **Active-view symmetry maintenance.** Each node periodically re-asserts its active
+  membership to its active peers with an ordinary `neighbor` message: a peer missing
+  this node re-adds it, one that already holds it ignores it. This repairs a *stable*
+  one-sided active view left when a control message is lost during churn, using no new
+  wire message. Its cadence is `active_view_maintenance_interval`, which defaults to
+  `random_promotion_interval`.
+- **Epochs.** `epoch` counts this node's restarts and `epoch_count` counts the
+  disconnect messages it has generated; together they form a
+  `message_id() :: {epoch, epoch_count}` that lets a node ignore stale control messages
+  from a previous incarnation of a peer.
+- **Partition injection / resolution.** `inject_partition` and `resolve_partition` sever
+  and restore overlay links deterministically, for tests and operations.
+
+## Configuration
+
+`active_max_size` (6), `passive_max_size` (30), `random_promotion` and
+`random_promotion_interval`, `shuffle_interval` (10 s), `shuffle_k_active` (3),
+`shuffle_k_passive` (4), and the active/passive random-walk lengths ARWL and PRWL.
+Larger views trade memory and maintenance traffic for resilience.
+
+## Reading guide
+
+`init/1` builds the empty views and starts the shuffle and promotion timers. Membership
+operations arrive through the `partisan_peer_service_manager` callbacks; the protocol
+itself lives in the handlers for `join`, `forward_join`, `neighbor`, `disconnect` and
+`shuffle`, with the X-BOT optimisation and the peer-set bookkeeping (add-to-active,
+add-to-passive, promotion, symmetry maintenance) below them.
+""".
 
 -behaviour(gen_server).
 -behaviour(partisan_peer_service_manager).
@@ -2672,7 +2579,11 @@ handle_update_members(Members, State) ->
 
 %% @private
 notify(#state{active = Active}) ->
-    _ = catch partisan_peer_service_events:update(Active),
+    %% The overlay Plumtree runs on is the active view; feed it to the
+    %% membership snapshot (and push subscribers) as well as the legacy bus.
+    Members = sets:to_list(Active),
+    ok = partisan_membership:set(Members),
+    ok = partisan_membership:notify(Members),
     ok.
 
 %% @private

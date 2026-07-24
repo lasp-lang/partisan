@@ -75,8 +75,10 @@
 %% partisan_plumtree_broadcast_handler callbacks
 -export([broadcast_channel/0]).
 -export([broadcast_data/1]).
+-export([claim/2]).
 -export([exchange/1]).
 -export([graft/1]).
+-export([handle_broadcast/2]).
 -export([is_stale/1]).
 -export([merge/2]).
 
@@ -185,16 +187,46 @@ broadcast_data(#broadcast{timestamp = Timestamp}) ->
 %% -----------------------------------------------------------------------------
 -spec merge(broadcast_id(), broadcast_payload()) -> boolean().
 
-merge(Timestamp, Timestamp) ->
-    ?LOG_DEBUG("Heartbeat received: ~p", [Timestamp]),
+merge(MessageId, Payload) ->
+    %% Retained for backwards compatibility. Delegates to the split contract so
+    %% direct callers keep the same semantics: record iff novel, then apply.
+    case claim(MessageId, Payload) of
+        true ->
+            ok = handle_broadcast(MessageId, Payload),
+            true;
+        false ->
+            false
+    end.
 
+%% -----------------------------------------------------------------------------
+%% @doc Atomically decide whether `Timestamp' is novel and, if so, record it in
+%% the seen-set. Runs on the broadcast (tree) process; see {@link init/1} for
+%% the single-writer-per-key invariant that keeps this safe without serialising
+%% through this server.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec claim(broadcast_id(), broadcast_payload()) -> boolean().
+
+claim({_, _, _} = Timestamp, Timestamp) ->
+    ?LOG_DEBUG("Heartbeat received: ~p", [Timestamp]),
     case is_stale(Timestamp) of
         true ->
             false;
         false ->
-            gen_server:call(?MODULE, {merge, Timestamp}, infinity),
+            true = add_timestamp(Timestamp),
             true
     end.
+
+%% -----------------------------------------------------------------------------
+%% @doc Off-path apply. For the heartbeat handler the seen-set record IS the
+%% apply and it already happened in {@link claim/2}, so there is nothing further
+%% to do here.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec handle_broadcast(broadcast_id(), broadcast_payload()) -> ok.
+
+handle_broadcast(_Timestamp, _Payload) ->
+    ok.
 
 %% -----------------------------------------------------------------------------
 %% @doc Use the clock on the object to determine if this message is
@@ -277,7 +309,20 @@ init([]) ->
     schedule_heartbeat(),
 
     %% Open an ETS table for tracking heartbeat messages.
-    ets:new(?MODULE, [named_table, set, protected]),
+    %% `public' + write_concurrency because `claim/2' records the seen-set from
+    %% the broadcast (tree) process, while the heartbeat records from this
+    %% process. The two never write the same key concurrently: this process only
+    %% writes the local node's key (and always before broadcasting it), while
+    %% `claim/2' only records remote-origin timestamps — a local-origin
+    %% timestamp is already recorded by the time it could echo back, so
+    %% `is_stale/1' short-circuits it in `claim/2'.
+    ets:new(?MODULE, [
+        named_table,
+        set,
+        public,
+        {read_concurrency, true},
+        {write_concurrency, true}
+    ]),
 
     State = #state{
         node = node(),
@@ -289,15 +334,17 @@ init([]) ->
 -spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()}.
 
-handle_call({merge, {_, _, _} = Timestamp}, _From, State) ->
-    true = add_timestamp(Timestamp),
-    {reply, ok, State};
 handle_call(Event, _From, State) ->
     ?LOG_WARNING(#{description => "Unhandled call event", event => Event}),
     {reply, ok, State}.
 
 -spec handle_cast(term(), state()) -> {noreply, state()}.
 
+handle_cast({'$partisan_apply', MessageId, Payload}, State) ->
+    %% Off-path apply delivered by the broadcast server (see claim/2). For this
+    %% handler the record already happened in claim/2, so this is a no-op.
+    ok = handle_broadcast(MessageId, Payload),
+    {noreply, State};
 handle_cast(Event, State) ->
     ?LOG_WARNING(#{description => "Unhandled cast event", event => Event}),
     {noreply, State}.
