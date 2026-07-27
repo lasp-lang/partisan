@@ -1,262 +1,93 @@
 # Telemetry Events
 
-Partisan uses the `telemetry` library for instrumentation.
+Partisan publishes runtime metrics through [`telemetry`](https://github.com/beam-telemetry/telemetry). A consumer attaches a handler to one or more event names and receives, on every occurrence, the event's **measurements** (a map of numeric values) and its **metadata** (a map of context you can use to tag or filter the metric):
 
-A Telemetry event is made up of the following:
+```erlang
+telemetry:attach(
+    my_handler_id,
+    [partisan, connection, client, hearbeat],
+    fun(_EventName, Measurements, Metadata, _Config) ->
+        #{latency := Latency} = Measurements,
+        #{peer_node := Peer} = Metadata,
+        logger:info("Round-trip to ~p: ~pms", [Peer, Latency])
+    end,
+    undefined
+).
+```
 
-* `name` - A list of atoms that uniquely identifies the event.
+This page catalogues every event Partisan currently emits.
 
-* `measurements` - A map of atom keys (e.g. duration) and numeric values.
+## Connection events
 
-* `metadata` - A map of key-value pairs that can be used for tagging metrics.
+### `[partisan, connection, client, hearbeat]`
 
-## Membership Events
+Fired by `partisan_peer_service_client` on every ping/pong round-trip it completes with the peer it connected to. Emission cadence follows the `connection_ping` configuration: a ping is sent after `idle_timeout` (20000ms by default) of connection inactivity, and this event fires when the matching pong arrives.
 
-### [partisan, membership, peer, join]
-This event is triggered when a node joins the cluster.
+> #### The event name misspells "heartbeat" {: .warning}
+> The atom is `hearbeat`, not `heartbeat` — a naming defect carried forward from the v5.0.3 release that first introduced this event. Handler code that filters on the event name must match the misspelling as it exists today.
 
 ##### Measurements
 ```erlang
 #{
-    count => 1
+    latency => 12  % milliseconds, round-trip since the ping was sent
 }
 ```
 
 ##### Metadata
 ```erlang
 #{
-    name => 'node@192.168.0.20',
-    listen_addrs => [
-        #{ip => {127,0,0,1}, port => 10200}
-    ]
+    node => 'client@192.168.0.20',      % this node
+    peer_node => 'server@192.168.0.21', % the peer the connection is to
+    channel => default,                 % partisan:channel()
+    listen_addr => #{ip => {192,168,0,21}, port => 10200},
+    socket => Socket                    % partisan_peer_socket:t()
 }
 ```
 
-### [partisan, membership, peer, leave]
-This event is triggered when a node leaves the cluster.
+### `[partisan, connection, server, hearbeat]`
+
+The server-side counterpart: fired by `partisan_peer_service_server` on every ping/pong round-trip it completes with a connected client. Same cadence and the same event-name defect as the client event above.
 
 ##### Measurements
 ```erlang
 #{
-    count => 1
+    latency => 12  % milliseconds, round-trip since the ping was sent
 }
 ```
 
 ##### Metadata
 ```erlang
 #{
-    name => 'node@192.168.0.20',
-    listen_addrs => [
-        #{ip => {127,0,0,1}, port => 10200}
-    ]
+    node => 'server@192.168.0.21',      % this node
+    peer_node => 'client@192.168.0.20', % the peer the connection is from
+    channel => default,                 % partisan:channel()
+    socket => Socket                    % partisan_peer_socket:t()
 }
 ```
 
-### [partisan, membership, peer, up]
-This event is triggered when a node successfully establishes all necessary channel connections with a peer. In other words, the node has established the number of connections for each channel based on the `parallelism` setting for the corresponding channel.
+## Configuration events
+
+### `[partisan, channel, configured]`
+
+Fired once per channel every time the `channels` configuration parameter is set — at startup, and again on any runtime reconfiguration. `Measurements.max` is the channel's configured `parallelism` (its target connection count), not a live count of open connections.
 
 ##### Measurements
 ```erlang
 #{
-    count => 1
+    max => 4  % the channel's configured `parallelism`
 }
 ```
 
 ##### Metadata
 ```erlang
 #{
-    name => 'node@192.168.0.20',
-    listen_addrs => [
-        #{ip => {127,0,0,1}, port => 10200}
-    ]
-}
-```
-
-### [partisan, membership, peer, down]
-This event occurs when a peer disconnects, and there are no established channel connections with that peer.
-
-##### Measurements
-```erlang
-#{
-    count => 1
-}
-```
-
-##### Metadata
-
-```erlang
-#{
-    name => 'node@192.168.0.20',
-    listen_addrs => [
-        #{ip => {127,0,0,1}, port => 10200}
-    ]
-}
-```
-
-
-### [partisan, membership, peer, channel, up]
-Emitted every time a channel reaches the desired number of connections i.e. `parallelism`.
-
-##### Measurements
-```erlang
-#{
-    count => 1,
-    sockets => 3
-}
-```
-
-##### Metadata
-```erlang
-#{
-
-}
-```
-
-### [partisan, membership, peer, channel, down]
-Emitted every time a channel reaches the desired number of connections i.e. `parallelism`.
-
-##### Measurements
-```erlang
-#{
-
-}
-```
-
-##### Metadata
-```erlang
-#{
-
-}
-```
-
-
-
-## Channel Events
-### [partisan, channel, configured]
-
-Emitted once for every channel every time the `channels` configuration parameter is modified. It provides a measurement of the count of channels. The metadata includes the channel name and options i.e. `partisan:channel_opts()`.
-
-##### Measurements
-```erlang
-#{
-    count => 1
-}
-```
-
-##### Metadata
-```erlang
-#{
-    name => user_data,
-    config => #{
+    channel => user_data,
+    channel_opts => #{
+        parallelism => 4,
         monotonic => false,
-        compression => false,
-        parallelism => 4
+        compression => false
     }
 }
 ```
 
-## Socket Events
-
-### [partisan, socket, open]
-Emitted once for every socket that is open and waiting for connection with another socket. It provides a measurement of the count of connect `open` events.
-
-##### Measurements
-```erlang
-#{
-
-}
-```
-
-##### Metadata
-```erlang
-#{
-
-}
-```
-
-### [partisan, socket, connect]
-
-##### Measurements
-```erlang
-#{
-
-}
-```
-
-##### Metadata
-```erlang
-#{
-
-}
-```
-### [partisan, socket, recv]
-
-##### Measurements
-```erlang
-#{
-
-}
-```
-
-##### Metadata
-```erlang
-#{
-
-}
-```
-### [partisan, socket, send]
-
-##### Measurements
-```erlang
-#{
-
-}
-```
-
-##### Metadata
-```erlang
-#{
-
-}
-```
-
-### [partisan, socket, close]
-
-##### Measurements
-```erlang
-#{
-
-}
-```
-
-##### Metadata
-```erlang
-#{
-
-}
-```
-
-
-
-
-* `[partisan, channel, configured]` -
-* `[partisan, socket, open]` -
-* `[partisan, socket, connect]` -
-* `[partisan, socket, recv]` -
-* `[partisan, socket, send]` -
-* `[partisan, socket, close]` -
-* `[partisan, socket, tag_msg]` -
-* `[partisan, connection, connections]` -
-* `[partisan, connection, monitors]` -
-* `[partisan, connection, new]` -
-* `[partisan, connection, outstanding]` -
-* `[partisan, connection, owners]` -
-* `[partisan, queue, unacknowledged, count]` -
-* `[partisan, queue, unacknowledged, bytes]` -
-* `[partisan, queue, retransmitted, count]` -
-* `[partisan, queue, retransmitted, bytes]` -
-* `[partisan, queue, undelivered, count]` -
-* `[partisan, queue, undelivered, bytes]` -
-* `[partisan, queue, delivered, count]` -
-* `[partisan, queue, delivered, bytes]` -
-plumbtree_broadcast oustanding, neweagers, lazy_sets, all_members (ordset)
+`channel_opts` is a `t:partisan:channel_opts/0`.
