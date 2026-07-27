@@ -663,7 +663,7 @@ set(channels, Arg) when is_list(Arg) orelse is_map(Arg) ->
 
     maps:foreach(
         fun(Channel, #{parallelism := N} = Opts) ->
-            telemetry:execute(
+            partisan_telemetry:execute(
                 [partisan, channel, configured],
                 #{
                     max => N

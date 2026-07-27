@@ -84,7 +84,22 @@ start_link(Peer, ListenAddr, Channel, ChannelOpts, From) ->
 -spec init(Args :: list()) -> {ok, state()} | {stop, Reason :: any()}.
 
 init([Peer, ListenAddr, Channel, ChannelOpts, From]) ->
-    case connect(ListenAddr, Channel, ChannelOpts) of
+    T0 = erlang:monotonic_time(millisecond),
+    Result = connect(ListenAddr, Channel, ChannelOpts),
+    Latency = erlang:monotonic_time(millisecond) - T0,
+
+    partisan_telemetry:execute(
+        [partisan, connection, client, connect],
+        #{latency => Latency},
+        #{
+            peer_node => maps:get(name, Peer),
+            channel => Channel,
+            listen_addr => ListenAddr,
+            result => element(1, Result)
+        }
+    ),
+
+    case Result of
         {ok, Socket} ->
             ?LOG_INFO(#{
                 description => "Connection established",
@@ -397,11 +412,15 @@ handle_inbound(
     #pong{from = Node, id = Id, timestamp = Ts},
     #state{peer = #{name := Node}, ping_id = Id} = State
 ) ->
-    ok = telemetry:execute(
-        [partisan, connection, client, hearbeat],
+    Measurements = maps:merge(
         #{latency => erlang:system_time(millisecond) - Ts},
+        partisan_peer_socket:telemetry_stats(State#state.socket)
+    ),
+
+    ok = partisan_telemetry:execute(
+        [partisan, connection, client, hearbeat],
+        Measurements,
         #{
-            node => partisan:node(),
             channel => State#state.channel,
             listen_addr => State#state.listen_addr,
             socket => State#state.socket,

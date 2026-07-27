@@ -134,6 +134,7 @@
 -export([processes/1]).
 -export([processes/2]).
 -export([prune/1]).
+-export([prune/2]).
 -export([store/4]).
 -export([timestamp/1]).
 
@@ -588,7 +589,8 @@ store(
 
     try ets:insert_new(?MODULE, Conn) of
         true ->
-            incr_counter(Spec);
+            incr_counter(Spec),
+            ok = telemetry_connection_up(Node, Channel, ListenAddr);
         false ->
             {ok, Info} = info(Node),
             InfoSpec = node_spec(Info),
@@ -610,7 +612,8 @@ store(
                         }
                     }),
                     ets:insert(?MODULE, Conn),
-                    incr_counter(Spec);
+                    incr_counter(Spec),
+                    ok = telemetry_connection_up(Node, Channel, ListenAddr);
                 false ->
                     ?LOG_WARNING(#{
                         description =>
@@ -635,13 +638,25 @@ store(
 
 %% -----------------------------------------------------------------------------
 %% @doc Prune all occurrences of a connection pid returns the node where the
-%% pruned pid was found
+%% pruned pid was found. Equivalent to `prune(Arg, undefined)'.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec prune(pid() | node() | partisan:node_spec()) ->
     {info(), connections()} | no_return().
 
-prune(Node) when is_atom(Node) ->
+prune(Arg) ->
+    prune(Arg, undefined).
+
+%% -----------------------------------------------------------------------------
+%% @doc Same as `prune/1' but allows passing a `Reason' (e.g. the connection
+%% process' exit reason) that is added to the metadata of the resulting
+%% `[partisan, connection, down]' telemetry event.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec prune(pid() | node() | partisan:node_spec(), Reason :: term()) ->
+    {info(), connections()} | no_return().
+
+prune(Node, Reason) when is_atom(Node) ->
     MatchHead = #partisan_peer_connection{
         pid = '_',
         node = Node,
@@ -664,6 +679,8 @@ prune(Node) when is_atom(Node) ->
                 error(notalive)
         end,
 
+    ok = telemetry_connection_down(Connections, Reason),
+
     %% We finally remove info and return it as part of the result
     case ets:take(?MODULE, Node) of
         [#partisan_peer_info{} = I] ->
@@ -671,12 +688,13 @@ prune(Node) when is_atom(Node) ->
         [] ->
             error(badarg)
     end;
-prune(Pid) when is_pid(Pid) ->
+prune(Pid, Reason) when is_pid(Pid) ->
     %% Remove matching connection
     try ets:take(?MODULE, Pid) of
         [#partisan_peer_connection{node = Node}] = L ->
             %% We decrease the connection count
             ok = decr_counter(Node),
+            ok = telemetry_connection_down(L, Reason),
             {ok, #partisan_peer_info{} = I} = info(Node),
             {I, L};
         [] ->
@@ -685,8 +703,8 @@ prune(Pid) when is_pid(Pid) ->
         error:badarg ->
             error(notalive)
     end;
-prune(#{name := Node}) ->
-    prune(Node).
+prune(#{name := Node}, Reason) ->
+    prune(Node, Reason).
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -971,6 +989,61 @@ decr_counter(Node) ->
     Ops = [{#partisan_peer_info.connection_count, -1}],
     _ = ets:update_counter(?MODULE, Node, Ops),
     ok.
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc Emits `[partisan, connection, up]' whenever a connection is added to
+%% the table, followed by the `[partisan, channel, connections]' gauge.
+%% @end
+%% -----------------------------------------------------------------------------
+telemetry_connection_up(Node, Channel, ListenAddr) ->
+    partisan_telemetry:count(
+        [partisan, connection, up],
+        #{peer_node => Node, channel => Channel, listen_addr => ListenAddr}
+    ),
+    telemetry_channel_connections(Node, Channel).
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc Emits a gauge of the current connection count for `Node'/`Channel'
+%% against the channel's configured `parallelism', so a consumer can detect a
+%% channel that is running under its target connection count (e.g. after
+%% churn). `target' is `undefined' if `Channel' is not currently configured.
+%% @end
+%% -----------------------------------------------------------------------------
+telemetry_channel_connections(Node, Channel) ->
+    Target =
+        try
+            #{parallelism := N} = partisan_config:channel_opts(Channel),
+            N
+        catch
+            error:badarg ->
+                undefined
+        end,
+
+    partisan_telemetry:execute(
+        [partisan, channel, connections],
+        #{size => count(Node, Channel), target => Target},
+        #{peer_node => Node, channel => Channel}
+    ).
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc Emits `[partisan, connection, down]' for every connection removed by a
+%% `prune/2' call.
+%% @end
+%% -----------------------------------------------------------------------------
+telemetry_connection_down(Connections, Reason) when is_list(Connections) ->
+    lists:foreach(
+        fun(#partisan_peer_connection{node = Node, channel = Channel}) ->
+            partisan_telemetry:count(
+                [partisan, connection, down],
+                #{peer_node => Node, channel => Channel, reason => Reason}
+            ),
+            telemetry_channel_connections(Node, Channel)
+        end,
+        Connections
+    ).
 
 %% -----------------------------------------------------------------------------
 %% @private

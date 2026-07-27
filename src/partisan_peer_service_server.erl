@@ -185,11 +185,15 @@ handle_inbound(
     #pong{from = Node, id = Id, timestamp = Ts},
     #state{peer_node = Node, ping_id = Id} = State
 ) ->
-    ok = telemetry:execute(
-        [partisan, connection, server, hearbeat],
+    Measurements = maps:merge(
         #{latency => erlang:system_time(millisecond) - Ts},
+        partisan_peer_socket:telemetry_stats(State#state.socket)
+    ),
+
+    ok = partisan_telemetry:execute(
+        [partisan, connection, server, hearbeat],
+        Measurements,
         #{
-            node => partisan:node(),
             channel => State#state.channel,
             socket => State#state.socket,
             peer_node => Node

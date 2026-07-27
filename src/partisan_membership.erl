@@ -54,11 +54,44 @@ members at least as new. Not for application code.
 -spec set([partisan:node_spec()]) -> ok.
 
 set(Members) when is_list(Members) ->
+    Previous = members(),
+
     %% Members first, then version — so a reader seeing a new version always
     %% reads members that are at least as new.
     true = ets:insert(?PARTISAN_MEMBERS, {members, Members}),
-    _ = ets:update_counter(?PARTISAN_MEMBERS, version, {2, 1}, {version, 0}),
+    Version =
+        ets:update_counter(?PARTISAN_MEMBERS, version, {2, 1}, {version, 0}),
+
+    ok = telemetry_changed(Previous, Members, Version),
+
     ok.
+
+%% @private
+%% Emits `[partisan, membership, changed]' — the single choke point for every
+%% peer service manager (PDDR-000003) — whenever the member set actually
+%% differs from what was previously published. Diffed by node name, since
+%% metadata (e.g. `listen_addrs') can change without the membership itself
+%% changing.
+telemetry_changed(Previous, Members, Version) ->
+    PrevNames = ordsets:from_list([Name || #{name := Name} <- Previous]),
+    NewNames = ordsets:from_list([Name || #{name := Name} <- Members]),
+    Added = ordsets:subtract(NewNames, PrevNames),
+    Removed = ordsets:subtract(PrevNames, NewNames),
+
+    case Added =:= [] andalso Removed =:= [] of
+        true ->
+            ok;
+        false ->
+            partisan_telemetry:execute(
+                [partisan, membership, changed],
+                #{
+                    added => erlang:length(Added),
+                    removed => erlang:length(Removed),
+                    total => erlang:length(Members)
+                },
+                #{version => Version}
+            )
+    end.
 
 -doc """
 Returns the current member set as node specs, with a lock-free read.

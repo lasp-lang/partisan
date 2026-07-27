@@ -304,8 +304,8 @@ handle_cast(Event, State) ->
     ?LOG_WARNING(#{description => "Unhandled cast event", event => Event}),
     {noreply, State}.
 
-handle_info({'EXIT', From, _Reason}, #state{} = State) ->
-    _ = catch partisan_peer_connections:prune(From),
+handle_info({'EXIT', From, Reason}, #state{} = State) ->
+    _ = catch partisan_peer_connections:prune(From, Reason),
     {noreply, State};
 handle_info(
     {connected, Node, _Channel, _Tag, _RemoteState},

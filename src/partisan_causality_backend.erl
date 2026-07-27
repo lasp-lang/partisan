@@ -129,8 +129,10 @@ init([Label]) ->
     %% Initiaize order buffer.
     OrderBuffer = orddict:new(),
 
-    %% Generate message buffer.
-    BufferedMessages = [],
+    %% Generate message buffer: a `reference() => {Attempts, FullMessage}' map,
+    %% keyed by a fresh ref per buffered occurrence (see
+    %% `internal_receive_message/2' for why identity matters here).
+    BufferedMessages = #{},
 
     %% Schedule delivery attempts.
     schedule_delivery(Label),
@@ -216,9 +218,12 @@ handle_call(
         message => MessageClock
     }),
 
-    BufferedMessages = BufferedMessages0 ++ [FullMessage],
-    State = lists:foldl(
-        fun(M, S) -> internal_receive_message(M, S) end,
+    Ref = erlang:make_ref(),
+    BufferedMessages = maps:put(Ref, {0, FullMessage}, BufferedMessages0),
+    State = maps:fold(
+        fun(R, {Attempts, M}, S) ->
+            internal_receive_message({R, Attempts, M}, S)
+        end,
         State0#state{buffered_messages = BufferedMessages},
         BufferedMessages
     ),
@@ -241,13 +246,15 @@ handle_info(
     deliver,
     #state{buffered_messages = BufferedMessages, label = Label} = State0
 ) ->
-    State = lists:foldl(
-        fun(M, S) ->
-            internal_receive_message(M, S)
+    State = maps:fold(
+        fun(Ref, {Attempts, M}, S) ->
+            internal_receive_message({Ref, Attempts, M}, S)
         end,
         State0,
         BufferedMessages
     ),
+
+    ok = telemetry_backlog(Label, State),
 
     %% Write state to disk.
     write_state(State),
@@ -326,9 +333,25 @@ schedule_delivery(Label) ->
     erlang:send_after(Interval, Name, deliver).
 
 %% @private
+%% Buffered entries are keyed by a unique `Ref' (assigned once, at insertion)
+%% mapping to `{Attempts, FullMessage}': `Attempts' counts how many redelivery
+%% cycles this message has survived without its causal dependencies being met,
+%% and is surfaced via `[partisan, causal, backlog]' telemetry (see
+%% `telemetry_backlog/2') as a stuck-message signal. Keying by `Ref' rather
+%% than by the message's own content is deliberate: an ack-retried causal
+%% message can legitimately be buffered twice with byte-identical content, and
+%% content-equality would conflate the two (one entry's bump silently
+%% clobbering or masking the other's) — `Ref' keeps every buffered occurrence
+%% independently identified regardless of buffer size. It also improves on the
+%% previous list-based update, though not all the way to O(1): Erlang maps
+%% under ~32 keys are a flat array (`maps:put/3' still copies it, same
+%% asymptotic cost as the list rebuild it replaces), only becoming O(log n)
+%% above that. The win is real exactly where it matters most — a large,
+%% pathologically stuck backlog no longer turns each tick quadratic.
 internal_receive_message(
-    {causal, _Label, _Node, ServerRef, IncomingOrderBuffer, MessageClock,
-        Message} = FullMessage,
+    {Ref, Attempts,
+        {causal, _Label, _Node, ServerRef, IncomingOrderBuffer, MessageClock,
+            Message} = FullMessage},
     #state{
         my_node = MyNode,
         local_clock = LocalClock,
@@ -349,7 +372,7 @@ internal_receive_message(
             }),
             deliver(
                 State0#state{
-                    buffered_messages = BufferedMessages -- [FullMessage]
+                    buffered_messages = maps:remove(Ref, BufferedMessages)
                 },
                 IncomingOrderBuffer,
                 MessageClock,
@@ -368,7 +391,7 @@ internal_receive_message(
                     deliver(
                         State0#state{
                             buffered_messages =
-                                BufferedMessages -- [FullMessage]
+                                maps:remove(Ref, BufferedMessages)
                         },
                         IncomingOrderBuffer,
                         MessageClock,
@@ -377,16 +400,46 @@ internal_receive_message(
                     );
                 %% Dependencies NOT met.
                 false ->
-                    %% Buffer, for later delivery.
+                    %% Buffer, for later delivery, bumping the attempt count.
                     ?LOG_DEBUG(#{
                         description =>
                             "Message dependencies NOT met, delivering",
                         messages => MessageClock,
                         dependencies => DependencyClock
                     }),
-                    State0#state{buffered_messages = BufferedMessages}
+                    Updated = maps:put(
+                        Ref, {Attempts + 1, FullMessage}, BufferedMessages
+                    ),
+                    State0#state{buffered_messages = Updated}
             end
     end.
+
+%% @private
+%% @doc Emits `[partisan, causal, backlog]': the current redelivery-queue
+%% depth, the size of the per-peer order buffer (neither is bounded or
+%% pruned today, so both are also unbounded-growth canaries), and the
+%% highest attempt count among currently-buffered messages (a message stuck
+%% on a dependency that never arrives keeps climbing this counter, forever,
+%% with no other visibility).
+telemetry_backlog(
+    Label,
+    #state{buffered_messages = BufferedMessages, order_buffer = OrderBuffer}
+) ->
+    MaxAttempts =
+        case maps:size(BufferedMessages) of
+            0 -> 0;
+            _ -> lists:max([A || {A, _} <- maps:values(BufferedMessages)])
+        end,
+
+    partisan_telemetry:execute(
+        [partisan, causal, backlog],
+        #{
+            buffered => maps:size(BufferedMessages),
+            order_buffer_size => orddict:size(OrderBuffer),
+            max_attempts => MaxAttempts
+        },
+        #{label => Label}
+    ).
 
 %% @private
 generate_name(Label) ->

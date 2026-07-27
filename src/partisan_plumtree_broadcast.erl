@@ -566,6 +566,7 @@ handle_info(lazy_tick, State0) ->
             typed -> fun(E, ES) -> E:lazy_tick(ES) end
         end,
     State2 = run_engine(Tick, State1),
+    ok = maybe_emit_interior_load(State2),
     schedule_lazy_tick(State2#state.lazy_tick_period),
     {noreply, State2};
 handle_info(exchange_tick, #state{exchange_tick_period = Period} = State) ->
@@ -831,6 +832,27 @@ run_engine(Fun, #state{engine = E, engine_state = ES} = State) ->
     {ES2, Actions} = Fun(E, ES),
     ok = execute_engine_actions(State#state.engine_mode, Actions, State),
     State#state{engine_state = ES2}.
+
+%% @private Surfaces a raw engine's interior-load gauge (e.g. Thicket) after
+%% its repair tick — the measurement PDDR-000002/000004 gate enabling such an
+%% engine on. The engine itself stays pure (no telemetry inside it, so PropEr
+%% simulation stays deterministic); this is a read-only query the shell makes
+%% on the result. A no-op for engines that do not export `interior_load/1'.
+maybe_emit_interior_load(
+    #state{engine_mode = raw, engine = E, engine_state = ES, name = Name}
+) ->
+    case erlang:function_exported(E, interior_load, 1) of
+        true ->
+            partisan_telemetry:execute(
+                [partisan, broadcast, interior_load],
+                #{value => E:interior_load(ES)},
+                #{group => Name, engine => E}
+            );
+        false ->
+            ok
+    end;
+maybe_emit_interior_load(#state{}) ->
+    ok.
 
 %% @private
 execute_engine_actions(typed, Actions, _State) ->

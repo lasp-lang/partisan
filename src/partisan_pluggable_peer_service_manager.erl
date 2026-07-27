@@ -1449,7 +1449,7 @@ handle_info({'EXIT', Pid, Reason}, State0) ->
     }),
 
     %% A connection has closed, prune it from the connections table
-    try partisan_peer_connections:prune(Pid) of
+    try partisan_peer_connections:prune(Pid, Reason) of
         {Info, [Connection]} ->
             NodeSpec = partisan_peer_connections:node_spec(Info),
             #{name := Node} = NodeSpec,

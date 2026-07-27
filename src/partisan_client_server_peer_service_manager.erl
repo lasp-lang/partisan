@@ -526,7 +526,7 @@ handle_info({'EXIT', From, Reason}, State0) ->
     }),
 
     %% A connection has closed, prune it from the connections table
-    try partisan_peer_connections:prune(From) of
+    try partisan_peer_connections:prune(From, Reason) of
         {Info, [_Connection]} ->
             State =
                 case partisan_peer_connections:count(Info) of

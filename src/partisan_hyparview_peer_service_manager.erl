@@ -979,6 +979,8 @@ handle_info(active_view_maintenance, State0) ->
         peers(State0)
     ),
 
+    ok = telemetry_view_sizes(State0),
+
     %% Reschedule.
     schedule_active_view_maintenance(State0),
 
@@ -1016,7 +1018,7 @@ handle_info({'EXIT', Pid, Reason}, State0) when is_pid(Pid) ->
     Passive0 = State0#state.passive,
 
     %% Prune active connections from map.
-    try partisan_peer_connections:prune(Pid) of
+    try partisan_peer_connections:prune(Pid, Reason) of
         {Info, _Connections} ->
             Peer = partisan_peer_connections:node_spec(Info),
             %% If it was in the passive view and our connection attempt failed,
@@ -1262,8 +1264,20 @@ handle_message(
     %% round would needlessly wake downstream subscribers (e.g. anti-entropy).
     _ =
         case State =/= State0 of
-            true -> notify(State);
-            false -> ok
+            true ->
+                %% This handler serves both a peer's first NEIGHBOR (a genuine
+                %% join) and a periodic symmetry re-assertion
+                %% (active_view_maintenance) — a change here does not by
+                %% itself distinguish the two. On an otherwise-quiescent
+                %% cluster (no recent `[partisan, membership, changed]`) this
+                %% is the asymmetry-repair signal.
+                partisan_telemetry:count(
+                    [partisan, hyparview, active_view, peer_added],
+                    #{peer_node => Peer}
+                ),
+                notify(State);
+            false ->
+                ok
         end,
 
     {noreply, State};
@@ -2135,10 +2149,21 @@ peers(#state{active = Set, node_spec = NodeSpec}) ->
     sets:to_list(sets:del_element(NodeSpec, Set)).
 
 %% @private
+%% @doc Emits `[partisan, hyparview, view, size]': the current active- and
+%% passive-view sizes. Active-view size bounded by `active_max_size';
+%% passive by `passive_max_size' (see module docs).
+telemetry_view_sizes(#state{passive = Passive} = State) ->
+    partisan_telemetry:execute(
+        [partisan, hyparview, view, size],
+        #{active => erlang:length(peers(State)), passive => sets:size(Passive)},
+        #{}
+    ).
+
+%% @private
 -spec disconnect(Node :: partisan:node_spec()) -> ok.
 
 disconnect(Node) ->
-    try partisan_peer_connections:prune(Node) of
+    try partisan_peer_connections:prune(Node, normal) of
         {_Info, Connections} ->
             [
                 begin

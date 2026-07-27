@@ -45,6 +45,9 @@
 -export([connect/3]).
 -export([connect/4]).
 -export([connect/5]).
+-export([getstat/1]).
+-export([getstat/2]).
+-export([telemetry_stats/1]).
 -export([recv/2]).
 -export([recv/3]).
 -export([send/2]).
@@ -75,10 +78,17 @@ accept(TCPSocket) ->
             %% succeed depending on timing.
             inet:setopts(TCPSocket, [{active, false}]),
             HSTimeout = partisan_config:get(tls_handshake_timeout),
+            T0 = erlang:monotonic_time(millisecond),
+
             case ssl:handshake(TCPSocket, TLSOpts, HSTimeout) of
                 {ok, TLSSocket} ->
                     %% restore the expected active once setting
                     ssl:setopts(TLSSocket, [{active, once}]),
+                    partisan_telemetry:execute(
+                        [partisan, socket, server, handshake],
+                        #{latency => erlang:monotonic_time(millisecond) - T0},
+                        #{result => ok}
+                    ),
                     #partisan_peer_socket{
                         socket = TLSSocket,
                         transport = ssl,
@@ -94,6 +104,11 @@ accept(TCPSocket) ->
                     %% TCP socket and terminate this acceptor *normally* — the
                     %% pool simply replaces it — with only a debug log.
                     _ = (catch gen_tcp:close(TCPSocket)),
+                    partisan_telemetry:execute(
+                        [partisan, socket, server, handshake],
+                        #{latency => erlang:monotonic_time(millisecond) - T0},
+                        #{result => error, reason => Reason}
+                    ),
                     logger:debug(#{
                         description =>
                             "TLS handshake failed on inbound peer "
@@ -181,6 +196,53 @@ setopts(#partisan_peer_socket{} = Connection, Options) when is_map(Options) ->
     setopts(Connection, maps:to_list(Options));
 setopts(#partisan_peer_socket{socket = Socket, control = Control}, Options) ->
     Control:setopts(Socket, Options).
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns socket-level byte/packet counters, e.g. `recv_oct', `send_oct',
+%% `send_pend'. These come directly from the runtime (no counting done by
+%% Partisan) so they are cheap to poll periodically.
+%% @see inet:getstat/1
+%% @see ssl:getstat/1
+%% @end
+%% -----------------------------------------------------------------------------
+-spec getstat(t()) -> {ok, [{atom(), integer()}]} | {error, inet:posix()}.
+
+getstat(#partisan_peer_socket{socket = Socket, transport = gen_tcp}) ->
+    inet:getstat(Socket);
+getstat(#partisan_peer_socket{socket = Socket, transport = ssl}) ->
+    ssl:getstat(Socket).
+
+%% -----------------------------------------------------------------------------
+%% @doc Same as `getstat/1' but restricted to the counters in `Items'.
+%% @see inet:getstat/2
+%% @see ssl:getstat/2
+%% @end
+%% -----------------------------------------------------------------------------
+-spec getstat(t(), Items :: [atom()]) ->
+    {ok, [{atom(), integer()}]} | {error, inet:posix()}.
+
+getstat(#partisan_peer_socket{socket = Socket, transport = gen_tcp}, Items) ->
+    inet:getstat(Socket, Items);
+getstat(#partisan_peer_socket{socket = Socket, transport = ssl}, Items) ->
+    ssl:getstat(Socket, Items).
+
+%% -----------------------------------------------------------------------------
+%% @doc Byte/packet counters and send-queue depth for telemetry, straight from
+%% `getstat/2' (no counting done by Partisan). Returns `#{}' if the socket is
+%% unavailable, rather than failing the caller's tick.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec telemetry_stats(t() | undefined) -> map().
+
+telemetry_stats(undefined) ->
+    #{};
+telemetry_stats(#partisan_peer_socket{} = Socket) ->
+    Items = [recv_cnt, recv_oct, send_cnt, send_oct, send_pend],
+
+    case getstat(Socket, Items) of
+        {ok, Stats} -> maps:from_list(Stats);
+        {error, _} -> #{}
+    end.
 
 %% -----------------------------------------------------------------------------
 %% @doc
