@@ -418,7 +418,7 @@ handle_inbound(
     ),
 
     ok = partisan_telemetry:execute(
-        [partisan, connection, client, hearbeat],
+        [partisan, connection, client, heartbeat],
         Measurements,
         #{
             channel => State#state.channel,

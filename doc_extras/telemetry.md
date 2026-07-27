@@ -5,7 +5,7 @@ Partisan publishes runtime metrics through [`telemetry`](https://github.com/beam
 ```erlang
 telemetry:attach(
     my_handler_id,
-    [partisan, connection, client, hearbeat],
+    [partisan, connection, client, heartbeat],
     fun(_EventName, Measurements, Metadata, _Config) ->
         #{latency := Latency} = Measurements,
         #{peer_node := Peer} = Metadata,
@@ -65,12 +65,9 @@ Fired by `partisan_peer_socket:accept/1` after a TLS handshake on an inbound con
 }
 ```
 
-### `[partisan, connection, client, hearbeat]`
+### `[partisan, connection, client, heartbeat]`
 
 Fired by `partisan_peer_service_client` on every ping/pong round-trip it completes with the peer it connected to. Emission cadence follows the `connection_ping` configuration: a ping is sent after `idle_timeout` (20000ms by default) of connection inactivity, and this event fires when the matching pong arrives.
-
-> #### The event name misspells "heartbeat" {: .warning}
-> The atom is `hearbeat`, not `heartbeat` — a naming defect carried forward from the v5.0.3 release that first introduced this event. Handler code that filters on the event name must match the misspelling as it exists today.
 
 ##### Measurements
 ```erlang
@@ -100,9 +97,9 @@ Fired by `partisan_peer_service_client` on every ping/pong round-trip it complet
 }
 ```
 
-### `[partisan, connection, server, hearbeat]`
+### `[partisan, connection, server, heartbeat]`
 
-The server-side counterpart: fired by `partisan_peer_service_server` on every ping/pong round-trip it completes with a connected client. Same cadence, the same `inet:getstat/2` measurements, and the same event-name defect as the client event above.
+The server-side counterpart: fired by `partisan_peer_service_server` on every ping/pong round-trip it completes with a connected client. Same cadence and the same `inet:getstat/2` measurements as the client event above.
 
 ##### Measurements
 ```erlang
