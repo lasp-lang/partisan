@@ -20,45 +20,65 @@
 %% Author: Rickard Green
 %%
 
-%% -----------------------------------------------------------------------------
-%% @doc This module is an adaptation of Erlang `erpc' module.
-%%
-%% It replaces all instances of `erlang:send/2` and `erlang:monitor/2` with
-%% their Partisan counterparts.
-%%
-%% It maintains the `erpc' API — every function `erpc' exports is exported here
-%% with the same arity and the same contract (asserted by an export-parity test)
-%% — and adds the following, all of which are supersets rather than changes:
-%%
-%% <ul>
-%% <li><strong>Per-call transport options.</strong> Upstream `erpc' has no notion
-%% of channels, so on its API every request would have to ride the globally
-%% configured `forward_options'. `call/5' and `multicall/5' therefore accept
-%% `forward_opts()' in place of a bare timeout (`timeout' is read out of the
-%% map), and `send_request/5', `send_request/7', `cast/5' and `multicast/5' are
-%% additional arities that do not exist upstream. Per-call keys win over the
-%% global configuration; the global value fills in only what the caller omitted.
-%% One consequence worth stating: on those two overloaded arities a *list* in the
-%% fifth position is now read as a proplist of options rather than rejected as an
-%% invalid timeout.</li>
-%% <li><strong>Native transport.</strong> Upstream reaches the peer with the
-%% `spawn_request/5' BIF and receives the result as a monitor's exit reason —
-%% both distribution-protocol mechanisms that ride disterl. This module replaces
-%% them with an explicit correlated request/response over Partisan (see
-%% `partisan_rpc_backend'). The pure logic — error translation, `trim_stack/4',
-%% `is_arg_error/4', `result/4' — is kept verbatim and diffable against
-%% upstream; only the transport is native.</li>
-%% <li><strong>Request-identifier collections.</strong> The vendored snapshot
-%% predates the OTP 25+ collection API; it is implemented here natively, keyed by
-%% each request's correlation reference.</li>
-%% </ul>
-%%
-%% <strong>NOTICE:</strong>
-%% At the moment this only works for `partisan_pluggable_peer_service_manager'.
-%% @end
-%% -----------------------------------------------------------------------------
-%% -
 -module(partisan_erpc).
+
+-moduledoc """
+Executes a function call on a remote node over the Partisan transport.
+
+This is Partisan's counterpart of Erlang's `m:erpc`, and the **primary** RPC
+surface — prefer it to `m:partisan_rpc`, which is the legacy `rpc`-shaped API
+built on top of this one.
+
+Every function `erpc` exports is exported here with the same arity and the same
+contract, so code written against `erpc` behaves identically when pointed at this
+module. The differences are all supersets:
+
+- **Per-call transport options.** `erpc` has no notion of channels, so on its API
+  every request would ride the globally configured `forward_options`. `call/5`
+  and `multicall/5` accept `t:partisan_peer_service_manager:forward_opts/0` in
+  place of a bare timeout, and `send_request/5`, `send_request/7`, `cast/5` and
+  `multicast/5` are extra arities. Per-call keys win over the global
+  configuration, which fills in only what the caller omitted.
+
+  One consequence of the widened arities: a *list* in the fifth position of
+  `call/5` or `multicall/5` is read as a proplist of options, where `erpc` would
+  reject it as an invalid timeout.
+
+- **Request-identifier collections.** The OTP 25+ collection API
+  (`send_request/6`, `receive_response/3`, `reqids_new/0` and friends) is
+  supported, keyed by each request's correlation reference.
+
+## How a call is carried
+
+A request is an explicit correlated message to the target's `partisan_rpc_backend`,
+which runs it in a process of its own and replies directly to the caller. Upstream
+`erpc` instead uses the `spawn_request/5` BIF and reads the result from a monitor's
+exit reason — both are distribution mechanisms that ride Erlang distribution, not
+Partisan, which is why the transport here is native rather than vendored.
+
+Two properties follow, and callers can rely on them:
+
+- **A slow call delays only itself.** Each request runs in its own process on the
+  target, so one blocking `M:F(A)` does not stall unrelated calls.
+- **A late reply is discarded, never mis-delivered.** The correlation reference is
+  a process alias; abandoning a request deactivates it, so a reply arriving after
+  its caller gave up is dropped by the runtime.
+
+## Failures
+
+Failures are raised, not returned. A remote exception is re-raised locally with
+its class preserved; an unreachable target raises `error({partisan_erpc,
+noconnection})`; an expired timeout raises `error({partisan_erpc, timeout})`; and
+a target already running `rpc_max_concurrency` requests raises
+`error({partisan_erpc, overloaded})`. `m:partisan_rpc` translates all of these
+into `{badrpc, _}` for callers that prefer the `rpc` convention.
+
+> #### Peer service manager {: .warning}
+>
+> This module currently works only with
+> `m:partisan_pluggable_peer_service_manager`.
+""".
+
 -include("partisan.hrl").
 
 -export([call/2]).
@@ -140,6 +160,9 @@
 %% API
 %% =============================================================================
 
+-doc """
+Equivalent to `call(Node, Fun, infinity)`.
+""".
 -spec call(Node, Fun) -> Result when
     Node :: node(),
     Fun :: function(),
@@ -148,6 +171,12 @@
 call(N, Fun) ->
     call(N, Fun, infinity).
 
+-doc """
+Evaluates `Fun()` on `Node` and returns its value.
+
+Equivalent to `call(Node, erlang, apply, [Fun, []], Timeout)`. `Fun` must be
+loadable on the target.
+""".
 -spec call(Node, Fun, Timeout) -> Result when
     Node :: node(),
     Fun :: function(),
@@ -159,6 +188,12 @@ call(N, Fun, Timeout) when is_function(Fun, 0) ->
 call(_N, _Fun, _Timeout) ->
     error({?MODULE, badarg}).
 
+-doc """
+Equivalent to `call(Node, Module, Function, Args, infinity)`.
+
+A call to the local node with an `infinity` timeout is evaluated in the calling
+process, without going near the transport.
+""".
 -spec call(Node, Module, Function, Args) -> Result when
     Node :: node(),
     Module :: atom(),
@@ -171,6 +206,19 @@ call(N, M, F, A) ->
 
 -dialyzer([{nowarn_function, call/5}, no_return]).
 
+-doc """
+Evaluates `apply(Module, Function, Args)` on `Node` and returns its value.
+
+Blocks until the result arrives, the timeout expires, or the target becomes
+unreachable. The call runs in a process of its own on the target, so it does not
+delay unrelated calls there.
+
+`TimeoutOrOpts` is either a timeout or a
+`t:partisan_peer_service_manager:forward_opts/0` map from which `timeout` is
+read — use the latter to place the request on a specific `channel`.
+
+Raises on failure; see the module documentation for the error terms.
+""".
 -spec call(Node, Module, Function, Args, TimeoutOrOpts) -> Result when
     Node :: node(),
     Module :: atom(),
@@ -248,6 +296,9 @@ call(_N, _M, _F, _A, _T) ->
     Res :: partisan:remote_reference(), ReqId :: monitor_ref()
 }.
 
+-doc """
+Equivalent to `send_request(Node, erlang, apply, [Fun, []])`.
+""".
 -spec send_request(Node, Fun) -> RequestId when
     Node :: node(),
     Fun :: function(),
@@ -258,6 +309,19 @@ send_request(N, F) when is_function(F, 0) ->
 send_request(_N, _F) ->
     error({?MODULE, badarg}).
 
+-doc """
+Sends a request to evaluate `apply(Module, Function, Args)` on `Node` and
+returns immediately.
+
+Collect the result with `receive_response/1,2`, `wait_response/1,2` or
+`check_response/2`. Several requests may be outstanding at once: each carries its
+own correlation reference, so replies cannot be confused with one another, and a
+reply to a request you have abandoned is discarded rather than delivered to the
+next call.
+
+The returned identifier is opaque and belongs to the calling process — only that
+process can collect the response.
+""".
 -spec send_request(Node, Module, Function, Args) -> RequestId when
     Node :: node(),
     Module :: atom(),
@@ -281,7 +345,14 @@ send_request(N, F, L, C) when is_atom(N), is_function(F, 0), is_map(C) ->
 send_request(_N, _M, _F, _A) ->
     error({?MODULE, badarg}).
 
--doc false.
+-doc """
+Sends a request as `send_request/4`, with per-call transport options.
+
+Partisan-specific; `erpc` has no equivalent. `Opts` is a
+`t:partisan_peer_service_manager:forward_opts/0` map or proplist — most usefully
+`channel`, to keep a burst of asynchronous requests off the channel carrying
+latency-sensitive traffic. Per-call keys win over the global `forward_options`.
+""".
 -spec send_request(Node, Module, Function, Args, Opts) -> RequestId when
     Node :: node(),
     Module :: atom(),
@@ -408,6 +479,9 @@ call_with_opts(N, M, F, A, T, Opts) when
 call_with_opts(_N, _M, _F, _A, _T, _Opts) ->
     error({?MODULE, badarg}).
 
+-doc """
+Equivalent to `receive_response(RequestId, infinity)`.
+""".
 -spec receive_response(RequestId) -> Result when
     RequestId :: request_id(),
     Result :: term().
@@ -419,6 +493,14 @@ receive_response({Res, ReqId} = RId) ->
 
 -dialyzer([{nowarn_function, receive_response/2}, no_return]).
 
+-doc """
+Waits for the response to `RequestId` and returns its value.
+
+Blocks until the response arrives, the timeout expires, or the target becomes
+unreachable, and raises on failure exactly as `call/5` does. The request is
+abandoned on timeout, so a reply that arrives afterwards is discarded rather than
+left in the mailbox.
+""".
 -spec receive_response(RequestId, Timeout) -> Result when
     RequestId :: request_id(),
     Timeout :: ?TIMEOUT_TYPE,
@@ -444,6 +526,10 @@ receive_response({Res, ReqId}, Tmo) when ?IS_VALID_TMO(Tmo) ->
 receive_response(_, _) ->
     error({?MODULE, badarg}).
 
+-doc """
+Equivalent to `wait_response(RequestId, 0)` — checks for a response without
+waiting.
+""".
 -spec wait_response(RequestId) -> {'response', Result} | 'no_response' when
     RequestId :: request_id(),
     Result :: term().
@@ -455,6 +541,13 @@ wait_response({Res, ReqId} = RId) ->
 
 -dialyzer([{nowarn_function, wait_response/2}, no_return]).
 
+-doc """
+Waits up to `WaitTime` for the response to `RequestId`.
+
+Returns `{response, Result}` if it arrives, or `no_response` if the wait expires.
+Unlike `receive_response/2`, expiry is **not** an error and does not abandon the
+request: the identifier stays valid and can be waited on again.
+""".
 -spec wait_response(RequestId, WaitTime) ->
     {'response', Result} | 'no_response'
 when
@@ -481,6 +574,13 @@ wait_response(_, _) ->
 
 -dialyzer([{nowarn_function, check_response/2}, no_return]).
 
+-doc """
+Tests whether `Message` is the response to `RequestId`.
+
+Returns `{response, Result}` if it is, and `no_response` for any other message —
+which lets a process with its own receive loop handle responses without giving up
+control of its mailbox.
+""".
 -spec check_response(Message, RequestId) ->
     {'response', Result} | 'no_response'
 when
@@ -520,11 +620,17 @@ check_response(_, _) ->
         partisan:remote_reference() => {ReqId :: monitor_ref(), Label :: term()}
 }.
 
+-doc """
+Returns a new, empty request-identifier collection.
+""".
 -spec reqids_new() -> request_id_collection().
 
 reqids_new() ->
     maps:new().
 
+-doc """
+Returns the number of requests still outstanding in the collection.
+""".
 -spec reqids_size(request_id_collection()) -> non_neg_integer().
 
 reqids_size(ReqIdCollection) ->
@@ -535,6 +641,12 @@ reqids_size(ReqIdCollection) ->
             error({?MODULE, badarg})
     end.
 
+-doc """
+Adds an already-issued request to a collection under `Label`.
+
+Use it to fold a request made with `send_request/4` into a collection. Raises
+`error({partisan_erpc, badarg})` if the identifier is already present.
+""".
 -spec reqids_add(request_id(), term(), request_id_collection()) ->
     request_id_collection().
 
@@ -553,6 +665,10 @@ reqids_add({Res, ReqId}, Label, ReqIdCollection) when
 reqids_add(_, _, _) ->
     error({?MODULE, badarg}).
 
+-doc """
+Returns the collection's outstanding requests as a list of
+`{RequestId, Label}` pairs.
+""".
 -spec reqids_to_list(request_id_collection()) ->
     [{request_id(), Label :: term()}].
 
@@ -575,6 +691,14 @@ reqids_to_list(ReqIdCollection) when is_map(ReqIdCollection) ->
 reqids_to_list(_) ->
     error({?MODULE, badarg}).
 
+-doc """
+Sends a request as `send_request/4` and adds it to a collection under `Label`.
+
+Use this to hold many outstanding requests together and collect them as they
+arrive, with `receive_response/3`, `wait_response/3` or `check_response/3`. The
+label is returned alongside the result, so the caller can tell which request
+answered without tracking identifiers itself.
+""".
 -spec send_request(
     Node :: node(),
     Module :: atom(),
@@ -597,7 +721,13 @@ send_request(N, M, F, A, L, C) when
 send_request(_N, _M, _F, _A, _L, _C) ->
     error({?MODULE, badarg}).
 
--doc false.
+-doc """
+Sends a request as `send_request/6`, with per-call transport options.
+
+Partisan-specific; `erpc` has no equivalent. This is the collection form, so it is
+the one to reach for when issuing a large fan-out that should not share a channel
+with everything else.
+""".
 -spec send_request(
     Node :: node(),
     Module :: atom(),
@@ -627,6 +757,16 @@ send_request(_N, _M, _F, _A, _L, _C, _Opts) ->
 
 -dialyzer([{nowarn_function, receive_response/3}, no_return]).
 
+-doc """
+Waits for the next response in a collection.
+
+Returns the result, the label the request was added under, and the collection —
+with that request removed when `Delete` is `true`. Responses are returned in the
+order they arrive, not the order the requests were issued.
+
+Raises `error({partisan_erpc, timeout})` when the timeout expires, abandoning
+**every** request in the collection.
+""".
 -spec receive_response(
     request_id_collection(), Timeout :: ?TIMEOUT_TYPE, Delete :: boolean()
 ) -> {Result :: term(), Label :: term(), request_id_collection()}.
@@ -651,6 +791,12 @@ receive_response(_, _, _) ->
 
 -dialyzer([{nowarn_function, wait_response/3}, no_return]).
 
+-doc """
+Waits up to `WaitTime` for the next response in a collection.
+
+Returns `{{response, Result}, Label, Collection}` or `no_response`. As with
+`wait_response/2`, expiry is not an error and leaves the collection intact.
+""".
 -spec wait_response(
     request_id_collection(), WaitTime :: ?TIMEOUT_TYPE, Delete :: boolean()
 ) ->
@@ -677,6 +823,12 @@ wait_response(_, _, _) ->
 
 -dialyzer([{nowarn_function, check_response/3}, no_return]).
 
+-doc """
+Tests whether `Message` is a response to any request in a collection.
+
+Returns `{{response, Result}, Label, Collection}` if it is, and `no_response`
+otherwise, so a process can service its own mailbox and still collect responses.
+""".
 -spec check_response(
     Message :: term(), request_id_collection(), Delete :: boolean()
 ) ->
@@ -783,6 +935,9 @@ timeout_value(_) ->
     | {exit, {signal, Reason :: term()}}
     | {error, {?MODULE, Reason :: term()}}.
 
+-doc """
+Equivalent to `multicall(Nodes, Fun, infinity)`.
+""".
 -spec multicall(Nodes, Fun) -> Result when
     Nodes :: [atom()],
     Fun :: function(),
@@ -791,6 +946,9 @@ timeout_value(_) ->
 multicall(Ns, Fun) ->
     multicall(Ns, Fun, infinity).
 
+-doc """
+Equivalent to `multicall(Nodes, erlang, apply, [Fun, []], Timeout)`.
+""".
 -spec multicall(Nodes, Fun, Timeout) -> Result when
     Nodes :: [atom()],
     Fun :: function(),
@@ -802,6 +960,9 @@ multicall(Ns, Fun, Timeout) when is_function(Fun, 0) ->
 multicall(_Ns, _Fun, _Timeout) ->
     error({?MODULE, badarg}).
 
+-doc """
+Equivalent to `multicall(Nodes, Module, Function, Args, infinity)`.
+""".
 -spec multicall(Nodes, Module, Function, Args) -> Result when
     Nodes :: [atom()],
     Module :: atom(),
@@ -812,6 +973,18 @@ multicall(_Ns, _Fun, _Timeout) ->
 multicall(Ns, M, F, A) ->
     multicall(Ns, M, F, A, infinity).
 
+-doc """
+Evaluates `apply(Module, Function, Args)` on every node in `Nodes`.
+
+Returns **one result per node, in the order of `Nodes`** — `{ok, Value}` for a
+node that answered, or the caught exception for one that did not. Unlike the
+single-node calls, a failure on one node is reported in its own element rather
+than raised, so a timeout or an unreachable peer never hides the other results.
+
+`TimeoutOrOpts` is either a timeout or a
+`t:partisan_peer_service_manager:forward_opts/0` map, as for `call/5`. The
+timeout applies to the fan-out as a whole.
+""".
 -spec multicall(Nodes, Module, Function, Args, TimeoutOrOpts) -> Result when
     Nodes :: [atom()],
     Module :: atom(),
@@ -854,6 +1027,9 @@ opts_as_map(Opts) when is_list(Opts) ->
 opts_as_map(Opts) when is_map(Opts) ->
     Opts.
 
+-doc """
+Equivalent to `multicast(Nodes, erlang, apply, [Fun, []])`.
+""".
 -spec multicast(Nodes, Fun) -> 'ok' when
     Nodes :: [node()],
     Fun :: function().
@@ -861,6 +1037,13 @@ opts_as_map(Opts) when is_map(Opts) ->
 multicast(N, Fun) ->
     multicast(N, erlang, apply, [Fun, []]).
 
+-doc """
+Evaluates `apply(Module, Function, Args)` on every node in `Nodes`, discarding
+the results.
+
+The fan-out counterpart of `cast/4`: no replies, no correlation, no indication of
+which nodes ran anything.
+""".
 -spec multicast(Nodes, Module, Function, Args) -> 'ok' when
     Nodes :: [node()],
     Module :: atom(),
@@ -878,7 +1061,13 @@ multicast(Nodes, Mod, Fun, Args) ->
             error({?MODULE, badarg})
     end.
 
--doc false.
+-doc """
+Evaluates `apply(Module, Function, Args)` on every node in `Nodes` with per-call
+transport options, discarding the results.
+
+Partisan-specific; `erpc` has no equivalent. See `multicast/4` for the semantics
+and `send_request/5` for the options.
+""".
 -spec multicast(Nodes, Module, Function, Args, Opts) -> 'ok' when
     Nodes :: [node()],
     Module :: atom(),
@@ -916,6 +1105,9 @@ send_erpc_cast(Node, Mod, Fun, Args, Opts) ->
     Msg = {?ERPC_CAST, Mod, Fun, Args},
     partisan:forward_message(Node, partisan_rpc_backend, Msg, Opts).
 
+-doc """
+Equivalent to `cast(Node, erlang, apply, [Fun, []])`.
+""".
 -spec cast(Node, Fun) -> 'ok' when
     Node :: node(),
     Fun :: function().
@@ -923,6 +1115,13 @@ send_erpc_cast(Node, Mod, Fun, Args, Opts) ->
 cast(N, Fun) ->
     cast(N, erlang, apply, [Fun, []]).
 
+-doc """
+Evaluates `apply(Module, Function, Args)` on `Node` and discards the result.
+
+Returns `ok` as soon as the request has been handed to the transport: there is no
+reply, no correlation and no confirmation that the target ran anything. The call
+still runs in its own process on the target.
+""".
 -spec cast(Node, Module, Function, Args) -> 'ok' when
     Node :: node(),
     Module :: atom(),
@@ -940,7 +1139,13 @@ cast(Node, Mod, Fun, Args) when
 cast(_Node, _Mod, _Fun, _Args) ->
     error({?MODULE, badarg}).
 
--doc false.
+-doc """
+Evaluates `apply(Module, Function, Args)` on `Node` with per-call transport
+options, discarding the result.
+
+Partisan-specific; `erpc` has no equivalent. See `cast/4` for the semantics and
+`send_request/5` for the options.
+""".
 -spec cast(Node, Module, Function, Args, Opts) -> 'ok' when
     Node :: node(),
     Module :: atom(),
@@ -967,6 +1172,7 @@ cast(_Node, _Mod, _Fun, _Args, _Opts) ->
 
 %% Note that most of these are used by 'rpc' as well...
 
+-doc false.
 execute_call(Ref, M, F, A) ->
     Reply =
         try
@@ -987,9 +1193,11 @@ execute_call(Ref, M, F, A) ->
         end,
     exit(Reply).
 
+-doc false.
 execute_call(M, F, A) ->
     {return, apply(M, F, A)}.
 
+-doc false.
 execute_cast(M, F, A) ->
     try
         apply(M, F, A)
@@ -1006,9 +1214,11 @@ execute_cast(M, F, A) ->
             end
     end.
 
+-doc false.
 call_result(Type, ReqId, Res, Reason) ->
     result(Type, ReqId, Res, Reason).
 
+-doc false.
 is_arg_error(system_limit, _M, _F, A) ->
     try
         apply(?MODULE, nonexisting, A),
@@ -1026,6 +1236,7 @@ is_arg_error(_R, _M, _F, _A) ->
             (element(2, (F)) == execute_cast)))
 ).
 
+-doc false.
 trim_stack([CF | _], M, F, A) when ?IS_CUT_FRAME(CF) ->
     [{M, F, A, []}];
 trim_stack([{M, F, A, _} = SF, CF | _], M, F, A) when ?IS_CUT_FRAME(CF) ->

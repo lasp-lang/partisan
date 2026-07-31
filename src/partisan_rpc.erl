@@ -374,10 +374,6 @@ eval_everywhere(Nodes, Module, Function, Arguments) ->
     abcast.
 
 %% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
-%% -----------------------------------------------------------------------------
 %% @doc Resolves the `forward_opts()' for a call: the caller's options merged
 %% over the globally configured `forward_options'.
 %%
