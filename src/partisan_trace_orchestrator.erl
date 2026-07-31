@@ -34,33 +34,51 @@
 -define(MANAGER, partisan_pluggable_peer_service_manager).
 
 %% API
--export([start_link/0,
-         start_link/1,
-         stop/0,
-         trace/2,
-         replay/2,
-         reset/0,
-         enable/1,
-         identify/1,
-         print/0,
-         perform_preloads/1]).
+-export([
+    start_link/0,
+    start_link/1,
+    stop/0,
+    trace/2,
+    replay/2,
+    reset/0,
+    enable/1,
+    identify/1,
+    print/0,
+    perform_preloads/1
+]).
+
+%% Interposition functions installed on peer nodes. These are exported so they
+%% can be referenced as NAMED funs (`fun ?MODULE:F/1'): an interposition fun is
+%% shipped to a peer and applied there, and an ANONYMOUS fun is bound to the
+%% defining module's md5 — so it becomes `badfun' on any node whose copy of this
+%% module differs. That happens routinely when the runner is cover-compiled
+%% (`{cover_enabled, true}') while the peers load the plain beam. A named fun is
+%% resolved by name on the target node and is immune to that skew.
+-export([
+    faulted_interposition/1,
+    faulted_for_background_interposition/1
+]).
 
 %% gen_server callbacks
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
--record(state, {previous_trace=[],
-                trace=[],
-                enabled=false,
-                nodes=[],
-                replay=false,
-                shrinking=false,
-                blocked_processes=[],
-                identifier=undefined}).
+-record(state, {
+    previous_trace = [],
+    trace = [],
+    enabled = false,
+    nodes = [],
+    replay = false,
+    shrinking = false,
+    blocked_processes = [],
+    identifier = undefined
+}).
 
 %%%===================================================================
 %%% API
@@ -110,6 +128,131 @@ perform_preloads(Nodes) ->
 
     ok.
 
+%% @doc Interposition applied on a peer while that peer is `faulted', dropping
+%% the message. It is installed as a named fun, `fun ?MODULE:F/A', which the
+%% receiving node resolves by name; an anonymous fun would instead be bound to
+%% the exact module the installer loaded and would fail to apply on a node whose
+%% copy of this module differs.
+faulted_interposition({forward_message, _N, M}) ->
+    %% Default: a node with no `faulted' setting is simply not faulted.
+    %% `get/1' would raise badarg when the key was never set on this peer.
+    case partisan_config:get(faulted, false) of
+        true ->
+            case M of
+                undefined ->
+                    undefined;
+                _ ->
+                    replay_debug(
+                        "~p: faulted during forward_message of background message, message ~p should be dropped.",
+                        [partisan:node(), M]
+                    ),
+                    undefined
+            end;
+        _ ->
+            M
+    end;
+faulted_interposition({receive_message, _N, M}) ->
+    %% Default: a node with no `faulted' setting is simply not faulted.
+    %% `get/1' would raise badarg when the key was never set on this peer.
+    case partisan_config:get(faulted, false) of
+        true ->
+            case M of
+                undefined ->
+                    undefined;
+                _ ->
+                    replay_debug(
+                        "~p: faulted during receive_message of background message, message ~p should be dropped.",
+                        [partisan:node(), M]
+                    ),
+                    undefined
+            end;
+        _ ->
+            M
+    end.
+
+%% @doc Interposition applied on a peer while that peer is
+%% `faulted_for_background', dropping only messages annotated as background.
+%% The annotations are read from the peer's own `partisan_config', where the
+%% installer places them, rather than captured from the enclosing scope, which
+%% is what allows this to be a named fun.
+faulted_for_background_interposition({forward_message, _N, M}) ->
+    replay_debug("~p: interposition called for message: ~p", [
+        partisan:node(), M
+    ]),
+
+    %% Default as above: unset means "not faulted for background".
+    case partisan_config:get(faulted_for_background, false) of
+        true ->
+            case M of
+                undefined ->
+                    undefined;
+                _ ->
+                    MessageType = message_type(forward_message, M),
+
+                    case
+                        lists:member(
+                            element(2, MessageType),
+                            background_annotations_for_node()
+                        )
+                    of
+                        true ->
+                            ?LOG_INFO(
+                                "~p: faulted_for_background during forward_message of background message, message ~p should be dropped.",
+                                [partisan:node(), M]
+                            ),
+                            undefined;
+                        false ->
+                            ?LOG_INFO(
+                                "~p: faulted_for_background, but forward_message payload is not background message: ~p, message_type: ~p",
+                                [partisan:node(), M, MessageType]
+                            ),
+                            M
+                    end
+            end;
+        _ ->
+            M
+    end;
+faulted_for_background_interposition({receive_message, _N, M}) ->
+    %% Default as above: unset means "not faulted for background".
+    case partisan_config:get(faulted_for_background, false) of
+        true ->
+            case M of
+                undefined ->
+                    undefined;
+                _ ->
+                    MessageType = message_type(receive_message, M),
+
+                    case
+                        lists:member(
+                            element(2, MessageType),
+                            background_annotations_for_node()
+                        )
+                    of
+                        true ->
+                            ?LOG_INFO(
+                                "~p: faulted_for_background during receive_message of background message, message ~p should be dropped.",
+                                [partisan:node(), M]
+                            ),
+                            undefined;
+                        false ->
+                            ?LOG_INFO(
+                                "~p: faulted_for_background, but receive_message payload is not background message: ~p, message_type: ~p",
+                                [partisan:node(), M, MessageType]
+                            ),
+                            M
+                    end
+            end;
+        _ ->
+            M
+    end.
+
+%% @private Background annotations as seen by THIS node. The orchestrator ships
+%% them into each peer's partisan_config when installing the interposition,
+%% because background_annotations/0 resolves a file relative to the caller's
+%% CWD and would yield [] on a peer.
+background_annotations_for_node() ->
+    partisan_config:get(background_annotations, []).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -125,8 +268,9 @@ init([]) ->
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}} | {noreply, #state{}}.
 
-handle_call({enable, Nodes}, _From, #state{enabled=false}=State)
-when is_list(Nodes) ->
+handle_call({enable, Nodes}, _From, #state{enabled = false} = State) when
+    is_list(Nodes)
+->
     ?LOG_INFO("enabling tracing for nodes: ~p", [Nodes]),
 
     %% Add send and receive pre-interposition functions to enforce message
@@ -152,7 +296,7 @@ when is_list(Nodes) ->
     end,
 
     lists:foreach(
-        fun({_Name, Node}) when is_atom(Node)->
+        fun({_Name, Node}) when is_atom(Node) ->
             ?LOG_INFO(
                 "Installing $tracing pre-interposition function on node: ~p",
                 [Node]
@@ -168,9 +312,12 @@ when is_list(Nodes) ->
     ),
 
     %% Add send and receive post-interposition functions to perform tracing.
-    PostInterpositionFun = fun({Type, OriginNode, OriginalMessage}, {Type, OriginNode, RewrittenMessage}) ->
+    PostInterpositionFun = fun(
+        {Type, OriginNode, OriginalMessage},
+        {Type, OriginNode, RewrittenMessage}
+    ) ->
         %% Record outgoing message after transformation.
-    ?LOG_INFO("post interposition fired for message type: ~p", [Type]),
+        ?LOG_INFO("post interposition fired for message type: ~p", [Type]),
         ok = partisan_trace_orchestrator:trace(
             post_interposition_fun,
             {node(), OriginNode, Type, OriginalMessage, RewrittenMessage}
@@ -188,30 +335,43 @@ when is_list(Nodes) ->
         Nodes
     ),
 
-    {reply, ok, State#state{nodes=Nodes, enabled=true}};
-
-handle_call(Message, _From, #state{enabled=false}=State) ->
+    {reply, ok, State#state{nodes = Nodes, enabled = true}};
+handle_call(Message, _From, #state{enabled = false} = State) ->
     replay_debug("ignoring ~p as tracing is disabled.", [Message]),
     {reply, ok, State};
-
-handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0, replay=Replay, shrinking=Shrinking, blocked_processes=BlockedProcesses0}=State) ->
+handle_call(
+    {replay, Type, Message},
+    From,
+    #state{
+        previous_trace = PreviousTrace0,
+        replay = Replay,
+        shrinking = Shrinking,
+        blocked_processes = BlockedProcesses0
+    } = State
+) ->
     case Replay of
         true ->
             %% Should we enforce trace order during replay?
-            ShouldEnforce = case Type of
-                pre_interposition_fun ->
-                    %% Destructure pre-interposition trace message.
-                    {_TracingNode, InterpositionType, _OriginNode, MessagePayload} = Message,
+            ShouldEnforce =
+                case Type of
+                    pre_interposition_fun ->
+                        %% Destructure pre-interposition trace message.
+                        {_TracingNode, InterpositionType, _OriginNode,
+                            MessagePayload} = Message,
 
-                    case is_membership_strategy_message(InterpositionType, MessagePayload) of
-                        true ->
-                            membership_strategy_tracing();
-                        false ->
-                            true
-                    end;
-                _ ->
-                    true
-            end,
+                        case
+                            is_membership_strategy_message(
+                                InterpositionType, MessagePayload
+                            )
+                        of
+                            true ->
+                                membership_strategy_tracing();
+                            false ->
+                                true
+                        end;
+                    _ ->
+                        true
+                end,
 
             case ShouldEnforce of
                 false ->
@@ -219,13 +379,28 @@ handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0,
                 true ->
                     %% Find next message that should arrive based on the trace.
                     %% Can we process immediately?
-                    case can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace0, BlockedProcesses0) of
+                    case
+                        can_deliver_based_on_trace(
+                            Shrinking,
+                            {Type, Message},
+                            PreviousTrace0,
+                            BlockedProcesses0
+                        )
+                    of
                         true ->
                             %% Deliver as much as we can.
-                            {PreviousTrace, BlockedProcesses} = trace_deliver(Shrinking, {Type, Message}, PreviousTrace0, BlockedProcesses0),
+                            {PreviousTrace, BlockedProcesses} = trace_deliver(
+                                Shrinking,
+                                {Type, Message},
+                                PreviousTrace0,
+                                BlockedProcesses0
+                            ),
 
                             %% Record new trace position and new list of blocked processes.
-                            {reply, ok, State#state{blocked_processes=BlockedProcesses, previous_trace=PreviousTrace}};
+                            {reply, ok, State#state{
+                                blocked_processes = BlockedProcesses,
+                                previous_trace = PreviousTrace
+                            }};
                         false ->
                             %% If not, store message, block caller until
                             %% processed.
@@ -233,7 +408,9 @@ handle_call({replay, Type, Message}, From, #state{previous_trace=PreviousTrace0,
                                 {{Type, Message}, From} | BlockedProcesses0
                             ],
                             %% Block the process.
-                            {noreply, State#state{blocked_processes=BlockedProcesses}}
+                            {noreply, State#state{
+                                blocked_processes = BlockedProcesses
+                            }}
                     end
             end;
         false ->
@@ -245,84 +422,136 @@ handle_call(reset, _From, _State) ->
     {reply, ok, State};
 handle_call({identify, Identifier}, _From, State) ->
     replay_debug("identifying trace: ~p", [Identifier]),
-    {reply, ok, State#state{identifier=Identifier}};
-handle_call(print, _From, #state{trace=Trace}=State) ->
+    {reply, ok, State#state{identifier = Identifier}};
+handle_call(print, _From, #state{trace = Trace} = State) ->
     replay_debug("printing trace", []),
 
-    lists:foreach(fun({Type, Message}) ->
-        case Type of
-            enter_command ->
-                %% Destructure message.
-                {TracingNode, Command} = Message,
+    lists:foreach(
+        fun({Type, Message}) ->
+            case Type of
+                enter_command ->
+                    %% Destructure message.
+                    {TracingNode, Command} = Message,
 
-                %% Format trace accordingly.
-                replay_debug("~p entering command: ~p", [TracingNode, Command]);
-            exit_command ->
-                %% Destructure message.
-                {TracingNode, Command} = Message,
+                    %% Format trace accordingly.
+                    replay_debug("~p entering command: ~p", [
+                        TracingNode, Command
+                    ]);
+                exit_command ->
+                    %% Destructure message.
+                    {TracingNode, Command} = Message,
 
-                %% Format trace accordingly.
-                replay_debug("~p leaving command: ~p", [TracingNode, Command]);
-            pre_interposition_fun ->
-                %% Destructure message.
-                {_TracingNode, _InterpositionType, _OriginNode, _MessagePayload} = Message,
+                    %% Format trace accordingly.
+                    replay_debug("~p leaving command: ~p", [
+                        TracingNode, Command
+                    ]);
+                pre_interposition_fun ->
+                    %% Destructure message.
+                    {_TracingNode, _InterpositionType, _OriginNode,
+                        _MessagePayload} = Message,
 
-                %% Do nothing.
-                ok;
-            interposition_fun ->
-                %% Destructure message.
-                {TracingNode, OriginNode, InterpositionType, MessagePayload} = Message,
+                    %% Do nothing.
+                    ok;
+                interposition_fun ->
+                    %% Destructure message.
+                    {TracingNode, OriginNode, InterpositionType, MessagePayload} =
+                        Message,
 
-                %% Format trace accordingly.
-                case InterpositionType of
-                    receive_message ->
-                        % replay_debug("~p <- ~p: ~p", [TracingNode, OriginNode, MessagePayload]),
-                        ok;
-                    forward_message ->
-                        replay_debug("~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload])
-                end;
-            post_interposition_fun ->
-                %% Destructure message.
-                {TracingNode, OriginNode, InterpositionType, MessagePayload, RewrittenMessagePayload} = Message,
+                    %% Format trace accordingly.
+                    case InterpositionType of
+                        receive_message ->
+                            % replay_debug("~p <- ~p: ~p", [TracingNode, OriginNode, MessagePayload]),
+                            ok;
+                        forward_message ->
+                            replay_debug("~p => ~p: ~p", [
+                                TracingNode, OriginNode, MessagePayload
+                            ])
+                    end;
+                post_interposition_fun ->
+                    %% Destructure message.
+                    {TracingNode, OriginNode, InterpositionType, MessagePayload,
+                        RewrittenMessagePayload} = Message,
 
-                case is_membership_strategy_message(InterpositionType, MessagePayload) andalso not membership_strategy_tracing() of
-                    true ->
-                        %% Protocol message and we're not tracing protocol messages.
-                        ok;
-                    _ ->
-                        %% Otherwise, format trace accordingly.
-                        case MessagePayload =:= RewrittenMessagePayload of
-                            true ->
-                                case InterpositionType of
-                                    receive_message ->
-                                        % replay_debug("* ~p <- ~p: ~p", [TracingNode, OriginNode, MessagePayload]),
-                                        ok;
-                                    forward_message ->
-                                        replay_debug("~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload])
-                                end;
-                            false ->
-                                case RewrittenMessagePayload of
-                                    undefined ->
-                                        case InterpositionType of
-                                            receive_message ->
-                                                replay_debug("* ~p <- ~p: DROPPED ~p", [TracingNode, OriginNode, MessagePayload]);
-                                            forward_message ->
-                                                replay_debug("~p => ~p: DROPPED ~p", [TracingNode, OriginNode, MessagePayload])
-                                        end;
-                                    _ ->
-                                        case InterpositionType of
-                                            receive_message ->
-                                                replay_debug("* ~p <- ~p: REWROTE ~p to ~p", [TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload]);
-                                            forward_message ->
-                                                replay_debug("~p => ~p: REWROTE ~p to ~p", [TracingNode, OriginNode, MessagePayload, RewrittenMessagePayload])
-                                        end
-                                end
-                        end
-                end;
-            _ ->
-                replay_debug("unknown message type: ~p, message: ~p", [Type, Message])
-        end
-    end, Trace),
+                    case
+                        is_membership_strategy_message(
+                            InterpositionType, MessagePayload
+                        ) andalso not membership_strategy_tracing()
+                    of
+                        true ->
+                            %% Protocol message and we're not tracing protocol messages.
+                            ok;
+                        _ ->
+                            %% Otherwise, format trace accordingly.
+                            case MessagePayload =:= RewrittenMessagePayload of
+                                true ->
+                                    case InterpositionType of
+                                        receive_message ->
+                                            % replay_debug("* ~p <- ~p: ~p", [TracingNode, OriginNode, MessagePayload]),
+                                            ok;
+                                        forward_message ->
+                                            replay_debug("~p => ~p: ~p", [
+                                                TracingNode,
+                                                OriginNode,
+                                                MessagePayload
+                                            ])
+                                    end;
+                                false ->
+                                    case RewrittenMessagePayload of
+                                        undefined ->
+                                            case InterpositionType of
+                                                receive_message ->
+                                                    replay_debug(
+                                                        "* ~p <- ~p: DROPPED ~p",
+                                                        [
+                                                            TracingNode,
+                                                            OriginNode,
+                                                            MessagePayload
+                                                        ]
+                                                    );
+                                                forward_message ->
+                                                    replay_debug(
+                                                        "~p => ~p: DROPPED ~p",
+                                                        [
+                                                            TracingNode,
+                                                            OriginNode,
+                                                            MessagePayload
+                                                        ]
+                                                    )
+                                            end;
+                                        _ ->
+                                            case InterpositionType of
+                                                receive_message ->
+                                                    replay_debug(
+                                                        "* ~p <- ~p: REWROTE ~p to ~p",
+                                                        [
+                                                            TracingNode,
+                                                            OriginNode,
+                                                            MessagePayload,
+                                                            RewrittenMessagePayload
+                                                        ]
+                                                    );
+                                                forward_message ->
+                                                    replay_debug(
+                                                        "~p => ~p: REWROTE ~p to ~p",
+                                                        [
+                                                            TracingNode,
+                                                            OriginNode,
+                                                            MessagePayload,
+                                                            RewrittenMessagePayload
+                                                        ]
+                                                    )
+                                            end
+                                    end
+                            end
+                    end;
+                _ ->
+                    replay_debug("unknown message type: ~p, message: ~p", [
+                        Type, Message
+                    ])
+            end
+        end,
+        Trace
+    ),
 
     write_trace(Trace),
 
@@ -333,8 +562,8 @@ handle_call(Msg, _From, State) ->
 
 %% @private
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
-handle_cast({trace, Type, Message}, #state{trace=Trace0}=State) ->
-    {noreply, State#state{trace=Trace0++[{Type, Message}]}};
+handle_cast({trace, Type, Message}, #state{trace = Trace0} = State) ->
+    {noreply, State#state{trace = Trace0 ++ [{Type, Message}]}};
 handle_cast(Msg, State) ->
     replay_debug("Unhandled cast messages: ~p", [Msg]),
     {noreply, State}.
@@ -347,16 +576,26 @@ handle_info(Msg, State) ->
 
 %% @private
 -spec terminate(term(), #state{}) -> term().
-terminate(_Reason, #state{nodes=Nodes}) ->
-    lists:foreach(fun({_Name, Node}) ->
-        replay_debug("removing tracing pre-interposition on node: ~p", [Node]),
-        rpc:call(Node, ?MANAGER, remove_pre_interposition_fun, ['$tracing'])
-    end, Nodes),
+terminate(_Reason, #state{nodes = Nodes}) ->
+    lists:foreach(
+        fun({_Name, Node}) ->
+            replay_debug("removing tracing pre-interposition on node: ~p", [
+                Node
+            ]),
+            rpc:call(Node, ?MANAGER, remove_pre_interposition_fun, ['$tracing'])
+        end,
+        Nodes
+    ),
 
-    lists:foreach(fun({_Name, Node}) ->
-        replay_debug("removing tracing post-interposition on node: ~p", [Node]),
-        rpc:call(Node, ?MANAGER, remove_post_interposition_fun, ['$tracing'])
-    end, Nodes),
+    lists:foreach(
+        fun({_Name, Node}) ->
+            replay_debug("removing tracing post-interposition on node: ~p", [
+                Node
+            ]),
+            rpc:call(Node, ?MANAGER, remove_post_interposition_fun, ['$tracing'])
+        end,
+        Nodes
+    ),
 
     ok.
 
@@ -373,36 +612,51 @@ code_change(_OldVsn, State, _Extra) ->
 -spec can_deliver_based_on_trace(term(), term(), term(), [term()]) ->
     true | false.
 
-can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace, BlockedProcesses)  ->
-    replay_debug("determining if message ~p: ~p can be delivered.", [Type, Message]),
+can_deliver_based_on_trace(
+    Shrinking, {Type, Message}, PreviousTrace, BlockedProcesses
+) ->
+    replay_debug("determining if message ~p: ~p can be delivered.", [
+        Type, Message
+    ]),
 
     case PreviousTrace of
         [{NextType, NextMessage} | _] ->
             replay_debug("waiting for message ~p: ~p ", [NextType, NextMessage]),
 
-            CanDeliver = case {NextType, NextMessage} of
-                {Type, Message} ->
-                    replay_debug("=> YES!", []),
-                    true;
-                _ ->
-                    %% But, does the message actually exist in the trace?
-                    case lists:member({Type, Message}, PreviousTrace) of
-                        true ->
-                            replay_debug("=> NO, waiting for message: ~p: ~p", [NextType, NextMessage]),
-                            false;
-                        false ->
-                            %% new messages in the middle of the trace.
-                            %% this *should* be the common case if we shrink from the start of the trace forward (foldl)
-                            case Shrinking of
-                                true ->
-                                    replay_debug("=> CONDITIONAL YES, message doesn't exist in previous trace, but shrinking: ~p ~p", [Type, Message]),
-                                    true;
-                                false ->
-                                    replay_debug("=> NO, waiting for message: ~p: ~p", [NextType, NextMessage]),
-                                    false
-                            end
-                    end
-            end,
+            CanDeliver =
+                case {NextType, NextMessage} of
+                    {Type, Message} ->
+                        replay_debug("=> YES!", []),
+                        true;
+                    _ ->
+                        %% But, does the message actually exist in the trace?
+                        case lists:member({Type, Message}, PreviousTrace) of
+                            true ->
+                                replay_debug(
+                                    "=> NO, waiting for message: ~p: ~p", [
+                                        NextType, NextMessage
+                                    ]
+                                ),
+                                false;
+                            false ->
+                                %% new messages in the middle of the trace.
+                                %% this *should* be the common case if we shrink from the start of the trace forward (foldl)
+                                case Shrinking of
+                                    true ->
+                                        replay_debug(
+                                            "=> CONDITIONAL YES, message doesn't exist in previous trace, but shrinking: ~p ~p",
+                                            [Type, Message]
+                                        ),
+                                        true;
+                                    false ->
+                                        replay_debug(
+                                            "=> NO, waiting for message: ~p: ~p",
+                                            [NextType, NextMessage]
+                                        ),
+                                        false
+                                end
+                        end
+                end,
 
             replay_debug("can deliver: ~p", [CanDeliver]),
             replay_debug("blocked processes: ~p", [length(BlockedProcesses)]),
@@ -413,27 +667,39 @@ can_deliver_based_on_trace(Shrinking, {Type, Message}, PreviousTrace, BlockedPro
             %% this *should* be the common case if we shrink from the back of the trace forward (foldr)
             case Shrinking of
                 true ->
-                    replay_debug("=> CONDITIONAL YES, message doesn't exist in previous trace, but shrinking: ~p ~p", [Type, Message]),
+                    replay_debug(
+                        "=> CONDITIONAL YES, message doesn't exist in previous trace, but shrinking: ~p ~p",
+                        [Type, Message]
+                    ),
                     true;
                 false ->
-                    replay_debug("=> message should not have been delivered, blocking.", []),
+                    replay_debug(
+                        "=> message should not have been delivered, blocking.",
+                        []
+                    ),
                     false
             end
     end.
 
 %% @private
-trace_deliver(Shrinking, {Type, Message}, [{Type, Message} | Trace], BlockedProcesses) ->
+trace_deliver(
+    Shrinking, {Type, Message}, [{Type, Message} | Trace], BlockedProcesses
+) ->
     replay_debug("delivering single message!", []),
 
     %% Advance the trace, then try to flush the blocked processes.
     trace_deliver_log_flush(Shrinking, Trace, BlockedProcesses);
-trace_deliver(_Shrinking, {_, _}, [{_, _} = NextMessage | Trace], BlockedProcesses) ->
+trace_deliver(
+    _Shrinking, {_, _}, [{_, _} = NextMessage | Trace], BlockedProcesses
+) ->
     replay_debug("delivering single message (not in the trace)!", []),
 
     %% Advance the trace, don't flush blocked processes, since we weren't in the trace, nothing is blocked.
-    {[NextMessage|Trace], BlockedProcesses};
+    {[NextMessage | Trace], BlockedProcesses};
 trace_deliver(_Shrinking, {_, _}, [], BlockedProcesses) ->
-    replay_debug("delivering single message (not in the trace -- end of trace)!", []),
+    replay_debug(
+        "delivering single message (not in the trace -- end of trace)!", []
+    ),
 
     %% No trace to advance.
     {[], BlockedProcesses}.
@@ -443,30 +709,50 @@ trace_deliver_log_flush(Shrinking, Trace0, BlockedProcesses0) ->
     replay_debug("attempting to flush blocked messages!", []),
 
     %% Iterate blocked processes in an attempt to remove one.
-    {ND, T, BP} = lists:foldl(fun({{NextType, NextMessage}, Pid} = BP, {NumDelivered1, Trace1, BlockedProcesses1}) ->
-        case can_deliver_based_on_trace(Shrinking, {NextType, NextMessage}, Trace1, BlockedProcesses0) of
-            true ->
-                replay_debug("message ~p ~p can be unblocked!", [NextType, NextMessage]),
+    {ND, T, BP} = lists:foldl(
+        fun(
+            {{NextType, NextMessage}, Pid} = BP,
+            {NumDelivered1, Trace1, BlockedProcesses1}
+        ) ->
+            case
+                can_deliver_based_on_trace(
+                    Shrinking,
+                    {NextType, NextMessage},
+                    Trace1,
+                    BlockedProcesses0
+                )
+            of
+                true ->
+                    replay_debug("message ~p ~p can be unblocked!", [
+                        NextType, NextMessage
+                    ]),
 
-                %% Advance the trace.
-                [{_, _} | RestOfTrace] = Trace1,
+                    %% Advance the trace.
+                    [{_, _} | RestOfTrace] = Trace1,
 
-                %% Advance the count of delivered messages.
-                NewNumDelivered = NumDelivered1 + 1,
+                    %% Advance the count of delivered messages.
+                    NewNumDelivered = NumDelivered1 + 1,
 
-                %% Unblock the process.
-                gen_server:reply(Pid, ok),
+                    %% Unblock the process.
+                    gen_server:reply(Pid, ok),
 
-                %% Remove from the blocked processes list.
-                NewBlockedProcesses = BlockedProcesses1 -- [BP],
+                    %% Remove from the blocked processes list.
+                    NewBlockedProcesses = BlockedProcesses1 -- [BP],
 
-                {NewNumDelivered, RestOfTrace, NewBlockedProcesses};
-            false ->
-                replay_debug("pid ~p CANNOT be unblocked yet, unmet dependencies!", [Pid]),
+                    {NewNumDelivered, RestOfTrace, NewBlockedProcesses};
+                false ->
+                    replay_debug(
+                        "pid ~p CANNOT be unblocked yet, unmet dependencies!", [
+                            Pid
+                        ]
+                    ),
 
-                {NumDelivered1, Trace1, BlockedProcesses1}
-        end
-    end, {0, Trace0, BlockedProcesses0}, BlockedProcesses0),
+                    {NumDelivered1, Trace1, BlockedProcesses1}
+            end
+        end,
+        {0, Trace0, BlockedProcesses0},
+        BlockedProcesses0
+    ),
 
     %% Did we deliver something? If so, try again.
     case ND > 0 of
@@ -518,7 +804,12 @@ initialize_state() ->
         false ->
             %% This is not a replay, so store the current trace.
             replay_debug("recording trace to file.", []),
-            #state{enabled=false, trace=[], blocked_processes=[], identifier=undefined};
+            #state{
+                enabled = false,
+                trace = [],
+                blocked_processes = [],
+                identifier = undefined
+            };
         _ ->
             %% Mark that we are in replay mode.
             partisan_config:set(replaying, true),
@@ -533,44 +824,61 @@ initialize_state() ->
 
             replay_debug("trace loaded.", []),
 
-            Shrinking = case os:getenv("SHRINKING") of
-                false ->
-                    false;
-                _ ->
-                    %% Mark that we are in shrinking mode.
-                    partisan_config:set(shrinking, true),
+            Shrinking =
+                case os:getenv("SHRINKING") of
+                    false ->
+                        false;
+                    _ ->
+                        %% Mark that we are in shrinking mode.
+                        partisan_config:set(shrinking, true),
 
-                    true
-            end,
+                        true
+                end,
 
-            #state{enabled=false, trace=[], previous_trace=Lines, replay=true, shrinking=Shrinking, blocked_processes=[], identifier=undefined}
+            #state{
+                enabled = false,
+                trace = [],
+                previous_trace = Lines,
+                replay = true,
+                shrinking = Shrinking,
+                blocked_processes = [],
+                identifier = undefined
+            }
     end.
 
 %% @private
 write_trace(Trace) ->
     %% Write trace.
-    FilteredTrace = lists:filter(fun({Type, Message}) ->
-        case Type of
-            pre_interposition_fun ->
-                %% Trace all entry points if protocol message, unless tracing enabled.
-                {_TracingNode, InterpositionType, _OriginNode, MessagePayload} = Message,
+    FilteredTrace = lists:filter(
+        fun({Type, Message}) ->
+            case Type of
+                pre_interposition_fun ->
+                    %% Trace all entry points if protocol message, unless tracing enabled.
+                    {_TracingNode, InterpositionType, _OriginNode,
+                        MessagePayload} = Message,
 
-                case is_membership_strategy_message(InterpositionType, MessagePayload) of
-                    true ->
-                        %% Trace protocol messages only if protocol tracing is enabled.
-                        membership_strategy_tracing();
-                    false ->
-                        %% Always trace non-protocol messages.
-                        true
-                end;
-            enter_command ->
-                true;
-            exit_command ->
-                true;
-            _ ->
-                false
-        end
-    end, Trace),
+                    case
+                        is_membership_strategy_message(
+                            InterpositionType, MessagePayload
+                        )
+                    of
+                        true ->
+                            %% Trace protocol messages only if protocol tracing is enabled.
+                            membership_strategy_tracing();
+                        false ->
+                            %% Always trace non-protocol messages.
+                            true
+                    end;
+                enter_command ->
+                    true;
+                exit_command ->
+                    true;
+                _ ->
+                    false
+            end
+        end,
+        Trace
+    ),
 
     %% Write the trace file out.
     TraceFile = trace_file(),
@@ -580,7 +888,10 @@ write_trace(Trace) ->
 
 %% Should we do replay debugging?
 replay_debug(Line, Args) ->
-    case partisan_config:get(replay_debug) of
+    %% Default: replay debugging off. This runs on PEER nodes too (via the
+    %% interposition funs), where the key is typically never set — `get/1'
+    %% would raise badarg and take the peer's peer-service manager down.
+    case partisan_config:get(replay_debug, false) of
         true ->
             ?LOG_INFO("~p: " ++ Line, [?MODULE] ++ Args);
         _ ->
@@ -592,7 +903,9 @@ debug(Line, Args) ->
 
 %% @private
 membership_strategy_tracing() ->
-    partisan_config:get(membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING).
+    partisan_config:get(
+        membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING
+    ).
 
 %% @private
 preload_omissions(Nodes) ->
@@ -606,53 +919,109 @@ preload_omissions(Nodes) ->
             {ok, Omissions} = partisan_trace_file:read(PreloadOmissionFile),
 
             %% Preload each omission at the correct node.
-            lists:foldl(fun({T, Message}, OmissionNodes0) ->
-                case T of
-                    pre_interposition_fun ->
-                        {TracingNode, forward_message, OriginNode, MessagePayload} = Message,
+            lists:foldl(
+                fun({T, Message}, OmissionNodes0) ->
+                    case T of
+                        pre_interposition_fun ->
+                            {TracingNode, forward_message, OriginNode,
+                                MessagePayload} = Message,
 
-                        replay_debug("enabling preload omission for ~p => ~p: ~p", [TracingNode, OriginNode, MessagePayload]) ,
+                            replay_debug(
+                                "enabling preload omission for ~p => ~p: ~p", [
+                                    TracingNode, OriginNode, MessagePayload
+                                ]
+                            ),
 
-                        InterpositionFun = fun
-                            ({forward_message, N, M}) ->
-                                case N of
-                                    OriginNode ->
-                                        case M of
-                                            MessagePayload ->
-                                                ?LOG_INFO("~p: dropping packet from ~p to ~p due to preload interposition.", [partisan:node(), TracingNode, OriginNode]),
+                            InterpositionFun = fun
+                                ({forward_message, N, M}) ->
+                                    case N of
+                                        OriginNode ->
+                                            case M of
+                                                MessagePayload ->
+                                                    ?LOG_INFO(
+                                                        "~p: dropping packet from ~p to ~p due to preload interposition.",
+                                                        [
+                                                            partisan:node(),
+                                                            TracingNode,
+                                                            OriginNode
+                                                        ]
+                                                    ),
 
-                                                case partisan_config:get(fauled_for_background) of
-                                                    true ->
-                                                        ok;
-                                                    _ ->
-                                                        ?LOG_INFO("~p: setting node ~p to faulted due to preload interposition hit on message: ~p", [partisan:node(), TracingNode, Message]),
-                                                        partisan_config:set(fauled_for_background, true)
-                                                end,
+                                                    case
+                                                        partisan_config:get(
+                                                            fauled_for_background
+                                                        )
+                                                    of
+                                                        true ->
+                                                            ok;
+                                                        _ ->
+                                                            ?LOG_INFO(
+                                                                "~p: setting node ~p to faulted due to preload interposition hit on message: ~p",
+                                                                [
+                                                                    partisan:node(),
+                                                                    TracingNode,
+                                                                    Message
+                                                                ]
+                                                            ),
+                                                            partisan_config:set(
+                                                                fauled_for_background,
+                                                                true
+                                                            )
+                                                    end,
 
-                                                undefined;
-                                            Other ->
-                                                ?LOG_INFO("~p: allowing message, doesn't match interposition payload while node matches", [partisan:node()]),
-                                                ?LOG_INFO("~p: => expecting: ~p", [partisan:node(), MessagePayload]),
-                                                ?LOG_INFO("~p: => got: ~p", [partisan:node(), Other]),
-                                                M
-                                        end;
-                                    OtherNode ->
-                                        ?LOG_INFO("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [partisan:node(), TracingNode, OtherNode]),
-                                        M
-                                end;
-                            ({receive_message, _N, M}) ->
-                                M
-                        end,
+                                                    undefined;
+                                                Other ->
+                                                    ?LOG_INFO(
+                                                        "~p: allowing message, doesn't match interposition payload while node matches",
+                                                        [partisan:node()]
+                                                    ),
+                                                    ?LOG_INFO(
+                                                        "~p: => expecting: ~p",
+                                                        [
+                                                            partisan:node(),
+                                                            MessagePayload
+                                                        ]
+                                                    ),
+                                                    ?LOG_INFO(
+                                                        "~p: => got: ~p", [
+                                                            partisan:node(),
+                                                            Other
+                                                        ]
+                                                    ),
+                                                    M
+                                            end;
+                                        OtherNode ->
+                                            ?LOG_INFO(
+                                                "~p: allowing message, doesn't match interposition as destination is ~p and not ~p",
+                                                [
+                                                    partisan:node(),
+                                                    TracingNode,
+                                                    OtherNode
+                                                ]
+                                            ),
+                                            M
+                                    end;
+                                ({receive_message, _N, M}) ->
+                                    M
+                            end,
 
-                        %% Install function.
-                        ok = rpc:call(TracingNode, ?MANAGER, add_interposition_fun, [{send_omission, OriginNode, Message}, InterpositionFun]),
+                            %% Install function.
+                            ok = rpc:call(
+                                TracingNode, ?MANAGER, add_interposition_fun, [
+                                    {send_omission, OriginNode, Message},
+                                    InterpositionFun
+                                ]
+                            ),
 
-                        lists:usort(OmissionNodes0 ++ [TracingNode]);
-                    Other ->
-                        replay_debug("unknown preload: ~p", [Other]),
-                        OmissionNodes0
-                end
-            end, [], Omissions)
+                            lists:usort(OmissionNodes0 ++ [TracingNode]);
+                        Other ->
+                            replay_debug("unknown preload: ~p", [Other]),
+                            OmissionNodes0
+                    end
+                end,
+                [],
+                Omissions
+            )
     end,
 
     %% Load background annotations.
@@ -660,127 +1029,81 @@ preload_omissions(Nodes) ->
     debug("background annotations are: ~p", [BackgroundAnnotations]),
 
     %% Install faulted tracing interposition function.
-    lists:foreach(fun({_, Node}) ->
-        InterpositionFun = fun({forward_message, _N, M}) ->
-            case partisan_config:get(faulted) of
-                true ->
-                    case M of
-                        undefined ->
-                            undefined;
-                        _ ->
-                            replay_debug("~p: faulted during forward_message of background message, message ~p should be dropped.", [partisan:node(), M]),
-                            undefined
-                    end;
-                _ ->
-                    M
-            end;
-            ({receive_message, _N, M}) ->
-                case partisan_config:get(faulted) of
-                    true ->
-                        case M of
-                            undefined ->
-                                undefined;
-                            _ ->
-                                replay_debug("~p: faulted during receive_message of background message, message ~p should be dropped.", [partisan:node(), M]),
-                                undefined
-                        end;
-                    _ ->
-                        M
-                end
+    lists:foreach(
+        fun({_, Node}) ->
+            %% A named fun, for the reason given at faulted_interposition/1.
+            replay_debug("installing faulted pre-interposition for node: ~p", [
+                Node
+            ]),
+            ok = rpc:call(Node, ?MANAGER, add_interposition_fun, [
+                {faulted, Node}, fun ?MODULE:faulted_interposition/1
+            ])
         end,
-
-        %% Install function.
-        replay_debug("installing faulted pre-interposition for node: ~p", [Node]),
-        ok = rpc:call(Node, ?MANAGER, add_interposition_fun, [{faulted, Node}, InterpositionFun])
-    end, Nodes),
+        Nodes
+    ),
 
     %% Install faulted_for_background tracing interposition function.
-    lists:foreach(fun({_, Node}) ->
-        InterpositionFun = fun({forward_message, _N, M}) ->
-            replay_debug("~p: interposition called for message: ~p", [partisan:node(), M]),
+    lists:foreach(
+        fun({_, Node}) ->
+            %% The annotations are computed on this node, since
+            %% background_annotations/0 reads a file relative to the current
+            %% working directory. They are placed in the peer's partisan_config
+            %% rather than captured, so that the interposition can be a named
+            %% fun; see faulted_for_background_interposition/1.
+            ok = rpc:call(Node, partisan_config, set, [
+                background_annotations, BackgroundAnnotations
+            ]),
 
-            case partisan_config:get(faulted_for_background) of
-                true ->
-                    case M of
-                        undefined ->
-                            undefined;
-                        _ ->
-                            MessageType = message_type(forward_message, M),
-
-                            case lists:member(element(2, MessageType), BackgroundAnnotations) of
-                                true ->
-                                    ?LOG_INFO("~p: faulted_for_background during forward_message of background message, message ~p should be dropped.", [partisan:node(), M]),
-                                    undefined;
-                                false ->
-                                    ?LOG_INFO("~p: faulted_for_background, but forward_message payload is not background message: ~p, message_type: ~p", [partisan:node(), M, MessageType]),
-                                    M
-                            end
-                    end;
-                _ ->
-                    M
-            end;
-            ({receive_message, _N, M}) ->
-                case partisan_config:get(faulted_for_background) of
-                    true ->
-                        case M of
-                            undefined ->
-                                undefined;
-                            _ ->
-                                MessageType = message_type(receive_message, M),
-
-                                case lists:member(element(2, MessageType), BackgroundAnnotations) of
-                                    true ->
-                                        ?LOG_INFO("~p: faulted_for_background during receive_message of background message, message ~p should be dropped.", [partisan:node(), M]),
-                                        undefined;
-                                    false ->
-                                        ?LOG_INFO("~p: faulted_for_background, but receive_message payload is not background message: ~p, message_type: ~p", [partisan:node(), M, MessageType]),
-                                        M
-                                end
-                        end;
-                    _ ->
-                        M
-                end
+            %% Install function.
+            replay_debug(
+                "installing faulted_for_background pre-interposition for node: ~p",
+                [Node]
+            ),
+            ok = rpc:call(Node, ?MANAGER, add_interposition_fun, [
+                {faulted_for_background, Node},
+                fun ?MODULE:faulted_for_background_interposition/1
+            ])
         end,
-
-        %% Install function.
-        replay_debug("installing faulted_for_background pre-interposition for node: ~p", [Node]),
-        ok = rpc:call(Node, ?MANAGER, add_interposition_fun, [{faulted_for_background, Node}, InterpositionFun])
-    end, Nodes),
+        Nodes
+    ),
 
     ok.
 
 %% @private
 message_type(InterpositionType, MessagePayload) ->
-    ?LOG_INFO("interposition_type: ~p, payload: ~p", [InterpositionType, MessagePayload]),
+    ?LOG_INFO("interposition_type: ~p, payload: ~p", [
+        InterpositionType, MessagePayload
+    ]),
 
     case InterpositionType of
         forward_message ->
             MessageType1 = element(1, MessagePayload),
 
-            ActualType = case MessageType1 of
-                '$gen_cast' ->
-                    CastMessage = element(2, MessagePayload),
-                    element(1, CastMessage);
-                _ ->
-                    MessageType1
-            end,
+            ActualType =
+                case MessageType1 of
+                    '$gen_cast' ->
+                        CastMessage = element(2, MessagePayload),
+                        element(1, CastMessage);
+                    _ ->
+                        MessageType1
+                end,
 
             {forward_message, ActualType};
         receive_message ->
             {forward_message, _Module, Payload} = MessagePayload,
             MessageType1 = element(1, Payload),
 
-            ActualType = case MessageType1 of
-                '$gen_cast' ->
-                    CastMessage = element(2, Payload),
-                    element(1, CastMessage);
-                _ ->
-                    MessageType1
-            end,
+            ActualType =
+                case MessageType1 of
+                    '$gen_cast' ->
+                        CastMessage = element(2, Payload),
+                        element(1, CastMessage);
+                    _ ->
+                        MessageType1
+                end,
 
             {receive_message, ActualType}
     end.
-
 
 %% @private
 background_annotations() ->
@@ -791,7 +1114,6 @@ background_annotations() ->
 background_annotations(false) ->
     debug("IMPLEMENTATION_MODULE env var undefined", []),
     [];
-
 background_annotations(ModuleString) ->
     %% Open the annotations file.
     AnnotationsFile = "./annotations/partisan-annotations-" ++ ModuleString,
@@ -800,7 +1122,6 @@ background_annotations(ModuleString) ->
         false ->
             debug("Annotations file doesn't exist: ~p~n", [AnnotationsFile]),
             [];
-
         true ->
             {ok, [RawAnnotations]} = file:consult(AnnotationsFile),
             % debug("Raw annotations loaded: ~p~n", [RawAnnotations]),
@@ -838,19 +1159,18 @@ background_annotations(ModuleString) ->
 %% TODO: Change "protocol" tracing to "membership strategy" tracing.
 
 %% Pre-interposition examples.
-is_membership_strategy_message(receive_message, {_, _, {membership_strategy, _}}) ->
+is_membership_strategy_message(
+    receive_message, {_, _, {membership_strategy, _}}
+) ->
     true;
-
 is_membership_strategy_message(forward_message, {membership_strategy, _}) ->
     true;
-
 %% Post-interposition examples.
-is_membership_strategy_message(forward_message, {_, _, {membership_strategy, _}}) ->
+is_membership_strategy_message(
+    forward_message, {_, _, {membership_strategy, _}}
+) ->
     true;
-
 is_membership_strategy_message(receive_message, {membership_strategy, _}) ->
     true;
-
 is_membership_strategy_message(_Type, _Message) ->
     false.
-

@@ -1,0 +1,27 @@
+# Keeps the build context small. The suites need src/, include/, test/, priv/,
+# otp_src/, config/, protocols/, rebar.* and the Makefile, so none of those may
+# be excluded here.
+#
+# protocols/ in particular: the `test' profile compiles it through
+# {extra_src_dirs, ["protocols", "test/otp"]}, and it holds the gossip and
+# consensus backends, among them the one the property suites broadcast through.
+# Excluding it yields an image in which those modules do not exist, and the
+# suites that call them fail as undefined.
+_build/
+deps/
+doc/
+.git/
+.github/
+_notes/
+.claude/
+old-bin/
+analysis/
+annotations/
+*.dump
+*.crashdump
+erl_crash.dump
+TEST-*.xml
+results.csv
+*.beam
+.DS_Store
+test/fly/.env

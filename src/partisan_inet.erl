@@ -31,17 +31,15 @@
 -define(CHECK_MSECS, timer:seconds(2)).
 
 -record(state, {
-    atomics_ref             ::  atomics:atomics_ref(),
-    pids = #{}              ::  #{pid() := reference()}
+    atomics_ref :: atomics:atomics_ref(),
+    pids = #{} :: #{pid() := reference()}
 }).
-
 
 %% API
 -export([monitor/1]).
 -export([net_status/0]).
 -export([net_status/1]).
 -export([start_link/0]).
-
 
 %% gen_server callbacks
 -export([code_change/3]).
@@ -53,11 +51,9 @@
 
 -compile({no_auto_import, [monitor/1]}).
 
-
 %% =============================================================================
 %% API
 %% =============================================================================
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -65,8 +61,6 @@
 %% -----------------------------------------------------------------------------
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns `connected' if the host has at least one non-loopback network
@@ -83,7 +77,6 @@ net_status() ->
             status_name(atomics:get(Ref, 1))
     end.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Returns `connected' if the host has at least one non-loopback network
 %% interface address. Otherwise returns `disconnected'.
@@ -93,11 +86,8 @@ net_status() ->
 
 net_status([nocache]) ->
     status_name(check_net_status());
-
 net_status(_) ->
     net_status().
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -107,17 +97,12 @@ net_status(_) ->
 
 monitor(true) ->
     gen_server:call(?MODULE, monitor);
-
 monitor(false) ->
     gen_server:call(?MODULE, demonitor).
-
-
 
 %% =============================================================================
 %% GEN_SERVER CALLBACKS
 %% =============================================================================
-
-
 
 init([]) ->
     Ref = atomics:new(1, [{signed, false}]),
@@ -129,42 +114,39 @@ init([]) ->
 
 handle_call(monitor, {Pid, _Tag}, State0) ->
     Pids0 = State0#state.pids,
-    State = case maps:find(Pid, Pids0) of
-        {ok, _} ->
-            %% Already monitoring
-            State0;
-        error ->
-            Ref = partisan:monitor(process, Pid),
-            Pids = maps:put(Pid, Ref, Pids0),
-            State0#state{pids = Pids}
-    end,
+    State =
+        case maps:find(Pid, Pids0) of
+            {ok, _} ->
+                %% Already monitoring
+                State0;
+            error ->
+                Ref = partisan:monitor(process, Pid),
+                Pids = maps:put(Pid, Ref, Pids0),
+                State0#state{pids = Pids}
+        end,
     {reply, ok, State};
-
 handle_call(demonitor, {Pid, _Tag}, State0) ->
     Pids0 = State0#state.pids,
-    State = case maps:find(Pid, Pids0) of
-        {ok, _} ->
-            Pids = maps:remove(Pid, Pids0),
-            State0#state{pids = Pids};
-        error ->
-            State0
-    end,
+    State =
+        case maps:find(Pid, Pids0) of
+            {ok, _} ->
+                Pids = maps:remove(Pid, Pids0),
+                State0#state{pids = Pids};
+            error ->
+                State0
+        end,
     {reply, ok, State};
-
 handle_call(_, _From, State) ->
     {reply, {error, unknown}, State}.
 
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
-
 
 handle_info({'DOWN', _Ref, process, Pid, _Reason}, State0) ->
     Pids0 = State0#state.pids,
     Pids = maps:remove(Pid, Pids0),
     State = State0#state{pids = Pids},
     {noreply, State};
-
 handle_info(check, State) ->
     Status = check_net_status(),
     case atomics:exchange(State#state.atomics_ref, 1, Status) of
@@ -180,45 +162,35 @@ handle_info(check, State) ->
     end,
     ok = schedule_check(),
     {noreply, State, hibernate};
-
 handle_info(_Msg, State) ->
     {noreply, State}.
-
 
 terminate(_Reason, _State) ->
     ok.
 
-
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-
-
-
-
 
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
 
-
-
-
 %% @private
 status_name(0) -> disconnected;
 status_name(1) -> connected.
-
 
 %% @private
 check_net_status() ->
     {ok, L} = net:getifaddrs(
         fun
-            (#{addr  := #{family := Family}, flags := Flags})
-            when Family == inet ->
-            % when Family == inet orelse Family == inet6 ->
-			    not lists:member(loopback, Flags);
+            (#{addr := #{family := Family}, flags := Flags}) when
+                Family == inet
+            ->
+                % when Family == inet orelse Family == inet6 ->
+                not lists:member(loopback, Flags);
             (_) ->
                 false
-            end
+        end
     ),
 
     case L == [] of
@@ -226,12 +198,10 @@ check_net_status() ->
         false -> 1
     end.
 
-
 %% @private
 schedule_check() ->
     _ = erlang:send_after(?CHECK_MSECS, self(), check),
     ok.
-
 
 %% @private
 notify(Status, State) ->

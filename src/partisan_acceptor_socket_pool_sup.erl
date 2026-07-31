@@ -31,24 +31,16 @@
 %% Supervisor Callbacks
 -export([init/1]).
 
-
-
 %% =============================================================================
 %% API
 %% =============================================================================
 
-
-
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
-
-
 
 %% =============================================================================
 %% SUPERVISOR CALLBACKS
 %% =============================================================================
-
-
 
 init([]) ->
     Flags = #{strategy => rest_for_one},
@@ -60,18 +52,13 @@ init([]) ->
         listen_addrs => ListenAddrs
     }),
 
-    Sockets = [
-        socket(ListenAddr) || ListenAddr <- ListenAddrs
-    ],
+    Sockets = [socket(ListenAddr) || ListenAddr <- ListenAddrs],
 
     {ok, {Flags, lists:flatten([Pool, Sockets])}}.
-
-
 
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
-
 
 %% @private
 socket(#{ip := IP, port := Port}) ->

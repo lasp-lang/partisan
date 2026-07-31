@@ -23,22 +23,23 @@
 -export([accept/5]).
 
 -callback acceptor_continue({ok, Sock} | {error, Reason}, Parent, Misc) ->
-    no_return() when
-      Sock :: gen_tcp:socket(),
-      Reason :: timeout | closed | system_limit | inet:posix(),
-      Parent :: pid(),
-      Misc :: term().
+    no_return()
+when
+    Sock :: gen_tcp:socket(),
+    Reason :: timeout | closed | system_limit | inet:posix(),
+    Parent :: pid(),
+    Misc :: term().
 
 -callback acceptor_terminate(Reason, Parent, Misc) -> no_return() when
-      Reason :: term(),
-      Parent :: pid(),
-      Misc :: term().
+    Reason :: term(),
+    Parent :: pid(),
+    Misc :: term().
 
 -spec accept(LSock, Timeout, Parent, Mod, Misc) -> no_return() when
-      LSock :: gen_tcp:socket(),
-      Timeout :: timeout(),
-      Parent :: pid(),
-      Mod :: module(),
-      Misc :: term().
+    LSock :: gen_tcp:socket(),
+    Timeout :: timeout(),
+    Parent :: pid(),
+    Mod :: module(),
+    Misc :: term().
 accept(LSock, Timeout, Parent, Mod, Misc) ->
     Mod:acceptor_continue(gen_tcp:accept(LSock, Timeout), Parent, Misc).

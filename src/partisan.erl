@@ -20,76 +20,164 @@
 %%
 %% -------------------------------------------------------------------
 
-%% -----------------------------------------------------------------------------
-%% @doc This module implements the Partisan API.
-%% Some of the functions in this module are the Partisan counterparts of a
-%% subset of the functions found in the {@link erlang} and {@link net_kernel}
-%% modules.
-%%
-%% -----------------------------------------------------------------------------
 -module(partisan).
 
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
 
--type any_pid()             ::  remote_pid() | pid().
--type any_reference()       ::  remote_reference() | reference().
--type any_name()            ::  remote_name() | atom().
--type remote_pid()          ::  partisan_remote_ref:p().
--type remote_reference()    ::  partisan_remote_ref:r().
--type remote_name()         ::  partisan_remote_ref:n().
+-moduledoc """
+The primary Partisan API: process operations, messaging, monitoring and cluster
+membership over Partisan's overlay network.
 
--type monitor_opt()         ::  erlang:monitor_option()
-                                | {channel, channel()}.
--type demonitor_opt()       ::  flush | info.
--type net_kernel_opt()      ::  nodedown_reason
-                                | connection_id % OTP 25
-                                | {node_type, visible | hidden | all}.
--type channel_opt()         ::   net_kernel_opt()
-                                | {channel, channel()}
-                                | {channel_fallback, boolean()}.
--type monitor_nodes_opt()   ::   net_kernel_opt()
-                                | channel_opt().
--type send_dst()            ::  erlang:send_destination()
-                                | server_ref().
+Partisan replaces Erlang's built-in distribution (disterl) with a configurable
+overlay of TCP connections organised into **channels**. Many functions here are
+counterparts of `erlang` and `net_kernel` — `send/2`, `monitor/2`, `node/1`,
+`monitor_nodes/1` and so on — but they operate over that overlay rather than
+disterl, and they speak in **remote references** rather than raw pids.
 
--type server_ref()          ::  partisan_peer_service_manager:server_ref().
--type forward_opts()        ::  partisan_peer_service_manager:forward_opts().
--type node_type()           ::  this | known | visible | connected | hidden.
--type channel()             ::  atom().
--type channel_opts()        ::  #{
-                                    parallelism := non_neg_integer(),
-                                    monotonic => boolean(),
-                                    compression => boolean() | 0..9
-                                }.
--type actor()               ::  binary().
--type listen_addr()         ::  #{
-                                    ip := inet:ip_address(),
-                                    port := 1..65535
-                                }.
--type node_spec()           ::  #{
-                                    name := node(),
-                                    listen_addrs := [listen_addr()],
-                                    channels := #{channel() => channel_opts()}
-                                }.
--type node_info()           ::  #{info_opt() => term()}.
--type info_opt()            ::  metadata
-                                | name
-                                | channels
-                                | listen_addrs
-                                | listen_ip
-                                | listen_port
-                                | connection_count.
+Two ideas underpin the API:
 
+- **Remote references.** A raw pid, reference or registered name is only
+  meaningful on the node that created it. Partisan addresses a process, reference
+  or name on a peer by a *remote reference* — a node-localised, serialisable
+  handle (`t:remote_pid/0`, `t:remote_reference/0`, `t:remote_name/0`). `self/0`,
+  `make_ref/0` and `whereis/1` return these forms; see `partisan_remote_ref`.
+- **Channels.** Traffic is carried on named channels, each with its own
+  connections and parallelism, so unrelated streams do not queue behind one
+  another. Messaging and monitoring take an optional channel; see `t:channel/0`
+  and `t:channel_opts/0`.
 
--type message()             ::  term().
--type time()                ::  non_neg_integer().
--type send_after_dst()      ::  pid()
-                                | (RegName :: atom())
-                                | (Pid :: remote_pid())
-                                | (RegName :: remote_name()).
--type send_after_opts()     ::  forward_opts() | [{abs, boolean()}].
+## Where to start
 
+- **Messaging** — `send/2`, `cast_message/2`, `forward_message/2`.
+- **Monitoring** — `monitor/2`, `demonitor/1`, `monitor_node/2`, `monitor_nodes/1`.
+- **Cluster** — `join/1`, `leave/0`, `nodes/0`, `node/0`; richer membership
+  operations live in `partisan_peer_service`.
+- **Identity and references** — `self/0`, `node/1`, `make_ref/0`, `whereis/1`, and
+  the `is_local_pid/1` / `is_self/1` predicates.
+
+Configuration is read through `partisan_config`.
+""".
+
+-doc "A process identifier that is either a local pid or a remote pid on a peer.".
+-type any_pid() :: remote_pid() | pid().
+
+-doc "A reference that is either a local reference or a remote reference on a peer.".
+-type any_reference() :: remote_reference() | reference().
+
+-doc "A registered name that is either a local atom or a remote name on a peer.".
+-type any_name() :: remote_name() | atom().
+
+-doc "A node-localised, serialisable handle for a pid on a peer. See `partisan_remote_ref`.".
+-type remote_pid() :: partisan_remote_ref:p().
+
+-doc "A node-localised, serialisable handle for a reference on a peer. See `partisan_remote_ref`.".
+-type remote_reference() :: partisan_remote_ref:r().
+
+-doc "A node-localised, serialisable handle for a registered name on a peer. See `partisan_remote_ref`.".
+-type remote_name() :: partisan_remote_ref:n().
+
+-doc """
+An option for `monitor/2` and `monitor/3`: any standard `erlang` monitor option,
+plus `{channel, Channel}` to bind the monitor — and the eventual `DOWN` — to a
+channel.
+""".
+-type monitor_opt() ::
+    erlang:monitor_option()
+    | {channel, channel()}.
+
+-doc "An option for `demonitor/2`: `flush` discards a pending `DOWN`; `info` reports whether the monitor was still live.".
+-type demonitor_opt() :: flush | info.
+
+-type net_kernel_opt() ::
+    nodedown_reason
+    % OTP 25
+    | connection_id
+    | {node_type, visible | hidden | all}.
+-type channel_opt() ::
+    net_kernel_opt()
+    | {channel, channel()}
+    | {channel_fallback, boolean()}.
+
+-doc "An option for `monitor_nodes/2`: the standard `net_kernel` node-monitoring options together with a channel selector.".
+-type monitor_nodes_opt() ::
+    net_kernel_opt()
+    | channel_opt().
+-type send_dst() ::
+    erlang:send_destination()
+    | server_ref().
+
+-doc """
+A message or call destination: a pid or registered name (local or remote), an
+encoded remote reference, or a `{Name, Node}`, `{global, Name}` or
+`{via, Module, Name}` tuple. Defined by `partisan_peer_service_manager`.
+""".
+-type server_ref() :: partisan_peer_service_manager:server_ref().
+
+-doc """
+Options controlling how a message is routed — the channel to use, whether to
+request acknowledgement, a causal label, and so on. Defined by
+`partisan_peer_service_manager`.
+""".
+-type forward_opts() :: partisan_peer_service_manager:forward_opts().
+
+-doc "The node-set selector accepted by `nodes/1`, mirroring the standard `erlang` node types.".
+-type node_type() :: this | known | visible | connected | hidden.
+
+-doc "The name of a channel: an independently connected, independently parallel class of traffic over the overlay.".
+-type channel() :: atom().
+
+-doc """
+A channel's configuration: its `parallelism` (the number of connections it opens
+to each peer), and whether it preserves per-sender `monotonic` ordering and
+applies `compression`.
+""".
+-type channel_opts() :: #{
+    parallelism := non_neg_integer(),
+    monotonic => boolean(),
+    compression => boolean() | 0..9
+}.
+
+-doc "The identity (a binary) under which this node contributes entries to Partisan's membership CRDT. See `partisan_membership_set`.".
+-type actor() :: binary().
+
+-doc "A peer-plane listen address — an `ip` and a `port`.".
+-type listen_addr() :: #{
+    ip := inet:ip_address(),
+    port := 1..65535
+}.
+
+-doc """
+The full specification of a peer: its node `name`, the `listen_addrs` it accepts
+connections on, and the `channels` it offers. This is the unit of membership
+Partisan gossips.
+""".
+-type node_spec() :: #{
+    name := node(),
+    listen_addrs := [listen_addr()],
+    channels := #{channel() => channel_opts()}
+}.
+-type node_info() :: #{info_opt() => term()}.
+
+-doc "A key selecting one field of a peer's node info, as returned by `node_spec/2`.".
+-type info_opt() ::
+    metadata
+    | name
+    | channels
+    | listen_addrs
+    | listen_ip
+    | listen_port
+    | connection_count.
+
+-doc "An arbitrary Erlang term carried as a Partisan message.".
+-type message() :: term().
+-type time() :: non_neg_integer().
+-type send_after_dst() ::
+    pid()
+    | (RegName :: atom())
+    | (Pid :: remote_pid())
+    | (RegName :: remote_name()).
+-type send_after_opts() :: forward_opts() | [{abs, boolean()}].
 
 -export_type([actor/0]).
 -export_type([channel/0]).
@@ -110,7 +198,6 @@
 -export_type([remote_reference/0]).
 -export_type([remote_name/0]).
 -export_type([server_ref/0]).
-
 
 %% API
 -export([start/0]).
@@ -182,8 +269,8 @@
 -export([nodes/0]).
 -export([nodes/1]).
 -export([nodestring/0]).
+-export([remote_ref_to_disterl/1]).
 -export([self/1]).
-
 
 -compile({no_auto_import, [demonitor/2]}).
 -compile({no_auto_import, [is_pid/1]}).
@@ -204,93 +291,59 @@
 -compile({no_auto_import, [spawn_monitor/2]}).
 -compile({no_auto_import, [spawn_monitor/4]}).
 
--eqwalizer({nowarn_function, make_ref/0}).
--eqwalizer({nowarn_function, self/0}).
--eqwalizer({nowarn_function, self/1}).
--eqwalizer({nowarn_function, is_local_name/2}).
--eqwalizer({nowarn_function, is_local_pid/2}).
--eqwalizer({nowarn_function, is_local_reference/2}).
--eqwalizer({nowarn_function, to_net_kernel_opts/1}).
-
-
-
 %% =============================================================================
 %% API
 %% =============================================================================
 
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Start the application.
-%% @end
-%% -----------------------------------------------------------------------------
+-doc "Starts the `partisan` application and all of its dependencies.".
 start() ->
     application:ensure_all_started(partisan).
 
-
-%% -----------------------------------------------------------------------------
-%% @doc Stop the application.
-%% @end
-%% -----------------------------------------------------------------------------
+-doc "Stops the `partisan` application.".
 stop() ->
     application:stop(partisan).
 
+-doc """
+Returns a fresh remote reference — the Partisan counterpart of `erlang:make_ref/0`.
 
-
-%% -----------------------------------------------------------------------------
-%% @doc Returns a new partisan_remote_ref.
-%% This is the same as calling
-%% `partisan_remote_ref:from_term(erlang:make_ref())'.
-%% @end
-%% -----------------------------------------------------------------------------
+Equivalent to `partisan_remote_ref:from_term(erlang:make_ref())`.
+""".
 -spec make_ref() -> remote_reference() | no_return().
 
 make_ref() ->
     partisan_remote_ref:from_term(erlang:make_ref()).
 
+-doc """
+Returns the remote-reference form of the calling process's pid.
 
-%% -----------------------------------------------------------------------------
-%% @doc Returns the partisan encoded pid for the calling process.
-%% This is equivalent to calling `partisan_remote_ref:from_term(self())'.
-%%
-%% Notice that this call is more expensive than It's erlang counterpart. So you
-%% might want to cache the result in your process state.
-%% See function {@link self/1} which allows you to cache the result in the
-%% process dictionary and take notice of the warning related to doing this on
-%% an Erlang Shell process.
-%% @end
-%% -----------------------------------------------------------------------------
+Equivalent to `partisan_remote_ref:from_term(self())`. This is more expensive than
+`erlang:self/0`, so you may want to cache the result in your process state — see
+`self/1`, which can cache it in the process dictionary (and note the shell caveat
+described there).
+""".
 -spec self() -> remote_pid().
 
 self() ->
     partisan_remote_ref:from_term(erlang:self()).
 
+-doc """
+Returns the remote-reference form of the calling process's pid, optionally caching
+it.
 
-%% -----------------------------------------------------------------------------
-%% @doc Returns the partisan encoded pid for the calling process.
-%%
-%% If `Opts' is the empty list, this is equivalent to calling
-%% `partisan_remote_ref:from_term(self())'.
-%%
-%% Otherwise, if the option `cache' is present in `Opts' the function lazily
-%% caches the result of calling {@link partisan_remote_ref:from_term/1} in
-%% the process dictionary the first time and retrieves the value in subsequent
-%% calls.
-%% <blockquote class="warning">
-%% <h4 class="warning">NOTICE</h4>
-%% <p>You SHOULD avoid using this function in the Erlang Shell. This is because
-%% when an Erlang Shell process crashes it will copy the contents of It's
-%% dictionary to the new shell process and thus you will end up with the wrong
-%% partisan remote reference.
-%% </p>
-%% </blockquote>
-%% @end
-%% -----------------------------------------------------------------------------
+With `Opts = []` this is equivalent to `self/0`. With `Opts = [cache]` the result
+is computed once and stored in the process dictionary, then returned from there on
+subsequent calls.
+
+> #### Warning {: .warning}
+>
+> Avoid `[cache]` in the Erlang shell. When a shell process crashes it copies its
+> dictionary to the replacement shell, so you would carry over a remote reference
+> that no longer matches the running process.
+""".
 -spec self(Opts :: [cache]) -> remote_pid().
 
 self([]) ->
     partisan_remote_ref:from_term(erlang:self());
-
 self([cache]) ->
     Key = {?MODULE, ?FUNCTION_NAME},
 
@@ -303,35 +356,31 @@ self([cache]) ->
             Ref
     end.
 
+-doc """
+Monitors `Term` as a process; equivalent to `monitor(process, Term)`.
 
-%% -----------------------------------------------------------------------------
-%% @deprecated Use monitor/2 instead.
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+_Deprecated: use `monitor/2` instead._
+""".
 monitor(Term) ->
     monitor(process, Term).
 
+-doc """
+Sends a monitor request of type `Type` for the entity identified by `Item`;
+equivalent to `monitor(Type, Item, [])`.
 
-%% -----------------------------------------------------------------------------
-%% @doc Sends a monitor request of type `Type' to the entity identified by
-%% `Item'. If the monitored entity does not exist or it changes monitored
-%% state, the caller of `monitor/2' is notified by a message on the following
-%% format:
-%% `{Tag, MonitorRef, Type, Object, Info}'
-%%
-%% This is the Partisan's equivalent to {@link erlang:monitor/2}.
-%%
-%% Failure: `notalive' if the `partisan_monitor' server is not alive.
-%% @end
-%% -----------------------------------------------------------------------------
+If the monitored entity does not exist, or later changes monitored state, the
+caller receives a `{Tag, MonitorRef, Type, Object, Info}` message. This is
+Partisan's counterpart of `erlang:monitor/2`.
+
+Fails with `notalive` if the `partisan_monitor` server is not running.
+""".
 -spec monitor
     (process, pid() | atom() | {atom(), node()}) ->
         reference();
     (process, remote_pid() | remote_name()) ->
         remote_reference() | no_return();
     (port, port() | atom()) ->
-        reference() |  no_return();
+        reference() | no_return();
     (time_offset, clock_service) ->
         reference() | no_return().
 
@@ -341,47 +390,35 @@ monitor(Term) ->
 monitor(Type, Item) ->
     monitor(Type, Item, []).
 
+-doc """
+Sends a monitor request of type `Type` for the entity identified by `Item`, with
+options.
 
-%% -----------------------------------------------------------------------------
-%% @doc Sends a monitor request of type `Type' to the entity identified by
-%% `Item'. If the monitored entity does not exist or it changes monitored
-%% state, the caller of `monitor/2' is notified by a message on the following
-%% format:
-%%
-%% `{Tag, MonitorRef, Type, Object, Info}'
-%%
-%% where it differs from the message sent by {@link erlang:monitor/3} only when
-%% the item being monitored is a remote process identifier
-%% {@link erlang:monitor/3} in which case:
-%% <ul>
-%% <li>`MonitorRef' is a {@link remote_reference()}</li>
-%% <li>`Object' is a {@link remote_pid()} or {@link
-%% remote_name()}</li>
-%% </ul>
-%%
-%% This is the Partisan's equivalent to {@link erlang:monitor/2}. It differs
-%% from the Erlang implementation only when monitoring a `process'. For all
-%% other cases (monitoring a `port' or `time_offset') this function calls
-%% `erlang:monitor/2'.
-%%
-%% As opposed to {@link erlang:monitor/2} this function does not support
-%% aliases.
-%%
-%% === Monitoring a `process` ===
-%% Creates monitor between the current process and another process identified
-%% by Item, which can be a `pid()' (local or remote), an atom `RegisteredName'
-%% or a tuple `{RegisteredName, Node}'' for a registered process, located
-%% elsewhere.
-%%
-%% In the case of a local `pid()' or a remote `pid()'
-%% A process monitor by name resolves the `RegisteredName' to `pid()' or
-%% `port()' only once at the moment of monitor instantiation, later changes to
-%% the name registration will not affect the existing monitor.
-%%
-%% Failure: if the `partisan_monitor' server is not alive, a reference will be
-%% returned with an immediate 'DOWN' signal with reason `notalive'.
-%% @end
-%% -----------------------------------------------------------------------------
+If the monitored entity does not exist, or later changes monitored state, the
+caller receives a `{Tag, MonitorRef, Type, Object, Info}` message. This differs
+from the message `erlang:monitor/3` sends only when the monitored item is a remote
+process, in which case `MonitorRef` is a `t:remote_reference/0` and `Object` is a
+`t:remote_pid/0` or `t:remote_name/0`.
+
+This is Partisan's counterpart of `erlang:monitor/3` and differs from it only when
+monitoring a `process`; for a `port` or `time_offset` it calls `erlang:monitor/3`
+directly. Unlike `erlang:monitor/3`, it does not support aliases.
+
+## Monitoring a process
+
+Creates a monitor between the calling process and the process identified by `Item`
+— a local or remote pid, a registered-name atom, or a `{RegisteredName, Node}`
+tuple for a process registered on another node. A monitor by name resolves the
+name to a pid once, at creation; later changes to the registration do not affect
+the existing monitor.
+
+Pass `{channel, Channel}` in `Opts` to bind the monitor to a channel: the eventual
+`DOWN` is then delivered on that channel, in order with other traffic on it (see
+the channel-ordering note in the module documentation).
+
+Fails soft: if the `partisan_monitor` server is not running, the returned reference
+receives an immediate `DOWN` with reason `notalive`.
+""".
 -spec monitor
     (process, pid() | atom(), [monitor_opt()]) ->
         reference();
@@ -401,114 +438,126 @@ monitor(Type, Item) ->
 
 monitor(process, RegisteredName, Opts) when is_atom(RegisteredName) ->
     erlang:monitor(process, RegisteredName, to_erl_monitor_opts(Opts));
-
 monitor(process, Pid, Opts) when erlang:is_pid(Pid) ->
     erlang:monitor(process, Pid, to_erl_monitor_opts(Opts));
-
-monitor(process, {RegisteredName, Node}, Opts)
-when is_atom(RegisteredName) ->
-    case partisan_config:get(connect_disterl) orelse partisan:node() == Node of
+monitor(process, {RegisteredName, Node}, Opts) when
+    is_atom(RegisteredName)
+->
+    case partisan:node() == Node of
         true ->
             erlang:monitor(process, RegisteredName, to_erl_monitor_opts(Opts));
         false ->
-            Ref = partisan_remote_ref:from_term(RegisteredName, Node),
-            partisan_monitor:monitor(Ref, Opts)
+            %% Only use native disterl monitoring when the peer is actually
+            %% reachable over disterl; otherwise `erlang:monitor' fabricates an
+            %% immediate `noconnection' DOWN for a process still reachable over
+            %% the partisan overlay.
+            case
+                partisan_config:get(connect_disterl, false) andalso
+                    lists:member(Node, erlang:nodes())
+            of
+                true ->
+                    erlang:monitor(
+                        process,
+                        {RegisteredName, Node},
+                        to_erl_monitor_opts(Opts)
+                    );
+                false ->
+                    Ref = partisan_remote_ref:from_term(
+                        RegisteredName, Node
+                    ),
+                    partisan_monitor:monitor(Ref, Opts)
+            end
     end;
-
 monitor(process, Term, Opts) when erlang:is_pid(Term) orelse is_atom(Term) ->
     erlang:monitor(process, Term, to_erl_monitor_opts(Opts));
-
 monitor(process, RemoteRef, Opts) ->
-    %% eqwalizer:ignore RemoteRef
-    partisan_monitor:monitor(RemoteRef, Opts);
-
+    %% When `connect_disterl' is true AND the peer is actually reachable over
+    %% disterl, decode the remote-ref and use `erlang:monitor' so DOWN fires
+    %% promptly. If the peer is not disterl-reachable, native `erlang:monitor'
+    %% would fabricate an immediate `noconnection' DOWN for a process still
+    %% reachable over the partisan overlay, so fall back to the partisan
+    %% transport's own monitor (also the default when `connect_disterl' is off).
+    %% Note: only name refs are disterl-usable; encoded pids cannot be
+    %% reconstructed as remote pids (see `remote_ref_to_disterl/1').
+    case
+        partisan_config:get(connect_disterl, false) andalso
+            lists:member(
+                partisan_remote_ref:node(RemoteRef), erlang:nodes()
+            ) andalso
+            remote_ref_to_disterl(RemoteRef)
+    of
+        {ok, {Name, _Node} = NN} when is_atom(Name) ->
+            erlang:monitor(process, NN, to_erl_monitor_opts(Opts));
+        _ ->
+            partisan_monitor:monitor(RemoteRef, Opts)
+    end;
 monitor(Type, Term, Opts) when Type == port orelse Type == time_offset ->
     erlang:monitor(Type, Term, to_erl_monitor_opts(Opts)).
 
+-doc """
+Removes the monitor identified by `MonitorRef`; equivalent to `demonitor(Ref, [])`.
 
-%% -----------------------------------------------------------------------------
-%% @doc
-%%
-%% It differs from {@link erlang:demonitor/1} in that it doesn't fail if
-%% `MonitorRef' refers to a monitoring started by another process.
-%% @end
-%% -----------------------------------------------------------------------------
+Unlike `erlang:demonitor/1`, it does not fail if `MonitorRef` refers to a monitor
+started by another process.
+""".
 -spec demonitor(MonitorRef :: reference() | remote_reference()) -> true.
 
 demonitor(Ref) ->
     _ = demonitor(Ref, []),
     true.
 
+-doc """
+Removes the monitor identified by `MonitorRef`, with options — Partisan's
+counterpart of `erlang:demonitor/2`.
 
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+`flush` removes a pending `DOWN` for this monitor from the caller's mailbox; `info`
+makes the call return whether the monitor was still live when removed.
+""".
 -spec demonitor(
     MonitorRef :: reference() | remote_reference(),
-    OptionList :: [demonitor_opt()]) -> boolean().
+    OptionList :: [demonitor_opt()]
+) -> boolean().
 
 demonitor(Ref, Opts) when erlang:is_reference(Ref) ->
     erlang:demonitor(Ref, Opts);
-
 demonitor(Ref, Opts) ->
     %% partisan_monitor:demonitor will raise a badarg if Ref is not valid
     partisan_monitor:demonitor(Ref, Opts).
 
+-doc """
+Turns node-status monitoring of `Node` on (`Flag = true`) or off (`false`);
+equivalent to `monitor_node(Node, Flag, [])`. `Node` may be a node name or a
+`t:node_spec/0`.
 
-%% -----------------------------------------------------------------------------
-%% @doc Monitor the status of the node `Node'. If Flag is true, monitoring is
-%% turned on. If `Flag' is `false', monitoring is turned off.
-%%
-%% Making several calls to `monitor_node(Node, true)' for the same `Node' from
-%% is not an error; it results in as many independent monitoring instances as
-%% the number of different calling processes i.e. If a process has made two
-%% calls to `monitor_node(Node, true)' and `Node' terminates, only one
-%% `nodedown' message is delivered to the process (this differs from {@link
-%% erlang:monitor_node/2}).
-%%
-%% If `Node' fails or does not exist, the message `{nodedown, Node}' is
-%% delivered to the calling process. If there is no connection to Node, a
-%% `nodedown' message is delivered. As a result when using a membership
-%% strategy that uses a partial view, you can not monitor nodes that are not
-%% members of the view.
-%%
-%% If `Node' is the caller's node, the function returns `false'.
-%% @end
-%% -----------------------------------------------------------------------------
+Calling `monitor_node(Node, true)` repeatedly is not an error: each calling process
+gets one independent monitor, so a process that called it twice still receives a
+single `{nodedown, Node}` if `Node` goes down — this differs from
+`erlang:monitor_node/2`.
+
+`{nodedown, Node}` is delivered if `Node` fails, does not exist, or is not
+connected. Under a membership strategy with a partial view you therefore cannot
+monitor nodes outside your view. Monitoring the caller's own node returns `false`.
+""".
 -spec monitor_node(node() | node_spec(), boolean()) -> boolean().
 
 monitor_node(#{name := Node}, Flag) ->
     monitor_node(Node, Flag, []);
-
 monitor_node(Node, Flag) ->
     monitor_node(Node, Flag, []).
 
+-doc """
+Turns node-status monitoring of `Node` on or off, with options.
 
-%% -----------------------------------------------------------------------------
-%% @doc Monitor the status of the node `Node'. If Flag is true, monitoring is
-%% turned on. If `Flag' is `false', monitoring is turned off.
-%%
-%% Making several calls to `monitor_node(Node, true)' for the same `Node' from
-%% is not an error; it results in as many independent monitoring instances as
-%% the number of different calling processes i.e. If a process has made two
-%% calls to `monitor_node(Node, true)' and `Node' terminates, only one
-%% `nodedown' message is delivered to the process (this differs from {@link
-%% erlang:monitor_node/2}).
-%%
-%% If `Node' fails or does not exist, the message `{nodedown, Node}' is
-%% delivered to the calling process. If there is no connection to Node, a
-%% `nodedown' message is delivered. As a result when using a membership
-%% strategy that uses a partial view, you can not monitor nodes that are not
-%% members of the view.
-%%
-%% If `Node' is the caller's node, the function returns `false'.
-%% @end
-%% -----------------------------------------------------------------------------
+Behaves as `monitor_node/2` — see there for the repeated-call, delivery and
+partial-view semantics. `Options` accepts `allow_passive_connect`, which applies
+only on the Erlang-distribution path (`connect_disterl = true`); with the default
+overlay transport the options are ignored.
+""".
 -spec monitor_node(
     Node :: node(),
     Flag :: boolean(),
-    Options :: [allow_passive_connect]) -> true.
+    Options :: [allow_passive_connect]
+) -> true.
 
 monitor_node(Node, Flag, Opts) ->
     case partisan_config:get(connect_disterl, false) of
@@ -519,24 +568,23 @@ monitor_node(Node, Flag, Opts) ->
             partisan_monitor:monitor_node(Node, Flag)
     end.
 
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+-doc """
+Subscribes (`Flag = true`) or unsubscribes (`false`) the calling process to
+node-status change messages; equivalent to `monitor_nodes(Flag, [])`.
+""".
 -spec monitor_nodes(Flag :: boolean()) -> ok | error | {error, term()}.
 
 monitor_nodes(Flag) ->
     monitor_nodes(Flag, []).
 
+-doc """
+Subscribes (`Flag = true`) or unsubscribes (`false`) the calling process to
+node-status change messages, with options.
 
-%% -----------------------------------------------------------------------------
-%% @doc The calling process subscribes or unsubscribes to node status change
-%% messages. A nodeup message is delivered to all subscribing processes when a
-%% new node is connected, and a nodedown message is delivered when a node is
-%% disconnected.
-%% @end
-%% -----------------------------------------------------------------------------
+While subscribed, the process receives a `{nodeup, Node}` message when a peer
+connects and a `{nodedown, Node}` message when one disconnects. `Opts` mirrors the
+`net_kernel` node-monitoring options and may also carry a channel selector.
+""".
 -spec monitor_nodes(Flag :: boolean(), [monitor_nodes_opt()]) ->
     ok | error | {error, term()}.
 
@@ -549,199 +597,159 @@ monitor_nodes(Flag, Opts) ->
             partisan_monitor:monitor_nodes(Flag, Opts)
     end.
 
+-doc """
+Returns `true` if `Arg` belongs to the local node.
 
-%% -----------------------------------------------------------------------------
-%% @doc Returns the name of the local node.
-%% @end
-%% -----------------------------------------------------------------------------
+`Arg` may be a pid, port or reference, or one of their remote forms
+(`t:remote_pid/0`, `t:remote_reference/0`).
+""".
 -spec is_local(Arg) -> Result when
-    Arg :: pid() | port() | reference()
-            | remote_pid()
-            | remote_reference(),
+    Arg ::
+        pid()
+        | port()
+        | reference()
+        | remote_pid()
+        | remote_reference(),
     Result :: boolean().
 
 is_local(Arg) ->
     Node = node(Arg),
     Node == 'nonode@nohost' orelse Node =:= node().
 
+-doc """
+Returns `true` if `Arg` refers to a name on the local node.
 
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+A plain atom is always a local name; a `t:remote_name/0` is checked against the
+local node.
+""".
 -spec is_local_name(Arg :: atom() | remote_name()) ->
     boolean() | no_return().
 
 is_local_name(Arg) when is_atom(Arg) ->
     true;
-
 is_local_name(Arg) ->
     partisan_remote_ref:is_local_name(Arg).
 
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+-doc "Returns `true` if `Arg` refers to the locally registered name `Name`.".
 -spec is_local_name(
-    Arg :: atom() | remote_name(), Name :: atom()) ->
+    Arg :: atom() | remote_name(), Name :: atom()
+) ->
     boolean() | no_return().
 
 is_local_name(Name, Name) when is_atom(Name) ->
     true;
-
 is_local_name(Arg, Name) when is_atom(Name) ->
     partisan_remote_ref:is_local_name(Arg, Name);
-
 is_local_name(Arg, _) ->
     is_local_name(Arg) orelse error(badarg),
     false.
 
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+-doc "Returns `true` if `Arg` (a pid or `t:remote_pid/0`) is a pid on the local node.".
 -spec is_local_pid(Arg :: pid() | remote_pid()) ->
     boolean() | no_return().
 
-
 is_local_pid(Pid) when erlang:is_pid(Pid) ->
     is_local(Pid);
-
 is_local_pid(Arg) ->
     partisan_remote_ref:is_local_pid(Arg).
 
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+-doc "Returns `true` if `Arg` refers to the local pid `Pid`.".
 -spec is_local_pid(
-    Arg :: pid() | remote_pid(), Pid :: pid()) ->
+    Arg :: pid() | remote_pid(), Pid :: pid()
+) ->
     boolean() | no_return().
 
 is_local_pid(Pid, Pid) when erlang:is_pid(Pid) ->
     is_local(Pid);
-
 is_local_pid(Arg, Pid) when erlang:is_pid(Pid) ->
     partisan_remote_ref:is_local_pid(Arg, Pid);
-
 is_local_pid(Arg, _) ->
     is_local_pid(Arg) orelse error(badarg),
     false.
 
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+-doc "Returns `true` if `Arg` (a reference or `t:remote_reference/0`) was created on the local node.".
 -spec is_local_reference(Arg :: reference() | remote_reference()) ->
     boolean() | no_return().
 
 is_local_reference(Ref) when erlang:is_reference(Ref) ->
     is_local(Ref);
-
 is_local_reference(Arg) ->
     partisan_remote_ref:is_local_reference(Arg).
 
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+-doc "Returns `true` if `Arg` refers to the local reference `LocalRef`.".
 -spec is_local_reference(
-    Arg :: reference() | remote_reference(), LocalRef :: reference()) ->
+    Arg :: reference() | remote_reference(), LocalRef :: reference()
+) ->
     boolean() | no_return().
 
 is_local_reference(Ref, Ref) when erlang:is_reference(Ref) ->
     is_local(Ref);
-
 is_local_reference(Arg, Ref) when erlang:is_reference(Ref) ->
     partisan_remote_ref:is_local_reference(Arg, Ref);
-
 is_local_reference(Arg, _) ->
     is_local_reference(Arg) orelse error(badarg),
     false.
 
-
-%% -----------------------------------------------------------------------------
-%% @doc Returns true if `Arg' is the caller's process identifier.
-%% @end
-%% -----------------------------------------------------------------------------
+-doc "Returns `true` if `Arg` (a pid or `t:remote_pid/0`) is the calling process.".
 -spec is_self(Arg) -> Result when
     Arg :: pid() | remote_pid(),
     Result :: boolean().
 
 is_self(Arg) when erlang:is_pid(Arg) ->
     Arg =:= erlang:self();
-
 is_self(Arg) ->
     partisan_remote_ref:is_local_pid(Arg, erlang:self()).
 
-
-%% -----------------------------------------------------------------------------
-%% @doc Shortcut for `partisan_peer_service:join/1'.
-%% @end
-%% -----------------------------------------------------------------------------
+-doc "Adds a peer to the cluster; a shortcut for `partisan_peer_service:join/1`.".
 -spec join(node_spec()) -> ok.
 
 join(NodeSpec) ->
     partisan_peer_service:join(NodeSpec).
 
-
-%% -----------------------------------------------------------------------------
-%% @doc Shortcut for `partisan_peer_service:leave/0'.
-%% @end
-%% -----------------------------------------------------------------------------
+-doc "Removes the local node from the cluster; a shortcut for `partisan_peer_service:leave/0`.".
 -spec leave() -> ok.
 
 leave() ->
     partisan_peer_service:leave().
 
+-doc """
+Drops the peer connections to `Nodes` (a node name or a list of them).
 
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+The membership protocol re-establishes them if the nodes are still members, so this
+forces a reconnect rather than removing a node from the cluster.
+""".
 kill_connections(Node) when is_atom(Node) ->
     kill_connections([Node]);
-
 kill_connections(Nodes) when is_list(Nodes) ->
     partisan_peer_service_manager:disconnect(Nodes).
 
-
-%% -----------------------------------------------------------------------------
-%% @doc Returns the name of the local node.
-%% @end
-%% -----------------------------------------------------------------------------
+-doc "Returns the name of the local node.".
 -spec node() -> node().
 
 node() ->
     partisan_config:get(name).
 
-
-%% -----------------------------------------------------------------------------
-%% @doc Returns the name of the local node as a binary string.
-%% @end
-%% -----------------------------------------------------------------------------
+-doc "Returns the name of the local node as a binary string.".
 -spec nodestring() -> binary().
 
 nodestring() ->
     partisan_config:get(nodestring).
 
+-doc """
+Returns the node on which `Arg` originates.
 
-%% -----------------------------------------------------------------------------
-%% @doc Returns the node where Arg originates. Arg can be a process identifier,
-%% a reference, a port or a partisan remote reference.
-%% @end
-%% -----------------------------------------------------------------------------
+`Arg` may be a pid, port or reference, or a Partisan remote reference. For a remote
+reference the node is read from the reference; for a local pid, port or reference it
+is `erlang:node(Arg)`, falling back to `node/0` when Erlang distribution is
+disabled.
+""".
 -spec node
     (pid() | port() | reference()) -> node();
     (partisan_remote_ref:t()) -> node() | no_return().
 
-node(Arg)
-when erlang:is_pid(Arg) orelse erlang:is_reference(Arg) orelse is_port(Arg) ->
+node(Arg) when
+    erlang:is_pid(Arg) orelse erlang:is_reference(Arg) orelse is_port(Arg)
+->
     Node = erlang:node(Arg),
 
     case partisan_config:get(connect_disterl) of
@@ -761,47 +769,34 @@ when erlang:is_pid(Arg) orelse erlang:is_reference(Arg) orelse is_port(Arg) ->
                     Other
             end
     end;
-
 node(Arg) ->
-    %% eqwalizer:ignore We assume this is a partisan_remote_ref:t()
     partisan_remote_ref:node(Arg).
 
+-doc """
+Returns the peers connected to this node over Partisan; equivalent to
+`nodes(visible)` and the counterpart of `erlang:nodes/0`.
 
-%% -----------------------------------------------------------------------------
-%% @doc Returns a list of all nodes connected to this node via Partisan.
-%% Equivalent to {@link erlang:nodes/1}.
-%% Sames as calling `nodes(visible)'.
-%%
-%% Notice that if `connect_disterl' is `true' (possibly the case when testing),
-%% this function will NOT return the disterl nodes. For that you still need to
-%% call {@link erlang:nodes/1}.
-%% @end
-%% -----------------------------------------------------------------------------
+If `connect_disterl` is `true` (as in some test setups) this does **not** include
+Erlang-distribution nodes — use `erlang:nodes/0` for those.
+""".
 -spec nodes() -> [node()].
 
 nodes() ->
     nodes(visible).
 
+-doc """
+Returns nodes of the given type — the counterpart of `erlang:nodes/1`. When `Arg`
+is a list, returns the nodes satisfying any of its elements.
 
-%% -----------------------------------------------------------------------------
-%% @doc Returns a list of nodes according to the argument specified. The
-%% returned result, when the argument is a list, is the list of nodes
-%% satisfying the disjunction(s) of the list elements.
-%%
-%% Differences with Erlang:
-%% <ul>
-%% <li>`hidden' - always returns the empty list (there is no concept of hidden
-%% nodes in Partisan).</li>
-%% <li>`this' - returns the list containing the result of calling
-%% {@link node/0}</li>
-%% <li>`known' - will return the nodes known by the {@link
-%% partisan_peer_service} i.e. {@link partisan_peer_service:members/0} but not
-%% the nodes referred to by process identifiers,
-%% port identifiers, and references located on this node.</li>
-%% <li>`visible' - equivalent to Erlang.</li>
-%% </ul>
-%% @end
-%% -----------------------------------------------------------------------------
+The node types differ from Erlang as follows:
+
+- `hidden` — always `[]`; Partisan has no hidden nodes.
+- `this` — the list containing `node/0`.
+- `known` — the nodes known to `partisan_peer_service` (its
+  `partisan_peer_service:members/0`), not the nodes of pids, ports and references
+  located on this node.
+- `visible` — as in Erlang.
+""".
 -spec nodes(Arg :: node_type() | [node_type()]) -> [node()].
 
 nodes(Arg) ->
@@ -822,42 +817,36 @@ nodes(Arg) ->
             lists:flatten(L)
     end.
 
-
-%% -----------------------------------------------------------------------------
-%% @doc Returns the name of the local node.
-%% @end
-%% -----------------------------------------------------------------------------
+-doc "Returns `true` if this node currently has a connection to `NodeOrSpec`.".
 -spec is_connected(NodeOrSpec :: node_spec() | node()) -> boolean().
 
 is_connected(NodeOrSpec) ->
     partisan_peer_connections:is_connected(NodeOrSpec).
 
-
-%% -----------------------------------------------------------------------------
-%% @doc Returns the name of the local node.
-%% @end
-%% -----------------------------------------------------------------------------
+-doc "Returns `true` if this node currently has a connection to `NodeOrSpec` on `Channel`.".
 -spec is_connected(NodeOrSpec :: node_spec() | node(), Channel :: channel()) ->
     boolean().
 
 is_connected(NodeOrSpec, Channel) ->
     partisan_peer_connections:is_connected(NodeOrSpec, Channel).
 
-
-%% -----------------------------------------------------------------------------
-%% @doc Returns the name of the local node.
-%% @end
-%% -----------------------------------------------------------------------------
+-doc """
+Returns `true` if every expected connection to `NodeOrSpec` is established — one per
+configured channel at its configured parallelism.
+""".
 -spec is_fully_connected(NodeOrSpec :: node_spec() | node()) -> boolean().
 
 is_fully_connected(NodeOrSpec) ->
     partisan_peer_connections:is_fully_connected(NodeOrSpec).
 
+-doc """
+Disconnects the local node from `Node` — the counterpart of
+`erlang:disconnect_node/1`.
 
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+If `Node` is the local node, the node leaves the cluster; otherwise it leaves the
+peer identified by `Node`. Returns `true` on success and `false` if `Node` is not a
+known peer.
+""".
 -spec disconnect_node(Node :: node()) -> boolean() | ignored.
 
 disconnect_node(Node) ->
@@ -878,29 +867,27 @@ disconnect_node(Node) ->
             end
     end.
 
-
-%% -----------------------------------------------------------------------------
-%% @doc Returns true if the local node is alive (that is, if the node can be
-%% part of a distributed system), otherwise false.
-%% @end
-%% -----------------------------------------------------------------------------
+-doc """
+Returns `true` if the local node is alive — that is, the peer service manager is
+running and the node can take part in a cluster.
+""".
 -spec is_alive() -> boolean().
 
 is_alive() ->
     undefined =/= erlang:whereis(?PEER_SERVICE_MANAGER).
 
+-doc """
+Returns the pid or port registered under `Arg`, or `undefined` — the counterpart of
+`erlang:whereis/1`.
 
-%% -----------------------------------------------------------------------------
-%% @doc
-%% Fails with `badarg' if `Arg' is a remote reference for another node.
-%% @end
-%% -----------------------------------------------------------------------------
+`Arg` is a local name (an atom) or a `t:remote_name/0` for the local node. Fails
+with `badarg` if `Arg` is a remote name for another node.
+""".
 -spec whereis(Arg :: atom() | remote_name()) ->
     pid() | port() | undefined.
 
 whereis(Arg) when is_atom(Arg) ->
     erlang:whereis(Arg);
-
 whereis(Arg) ->
     case partisan_remote_ref:to_term(Arg) of
         Ref when is_atom(Ref) ->
@@ -909,17 +896,15 @@ whereis(Arg) ->
             error(badarg)
     end.
 
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+-doc """
+Returns information about the process `Arg` (a pid or `t:remote_pid/0`), or
+`undefined` — the counterpart of `erlang:process_info/1`.
+""".
 -spec process_info(Arg :: pid() | remote_pid()) ->
     [tuple()] | undefined.
 
 process_info(Arg) when erlang:is_pid(Arg) ->
     erlang:process_info(Arg);
-
 process_info(Arg) ->
     try partisan_remote_ref:to_term(Arg) of
         Term when erlang:is_pid(Term) ->
@@ -931,19 +916,18 @@ process_info(Arg) ->
             error(badarg)
     end.
 
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%%
-%% -----------------------------------------------------------------------------
+-doc """
+Returns the requested information `Item` (an item or a list of items) about the
+process `Arg` (a pid or `t:remote_pid/0`), or `undefined` — the counterpart of
+`erlang:process_info/2`.
+""".
 -spec process_info(
     Arg :: pid() | remote_pid(),
-    Item :: atom() | [atom()]) -> [tuple()] | undefined.
+    Item :: atom() | [atom()]
+) -> [tuple()] | undefined.
 
 process_info(Arg, ItemOrItems) when erlang:is_pid(Arg) ->
     erlang:process_info(Arg, ItemOrItems);
-
 process_info(Arg, ItemOrItems) ->
     try partisan_remote_ref:to_term(Arg) of
         Term when erlang:is_pid(Term) ->
@@ -955,21 +939,16 @@ process_info(Arg, ItemOrItems) ->
             error(badarg)
     end.
 
+-doc """
+Returns the node specification (`t:node_spec/0`) of the local node.
 
-%% -----------------------------------------------------------------------------
-%% @doc Returns the node specification of the local node.
-%% This is the information required when other nodes wish to join this node
-%% (See {@link partisan_peer_service:join/1}).
-%%
-%% Notice that the values of the keys must be sorted for the peer service to be
-%% able to compare node specifications, and prevent duplicates in the
-%% membership view data structure. This is important in case you find
-%% yourself building this representation manually in order to implement a
-%% particular orchestration strategy. As Erlang maps are naturally sorted, the
-%% only property that you need to keep sorted is `listen_addrs' as it is
-%% implemented as a list.
-%% @end
-%% -----------------------------------------------------------------------------
+This is the information another node needs in order to join this one (see
+`partisan_peer_service:join/1`). The values of the map's keys must be sorted so
+the peer service can compare specifications and keep the membership view free of
+duplicates — relevant when you build a specification by hand for a custom
+orchestration strategy. Erlang maps are already sorted, so the only field you
+must keep sorted yourself is `listen_addrs`, which is a list.
+""".
 -spec node_spec() -> node_spec().
 
 node_spec() ->
@@ -980,76 +959,56 @@ node_spec() ->
         channels => partisan_config:get(channels)
     }.
 
-
-%% -----------------------------------------------------------------------------
-%% @doc Return the partisan node_spec() for node named `Node'.
-%%
-%% This function retrieves the `node_spec()' from the remote node using RPC and
-%% returns `{error, Reason}' if the RPC fails. Otherwise, assumes the node is
-%% running on the same host and returns a `node_spec()' with with nodename
-%% `Name' and host 'Host' and same metadata as `myself/0'.
-%%
-%% If configuration option `connect_disterl' is `true', the RPC will be
-%% implemented using the `rpc' module. Otherwise it will use `partisan_rpc'.
-%%
-%% You should only use this function when distributed erlang is enabled
-%% (configuration option `connect_disterl' is `true') or if the node is running
-%% on the same host and you are using this for testing purposes as there is no
-%% much sense in running a partisan cluster on a single host.
-%% @end
-%% -----------------------------------------------------------------------------
+-doc """
+Returns `{ok, NodeSpec}` for the node named `Node`, or `{error, Reason}`.
+Equivalent to `node_spec(Node, #{})`; see `node_spec/2` for how the specification
+is resolved.
+""".
 -spec node_spec(node()) -> {ok, node_spec()} | {error, Reason :: any()}.
 
 node_spec(Node) when is_atom(Node) ->
     node_spec(Node, #{}).
 
+-doc """
+Returns `{ok, NodeSpec}` for the node named `Node`, or `{error, Reason}`.
 
-%% -----------------------------------------------------------------------------
-%% @doc Return the tuple `{ok, node_spec()' for node named `Node' or the tuple
-%% `{error, Reason}'.
-%%
-%% This function first checks If there is a partisan connection to `Node', if
-%% so returns the cached specification that was used for creating the
-%% connection. If no connection is present (the case for a p2p topology), then
-%% it tries to use @@link partisan_rpc} to retrieve the node specification from
-%% the remote node. This later alternative requires the partisan configuration
-%% `forward_opts` to have `broadcast' and `transitive' enabled.
-%%
-%% NOTICE: At the moment partisan_rpc might not work correctly w/ a p2p
-%% topology.
-%% @end
-%% -----------------------------------------------------------------------------
+If a Partisan connection to `Node` already exists, the cached specification used
+to establish that connection is returned. Otherwise — the case under a
+peer-to-peer topology — the specification is fetched from the remote node with
+`partisan_rpc`, which requires the `forward_opts` configuration to enable
+`broadcast` and `transitive`. `Opts` may set `rpc_timeout` (default 5000 ms).
+
+> #### Peer-to-peer topologies {: .warning}
+> `partisan_rpc` may not resolve a specification reliably under a peer-to-peer
+> topology.
+""".
 -spec node_spec(
     Node :: binary() | list() | node(),
-    Opts :: #{rpc_timeout => timeout()}) ->
+    Opts :: #{rpc_timeout => timeout()}
+) ->
     {ok, node_spec()} | {error, Reason :: any()}.
 
 node_spec(Node, Opts) when is_binary(Node) ->
     node_spec(binary_to_atom(Node), Opts);
-
 node_spec(Node, Opts) when is_list(Node) ->
     node_spec(list_to_atom(lists:flatten(Node)), Opts);
-
 node_spec(Node, Opts) when is_atom(Node), is_map(Opts) ->
     Timeout = maps:get(rpc_timeout, Opts, 5000),
 
     case partisan:node() of
         Node ->
             {ok, partisan:node_spec()};
-
         _ ->
             case is_connected(Node) of
                 true ->
                     {ok, Info} = partisan_peer_connections:info(Node),
                     {ok, partisan_peer_connections:node_spec(Info)};
-
                 false ->
                     M = ?MODULE,
                     F = node_spec,
                     A = [],
                     case partisan_rpc:call(Node, M, F, A, Timeout) of
                         #{name := Node} = Spec ->
-                            %% eqwalizer:ignore
                             {ok, Spec};
                         {badrpc, Reason} ->
                             {error, Reason}
@@ -1057,94 +1016,72 @@ node_spec(Node, Opts) when is_atom(Node), is_map(Opts) ->
             end
     end.
 
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+-doc false.
 -spec node_info() -> node_info().
 
 node_info() ->
     node_info([]).
 
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+-doc false.
 -spec node_info([info_opt()]) -> map().
 
 node_info([]) ->
     #{};
-
 node_info(L) when is_list(L) ->
     node_info(L, #{}).
 
-
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+-doc "Returns the name of the default channel.".
 -spec default_channel() -> channel().
 
 default_channel() ->
     ?DEFAULT_CHANNEL.
 
-
-%% -----------------------------------------------------------------------------
-%% @doc Returns a channel with name `Name'.
-%% Fails if a channel named `Name' doesn't exist.
-%% @end
-%% -----------------------------------------------------------------------------
+-doc """
+Returns the options (`t:channel_opts/0`) of the channel named `Channel`.
+Fails with `badarg` if no such channel exists.
+""".
 -spec channel_opts(Channel :: channel()) -> channel_opts() | no_return().
 
 channel_opts(Channel) when is_atom(Channel) ->
     partisan_config:channel_opts(Channel).
 
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+-doc """
+Returns `true` if `Arg` is a local process identifier or a `t:remote_pid/0`,
+`false` otherwise.
+""".
 -spec is_pid(any()) ->
     boolean() | no_return().
 
 is_pid(Arg) when erlang:is_pid(Arg) ->
     true;
-
 is_pid(Arg) ->
     partisan_remote_ref:is_pid(Arg).
 
-
-%% -----------------------------------------------------------------------------
-%% @doc Returns the name of the local node.
-%% @end
-%% -----------------------------------------------------------------------------
+-doc """
+Returns `true` if `Arg` is a local reference or a `t:remote_reference/0`,
+`false` otherwise.
+""".
 -spec is_reference(reference() | remote_reference()) ->
     boolean() | no_return().
 
 is_reference(Arg) when erlang:is_reference(Arg) ->
     true;
-
 is_reference(Arg) ->
     partisan_remote_ref:is_reference(Arg).
 
-
-%% -----------------------------------------------------------------------------
-%% @doc Returns the name of the local node.
-%% @end
-%% -----------------------------------------------------------------------------
+-doc """
+Returns `true` if the process identified by `Arg` (a local pid or a
+`t:remote_pid/0`) is alive, `false` otherwise. For a remote reference the check
+runs on the owning node via `partisan_rpc`.
+""".
 -spec is_process_alive(pid() | remote_pid()) ->
     boolean() | no_return().
 
 is_process_alive(Pid) when erlang:is_pid(Pid) ->
     erlang:is_process_alive(Pid);
-
 is_process_alive(RemoteRef) ->
     case partisan_remote_ref:is_local_pid(RemoteRef) of
         true ->
-            %% eqwalizer:ignore It's local so this call won't fail
             erlang:is_process_alive(partisan_remote_ref:to_term(RemoteRef));
         false ->
             Node = node(RemoteRef),
@@ -1159,22 +1096,21 @@ is_process_alive(RemoteRef) ->
             end
     end.
 
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+-doc """
+Sends an exit signal with reason `Reason` to the process identified by `Pid` (a
+local pid or a `t:remote_pid/0`) — the Partisan counterpart of `erlang:exit/2`.
+For a remote reference the signal is delivered on the owning node via
+`partisan_rpc`.
+""".
 -spec exit(Pid :: pid() | remote_pid(), Reason :: term()) -> true.
 
 exit(Pid, Reason) when erlang:is_pid(Pid) ->
     erlang:exit(Pid, Reason);
-
 exit(RemoteRef, Reason) ->
     try partisan_remote_ref:to_term(RemoteRef) of
         Pid when erlang:is_pid(Pid) ->
             erlang:exit(Pid, Reason);
         Name when is_atom(Name) ->
-            %% eqwalizer:ignore We know it's a pid
             erlang:exit(whereis(Name), Reason)
     catch
         error:badarg ->
@@ -1198,86 +1134,96 @@ exit(RemoteRef, Reason) ->
             end
     end.
 
+-doc """
+Sends message `Msg` to the destination `Dest` and returns `Msg`.
+Equivalent to `send(Dest, Msg, [])`.
 
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+Follows `erlang:send/2`: delivery is best-effort and the message is returned
+whether or not it could be delivered. An unreachable destination is not an
+error here — it is not one for `erlang:send/2` either, where sending to a dead
+process or an unreachable node simply returns.
+
+Use `send/3` when you need to know: it reports `{error, Reason}` rather than
+discarding the outcome.
+""".
 -spec send(Dest :: send_dst(), Msg :: message()) -> message().
 
 send(Dest, Msg) ->
-    ok = send(Dest, Msg, []),
+    %% Deliberately discards the result, mirroring `erlang:send/2'. This used to
+    %% be `ok = send(Dest, Msg, [])', which badmatched whenever `send/3' answered
+    %% `{error, disconnected}' — turning an unreachable peer into a crash in the
+    %% caller, for a function whose Erlang counterpart never fails that way. The
+    %% mismatch was invisible while `forward_message/3' was mis-specced `-> ok'.
+    _ = send(Dest, Msg, []),
     Msg.
 
+-doc """
+Sends message `Msg` to the destination `Dest`.
 
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+When distributed Erlang is enabled (`connect_disterl` is `true`) the message is
+delivered with `erlang:send/3`. Otherwise it is forwarded over Partisan with
+`forward_message/3`, honouring `Opts` (`t:forward_opts/0`) — and then a failure
+to reach the target is reported as `{error, Reason}` rather than raised.
+""".
 -spec send(Dest :: send_dst(), Msg :: message(), Opts :: forward_opts()) ->
-    ok | nosuspend | noconnect.
+    ok
+    | nosuspend
+    | noconnect
+    | {error, Reason :: any()}.
 
 send(Dest, Msg, Opts) ->
     case partisan_config:get(connect_disterl) of
         true ->
-            %% eqwalizer:ignore
             erlang:send(Dest, Msg, to_erl_send_opts(Opts));
         false ->
-            %% eqwalizer:ignore
             forward_message(Dest, Msg, Opts)
     end.
 
-
-%% -----------------------------------------------------------------------------
-%% @doc Equivalent to calling `send_after(Time, Dest, Msg, [])'.
-%% @end
-%% -----------------------------------------------------------------------------
+-doc "Equivalent to `send_after(Time, Dest, Msg, [])`.".
 -spec send_after(
     Time :: time(),
     Destination :: send_after_dst(),
-    Msg :: message()) -> TRef :: reference().
+    Msg :: message()
+) -> TRef :: reference().
 
 send_after(Time, Dest, Msg) ->
     send_after(Time, Dest, Msg, []).
 
+-doc """
+The Partisan counterpart of `erlang:send_after/4`.
 
-%% -----------------------------------------------------------------------------
-%% @doc Equivalent to the native `erlang:send_after/4'.
-%% It calls the native implementation for local destinations. For remote
-%% destinations it spawns a process that uses a timer and accepts cancellation (
-%% via `cancel_timer/1,2'), so this is less efficient than the native
-%% implementation.
-%% @end
-%% -----------------------------------------------------------------------------
+For a local destination it calls the native implementation. For a remote
+destination it spawns a process that holds the timer and accepts cancellation
+(via `cancel_timer/1,2`); this is less efficient than the native implementation.
+""".
 -spec send_after(
     Time :: time(),
     Destination :: send_after_dst(),
     Message :: message(),
-    Opts :: send_after_opts()) -> TRef :: reference().
+    Opts :: send_after_opts()
+) -> TRef :: reference().
 
-send_after(Time, Dest, Msg, Opts0)
-when ?IS_VALID_TIME(Time) andalso is_list(Opts0) andalso
-(
-    (erlang:is_pid(Dest) andalso erlang:node(Dest) == erlang:node())
-    orelse is_atom(Dest)
-) ->
+send_after(Time, Dest, Msg, Opts0) when
+    ?IS_VALID_TIME(Time) andalso is_list(Opts0) andalso
+        ((erlang:is_pid(Dest) andalso erlang:node(Dest) == erlang:node()) orelse
+            is_atom(Dest))
+->
     %% Local send
     Opts = to_erl_send_after_opts(Opts0),
     erlang:send_after(Time, Dest, Msg, Opts);
-
-
-send_after(Time, {RegName, Node}, Msg, Opts0)
-when ?IS_VALID_TIME(Time) andalso
-is_list(Opts0) andalso
-is_atom(RegName) andalso
-is_atom(Node) andalso
-Node == erlang:node() ->
+send_after(Time, {RegName, Node}, Msg, Opts0) when
+    ?IS_VALID_TIME(Time) andalso
+        is_list(Opts0) andalso
+        is_atom(RegName) andalso
+        is_atom(Node) andalso
+        Node == erlang:node()
+->
     %% Local send
     Opts = to_erl_send_after_opts(Opts0),
     erlang:send_after(Time, RegName, Msg, Opts);
-
-send_after(Time, Dest, Msg, Opts)
-when ?IS_VALID_TIME(Time) andalso is_list(Opts) ->
+send_after(Time, Dest, Msg, Opts) when
+    ?IS_VALID_TIME(Time) andalso is_list(Opts)
+->
     case partisan_remote_ref:is_type(Dest) of
         true ->
             Caller = erlang:self(),
@@ -1298,7 +1244,6 @@ when ?IS_VALID_TIME(Time) andalso is_list(Opts) ->
                             {timeout, TimerRef, send} ->
                                 catch partisan:send(Dest, Msg, Opts),
                                 ok;
-
                             {cancel, Alias, Pid, Info} ->
                                 CancelOpts = [{info, Info}],
                                 Result = erlang:cancel_timer(
@@ -1320,18 +1265,15 @@ when ?IS_VALID_TIME(Time) andalso is_list(Opts) ->
                     after
                         unalias(Alias)
                     end
-
                 end
             ),
 
             receive
                 {send_after_init, Pid, Ref} ->
                     Ref
-            after
-                3000 ->
-                    error(timeout)
+            after 3000 ->
+                error(timeout)
             end;
-
         false ->
             Info = #{
                 cause => #{
@@ -1346,31 +1288,31 @@ when ?IS_VALID_TIME(Time) andalso is_list(Opts) ->
                 badarg, [Time, Dest, Msg, Opts], [{error_info, Info}]
             )
     end;
-
 send_after(Time, Dest, Msg, Opts) when not ?IS_VALID_TIME(Time) ->
     Info = #{cause => #{1 => "should be a pos_integer"}},
     erlang:error(
         badarg, [Time, Dest, Msg, Opts], [{error_info, Info}]
     );
-
 send_after(Time, Dest, Msg, Opts) when not is_list(Opts) ->
     Info = #{cause => #{4 => "should be a list"}},
     erlang:error(
         badarg, [Time, Dest, Msg, Opts], [{error_info, Info}]
     ).
 
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+-doc "Equivalent to `cancel_timer(Ref, [])`.".
 -spec cancel_timer(Ref :: reference()) ->
     ok | time() | false.
 
 cancel_timer(Ref) ->
     cancel_timer(Ref, []).
 
+-doc """
+Cancels the timer `Ref` — the Partisan counterpart of `erlang:cancel_timer/2`.
 
+`Opts` accepts `{async, boolean()}` and `{info, boolean()}` with the same meaning
+as in `erlang:cancel_timer/2`. Works for both native timers and the emulated
+timers `send_after/4` creates for remote destinations.
+""".
 -spec cancel_timer(Ref :: reference(), Opts :: list()) ->
     ok | time() | false.
 
@@ -1381,23 +1323,21 @@ cancel_timer(Ref, Opts) when erlang:is_reference(Ref), is_list(Opts) ->
         true ->
             _ = spawn(fun() -> do_cancel_timer(Ref, Opts, Me) end),
             ok;
-
         false ->
             do_cancel_timer(Ref, Opts, Me)
     end.
 
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+-doc """
+Spawns `Fun` on `Node` and returns a `t:remote_pid/0` for the new process — the
+Partisan counterpart of `erlang:spawn/2`. A remote spawn is carried out with
+`partisan_rpc`.
+""".
 -spec spawn(Node :: node(), Fun :: fun(() -> any())) -> remote_pid().
 
 spawn(Node, Fun) ->
     case Node == node() of
         true ->
             Pid = erlang:spawn(Fun),
-            %% eqwalizer:ignore This MUST be a pid()
             partisan_remote_ref:from_term(Pid);
         false ->
             case partisan_rpc:call(Node, erlang, spawn, [Fun], 5000) of
@@ -1412,33 +1352,27 @@ spawn(Node, Fun) ->
                             erlang:exit(process_exit_reason(Reason))
                         end
                     ),
-                    %% eqwalizer:ignore It's a pid so this call won't fail
                     partisan_remote_ref:from_term(Pid);
-
                 Pid when erlang:is_pid(Pid) ->
-                    %% eqwalizer:ignore It's a pid so this call won't fail
                     partisan_remote_ref:from_term(Pid, Node);
-
                 Encoded ->
-                    %% eqwalizer:ignore This MUST be remote_pid()
                     Encoded
             end
     end.
 
-
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+-doc """
+Spawns `Module:Function(Args)` on `Node` and returns a `t:remote_pid/0` for the
+new process — the Partisan counterpart of `erlang:spawn/4`. A remote spawn is
+carried out with `partisan_rpc`.
+""".
 -spec spawn(
-    Node :: node(), Mod :: module(), Function :: atom(), Args :: [term()]) -> remote_pid().
+    Node :: node(), Mod :: module(), Function :: atom(), Args :: [term()]
+) -> remote_pid().
 
 spawn(Node, Module, Function, Args) ->
     case Node == node() of
         true ->
             Pid = erlang:spawn(Module, Function, Args),
-            %% eqwalizer:ignore It's a pid so this call won't fail
             partisan_remote_ref:from_term(Pid);
         false ->
             SpawnArgs = [Module, Function, Args],
@@ -1456,20 +1390,17 @@ spawn(Node, Module, Function, Args) ->
                             erlang:exit(process_exit_reason(Reason))
                         end
                     ),
-                    %% eqwalizer:ignore It's a pid so this call won't fail
                     partisan_remote_ref:from_term(Pid);
-
                 EncodedPid ->
-                    %% eqwalizer:ignore we know this is correct
                     EncodedPid
             end
     end.
 
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+-doc """
+Spawns `Fun` on `Node` and monitors it, returning `{Pid, MonitorRef}` — the
+Partisan counterpart of `erlang:spawn_monitor/2`. See `monitor/2` for the shape
+of the reference and the `DOWN` message.
+""".
 -spec spawn_monitor(Node :: node(), Fun :: fun(() -> any())) ->
     {remote_pid(), remote_reference()}
     | {pid(), reference()}.
@@ -1479,14 +1410,14 @@ spawn_monitor(Node, Fun) ->
     Ref = monitor(process, Pid),
     {Pid, Ref}.
 
-
-
-%% -----------------------------------------------------------------------------
-%% @doc
-%% @end
-%% -----------------------------------------------------------------------------
+-doc """
+Spawns `Module:Function(Args)` on `Node` and monitors it, returning
+`{Pid, MonitorRef}` — the Partisan counterpart of `erlang:spawn_monitor/4`. See
+`monitor/2` for the shape of the reference and the `DOWN` message.
+""".
 -spec spawn_monitor(
-    Node :: node(), Mod :: module(), Function :: atom(), Args :: [term()]) ->
+    Node :: node(), Mod :: module(), Function :: atom(), Args :: [term()]
+) ->
     {remote_pid(), remote_reference()}
     | {pid(), reference()}.
 
@@ -1495,157 +1426,156 @@ spawn_monitor(Node, Module, Function, Args) ->
     Ref = monitor(process, Pid),
     {Pid, Ref}.
 
-
-
-%% -----------------------------------------------------------------------------
-%% @doc Cast message to a remote ref
-%% @end
-%% -----------------------------------------------------------------------------
+-doc """
+Casts message `Msg` to the process identified by `ServerRef` (a
+`t:server_ref/0`), returning `ok`. Delivery is asynchronous and best-effort.
+""".
 -spec cast_message(
     ServerRef :: server_ref(),
-    Msg :: message()) -> ok.
+    Msg :: message()
+) -> ok.
 
 cast_message(Term, Message) ->
     ?PEER_SERVICE_MANAGER:cast_message(Term, Message).
 
-
-%% -----------------------------------------------------------------------------
-%% @doc Cast message to registered process on the remote side.
-%% @end
-%% -----------------------------------------------------------------------------
+-doc """
+Casts message `Msg` to the process identified by `ServerRef`, honouring `Opts`
+(`t:forward_opts/0`). Delivery is asynchronous and best-effort.
+""".
 -spec cast_message(
     ServerRef :: server_ref(),
     Msg :: message(),
-    Opts :: forward_opts()) -> ok.
+    Opts :: forward_opts()
+) -> ok.
 
 cast_message(ServerRef, Msg, Opts) ->
     ?PEER_SERVICE_MANAGER:cast_message(ServerRef, Msg, Opts).
 
-
-%% -----------------------------------------------------------------------------
-%% @doc Cast message to registered process on the remote side.
-%% @end
-%% -----------------------------------------------------------------------------
+-doc """
+Casts message `Msg` to the process `ServerRef` on `Node`, honouring `Opts`
+(`t:forward_opts/0`). Delivery is asynchronous and best-effort.
+""".
 -spec cast_message(
     Node :: node(),
     ServerRef :: server_ref(),
     Msg :: message(),
-    Opts :: forward_opts()) -> ok.
+    Opts :: forward_opts()
+) -> ok.
 
 cast_message(Node, ServerRef, Message, Options) ->
     ?PEER_SERVICE_MANAGER:cast_message(Node, ServerRef, Message, Options).
 
+-doc """
+Forwards message `Msg` to the process identified by `ServerRef` (a
+`t:server_ref/0`).
 
-%% -----------------------------------------------------------------------------
-%% @doc Forward message to registered process on the remote side.
-%% @end
-%% -----------------------------------------------------------------------------
+Forwarding is best-effort. It returns `{error, Reason}` — it does **not** raise —
+when the message could not be handed to a connection, most commonly because there
+is no usable connection to the target node on the requested channel. See
+`t:partisan_peer_service_manager:forward_result/0` for the reasons Partisan's own
+managers report.
+
+> #### Check the return value {: .warning}
+>
+> Before 6.0.0 this function was specced `-> ok`, which was never true of the
+> implementations. Code written against that spec drops messages silently.
+""".
 -spec forward_message(
     ServerRef :: server_ref(),
-    Msg :: message()) -> ok.
+    Msg :: message()
+) -> partisan_peer_service_manager:forward_result().
 
 forward_message(ServerRef, Message) ->
     ?PEER_SERVICE_MANAGER:forward_message(ServerRef, Message).
 
+-doc """
+Forwards message `Msg` to the process identified by `ServerRef`, honouring `Opts`
+(`t:forward_opts/0`).
 
-%% -----------------------------------------------------------------------------
-%% @doc Forward message to registered process on the remote side.
-%% @end
-%% -----------------------------------------------------------------------------
+Best-effort; see `forward_message/2` on the return value.
+""".
 -spec forward_message(
     ServerRef :: server_ref(),
     Msg :: message(),
-    Opts :: forward_opts()) -> ok.
+    Opts :: forward_opts()
+) -> partisan_peer_service_manager:forward_result().
 
 forward_message(ServerRef, Message, Opts) ->
     ?PEER_SERVICE_MANAGER:forward_message(ServerRef, Message, Opts).
 
+-doc """
+Forwards message `Msg` to the process `ServerRef` on `Node`, honouring `Opts`
+(`t:forward_opts/0`).
 
-%% -----------------------------------------------------------------------------
-%% @doc Forward message to registered process on the remote side.
-%% @end
-%% -----------------------------------------------------------------------------
+Best-effort; see `forward_message/2` on the return value.
+""".
 -spec forward_message(
     Node :: node(),
     ServerRef :: server_ref(),
     Msg :: message(),
-    Opts :: forward_opts()) -> ok.
+    Opts :: forward_opts()
+) -> partisan_peer_service_manager:forward_result().
 
 forward_message(Node, ServerRef, Message, Opts) ->
     ?PEER_SERVICE_MANAGER:forward_message(Node, ServerRef, Message, Opts).
 
+-doc """
+Broadcasts a message originating from this node.
 
-%% -----------------------------------------------------------------------------
-%% @doc Broadcasts a message originating from this node.
-%%
-%% The message will be delivered to each node at least once. The `Mod' passed
-%% is responsible for handling the message on remote nodes as well as providing
-%% some other information both locally and and on other nodes.
-%% `Mod' must be loaded on all members of the clusters and implement the
-%% `partisan_plumtree_broadcast_handler' behaviour.
-%% @end
-%% -----------------------------------------------------------------------------
+The message is delivered to every node at least once. `Mod` is responsible for
+handling the message on remote nodes and for supplying the related information
+the broadcast substrate needs, both locally and on other nodes. `Mod` must be
+loaded on every member of the cluster and implement the
+`m:partisan_plumtree_broadcast_handler` behaviour.
+""".
 -spec broadcast(any(), module()) -> ok.
 
 broadcast(Broadcast, Mod) ->
     partisan_plumtree_broadcast:broadcast(Broadcast, Mod).
 
-
-
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
-
-
 
 %% @private
 node_info(L, Acc) ->
     node_info(L, Acc, node_spec()).
 
-
 %% @private
-node_info([name|T], Acc0, #{name := Val} = Spec) ->
+node_info([name | T], Acc0, #{name := Val} = Spec) ->
     Acc1 = Acc0#{name => Val},
     node_info(T, Acc1, Spec);
-
-node_info([listen_addrs|T], Acc0, #{listen_addrs := Val} = Spec) ->
+node_info([listen_addrs | T], Acc0, #{listen_addrs := Val} = Spec) ->
     Acc1 = Acc0#{listen_addrs => Val},
     node_info(T, Acc1, Spec);
-
-node_info([channels|T], Acc0, #{channels := Val} = Spec) ->
+node_info([channels | T], Acc0, #{channels := Val} = Spec) ->
     Acc1 = Acc0#{channels => Val},
     node_info(T, Acc1, Spec);
-
-node_info([listen_ip|T], Acc0, #{listen_addrs := [#{ip := Val} | _]} = Spec) ->
+node_info([listen_ip | T], Acc0, #{listen_addrs := [#{ip := Val} | _]} = Spec) ->
     Acc1 = Acc0#{listen_ip => Val},
     node_info(T, Acc1, Spec);
-
-node_info([listen_port|T], Acc0, #{listen_addrs := [#{port := Val} | _]} = Spec) ->
+node_info(
+    [listen_port | T], Acc0, #{listen_addrs := [#{port := Val} | _]} = Spec
+) ->
     Acc1 = Acc0#{listen_port => Val},
     node_info(T, Acc1, Spec);
-
-node_info([metadata|T], Acc0, Spec) ->
+node_info([metadata | T], Acc0, Spec) ->
     Default = #{},
     Acc1 = Acc0#{metadata => partisan_config:get(metadata, Default)},
     node_info(T, Acc1, Spec);
-
-node_info([connection_count|T], Acc0, Spec) ->
+node_info([connection_count | T], Acc0, Spec) ->
     Acc1 = Acc0#{connection_count => partisan_peer_connections:count()},
     node_info(T, Acc1, Spec);
-
-node_info([_|T], Acc, Spec) ->
+node_info([_ | T], Acc, Spec) ->
     node_info(T, Acc, Spec);
-
 node_info([], Acc, _) ->
     Acc.
-
 
 %% @private
 -spec to_erl_send_opts([tuple()]) -> [nosuspend | noconnect | tuple()].
 
 to_erl_send_opts(Opts) ->
     to_erl_opts(Opts).
-
 
 %% @private
 %%  Returns [{abs, boolean()}].
@@ -1654,13 +1584,11 @@ to_erl_send_opts(Opts) ->
 to_erl_send_after_opts(Opts) ->
     to_erl_opts(Opts).
 
-
 %% @private
 -spec to_erl_monitor_opts(list()) -> [erlang:monitor_option()].
 
 to_erl_monitor_opts(Opts) ->
     to_erl_opts(Opts).
-
 
 %% @private
 to_erl_opts(Opts0) when is_list(Opts0) ->
@@ -1670,7 +1598,6 @@ to_erl_opts(Opts0) when is_list(Opts0) ->
         false ->
             Opts0
     end.
-
 
 %% @private
 -spec to_net_kernel_opts([monitor_nodes_opt()]) -> [net_kernel_opt()].
@@ -1688,37 +1615,29 @@ to_net_kernel_opts(Opts0) when is_list(Opts0) ->
             Opts0
     end.
 
-
 %% @private
 maybe_wait_for_cancel_timer_result(Ref, Info, undefined) ->
     maybe_wait_for_cancel_timer_result(Ref, Info, erlang:self());
-
 maybe_wait_for_cancel_timer_result(Ref, Info, Pid) when erlang:is_pid(Pid) ->
     maybe_wait_for_cancel_timer_result(Ref, Info, Pid, Pid == erlang:self()).
-
 
 %% @private
 maybe_wait_for_cancel_timer_result(_, false, _, _) ->
     ok;
-
 maybe_wait_for_cancel_timer_result(Ref, true, _, true) ->
     receive
         {send_after_canceled, Ref, Result} ->
             Result
-    after
-        500 ->
-            false
+    after 500 ->
+        false
     end;
-
 maybe_wait_for_cancel_timer_result(Ref, true, Pid, _) ->
     receive
         {send_after_canceled, Ref, Result} ->
             Pid ! {cancel_timer, Ref, Result}
-    after
-        500 ->
-            Pid ! {cancel_timer, Ref, false}
+    after 500 ->
+        Pid ! {cancel_timer, Ref, false}
     end.
-
 
 %% @private
 do_cancel_timer(Ref, Opts, Pid) ->
@@ -1731,17 +1650,13 @@ do_cancel_timer(Ref, Opts, Pid) ->
             Info = partisan_util:get(info, Opts, true),
             Ref ! {cancel, Ref, Me, Info},
             maybe_wait_for_cancel_timer_result(Ref, Info, Pid);
-
         Result when Info == true, erlang:is_pid(Pid) ->
             Pid ! {cancel_timer, Ref, Result};
-
         Result when Info == true ->
             Result;
-
         _ ->
             ok
     end.
-
 
 %% @private
 process_exit_reason(disconnected) ->
@@ -1751,5 +1666,31 @@ process_exit_reason(not_yet_connected) ->
 process_exit_reason(_) ->
     noproc.
 
-
-
+%% @private
+%% When `connect_disterl' is set, convert a partisan_remote_ref to a
+%% disterl-usable form: a foreign pid (via `list_to_pid/1') for encoded pids,
+%% or `{Name, Node}' for encoded names. Returns `error' for refs we don't
+%% know how to convert (the caller should fall back to partisan_monitor).
+remote_ref_to_disterl(Ref) ->
+    try
+        Node = partisan_remote_ref:node(Ref),
+        case partisan_remote_ref:target(Ref) of
+            {encoded_pid, Str} ->
+                %% A partisan-encoded pid is stored in node-localised
+                %% "<0.X.Y>" form; `list_to_pid/1' rebuilds it as a pid on the
+                %% LOCAL node, silently discarding the origin node. Only a
+                %% genuinely-local pid can be reconstructed this way; a remote
+                %% pid has no disterl-usable form, so the caller must fall back
+                %% to the partisan transport.
+                case Node =:= partisan:node() of
+                    true -> {ok, list_to_pid(Str)};
+                    false -> error
+                end;
+            {encoded_name, Str} ->
+                {ok, {list_to_existing_atom(Str), Node}};
+            _ ->
+                error
+        end
+    catch
+        _:_ -> error
+    end.

@@ -63,8 +63,8 @@ node_num_nodes() ->
 %% What node-specific operations should be called.
 node_commands() ->
     [
-     {call, ?MODULE, update, [node_name(), key(), value()]},
-     {call, ?MODULE, sleep, []}
+        {call, ?MODULE, update, [node_name(), key(), value()]},
+        {call, ?MODULE, sleep, []}
     ].
 
 %% Assertion commands.
@@ -78,7 +78,7 @@ node_global_functions() ->
 %% What should the initial node state be.
 node_initial_state() ->
     node_debug("initializing", []),
-    #node_state{values=dict:new()}.
+    #node_state{values = dict:new()}.
 
 %% Names of the node functions so we kow when we can dispatch to the node
 %% pre- and postconditions.
@@ -96,45 +96,71 @@ node_precondition(_NodeState, _Command) ->
     false.
 
 %% Next state.
-node_next_state(_State, #node_state{values=Values0} = NodeState, {ok, _}, {call, ?MODULE, update, [_Node, Key, Value]}) ->
+node_next_state(
+    _State,
+    #node_state{values = Values0} = NodeState,
+    {ok, _},
+    {call, ?MODULE, update, [_Node, Key, Value]}
+) ->
     Values = dict:store([a, b, Key], Value, Values0),
-    NodeState#node_state{values=Values};
+    NodeState#node_state{values = Values};
 node_next_state(_State, NodeState, _Response, _Command) ->
     NodeState.
 
 %% Postconditions for node commands.
-node_postcondition(#node_state{values=Values}, {call, ?MODULE, check_delivery, []}, Results) ->
+node_postcondition(
+    #node_state{values = Values}, {call, ?MODULE, check_delivery, []}, Results
+) ->
     node_debug("checking postcondition for check_delivery...", []),
 
     %% For each value we sent...
-    Result = dict:fold(fun(Key, Value, Acc1) ->
-        %% Make sure each node received it.
-        dict:fold(fun(Node, NodeResults, Acc2) ->
-            case NodeResults of
-                {badrpc, nodedown} ->
-                    Acc2 andalso true;
-                _ ->
-                    case lists:member(Key, NodeResults) of
-                        true ->
-                            node_debug("=> node: ~p received key: ~p", [Node, Key]),
+    Result = dict:fold(
+        fun(Key, Value, Acc1) ->
+            %% Make sure each node received it.
+            dict:fold(
+                fun(Node, NodeResults, Acc2) ->
+                    case NodeResults of
+                        {badrpc, nodedown} ->
                             Acc2 andalso true;
-                        false ->
-                            node_debug("=> node: ~p didn't receive key: ~p, value: ~p, only received: ~p", [Node, Key, Value, NodeResults]),
-                            Acc2 andalso false
+                        _ ->
+                            case lists:member(Key, NodeResults) of
+                                true ->
+                                    node_debug(
+                                        "=> node: ~p received key: ~p", [
+                                            Node, Key
+                                        ]
+                                    ),
+                                    Acc2 andalso true;
+                                false ->
+                                    node_debug(
+                                        "=> node: ~p didn't receive key: ~p, value: ~p, only received: ~p",
+                                        [Node, Key, Value, NodeResults]
+                                    ),
+                                    Acc2 andalso false
+                            end
                     end
-            end
-        end, Acc1, Results)
-    end, true, Values),
+                end,
+                Acc1,
+                Results
+            )
+        end,
+        true,
+        Values
+    ),
 
     node_debug("postcondition result for check_delivery: ~p", [Result]),
     Result;
-node_postcondition(_NodeState, {call, ?MODULE, update, [_Node, _Key, _Value]}, {ok, _Result}) ->
+node_postcondition(
+    _NodeState, {call, ?MODULE, update, [_Node, _Key, _Value]}, {ok, _Result}
+) ->
     true;
 node_postcondition(_NodeState, {call, ?MODULE, sleep, []}, _Result) ->
     true;
 node_postcondition(_NodeState, Command, Response) ->
-    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p",
-               [Command, Response]),
+    node_debug(
+        "generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p",
+        [Command, Response]
+    ),
     false.
 
 %%%===================================================================
@@ -147,7 +173,10 @@ node_postcondition(_NodeState, Command, Response) ->
 -define(RECEIVER, receiver).
 
 -define(ETS, prop_partisan).
--define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
+-define(NAME, fun(Name) ->
+    [{_, NodeName}] = ets:lookup(?ETS, Name),
+    NodeName
+end).
 
 %% @private
 update(Node, Key, Value) ->
@@ -155,12 +184,13 @@ update(Node, Key, Value) ->
 
     Key1 = [a, b, Key],
 
-    Result = rpc:call(?NAME(Node), lashup_kv, request_op, [Key1, {update,
-                    [{update,
-                        {flag, riak_dt_lwwreg},
-                        {assign, Value, erlang:system_time(nano_seconds)}
-                    }]
-                }]),
+    Result = rpc:call(?NAME(Node), lashup_kv, request_op, [
+        Key1,
+        {update, [
+            {update, {flag, riak_dt_lwwreg},
+                {assign, Value, erlang:system_time(nano_seconds)}}
+        ]}
+    ]),
     node_debug("received result to write with result: ~p", [Result]),
 
     ?PROPERTY_MODULE:command_conclusion(Node, [update, Node, Key, Value]),
@@ -188,11 +218,15 @@ check_delivery() ->
 
     ?PROPERTY_MODULE:command_preamble(RunnerNode, [check_delivery]),
 
-    Results = lists:foldl(fun(Node, Dict) ->
-        MatchSpec = ets:fun2ms(fun({[a, b, '_']}) -> true end),
-        Result = rpc:call(?NAME(Node), lashup_kv, keys, [MatchSpec]),
-        dict:store(Node, Result, Dict)
-    end, dict:new(), names()),
+    Results = lists:foldl(
+        fun(Node, Dict) ->
+            MatchSpec = ets:fun2ms(fun({[a, b, '_']}) -> true end),
+            Result = rpc:call(?NAME(Node), lashup_kv, keys, [MatchSpec]),
+            dict:store(Node, Result, Dict)
+        end,
+        dict:new(),
+        names()
+    ),
 
     node_debug("check_delivery: ~p", [dict:to_list(Results)]),
 
@@ -225,32 +259,47 @@ node_begin_case() ->
     [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
 
     %% Enable pid encoding.
-    lists:foreach(fun({ShortName, _}) ->
-        % node_debug("enabling pid_encoding at node ~p", [ShortName]),
-        ok = rpc:call(?NAME(ShortName), partisan_config, set, [pid_encoding, true])
-    end, Nodes),
+    lists:foreach(
+        fun({ShortName, _}) ->
+            % node_debug("enabling pid_encoding at node ~p", [ShortName]),
+            ok = rpc:call(?NAME(ShortName), partisan_config, set, [
+                pid_encoding, true
+            ])
+        end,
+        Nodes
+    ),
 
     %% Enable register_pid_for_encoding.
-    lists:foreach(fun({ShortName, _}) ->
-        % node_debug("enabling register_pid_for_encoding at node ~p", [ShortName]),
-        ok = rpc:call(?NAME(ShortName), partisan_config, set, [register_pid_for_encoding, true])
-    end, Nodes),
+    lists:foreach(
+        fun({ShortName, _}) ->
+            % node_debug("enabling register_pid_for_encoding at node ~p", [ShortName]),
+            ok = rpc:call(?NAME(ShortName), partisan_config, set, [
+                register_pid_for_encoding, true
+            ])
+        end,
+        Nodes
+    ),
 
     %% Load, configure, and start lashup.
-    lists:foreach(fun({ShortName, _}) ->
-        % node_debug("starting lashup at node ~p", [ShortName]),
-        case rpc:call(?NAME(ShortName), application, load, [lashup]) of
-            ok ->
-                ok;
-            {error, {already_loaded, lashup}} ->
-                ok;
-            Other ->
-                exit({error, {load_failed, Other}})
-        end,
+    lists:foreach(
+        fun({ShortName, _}) ->
+            % node_debug("starting lashup at node ~p", [ShortName]),
+            case rpc:call(?NAME(ShortName), application, load, [lashup]) of
+                ok ->
+                    ok;
+                {error, {already_loaded, lashup}} ->
+                    ok;
+                Other ->
+                    exit({error, {load_failed, Other}})
+            end,
 
-        % node_debug("starting lashup at node ~p", [ShortName]),
-        {ok, _} = rpc:call(?NAME(ShortName), application, ensure_all_started, [lashup])
-    end, Nodes),
+            % node_debug("starting lashup at node ~p", [ShortName]),
+            {ok, _} = rpc:call(
+                ?NAME(ShortName), application, ensure_all_started, [lashup]
+            )
+        end,
+        Nodes
+    ),
 
     %% Sleep.
     % node_debug("sleeping for convergence", []),
@@ -275,30 +324,35 @@ node_end_case() ->
     [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
 
     %% Stop lashup.
-    lists:foreach(fun({ShortName, _}) ->
-        % node_debug("stopping lashup on node ~p", [ShortName]),
-        case rpc:call(?NAME(ShortName), application, stop, [lashup]) of
-            ok ->
-                ok;
-            {badrpc, nodedown} ->
-                ok;
-            {error, {not_started, lashup}} ->
-                ok;
-            LashupError ->
-                node_debug("cannot terminate lashup: ~p", [LashupError]),
-                exit({error, shutdown_failed})
-        end,
+    lists:foreach(
+        fun({ShortName, _}) ->
+            % node_debug("stopping lashup on node ~p", [ShortName]),
+            case rpc:call(?NAME(ShortName), application, stop, [lashup]) of
+                ok ->
+                    ok;
+                {badrpc, nodedown} ->
+                    ok;
+                {error, {not_started, lashup}} ->
+                    ok;
+                LashupError ->
+                    node_debug("cannot terminate lashup: ~p", [LashupError]),
+                    exit({error, shutdown_failed})
+            end,
 
-        % node_debug("stopping prometheus on node ~p", [ShortName]),
-        case rpc:call(?NAME(ShortName), application, stop, [prometheus]) of
-            ok ->
-                ok;
-            {badrpc, nodedown} ->
-                ok;
-            PrometheusError ->
-                node_debug("cannot terminate prometheus: ~p", [PrometheusError]),
-                exit({error, shutdown_failed})
-        end
-    end, Nodes),
+            % node_debug("stopping prometheus on node ~p", [ShortName]),
+            case rpc:call(?NAME(ShortName), application, stop, [prometheus]) of
+                ok ->
+                    ok;
+                {badrpc, nodedown} ->
+                    ok;
+                PrometheusError ->
+                    node_debug("cannot terminate prometheus: ~p", [
+                        PrometheusError
+                    ]),
+                    exit({error, shutdown_failed})
+            end
+        end,
+        Nodes
+    ),
 
     ok.

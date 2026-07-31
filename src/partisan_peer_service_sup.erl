@@ -56,10 +56,8 @@
 
 -export([init/1]).
 
-
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
-
 
 init([]) ->
     Manager = partisan_peer_service:manager(),
@@ -67,7 +65,6 @@ init([]) ->
     Children = [
         ?WORKER(Manager, [], permanent, 5000),
         ?WORKER(partisan_peer_discovery_agent, [], permanent, 5000),
-        ?EVENT_MANAGER(partisan_peer_service_events, permanent, 5000),
         ?WORKER(partisan_monitor, [], permanent, 5000)
     ],
     RestartStrategy = {rest_for_one, 10, 10},

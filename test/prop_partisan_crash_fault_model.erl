@@ -30,20 +30,28 @@
 
 -define(MANAGER, partisan_pluggable_peer_service_manager).
 
--record(fault_model_state, {tolerance,
-                            crashed_nodes,
-                            send_omissions,
-                            receive_omissions,
-                            general_omissions}).
+-record(fault_model_state, {
+    tolerance,
+    crashed_nodes,
+    send_omissions,
+    receive_omissions,
+    general_omissions
+}).
 
 %%%===================================================================
 %%% Generators
 %%%===================================================================
 
 message() ->
-    ?LET(Id, erlang:unique_integer([positive, monotonic]),
-        ?LET(Random, integer(),
-            {Id, Random})).
+    ?LET(
+        Id,
+        erlang:unique_integer([positive, monotonic]),
+        ?LET(
+            Random,
+            integer(),
+            {Id, Random}
+        )
+    ).
 
 node_name() ->
     oneof(names()).
@@ -63,7 +71,10 @@ names() ->
 -define(FAULT_DEBUG, true).
 
 -define(ETS, prop_partisan).
--define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
+-define(NAME, fun(Name) ->
+    [{_, NodeName}] = ets:lookup(?ETS, Name),
+    NodeName
+end).
 
 %% Stop the node.
 %% Fail-stop model, assume synchronous failure detection.
@@ -115,83 +126,135 @@ end_omission(Node) ->
 
 %% Create a receive omission failure.
 begin_receive_omission(SourceNode0, DestinationNode) ->
-    ?PROPERTY_MODULE:command_preamble(DestinationNode, [begin_receive_omission, SourceNode0]),
+    ?PROPERTY_MODULE:command_preamble(DestinationNode, [
+        begin_receive_omission, SourceNode0
+    ]),
 
-    fault_debug("begin_receive_omission: source_node ~p destination_node ~p", [SourceNode0, DestinationNode]),
+    fault_debug("begin_receive_omission: source_node ~p destination_node ~p", [
+        SourceNode0, DestinationNode
+    ]),
 
     %% Convert to real node name and not symbolic name.
     SourceNode = ?NAME(SourceNode0),
 
-    InterpositionFun = fun({receive_message, N, Message}) ->
-        case N of
-            SourceNode ->
-                ?LOG_INFO("~p: dropping packet from ~p to ~p due to interposition.", [node(), SourceNode, DestinationNode]),
-                undefined;
-            OtherNode ->
-                ?LOG_INFO("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
-                Message
-        end;
-        ({forward_message, _N, Message}) -> Message
+    InterpositionFun = fun
+        ({receive_message, N, Message}) ->
+            case N of
+                SourceNode ->
+                    ?LOG_INFO(
+                        "~p: dropping packet from ~p to ~p due to interposition.",
+                        [node(), SourceNode, DestinationNode]
+                    ),
+                    undefined;
+                OtherNode ->
+                    ?LOG_INFO(
+                        "~p: allowing message, doesn't match interposition as destination is ~p and not ~p",
+                        [node(), OtherNode, DestinationNode]
+                    ),
+                    Message
+            end;
+        ({forward_message, _N, Message}) ->
+            Message
     end,
-    Result = rpc:call(?NAME(DestinationNode), ?MANAGER, add_interposition_fun, [{receive_omission, SourceNode}, InterpositionFun]),
+    Result = rpc:call(
+        ?NAME(DestinationNode), ?MANAGER, add_interposition_fun, [
+            {receive_omission, SourceNode}, InterpositionFun
+        ]
+    ),
 
-    ?PROPERTY_MODULE:command_conclusion(DestinationNode, [begin_receive_omission, SourceNode0]),
+    ?PROPERTY_MODULE:command_conclusion(DestinationNode, [
+        begin_receive_omission, SourceNode0
+    ]),
 
     Result.
 
 %% End receive omission failure period.
 end_receive_omission(SourceNode0, DestinationNode) ->
-    ?PROPERTY_MODULE:command_preamble(DestinationNode, [end_receive_omission, SourceNode0]),
+    ?PROPERTY_MODULE:command_preamble(DestinationNode, [
+        end_receive_omission, SourceNode0
+    ]),
 
-    fault_debug("end_receive_omission: source_node ~p destination_node ~p", [SourceNode0, DestinationNode]),
+    fault_debug("end_receive_omission: source_node ~p destination_node ~p", [
+        SourceNode0, DestinationNode
+    ]),
 
     %% Convert to real node name and not symbolic name.
     SourceNode = ?NAME(SourceNode0),
 
-    Result = rpc:call(?NAME(DestinationNode), ?MANAGER, remove_interposition_fun, [{receive_omission, SourceNode}]),
+    Result = rpc:call(
+        ?NAME(DestinationNode), ?MANAGER, remove_interposition_fun, [
+            {receive_omission, SourceNode}
+        ]
+    ),
 
-    ?PROPERTY_MODULE:command_conclusion(DestinationNode, [end_receive_omission, SourceNode0]),
+    ?PROPERTY_MODULE:command_conclusion(DestinationNode, [
+        end_receive_omission, SourceNode0
+    ]),
 
     Result.
 
 %% Create a send omission failure.
 begin_send_omission(SourceNode, DestinationNode0) ->
-    ?PROPERTY_MODULE:command_preamble(SourceNode, [begin_send_omission, DestinationNode0]),
+    ?PROPERTY_MODULE:command_preamble(SourceNode, [
+        begin_send_omission, DestinationNode0
+    ]),
 
-    fault_debug("begin_send_omission: source_node ~p destination_node ~p", [SourceNode, DestinationNode0]),
+    fault_debug("begin_send_omission: source_node ~p destination_node ~p", [
+        SourceNode, DestinationNode0
+    ]),
 
     %% Convert to real node name and not symbolic name.
     DestinationNode = ?NAME(DestinationNode0),
 
-    InterpositionFun = fun({forward_message, N, Message}) ->
-        case N of
-            DestinationNode ->
-                ?LOG_INFO("~p: dropping packet from ~p to ~p due to interposition.", [node(), SourceNode, DestinationNode]),
-                undefined;
-            OtherNode ->
-                ?LOG_INFO("~p: allowing message, doesn't match interposition as destination is ~p and not ~p", [node(), OtherNode, DestinationNode]),
-                Message
-        end;
-        ({receive_message, _N, Message}) -> Message
+    InterpositionFun = fun
+        ({forward_message, N, Message}) ->
+            case N of
+                DestinationNode ->
+                    ?LOG_INFO(
+                        "~p: dropping packet from ~p to ~p due to interposition.",
+                        [node(), SourceNode, DestinationNode]
+                    ),
+                    undefined;
+                OtherNode ->
+                    ?LOG_INFO(
+                        "~p: allowing message, doesn't match interposition as destination is ~p and not ~p",
+                        [node(), OtherNode, DestinationNode]
+                    ),
+                    Message
+            end;
+        ({receive_message, _N, Message}) ->
+            Message
     end,
-    Result = rpc:call(?NAME(SourceNode), ?MANAGER, add_interposition_fun, [{send_omission, DestinationNode}, InterpositionFun]),
+    Result = rpc:call(?NAME(SourceNode), ?MANAGER, add_interposition_fun, [
+        {send_omission, DestinationNode}, InterpositionFun
+    ]),
 
-    ?PROPERTY_MODULE:command_conclusion(SourceNode, [begin_send_omission, DestinationNode0]),
+    ?PROPERTY_MODULE:command_conclusion(SourceNode, [
+        begin_send_omission, DestinationNode0
+    ]),
 
     Result.
 
 %% End send omission failure period.
 end_send_omission(SourceNode, DestinationNode0) ->
-    ?PROPERTY_MODULE:command_preamble(SourceNode, [end_send_omission, DestinationNode0]),
+    ?PROPERTY_MODULE:command_preamble(SourceNode, [
+        end_send_omission, DestinationNode0
+    ]),
 
-    fault_debug("end_send_omission: source_node ~p destination_node ~p", [SourceNode, DestinationNode0]),
+    fault_debug("end_send_omission: source_node ~p destination_node ~p", [
+        SourceNode, DestinationNode0
+    ]),
 
     %% Convert to real node name and not symbolic name.
     DestinationNode = ?NAME(DestinationNode0),
 
-    Result = rpc:call(?NAME(SourceNode), ?MANAGER, remove_interposition_fun, [{send_omission, DestinationNode}]),
+    Result = rpc:call(?NAME(SourceNode), ?MANAGER, remove_interposition_fun, [
+        {send_omission, DestinationNode}
+    ]),
 
-    ?PROPERTY_MODULE:command_conclusion(SourceNode, [end_send_omission, DestinationNode0]),
+    ?PROPERTY_MODULE:command_conclusion(SourceNode, [
+        end_send_omission, DestinationNode0
+    ]),
 
     Result.
 
@@ -204,27 +267,40 @@ resolve_all_faults_with_heal() ->
     ?PROPERTY_MODULE:command_preamble(RunnerNode, [resolve_all_faults_with_heal]),
 
     %% Remove all interposition funs.
-    lists:foreach(fun(Node) ->
-        % fault_debug("getting interposition funs at node ~p", [Node]),
+    lists:foreach(
+        fun(Node) ->
+            % fault_debug("getting interposition funs at node ~p", [Node]),
 
-        case rpc:call(?NAME(Node), ?MANAGER, get_interposition_funs, []) of
-            {badrpc, nodedown} ->
-                ok;
-            {ok, InterpositionFuns0} ->
-                InterpositionFuns = dict:to_list(InterpositionFuns0),
-                % fault_debug("=> ~p", [InterpositionFuns]),
+            case rpc:call(?NAME(Node), ?MANAGER, get_interposition_funs, []) of
+                {badrpc, nodedown} ->
+                    ok;
+                {ok, InterpositionFuns0} ->
+                    InterpositionFuns = dict:to_list(InterpositionFuns0),
+                    % fault_debug("=> ~p", [InterpositionFuns]),
 
-                lists:foreach(fun({InterpositionName, _Function}) ->
-                    % fault_debug("=> removing interposition: ~p", [InterpositionName]),
-                    ok = rpc:call(?NAME(Node), ?MANAGER, remove_interposition_fun, [InterpositionName])
-            end, InterpositionFuns)
-        end
-    end, names()),
+                    lists:foreach(
+                        fun({InterpositionName, _Function}) ->
+                            % fault_debug("=> removing interposition: ~p", [InterpositionName]),
+                            ok = rpc:call(
+                                ?NAME(Node),
+                                ?MANAGER,
+                                remove_interposition_fun,
+                                [InterpositionName]
+                            )
+                        end,
+                        InterpositionFuns
+                    )
+            end
+        end,
+        names()
+    ),
 
     %% Sleep.
     timer:sleep(10000),
 
-    ?PROPERTY_MODULE:command_conclusion(RunnerNode, [resolve_all_faults_with_heal]),
+    ?PROPERTY_MODULE:command_conclusion(RunnerNode, [
+        resolve_all_faults_with_heal
+    ]),
 
     ok.
 
@@ -234,58 +310,81 @@ resolve_all_faults_with_crash() ->
 
     RunnerNode = node(),
 
-    ?PROPERTY_MODULE:command_preamble(RunnerNode, [resolve_all_faults_with_crash]),
+    ?PROPERTY_MODULE:command_preamble(RunnerNode, [
+        resolve_all_faults_with_crash
+    ]),
 
     %% Remove all interposition funs.
-    NodesToCrash = lists:foldl(fun(Node, ToCrash) ->
-        % fault_debug("getting interposition funs at node ~p", [Node]),
+    NodesToCrash = lists:foldl(
+        fun(Node, ToCrash) ->
+            % fault_debug("getting interposition funs at node ~p", [Node]),
 
-        case rpc:call(?NAME(Node), ?MANAGER, get_interposition_funs, []) of
-            {badrpc, nodedown} ->
-                ToCrash;
-            {ok, InterpositionFuns0} ->
-                InterpositionFuns = dict:to_list(InterpositionFuns0),
-                % fault_debug("=> InterpositionFuns: ~p", [InterpositionFuns]),
+            case rpc:call(?NAME(Node), ?MANAGER, get_interposition_funs, []) of
+                {badrpc, nodedown} ->
+                    ToCrash;
+                {ok, InterpositionFuns0} ->
+                    InterpositionFuns = dict:to_list(InterpositionFuns0),
+                    % fault_debug("=> InterpositionFuns: ~p", [InterpositionFuns]),
 
-                %% TODO: This is not good -- previous code made an assumption
-                %% that interposition funs define whether or not a node is faulted.
-                %% So, remove preloads from the list.
-                InterpositionFuns1 = lists:filter(fun({{InterpositionType, _}, _}) ->
-                    lists:member(InterpositionType, [send_omission, receive_omission])
-                end, InterpositionFuns),
-                % fault_debug("=> InterpositionFuns1: ~p", [InterpositionFuns1]),
+                    %% TODO: This is not good -- previous code made an assumption
+                    %% that interposition funs define whether or not a node is faulted.
+                    %% So, remove preloads from the list.
+                    InterpositionFuns1 = lists:filter(
+                        fun({{InterpositionType, _}, _}) ->
+                            lists:member(InterpositionType, [
+                                send_omission, receive_omission
+                            ])
+                        end,
+                        InterpositionFuns
+                    ),
+                    % fault_debug("=> InterpositionFuns1: ~p", [InterpositionFuns1]),
 
-                %% Remove all interposition functions.
-                ToCrash1 = lists:map(fun({_InterpositionName, _Function}) ->
-                    % fault_debug("=> removing interposition: ~p", [InterpositionName]),
-                    Node
-                end, InterpositionFuns1),
+                    %% Remove all interposition functions.
+                    ToCrash1 = lists:map(
+                        fun({_InterpositionName, _Function}) ->
+                            % fault_debug("=> removing interposition: ~p", [InterpositionName]),
+                            Node
+                        end,
+                        InterpositionFuns1
+                    ),
 
-                %% Return updated list of nodes to crash.
-                lists:usort(ToCrash ++ ToCrash1)
-        end
-    end, [], names()),
+                    %% Return updated list of nodes to crash.
+                    lists:usort(ToCrash ++ ToCrash1)
+            end
+        end,
+        [],
+        names()
+    ),
 
     %% Any faulted nodes should also be crashed.
-    NodesToCrash1 = lists:foldl(fun(N, Acc) ->
-        case rpc:call(?NAME(N), partisan_config, get, [faulted]) of
-            true ->
-                Acc ++ [N];
-            _ ->
-                Acc
-        end
-    end, [], names()),
+    NodesToCrash1 = lists:foldl(
+        fun(N, Acc) ->
+            case rpc:call(?NAME(N), partisan_config, get, [faulted]) of
+                true ->
+                    Acc ++ [N];
+                _ ->
+                    Acc
+            end
+        end,
+        [],
+        names()
+    ),
 
     %% Crash faulted nodes.
-    lists:foreach(fun(N) ->
-        fault_debug("crashing faulted node: ~p", [N]),
-        internal_crash(N)
-    end, lists:usort(NodesToCrash ++ NodesToCrash1)),
+    lists:foreach(
+        fun(N) ->
+            fault_debug("crashing faulted node: ~p", [N]),
+            internal_crash(N)
+        end,
+        lists:usort(NodesToCrash ++ NodesToCrash1)
+    ),
 
     %% Sleep.
     timer:sleep(10000),
 
-    ?PROPERTY_MODULE:command_conclusion(RunnerNode, [resolve_all_faults_with_crash]),
+    ?PROPERTY_MODULE:command_conclusion(RunnerNode, [
+        resolve_all_faults_with_crash
+    ]),
 
     ok.
 
@@ -295,23 +394,23 @@ resolve_all_faults_with_crash() ->
 
 fault_commands() ->
     [
-     %% Crashes.
-     %% {call, ?MODULE, crash, [node_name(), JoinedNodes]},
+        %% Crashes.
+        %% {call, ?MODULE, crash, [node_name(), JoinedNodes]},
 
-     %% Failures: fail-stop.
-     %% {call, ?MODULE, stop, [node_name(), JoinedNodes]},
+        %% Failures: fail-stop.
+        %% {call, ?MODULE, stop, [node_name(), JoinedNodes]},
 
-     %% Send omission failures.
-     %% {call, ?MODULE, begin_send_omission, [node_name(), node_name()]},
-     %% {call, ?MODULE, end_send_omission, [node_name(), node_name()]},
+        %% Send omission failures.
+        %% {call, ?MODULE, begin_send_omission, [node_name(), node_name()]},
+        %% {call, ?MODULE, end_send_omission, [node_name(), node_name()]},
 
-     %% Receive omission failures.
-     %% {call, ?MODULE, begin_receive_omission, [node_name(), node_name()]},
-     %% {call, ?MODULE, end_receive_omission, [node_name(), node_name()]},
+        %% Receive omission failures.
+        %% {call, ?MODULE, begin_receive_omission, [node_name(), node_name()]},
+        %% {call, ?MODULE, end_receive_omission, [node_name(), node_name()]},
 
-     %% General omission failure.
-     {call, ?MODULE, begin_omission, [node_name()]},
-     {call, ?MODULE, end_omission, [node_name()]}
+        %% General omission failure.
+        {call, ?MODULE, begin_omission, [node_name()]},
+        {call, ?MODULE, end_omission, [node_name()]}
     ].
 
 %% Names of the node functions so we kow when we can dispatch to the node
@@ -333,12 +432,13 @@ fault_global_functions() ->
 
 %% Initialize failure state.
 fault_initial_state() ->
-    Tolerance = case os:getenv("FAULT_TOLERANCE") of
-        false ->
-            1;
-        ToleranceString ->
-            list_to_integer(ToleranceString)
-    end,
+    Tolerance =
+        case os:getenv("FAULT_TOLERANCE") of
+            false ->
+                1;
+            ToleranceString ->
+                list_to_integer(ToleranceString)
+        end,
 
     fault_debug("setting fault tolerance level to: ~p", [Tolerance]),
 
@@ -347,191 +447,296 @@ fault_initial_state() ->
     ReceiveOmissions = dict:new(),
     GeneralOmissions = [],
 
-    #fault_model_state{tolerance=Tolerance,
-                       crashed_nodes=CrashedNodes,
-                       send_omissions=SendOmissions,
-                       receive_omissions=ReceiveOmissions,
-                       general_omissions=GeneralOmissions}.
+    #fault_model_state{
+        tolerance = Tolerance,
+        crashed_nodes = CrashedNodes,
+        send_omissions = SendOmissions,
+        receive_omissions = ReceiveOmissions,
+        general_omissions = GeneralOmissions
+    }.
 
 %% General omission.
-fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, general_omissions=GeneralOmissions}=FaultModelState, {call, _Mod, begin_omission, [Node]}=Call) ->
+fault_precondition(
+    #fault_model_state{
+        crashed_nodes = CrashedNodes, general_omissions = GeneralOmissions
+    } = FaultModelState,
+    {call, _Mod, begin_omission, [Node]} = Call
+) ->
     %% Fault must be allowed at this moment.
     fault_allowed(Call, FaultModelState) andalso
-
-    %% Both nodes have to be non-crashed.
-    not lists:member(Node, GeneralOmissions) andalso not lists:member(Node, CrashedNodes);
-
-fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, general_omissions=GeneralOmissions}, {call, _Mod, end_omission, [Node]}) ->
+        %% Both nodes have to be non-crashed.
+        not lists:member(Node, GeneralOmissions) andalso
+        not lists:member(Node, CrashedNodes);
+fault_precondition(
+    #fault_model_state{
+        crashed_nodes = CrashedNodes, general_omissions = GeneralOmissions
+    },
+    {call, _Mod, end_omission, [Node]}
+) ->
     %% We must be in the middle of a general omission to resolve it.
-    Result = lists:member(Node, GeneralOmissions) andalso not lists:member(Node, CrashedNodes),
+    Result =
+        lists:member(Node, GeneralOmissions) andalso
+            not lists:member(Node, CrashedNodes),
 
-    fault_debug("precondition for end_omission, node: ~p result: ~p", [Node, Result]),
-    fault_debug("=> is node ~p faulted: ~p", [Node, lists:member(Node, GeneralOmissions)]),
-    fault_debug("=> is node ~p NOT crashed: ~p", [Node, not lists:member(Node, CrashedNodes)]),
+    fault_debug("precondition for end_omission, node: ~p result: ~p", [
+        Node, Result
+    ]),
+    fault_debug("=> is node ~p faulted: ~p", [
+        Node, lists:member(Node, GeneralOmissions)
+    ]),
+    fault_debug("=> is node ~p NOT crashed: ~p", [
+        Node, not lists:member(Node, CrashedNodes)
+    ]),
 
     Result;
-
 %% Receive omission.
-fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, receive_omissions=ReceiveOmissions}=FaultModelState, {call, _Mod, begin_receive_omission, [SourceNode, DestinationNode]}=Call) ->
+fault_precondition(
+    #fault_model_state{
+        crashed_nodes = CrashedNodes, receive_omissions = ReceiveOmissions
+    } = FaultModelState,
+    {call, _Mod, begin_receive_omission, [SourceNode, DestinationNode]} = Call
+) ->
     %% We must not already have a receive omission for these nodes.
-    BeginCondition = case dict:find({SourceNode, DestinationNode}, ReceiveOmissions) of
-        {ok, _Value} ->
-            false;
-        error ->
-            true
-    end,
+    BeginCondition =
+        case dict:find({SourceNode, DestinationNode}, ReceiveOmissions) of
+            {ok, _Value} ->
+                false;
+            error ->
+                true
+        end,
 
     %% Fault must be allowed at this moment.
     fault_allowed(Call, FaultModelState) andalso
-
-    %% Nodes must not be the same node.
-    SourceNode =/= DestinationNode andalso
-
-    %% Both nodes have to be non-crashed.
-    not lists:member(SourceNode, CrashedNodes) andalso not lists:member(DestinationNode, CrashedNodes) andalso
-
-    %% Can't already have a receive omission for these nodes.
-    BeginCondition;
-
-fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, receive_omissions=ReceiveOmissions}, {call, _Mod, end_receive_omission, [SourceNode, DestinationNode]}) ->
+        %% Nodes must not be the same node.
+        SourceNode =/= DestinationNode andalso
+        %% Both nodes have to be non-crashed.
+        not lists:member(SourceNode, CrashedNodes) andalso
+        not lists:member(DestinationNode, CrashedNodes) andalso
+        %% Can't already have a receive omission for these nodes.
+        BeginCondition;
+fault_precondition(
+    #fault_model_state{
+        crashed_nodes = CrashedNodes, receive_omissions = ReceiveOmissions
+    },
+    {call, _Mod, end_receive_omission, [SourceNode, DestinationNode]}
+) ->
     %% We must be in the middle of a send omission to resolve it.
-    EndCondition = case dict:find({SourceNode, DestinationNode}, ReceiveOmissions) of
-        {ok, _Value} ->
-            true;
-        error ->
-            false
-    end,
+    EndCondition =
+        case dict:find({SourceNode, DestinationNode}, ReceiveOmissions) of
+            {ok, _Value} ->
+                true;
+            error ->
+                false
+        end,
 
     EndCondition andalso not lists:member(DestinationNode, CrashedNodes);
-
 %% Send omission.
-fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, send_omissions=SendOmissions}=FaultModelState, {call, _Mod, begin_send_omission, [SourceNode, DestinationNode]}=Call) ->
+fault_precondition(
+    #fault_model_state{
+        crashed_nodes = CrashedNodes, send_omissions = SendOmissions
+    } = FaultModelState,
+    {call, _Mod, begin_send_omission, [SourceNode, DestinationNode]} = Call
+) ->
     %% We must not already have a receive omission for these nodes.
-    BeginCondition = case dict:find({SourceNode, DestinationNode}, SendOmissions) of
-        {ok, _Value} ->
-            false;
-        error ->
-            true
-    end,
+    BeginCondition =
+        case dict:find({SourceNode, DestinationNode}, SendOmissions) of
+            {ok, _Value} ->
+                false;
+            error ->
+                true
+        end,
 
     %% Fault must be allowed at this moment.
     fault_allowed(Call, FaultModelState) andalso
-
-    %% Nodes must not be the same node.
-    SourceNode =/= DestinationNode andalso
-
-    %% Both nodes have to be non-crashed.
-    not lists:member(SourceNode, CrashedNodes) andalso not lists:member(DestinationNode, CrashedNodes) andalso
-
-    %% Can't already have a receive omission for these nodes.
-    BeginCondition;
-
-fault_precondition(#fault_model_state{crashed_nodes=CrashedNodes, send_omissions=SendOmissions}, {call, _Mod, end_send_omission, [SourceNode, DestinationNode]}) ->
+        %% Nodes must not be the same node.
+        SourceNode =/= DestinationNode andalso
+        %% Both nodes have to be non-crashed.
+        not lists:member(SourceNode, CrashedNodes) andalso
+        not lists:member(DestinationNode, CrashedNodes) andalso
+        %% Can't already have a receive omission for these nodes.
+        BeginCondition;
+fault_precondition(
+    #fault_model_state{
+        crashed_nodes = CrashedNodes, send_omissions = SendOmissions
+    },
+    {call, _Mod, end_send_omission, [SourceNode, DestinationNode]}
+) ->
     %% We must be in the middle of a send omission to resolve it.
-    EndCondition = case dict:find({SourceNode, DestinationNode}, SendOmissions) of
-        {ok, _Value} ->
-            true;
-        error ->
-            false
-    end,
+    EndCondition =
+        case dict:find({SourceNode, DestinationNode}, SendOmissions) of
+            {ok, _Value} ->
+                true;
+            error ->
+                false
+        end,
 
     EndCondition andalso not lists:member(SourceNode, CrashedNodes);
-
-fault_precondition(_FaultModelState, {call, Mod, Fun, [_Node|_]=Args}) ->
+fault_precondition(_FaultModelState, {call, Mod, Fun, [_Node | _] = Args}) ->
     fault_debug("fault precondition fired for ~p:~p(~p)", [Mod, Fun, Args]),
     false.
 
 %% General omission.
-fault_next_state(_State, #fault_model_state{general_omissions=GeneralOmissions} = FaultModelState, _Res, {call, _Mod, begin_omission, [Node]}) ->
-    FaultModelState#fault_model_state{general_omissions=GeneralOmissions ++ [Node]};
-
-fault_next_state(_State, #fault_model_state{general_omissions=GeneralOmissions} = FaultModelState, _Res, {call, _Mod, end_omission, [Node]}) ->
-    FaultModelState#fault_model_state{general_omissions=GeneralOmissions -- [Node]};
-
+fault_next_state(
+    _State,
+    #fault_model_state{general_omissions = GeneralOmissions} = FaultModelState,
+    _Res,
+    {call, _Mod, begin_omission, [Node]}
+) ->
+    FaultModelState#fault_model_state{
+        general_omissions = GeneralOmissions ++ [Node]
+    };
+fault_next_state(
+    _State,
+    #fault_model_state{general_omissions = GeneralOmissions} = FaultModelState,
+    _Res,
+    {call, _Mod, end_omission, [Node]}
+) ->
+    FaultModelState#fault_model_state{
+        general_omissions = GeneralOmissions -- [Node]
+    };
 %% Receive omission.
-fault_next_state(_State, #fault_model_state{receive_omissions=ReceiveOmissions0} = FaultModelState, _Res, {call, _Mod, begin_receive_omission, [SourceNode, DestinationNode]}) ->
-    ReceiveOmissions = dict:store({SourceNode, DestinationNode}, true, ReceiveOmissions0),
-    FaultModelState#fault_model_state{receive_omissions=ReceiveOmissions};
-
-fault_next_state(_State, #fault_model_state{receive_omissions=ReceiveOmissions0} = FaultModelState, _Res, {call, _Mod, end_receive_omission, [SourceNode, DestinationNode]}) ->
-    ReceiveOmissions = dict:erase({SourceNode, DestinationNode}, ReceiveOmissions0),
-    FaultModelState#fault_model_state{receive_omissions=ReceiveOmissions};
-
+fault_next_state(
+    _State,
+    #fault_model_state{receive_omissions = ReceiveOmissions0} = FaultModelState,
+    _Res,
+    {call, _Mod, begin_receive_omission, [SourceNode, DestinationNode]}
+) ->
+    ReceiveOmissions = dict:store(
+        {SourceNode, DestinationNode}, true, ReceiveOmissions0
+    ),
+    FaultModelState#fault_model_state{receive_omissions = ReceiveOmissions};
+fault_next_state(
+    _State,
+    #fault_model_state{receive_omissions = ReceiveOmissions0} = FaultModelState,
+    _Res,
+    {call, _Mod, end_receive_omission, [SourceNode, DestinationNode]}
+) ->
+    ReceiveOmissions = dict:erase(
+        {SourceNode, DestinationNode}, ReceiveOmissions0
+    ),
+    FaultModelState#fault_model_state{receive_omissions = ReceiveOmissions};
 %% Send omission.
-fault_next_state(_State, #fault_model_state{send_omissions=SendOmissions0} = FaultModelState, _Res, {call, _Mod, begin_send_omission, [SourceNode, DestinationNode]}) ->
-    SendOmissions = dict:store({SourceNode, DestinationNode}, true, SendOmissions0),
-    FaultModelState#fault_model_state{send_omissions=SendOmissions};
-
-fault_next_state(_State, #fault_model_state{send_omissions=SendOmissions0} = FaultModelState, _Res, {call, _Mod, end_send_omission, [SourceNode, DestinationNode]}) ->
+fault_next_state(
+    _State,
+    #fault_model_state{send_omissions = SendOmissions0} = FaultModelState,
+    _Res,
+    {call, _Mod, begin_send_omission, [SourceNode, DestinationNode]}
+) ->
+    SendOmissions = dict:store(
+        {SourceNode, DestinationNode}, true, SendOmissions0
+    ),
+    FaultModelState#fault_model_state{send_omissions = SendOmissions};
+fault_next_state(
+    _State,
+    #fault_model_state{send_omissions = SendOmissions0} = FaultModelState,
+    _Res,
+    {call, _Mod, end_send_omission, [SourceNode, DestinationNode]}
+) ->
     SendOmissions = dict:erase({SourceNode, DestinationNode}, SendOmissions0),
-    FaultModelState#fault_model_state{send_omissions=SendOmissions};
-
+    FaultModelState#fault_model_state{send_omissions = SendOmissions};
 %% Crashing a node adds a node to the crashed state.
-fault_next_state(_State, #fault_model_state{crashed_nodes=CrashedNodes} = FaultModelState, _Res, {call, _Mod, crash, [Node, _JoinedNodes]}) ->
-    FaultModelState#fault_model_state{crashed_nodes=CrashedNodes ++ [Node]};
-
+fault_next_state(
+    _State,
+    #fault_model_state{crashed_nodes = CrashedNodes} = FaultModelState,
+    _Res,
+    {call, _Mod, crash, [Node, _JoinedNodes]}
+) ->
+    FaultModelState#fault_model_state{crashed_nodes = CrashedNodes ++ [Node]};
 %% Stopping a node assumes a crash that's immediately detected.
-fault_next_state(_State, #fault_model_state{crashed_nodes=CrashedNodes} = FaultModelState, _Res, {call, _Mod, stop, [Node, _JoinedNodes]}) ->
-    FaultModelState#fault_model_state{crashed_nodes=CrashedNodes ++ [Node]};
-
+fault_next_state(
+    _State,
+    #fault_model_state{crashed_nodes = CrashedNodes} = FaultModelState,
+    _Res,
+    {call, _Mod, stop, [Node, _JoinedNodes]}
+) ->
+    FaultModelState#fault_model_state{crashed_nodes = CrashedNodes ++ [Node]};
 %% Remove faults.
-fault_next_state(_State, FaultModelState, _Res, {call, _Mod, resolve_all_faults_with_heal, []}) ->
+fault_next_state(
+    _State,
+    FaultModelState,
+    _Res,
+    {call, _Mod, resolve_all_faults_with_heal, []}
+) ->
     SendOmissions = dict:new(),
     ReceiveOmissions = dict:new(),
-    FaultModelState#fault_model_state{send_omissions=SendOmissions, receive_omissions=ReceiveOmissions};
-
-fault_next_state(_State,
-                 #fault_model_state{crashed_nodes=CrashedNodes0}=FaultModelState,
-                 _Res,
-                 {call, _Mod, resolve_all_faults_with_crash, []}) ->
+    FaultModelState#fault_model_state{
+        send_omissions = SendOmissions, receive_omissions = ReceiveOmissions
+    };
+fault_next_state(
+    _State,
+    #fault_model_state{crashed_nodes = CrashedNodes0} = FaultModelState,
+    _Res,
+    {call, _Mod, resolve_all_faults_with_crash, []}
+) ->
     SendOmissions = dict:new(),
     ReceiveOmissions = dict:new(),
     CrashedNodes = lists:usort(CrashedNodes0 ++ active_faults(FaultModelState)),
 
-    FaultModelState#fault_model_state{crashed_nodes=CrashedNodes,
-                                      send_omissions=SendOmissions,
-                                      receive_omissions=ReceiveOmissions};
-
+    FaultModelState#fault_model_state{
+        crashed_nodes = CrashedNodes,
+        send_omissions = SendOmissions,
+        receive_omissions = ReceiveOmissions
+    };
 fault_next_state(_State, FaultModelState, _Res, _Call) ->
     FaultModelState.
 
 %% General omission.
-fault_postcondition(_FaultModelState, {call, _Mod, begin_omission, [_Node]}, ok) ->
+fault_postcondition(
+    _FaultModelState, {call, _Mod, begin_omission, [_Node]}, ok
+) ->
     true;
-
 fault_postcondition(_FaultModelState, {call, _Mod, end_omission, [_Node]}, ok) ->
     true;
-
 %% Receive omission.
-fault_postcondition(_FaultModelState, {call, _Mod, begin_receive_omission, [_SourceNode, _DestinationNode]}, ok) ->
+fault_postcondition(
+    _FaultModelState,
+    {call, _Mod, begin_receive_omission, [_SourceNode, _DestinationNode]},
+    ok
+) ->
     true;
-
-fault_postcondition(_FaultModelState, {call, _Mod, end_receive_omission, [_SourceNode, _DestinationNode]}, ok) ->
+fault_postcondition(
+    _FaultModelState,
+    {call, _Mod, end_receive_omission, [_SourceNode, _DestinationNode]},
+    ok
+) ->
     true;
-
 %% Send omission.
-fault_postcondition(_FaultModelState, {call, _Mod, begin_send_omission, [_SourceNode, _DestinationNode]}, ok) ->
+fault_postcondition(
+    _FaultModelState,
+    {call, _Mod, begin_send_omission, [_SourceNode, _DestinationNode]},
+    ok
+) ->
     true;
-
-fault_postcondition(_FaultModelState, {call, _Mod, end_send_omission, [_SourceNode, _DestinationNode]}, ok) ->
+fault_postcondition(
+    _FaultModelState,
+    {call, _Mod, end_send_omission, [_SourceNode, _DestinationNode]},
+    ok
+) ->
     true;
-
 %% Stops are allowed.
-fault_postcondition(_FaultModelState, {call, _Mod, stop, [_Node, _JoinedNodes]}, ok) ->
+fault_postcondition(
+    _FaultModelState, {call, _Mod, stop, [_Node, _JoinedNodes]}, ok
+) ->
     true;
-
 %% Crashes are allowed.
-fault_postcondition(_FaultModelState, {call, _Mod, crash, [_Node, _JoinedNodes]}, ok) ->
+fault_postcondition(
+    _FaultModelState, {call, _Mod, crash, [_Node, _JoinedNodes]}, ok
+) ->
     true;
-
-fault_postcondition(_FaultModelState, {call, _Mod, resolve_all_faults_with_heal, []}, ok) ->
+fault_postcondition(
+    _FaultModelState, {call, _Mod, resolve_all_faults_with_heal, []}, ok
+) ->
     true;
-
-fault_postcondition(_FaultModelState, {call, _Mod, resolve_all_faults_with_crash, []}, ok) ->
+fault_postcondition(
+    _FaultModelState, {call, _Mod, resolve_all_faults_with_crash, []}, ok
+) ->
     true;
-
-fault_postcondition(_FaultModelState, {call, Mod, Fun, [_Node|_]=Args}, Res) ->
-    fault_debug("fault postcondition fired for ~p:~p(~p) with response ~p", [Mod, Fun, Args, Res]),
+fault_postcondition(
+    _FaultModelState, {call, Mod, Fun, [_Node | _] = Args}, Res
+) ->
+    fault_debug("fault postcondition fired for ~p:~p(~p) with response ~p", [
+        Mod, Fun, Args, Res
+    ]),
     false.
 
 %%%===================================================================
@@ -543,32 +748,56 @@ num_active_faults(FaultModelState) ->
     length(active_faults(FaultModelState)).
 
 %% Resolvable faults.
-fault_num_resolvable_faults(#fault_model_state{general_omissions=GeneralOmissions, send_omissions=SendOmissions0, receive_omissions=ReceiveOmissions0}) ->
-    SendOmissions = lists:map(fun({{SourceNode, _DestinationNode}, true}) -> SourceNode end,
-                        dict:to_list(SendOmissions0)),
-    ReceiveOmissions = lists:map(fun({{_SourceNode, DestinationNode}, true}) -> DestinationNode end,
-                        dict:to_list(ReceiveOmissions0)),
-    ResolvableFaults = lists:usort(SendOmissions ++ ReceiveOmissions ++ GeneralOmissions),
+fault_num_resolvable_faults(#fault_model_state{
+    general_omissions = GeneralOmissions,
+    send_omissions = SendOmissions0,
+    receive_omissions = ReceiveOmissions0
+}) ->
+    SendOmissions = lists:map(
+        fun({{SourceNode, _DestinationNode}, true}) -> SourceNode end,
+        dict:to_list(SendOmissions0)
+    ),
+    ReceiveOmissions = lists:map(
+        fun({{_SourceNode, DestinationNode}, true}) -> DestinationNode end,
+        dict:to_list(ReceiveOmissions0)
+    ),
+    ResolvableFaults = lists:usort(
+        SendOmissions ++ ReceiveOmissions ++ GeneralOmissions
+    ),
     length(ResolvableFaults).
 
 %% The nodes that are faulted.
-active_faults(#fault_model_state{crashed_nodes=CrashedNodes, general_omissions=GeneralOmissions, send_omissions=SendOmissions0, receive_omissions=ReceiveOmissions0}) ->
-    SendOmissions = lists:map(fun({{SourceNode, _DestinationNode}, true}) -> SourceNode end,
-                        dict:to_list(SendOmissions0)),
+active_faults(#fault_model_state{
+    crashed_nodes = CrashedNodes,
+    general_omissions = GeneralOmissions,
+    send_omissions = SendOmissions0,
+    receive_omissions = ReceiveOmissions0
+}) ->
+    SendOmissions = lists:map(
+        fun({{SourceNode, _DestinationNode}, true}) -> SourceNode end,
+        dict:to_list(SendOmissions0)
+    ),
     % fault_debug("=> => send_omissions: ~p", [SendOmissions]),
 
-    ReceiveOmissions = lists:map(fun({{_SourceNode, DestinationNode}, true}) -> DestinationNode end,
-                        dict:to_list(ReceiveOmissions0)),
+    ReceiveOmissions = lists:map(
+        fun({{_SourceNode, DestinationNode}, true}) -> DestinationNode end,
+        dict:to_list(ReceiveOmissions0)
+    ),
     % fault_debug("=> => receive_omissions: ~p", [ReceiveOmissions]),
 
-    lists:usort(SendOmissions ++ ReceiveOmissions ++ CrashedNodes ++ GeneralOmissions).
+    lists:usort(
+        SendOmissions ++ ReceiveOmissions ++ CrashedNodes ++ GeneralOmissions
+    ).
 
 %% Is crashed?
-fault_is_crashed(#fault_model_state{crashed_nodes=CrashedNodes}, Name) ->
+fault_is_crashed(#fault_model_state{crashed_nodes = CrashedNodes}, Name) ->
     lists:member(Name, CrashedNodes).
 
 %% Is this fault allowed?
-fault_allowed({call, _Mod, begin_omission, [Node] = _Args}, #fault_model_state{tolerance=Tolerance}=FaultModelState) ->
+fault_allowed(
+    {call, _Mod, begin_omission, [Node] = _Args},
+    #fault_model_state{tolerance = Tolerance} = FaultModelState
+) ->
     %% We can tolerate another failure.
     NumActiveFaults = num_active_faults(FaultModelState),
 
@@ -578,10 +807,17 @@ fault_allowed({call, _Mod, begin_omission, [Node] = _Args}, #fault_model_state{t
     %% Compute and log result.
     Result = NumActiveFaults < Tolerance orelse IsAlreadyFaulted,
 
-    fault_debug("=> ~p num_active_faults: ~p is_already_faulted(~p): ~p: result: ~p", [begin_omission, NumActiveFaults, Node, IsAlreadyFaulted, Result]),
+    fault_debug(
+        "=> ~p num_active_faults: ~p is_already_faulted(~p): ~p: result: ~p", [
+            begin_omission, NumActiveFaults, Node, IsAlreadyFaulted, Result
+        ]
+    ),
 
     Result;
-fault_allowed({call, _Mod, begin_send_omission, [SourceNode, _DestinationNode] = _Args}, #fault_model_state{tolerance=Tolerance}=FaultModelState) ->
+fault_allowed(
+    {call, _Mod, begin_send_omission, [SourceNode, _DestinationNode] = _Args},
+    #fault_model_state{tolerance = Tolerance} = FaultModelState
+) ->
     %% We can tolerate another failure.
     NumActiveFaults = num_active_faults(FaultModelState),
 
@@ -591,20 +827,42 @@ fault_allowed({call, _Mod, begin_send_omission, [SourceNode, _DestinationNode] =
     %% Compute and log result.
     Result = NumActiveFaults < Tolerance orelse IsAlreadyFaulted,
 
-    fault_debug("=> ~p num_active_faults: ~p is_already_faulted(~p): ~p: result: ~p", [begin_send_omission, NumActiveFaults, SourceNode, IsAlreadyFaulted, Result]),
+    fault_debug(
+        "=> ~p num_active_faults: ~p is_already_faulted(~p): ~p: result: ~p", [
+            begin_send_omission,
+            NumActiveFaults,
+            SourceNode,
+            IsAlreadyFaulted,
+            Result
+        ]
+    ),
 
     Result;
-fault_allowed({call, _Mod, begin_receive_omission, [_SourceNode, DestinationNode] = _Args}, #fault_model_state{tolerance=Tolerance}=FaultModelState) ->
+fault_allowed(
+    {call, _Mod, begin_receive_omission,
+        [_SourceNode, DestinationNode] = _Args},
+    #fault_model_state{tolerance = Tolerance} = FaultModelState
+) ->
     %% We can tolerate another failure.
     NumActiveFaults = num_active_faults(FaultModelState),
 
     %% Node is already in faulted state -- send or receive omission.
-    IsAlreadyFaulted = lists:member(DestinationNode, active_faults(FaultModelState)),
+    IsAlreadyFaulted = lists:member(
+        DestinationNode, active_faults(FaultModelState)
+    ),
 
     %% Compute and log result.
     Result = NumActiveFaults < Tolerance orelse IsAlreadyFaulted,
 
-    fault_debug("=> ~p num_active_faults: ~p is_already_faulted(~p): ~p: result: ~p", [begin_receive_omission, NumActiveFaults, DestinationNode, IsAlreadyFaulted, Result]),
+    fault_debug(
+        "=> ~p num_active_faults: ~p is_already_faulted(~p): ~p: result: ~p", [
+            begin_receive_omission,
+            NumActiveFaults,
+            DestinationNode,
+            IsAlreadyFaulted,
+            Result
+        ]
+    ),
 
     Result.
 
@@ -632,10 +890,14 @@ wait_until_nodes_agree_on_membership(Nodes) ->
         %% Ensure the lists are the same -- barrier for proceeding.
         case SortedNames =:= SortedMembers of
             true ->
-                fault_debug("node ~p agrees on membership: ~p", [Node, SortedMembers]),
+                fault_debug("node ~p agrees on membership: ~p", [
+                    Node, SortedMembers
+                ]),
                 true;
             false ->
-                fault_debug("node ~p disagrees on membership: ~p != ~p", [Node, SortedMembers, SortedNames]),
+                fault_debug("node ~p disagrees on membership: ~p != ~p", [
+                    Node, SortedMembers, SortedNames
+                ]),
                 error
         end
     end,
@@ -645,9 +907,11 @@ wait_until_nodes_agree_on_membership(Nodes) ->
 
 %% @private
 wait_until(Fun) when is_function(Fun) ->
-    MaxTime = 600000, %% @TODO use config,
-        Delay = 1000, %% @TODO use config,
-        Retry = MaxTime div Delay,
+    %% @TODO use config,
+    MaxTime = 600000,
+    %% @TODO use config,
+    Delay = 1000,
+    Retry = MaxTime div Delay,
     wait_until(Fun, Retry, Delay).
 
 %% @private
@@ -668,7 +932,7 @@ wait_until_result(Fun, Result, Retry, Delay) when Retry > 0 ->
             {fail, Res};
         _ ->
             timer:sleep(Delay),
-            wait_until_result(Fun, Result, Retry-1, Delay)
+            wait_until_result(Fun, Result, Retry - 1, Delay)
     end.
 
 %% @private

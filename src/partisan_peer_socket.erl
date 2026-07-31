@@ -28,38 +28,35 @@
 -module(partisan_peer_socket).
 
 -record(partisan_peer_socket, {
-    socket              :: gen_tcp:socket() | ssl:sslsocket() | socket:socket(),
-    transport           :: gen_tcp | ssl,
-    control             :: inet | ssl,
-    monotonic = false   :: boolean()
+    socket :: gen_tcp:socket() | ssl:sslsocket() | socket:socket(),
+    transport :: gen_tcp | ssl,
+    control :: inet | ssl,
+    monotonic = false :: boolean()
 }).
 
--type t()               :: #partisan_peer_socket{}.
--type reason()          :: closed | inet:posix().
--type options()         :: [gen_tcp:option()] | map().
-
+-type t() :: #partisan_peer_socket{}.
+-type reason() :: closed | inet:posix().
+-type options() :: [gen_tcp:option()] | map().
 
 -export_type([t/0]).
-
 
 -export([accept/1]).
 -export([close/1]).
 -export([connect/3]).
 -export([connect/4]).
 -export([connect/5]).
+-export([getstat/1]).
+-export([getstat/2]).
+-export([telemetry_stats/1]).
 -export([recv/2]).
 -export([recv/3]).
 -export([send/2]).
 -export([setopts/2]).
 -export([socket/1]).
 
-
-
 %% =============================================================================
 %% API
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Wraps a TCP socket with the appropriate information for
@@ -80,14 +77,46 @@ accept(TCPSocket) ->
             %% calling this function, else the upgrade succeeds or does not
             %% succeed depending on timing.
             inet:setopts(TCPSocket, [{active, false}]),
-            {ok, TLSSocket} = ssl:handshake(TCPSocket, TLSOpts),
-            %% restore the expected active once setting
-            ssl:setopts(TLSSocket, [{active, once}]),
-            #partisan_peer_socket{
-                socket = TLSSocket,
-                transport = ssl,
-                control = ssl
-            };
+            HSTimeout = partisan_config:get(tls_handshake_timeout),
+            T0 = erlang:monotonic_time(millisecond),
+
+            case ssl:handshake(TCPSocket, TLSOpts, HSTimeout) of
+                {ok, TLSSocket} ->
+                    %% restore the expected active once setting
+                    ssl:setopts(TLSSocket, [{active, once}]),
+                    partisan_telemetry:execute(
+                        [partisan, socket, server, handshake],
+                        #{latency => erlang:monotonic_time(millisecond) - T0},
+                        #{result => ok}
+                    ),
+                    #partisan_peer_socket{
+                        socket = TLSSocket,
+                        transport = ssl,
+                        control = ssl
+                    };
+                {error, Reason} ->
+                    %% A failed or timed-out handshake must not crash the
+                    %% acceptor worker: a strict `{ok, _} =' match raises
+                    %% `badmatch' and emits a crash report per failed handshake,
+                    %% which a slowloris-style flood or a misconfigured peer can
+                    %% turn into a log flood and acceptor-pool exhaustion (each
+                    %% worker blocked up to `tls_handshake_timeout'). Close the
+                    %% TCP socket and terminate this acceptor *normally* — the
+                    %% pool simply replaces it — with only a debug log.
+                    _ = (catch gen_tcp:close(TCPSocket)),
+                    partisan_telemetry:execute(
+                        [partisan, socket, server, handshake],
+                        #{latency => erlang:monotonic_time(millisecond) - T0},
+                        #{result => error, reason => Reason}
+                    ),
+                    logger:debug(#{
+                        description =>
+                            "TLS handshake failed on inbound peer "
+                            "connection; closing.",
+                        reason => Reason
+                    }),
+                    exit(normal)
+            end;
         _ ->
             #partisan_peer_socket{
                 socket = TCPSocket,
@@ -95,7 +124,6 @@ accept(TCPSocket) ->
                 control = inet
             }
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -109,7 +137,6 @@ send(#partisan_peer_socket{monotonic = false} = Conn, Data) ->
     Socket = Conn#partisan_peer_socket.socket,
     Transport = Conn#partisan_peer_socket.transport,
     send(Transport, Socket, Data);
-
 send(#partisan_peer_socket{monotonic = true} = Conn, Data) ->
     Socket = Conn#partisan_peer_socket.socket,
     Transport = Conn#partisan_peer_socket.transport,
@@ -130,7 +157,6 @@ send(#partisan_peer_socket{monotonic = true} = Conn, Data) ->
             send(Transport, Socket, Data)
     end.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @see gen_tcp:recv/2
@@ -142,7 +168,6 @@ send(#partisan_peer_socket{monotonic = true} = Conn, Data) ->
 recv(Conn, Length) ->
     recv(Conn, Length, infinity).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @see gen_tcp:recv/3
@@ -152,9 +177,12 @@ recv(Conn, Length) ->
 -spec recv(t(), integer(), timeout()) ->
     {ok, iodata()} | {error, reason()}.
 
-recv(#partisan_peer_socket{socket = Socket, transport = Transport}, Length, Timeout) ->
+recv(
+    #partisan_peer_socket{socket = Socket, transport = Transport},
+    Length,
+    Timeout
+) ->
     Transport:recv(Socket, Length, Timeout).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -166,10 +194,55 @@ recv(#partisan_peer_socket{socket = Socket, transport = Transport}, Length, Time
 
 setopts(#partisan_peer_socket{} = Connection, Options) when is_map(Options) ->
     setopts(Connection, maps:to_list(Options));
-
 setopts(#partisan_peer_socket{socket = Socket, control = Control}, Options) ->
     Control:setopts(Socket, Options).
 
+%% -----------------------------------------------------------------------------
+%% @doc Returns socket-level byte/packet counters, e.g. `recv_oct', `send_oct',
+%% `send_pend'. These come directly from the runtime (no counting done by
+%% Partisan) so they are cheap to poll periodically.
+%% @see inet:getstat/1
+%% @see ssl:getstat/1
+%% @end
+%% -----------------------------------------------------------------------------
+-spec getstat(t()) -> {ok, [{atom(), integer()}]} | {error, inet:posix()}.
+
+getstat(#partisan_peer_socket{socket = Socket, transport = gen_tcp}) ->
+    inet:getstat(Socket);
+getstat(#partisan_peer_socket{socket = Socket, transport = ssl}) ->
+    ssl:getstat(Socket).
+
+%% -----------------------------------------------------------------------------
+%% @doc Same as `getstat/1' but restricted to the counters in `Items'.
+%% @see inet:getstat/2
+%% @see ssl:getstat/2
+%% @end
+%% -----------------------------------------------------------------------------
+-spec getstat(t(), Items :: [atom()]) ->
+    {ok, [{atom(), integer()}]} | {error, inet:posix()}.
+
+getstat(#partisan_peer_socket{socket = Socket, transport = gen_tcp}, Items) ->
+    inet:getstat(Socket, Items);
+getstat(#partisan_peer_socket{socket = Socket, transport = ssl}, Items) ->
+    ssl:getstat(Socket, Items).
+
+%% -----------------------------------------------------------------------------
+%% @doc Byte/packet counters and send-queue depth for telemetry, straight from
+%% `getstat/2' (no counting done by Partisan). Returns `#{}' if the socket is
+%% unavailable, rather than failing the caller's tick.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec telemetry_stats(t() | undefined) -> map().
+
+telemetry_stats(undefined) ->
+    #{};
+telemetry_stats(#partisan_peer_socket{} = Socket) ->
+    Items = [recv_cnt, recv_oct, send_cnt, send_oct, send_pend],
+
+    case getstat(Socket, Items) of
+        {ok, Stats} -> maps:from_list(Stats);
+        {error, _} -> #{}
+    end.
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -182,7 +255,6 @@ setopts(#partisan_peer_socket{socket = Socket, control = Control}, Options) ->
 close(#partisan_peer_socket{socket = Socket, transport = Transport}) ->
     Transport:close(Socket).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @see gen_tcp:connect/3
@@ -190,12 +262,12 @@ close(#partisan_peer_socket{socket = Socket, transport = Transport}) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec connect(
-    inet:socket_address() | inet:hostname(), inet:port_number(), options()) ->
+    inet:socket_address() | inet:hostname(), inet:port_number(), options()
+) ->
     {ok, t()} | {error, inet:posix()}.
 
 connect(Address, Port, Options) ->
     connect(Address, Port, Options, infinity).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -205,12 +277,12 @@ connect(Address, Port, Options) ->
     inet:socket_address() | inet:hostname(),
     inet:port_number(),
     options(),
-    timeout()) ->
+    timeout()
+) ->
     {ok, t()} | {error, inet:posix()}.
 
 connect(Address, Port, Options, Timeout) ->
     connect(Address, Port, Options, Timeout, #{}).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -221,14 +293,16 @@ connect(Address, Port, Options, Timeout) ->
     inet:port_number(),
     options(),
     timeout(),
-    map() | list()) -> {ok, t()} | {error, inet:posix()}.
+    map() | list()
+) -> {ok, t()} | {error, inet:posix()}.
 
-connect(Address, Port, Options, Timeout, PartisanOptions)
-when is_list(PartisanOptions) ->
+connect(Address, Port, Options, Timeout, PartisanOptions) when
+    is_list(PartisanOptions)
+->
     connect(Address, Port, Options, Timeout, maps:from_list(PartisanOptions));
-
-connect(Address, Port, Options0, Timeout, PartisanOptions)
-when is_map(PartisanOptions) ->
+connect(Address, Port, Options0, Timeout, PartisanOptions) when
+    is_map(PartisanOptions)
+->
     Options = connection_options(Options0),
 
     case tls_enabled() of
@@ -255,7 +329,6 @@ when is_map(PartisanOptions) ->
             )
     end.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Returns the wrapped socket from within the connection.
 %% @end
@@ -264,44 +337,36 @@ when is_map(PartisanOptions) ->
 socket(Conn) ->
     Conn#partisan_peer_socket.socket.
 
-
-
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
 
-
-
 %% @private
 do_connect(Address, Port, ConnectOpts, Timeout, Transport, Control, Opts) ->
-   Monotonic = maps:get(monotonic, Opts, false),
+    Monotonic = maps:get(monotonic, Opts, false),
 
-   case Transport:connect(Address, Port, ConnectOpts, Timeout) of
-       {ok, Socket} ->
+    case Transport:connect(Address, Port, ConnectOpts, Timeout) of
+        {ok, Socket} ->
             Connection = #partisan_peer_socket{
                 socket = Socket,
                 transport = Transport,
                 control = Control,
                 monotonic = Monotonic
             },
-           {ok, Connection};
-       Error ->
-           Error
-   end.
-
+            {ok, Connection};
+        Error ->
+            Error
+    end.
 
 %% @private
 connection_options(Options) when is_map(Options) ->
     connection_options(maps:to_list(Options));
-
 connection_options(Options) when is_list(Options) ->
     Options ++ [{nodelay, true}].
-
 
 %% @private
 tls_enabled() ->
     partisan_config:get(tls).
-
 
 %% @private
 monotonic_now() ->
@@ -311,7 +376,6 @@ monotonic_now() ->
 send(Transport, Socket, Data) ->
     %% Transmit the data on the socket.
     Transport:send(Socket, Data).
-
 
 %% Determine if we should transmit:
 %%

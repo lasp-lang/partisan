@@ -1,4 +1,3 @@
-# we disable it, as we only enable it for the eqwalize target
 BASE_DIR         = $(shell pwd)
 CONCURRENCY 	 ?= 4
 DEP_DIR         ?= "deps"
@@ -16,10 +15,9 @@ CODESPELL 		= $(shell which codespell)
 SPELLCHECK 	    = $(CODESPELL) -S _build -S doc -S .git -L applys,nd,accout,mattern,pres,fo
 SPELLFIX      	= $(SPELLCHECK) -i 3 -w
 
-PARTISAN_EQWALIZER = 0
 OTPVSN 			= $(shell erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell)
 
-.PHONY: compile-no-deps alt-test core-test otp-test test docs xref dialyzer-run dialyzer-quick dialyzer eqwalizer eqwalize-all\
+.PHONY: compile-no-deps alt-test core-test test ci-light ci-heavy security-test docs xref dialyzer-run dialyzer-quick dialyzer\
 		cleanplt upload-docs rel deps test plots spellcheck spellfix certs node1 node2 node3 node checkssl
 
 all: compile
@@ -43,26 +41,6 @@ xref: compile
 dialyzer: compile
 	${REBAR} dialyzer
 
-# This is super slow as we are invoking equalizer for each source file as
-# opposed to once. We do this becuase we want to ignore modules in the otp_src
-# directory but at the moment Eqwalizer does not allow that option
-eqwalizer: src/*.erl
-ifeq ($(shell expr $(OTPVSN) \> 24),1)
-	export PARTISAN_EQWALIZER=1 && for file in $(shell ls $^ | sed 's|.*/\(.*\)\.erl|\1|'); do elp eqwalize $${file}; done
-else
-	$(info OTPVSN is not higher than 24)
-	$(eval override mytarget=echo "skipping eqwalizer target. Eqwalizer tool  requires OTP25 or higher")
-endif
-
-
-eqwalize-all:
-ifeq ($(shell expr $(OTPVSN) \> 24),1)
-	PARTISAN_EQWALIZER=1 elp eqwalize-all
-else
-	$(info OTPVSN is not higher than 24)
-	$(eval override mytarget=echo "skipping eqwalizer target. Eqwalizer tool  requires OTP25 or higher")
-endif
-
 compile:
 	$(REBAR) compile
 
@@ -77,18 +55,40 @@ packageclean:
 ## Test targets
 ##
 
+## Runs one property against one system model. `prop_sequential' reads the model
+## and its implementation from the environment and fails without them, so both
+## carry defaults here; override either on the command line:
+##   make proper SYSTEM_MODEL=... IMPLEMENTATION_MODULE=...
+## The exhaustive model checking lives in the demers-*, lampson-* and skeen-*
+## targets.
 proper:
-	pkill -9 beam.smp; rm -rf priv/lager; ./rebar3 proper -m prop_partisan -p prop_sequential --noshrink -n 10
+	pkill -9 beam.smp; rm -rf priv/lager; \
+	SYSTEM_MODEL=$${SYSTEM_MODEL:-prop_partisan_reliable_broadcast} \
+	IMPLEMENTATION_MODULE=$${IMPLEMENTATION_MODULE:-demers_direct_mail} \
+	RESTART_NODES=false USE_STARTED_NODES=false \
+	${REBAR} proper -m prop_partisan -p prop_sequential --noshrink -n 10
 
 perf:
 	pkill -9 beam.smp; pkill -9 epmd; SIZE=${SIZE} LATENCY=${LATENCY} CONCURRENCY=${CONCURRENCY} ${REBAR} ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=with_disterl
 	pkill -9 beam.smp; pkill -9 epmd; SIZE=${SIZE} LATENCY=${LATENCY} CONCURRENCY=${CONCURRENCY} ${REBAR} ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=default
 	pkill -9 beam.smp; pkill -9 epmd; SIZE=${SIZE} LATENCY=${LATENCY} CONCURRENCY=${CONCURRENCY} PARALLELISM=${CONCURRENCY} ${REBAR} ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=with_parallelism
 
+## Benchmarks. NOT part of `make test` or CI: these report machine-dependent
+## numbers, and a number cannot be a pass/fail condition. Run deliberately, on an
+## otherwise idle machine, and read the output. Override the fan-out size with
+## BENCH_NODES (default 5).
+##   make bench
+##   make bench BENCH_NODES=25
+##   make bench BENCH_CASE=rpc_under_a_slow_call
+bench: kill
+	BENCH_NODES=$${BENCH_NODES:-5} ${REBAR} as test ct -v --readable=false \
+		--suite=partisan_bench_SUITE \
+		$${BENCH_CASE:+--case=$${BENCH_CASE}}
+
 kill:
 	pkill -9 beam.smp; pkill -9 epmd; exit 0
 
-check: kill xref dialyzer eqwalizer
+check: kill xref dialyzer
 
 spellcheck:
 	$(if $(CODESPELL), $(SPELLCHECK), $(error "Aborting, command codespell not found in PATH"))
@@ -98,35 +98,43 @@ spellfix:
 	$(if $(CODESPELL), $(SPELLFIX), $(error "Aborting, command codespell not found in PATH"))
 
 
-test: eunit core-test otp-test cover
+test: eunit core-test otp-compat-test cover
+
+# CI split (see test/fly/): light suites run on GitHub runners; heavy multi-node
+# suites run on a large Fly.io Machine. `ci-heavy` is what test/fly/run.sh runs.
+ci-light: eunit otp-compat-test security-test
+
+ci-heavy: core-test alt-test proper
+
+security-test:
+	${REBAR} as test ct -v --readable=false --suite=partisan_security_SUITE
 
 core-test: setup-tls
-ifeq ($(shell expr $(OTPVSN) \> 25),1)
-	$(info OTPVSN is higher than 25)
-	$(info Skipping core-test target. CT Suite currently requires OTP24)
-else
 	${REBAR} as test ct -v --readable=false --suite=partisan_SUITE
-endif
-
-
-otp-test: setup-tls
-ifeq ($(shell expr $(OTPVSN) \> 24),1)
-	$(info OTPVSN is higher than 24)
-	$(eval override mytarget=echo "skipping al-test target. CT Suite currently requires OTP24")
-else
-	${REBAR} as test ct --suite=partisan_gen_server_SUITE,partisan_gen_event_SUITE,partisan_gen_statem_SUITE
-endif
-
 
 alt-test: setup-tls
-ifeq ($(shell expr $(OTPVSN) \> 24),1)
-	$(info OTPVSN is higher than 24)
-	$(eval override mytarget=echo "skipping alt-test target. CT Suite currently requires OTP24")
-else
 	mkdir -p test/partisan_alt_SUITE_data/
 	openssl rand -out test/partisan_alt_SUITE_data/RAND 4096
 	${REBAR} as test ct -v --readable=false --suite=partisan_alt_SUITE
-endif
+
+## Run OTP compatibility test suites.
+## These are adapted versions of OTP's own gen_server_SUITE, supervisor_SUITE, etc.
+## that validate the generated partisan modules behave identically to OTP.
+## The -eval expressions MUST each stay on one physical line: GNU Make >= 3.82
+## passes backslash-newlines through to the shell, which keeps them literal
+## inside single quotes, and erl_parse rejects the resulting '\' tokens.
+## (GNU Make 3.81, as shipped by macOS, strips them — which is why a multi-line
+## eval works locally but breaks on CI runners.)
+otp-compat-test:
+	${REBAR} as test compile
+	erl -noshell -pa _build/test/lib/*/ebin \
+		-eval 'case partisan_otp_test_gen:generate_all_suites("_build/test/lib/partisan/test") of ok -> halt(0); _ -> halt(1) end.'
+	erl -noshell -sname partisan_ct_runner \
+		-pa _build/test/lib/*/ebin \
+		-pa _build/test/lib/partisan/test \
+		-pa _build/test/lib/partisan/test/otp \
+		-partisan connect_disterl true \
+		-eval 'case partisan_otp_test_gen:run_all_suites("_build/test/lib/partisan/test", "_build/test/logs") of ok -> halt(0); _ -> halt(1) end.'
 
 
 setup-tls:
@@ -225,7 +233,7 @@ verify-skeen-3pc: kill bin-perms compile
 ## Testing targets
 ##
 
-make bin-perms:
+bin-perms:
 	chmod 755 bin/*.sh
 	chmod 755 bin/*.escript
 

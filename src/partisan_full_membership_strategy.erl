@@ -32,16 +32,14 @@
 
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
-
 -record(full_v1, {
-    actor           ::  partisan:actor(),
-    membership      ::  partisan_membership_set:t()
+    actor :: partisan:actor(),
+    membership :: partisan_membership_set:t()
 }).
 
--type t()                   :: #full_v1{}.
--type membership_list()     :: partisan_membership_strategy:membership_list().
--type outgoing_messages()   :: partisan_membership_strategy:outgoing_messages().
-
+-type t() :: #full_v1{}.
+-type membership_list() :: partisan_membership_strategy:membership_list().
+-type outgoing_messages() :: partisan_membership_strategy:outgoing_messages().
 
 %% PARTISAN_MEMBERSHIP_STRATEGY CALLBACKS
 -export([init/1]).
@@ -52,13 +50,9 @@
 -export([prune/2]).
 -export([handle_message/2]).
 
-
-
 %% =============================================================================
 %% PARTISAN_MEMBERSHIP_STRATEGY CALLBACKS
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Initialize the strategy state.
@@ -72,7 +66,6 @@ init(Actor) ->
     Members = members(State),
     ok = persist_state(State),
     {ok, Members, State}.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc When a node is connected, return the state, membership and outgoing
@@ -95,7 +88,6 @@ join(_Node, #full_v1{} = PeerState, #full_v1{} = State0) ->
 
     {ok, Members, OutgoingMessages, State}.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Periodic protocol maintenance.
 %% @end
@@ -110,7 +102,6 @@ periodic(State) ->
 
     {ok, Members, OutgoingMessages, State}.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Returns the tuple `{Joiners, Leavers}' where `Joiners' is the list of
 %% node specifications that are elements of `List' but are not in the
@@ -124,7 +115,6 @@ periodic(State) ->
 compare(Members, State) ->
     partisan_membership_set:compare(Members, State#full_v1.membership).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Handling incoming protocol message.
 %% @end
@@ -133,7 +123,6 @@ compare(Members, State) ->
     {ok, membership_list(), outgoing_messages(), NewState :: any()}.
 
 handle_message({#{name := From}, #full_v1{} = State1}, #full_v1{} = State0) ->
-
     M0 = State0#full_v1.membership,
     M1 = State1#full_v1.membership,
 
@@ -166,7 +155,6 @@ handle_message({#{name := From}, #full_v1{} = State1}, #full_v1{} = State0) ->
             {ok, Members, OutgoingMessages, State}
     end.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Leave a node from the cluster.
 %% @end
@@ -194,15 +182,16 @@ leave(#{name := NameLeaving}, #full_v1{} = State0) ->
     %% Self-leave removes our own state and resets it.
     StateToGossip = State0#full_v1{membership = Membership},
 
-    State = case partisan:node() of
-        NameLeaving ->
-            %% Reset our state, store this, but gossip the state with us
-            %% removed to the remainder of the members.
-            new_state(Actor);
-        _ ->
-            %% Gossip state with member removed.
-            StateToGossip
-    end,
+    State =
+        case partisan:node() of
+            NameLeaving ->
+                %% Reset our state, store this, but gossip the state with us
+                %% removed to the remainder of the members.
+                new_state(Actor);
+            _ ->
+                %% Gossip state with member removed.
+                StateToGossip
+        end,
 
     ok = persist_state(State),
 
@@ -213,7 +202,6 @@ leave(#{name := NameLeaving}, #full_v1{} = State0) ->
 
     {ok, Members, OutgoingMessages, State}.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -221,32 +209,25 @@ leave(#{name := NameLeaving}, #full_v1{} = State0) ->
 -spec prune([partisan:node_spec()], State :: any()) ->
     {ok, membership_list(), NewState :: any()}.
 
-prune([H|T], #full_v1{membership = M0} = State0) ->
+prune([H | T], #full_v1{membership = M0} = State0) ->
     Actor = State0#full_v1.actor,
     M = partisan_membership_set:remove(H, Actor, M0),
     State = State0#full_v1{membership = M},
     prune(T, State);
-
 prune([], State) ->
     {ok, members(State), State}.
-
-
 
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
 
-
-
 %% @private
 members(#full_v1{membership = M}) ->
     partisan_membership_set:to_list(M).
 
-
 %% @private
 gossip_messages(State) ->
     gossip_messages(State, State).
-
 
 %% @private
 gossip_messages(State0, #full_v1{} = State) ->
@@ -259,14 +240,11 @@ gossip_messages(State0, #full_v1{} = State) ->
         _ ->
             []
     end;
-
 gossip_messages(_, []) ->
     [];
-
 gossip_messages(State, Peers) when is_list(Peers) ->
     Msg = {membership_strategy, {partisan:node_spec(), State}},
     [{Peer, Msg} || Peer <- Peers].
-
 
 %% @private
 maybe_load_state_from_disk(Actor) ->
@@ -285,7 +263,6 @@ maybe_load_state_from_disk(Actor) ->
             end
     end.
 
-
 %% @private
 new_state(Actor) ->
     Membership = partisan_membership_set:add(
@@ -294,7 +271,6 @@ new_state(Actor) ->
     State = #full_v1{actor = Actor, membership = Membership},
     ok = persist_state(State),
     State.
-
 
 %% @private
 persist_state(State) ->
@@ -316,7 +292,6 @@ persist_state(State) ->
             ok
     end.
 
-
 %% @private
 write_state_to_disk(State) ->
     case data_root() of
@@ -327,7 +302,6 @@ write_state_to_disk(State) ->
             ok = filelib:ensure_dir(File),
             ok = file:write_file(File, term_to_binary(State))
     end.
-
 
 %% @private
 data_root() ->

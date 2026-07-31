@@ -46,35 +46,29 @@
 -include_lib("kernel/include/logger.hrl").
 -include("partisan_util.hrl").
 
-
 -record(state, {
-    peers = []      ::  [partisan:node_spec()]
+    peers = [] :: [partisan:node_spec()]
 }).
 
--type state()       ::  #state{}.
--type name()        ::  atom() | binary() | string().
--type options()     ::  #{
-                            addresses := [name() | {name(), inet:port_number()}]
-                        }.
-
+-type state() :: #state{}.
+-type name() :: atom() | binary() | string().
+-type options() :: #{
+    addresses := [name() | {name(), inet:port_number()}]
+}.
 
 -export([init/1]).
 -export([lookup/2]).
 
-
-
 %% =============================================================================
 %% AGENT CALLBACKS
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
 -spec init(Opts :: options()) ->
-    {ok, State :: state()} | {error, Reason ::  any()}.
+    {ok, State :: state()} | {error, Reason :: any()}.
 
 init(#{addresses := Nodes}) when is_list(Nodes) ->
     try
@@ -86,10 +80,8 @@ init(#{addresses := Nodes}) when is_list(Nodes) ->
         throw:Reason ->
             {error, Reason}
     end;
-
 init(Opts) ->
     {error, {invalid_options, Opts}}.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -102,13 +94,9 @@ init(Opts) ->
 lookup(State, _Timeout) ->
     {ok, State#state.peers, State}.
 
-
-
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
-
-
 
 %% @private
 to_peer_list(Addrs) ->
@@ -128,17 +116,13 @@ to_peer_list(Addrs) ->
         Addrs
     ).
 
-
 %% @private
 to_peer(Address, Channels) when is_binary(Address) ->
     to_peer(binary_to_list(Address), Channels);
-
 to_peer(Address, Channels) when is_list(Address) ->
     to_peer(split_nodestring_port(Address), Channels);
-
 to_peer({Node, Port}, Channels) when is_atom(Node), ?IS_PORT_NBR(Port) ->
     to_peer({atom_to_list(Node), Port}, Channels);
-
 to_peer({Node, Port}, Channels) when is_list(Node), ?IS_PORT_NBR(Port) ->
     IPAddr =
         case string:split(Node, "@") of
@@ -146,17 +130,14 @@ to_peer({Node, Port}, Channels) when is_list(Node), ?IS_PORT_NBR(Port) ->
                 case inet_parse:address(Host) of
                     {ok, Value} ->
                         Value;
-
                     {error, _} ->
                         case inet:getaddr(Host, inet) of
                             {ok, Value} ->
                                 Value;
-
                             {error, _} ->
                                 throw(badarg)
                         end
                 end;
-
             _ ->
                 throw(badarg)
         end,
@@ -167,13 +148,11 @@ to_peer({Node, Port}, Channels) when is_list(Node), ?IS_PORT_NBR(Port) ->
         channels => Channels
     }.
 
-
 %% @private
 split_nodestring_port(HostPort) ->
     case string:split(HostPort, ":") of
         [_] ->
             {HostPort, partisan_config:get(listen_port)};
-
         [Nodestring, Port] ->
             try
                 {Nodestring, list_to_integer(Port)}

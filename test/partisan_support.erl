@@ -30,17 +30,22 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 
-
 start_disterl() ->
     {ok, Hostname} = inet:gethostname(),
     os:cmd(os:find_executable("epmd") ++ " -daemon"),
+    %% The suite drives peers over disterl. OTP 25+ `global' partition
+    %% prevention would disconnect peer nodes mid-test as HyParView churns
+    %% connections (`global ... requested disconnect ... to prevent overlapping
+    %% partitions'), causing flaky failures. Disable it on the runner node
+    %% before distribution starts. Partisan itself uses connect_disterl=false
+    %% in production, so this only affects the test control plane.
+    ok = application:set_env(kernel, prevent_overlapping_partitions, false),
     case net_kernel:start([list_to_atom("runner@" ++ Hostname), shortnames]) of
         {ok, _} ->
             ok;
         {error, {already_started, _}} ->
             ok
     end.
-
 
 %% @private
 start(Case, Config, Options) ->
@@ -56,12 +61,13 @@ start(Case, Config, Options) ->
     Servers = proplists:get_value(servers, Options, []),
     Clients = proplists:get_value(clients, Options, []),
 
-    NodeNames = case proplists:get_value(num_nodes, Options, undefined) of
-        undefined ->
-            lists:flatten(Servers ++ Clients);
-        NumNodes ->
-            node_list(NumNodes, "node", Config)
-    end,
+    NodeNames =
+        case proplists:get_value(num_nodes, Options, undefined) of
+            undefined ->
+                lists:flatten(Servers ++ Clients);
+            NumNodes ->
+                node_list(NumNodes, "node", Config)
+        end,
 
     NodeConfig0 = proplists:get_value(node_config, Options, []),
 
@@ -70,7 +76,8 @@ start(Case, Config, Options) ->
         debug("Starting node: ~p", [Name]),
 
         NodeConfig = [
-            {boot_timeout, 10}, % seconds
+            % seconds
+            {boot_timeout, 10},
             {monitor_master, true},
             {kill_if_fail, true},
             {startup_functions, [
@@ -85,7 +92,7 @@ start(Case, Config, Options) ->
             | NodeConfig0
         ],
 
-        case ?CT_NODE:start(Name, NodeConfig) of
+        case start_ct_node(Name, NodeConfig) of
             {ok, Node} ->
                 %% After starting a slave, it takes a little while until global
                 %% knows about it, even if nodes() includes it, so we make sure
@@ -96,7 +103,7 @@ start(Case, Config, Options) ->
             {error, started_not_connected, Node} = Error ->
                 net_kernel:connect_node(Node) orelse
                     ct:pal("Couldn't connect to peer. Reason: ~p", [Error]),
-                    ct:fail(Error),
+                ct:fail(Error),
                 ok;
             Error ->
                 ct:pal("Couldn't start peer. Reason: ~p", [Error]),
@@ -105,50 +112,84 @@ start(Case, Config, Options) ->
     end,
     Nodes = lists:map(InitializerFun, NodeNames),
 
-        %% Configure settings.
+    %% Configure settings.
     ConfigureFun = fun({Name, Node}) ->
         %% Configure the peer service.
         PeerService = proplists:get_value(
             peer_service_manager, Options
-            ),
+        ),
         debug(
             "Setting peer service manager on node ~p to ~p",
             [Node, PeerService]
         ),
         ok = rpc:call(
-            Node, partisan_config, set,
+            Node,
+            partisan_config,
+            set,
             [peer_service_manager, PeerService],
             5000
         ),
 
-         ok = rpc:call(
-            Node, application, set_env,
+        ok = rpc:call(
+            Node,
+            application,
+            set_env,
             [partisan, hyparview, ?HYPARVIEW_DEFAULTS],
             5000
         ),
 
+        %% Repair HyParView active-view symmetry more often than a deployed
+        %% cluster requires.
+        %%
+        %% The convergence assertions allow twelve seconds for a cluster to
+        %% settle. Symmetry repair otherwise follows the random-promotion
+        %% cadence of five seconds, which fits two attempts into that window; a
+        %% single NEIGHBOR that is dropped, or sent before the reverse
+        %% connection is established, then leaves little margin, and on a loaded
+        %% host the high-fanout cases fail intermittently. Half a second fits
+        %% roughly two dozen attempts into the same window.
+        %%
+        %% This belongs here rather than in ?HYPARVIEW_DEFAULTS, which supplies
+        %% the deployed default. Five seconds is a reasonable steady-state
+        %% cadence for a real cluster, and a test deadline is not a reason to
+        %% shorten it there.
         ok = rpc:call(
-            Node, application, set_env, [partisan, peer_ip, ?LOCALHOST],
+            Node,
+            application,
+            set_env,
+            [partisan, active_view_maintenance_interval, 500],
             5000
         ),
 
         ok = rpc:call(
-            Node, partisan_config, set,
+            Node,
+            application,
+            set_env,
+            [partisan, peer_ip, ?LOCALHOST],
+            5000
+        ),
+
+        ok = rpc:call(
+            Node,
+            partisan_config,
+            set,
             [periodic_interval, ?OVERRIDE_PERIODIC_INTERVAL],
             5000
         ),
 
-
-
-        DistanceEnabled = case ?config(distance_enabled, Config) of
-                          undefined ->
-                              true;
-                          DE ->
-                              DE
-                      end,
+        DistanceEnabled =
+            case ?config(distance_enabled, Config) of
+                undefined ->
+                    true;
+                DE ->
+                    DE
+            end,
         debug("Setting distance_enabled to: ~p", [DistanceEnabled]),
         ok = rpc:call(
-            Node, partisan_config, set, [distance_enabled, DistanceEnabled],
+            Node,
+            partisan_config,
+            set,
+            [distance_enabled, DistanceEnabled],
             5000
         ),
 
@@ -162,17 +203,23 @@ start(Case, Config, Options) ->
 
         debug("Setting periodic_enabled to: ~p", [PeriodicEnabled]),
         ok = rpc:call(
-            Node, partisan_config, set, [periodic_enabled, PeriodicEnabled],
+            Node,
+            partisan_config,
+            set,
+            [periodic_enabled, PeriodicEnabled],
             5000
         ),
 
-        MembershipStrategyTracing = case ?config(membership_strategy_tracing, Config) of
-                          undefined ->
-                              false;
-                          MST ->
-                              MST
-                      end,
-        debug("Setting membership_strategy_tracing to: ~p", [MembershipStrategyTracing]),
+        MembershipStrategyTracing =
+            case ?config(membership_strategy_tracing, Config) of
+                undefined ->
+                    false;
+                MST ->
+                    MST
+            end,
+        debug("Setting membership_strategy_tracing to: ~p", [
+            MembershipStrategyTracing
+        ]),
         ok = rpc:call(
             Node,
             partisan_config,
@@ -181,15 +228,19 @@ start(Case, Config, Options) ->
             5000
         ),
 
-        ForwardOptions = case ?config(forward_options, Config) of
-            undefined ->
-              #{};
-            FO ->
-              FO
-        end,
+        ForwardOptions =
+            case ?config(forward_options, Config) of
+                undefined ->
+                    #{};
+                FO ->
+                    FO
+            end,
         debug("Setting forward_options to: ~p", [ForwardOptions]),
         ok = rpc:call(
-            Node, partisan_config, set, [forward_options, ForwardOptions],
+            Node,
+            partisan_config,
+            set,
+            [forward_options, ForwardOptions],
             5000
         ),
 
@@ -199,151 +250,180 @@ start(Case, Config, Options) ->
         %% Configure random seed on the nodes.
         PHashNode = erlang:phash2([Node]),
         ok = rpc:call(
-            Node, partisan_config, set, [random_seed, {PHashNode, 1, 1}],
+            Node,
+            partisan_config,
+            set,
+            [random_seed, {PHashNode, 1, 1}],
             5000
         ),
 
-        Replaying = case ?config(replaying, Config) of
-                          undefined ->
-                              false;
-                          RP ->
-                              RP
-                      end,
+        Replaying =
+            case ?config(replaying, Config) of
+                undefined ->
+                    false;
+                RP ->
+                    RP
+            end,
         debug("Setting replaying to: ~p", [Replaying]),
         ok = rpc:call(Node, partisan_config, set, [replaying, Replaying]),
 
-        Shrinking = case ?config(shrinking, Config) of
-                          undefined ->
-                              false;
-                          SH ->
-                              SH
-                      end,
+        Shrinking =
+            case ?config(shrinking, Config) of
+                undefined ->
+                    false;
+                SH ->
+                    SH
+            end,
         debug("Setting shrinking to: ~p", [Shrinking]),
         ok = rpc:call(Node, partisan_config, set, [shrinking, Shrinking]),
 
-        MembershipStrategy = case ?config(membership_strategy, Config) of
-                          undefined ->
-                              ?DEFAULT_MEMBERSHIP_STRATEGY;
-                          S ->
-                              S
-                      end,
+        MembershipStrategy =
+            case ?config(membership_strategy, Config) of
+                undefined ->
+                    ?DEFAULT_MEMBERSHIP_STRATEGY;
+                S ->
+                    S
+            end,
         debug("Setting membership_strategy to: ~p", [MembershipStrategy]),
-        ok = rpc:call(Node, partisan_config, set, [membership_strategy, MembershipStrategy]),
+        ok = rpc:call(Node, partisan_config, set, [
+            membership_strategy, MembershipStrategy
+        ]),
 
         debug("Enabling tracing since we are in test mode....", []),
         ok = rpc:call(Node, partisan_config, set, [tracing, true]),
 
-        Disterl = case ?config(connect_disterl, Config) of
-                          undefined ->
-                              false;
-                          false ->
-                              false;
-                          true ->
-                              true
-                      end,
+        Disterl =
+            case ?config(connect_disterl, Config) of
+                undefined ->
+                    false;
+                false ->
+                    false;
+                true ->
+                    true
+            end,
         debug("Setting disterl to: ~p", [Disterl]),
         ok = rpc:call(
             Node, partisan_config, set, [connect_disterl, Disterl]
         ),
 
-        DisableFastReceive = case ?config(disable_fast_receive, Config) of
-                          undefined ->
-                              false;
-                          FR ->
-                              FR
-                      end,
+        DisableFastReceive =
+            case ?config(disable_fast_receive, Config) of
+                undefined ->
+                    false;
+                FR ->
+                    FR
+            end,
         debug("Setting disable_fast_receive to: ~p", [DisableFastReceive]),
-        ok = rpc:call(Node, partisan_config, set, [disable_fast_receive, DisableFastReceive]),
+        ok = rpc:call(Node, partisan_config, set, [
+            disable_fast_receive, DisableFastReceive
+        ]),
 
-        DisableFastForward = case ?config(disable_fast_forward, Config) of
-                          undefined ->
-                              false;
-                          FF ->
-                              FF
-                      end,
+        DisableFastForward =
+            case ?config(disable_fast_forward, Config) of
+                undefined ->
+                    false;
+                FF ->
+                    FF
+            end,
         debug("Setting disable_fast_forward to: ~p", [DisableFastForward]),
-        ok = rpc:call(Node, partisan_config, set, [disable_fast_forward, DisableFastForward]),
+        ok = rpc:call(Node, partisan_config, set, [
+            disable_fast_forward, DisableFastForward
+        ]),
 
-        BinaryPadding = case ?config(binary_padding, Config) of
-                          undefined ->
-                              false;
-                          BP ->
-                              BP
-                      end,
+        BinaryPadding =
+            case ?config(binary_padding, Config) of
+                undefined ->
+                    false;
+                BP ->
+                    BP
+            end,
         debug("Setting binary_padding to: ~p", [BinaryPadding]),
-        ok = rpc:call(Node, partisan_config, set, [binary_padding, BinaryPadding]),
+        ok = rpc:call(Node, partisan_config, set, [
+            binary_padding, BinaryPadding
+        ]),
 
-        Broadcast = case ?config(broadcast, Config) of
-                          undefined ->
-                              false;
-                          B ->
-                              B
-                      end,
+        Broadcast =
+            case ?config(broadcast, Config) of
+                undefined ->
+                    false;
+                B ->
+                    B
+            end,
         debug("Setting broadcast to: ~p", [Broadcast]),
         ok = rpc:call(Node, partisan_config, set, [broadcast, Broadcast]),
 
-        IngressDelay = case ?config(ingress_delay, Config) of
-                          undefined ->
-                              0;
-                          ID ->
-                              ID
-                      end,
+        IngressDelay =
+            case ?config(ingress_delay, Config) of
+                undefined ->
+                    0;
+                ID ->
+                    ID
+            end,
         debug("Setting ingress_delay to: ~p", [IngressDelay]),
         ok = rpc:call(Node, partisan_config, set, [ingress_delay, IngressDelay]),
 
-        EgressDelay = case ?config(egress_delay, Config) of
-                          undefined ->
-                              0;
-                          ED ->
-                              ED
-                      end,
+        EgressDelay =
+            case ?config(egress_delay, Config) of
+                undefined ->
+                    0;
+                ED ->
+                    ED
+            end,
         debug("Setting egress_delay to: ~p", [EgressDelay]),
         ok = rpc:call(Node, partisan_config, set, [egress_delay, EgressDelay]),
 
-        Channels = case ?config(channels, Config) of
-                          undefined ->
-                              ?CHANNELS;
-                          C ->
-                              C
-                      end,
+        Channels =
+            case ?config(channels, Config) of
+                undefined ->
+                    ?CHANNELS;
+                C ->
+                    C
+            end,
         debug("Setting channels to: ~p", [Channels]),
         ok = rpc:call(Node, partisan_config, set, [channels, Channels]),
 
-        CausalLabels = case ?config(causal_labels, Config) of
-                          undefined ->
-                              [];
-                          CL ->
-                              CL
-                      end,
+        CausalLabels =
+            case ?config(causal_labels, Config) of
+                undefined ->
+                    [];
+                CL ->
+                    CL
+            end,
         debug("Setting causal_labels to: ~p", [CausalLabels]),
         ok = rpc:call(Node, partisan_config, set, [causal_labels, CausalLabels]),
 
-        PidEncoding = case ?config(pid_encoding, Config) of
-                          undefined ->
-                              true;
-                          PE ->
-                              PE
-                      end,
+        PidEncoding =
+            case ?config(pid_encoding, Config) of
+                undefined ->
+                    true;
+                PE ->
+                    PE
+            end,
         debug("Setting pid_encoding to: ~p", [PidEncoding]),
         ok = rpc:call(Node, partisan_config, set, [pid_encoding, PidEncoding]),
 
         ok = rpc:call(Node, partisan_config, set, [tls, ?config(tls, Config)]),
 
         ok = rpc:call(
-            Node, partisan_config, set,
+            Node,
+            partisan_config,
+            set,
             [tls_client_options, ?config(tls_client_options, Config)]
         ),
         ok = rpc:call(
-            Node, partisan_config, set,
+            Node,
+            partisan_config,
+            set,
             [tls_server_options, ?config(tls_server_options, Config)]
         ),
 
-        Parallelism = case ?config(parallelism, Config) of
-                          undefined ->
-                              ?PARALLELISM;
-                          P ->
-                              P
-                      end,
+        Parallelism =
+            case ?config(parallelism, Config) of
+                undefined ->
+                    ?PARALLELISM;
+                P ->
+                    P
+            end,
         debug("Setting parallelism to: ~p", [Parallelism]),
         ok = rpc:call(Node, partisan_config, set, [parallelism, Parallelism]),
 
@@ -354,7 +434,6 @@ start(Case, Config, Options) ->
         case lists:member(Name, Servers) of
             true ->
                 ok = rpc:call(Node, partisan_config, set, [tag, server]);
-
             false ->
                 ok
         end,
@@ -375,13 +454,17 @@ start(Case, Config, Options) ->
         %% Manually force sasl loading, and disable the logger.
         ok = rpc:call(Node, application, load, [sasl]),
         ok = rpc:call(
-            Node, application, set_env,
+            Node,
+            application,
+            set_env,
             [sasl, sasl_error_logger, false]
         ),
         ok = rpc:call(Node, application, start, [sasl]),
 
         ok = rpc:call(
-            Node, application, set_env,
+            Node,
+            application,
+            set_env,
             [kernel, logger_level, debug]
         ),
 
@@ -390,10 +473,8 @@ start(Case, Config, Options) ->
 
         %% Finally load Partisan
         ok = rpc:call(Node, application, load, [partisan])
-
     end,
     lists:map(LoaderFun, Nodes),
-
 
     %% lists:foreach(ConfigureFun, Nodes),
 
@@ -481,18 +562,14 @@ cluster({Name, _Node} = Myself, Nodes, Options, Config) when is_list(Nodes) ->
         OtherNodes
     ).
 
-
 cluster(Peer) ->
     cluster(partisan:node(), Peer, [{sync_join, false}]).
-
 
 cluster(A, B) ->
     cluster(A, B, [{sync_join, false}]).
 
-
 cluster({_, Node}, {_, Peer}, Config) ->
     cluster(Node, Peer, Config);
-
 cluster(Node, Peer, Config) ->
     NodeSpec = rpc:call(Node, partisan, node_spec, [], 5000),
 
@@ -512,14 +589,13 @@ cluster(Node, Peer, Config) ->
         Peer, partisan_peer_service, JoinMethod, [NodeSpec], 60000
     ).
 
-
 %% @private
 stop(Nodes) ->
     StopFun = fun
         Stop({_, Node}) ->
             Stop(Node);
         Stop(Node) ->
-            case ?CT_NODE:stop(Node) of
+            case stop_ct_node(Node) of
                 {ok, _} ->
                     ok;
                 {error, stop_timeout, _} ->
@@ -534,6 +610,107 @@ stop(Nodes) ->
 
     _ = catch lists:foreach(StopFun, Nodes),
     ok.
+
+%% @private
+%% Compatibility shim: emulate the legacy `ct_slave:start(Name, Opts)' /
+%% `ct_slave:stop(Node)' API on top of OTP 25+ `peer'. Keeps the suite's
+%% existing call sites working without rewriting every test.
+%% Stores the peer Pid in a process-dictionary key keyed by Node name so the
+%% companion `stop_ct_node/1' can shut it down.
+-spec start_ct_node(atom(), [tuple()]) ->
+    {ok, node()} | {error, atom(), term()}.
+start_ct_node(Name, Opts) ->
+    StartupFuns = proplists:get_value(startup_functions, Opts, []),
+    BootTimeout = proplists:get_value(boot_timeout, Opts, 30),
+    %% Ensure the runner is alive — required for disterl-mode peer:start.
+    case erlang:is_alive() of
+        true ->
+            ok;
+        false ->
+            RunnerName = list_to_atom("ct_runner_" ++ os:getpid()),
+            ok = application:set_env(
+                kernel, prevent_overlapping_partitions, false
+            ),
+            {ok, _} = net_kernel:start(RunnerName, #{name_domain => shortnames})
+    end,
+    %% Use the runner's host portion to ensure peer/runner agree on the host.
+    Host =
+        case string:split(atom_to_list(node()), "@") of
+            [_, H] -> H;
+            _ -> net_adm:localhost()
+        end,
+    PaArgs = lists:flatmap(
+        fun(P) -> ["-pa", P] end,
+        [P || P <- code:get_path(), is_list(P), filelib:is_dir(P)]
+    ),
+    %% Ensure both ends share a non-`nocookie' cookie.
+    Cookie =
+        case erlang:get_cookie() of
+            nocookie -> partisan_test_cookie;
+            C -> C
+        end,
+    erlang:set_cookie(node(), Cookie),
+    %% Use disterl so the rest of the suite can drive the peer with
+    %% `rpc:call/4'. Standard-io connection mode skips disterl entirely
+    %% which breaks every existing rpc-based assertion.
+    PeerOpts = #{
+        name => Name,
+        host => Host,
+        wait_boot => BootTimeout * 1000,
+        args =>
+            [
+                "-setcookie",
+                atom_to_list(Cookie),
+                %% Match the runner: don't let `global' disconnect peers to
+                %% prevent overlapping partitions (flaky HyParView failures).
+                "-kernel",
+                "prevent_overlapping_partitions",
+                "false"
+                | PaArgs
+            ]
+    },
+    ct:pal(
+        "Starting peer name=~p host=~s alive=~p cookie=~p args_count=~p",
+        [
+            Name,
+            Host,
+            erlang:is_alive(),
+            erlang:get_cookie(),
+            length(maps:get(args, PeerOpts))
+        ]
+    ),
+    case peer:start(PeerOpts) of
+        {ok, Peer, Node} ->
+            persistent_term:put({?MODULE, peer, Node}, Peer),
+            %% Run any startup_functions over the disterl connection.
+            _ = [
+                (catch rpc:call(Node, M, F, A, 5000))
+             || {M, F, A} <- StartupFuns
+            ],
+            {ok, Node};
+        {error, Reason} ->
+            ct:pal("peer:start failed: ~p", [Reason]),
+            {error, peer_start_failed, Reason}
+    end.
+
+stop_ct_node(Node) ->
+    %% Ask the peer to leave the partisan cluster gracefully so the local
+    %% partisan_monitor sees the disconnect (and fires `noconnection' DOWN
+    %% messages on outstanding monitors). Without this, killing the peer via
+    %% `peer:stop' alone makes the runner wait for partisan's heartbeat to
+    %% time out, which exceeds CT's per-test budget.
+    _ = (catch rpc:call(Node, partisan_peer_service, leave, [], 2000)),
+    Key = {?MODULE, peer, Node},
+    case persistent_term:get(Key, undefined) of
+        undefined ->
+            %% Fall back to disterl shutdown.
+            _ = rpc:call(Node, init, stop, [], 5000),
+            {ok, Node};
+        Peer ->
+            persistent_term:erase(Key),
+            _ = (catch peer:stop(Peer)),
+            {ok, Node}
+    end.
 
 %% @private
 connect(G, N1, N2) ->
@@ -563,13 +740,13 @@ store_proc_receiver() ->
 %% @private
 omit(OmitNameList, Nodes0) ->
     FoldFun = fun({Name, _Node} = N, Nodes) ->
-                    case lists:member(Name, OmitNameList) of
-                        true ->
-                            Nodes;
-                        false ->
-                            Nodes ++ [N]
-                    end
-              end,
+        case lists:member(Name, OmitNameList) of
+            true ->
+                Nodes;
+            false ->
+                Nodes ++ [N]
+        end
+    end,
     lists:foldl(FoldFun, [], Nodes0).
 
 %% @private
@@ -578,16 +755,32 @@ node_list(0, _Name, _Config) ->
 node_list(N, Name, Config) ->
     case ?config(hash, Config) of
         undefined ->
-            [ list_to_atom(string:join([Name,
-                                        integer_to_list(X)],
-                                    "_")) ||
-                X <- lists:seq(1, N) ];
+            [
+                list_to_atom(
+                    string:join(
+                        [
+                            Name,
+                            integer_to_list(X)
+                        ],
+                        "_"
+                    )
+                )
+             || X <- lists:seq(1, N)
+            ];
         _ ->
-            [ list_to_atom(string:join([Name,
-                                        integer_to_list(?config(hash, Config)),
-                                        integer_to_list(X)],
-                                    "_")) ||
-                X <- lists:seq(1, N) ]
+            [
+                list_to_atom(
+                    string:join(
+                        [
+                            Name,
+                            integer_to_list(?config(hash, Config)),
+                            integer_to_list(X)
+                        ],
+                        "_"
+                    )
+                )
+             || X <- lists:seq(1, N)
+            ]
     end.
 
 %% @private

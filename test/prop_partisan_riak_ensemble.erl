@@ -79,7 +79,7 @@ node_global_functions() ->
 %% What should the initial node state be.
 node_initial_state() ->
     node_debug("initializing", []),
-    #node_state{values=dict:new()}.
+    #node_state{values = dict:new()}.
 
 %% Names of the node functions so we kow when we can dispatch to the node
 %% pre- and postconditions.
@@ -93,46 +93,59 @@ node_precondition(_NodeState, _Command) ->
     false.
 
 %% Next state.
-node_next_state(#property_state{joined_nodes=_JoinedNodes},
-                #node_state{values=Values0}=NodeState,
-                {ok, _},
-                {call, ?MODULE, write, [_Node, Key, Value]}) ->
+node_next_state(
+    #property_state{joined_nodes = _JoinedNodes},
+    #node_state{values = Values0} = NodeState,
+    {ok, _},
+    {call, ?MODULE, write, [_Node, Key, Value]}
+) ->
     Values = dict:store(Key, Value, Values0),
-    NodeState#node_state{values=Values};
-
+    NodeState#node_state{values = Values};
 %% Fallthrough.
 node_next_state(_State, NodeState, _Response, _Command) ->
     NodeState.
 
 %% Postconditions for node commands.
-node_postcondition(_NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {ok, _}) ->
+node_postcondition(
+    _NodeState, {call, ?MODULE, write, [_Node, _Key, _Value]}, {ok, _}
+) ->
     true;
-node_postcondition(#node_state{values=Values}=_NodeState, {call, ?MODULE, read, []}, Results) ->
+node_postcondition(
+    #node_state{values = Values} = _NodeState,
+    {call, ?MODULE, read, []},
+    Results
+) ->
     ?LOG_INFO("results: ~p", [Results]),
     ?LOG_INFO("values: ~p", [dict:to_list(Values)]),
 
-    Result = lists:foldl(fun({Key, {obj, _, _, Key, Value}}, Acc) ->
-        ?LOG_INFO("looking for ~p with value ~p", [Key, Value]),
+    Result = lists:foldl(
+        fun({Key, {obj, _, _, Key, Value}}, Acc) ->
+            ?LOG_INFO("looking for ~p with value ~p", [Key, Value]),
 
-        case dict:find(Key, Values) of
-            {ok, Value} ->
-                ?LOG_INFO("found!", []),
-                true andalso Acc;
-            error ->
-                case Value of
-                    notfound ->
-                        true andalso Acc;
-                    _ ->
-                        ?LOG_INFO("not found when it should be!", []),
-                        false andalso Acc
-                end
-        end
-    end, true, Results),
+            case dict:find(Key, Values) of
+                {ok, Value} ->
+                    ?LOG_INFO("found!", []),
+                    true andalso Acc;
+                error ->
+                    case Value of
+                        notfound ->
+                            true andalso Acc;
+                        _ ->
+                            ?LOG_INFO("not found when it should be!", []),
+                            false andalso Acc
+                    end
+            end
+        end,
+        true,
+        Results
+    ),
 
     Result;
 node_postcondition(_NodeState, Command, Response) ->
-    node_debug("generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p",
-               [Command, Response]),
+    node_debug(
+        "generic postcondition fired (this probably shouldn't be hit) for command: ~p with response: ~p",
+        [Command, Response]
+    ),
     false.
 
 %%%===================================================================
@@ -145,13 +158,18 @@ node_postcondition(_NodeState, Command, Response) ->
 -define(RECEIVER, receiver).
 
 -define(ETS, prop_partisan).
--define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
+-define(NAME, fun(Name) ->
+    [{_, NodeName}] = ets:lookup(?ETS, Name),
+    NodeName
+end).
 
 %% @private
 write(Node, Key, Value) ->
     ?PROPERTY_MODULE:command_preamble(Node, [write, Key, Value]),
 
-    Result = rpc:call(?NAME(Node), riak_ensemble_client, kover, [root, Key, Value, 5000], 5000),
+    Result = rpc:call(
+        ?NAME(Node), riak_ensemble_client, kover, [root, Key, Value, 5000], 5000
+    ),
 
     ?PROPERTY_MODULE:command_conclusion(Node, [write, Key, Value]),
 
@@ -166,10 +184,15 @@ read() ->
     %% Get all keys.
     Node = hd(names()),
 
-    Result = lists:map(fun(Key) ->
-        {ok, Value} = rpc:call(?NAME(Node), riak_ensemble_client, kget, [root, Key, 5000], 5000),
-        {Key, Value}
-    end, keys()),
+    Result = lists:map(
+        fun(Key) ->
+            {ok, Value} = rpc:call(
+                ?NAME(Node), riak_ensemble_client, kget, [root, Key, 5000], 5000
+            ),
+            {Key, Value}
+        end,
+        keys()
+    ),
 
     ?PROPERTY_MODULE:command_conclusion(RunnerNode, [read]),
 
@@ -208,33 +231,58 @@ node_begin_case() ->
     [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
 
     %% Enable pid encoding.
-    lists:foreach(fun({ShortName, _}) ->
-        node_debug("enabling pid_encoding at node ~p", [ShortName]),
-        ok = rpc:call(?NAME(ShortName), partisan_config, set, [pid_encoding, true])
-    end, Nodes),
+    lists:foreach(
+        fun({ShortName, _}) ->
+            node_debug("enabling pid_encoding at node ~p", [ShortName]),
+            ok = rpc:call(?NAME(ShortName), partisan_config, set, [
+                pid_encoding, true
+            ])
+        end,
+        Nodes
+    ),
 
     %% Enable register_pid_for_encoding.
-    lists:foreach(fun({ShortName, _}) ->
-        node_debug("enabling register_pid_for_encoding at node ~p", [ShortName]),
-        ok = rpc:call(?NAME(ShortName), partisan_config, set, [register_pid_for_encoding, true])
-    end, Nodes),
+    lists:foreach(
+        fun({ShortName, _}) ->
+            node_debug("enabling register_pid_for_encoding at node ~p", [
+                ShortName
+            ]),
+            ok = rpc:call(?NAME(ShortName), partisan_config, set, [
+                register_pid_for_encoding, true
+            ])
+        end,
+        Nodes
+    ),
 
     %% Load, configure, and start ensemble.
-    lists:foreach(fun({ShortName, _}) ->
-        node_debug("starting riak_ensemble at node ~p", [ShortName]),
-        ok = rpc:call(?NAME(ShortName), application, load, [riak_ensemble]),
+    lists:foreach(
+        fun({ShortName, _}) ->
+            node_debug("starting riak_ensemble at node ~p", [ShortName]),
+            ok = rpc:call(?NAME(ShortName), application, load, [riak_ensemble]),
 
-        DataRoot = "data-root-" ++ atom_to_list(?NAME(ShortName)),
+            DataRoot = "data-root-" ++ atom_to_list(?NAME(ShortName)),
 
-        node_debug("removing old data root: ~p", [DataRoot]),
-        os:cmd("rm -rf ./" ++ DataRoot),
+            node_debug("removing old data root: ~p", [DataRoot]),
+            os:cmd("rm -rf ./" ++ DataRoot),
 
-        node_debug("configuring riak_ensemble at node ~p for data_root ~p", [ShortName, DataRoot]),
-        ok = rpc:call(?NAME(ShortName), application, set_env, [riak_ensemble, data_root, DataRoot]),
+            node_debug(
+                "configuring riak_ensemble at node ~p for data_root ~p", [
+                    ShortName, DataRoot
+                ]
+            ),
+            ok = rpc:call(?NAME(ShortName), application, set_env, [
+                riak_ensemble, data_root, DataRoot
+            ]),
 
-        node_debug("starting riak_ensemble at node ~p", [ShortName]),
-        {ok, _} = rpc:call(?NAME(ShortName), application, ensure_all_started, [riak_ensemble])
-    end, Nodes),
+            node_debug("starting riak_ensemble at node ~p", [ShortName]),
+            {ok, _} = rpc:call(
+                ?NAME(ShortName), application, ensure_all_started, [
+                    riak_ensemble
+                ]
+            )
+        end,
+        Nodes
+    ),
 
     %% Cluster ensemble.
     {FirstName, _} = hd(Nodes),
@@ -247,32 +295,43 @@ node_begin_case() ->
     wait_stable(?NAME(FirstName), root),
 
     node_debug("getting leader id from node: ~p", [FirstName]),
-    RootLeader = rpc:call(?NAME(FirstName), riak_ensemble_manager, rleader_pid, []),
+    RootLeader = rpc:call(
+        ?NAME(FirstName), riak_ensemble_manager, rleader_pid, []
+    ),
     node_debug("root_leader: ~p", [RootLeader]),
 
     %% Join remote nodes to the root.
-    lists:foreach(fun({ShortName, _}) ->
-        %% Join the node.
-        ok = rpc:call(?NAME(FirstName), riak_ensemble_manager, join, [?NAME(FirstName), ?NAME(ShortName)]),
+    lists:foreach(
+        fun({ShortName, _}) ->
+            %% Join the node.
+            ok = rpc:call(?NAME(FirstName), riak_ensemble_manager, join, [
+                ?NAME(FirstName), ?NAME(ShortName)
+            ]),
 
-        %% Sleep for convergenece.
-        timer:sleep(10000),
+            %% Sleep for convergenece.
+            timer:sleep(10000),
 
-        %% Wait on the shortname.
-        wait_stable(?NAME(ShortName), root),
+            %% Wait on the shortname.
+            wait_stable(?NAME(ShortName), root),
 
-        % Result = rpc:call(?NAME(FirstName), riak_ensemble_manager, cluster, []),
+            % Result = rpc:call(?NAME(FirstName), riak_ensemble_manager, cluster, []),
 
-        %% Wait for stabilization.
-        wait_stable(?NAME(FirstName), root),
+            %% Wait for stabilization.
+            wait_stable(?NAME(FirstName), root),
 
-        %% Add member to root ensemble.
-        %% TODO update_members now receives Nodespecs only
-        ok = rpc:call(?NAME(FirstName), riak_ensemble_peer, update_members, [RootLeader, [{add, {root, ?NAME(ShortName)}}], 10000]),
+            %% Add member to root ensemble.
+            %% TODO update_members now receives Nodespecs only
+            ok = rpc:call(
+                ?NAME(FirstName), riak_ensemble_peer, update_members, [
+                    RootLeader, [{add, {root, ?NAME(ShortName)}}], 10000
+                ]
+            ),
 
-        %% Wait until stable.
-        wait_stable(?NAME(FirstName), root)
-    end, tl(Nodes)),
+            %% Wait until stable.
+            wait_stable(?NAME(FirstName), root)
+        end,
+        tl(Nodes)
+    ),
 
     %% Wait for membership to be correct.
     ShouldMembers = lists:map(fun({X, _}) -> {root, ?NAME(X)} end, Nodes),
@@ -280,7 +339,9 @@ node_begin_case() ->
     wait_members(?NAME(FirstName), root, ShouldMembers),
 
     %% Wait for root ensemble stability.
-    node_debug("waiting for root ensemble stability on node: ~p after join", [FirstName]),
+    node_debug("waiting for root ensemble stability on node: ~p after join", [
+        FirstName
+    ]),
     wait_stable(?NAME(FirstName), root),
 
     %% Create partisan ensemble.
@@ -288,30 +349,60 @@ node_begin_case() ->
     EnsembleId = partisan,
     Mod = riak_ensemble_basic_backend,
     Arg = [],
-    ok = rpc:call(?NAME(FirstName), riak_ensemble_manager, create_ensemble, [EnsembleId, {root, ?NAME(FirstName)}, ShouldMembers, Mod, Arg]),
+    ok = rpc:call(?NAME(FirstName), riak_ensemble_manager, create_ensemble, [
+        EnsembleId, {root, ?NAME(FirstName)}, ShouldMembers, Mod, Arg
+    ]),
 
     %% Wait for partisan ensemble stability.
-    node_debug("waiting for partisan ensemble stability on node: ~p after join", [FirstName]),
+    node_debug(
+        "waiting for partisan ensemble stability on node: ~p after join", [
+            FirstName
+        ]
+    ),
     wait_stable(?NAME(FirstName), partisan),
 
     %% Get members of the root ensemble.
     node_debug("getting members of the root ensemble on node ~p", [FirstName]),
-    RootEnsembleMembers = rpc:call(?NAME(FirstName), riak_ensemble_manager, get_members, [root]),
+    RootEnsembleMembers = rpc:call(
+        ?NAME(FirstName), riak_ensemble_manager, get_members, [root]
+    ),
     node_debug("=> ~p", [RootEnsembleMembers]),
 
     %% Get members of the partisan ensemble.
-    node_debug("getting members of the partisan ensemble on node ~p", [FirstName]),
-    PartisanEnsembleMembers = rpc:call(?NAME(FirstName), riak_ensemble_manager, get_members, [partisan]),
+    node_debug("getting members of the partisan ensemble on node ~p", [
+        FirstName
+    ]),
+    PartisanEnsembleMembers = rpc:call(
+        ?NAME(FirstName), riak_ensemble_manager, get_members, [partisan]
+    ),
     node_debug("=> ~p", [PartisanEnsembleMembers]),
 
     %% Perform a single write to ensure the cluster is ready.
-    node_debug("performing root ensemble write to ensure cluster is online and ready.", []),
-    {ok, RRes} = rpc:call(?NAME(FirstName), riak_ensemble_client, kover, [root, rkey, "first", 5000], 5000),
+    node_debug(
+        "performing root ensemble write to ensure cluster is online and ready.",
+        []
+    ),
+    {ok, RRes} = rpc:call(
+        ?NAME(FirstName),
+        riak_ensemble_client,
+        kover,
+        [root, rkey, "first", 5000],
+        5000
+    ),
     node_debug("write completed: ~p", [RRes]),
 
     %% Perform a second write to ensure the cluster is ready.
-    node_debug("performing partisan ensemble write to ensure cluster is online and ready.", []),
-    {ok, PRes} = rpc:call(?NAME(FirstName), riak_ensemble_client, kover, [partisan, pkey, "second", 5000], 5000),
+    node_debug(
+        "performing partisan ensemble write to ensure cluster is online and ready.",
+        []
+    ),
+    {ok, PRes} = rpc:call(
+        ?NAME(FirstName),
+        riak_ensemble_client,
+        kover,
+        [partisan, pkey, "second", 5000],
+        5000
+    ),
     node_debug("write completed: ~p", [PRes]),
 
     ok.
@@ -333,9 +424,15 @@ wait_stable(Node, Ensemble) ->
 
 %% @private
 check_stable(Node, Ensemble) ->
-    case rpc:call(Node, riak_ensemble_manager, check_quorum, [Ensemble, 1000]) of
+    case
+        rpc:call(Node, riak_ensemble_manager, check_quorum, [Ensemble, 1000])
+    of
         true ->
-            case rpc:call(Node, riak_ensemble_peer, stable_views, [Ensemble, 1000]) of
+            case
+                rpc:call(Node, riak_ensemble_peer, stable_views, [
+                    Ensemble, 1000
+                ])
+            of
                 {ok, true} ->
                     true;
                 _Other ->

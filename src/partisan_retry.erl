@@ -56,28 +56,28 @@ an atom indicating termination conditions: `max_retries` or `deadline`.
 """).
 
 -record(partisan_retry, {
-    id                  ::  any(),
-    deadline            ::  non_neg_integer(),
-    max_retries = 0     ::  non_neg_integer(),
-    interval            ::  pos_integer(),
-    count = 0           ::  non_neg_integer(),
-    backoff             ::  optional(backoff:backoff()),
-    start_ts            ::  optional(pos_integer())
+    id :: any(),
+    deadline :: non_neg_integer(),
+    max_retries = 0 :: non_neg_integer(),
+    interval :: pos_integer(),
+    count = 0 :: non_neg_integer(),
+    backoff :: optional(backoff:backoff()),
+    start_ts :: optional(pos_integer())
 }).
 
--type t()               ::  #partisan_retry{}.
--type opts()            ::  #{
-                                deadline => non_neg_integer(),
-                                max_retries => non_neg_integer(),
-                                interval => pos_integer(),
-                                backoff => backoff_opts()
-                            }.
--type backoff_opts()      ::  #{
-                                enabled => boolean(),
-                                min => pos_integer(),
-                                max => pos_integer(),
-                                type => jitter | normal
-                            }.
+-type t() :: #partisan_retry{}.
+-type opts() :: #{
+    deadline => non_neg_integer(),
+    max_retries => non_neg_integer(),
+    interval => pos_integer(),
+    backoff => backoff_opts()
+}.
+-type backoff_opts() :: #{
+    enabled => boolean(),
+    min => pos_integer(),
+    max => pos_integer(),
+    type => jitter | normal
+}.
 
 -export_type([t/0]).
 -export_type([opts/0]).
@@ -91,14 +91,9 @@ an atom indicating termination conditions: `max_retries` or `deadline`.
 
 -compile({no_auto_import, [get/1]}).
 
--eqwalizer({nowarn_function, init/2}).
-
-
 %% =============================================================================
 %% API
 %% =============================================================================
-
-
 
 ?DOC("""
 Initializes a new retry state with the given ID and options.
@@ -120,21 +115,18 @@ init(Id, Opts) ->
     case maps:get(backoff, Opts, undefined) of
         undefined ->
             State0;
-
         BackoffOpts ->
             case maps:get(enabled, BackoffOpts, false) of
                 true ->
-                    Min = maps:get(min, Opts, 10),
-                    Max = maps:get(max, Opts, 120000),
-                    Type = maps:get(type, Opts, jitter),
+                    Min = maps:get(min, BackoffOpts, 10),
+                    Max = maps:get(max, BackoffOpts, 120000),
+                    Type = maps:get(type, BackoffOpts, jitter),
                     Backoff = backoff:type(backoff:init(Min, Max), Type),
                     State0#partisan_retry{backoff = Backoff};
-
                 false ->
                     State0
             end
     end.
-
 
 ?DOC("""
 Returns the delay (in milliseconds) before the next retry should occur.
@@ -148,13 +140,10 @@ Returns `integer()` if retry is allowed, or `deadline | max_retries` atom.
 
 get(#partisan_retry{start_ts = undefined, backoff = undefined} = State) ->
     State#partisan_retry.interval;
-
 get(#partisan_retry{start_ts = undefined, backoff = B}) ->
     backoff:get(B);
-
 get(#partisan_retry{count = N, max_retries = M}) when N > M ->
     max_retries;
-
 get(#partisan_retry{} = State) ->
     Now = erlang:system_time(millisecond),
     Deadline = State#partisan_retry.deadline,
@@ -177,7 +166,6 @@ get(#partisan_retry{} = State) ->
             backoff:get(B)
     end.
 
-
 ?DOC("""
 Increments the retry counter and computes the next delay.
 
@@ -194,15 +182,12 @@ Returns the tuple `{Delay, NewState}`, or `{max_retries | deadline, NewState}`.
 
 fail(#partisan_retry{max_retries = N, count = N} = State) ->
     {max_retries, State};
-
 fail(#partisan_retry{backoff = undefined} = State0) ->
     State1 = State0#partisan_retry{
         count = State0#partisan_retry.count + 1
     },
     State = maybe_init_ts(State1),
-    %% eqwalizer:ignore
     {get(State), State};
-
 fail(#partisan_retry{backoff = B0} = State0) ->
     {_, B1} = backoff:fail(B0),
 
@@ -211,9 +196,7 @@ fail(#partisan_retry{backoff = B0} = State0) ->
         backoff = B1
     },
     State = maybe_init_ts(State1),
-    %% eqwalizer:ignore
     {get(State), State}.
-
 
 ?DOC("""
 Resets the retry counter and (if applicable) resets the backoff state.
@@ -229,9 +212,7 @@ succeed(#partisan_retry{backoff = undefined} = State0) ->
         count = 0,
         start_ts = undefined
     },
-    %% eqwalizer:ignore
     {get(State), State};
-
 succeed(#partisan_retry{backoff = B0} = State0) ->
     {_, B1} = backoff:succeed(B0),
     State = State0#partisan_retry{
@@ -239,9 +220,7 @@ succeed(#partisan_retry{backoff = B0} = State0) ->
         start_ts = undefined,
         backoff = B1
     },
-    %% eqwalizer:ignore
     {get(State), State}.
-
 
 ?DOC("""
 Starts a timer based on the current retry delay.
@@ -260,7 +239,6 @@ fire(#partisan_retry{} = State) ->
             error(Other)
     end.
 
-
 ?DOC("""
 Returns the number of failed retry attempts so far.
 """).
@@ -269,17 +247,13 @@ Returns the number of failed retry attempts so far.
 count(#partisan_retry{count = Val}) ->
     Val.
 
-
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
-
-
 
 maybe_init_ts(#partisan_retry{start_ts = undefined} = State) ->
     State#partisan_retry{
         start_ts = erlang:system_time(millisecond)
     };
-
 maybe_init_ts(#partisan_retry{} = State) ->
     State.

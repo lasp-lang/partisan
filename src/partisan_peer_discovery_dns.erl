@@ -60,86 +60,77 @@
 -include_lib("kernel/include/inet.hrl").
 -include("partisan_util.hrl").
 
--type config()             ::  #{
-                                    record_type := record_type(),
-                                    query := binary() | string(),
-                                    node_basename := binary() | string(),
-                                    options => options()
-                                }.
--type deprecated_config()  ::  #{
-                                    record_type := record_type(),
-                                    name := binary() | string(),
-                                    nodename := binary() | string(),
-                                    options => options()
-                                }.
+-type config() :: #{
+    record_type := record_type(),
+    query := binary() | string(),
+    node_basename := binary() | string(),
+    options => options()
+}.
+-type deprecated_config() :: #{
+    record_type := record_type(),
+    name := binary() | string(),
+    nodename := binary() | string(),
+    options => options()
+}.
 
--type record_type()         ::  string_or_type(a | aaaa | srv | fqdns).
+-type record_type() :: string_or_type(a | aaaa | srv | fqdns).
 
--type options()             ::  #{
-                                    alt_nameservers => [nameserver()],
-                                    nameservers => [nameserver()],
-                                    inet6 => string_or_type(boolean())
-                                }.
--type nameserver()          ::  {
-                                    string_or_type(inet:ip_address()),
-                                    string_or_type(1..65535)
-                                }
-                                | binary() | string().
--type string_or_type(T)     ::  T | binary() | string().
+-type options() :: #{
+    alt_nameservers => [nameserver()],
+    nameservers => [nameserver()],
+    inet6 => string_or_type(boolean())
+}.
+-type nameserver() ::
+    {
+        string_or_type(inet:ip_address()),
+        string_or_type(1..65535)
+    }
+    | binary()
+    | string().
+-type string_or_type(T) :: T | binary() | string().
 
 -export([init/1]).
 -export([lookup/2]).
 
--eqwalizer({nowarn_function, init/1}).
-
-
-
 %% =============================================================================
 %% AGENT CALLBACKS
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
 -spec init(Opts :: config() | deprecated_config()) ->
-    {ok, State :: any()} | {error, Reason ::  any()}.
+    {ok, State :: any()} | {error, Reason :: any()}.
 
 init(#{name := Name} = Opts) ->
     %% Deprecated
     init(maps:put(query, Name, maps:remove(name, Opts)));
-
 init(#{nodename := Name} = Opts) ->
     %% Deprecated
     init(maps:put(node_basename, Name, maps:remove(nodename, Opts)));
-
 init(#{query := Name} = Opts) when is_binary(Name) ->
     init(Opts#{query => binary_to_list(Name)});
-
 init(#{node_basename := Nodename} = Opts) when is_atom(Nodename) ->
     init(Opts#{node_basename => atom_to_list(Nodename)});
-
 init(#{node_basename := Nodename} = Opts) when is_binary(Nodename) ->
     init(Opts#{node_basename => binary_to_list(Nodename)});
-
-init(#{record_type := Type0, query := Query, node_basename := Basename} = Opts)
-when is_list(Query)
-andalso is_list(Basename) ->
+init(
+    #{record_type := Type0, query := Query, node_basename := Basename} = Opts
+) when
+    is_list(Query) andalso
+        is_list(Basename)
+->
     try
         Type = record_type(Type0),
         InetOpts = parse_inet_opts(maps:get(options, Opts, #{})),
         {ok, Opts#{record_type => Type, options => InetOpts}}
-
     catch
         error:badarg ->
             {error, {invalid_options, Opts}}
     end;
-
 init(Opts) ->
     {error, {invalid_options, Opts}}.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -155,9 +146,9 @@ lookup(#{record_type := Type, query := Query, options := Opts} = S, Timeout) ->
     ?LOG_DEBUG(
         fun([]) ->
             #{
-            description => "DNS lookup response",
-            response => Results,
-            query => Query
+                description => "DNS lookup response",
+                response => Results,
+                query => Query
             }
         end,
         []
@@ -173,42 +164,32 @@ lookup(#{record_type := Type, query := Query, options := Opts} = S, Timeout) ->
             {ok, [], S}
     end.
 
-
-
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
-
-
 
 %% @private
 -spec parse_inet_opts(map()) -> list().
 
 parse_inet_opts(Opts) ->
     Fun = fun
-        (Nameservers, L0)
-            when is_list(L0) andalso
-            (
-                Nameservers == alt_nameservers orelse
-                Nameservers == nameservers
-            ) ->
+        (Nameservers, L0) when
+            is_list(L0) andalso
+                (Nameservers == alt_nameservers orelse
+                    Nameservers == nameservers)
+        ->
             L = parse_nameservers(L0),
             {true, L};
-
         (inet6, Term) when is_boolean(Term) ->
             true;
-
         (inet6, Term) when Term == "true"; Term == <<"true">> ->
             {true, true};
-
         (inet6, Term) when Term == "false"; Term == <<"false">> ->
             {true, false};
-
         (_, _) ->
             false
     end,
     maps:to_list(maps:filtermap(Fun, Opts)).
-
 
 %% @private
 parse_nameservers(L) ->
@@ -227,7 +208,6 @@ parse_nameservers(L) ->
     end,
     lists:map(Fun, L).
 
-
 %% @private
 lookup(Query, Type0, Opts, Timeout) ->
     Type = dns_type(Type0),
@@ -235,23 +215,17 @@ lookup(Query, Type0, Opts, Timeout) ->
     Port = partisan_config:get(listen_port),
     [format_data(Type0, DNSData, Port) || DNSData <- Results].
 
-
 %% @private
 record_type(Str) when is_list(Str) ->
     record_type(list_to_existing_atom(Str));
-
 record_type(Str) when is_binary(Str) ->
     record_type(binary_to_existing_atom(Str));
-
 record_type(fqdns) ->
     fqdns;
-
 record_type(Term) when is_atom(Term) ->
     dns_type(Term);
-
 record_type(_) ->
     error(badarg).
-
 
 %% @private
 dns_type(fqdns) ->
@@ -309,12 +283,10 @@ dns_type(wks = Term) ->
 dns_type(Term) ->
     error({badarg, [Term]}).
 
-
 %% @private
 format_data(fqdns, IPAddr, Port) when ?IS_IP(IPAddr) ->
     {ok, {hostent, Host, _, _, _, _}} = inet_res:gethostbyaddr(IPAddr),
     {Host, #{ip => IPAddr, port => Port}};
-
 format_data(srv, {_, _, Port, Host}, _) ->
     %% We use the port returned by the DNS lookup
     IPAddr =
@@ -323,28 +295,24 @@ format_data(srv, {_, _, Port, Host}, _) ->
                 {ok, HostEnt} = inet_res:getbyname(Host, a),
                 #hostent{h_addr_list = [Val | _]} = HostEnt,
                 Val;
-
             {ok, Val} ->
                 Val
         end,
 
     {Host, #{ip => IPAddr, port => Port}};
-
-format_data(A, IPAddr, Port)
-when (A == a orelse A == aaaa) andalso ?IS_IP(IPAddr) ->
+format_data(A, IPAddr, Port) when
+    (A == a orelse A == aaaa) andalso ?IS_IP(IPAddr)
+->
     Host = inet_parse:ntoa(IPAddr),
     {Host, #{ip => IPAddr, port => Port}}.
-
 
 %% @private
 to_peer_list(Results, Basename, Channels) ->
     to_peer_list(Results, Basename, Channels, maps:new()).
 
-
 %% @private
 to_peer_list([], _, _, Acc) ->
     maps:values(Acc);
-
 to_peer_list([{Host, ListAddr} | T], Basename, Channels, Acc0) ->
     Node = list_to_atom(string:join([Basename, Host], "@")),
 
@@ -357,7 +325,6 @@ to_peer_list([{Host, ListAddr} | T], Basename, Channels, Acc0) ->
                     listen_addrs => [ListAddr | ListenAddrs0]
                 },
                 maps:put(Node, Spec, Acc0);
-
             error ->
                 %% We insert a new node specification
                 Spec = #{
@@ -369,6 +336,3 @@ to_peer_list([{Host, ListAddr} | T], Basename, Channels, Acc0) ->
         end,
 
     to_peer_list(T, Basename, Channels, Acc).
-
-
-

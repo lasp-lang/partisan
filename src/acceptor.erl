@@ -108,43 +108,47 @@
 
 -export_type([option/0]).
 
--type data() :: #{module => module(),
-                  state => term(),
-                  socket_module => module(),
-                  socket => gen_tcp:socket(),
-                  ack => reference()}.
+-type data() :: #{
+    module => module(),
+    state => term(),
+    socket_module => module(),
+    socket => gen_tcp:socket(),
+    ack => reference()
+}.
 
 -callback acceptor_init(SockName, LSock, Args) ->
-    {ok, State} | {ok, State, TimeoutOrHib} | ignore | {error, Reason} when
-      SockName :: acceptor_pool:name(),
-      LSock :: gen_tcp:socket(),
-      Args :: term(),
-      State :: term(),
-      TimeoutOrHib :: timeout() | hibernate,
-      Reason :: term().
+    {ok, State} | {ok, State, TimeoutOrHib} | ignore | {error, Reason}
+when
+    SockName :: acceptor_pool:name(),
+    LSock :: gen_tcp:socket(),
+    Args :: term(),
+    State :: term(),
+    TimeoutOrHib :: timeout() | hibernate,
+    Reason :: term().
 
 -callback acceptor_continue(PeerName, Sock, State) -> no_return() when
-      PeerName :: acceptor_pool:name(),
-      Sock :: gen_tcp:socket(),
-      State :: term().
+    PeerName :: acceptor_pool:name(),
+    Sock :: gen_tcp:socket(),
+    State :: term().
 
 -callback acceptor_terminate(Reason, State) -> any() when
-      Reason :: {shutdown, timeout | closed | system_limit | inet:posix()} |
-                term(),
-      State :: term().
+    Reason ::
+        {shutdown, timeout | closed | system_limit | inet:posix()}
+        | term(),
+    State :: term().
 
 %% public api
 
 %% @private
 -spec spawn_opt(Mod, SockMod, SockName, LSock, Args, Opts) -> {Pid, Ref} when
-      Mod :: module(),
-      SockMod :: module(),
-      SockName :: acceptor_pool:name(),
-      LSock :: gen_tcp:socket(),
-      Args :: term(),
-      Opts :: [option()],
-      Pid :: pid(),
-      Ref :: reference().
+    Mod :: module(),
+    SockMod :: module(),
+    SockName :: acceptor_pool:name(),
+    LSock :: gen_tcp:socket(),
+    Args :: term(),
+    Opts :: [option()],
+    Pid :: pid(),
+    Ref :: reference().
 spawn_opt(Mod, SockMod, SockName, LSock, Args, Opts) ->
     AckRef = make_ref(),
     SArgs = [self(), AckRef, Mod, SockMod, SockName, LSock, Args],
@@ -184,11 +188,12 @@ init_it(Parent, AckRef, Mod, SockMod, SockName, LSock, Args) ->
 
 %% @private
 -spec acceptor_continue({ok, Sock} | {error, Reason}, Parent, Data) ->
-    no_return() when
-      Sock :: gen_tcp:socket(),
-      Reason :: timeout | closed | system_limit | inet:posix(),
-      Parent :: pid(),
-      Data :: data().
+    no_return()
+when
+    Sock :: gen_tcp:socket(),
+    Reason :: timeout | closed | system_limit | inet:posix(),
+    Parent :: pid(),
+    Data :: data().
 acceptor_continue({ok, Sock}, Parent, #{socket := LSock} = Data) ->
     % As done by prim_inet:accept/2
     OptNames = [active, nodelay, keepalive, delay_send, priority, tos],
@@ -204,9 +209,9 @@ acceptor_continue({error, Reason}, Parent, Data) ->
 
 %% @private
 -spec acceptor_terminate(Reason, Parent, Data) -> no_return() when
-      Reason :: term(),
-      Parent :: pid(),
-      Data :: data().
+    Reason :: term(),
+    Parent :: pid(),
+    Data :: data().
 acceptor_terminate(Reason, _, Data) ->
     terminate(Reason, Data).
 
@@ -215,14 +220,24 @@ acceptor_terminate(Reason, _, Data) ->
 spawn_options(Opts) ->
     case lists:keyfind(spawn_options, 1, Opts) of
         {_, SpawnOpts} -> [link | SpawnOpts];
-        false          -> [link]
+        false -> [link]
     end.
 
 handle_init({ok, State}, Mod, SockMod, LSock, Parent, AckRef, SockName) ->
-    handle_init({ok, State, infinity}, Mod, SockMod, LSock, Parent, AckRef, SockName);
-handle_init({ok, State, Timeout}, Mod, SockMod, LSock, Parent, AckRef, SockName) ->
-    Data = #{module => Mod, state => State, socket_module => SockMod,
-             socket => LSock, ack => AckRef, sockname => SockName},
+    handle_init(
+        {ok, State, infinity}, Mod, SockMod, LSock, Parent, AckRef, SockName
+    );
+handle_init(
+    {ok, State, Timeout}, Mod, SockMod, LSock, Parent, AckRef, SockName
+) ->
+    Data = #{
+        module => Mod,
+        state => State,
+        socket_module => SockMod,
+        socket => LSock,
+        ack => AckRef,
+        sockname => SockName
+    },
     % Use another module to accept so can reload this module.
     acceptor_loop:accept(LSock, Timeout, Parent, ?MODULE, Data);
 handle_init(ignore, _, _, _, Parent, AckRef, _) ->
@@ -247,8 +262,10 @@ success(Sock, Opts, Parent, Data) ->
             failure(Reason, Data)
     end.
 
-accept_message(Sock, PeerName, #{ack := AckRef,
-                                 sockname := {{0,0,0,0}, _}}) ->
+accept_message(Sock, PeerName, #{
+    ack := AckRef,
+    sockname := {{0, 0, 0, 0}, _}
+}) ->
     case inet:sockname(Sock) of
         {ok, SockName} ->
             {'ACCEPT', self(), AckRef, SockName, PeerName};
@@ -290,19 +307,19 @@ failure(Reason, #{socket := LSock} = Data) ->
 -ifdef(OTP_RELEASE).
 terminate(Reason, #{module := Mod, state := State} = Data) ->
     try Mod:acceptor_terminate(Reason, State) of
-        _             -> terminated(Reason, Data)
+        _ -> terminated(Reason, Data)
     catch
-        throw:_       -> terminated(Reason, Data);
-        exit:NReason  -> terminated(NReason, Data);
+        throw:_ -> terminated(Reason, Data);
+        exit:NReason -> terminated(NReason, Data);
         error:NReason:Stacktrace -> terminated({NReason, Stacktrace}, Data)
     end.
 -else.
 terminate(Reason, #{module := Mod, state := State} = Data) ->
     try Mod:acceptor_terminate(Reason, State) of
-        _             -> terminated(Reason, Data)
+        _ -> terminated(Reason, Data)
     catch
-        throw:_       -> terminated(Reason, Data);
-        exit:NReason  -> terminated(NReason, Data);
+        throw:_ -> terminated(Reason, Data);
+        exit:NReason -> terminated(NReason, Data);
         error:NReason -> terminated({NReason, erlang:get_stacktrace()}, Data)
     end.
 -endif.
@@ -314,8 +331,9 @@ terminated(shutdown, _) ->
 terminated({shutdown, _} = Shutdown, _) ->
     exit(Shutdown);
 terminated(Reason, #{module := Mod, state := State}) ->
-    Msg = "** Acceptor ~p terminating~n"
-          "** When acceptor state == ~p~n"
-          "** Reason for termination ==~n** ~p~n",
+    Msg =
+        "** Acceptor ~p terminating~n"
+        "** When acceptor state == ~p~n"
+        "** Reason for termination ==~n** ~p~n",
     error_logger:format(Msg, [{self(), Mod}, State]),
     exit(Reason).

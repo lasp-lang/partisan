@@ -29,7 +29,6 @@
 
 -include("partisan.hrl").
 
-
 -export([gen_server_cast/3]).
 -export([gen_server_call/4]).
 -export([gen_fsm_send_event/3]).
@@ -37,13 +36,9 @@
 -export([gen_fsm_sync_send_event/4]).
 -export([gen_fsm_sync_send_all_state_event/4]).
 
-
-
 %% =============================================================================
 %% GEN_SERVER API
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -57,7 +52,6 @@ gen_server_cast(Node, Dest, Request) ->
         #{channel => ?DEFAULT_CHANNEL}
     ).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -66,21 +60,14 @@ gen_server_call(Node, Dest, Request, Opts) when is_list(Opts) ->
     call(
         gen_server_call, Node, Dest, '$gen_call', Request, Opts
     );
-
 gen_server_call(Node, Dest, Request, Timeout) ->
     call(
         gen_server_call, Node, Dest, '$gen_call', Request, [{timeout, Timeout}]
     ).
 
-
-
-
-
 %% =============================================================================
 %% GEN_FSM_API (DEPRECATED)
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Deprecated
@@ -109,17 +96,17 @@ gen_fsm_sync_send_event(Node, Dest, Request, Timeout) ->
 
 gen_fsm_sync_send_all_state_event(Node, Dest, Request, Timeout) ->
     call(
-        gen_fsm_sync_send_all_state_event, Node, Dest,
-        '$gen_sync_all_state_event', Request, Timeout
+        gen_fsm_sync_send_all_state_event,
+        Node,
+        Dest,
+        '$gen_sync_all_state_event',
+        Request,
+        Timeout
     ).
-
-
 
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
-
-
 
 call(Type, Node, Dest, Label, Request, Opts0) ->
     %% Make reference.
@@ -151,7 +138,6 @@ call(Type, Node, Dest, Label, Request, Opts0) ->
     receive
         {Mref, Reply} ->
             Reply
-    after
-        Timeout ->
-            exit({timeout, {?MODULE, Type, [Dest, Request, Timeout]}})
+    after Timeout ->
+        exit({timeout, {?MODULE, Type, [Dest, Request, Timeout]}})
     end.

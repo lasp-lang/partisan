@@ -18,7 +18,6 @@
 %%
 %% -------------------------------------------------------------------
 
-
 -module(partisan_config).
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
@@ -51,13 +50,16 @@ the `partisan' application section.
          {certfile, "config/_ssl/server/keycert.pem"},
          {cacertfile, "config/_ssl/server/cacerts.pem"},
          {keyfile, "config/_ssl/server/key.pem"},
-         {verify, verify_none}
+         %% Authenticate peers with a cert signed by the cluster CA.
+         %% verify_none would encrypt but NOT authenticate (MITM-able).
+         {verify, verify_peer},
+         {fail_if_no_peer_cert, true}
      ]},
      {tls_client_options, [
          {certfile, "config/_ssl/client/keycert.pem"},
          {cacertfile, "config/_ssl/client/cacerts.pem"},
          {keyfile, "config/_ssl/client/key.pem"},
-         {verify, verify_none}
+         {verify, verify_peer}
      ]}
  ]}
 ].
@@ -75,13 +77,14 @@ A boolean value indicating whether to pad encoded messages whose external binary
 representation consumes less than 65 bytes.
 
 #### broadcast
-TBD
+
+Enables tree-based transitive forwarding. When `true`, a message addressed to a peer this node has no connection to is forwarded over the broadcast tree instead of failing, provided the caller passed `transitive => true` in the forward options. Also starts a periodic tree refresh, whose period is the `tree_refresh` option (default `1000` ms). Defaults to `false`.
 
 #### broadcast_mods
-TBD
 
-#### broadcast_mods
-TBD
+The broadcast handler modules to start, as a list of modules implementing `m:partisan_plumtree_broadcast_handler`. Defaults to `[partisan_plumtree_backend]`, Partisan's own membership handler.
+
+Each module listed here gets its own broadcast group: its own process, mailbox, spanning tree and outstanding-lazy table. Handlers therefore do not share a tree or block one another. Use [`broadcast_groups`](#broadcast_groups) instead when you need several handlers to share one group, an explicit group name, a dedicated channel, or per-group tick periods.
 
 #### channels
 
@@ -103,7 +106,7 @@ Interval of time between peer connection attempts
 
 #### connection_jitter
 
-TBD
+The delay in milliseconds a node waits before opening a connection, so that a cluster forming or healing at once does not produce a simultaneous rush of connections. Defaults to `1000`. With the `jitter` option enabled the delay is randomised between `1` and this value; otherwise it is used as a fixed sleep.
 
 #### connection_ping
 
@@ -115,27 +118,36 @@ A map containing the following keys:
 
 #### disable_fast_forward
 
-TBD
+Forces outbound messages through the peer service manager instead of the direct-to-connection path. Defaults to `false`.
+
+The fast path hands an encoded message straight to a connection process and does not run interposition functions, so fault injection that needs to observe, delay or drop outbound messages sets this to `true`. It costs throughput and exists for testing.
 
 #### disable_fast_receive
 
-TBD
+Forces inbound messages through the peer service manager instead of being delivered concurrently. Defaults to `false` under `m:partisan_pluggable_peer_service_manager` and `true` under `m:partisan_hyparview_peer_service_manager`.
+
+The receive-side counterpart of [`disable_fast_forward`](#disable_fast_forward): serialising delivery lets interposition functions observe every inbound message in order, at the cost of concurrency.
 
 #### distance_enabled
 
-TBD
+Enables periodic distance measurement between peers. Defaults to `false`. The measurement interval is the `distance_interval` option (default `10000` ms).
 
 #### egress_delay
 
-TBD
+Milliseconds a connection process waits before writing a message to its socket. Defaults to `0`.
+
+An artificial latency injector for testing behaviour under a slow network. Leave at `0` in production.
 
 #### exchange_selection
 
-TBD
+How a broadcast group picks the peer for an anti-entropy exchange. One of:
+
+*   `optimized` (the default) — picks from members the tree does not already reach, i.e. excluding the eager and lazy peer sets for that tree. Exchanging with a peer the tree already covers is unlikely to find a difference, so this concentrates anti-entropy where divergence can actually be.
+*   `normal` — picks from all members.
 
 #### exchange_tick_period
 
-TBD
+Milliseconds between anti-entropy exchange attempts in a broadcast group. Defaults to `10000`. A group may override it in its own spec via the [`broadcast_groups`](#broadcast_groups) option.
 
 #### gossip
 
@@ -158,11 +170,13 @@ The configuration for the {@link partisan_hyparview_peer_service_manager}. A lis
 
 #### ingress_delay
 
-TBD
+Milliseconds a connection process waits before handing a received message to the peer service manager. Defaults to `0`. The receive-side counterpart of [`egress_delay`](#egress_delay), and likewise for testing only.
 
 #### lazy_tick_period
 
-TBD
+Milliseconds between flushes of a broadcast group's outstanding lazy pushes, each of which is sent as an `i_have` announcement. Defaults to `1000`. A group may override it in its own spec via the [`broadcast_groups`](#broadcast_groups) option.
+
+Lazy pushes are the repair half of the epidemic broadcast: a peer that receives an `i_have` for a message it does not hold responds with a graft, which retrieves it. A longer period reduces announcement traffic and lengthens the window in which a missed message stays missed.
 
 #### listen_addrs
 
@@ -174,7 +188,7 @@ The IP address to use for the peer connection listener when no {@link partisan:l
 
 #### listen_port
 
-The port number to use for the peer connection listener when no {@link partisan:listen_addr()} have been defined via option [`listen_addrs`](#listen_addrs). If a value is not defined (and [`listen_addrs`](#listen_addrs) was not used), Partisan will use a randomly generated port. However, the random port will only work for clusters deployed within the same host i.e. used for testing. Moreover, the `listen_port' value is also used by some peer discovery strategies that cannot detect in which port the peer is listening e.g. DNS. So for production environments we recommend always setting the same value on all peers, and having at least one {@link partisan:listen_addr()} in each peer [`listen_addrs`](#listen_addrs) option (when used) having the same port value.
+The port number to use for the peer connection listener when no {@link partisan:listen_addr()} have been defined via option [`listen_addrs`](#listen_addrs). If a value is not defined (and [`listen_addrs`](#listen_addrs) was not used), Partisan will use a randomly generated port. However, the random port will only work for clusters deployed within the same host i.e. used for testing. The `listen_port' value is also used by some peer discovery strategies that cannot detect in which port the peer is listening e.g. DNS. So for production environments we recommend always setting the same value on all peers, and having at least one {@link partisan:listen_addr()} in each peer [`listen_addrs`](#listen_addrs) option (when used) having the same port value.
 
 #### membership_binary_compression
 
@@ -186,7 +200,7 @@ The membership strategy to be used with {@link partisan_pluggable_peer_service_m
 
 #### membership_strategy_tracing
 
-TBD
+Enables tracing inside the membership strategy for the trace orchestrator. Defaults to `false`. Used by the fault-injection test suites; it has no purpose in production.
 
 #### metadata
 
@@ -198,7 +212,7 @@ The nodename to be used when one was not provided via the Erlang `vm.args' confi
 
 #### orchestration_strategy
 
-TBD
+The module implementing peer discovery against an external orchestrator, for example `m:partisan_kubernetes_orchestration_strategy`. Defaults to `undefined`, meaning no orchestration — peers are joined explicitly through `m:partisan_peer_service`.
 
 #### parallelism
 
@@ -210,27 +224,31 @@ The peer service manager to be used. An implementation of the {@link partisan_pe
 
 #### periodic_enabled
 
-TBD
+Enables the peer service manager's periodic maintenance tick, which drives connection retries and membership upkeep. Defaults to `true`. The interval is [`periodic_interval`](#periodic_interval).
 
 #### periodic_interval
 
-TBD
+Milliseconds between periodic maintenance ticks when [`periodic_enabled`](#periodic_enabled) is set. Defaults to `10000`.
 
 #### pid_encoding
 
-TBD
+Whether a pid placed in a message is encoded as a `t:partisan_remote_ref:p/0` before it goes on the wire. Defaults to `true`.
+
+Encoding is what makes a pid meaningful on the receiving node: Partisan does not use Erlang distribution, so a raw pid term is not resolvable there. Disable it only when every pid in your messages is already an encoded reference, or when messages carry no pids at all.
 
 #### random_seed
 
-TBD
+The seed for Partisan's randomness, as accepted by `rand:seed/1`. Defaults to a value generated at startup. Set it to make a test run reproducible.
 
 #### ref_encoding
 
-TBD
+Whether a reference placed in a message is encoded as a `t:partisan_remote_ref:r/0` before it goes on the wire. Defaults to `true`. The reference counterpart of [`pid_encoding`](#pid_encoding).
 
 #### register_pid_for_encoding
 
-TBD
+Registers a process under a generated name when its pid is encoded, so the resulting reference resolves by name rather than by pid. Defaults to `false`.
+
+This exists for deployments that restart processes and need a reference to survive the restart. It adds a registration per encoded pid, so it is off by default.
 
 #### remote_ref_format
 
@@ -248,11 +266,13 @@ If `true' and the URI encoding of a remote reference results in a binary smaller
 
 #### replaying
 
-TBD
+Set by the trace orchestrator while it replays a recorded trace. Defaults to `false`. Not intended to be set by hand.
 
 #### reservations
 
-TBD
+Active-view slots reserved for peers carrying a given tag, as a list of tags — for example `[server]`. Defaults to `[]`. Used by `m:partisan_hyparview_peer_service_manager` to guarantee that peers of a particular role keep a place in the active view even as it churns.
+
+The list may not be longer than the HyParView `active_max_size`; the manager refuses to start with `reservation_limit_exceeded` if it is.
 
 #### retransmit_interval
 
@@ -260,7 +280,7 @@ When option `retransmission' is set to `true' in the `partisan:forward_opts()' u
 
 #### shrinking
 
-TBD
+Set by the property-based test harness while it shrinks a counterexample. Defaults to `false`. Not intended to be set by hand.
 
 #### tag
 
@@ -270,17 +290,25 @@ The role of this node when using the Client-Server topology implemented by @{lin
 *   `client' - The node acts as a client. To be used only in combination with `{partisan_peer_manager, partisan_client_server_peer_manager}'
 *   `server' - The node acts as a server. To be used only in combination with `{partisan_peer_manager, partisan_client_server_peer_manager}'
 
+#### max_message_size
+
+Maximum size in bytes of an inbound peer message frame. Frames larger than this are rejected before they are assembled or decoded, guarding against pre-authentication memory exhaustion and decompression bombs on the peer plane. The default is `67108864' (64 MB).
+
 #### tls
 
-A boolean value indicating whether channel connections should use TLS. If enabled, you have to provide a value for `tls_client_options' and `tls_server_options'. The default is `false'.
+A boolean value indicating whether peer connections should use TLS. If enabled you must provide `tls_client_options' and `tls_server_options'. The default is `false'. NOTE: for authenticated (non-MITM-able) clustering set `{verify, verify_peer}' with a cluster CA on BOTH sides; `verify_none' only encrypts and does NOT authenticate the peer.
 
 #### tls_client_options
 
-The TLS socket options used when establishing outgoing connections to peers. The configuration applies to all Partisan channels. The default is `[]'. ==== Example ==== ``` {tls_client_options, [ {certfile, "config/_ssl/client/keycert.pem"}, {cacertfile, "config/_ssl/client/cacerts.pem"}, {keyfile, "config/_ssl/client/key.pem"}, {verify, verify_none} ]} '''
+The TLS socket options used when establishing outgoing connections to peers. The configuration applies to all Partisan channels. The default is `[]'. ==== Example ==== ``` {tls_client_options, [ {certfile, "config/_ssl/client/keycert.pem"}, {cacertfile, "config/_ssl/client/cacerts.pem"}, {keyfile, "config/_ssl/client/key.pem"}, {verify, verify_peer} ]} '''
+
+#### tls_handshake_timeout
+
+Timeout in milliseconds for the server-side TLS handshake on an inbound peer connection. Bounds a stalled handshake so it cannot pin an acceptor. The default is `5000'.
 
 #### tls_server_options
 
-The TLS socket options used when establishing incoming connections from peers. The configuration applies to all Partisan channels. The default is `[]'. ==== Example ==== ``` {tls_server_options, [ {certfile, "config/_ssl/server/keycert.pem"}, {cacertfile, "config/_ssl/server/cacerts.pem"}, {keyfile, "config/_ssl/server/key.pem"}, {verify, verify_none} ]} '''
+The TLS socket options used when establishing incoming connections from peers. The configuration applies to all Partisan channels. The default is `[]'. ==== Example ==== ``` {tls_server_options, [ {certfile, "config/_ssl/server/keycert.pem"}, {cacertfile, "config/_ssl/server/cacerts.pem"}, {keyfile, "config/_ssl/server/key.pem"}, {verify, verify_peer}, {fail_if_no_peer_cert, true} ]} '''
 
 #### tracing
 
@@ -288,7 +316,11 @@ a boolean value. The default is `false'.
 
 #### xbot_interval
 
-TBD == Deprecated Options == The following is the list of options have been deprecated. Some of them have been renamed and/or moved down a level in the configuration tree.
+Milliseconds between rounds of the X-BOT active-view optimisation in `m:partisan_hyparview_peer_service_manager`, which tries to replace an active-view peer with a closer one.
+
+## Deprecated options
+
+The following options are deprecated. Some have been renamed, or moved down a level in the configuration tree.
 
 #### arwl
 
@@ -369,19 +401,17 @@ Use `{remote_ref_format, uri}' instead
 
 -compile({no_auto_import, [get/1]}).
 -compile({no_auto_import, [set/2]}).
--compile({inline,[{channel_opts,1}]}).
--compile({inline,[{channels,0}]}).
--compile({inline,[{default_channel,0}]}).
--compile({inline,[{get,1}]}).
--compile({inline,[{get,2}]}).
--compile({inline,[{get_with_opts,2}]}).
--compile({inline,[{get_with_opts,3}]}).
-
+-compile({inline, [{channel_opts, 1}]}).
+-compile({inline, [{channels, 0}]}).
+-compile({inline, [{default_channel, 0}]}).
+-compile({inline, [{get, 1}]}).
+-compile({inline, [{get, 2}]}).
+-compile({inline, [{get_with_opts, 2}]}).
+-compile({inline, [{get_with_opts, 3}]}).
 
 %% =============================================================================
 %% API
 %% =============================================================================
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Initialises the configuration from the application environment.
@@ -443,16 +473,24 @@ init() ->
     DefaultPeerIP = try_get_peer_ip(),
     DefaultPeerPort = random_port(),
 
-    [env_or_default(Key, Default) ||
-        {Key, Default} <- [
+    [
+        env_or_default(Key, Default)
+     || {Key, Default} <- [
             %% WARNING:
             %% This list should be exhaustive, anything key missing from this
             %% list will not be read from the application environment.
             %% The following keys are missing on purpose
             %% as we need to process them after: [channels].
             %% Also do not change the sort order of this list.
+            %% Cadence of the HyParView active-view symmetry repair.
+            %% `undefined' selects the random-promotion cadence, which is the
+            %% default; any other value sets the cadence directly. The key is
+            %% listed here so that it is read from the application environment,
+            %% as the note above requires.
+            {active_view_maintenance_interval, undefined},
             {binary_padding, false},
             {broadcast, false},
+            {broadcast_groups, []},
             {broadcast_mods, [partisan_plumtree_backend]},
             {causal_labels, []},
             {channel_fallback, true},
@@ -476,6 +514,9 @@ init() ->
             {hyparview, ?HYPARVIEW_DEFAULTS},
             {ingress_delay, 0},
             {lazy_tick_period, ?DEFAULT_LAZY_TICK_PERIOD},
+            %% Max size (bytes) of an inbound peer message frame; frames larger
+            %% than this are rejected before decode (pre-auth DoS guard).
+            {max_message_size, ?DEFAULT_MAX_MESSAGE_SIZE},
             {membership_binary_compression, true},
             {membership_strategy, ?DEFAULT_MEMBERSHIP_STRATEGY},
             {membership_strategy_tracing, ?MEMBERSHIP_STRATEGY_TRACING},
@@ -484,9 +525,11 @@ init() ->
             {parallelism, ?PARALLELISM},
             {peer_discovery, #{enabled => false}},
             {peer_service_manager, PeerService},
-            {peer_ip, DefaultPeerIP}, % deprecated, use listen_ip
+            % deprecated, use listen_ip
+            {peer_ip, DefaultPeerIP},
             {listen_ip, DefaultPeerIP},
-            {peer_port, DefaultPeerPort}, % deprecated, use listen_port
+            % deprecated, use listen_port
+            {peer_port, DefaultPeerPort},
             {listen_port, DefaultPeerPort},
             %% IMPORTANT! listen_addrs should be after peer_port and peer_ip
             {listen_addrs, []},
@@ -500,15 +543,38 @@ init() ->
             {remote_ref_uri_padding, false},
             {replaying, false},
             {retransmit_interval, 1000},
+            %% Upper bound on RPC requests executing concurrently on this node.
+            %% Each inbound request runs in its own process, so without a bound
+            %% a peer could spawn without limit. OTP tolerates the unbounded
+            %% form because the distribution buffer backpressures; Partisan has
+            %% no equivalent, so the bound is enforced here. Set high enough to
+            %% be irrelevant to legitimate load; `infinity' disables it.
+            {rpc_max_concurrency, 10000},
+            %% Upper bound on messages queued to a single connection process
+            %% before sends to it are refused with `{error, overloaded}'.
+            %%
+            %% Dispatch is a `gen_server:cast/2' into an unbounded mailbox, so
+            %% without a bound a sender faster than its socket grows that mailbox
+            %% until the node dies. `infinity' — the default — preserves the
+            %% historical behaviour exactly, because turning an unbounded queue
+            %% into a refusing one changes what callers observe and that should
+            %% be an opt-in, not something an upgrade does to a running system.
+            %%
+            %% `monotonic' channels ignore this: they already have their own
+            %% overload strategy (drop the superseded message), which is correct
+            %% for the traffic they carry. See
+            %% `partisan_peer_connections:cast_encoded/3'.
+            {connection_high_watermark, infinity},
             {reservations, []},
             {shrinking, false},
             {tag, DefaultTag},
             {tls, false},
             {tls_client_options, []},
+            {tls_handshake_timeout, ?DEFAULT_TLS_HANDSHAKE_TIMEOUT},
             {tls_server_options, []},
             {tracing, false},
             {transmission_logging_mfa, undefined}
-       ]
+        ]
     ],
 
     %% Setup channels
@@ -529,15 +595,12 @@ init() ->
             ok
     end.
 
-
-
 %% -----------------------------------------------------------------------------
 %% @doc Seed the process.
 %% @end
 %% -----------------------------------------------------------------------------
 seed(Seed) ->
     rand:seed(exsplus, Seed).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Seed the process.
@@ -552,7 +615,6 @@ seed() ->
     }),
     rand:seed(exsplus, RandomSeed).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Return a random seed, either from the environment or one that's
 %% generated for the run.
@@ -561,11 +623,14 @@ seed() ->
 random_seed() ->
     case get(random_seed, undefined) of
         undefined ->
-            {erlang:phash2([partisan:node()]), erlang:monotonic_time(), erlang:unique_integer()};
+            {
+                erlang:phash2([partisan:node()]),
+                erlang:monotonic_time(),
+                erlang:unique_integer()
+            };
         Other ->
             Other
     end.
-
 
 trace(Message, Args) ->
     ?LOG_TRACE(#{
@@ -574,21 +639,17 @@ trace(Message, Args) ->
         args => Args
     }).
 
-
 get(broadcast_start_exchange_limit = Key) ->
     %% If there is no limit defined we assume a limit of 1 per module, as we
     %% This works because partisan_plumtree_broadcast will never run more than
     %% one exchange per module anyway.
     Default = length(get(broadcast_mods, [])),
     get(Key, Default);
-
 get(Key) ->
     persistent_term:get(?KEY(maybe_rename(Key))).
 
-
 get(Key, Default) ->
     persistent_term:get(?KEY(maybe_rename(Key)), Default).
-
 
 ?DOC("""
 Returns the value for `Key' in `Opts', if found. Otherwise, calls `get/1`.
@@ -598,7 +659,6 @@ get_with_opts(Key, Opts) when is_map(Opts); is_list(Opts) ->
         {ok, Val} -> Val;
         error -> get(Key)
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the value for `Key' in `Opts', if found. Otherwise, calls
@@ -611,17 +671,14 @@ get_with_opts(Key, Opts, Default) when is_map(Opts); is_list(Opts) ->
         error -> get(Key, Default)
     end.
 
-
 set(listen_addrs, Value0) when is_list(Value0) ->
     %% We make sure they are sorted so that we can compare them (specially when
     %% part of the node_spec()).
     Value = lists:usort(validate_listen_addrs(Value0)),
     do_set(listen_addrs, Value);
-
 set(peer_ip, Value) when is_list(Value) ->
     ParsedIP = partisan_util:parse_ip_address(Value),
     do_set(peer_ip, ParsedIP);
-
 set(channels, Arg) when is_list(Arg) orelse is_map(Arg) ->
     %% We coerse any defined channel to channel spec map representations and
     %% build a
@@ -650,7 +707,7 @@ set(channels, Arg) when is_list(Arg) orelse is_map(Arg) ->
 
     maps:foreach(
         fun(Channel, #{parallelism := N} = Opts) ->
-            telemetry:execute(
+            partisan_telemetry:execute(
                 [partisan, channel, configured],
                 #{
                     max => N
@@ -665,7 +722,6 @@ set(channels, Arg) when is_list(Arg) orelse is_map(Arg) ->
     ),
 
     do_set(channels, Channels);
-
 set(broadcast_mods, L0) ->
     is_list(L0) orelse error({badarg, [broadcast_mods, L0]}),
     Map = fun
@@ -676,7 +732,6 @@ set(broadcast_mods, L0) ->
                 error:_ ->
                     ToAtom({error, Mod})
             end;
-
         ToAtom({error, Mod}) ->
             ?LOG_ERROR(#{
                 description => "Configuration error. Broadcast module ignored",
@@ -684,36 +739,27 @@ set(broadcast_mods, L0) ->
                 module => Mod
             }),
             false;
-
         ToAtom(Mod) when is_atom(Mod), Mod =/= undefined ->
             true;
-
         ToAtom(Mod) ->
             ToAtom({error, Mod})
-
     end,
     L = lists:filtermap(Map, L0),
     %% We always add the mods required by partisan itself.
     do_set(broadcast_mods, lists:usort(L ++ ?BROADCAST_MODS));
-
 set(hyparview, Value) ->
     set_hyparview_config(Value);
-
 set(membership_binary_compression, true) ->
     do_set(membership_binary_compression, true),
     do_set('$membership_encoding_opts', [compressed]);
-
 set(membership_binary_compression, N) when is_integer(N), N >= 0, N =< 9 ->
     do_set(membership_binary_compression, N),
     do_set('$membership_encoding_opts', [{compressed, N}]);
-
 set(membership_binary_compression, Val) ->
     do_set(membership_binary_compression, Val),
     do_set('$membership_encoding_opts', []);
-
 set(forward_options, Opts) when is_list(Opts) ->
     set(forward_options, maps:from_list(Opts));
-
 set(tls_client_options, Opts0) when is_list(Opts0) ->
     case lists:keytake(hostname_verification, 1, Opts0) of
         {value, {hostname_verification, wildcard}, Opts1} ->
@@ -721,21 +767,16 @@ set(tls_client_options, Opts0) when is_list(Opts0) ->
             Check = {customize_hostname_check, [{match_fun, Match}]},
             Opts = lists:keystore(customize_hostname_check, 1, Opts1, Check),
             do_set(tls_client_options, Opts);
-
         {value, {hostname_verification, _}, Opts1} ->
             do_set(tls_client_options, Opts1);
-
         false ->
             do_set(tls_client_options, Opts0)
     end;
-
 set(Key, Value) ->
     do_set(maybe_rename(Key), Value).
 
-
 listen_addrs() ->
     get(listen_addrs).
-
 
 -spec channel_opts(Name :: partisan:channel()) -> partisan:channel_opts().
 
@@ -747,7 +788,6 @@ channel_opts(Name) when is_atom(Name) ->
             error(badarg)
     end.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc The spec of the default channel.
 %% @end
@@ -756,7 +796,6 @@ channel_opts(Name) when is_atom(Name) ->
 
 default_channel_opts() ->
     channel_opts(default_channel()).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc The name of the default channel.
@@ -767,23 +806,17 @@ default_channel_opts() ->
 default_channel() ->
     ?DEFAULT_CHANNEL.
 
-
 -spec channels() -> #{partisan:channel() => partisan:channel_opts()}.
 
 channels() ->
     get(channels).
 
-
 parallelism() ->
     get(parallelism, ?PARALLELISM).
-
-
 
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -793,10 +826,9 @@ parallelism() ->
 cleanup() ->
     _ = [
         persistent_term:erase(Key)
-        || {Key, _} <- persistent_term:get(), ?IS_KEY(Key)
+     || {Key, _} <- persistent_term:get(), ?IS_KEY(Key)
     ],
     ok.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -809,7 +841,6 @@ maybe_set_node_name() ->
             %% We read directly from the env (not our cache)
             UserDefined = application:get_env(partisan, name, undefined),
             set_node_name(UserDefined);
-
         Nodename ->
             %% Name already set
             ?LOG_NOTICE(#{
@@ -820,7 +851,6 @@ maybe_set_node_name() ->
             }),
             ok
     end.
-
 
 %% @private
 set_node_name(UserDefined) ->
@@ -835,7 +865,6 @@ set_node_name(UserDefined) ->
                     disterl_enabled => false
                 }),
                 Generated;
-
             nonode@nohost when UserDefined =/= undefined ->
                 ?LOG_NOTICE(#{
                     description => "Partisan node name configured",
@@ -843,7 +872,6 @@ set_node_name(UserDefined) ->
                     disterl_enabled => false
                 }),
                 UserDefined;
-
             Other ->
                 ?LOG_NOTICE(#{
                     description => "Partisan node name configured",
@@ -857,7 +885,6 @@ set_node_name(UserDefined) ->
     set(name, Name),
     set(nodestring, atom_to_binary(Name, utf8)).
 
-
 %% @private
 gen_node_name() ->
     {UUID, _UUIDState} = uuid:get_v1(uuid:new(self())),
@@ -868,14 +895,11 @@ gen_node_name() ->
             undefined ->
                 {ok, Val} = inet:gethostname(),
                 Val;
-
             Val ->
                 address_to_string(partisan_util:parse_ip_address(Val))
         end,
 
     list_to_atom(StringUUID ++ "@" ++ Host).
-
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -884,16 +908,10 @@ gen_node_name() ->
 %% -----------------------------------------------------------------------------
 address_to_string(IPAddress) when ?IS_IP(IPAddress) ->
     inet:ntoa(IPAddress);
-
 address_to_string(Address) when is_binary(Address) ->
     binary_to_list(Address);
-
 address_to_string(Address) when is_list(Address) ->
     Address.
-
-
-
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -904,21 +922,17 @@ env_or_default(Key, Default) ->
     Value = application:get_env(partisan, Key, Default),
     set(Key, Value).
 
-
 %% @private
 do_set(Key, MergeFun) when is_function(MergeFun, 1) ->
     OldValue = persistent_term:get(?KEY(Key), undefined),
     do_set(Key, MergeFun(OldValue));
-
 do_set(Key, Value) ->
     application:set_env(?APP, Key, Value),
     persistent_term:put(?KEY(Key), Value).
 
-
 %% @private
 set_hyparview_config(Config) when is_map(Config) ->
     set_hyparview_config(maps:to_list(Config));
-
 set_hyparview_config(Config) when is_list(Config) ->
     %% We rename keys
     M = lists:foldl(
@@ -931,7 +945,6 @@ set_hyparview_config(Config) when is_list(Config) ->
     %% We merge with defaults
     do_set(hyparview, maps:merge(get(hyparview, ?HYPARVIEW_DEFAULTS), M)).
 
-
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc Rename keys
@@ -940,43 +953,32 @@ set_hyparview_config(Config) when is_list(Config) ->
 maybe_rename(arwl) ->
     % hyparview
     active_rwl;
-
 maybe_rename(prwl) ->
     % hyparview
     passive_rwl;
-
 maybe_rename(max_active_size) ->
     % hyparview
     active_max_size;
-
 maybe_rename(min_active_size) ->
     % hyparview
     active_min_size;
-
 maybe_rename(max_passive_size) ->
     % hyparview
     passive_max_size;
-
 maybe_rename(passive_view_shuffle_period) ->
     % hyparview
     shuffle_interval;
-
 maybe_rename(random_promotion_period) ->
     % hyparview
     random_promotion_interval;
-
 maybe_rename(partisan_peer_service_manager) ->
     peer_service_manager;
-
 maybe_rename(peer_ip) ->
     listen_ip;
-
 maybe_rename(peer_port) ->
     listen_port;
-
 maybe_rename(Key) ->
     Key.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -992,8 +994,6 @@ validate_listen_addrs(Addrs) ->
         Addrs
     ).
 
-
-
 %% @private
 random_port() ->
     {ok, Socket} = gen_tcp:listen(0, []),
@@ -1001,17 +1001,14 @@ random_port() ->
     ok = gen_tcp:close(Socket),
     Port.
 
-
 %% @private
 try_get_peer_ip() ->
     case application:get_env(partisan, peer_ip) of
         {ok, Value} when is_list(Value) orelse ?IS_IP(Value) ->
             partisan_util:parse_ip_address(Value);
-
         undefined ->
             get_peer_ip()
     end.
-
 
 %% @private
 get_peer_ip() ->
@@ -1030,7 +1027,6 @@ get_peer_ip() ->
     receive
         {ok, Addr} ->
             Addr;
-
         {spawn_reply, ReqId, error, Reason} ->
             ?LOG_INFO(#{
                 description =>
@@ -1039,19 +1035,16 @@ get_peer_ip() ->
                 reason => Reason
             }),
             ?LOCALHOST
-
-    after
-        5000 ->
-            _ = spawn_request_abandon(ReqId),
-            ?LOG_INFO(#{
-                description =>
-                    "Cannot resolve IP address for host, using 127.0.0.1",
-                host => Host,
-                reason => timeout
-            }),
-            ?LOCALHOST
+    after 5000 ->
+        _ = spawn_request_abandon(ReqId),
+        ?LOG_INFO(#{
+            description =>
+                "Cannot resolve IP address for host, using 127.0.0.1",
+            host => Host,
+            reason => timeout
+        }),
+        ?LOCALHOST
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -1062,19 +1055,19 @@ get_peer_ip() ->
     inet:ip_address().
 
 get_ip_addr(Host) ->
-    Families = case is_inet6_supported() of
-        true -> [inet6, inet];
-        false -> [inet]
-    end,
+    Families =
+        case is_inet6_supported() of
+            true -> [inet6, inet];
+            false -> [inet]
+        end,
     get_ip_addr(Host, Families, undefined).
-
 
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
-get_ip_addr(Host, [H|T], _) ->
+get_ip_addr(Host, [H | T], _) ->
     case inet:getaddr(Host, H) of
         {ok, Addr} ->
             ?LOG_NOTICE(#{
@@ -1084,11 +1077,9 @@ get_ip_addr(Host, [H|T], _) ->
                 addr => Addr
             }),
             Addr;
-
         {error, Reason} ->
             get_ip_addr(Host, T, Reason)
     end;
-
 get_ip_addr(Host, [], Reason) ->
     %% Fallback, as we could't resolve Host
     ?LOG_NOTICE(#{
@@ -1097,7 +1088,6 @@ get_ip_addr(Host, [], Reason) ->
         reason => partisan_util:format_posix_error(Reason)
     }),
     {127, 0, 0, 1}.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -1109,11 +1099,9 @@ is_inet6_supported() ->
         {ok, Socket} ->
             ok = gen_tcp:close(Socket),
             true;
-
         _Error ->
             false
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -1126,10 +1114,10 @@ to_channels_map(L) when is_list(L) ->
             begin
                 Channel = to_channel_spec(E),
                 {maps:get(name, Channel), maps:without([name], Channel)}
-            end || E <- L
+            end
+         || E <- L
         ]
     );
-
 to_channels_map(M) when is_map(M) ->
     %% This is the case where a user has passed
     %% #{channel() => channel_opts()}
@@ -1141,7 +1129,6 @@ to_channels_map(M) when is_map(M) ->
         M
     ).
 
-
 %% @private
 init_channel_opts() ->
     #{
@@ -1149,7 +1136,6 @@ init_channel_opts() ->
         monotonic => false,
         compression => false
     }.
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -1159,29 +1145,26 @@ init_channel_opts() ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec to_channel_spec(
-    Arg ::  map()
-            | partisan:channel()
-            | {partisan:channel(), partisan:channel_opts()}
-            | {monotonic, partisan:channel()}) ->
+    Arg ::
+        map()
+        | partisan:channel()
+        | {partisan:channel(), partisan:channel_opts()}
+        | {monotonic, partisan:channel()}
+) ->
     Spec :: map() | no_return().
 
-to_channel_spec(#{name := Name, parallelism := N, monotonic := M} = Spec)
-when is_atom(Name) andalso is_integer(N) andalso N >= 1 andalso is_boolean(M) ->
+to_channel_spec(#{name := Name, parallelism := N, monotonic := M} = Spec) when
+    is_atom(Name) andalso is_integer(N) andalso N >= 1 andalso is_boolean(M)
+->
     Spec;
-
 to_channel_spec(Name) when is_atom(Name) ->
     to_channel_spec(#{name => Name});
-
 to_channel_spec({monotonic, Name}) when is_atom(Name) ->
     %% We support the legacy syntax
     to_channel_spec(#{name => Name, monotonic => true});
-
 to_channel_spec({Name, Opts}) when is_atom(Name), is_map(Opts) ->
     to_channel_spec(Opts#{name => Name});
-
 to_channel_spec(#{name := _} = Map) when is_map(Map) ->
     to_channel_spec(maps:merge(init_channel_opts(), Map));
-
 to_channel_spec(_) ->
     error(badarg).
-

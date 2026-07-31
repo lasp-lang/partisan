@@ -120,7 +120,9 @@ pre_init_per_suite(_Suite,Config,State) ->
               State :: #state{}) ->
     {config() | skip_or_fail(), NewState :: #state{}}.
 post_init_per_suite(_Suite,_Config,Return,State) ->
-    test_server_ctrl:kill_slavenodes(),
+    %% test_server_ctrl:kill_slavenodes() is deprecated and unavailable
+    %% outside the OTP test framework. Node cleanup is handled by
+    %% partisan_support_otp or peer:stop in individual test cases.
     {Return, State}.
 
 %% Called before end_per_suite.

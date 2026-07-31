@@ -43,6 +43,12 @@
 -include("partisan.hrl").
 
 -export([add_sup_callback/1]).
+
+-deprecated(
+    {add_sup_callback, 1,
+        "use partisan_membership:subscribe/0 (push) or "
+        "partisan_membership:members/0 (pull)"}
+).
 -export([broadcast_members/0]).
 -export([broadcast_members/1]).
 -export([cancel_exchanges/1]).
@@ -71,13 +77,9 @@
 -export([sync_join/1]).
 -export([update_members/1]).
 
-
-
 %% =============================================================================
 %% API
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Stop
@@ -85,7 +87,6 @@
 %% -----------------------------------------------------------------------------
 stop() ->
     stop("received stop request").
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Stop
@@ -98,7 +99,6 @@ stop(Reason) ->
     }),
     init:stop().
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Return current peer service manager for this
 %% @end
@@ -107,7 +107,6 @@ stop(Reason) ->
 
 manager() ->
     ?PEER_SERVICE_MANAGER.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -123,7 +122,6 @@ join(#{name := Node} = NodeSpec) ->
         _ ->
             ?PEER_SERVICE_MANAGER:join(NodeSpec)
     end;
-
 join(Node) ->
     case partisan:node_spec(Node) of
         {ok, NodeSpec} ->
@@ -131,7 +129,6 @@ join(Node) ->
         {error, _} = Error ->
             Error
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -148,7 +145,6 @@ sync_join(#{name := Node} = NodeSpec) ->
             ?PEER_SERVICE_MANAGER:sync_join(NodeSpec)
     end.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Leave the cluster.
 %% @end
@@ -157,7 +153,6 @@ sync_join(#{name := Node} = NodeSpec) ->
 
 leave() ->
     ?PEER_SERVICE_MANAGER:leave().
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Remove a node from the cluster.
@@ -173,7 +168,6 @@ leave(#{name := Node} = NodeSpec) ->
             ?PEER_SERVICE_MANAGER:leave(NodeSpec)
     end.
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Trigger function on connection open for a given node.
 %% `Function' is a function object taking zero or a single argument, where the
@@ -186,12 +180,12 @@ leave(#{name := Node} = NodeSpec) ->
 %% -----------------------------------------------------------------------------
 -spec on_up(
     node() | partisan:node_spec() | any | '_',
-    partisan_peer_service_manager:on_event_fun()) ->
+    partisan_peer_service_manager:on_event_fun()
+) ->
     ok | {error, not_implemented}.
 
 on_up(Node, Function) ->
     ?PEER_SERVICE_MANAGER:on_up(Node, Function).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Trigger function on connection open for a given node.
@@ -206,12 +200,12 @@ on_up(Node, Function) ->
 -spec on_up(
     node() | partisan:node_spec() | any | '_',
     partisan_peer_service_manager:on_event_fun(),
-    Opts :: #{channel => partisan:channel()}) ->
+    Opts :: #{channel => partisan:channel()}
+) ->
     ok | {error, not_implemented}.
 
 on_up(Node, Function, Opts) ->
     ?PEER_SERVICE_MANAGER:on_up(Node, Function, Opts).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Trigger function on connection close for a given node.
@@ -229,7 +223,6 @@ on_up(Node, Function, Opts) ->
 on_down(Node, Function) ->
     ?PEER_SERVICE_MANAGER:on_down(Node, Function).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Trigger function on connection close for a given node.
 %% `Function' is a function object taking zero or a single argument, where the
@@ -243,12 +236,12 @@ on_down(Node, Function) ->
 -spec on_down(
     node() | partisan:node_spec() | any | '_',
     partisan_peer_service_manager:on_event_fun(),
-    Opts :: #{channel => partisan:channel()}) ->
+    Opts :: #{channel => partisan:channel()}
+) ->
     ok | {error, not_implemented}.
 
 on_down(Node, Function, Opts) ->
     ?PEER_SERVICE_MANAGER:on_down(Node, Function, Opts).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Return a sampling of nodes connected to this node.
@@ -264,8 +257,6 @@ on_down(Node, Function, Opts) ->
 member(Node) ->
     ?PEER_SERVICE_MANAGER:member(Node).
 
-
-
 %% -----------------------------------------------------------------------------
 %% @doc Return cluster members
 %% @end
@@ -274,7 +265,6 @@ member(Node) ->
 
 members() ->
     ?PEER_SERVICE_MANAGER:members().
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Return cluster members
@@ -285,14 +275,12 @@ members() ->
 members_for_orchestration() ->
     ?PEER_SERVICE_MANAGER:members_for_orchestration().
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Return peer service connections
 %% @end
 %% -----------------------------------------------------------------------------
 connections() ->
     {ok, partisan_peer_connections:connections()}.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Update cluster members with a list of node specifications.
@@ -304,7 +292,6 @@ connections() ->
 update_members(Members) ->
     ?PEER_SERVICE_MANAGER:update_members(Members).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Decode peer_service_manager state from an encoded form
 %% @end
@@ -315,7 +302,6 @@ decode(State) ->
     Manager = ?PEER_SERVICE_MANAGER,
     [P || #{name := P} <- Manager:decode(State)].
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Reserve a slot for the particular tag.
 %% @end
@@ -325,17 +311,15 @@ decode(State) ->
 reserve(Tag) ->
     ?PEER_SERVICE_MANAGER:reserve(Tag).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
--spec partitions() -> {ok, partisan_peer_service_manager:partitions()} | {error, not_implemented}.
+-spec partitions() ->
+    {ok, partisan_peer_service_manager:partitions()} | {error, not_implemented}.
 
 partitions() ->
     ?PEER_SERVICE_MANAGER:partitions().
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc Inject a partition.
@@ -347,7 +331,6 @@ partitions() ->
 inject_partition(Origin, TTL) ->
     ?PEER_SERVICE_MANAGER:inject_partition(Origin, TTL).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc Resolve a partition.
 %% @end
@@ -358,7 +341,6 @@ inject_partition(Origin, TTL) ->
 resolve_partition(Reference) ->
     ?PEER_SERVICE_MANAGER:resolve_partition(Reference).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -368,17 +350,34 @@ resolve_partition(Reference) ->
 get_local_state() ->
     ?PEER_SERVICE_MANAGER:get_local_state().
 
-
-
 %% -----------------------------------------------------------------------------
 %% @doc Adds a supervised callback to receive peer service membership updates.
+%%
+%% Deprecated: prefer {@link partisan_membership:subscribe/0} —
+%% receive `{partisan_membership, Members}' in your own process — or poll
+%% {@link partisan_membership:members/0}. This is now a compatibility shim over
+%% the membership snapshot's push feed: it spawns a relay process, linked to the
+%% caller, that invokes `Function' with the current member specs on each change.
+%% The callback now runs asynchronously, in its own process — it no longer blocks
+%% the membership path, and a crashing callback no longer affects others.
 %% @end
 %% -----------------------------------------------------------------------------
-add_sup_callback(Function) ->
-    partisan_peer_service_events:add_sup_callback(Function).
+-spec add_sup_callback(fun(([partisan:node_spec()]) -> any())) -> ok.
 
+add_sup_callback(Function) when is_function(Function, 1) ->
+    _ = spawn_link(fun() ->
+        ok = partisan_membership:subscribe(),
+        sup_callback_loop(Function)
+    end),
+    ok.
 
-
+%% @private
+sup_callback_loop(Function) ->
+    receive
+        {partisan_membership, Members} ->
+            _ = (catch Function(Members)),
+            sup_callback_loop(Function)
+    end.
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the broadcast servers view of full cluster membership.
@@ -388,8 +387,10 @@ add_sup_callback(Function) ->
 -spec broadcast_members() -> ordsets:ordset(node()).
 
 broadcast_members() ->
-    partisan_plumtree_broadcast:broadcast_members().
-
+    %% Answered from the oracle's lock-free membership snapshot, not from a
+    %% broadcast process : with multiple broadcast groups there is
+    %% no single "the broadcast server" to ask.
+    partisan_membership:node_names().
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the broadcast servers view of full cluster membership.
@@ -398,9 +399,10 @@ broadcast_members() ->
 %% -----------------------------------------------------------------------------
 -spec broadcast_members(infinity | pos_integer()) -> ordsets:ordset(node()).
 
-broadcast_members(Timeout) ->
-    partisan_plumtree_broadcast:broadcast_members(Timeout).
-
+broadcast_members(_Timeout) ->
+    %% Lock-free snapshot read; the timeout is now irrelevant (kept for API
+    %% compatibility).
+    partisan_membership:node_names().
 
 %% -----------------------------------------------------------------------------
 %% @doc return a list of exchanges, started by broadcast on thisnode, that are
@@ -411,7 +413,6 @@ broadcast_members(Timeout) ->
 
 exchanges() ->
     partisan_plumtree_broadcast:exchanges().
-
 
 %% -----------------------------------------------------------------------------
 %% @doc returns a list of exchanges, started by broadcast on `Node', that are
@@ -424,7 +425,6 @@ exchanges() ->
 exchanges(Node) ->
     partisan_plumtree_broadcast:exchanges(Node).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc cancel exchanges started by this node.
 %% @end
@@ -434,9 +434,3 @@ exchanges(Node) ->
 
 cancel_exchanges(WhichExchanges) ->
     partisan_plumtree_broadcast:cancel_exchanges(WhichExchanges).
-
-
-
-
-
-

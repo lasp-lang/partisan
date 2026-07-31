@@ -12,7 +12,7 @@ Partisan is configured using the normal `sys.conf` file and/or calling the funct
         %% The listening port for Partisan TCP/IP connections
         {peer_port, 10200},
         %% The list of channels
-        {channels, [{data, #{parallelism => 1}]},
+        {channels, [{data, #{parallelism => 1}}]},
         %% Encoding for pid(), reference() and names
         {pid_encoding, false},
         {ref_encoding, false},
@@ -88,47 +88,49 @@ ok
 
 ## Migrating from Distributed Erlang
 
-In addition to using Partisan-specific functions to manage a cluster and send messages, adopting Partisan implies the need to replace some Erlang BIFs with Partisan's counterparts. This is mainly to cope with the impossibility for Partisan to represent remote pids and references in the way Distributed Erlang does. For that reason, pids and references are encoded manually (or automatically is the configuration options `pid_encoding` and `ref_encoding ` are enabled) using the `partisan_remote_ref:from_term/1` function.
+In addition to using Partisan-specific functions to manage a cluster and send messages, adopting Partisan implies the need to replace some Erlang BIFs with Partisan's counterparts. This is mainly to cope with the impossibility for Partisan to represent remote pids and references in the way Distributed Erlang does. Instead, a remote pid or reference is represented as a `t:partisan_remote_ref:t/0`.
+
+By default (`pid_encoding` and `ref_encoding` both default to `true`), this encoding is automatic: any `pid()` or `reference()` found anywhere inside a message payload is transparently rewritten to a `partisan_remote_ref:t()` when the message is sent. You only need to call `partisan_remote_ref:from_term/1` yourself when you disable automatic encoding, or when you want a reference to your own process or a value ahead of sending it (as `partisan:self/0` does).
 
 Several Erlang BIFs (a.k.a "native implementation") won't work when using Partisan so you will need to use the Partisan API instead. The Partisan API tries to be a drop-in replacement to Erlang's as much as possible. It tries comply with Erlang's in terms of naming, function signature and behaviour, so in most cases migrating to Partisan is as easy as replacing the module name from `erlang` to `partisan`.
 
-The same applies for OTP behaviours when making remote calls e.g. `gen_server:call/1` will not work when the first argument is a remote name. If you need your OTP behaviours to comminicate over the network you will need to: (i) implement the partisan counterpart fork i.e. `m:partisan_gen_server`; or (ii) use `partisan_rpc:call/2` instead of `gen_server:call/2`.
+The same applies for OTP behaviours when making remote calls e.g. `gen_server:call/2` will not work when the first argument is a remote name. If you need your OTP behaviours to communicate over the network you will need to either (i) implement the partisan counterpart fork, i.e. `m:partisan_gen_server`; or (ii) use `partisan_rpc:call/4` for an rpc-style remote call.
 
-Notice also that calling `sys` functions e.g. `sys:get_state/1` passing a `partisan_gen_server` pid will not work. You will also have to use the partisan
+Notice also that calling `sys` functions e.g. `sys:get_state/1` passing a *remote* `partisan_gen_server` reference will not work. You will also have to use the partisan
 counterpart `partisan_sys:get_state/1`.
 
 The following table shows a mapping of Erlang to Partisan APIs.
 
 |Erlang|Partisan|Description|
 |---|---|---|
-|`erlang:cancel_timer/1`|`partisan:cancel_timer/1`| |
-|`erlang:cancel_timer/2`|`partisan:cancel_timer/2`| |
-|`erlang:demonitor/1`|`partisan:demonitor/1`| |
-|`erlang:demonitor/2`|`partisan:demonitor/2`| |
+|`erlang:cancel_timer/1`|`partisan:cancel_timer/1`|Also cancels a timer created by `partisan:send_after/3,4` for a remote destination.|
+|`erlang:cancel_timer/2`|`partisan:cancel_timer/2`|Also cancels a timer created by `partisan:send_after/3,4` for a remote destination.|
+|`erlang:demonitor/1`|`partisan:demonitor/1`|Also accepts a `t:partisan:remote_reference/0` returned by `partisan:monitor/1,2,3`. Unlike the native function, does not fail if the monitor was started by another process.|
+|`erlang:demonitor/2`|`partisan:demonitor/2`|Also accepts a `t:partisan:remote_reference/0` returned by `partisan:monitor/1,2,3`.|
 |`erlang:disconnect_node/1`|`partisan:disconnect_node/1`| |
-|`erlang:exit/2`|`partisan:exit/2`| |
-|`erlang:is_alive/0`|`partisan:is_alive/0`| |
-|`erlang:is_pid/1`|`partisan:is_pid/1`| |
-|`erlang:is_process_alive/1`|`partisan:is_process_alive/1`| |
-|`erlang:is_reference/1`|`partisan:is_reference/1`| |
-|`erlang:make_ref/0`|`partisan:make_ref/0`| |
-|`erlang:monitor/1`|`partisan:monitor/1`| |
-|`erlang:monitor/2`|`partisan:monitor/2`| |
-|`erlang:monitor/3`|`partisan:monitor/3`| |
+|`erlang:exit/2`|`partisan:exit/2`|Also accepts a `t:partisan:remote_pid/0`.|
+|`erlang:is_alive/0`|`partisan:is_alive/0`|Different meaning: whether the peer service manager is running, not whether the node is registered for Distributed Erlang.|
+|`erlang:is_pid/1`|`partisan:is_pid/1`|Also accepts a `t:partisan:remote_pid/0`.|
+|`erlang:is_process_alive/1`|`partisan:is_process_alive/1`|Also accepts a `t:partisan:remote_pid/0`; the check runs on the owning node.|
+|`erlang:is_reference/1`|`partisan:is_reference/1`|Also accepts a `t:partisan:remote_reference/0`.|
+|`erlang:make_ref/0`|`partisan:make_ref/0`|Returns a `t:partisan:remote_reference/0`, not a native `reference()`.|
+|`erlang:monitor/1`|`partisan:monitor/1`|Deprecated; use `partisan:monitor/2`.|
+|`erlang:monitor/2`|`partisan:monitor/2`|Also accepts a `t:partisan:remote_pid/0` or `t:partisan:remote_name/0`, returning a `t:partisan:remote_reference/0`.|
+|`erlang:monitor/3`|`partisan:monitor/3`|Also accepts a `t:partisan:remote_pid/0` or `t:partisan:remote_name/0`, returning a `t:partisan:remote_reference/0`.|
 |`erlang:node/0`|`partisan:node/0`| |
-|`erlang:node/1`|`partisan:node/1`| |
-|`erlang:process_info/1`|`partisan:process_info/1`| |
-|`erlang:process_info/2`|`partisan:process_info/2`| |
-|`erlang:self/0`|`partisan:self/0`| |
+|`erlang:node/1`|`partisan:node/1`|Also accepts a `t:partisan:remote_pid/0` or `t:partisan:remote_reference/0`, reading the node from the encoded reference.|
+|`erlang:process_info/1`|`partisan:process_info/1`|Also accepts a `t:partisan:remote_pid/0`.|
+|`erlang:process_info/2`|`partisan:process_info/2`|Also accepts a `t:partisan:remote_pid/0`.|
+|`erlang:self/0`|`partisan:self/0`|Returns a `t:partisan:remote_pid/0`, not a native `pid()`. More expensive than `erlang:self/0` — see `partisan:self/1` to cache the result.|
 |`erlang:send/2`|`partisan:send/2`| |
 |`erlang:send/3`|`partisan:send/3`| |
 |`erlang:send_after/3`|`partisan:send_after/3`|Accepts a `partisan_remote_ref:t()` as destination. When destination is a local pid, it reverts to the native implementation.|
 |`erlang:send_after/4`|`partisan:send_after/4`|Accepts a `partisan_remote_ref:t()` as destination. When destination is a local pid, it reverts to the native implementation.|
-|`erlang:spawn/2`|`partisan:spawn/2`| |
-|`erlang:spawn/4`|`partisan:spawn/4`| |
-|`erlang:spawn_monitor/2`|`partisan:spawn_monitor/2`| |
-|`erlang:spawn_monitor/4`|`partisan:spawn_monitor/4`| |
-|`erlang:whereis/1`|`partisan:whereis/1`| |
+|`erlang:spawn/2`|`partisan:spawn/2`|Returns a `t:partisan:remote_pid/0`. A remote spawn is carried out over `partisan_rpc`.|
+|`erlang:spawn/4`|`partisan:spawn/4`|Returns a `t:partisan:remote_pid/0`. A remote spawn is carried out over `partisan_rpc`.|
+|`erlang:spawn_monitor/2`|`partisan:spawn_monitor/2`|Returns a `t:partisan:remote_pid/0` and `t:partisan:remote_reference/0` pair for a remote target.|
+|`erlang:spawn_monitor/4`|`partisan:spawn_monitor/4`|Returns a `t:partisan:remote_pid/0` and `t:partisan:remote_reference/0` pair for a remote target.|
+|`erlang:whereis/1`|`partisan:whereis/1`|Also accepts a `t:partisan:remote_name/0` for the *local* node; fails with `badarg` for a remote node.|
 |`net_kernel:monitor_node/2`|`partisan:monitor_node/2`| |
 |`net_kernel:monitor_nodes/1`|`partisan:monitor_nodes/1`| |
 |`net_kernel:monitor_nodes/2`|`partisan:monitor_nodes/2`| |

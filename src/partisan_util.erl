@@ -30,6 +30,7 @@
 -endif.
 
 -export([apply/4]).
+-export([channel_encode_opts/1]).
 -export([encode/1]).
 -export([encode/2]).
 -export([format_posix_error/1]).
@@ -42,13 +43,9 @@
 -export([parse_listen_address/1]).
 -export([parse_port_nbr/1]).
 
-
-
 %% =============================================================================
 %% API
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -63,11 +60,8 @@ get(Key, Arg) when is_list(Arg) ->
         false ->
             error(badkey)
     end;
-
 get(Key, Arg) when is_map(Arg) ->
     maps:get(Key, Arg).
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -83,11 +77,8 @@ get(Key, Arg, Default) when is_list(Arg) ->
         false ->
             Default
     end;
-
 get(Key, Arg, Default) when is_map(Arg) ->
     maps:get(Key, Arg, Default).
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -95,7 +86,7 @@ get(Key, Arg, Default) when is_map(Arg) ->
 %% -----------------------------------------------------------------------------
 -spec maybe_connect_disterl(Node :: node()) -> ok.
 
-maybe_connect_disterl(Node ) ->
+maybe_connect_disterl(Node) ->
     case partisan_config:get(connect_disterl, false) of
         true ->
             _ = net_kernel:connect_node(Node),
@@ -103,7 +94,6 @@ maybe_connect_disterl(Node ) ->
         false ->
             ok
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -120,7 +110,6 @@ maybe_pad_term(Term) ->
         false ->
             Term
     end.
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -141,18 +130,18 @@ maps_append(Key, Value, Map) ->
         Map
     ).
 
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
 -spec apply(
-    Mod :: module(), Fun :: atom(), Args :: list(), Default :: any()) ->
+    Mod :: module(), Fun :: atom(), Args :: list(), Default :: any()
+) ->
     any() | no_return().
 
 apply(Mod, Fun, Args, Default) ->
-    erlang:function_exported(Mod, module_info, 0)
-        orelse code:ensure_loaded(Mod),
+    erlang:function_exported(Mod, module_info, 0) orelse
+        code:ensure_loaded(Mod),
 
     Arity = length(Args),
 
@@ -168,7 +157,8 @@ apply(Mod, Fun, Args, Default) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec safe_apply(
-    Mod :: module(), Fun :: atom(), Args :: list(), Default :: any()) -> any().
+    Mod :: module(), Fun :: atom(), Args :: list(), Default :: any()
+) -> any().
 
 safe_apply(Mod, Fun, Args, Default) ->
     try
@@ -183,15 +173,12 @@ safe_apply(Mod, Fun, Args, Default) ->
             Default
     end.
 
-
-
 %% -----------------------------------------------------------------------------
 %% @doc
 %% @end
 %% -----------------------------------------------------------------------------
 encode(Term) ->
     encode(Term, []).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc If `pid_encoding' or `ref_encoding' configuration options are enabled,
@@ -212,6 +199,29 @@ encode(Term, Opts) ->
             erlang:term_to_iovec(Term, Opts)
     end.
 
+%% -----------------------------------------------------------------------------
+%% @doc Returns the `erlang:term_to_iovec/2' options implied by a channel's
+%% `compression' option.
+%%
+%% This is the single source of truth for the derivation. It is used both by
+%% `partisan_peer_service_client' when it caches the options for a connection,
+%% and by the dispatch path when it encodes a message in the *calling* process
+%% before handing it to that connection. Those two must agree: if the caller
+%% encodes with different options than the connection would have, the bytes on
+%% the wire change depending on which path a message took.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec channel_encode_opts(ChannelOpts :: partisan:channel_opts()) -> list().
+
+channel_encode_opts(ChannelOpts) when is_map(ChannelOpts) ->
+    case maps:get(compression, ChannelOpts, false) of
+        true ->
+            [compressed];
+        N when is_integer(N), N >= 0, N =< 9 ->
+            [{compressed, N}];
+        _ ->
+            []
+    end.
 
 %% -----------------------------------------------------------------------------
 %% @doc Given a POSIX error reason see {@link inet} and {@link file}, returns a
@@ -230,7 +240,6 @@ format_posix_error(Reason) when is_atom(Reason) ->
             iolist_to_binary([Message, " (", atom_to_list(Reason), ")"])
     end.
 
-
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc
@@ -243,20 +252,15 @@ parse_ip_address(Address) when is_list(Address) ->
     case inet:parse_address(Address) of
         {ok, IPAddress} ->
             IPAddress;
-
         {error, _} ->
             error(badarg)
     end;
-
 parse_ip_address(Term) when is_binary(Term) ->
     parse_ip_address(binary_to_list(Term));
-
 parse_ip_address(Term) when ?IS_IP(Term) ->
     Term;
-
 parse_ip_address(_) ->
     error(badarg).
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -265,16 +269,12 @@ parse_ip_address(_) ->
 %% -----------------------------------------------------------------------------
 parse_port_nbr(N) when ?IS_PORT_NBR(N) ->
     N;
-
 parse_port_nbr(Term) when is_binary(Term) ->
     parse_port_nbr(binary_to_integer(Term));
-
 parse_port_nbr(Term) when is_list(Term) ->
     parse_port_nbr(list_to_integer(Term));
-
 parse_port_nbr(_) ->
     error(badarg).
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -283,19 +283,16 @@ parse_port_nbr(_) ->
 -spec parse_listen_address(Term :: map() | list() | binary() | tuple()) ->
     partisan:listen_addr() | no_return().
 
-parse_listen_address(#{ip := IPAddress, port := N} = Addr)
-when ?IS_IP(IPAddress) andalso ?IS_PORT_NBR(N) ->
+parse_listen_address(#{ip := IPAddress, port := N} = Addr) when
+    ?IS_IP(IPAddress) andalso ?IS_PORT_NBR(N)
+->
     Addr;
-
 parse_listen_address(#{ip := IP, port := N}) ->
     #{ip => parse_ip_address(IP), port => parse_port_nbr(N)};
-
 parse_listen_address({IPAddr, N}) when ?IS_IP(IPAddr) andalso ?IS_PORT_NBR(N) ->
     #{ip => IPAddr, port => N};
-
 parse_listen_address({IPAddr, N}) ->
     parse_listen_address(#{ip => IPAddr, port => N});
-
 parse_listen_address(Term) when is_list(Term) ->
     case string:split(Term, ":") of
         [IPAddr, N] ->
@@ -306,20 +303,14 @@ parse_listen_address(Term) when is_list(Term) ->
         _ ->
             error(badarg)
     end;
-
 parse_listen_address(Term) when is_binary(Term) ->
     parse_listen_address(binary_to_list(Term));
-
 parse_listen_address(_) ->
     error(badarg).
-
-
 
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
-
-
 
 %% -----------------------------------------------------------------------------
 %% @doc
@@ -327,18 +318,14 @@ parse_listen_address(_) ->
 %% -----------------------------------------------------------------------------
 encode_([]) ->
     106;
-
 encode_({}) ->
     [104, 0];
-
 encode_(T) when is_atom(T) ->
     <<131, Rest/binary>> = term_to_binary(T),
     [Rest];
-
 encode_(T) when is_binary(T) ->
     Len = byte_size(T),
     [109, <<Len:32/integer-big>>, T];
-
 encode_(T) when is_tuple(T) ->
     Len = tuple_size(T),
     case Len > 255 of
@@ -347,32 +334,39 @@ encode_(T) when is_tuple(T) ->
         true ->
             [104, <<Len:32/integer-big>>, [encode_(E) || E <- tuple_to_list(T)]]
     end;
-
-encode_([alias|Ref]) ->
+encode_([alias | Ref]) ->
     %% Improper list with 2 elements to support partisan_remote_ref format
     [108, <<1:32/integer-big>>, [encode_(alias), encode_(Ref)]];
-
-encode_([Node|Bin]) when is_atom(Node), is_binary(Bin) ->
+encode_([Node | Bin]) when is_atom(Node), is_binary(Bin) ->
     %% Improper list with 2 elements to support partisan_remote_ref format
     [108, <<1:32/integer-big>>, [encode_(Node), encode_(Bin)]];
-
 encode_(T) when is_list(T) ->
     %% TODO improper lists
     Len = length(T),
-    case Len < 64436 andalso lists:all(fun(E) when is_integer(E), E >= 0, E < 256 ->
-                                                true;
-                                            (_) ->
-                                                 false
-                                        end, T) of
+    case
+        Len < 64436 andalso
+            lists:all(
+                fun
+                    (E) when is_integer(E), E >= 0, E < 256 ->
+                        true;
+                    (_) ->
+                        false
+                end,
+                T
+            )
+    of
         true ->
             [107, <<Len:16/integer-big>>, T];
         false ->
             [108, <<Len:32/integer-big>>, [[encode_(E) || E <- T]], 106]
     end;
-
 encode_(T) when is_map(T) ->
     Len = maps:size(T),
-    [116, <<Len:32/integer-big>>, [[encode_(K), encode_(V)] || {K, V} <- maps:to_list(T)]];
+    [
+        116,
+        <<Len:32/integer-big>>,
+        [[encode_(K), encode_(V)] || {K, V} <- maps:to_list(T)]
+    ];
 encode_(T) when is_reference(T) ->
     case partisan_config:get(ref_encoding, true) of
         false ->
@@ -384,7 +378,6 @@ encode_(T) when is_reference(T) ->
             ),
             Rest
     end;
-
 encode_(T) when is_pid(T) ->
     case partisan_config:get(pid_encoding, true) of
         false ->
@@ -394,14 +387,10 @@ encode_(T) when is_pid(T) ->
             <<131, Rest/binary>> = term_to_binary(pid(T)),
             Rest
     end;
-
 encode_(T) ->
     %% fallback clause
     <<131, Rest/binary>> = term_to_binary(T),
     Rest.
-
-
-
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -418,32 +407,32 @@ pid(Pid) when is_pid(Pid) ->
 %% @private
 pid(Pid, _, false) ->
     partisan_remote_ref:from_term(Pid);
-
 pid(Pid, Node, true) ->
     case Node == node() of
         true ->
             %% This is super dangerous.
             case partisan_config:get(register_pid_for_encoding, false) of
                 true ->
-                    Name = case process_info(Pid, registered_name) of
-                        {registered_name, OldName} ->
-                            ?LOG_DEBUG(
-                                "unregistering pid: ~p with name: ~p",
-                                [Pid, OldName]
-                            ),
+                    Name =
+                        case process_info(Pid, registered_name) of
+                            {registered_name, OldName} ->
+                                ?LOG_DEBUG(
+                                    "unregistering pid: ~p with name: ~p",
+                                    [Pid, OldName]
+                                ),
 
-                            %% TODO: Race condition on unregister/register.
-                            unregister(OldName),
-                            OldName;
-                        [] ->
-                            Unique = erlang:unique_integer(
-                                [monotonic, positive]
-                            ),
-                            list_to_atom(
-                                "partisan_registered_name_" ++
-                                integer_to_list(Unique)
-                            )
-                    end,
+                                %% TODO: Race condition on unregister/register.
+                                unregister(OldName),
+                                OldName;
+                            [] ->
+                                Unique = erlang:unique_integer(
+                                    [monotonic, positive]
+                                ),
+                                list_to_atom(
+                                    "partisan_registered_name_" ++
+                                        integer_to_list(Unique)
+                                )
+                        end,
 
                     ?LOG_DEBUG(
                         "registering pid: ~p as name: ~p at node: ~p",
@@ -454,7 +443,6 @@ pid(Pid, Node, true) ->
                 false ->
                     partisan_remote_ref:from_term(Pid, Node)
             end;
-
         false ->
             %% This is even more super dangerous.
             case partisan_config:get(register_pid_for_encoding, false) of
@@ -477,8 +465,9 @@ pid(Pid, Node, true) ->
                             LocalPid = list_to_pid(PidString),
                             RegName = process_info(LocalPid, registered_name),
                             case RegName of
-                                {registered_name, OldName}
-                                when is_atom(OldName) ->
+                                {registered_name, OldName} when
+                                    is_atom(OldName)
+                                ->
                                     ?LOG_DEBUG(
                                         "unregistering pid: ~p with name: ~p",
                                         [Pid, OldName]
@@ -493,14 +482,13 @@ pid(Pid, Node, true) ->
                             end,
 
                             erlang:register(Name, LocalPid)
-                    end,
+                        end,
 
                     %% TODO: Race here unless we wait.
                     _ = partisan_rpc:call(
                         Node, erlang, spawn, [RegisterFun], 5000
                     ),
                     partisan_remote_ref:from_term(Name, Node);
-
                 false ->
                     [_, B, C] = string:split(pid_to_list(Pid), ".", all),
                     PidString = "<0." ++ B ++ "." ++ C,
@@ -508,61 +496,90 @@ pid(Pid, Node, true) ->
             end
     end.
 
-
-
 %% =============================================================================
 %% EUNIT TESTS
 %% =============================================================================
 
-
-
 -ifdef(TEST).
 
-
 parse_listen_address_test_() ->
-    Addr = #{ip => {127,0,0,1}, port => 53688},
+    Addr = #{ip => {127, 0, 0, 1}, port => 53688},
     [
         ?_assertEqual(Addr, parse_listen_address("127.0.0.1:53688")),
         ?_assertEqual(Addr, parse_listen_address(<<"127.0.0.1:53688">>)),
         ?_assertEqual(Addr, parse_listen_address(Addr)),
-        ?_assertEqual(Addr, parse_listen_address(#{
-            ip => "127.0.0.1", port => "53688"}
-        )),
-        ?_assertEqual(Addr, parse_listen_address(#{
-            ip => <<"127.0.0.1">>, port => <<"53688">>}
-        )),
-        ?_assertEqual(Addr, parse_listen_address(#{
-            ip => {127,0,0,1}, port => <<"53688">>}
-        )),
-        ?_assertEqual(Addr, parse_listen_address(#{
-            ip => {127,0,0,1}, port => 53688}
-        )),
-        ?_assertEqual(Addr, parse_listen_address(
-            {{127,0,0,1}, 53688}
-        )),
-        ?_assertEqual(Addr, parse_listen_address(
-            {"127.0.0.1", "53688"}
-        )),
-        ?_assertEqual(Addr, parse_listen_address(
-            {<<"127.0.0.1">>, <<"53688">>}
-        )),
-        ?_assertError(badarg, parse_listen_address(#{
-            ip => " 127.0.0.1 ", port => 53688}
-        )),
-        ?_assertError(badarg, parse_listen_address(#{
-            ip => {127,0,0,1}, port => " 53688 "}
-        )),
-        ?_assertError(badarg, parse_listen_address(#{
-            ip => {127,0,0,1}, port => 0}
-        )),
-        ?_assertError(badarg, parse_listen_address(#{
-            ip => {127,0,0,1}, port => "0"}
-        )),
-        ?_assertError(badarg, parse_listen_address(#{
-            ip => {127,0,0,1}, port => <<"0">>}
-        ))
+        ?_assertEqual(
+            Addr,
+            parse_listen_address(#{
+                ip => "127.0.0.1", port => "53688"
+            })
+        ),
+        ?_assertEqual(
+            Addr,
+            parse_listen_address(#{
+                ip => <<"127.0.0.1">>, port => <<"53688">>
+            })
+        ),
+        ?_assertEqual(
+            Addr,
+            parse_listen_address(#{
+                ip => {127, 0, 0, 1}, port => <<"53688">>
+            })
+        ),
+        ?_assertEqual(
+            Addr,
+            parse_listen_address(#{
+                ip => {127, 0, 0, 1}, port => 53688
+            })
+        ),
+        ?_assertEqual(
+            Addr,
+            parse_listen_address(
+                {{127, 0, 0, 1}, 53688}
+            )
+        ),
+        ?_assertEqual(
+            Addr,
+            parse_listen_address(
+                {"127.0.0.1", "53688"}
+            )
+        ),
+        ?_assertEqual(
+            Addr,
+            parse_listen_address(
+                {<<"127.0.0.1">>, <<"53688">>}
+            )
+        ),
+        ?_assertError(
+            badarg,
+            parse_listen_address(#{
+                ip => " 127.0.0.1 ", port => 53688
+            })
+        ),
+        ?_assertError(
+            badarg,
+            parse_listen_address(#{
+                ip => {127, 0, 0, 1}, port => " 53688 "
+            })
+        ),
+        ?_assertError(
+            badarg,
+            parse_listen_address(#{
+                ip => {127, 0, 0, 1}, port => 0
+            })
+        ),
+        ?_assertError(
+            badarg,
+            parse_listen_address(#{
+                ip => {127, 0, 0, 1}, port => "0"
+            })
+        ),
+        ?_assertError(
+            badarg,
+            parse_listen_address(#{
+                ip => {127, 0, 0, 1}, port => <<"0">>
+            })
+        )
     ].
-
-
 
 -endif.

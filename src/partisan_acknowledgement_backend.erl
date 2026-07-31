@@ -25,20 +25,23 @@
 
 -include("partisan_logger.hrl").
 
-
 %% API
--export([start_link/0,
-         store/2,
-         ack/1,
-         outstanding/0]).
+-export([
+    start_link/0,
+    store/2,
+    ack/1,
+    outstanding/0
+]).
 
 %% gen_server callbacks
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 -record(state, {storage}).
 
@@ -46,17 +49,34 @@
 %%% API
 %%%===================================================================
 
+%% The outstanding-message table is a plain key/value store keyed by an
+%% already-unique message clock: there is no state here that needs a process to
+%% arbitrate it. It is therefore `public' with write concurrency, and `store/2'
+%% and `ack/1' run as single ETS operations in the *calling* process.
+%%
+%% They used to be synchronous `gen_server:call's. That put a node-global
+%% serialisation point — and a cross-process round trip — on the path of every
+%% acknowledged message, on top of the one the peer service manager already
+%% imposes. This server now exists only to own the table (and to be the
+%% supervised, registered process the rest of the system expects to find).
+
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 store(MessageClock, Message) ->
-    gen_server:call(?MODULE, {store, MessageClock, Message}, infinity).
+    true = ets:insert(?MODULE, {MessageClock, Message}),
+    ok.
 
 ack(MessageClock) ->
-    gen_server:call(?MODULE, {ack, MessageClock}, infinity).
+    true = ets:delete(?MODULE, MessageClock),
+    ok.
 
 outstanding() ->
-    gen_server:call(?MODULE, outstanding, infinity).
+    %% A match specification returning whole objects, in one BIF call. The
+    %% previous implementation folded over the table accumulating with
+    %% `Acc ++ [X]', which is quadratic in the size of the outstanding set —
+    %% and this runs on every retransmission tick.
+    {ok, ets:select(?MODULE, [{'_', [], ['$_']}])}.
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -64,29 +84,17 @@ outstanding() ->
 
 %% @private
 init([]) ->
-    Storage = ets:new(?MODULE, [named_table]),
+    Storage = ets:new(?MODULE, [
+        named_table,
+        set,
+        public,
+        {write_concurrency, true},
+        {read_concurrency, true}
+    ]),
     logger:set_process_metadata(#{node => partisan:node()}),
-    {ok, #state{storage=Storage}}.
+    {ok, #state{storage = Storage}}.
 
 %% @private
-handle_call({ack, MessageClock}, _From, #state{storage=Storage}=State) ->
-    ?LOG_DEBUG(#{
-        description => "Acknowledgement received",
-        clock => MessageClock
-    }),
-    true = ets:delete(Storage, MessageClock),
-    {reply, ok, State};
-handle_call({store, MessageClock, Message}, _From, #state{storage=Storage}=State) ->
-    ?LOG_DEBUG(#{
-        description => "storing message in acknowledgement backend",
-        clock => MessageClock,
-        message => Message
-    }),
-    true = ets:insert(Storage, {MessageClock, Message}),
-    {reply, ok, State};
-handle_call(outstanding, _From, #state{storage=Storage}=State) ->
-    Objects = ets:foldl(fun(X, Acc) -> Acc ++ [X] end, [], Storage),
-    {reply, {ok, Objects}, State};
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 

@@ -63,24 +63,16 @@
     modules => [dynamic]
 }).
 
-
-
 %% =============================================================================
 %% API
 %% =============================================================================
 
-
-
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
-
-
 
 %% =============================================================================
 %% SUPERVISO CALLBACKS
 %% =============================================================================
-
-
 
 init([]) ->
     %% Make sure we always call this function first.
@@ -92,9 +84,10 @@ init([]) ->
         ?WORKER(partisan_acknowledgement_backend, [], permanent, 5000),
         ?WORKER(partisan_orchestration_backend, [], permanent, 5000),
         ?SUPERVISOR(partisan_peer_service_sup, [], permanent, infinity),
-        %% THe peer service needs to be started before Plumtree servers
+        %% The peer service (and its membership snapshot) must be started before
+        %% the broadcast handlers and groups.
         ?WORKER(partisan_plumtree_backend, [], permanent, 5000),
-        ?WORKER(partisan_plumtree_broadcast, [], permanent, 5000)
+        ?SUPERVISOR(partisan_broadcast_group_sup, [], permanent, infinity)
         | ?CHILDREN
     ]),
 
@@ -103,20 +96,17 @@ init([]) ->
 
     CausalBackendFun = fun(Label) ->
         {partisan_causality_backend,
-     {partisan_causality_backend, start_link, [Label]},
-          permanent, 5000, worker, [partisan_causality_backend]}
+            {partisan_causality_backend, start_link, [Label]}, permanent, 5000,
+            worker, [partisan_causality_backend]}
     end,
 
     CausalBackends = lists:map(CausalBackendFun, CausalLabels),
 
-    %% Initialize the plumtree outstanding messages table
-    %% supervised by the supervisor.
-    %% The table is used by partisan_plumtree_broadcast and maps a nodename()
-    %% to set of outstanding messages. It uses a duplicate_bag to quickly
-    %% delete all messages for a nodename.
-    ?PLUMTREE_OUTSTANDING = ets:new(
-        ?PLUMTREE_OUTSTANDING,
-        [public, named_table, duplicate_bag, {read_concurrency, true}]
+    %% Lock-free membership snapshot (see partisan_membership). Owned by this
+    %% supervisor so it survives peer service manager restarts.
+    ?PARTISAN_MEMBERS = ets:new(
+        ?PARTISAN_MEMBERS,
+        [public, named_table, set, {read_concurrency, true}]
     ),
 
     %% Open connection pool.

@@ -34,9 +34,20 @@
 
 -module(partisan_vclock).
 
--export([fresh/0, descends/2, merge/1, get_counter/2, subtract_dots/2,
-         increment/2, all_nodes/1, equal/2,
-         to_binary/1, from_binary/1, dominates/2, glb/2]).
+-export([
+    fresh/0,
+    descends/2,
+    merge/1,
+    get_counter/2,
+    subtract_dots/2,
+    increment/2,
+    all_nodes/1,
+    equal/2,
+    to_binary/1,
+    from_binary/1,
+    dominates/2,
+    glb/2
+]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -50,8 +61,8 @@
 -type vc_entry() :: {vclock_node(), counter()}.
 
 % Nodes can have any term() as a name, but they must differ from each other.
--type   vclock_node() :: term().
--type   counter() :: integer().
+-type vclock_node() :: term().
+-type counter() :: integer().
 
 % @doc Create a brand new vclock.
 -spec fresh() -> vclock().
@@ -59,12 +70,12 @@ fresh() ->
     [].
 
 % @doc Return true if Va is a direct descendant of Vb, else false -- remember, a vclock is its own descendant!
--spec descends(Va :: vclock()|[], Vb :: vclock()|[]) -> boolean().
+-spec descends(Va :: vclock() | [], Vb :: vclock() | []) -> boolean().
 descends(_, []) ->
     % all vclocks descend from the empty vclock
     true;
 descends(Va, Vb) ->
-    [{NodeB, CtrB} |RestB] = Vb,
+    [{NodeB, CtrB} | RestB] = Vb,
     case lists:keyfind(NodeB, 1, Va) of
         false ->
             false;
@@ -88,7 +99,7 @@ subtract_dots(DotList, VClock) ->
 
 drop_dots([], _Clock, NewDots) ->
     lists:sort(NewDots);
-drop_dots([{Actor, Count}=Dot | Rest], Clock, Acc) ->
+drop_dots([{Actor, Count} = Dot | Rest], Clock, Acc) ->
     case get_counter(Actor, Clock) of
         Cnt when Cnt >= Count ->
             %% Dot is dominated by clock, drop it
@@ -100,32 +111,40 @@ drop_dots([{Actor, Count}=Dot | Rest], Clock, Acc) ->
 % @doc Combine all VClocks in the input list into their least possible
 %      common descendant.
 -spec merge(VClocks :: [vclock()]) -> vclock() | [].
-merge([])             -> [];
+merge([]) -> [];
 merge([SingleVclock]) -> SingleVclock;
-merge([First|Rest])   -> merge(Rest, lists:keysort(1, First)).
+merge([First | Rest]) -> merge(Rest, lists:keysort(1, First)).
 
-merge([], NClock) -> NClock;
-merge([AClock|VClocks], NClock) ->
+merge([], NClock) ->
+    NClock;
+merge([AClock | VClocks], NClock) ->
     merge(VClocks, merge(lists:keysort(1, AClock), NClock, [])).
 
-merge([], [], AccClock) -> lists:reverse(AccClock);
-merge([], Left, AccClock) -> lists:reverse(AccClock, Left);
-merge(Left, [], AccClock) -> lists:reverse(AccClock, Left);
-merge(V=[{Node1, Ctr1}=NCT1|VClock],
-      N=[{Node2, Ctr2}=NCT2|NClock], AccClock) ->
+merge([], [], AccClock) ->
+    lists:reverse(AccClock);
+merge([], Left, AccClock) ->
+    lists:reverse(AccClock, Left);
+merge(Left, [], AccClock) ->
+    lists:reverse(AccClock, Left);
+merge(
+    V = [{Node1, Ctr1} = NCT1 | VClock],
+    N = [{Node2, Ctr2} = NCT2 | NClock],
+    AccClock
+) ->
     case compare(Node1, Node2) of
         lt ->
-            merge(VClock, N, [NCT1|AccClock]);
+            merge(VClock, N, [NCT1 | AccClock]);
         gt ->
-            merge(V, NClock, [NCT2|AccClock]);
+            merge(V, NClock, [NCT2 | AccClock]);
         eq ->
-            CT = case compare(Ctr1, Ctr2) of
-                lt ->
-                    Ctr2;
-                _ ->
-                    Ctr1
-            end,
-            merge(VClock, NClock, [{Node1, CT}|AccClock])
+            CT =
+                case compare(Ctr1, Ctr2) of
+                    lt ->
+                        Ctr2;
+                    _ ->
+                        Ctr1
+                end,
+            merge(VClock, NClock, [{Node1, CT} | AccClock])
     end.
 
 compare(A, B) when A < B -> lt;
@@ -137,21 +156,23 @@ compare(_, _) -> eq.
 get_counter(Node, VClock) ->
     case lists:keyfind(Node, 1, VClock) of
         {_, Ctr} -> Ctr;
-        false           -> 0
+        false -> 0
     end.
 
 % @doc Increment VClock at Node.
--spec increment(Node :: vclock_node(),
-                VClock :: vclock()) -> vclock().
+-spec increment(
+    Node :: vclock_node(),
+    VClock :: vclock()
+) -> vclock().
 increment(Node, VClock) ->
-    {Ctr, NewV} = case lists:keytake(Node, 1, VClock) of
-                                false ->
-                                    {1, VClock};
-                                {value, {_N, C}, ModV} ->
-                                    {C + 1, ModV}
-                            end,
-    [{Node, Ctr}|NewV].
-
+    {Ctr, NewV} =
+        case lists:keytake(Node, 1, VClock) of
+            false ->
+                {1, VClock};
+            {value, {_N, C}, ModV} ->
+                {C + 1, ModV}
+        end,
+    [{Node, Ctr} | NewV].
 
 % @doc Return the list of all nodes that have ever incremented VClock.
 -spec all_nodes(VClock :: vclock()) -> [vclock_node()].
@@ -183,18 +204,20 @@ from_binary(Bin) ->
 %% events both have seen.
 -spec glb(vclock(), vclock()) -> vclock().
 glb(Clock1, Clock2) ->
-    Clock = lists:foldl(fun({Actor, Cnt}, GLB) ->
-                                case lists:keyfind(Actor, 1, Clock2) of
-                                    false ->
-                                        GLB;
-                                    {Actor, Cnt2} when Cnt2 >= Cnt ->
-                                        [{Actor, Cnt} | GLB];
-                                    {Actor, Cnt2} ->
-                                        [{Actor, Cnt2} | GLB]
-                                end
-                        end,
-                        fresh(),
-                        Clock1),
+    Clock = lists:foldl(
+        fun({Actor, Cnt}, GLB) ->
+            case lists:keyfind(Actor, 1, Clock2) of
+                false ->
+                    GLB;
+                {Actor, Cnt2} when Cnt2 >= Cnt ->
+                    [{Actor, Cnt} | GLB];
+                {Actor, Cnt2} ->
+                    [{Actor, Cnt2} | GLB]
+            end
+        end,
+        fresh(),
+        Clock1
+    ),
     lists:sort(Clock).
 
 %% ===================================================================
@@ -221,39 +244,53 @@ example_test() ->
     ok.
 
 accessor_test() ->
-    VC = [{<<"1">>, 1},
-          {<<"2">>, 2}],
+    VC = [
+        {<<"1">>, 1},
+        {<<"2">>, 2}
+    ],
     ?assertEqual(1, get_counter(<<"1">>, VC)),
     ?assertEqual(2, get_counter(<<"2">>, VC)),
     ?assertEqual(0, get_counter(<<"3">>, VC)),
     ?assertEqual([<<"1">>, <<"2">>], all_nodes(VC)).
 
 merge_test() ->
-    VC1 = [{<<"1">>, 1},
-           {<<"2">>, 2},
-           {<<"4">>, 4}],
-    VC2 = [{<<"3">>, 3},
-           {<<"4">>, 3}],
+    VC1 = [
+        {<<"1">>, 1},
+        {<<"2">>, 2},
+        {<<"4">>, 4}
+    ],
+    VC2 = [
+        {<<"3">>, 3},
+        {<<"4">>, 3}
+    ],
     ?assertEqual([], merge([?MODULE:fresh()])),
-    ?assertEqual([{<<"1">>, 1}, {<<"2">>, 2}, {<<"3">>, 3}, {<<"4">>, 4}],
-                 merge([VC1, VC2])).
+    ?assertEqual(
+        [{<<"1">>, 1}, {<<"2">>, 2}, {<<"3">>, 3}, {<<"4">>, 4}],
+        merge([VC1, VC2])
+    ).
 
 merge_less_left_test() ->
     VC1 = [{<<"5">>, 5}],
     VC2 = [{<<"6">>, 6}, {<<"7">>, 7}],
-    ?assertEqual([{<<"5">>, 5}, {<<"6">>, 6}, {<<"7">>, 7}],
-                 ?MODULE:merge([VC1, VC2])).
+    ?assertEqual(
+        [{<<"5">>, 5}, {<<"6">>, 6}, {<<"7">>, 7}],
+        ?MODULE:merge([VC1, VC2])
+    ).
 
 merge_less_right_test() ->
     VC1 = [{<<"6">>, 6}, {<<"7">>, 7}],
     VC2 = [{<<"5">>, 5}],
-    ?assertEqual([{<<"5">>, 5}, {<<"6">>, 6}, {<<"7">>, 7}],
-                 ?MODULE:merge([VC1, VC2])).
+    ?assertEqual(
+        [{<<"5">>, 5}, {<<"6">>, 6}, {<<"7">>, 7}],
+        ?MODULE:merge([VC1, VC2])
+    ).
 
 merge_same_id_test() ->
     VC1 = [{<<"1">>, 1}, {<<"2">>, 1}],
     VC2 = [{<<"1">>, 1}, {<<"3">>, 1}],
-    ?assertEqual([{<<"1">>, 1}, {<<"2">>, 1}, {<<"3">>, 1}],
-                 ?MODULE:merge([VC1, VC2])).
+    ?assertEqual(
+        [{<<"1">>, 1}, {<<"2">>, 1}, {<<"3">>, 1}],
+        ?MODULE:merge([VC1, VC2])
+    ).
 
 -endif.

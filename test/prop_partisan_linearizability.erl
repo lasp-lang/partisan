@@ -31,7 +31,10 @@
 
 -define(NODE_DEBUG, true).
 -define(ETS, prop_partisan).
--define(NAME, fun(Name) -> [{_, NodeName}] = ets:lookup(?ETS, Name), NodeName end).
+-define(NAME, fun(Name) ->
+    [{_, NodeName}] = ets:lookup(?ETS, Name),
+    NodeName
+end).
 -define(PB_MODULE, alsberg_day).
 
 %%%===================================================================
@@ -66,15 +69,15 @@ node_num_nodes() ->
 %% What node-specific operations should be called.
 node_commands() ->
     [
-     {call, ?MODULE, read, [node_name(), key()]},
-     {call, ?MODULE, write, [node_name(), key(), value()]}
+        {call, ?MODULE, read, [node_name(), key()]},
+        {call, ?MODULE, write, [node_name(), key(), value()]}
     ].
 
 %% What should the initial node state be.
 node_initial_state() ->
     node_debug("initializing", []),
     Store = dict:new(),
-    #state{store=Store}.
+    #state{store = Store}.
 
 %% Names of the node functions so we kow when we can dispatch to the node
 %% pre- and postconditions.
@@ -90,9 +93,13 @@ node_precondition(_State, _Command) ->
     false.
 
 %% Next state.
-node_next_state(#state{store=Store0}=State, ok, {call, ?MODULE, write, [_Node, Key, Value]}) ->
+node_next_state(
+    #state{store = Store0} = State,
+    ok,
+    {call, ?MODULE, write, [_Node, Key, Value]}
+) ->
     Store = dict:store(Key, Value, Store0),
-    State#state{store=Store};
+    State#state{store = Store};
 node_next_state(State, _Result, {call, ?MODULE, read, [_Node, _Key]}) ->
     State;
 node_next_state(State, _Response, _Command) ->
@@ -102,35 +109,67 @@ node_next_state(State, _Response, _Command) ->
 node_postcondition(_State, {call, ?MODULE, write, [Node, Key, Value]}, ok) ->
     node_debug("node ~p: writing key ~p with value ~p", [Node, Key, Value]),
     true;
-node_postcondition(_State, {call, ?MODULE, write, [Node, Key, Value]}, {error, timeout}) ->
-    node_debug("node ~p: timeout while writing key ~p with value ~p", [Node, Key, Value]),
+node_postcondition(
+    _State, {call, ?MODULE, write, [Node, Key, Value]}, {error, timeout}
+) ->
+    node_debug("node ~p: timeout while writing key ~p with value ~p", [
+        Node, Key, Value
+    ]),
     true;
-node_postcondition(_State, {call, ?MODULE, write, [Node, Key, Value]}, {timeout, _Call}) ->
-    node_debug("node ~p: gen_server timeout while writing key ~p with value ~p", [Node, Key, Value]),
+node_postcondition(
+    _State, {call, ?MODULE, write, [Node, Key, Value]}, {timeout, _Call}
+) ->
+    node_debug(
+        "node ~p: gen_server timeout while writing key ~p with value ~p", [
+            Node, Key, Value
+        ]
+    ),
     true;
-node_postcondition(#state{store=Store}=_State, {call, ?MODULE, read, [Node, Key]}, {ok, Value}) ->
+node_postcondition(
+    #state{store = Store} = _State,
+    {call, ?MODULE, read, [Node, Key]},
+    {ok, Value}
+) ->
     case dict:find(Key, Store) of
         {ok, Value} ->
             node_debug("node ~p: read key ~p with value ~p", [Node, Key, Value]),
             true;
         {ok, Other} ->
-            node_debug("node ~p: read key ~p with value ~p when it should be ~p", [Node, Key, Value, Other]),
+            node_debug(
+                "node ~p: read key ~p with value ~p when it should be ~p", [
+                    Node, Key, Value, Other
+                ]
+            ),
             false;
         error ->
             case Value of
                 not_found ->
-                    node_debug("node ~p: read key ~p with value not_found", [Node, Key]),
+                    node_debug("node ~p: read key ~p with value not_found", [
+                        Node, Key
+                    ]),
                     true;
                 Value ->
-                    node_debug("node ~p: received other value for key ~p: ~p", [Node, Key, Value]),
+                    node_debug(
+                        "node ~p: received other value for key ~p: ~p", [
+                            Node, Key, Value
+                        ]
+                    ),
                     false
             end
     end;
-node_postcondition(_State, {call, ?MODULE, _Fun, [Node|_Rest]}=Command, Response) ->
-    node_debug("node ~p: failed postcondition for command: ~p response: ~p", [Node, Command, Response]),
+node_postcondition(
+    _State, {call, ?MODULE, _Fun, [Node | _Rest]} = Command, Response
+) ->
+    node_debug("node ~p: failed postcondition for command: ~p response: ~p", [
+        Node, Command, Response
+    ]),
     false;
 node_postcondition(_State, Command, Response) ->
-    node_debug("fallthrough postcondition failed for command: ~p response: ~p", [Command, Response]),
+    node_debug(
+        "fallthrough postcondition failed for command: ~p response: ~p", [
+            Command, Response
+        ]
+    ),
     false.
 
 %%%===================================================================
@@ -169,10 +208,16 @@ begin_case() ->
     [{nodes, Nodes}] = ets:lookup(prop_partisan, nodes),
 
     %% Start the backend.
-    lists:foreach(fun({ShortName, _}) ->
-        node_debug("starting ~p at node ~p", [?PB_MODULE, ShortName]),
-        {ok, _Pid} = rpc:call(?NAME(ShortName), ?PB_MODULE, start_link, [])
-    end, Nodes),
+    lists:foreach(
+        fun({ShortName, _}) ->
+            node_debug("starting ~p at node ~p", [?PB_MODULE, ShortName]),
+            %% `start/0' rather than `start_link/0': linking would bind the
+            %% backend to the short-lived worker serving this remote call,
+            %% whose exit reason carries its result and so stops the backend.
+            {ok, _Pid} = rpc:call(?NAME(ShortName), ?PB_MODULE, start, [])
+        end,
+        Nodes
+    ),
 
     ok.
 
