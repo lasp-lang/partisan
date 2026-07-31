@@ -1252,7 +1252,17 @@ handle_message(
                         }),
                         State1;
                     false ->
-                        State0
+                        %% We could not establish the reverse connection, so we
+                        %% cannot hold this peer. Do not fall silent: the peer
+                        %% is asserting that it holds *us*, and if we neither
+                        %% add it nor answer, it keeps a one-sided link forever.
+                        %%
+                        %% This is the branch that produced a stable asymmetry.
+                        %% A node absent from our active view has no connection
+                        %% kept open for it, so `is_connected/1' here is not a
+                        %% transient race — it is the steady state, and every
+                        %% periodic re-assertion hit this branch and did nothing.
+                        tell_peer_to_drop_us(Peer, State0)
                 end;
             false ->
                 State0
@@ -1594,8 +1604,16 @@ handle_message(
 
                                 State1;
                             false ->
-                                %% the connections does not change, the peer
-                                %% can not be connected
+                                %% We cannot establish the connection, so we
+                                %% cannot accept. Answer anyway: the paper
+                                %% (§4.3) has the initiator pick another peer
+                                %% from its passive view on a rejection, and it
+                                %% can only do that if it is told. Returning
+                                %% silently leaves the promotion hanging.
+                                do_send_message(
+                                    Peer,
+                                    {neighbor_rejected, Myself0, Exchange_Ack}
+                                ),
                                 State0
                         end;
                     false ->
@@ -2411,13 +2429,7 @@ add_to_active_view(
 add_to_active_view_or_reject(
     Peer,
     Tag,
-    #state{
-        node_spec = Myself,
-        active = Active0,
-        reserved = Reserved0,
-        epoch = Epoch0,
-        sent_message_map = SentMessageMap0
-    } = State0
+    #state{active = Active0, reserved = Reserved0} = State0
 ) ->
     case sets:is_element(Peer, Active0) of
         true ->
@@ -2428,14 +2440,33 @@ add_to_active_view_or_reject(
                 false ->
                     add_to_active_view(Peer, Tag, State0);
                 true ->
-                    NextId = get_next_id(Peer, Epoch0, SentMessageMap0),
-                    SentMessageMap = maps:put(
-                        Peer, NextId, SentMessageMap0
-                    ),
-                    do_send_message(Peer, {disconnect, Myself, NextId}),
-                    State0#state{sent_message_map = SentMessageMap}
+                    tell_peer_to_drop_us(Peer, State0)
             end
     end.
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc Send `Peer' a DISCONNECT so it removes us from its active view.
+%%
+%% Used whenever we cannot hold `Peer' ourselves. HyParView active-view links are
+%% symmetric (Leitao et al., DSN'07, §4.1: "if node q is in the active view of
+%% node p then node p is also in the active view of node q"), so a node that
+%% cannot reciprocate must say so. Staying silent leaves the peer holding a
+%% one-sided link that nothing repairs.
+%% @end
+%% -----------------------------------------------------------------------------
+tell_peer_to_drop_us(
+    Peer,
+    #state{
+        node_spec = Myself,
+        epoch = Epoch0,
+        sent_message_map = SentMessageMap0
+    } = State0
+) ->
+    NextId = get_next_id(Peer, Epoch0, SentMessageMap0),
+    SentMessageMap = maps:put(Peer, NextId, SentMessageMap0),
+    do_send_message(Peer, {disconnect, Myself, NextId}),
+    State0#state{sent_message_map = SentMessageMap}.
 
 %% -----------------------------------------------------------------------------
 %% @private
