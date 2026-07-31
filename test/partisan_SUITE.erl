@@ -258,6 +258,7 @@ groups() ->
             self_leave_test,
             on_down_test,
             rpc_test,
+            erpc_test,
             pid_test,
             rejoin_test,
             otp_test
@@ -311,7 +312,8 @@ groups() ->
 
         {with_channels, [], [
             basic_test,
-            rpc_test
+            rpc_test,
+            erpc_test
         ]},
 
         {with_no_channels, [], [basic_test]},
@@ -946,6 +948,191 @@ rpc_test(Config) ->
     ]),
 
     ok.
+
+%% -----------------------------------------------------------------------------
+%% `partisan_erpc' across a real cluster.
+%%
+%% Everything `partisan_erpc' does locally can be exercised from eunit, because a
+%% self-directed request still travels through the backend and a worker. Two
+%% things cannot:
+%%
+%% <ul>
+%% <li>the request/reply correlation over an actual peer connection, including
+%% the remote monitor used for failure detection — locally the reply never leaves
+%% the node;</li>
+%% <li>per-call channel selection. `forward_message/4' delivers straight to the
+%% target process when the target node is the local node, *discarding the
+%% options*, so on one node the channel is unobservable in principle.</li>
+%% </ul>
+%%
+%% The outer `rpc:call' is harness scaffolding over disterl — it is how the suite
+%% drives a peer. The calls under test are the inner `partisan_erpc' ones, which
+%% cannot reach disterl at all: the module is compiled with
+%% `no_auto_import([spawn_request/5, ...])', so any lingering distribution BIF
+%% would have been a compile error.
+%% -----------------------------------------------------------------------------
+erpc_test(Config) ->
+    %% Use the default peer service manager.
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
+
+    %% Specify servers.
+    Servers = ?SUPPORT:node_list(1, "server", Config),
+
+    %% Specify clients.
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
+
+    %% Start nodes.
+    Nodes = ?SUPPORT:start(
+        erpc_test,
+        Config,
+        [
+            {peer_service_manager, Manager},
+            {servers, Servers},
+            {clients, Clients}
+        ]
+    ),
+
+    ?PUT_NODES(Nodes),
+
+    ?PAUSE_FOR_CLUSTERING,
+
+    %% Select two of the nodes.
+    [{_, _}, {_, _}, {_, Node3}, {_, Node4}] = Nodes,
+
+    ct:pal("Issuing erpc from ~p to ~p", [Node3, Node4]),
+
+    %% A finite timeout is deliberate: `call/5' short-circuits locally only on
+    %% `infinity', and here the target is remote in any case.
+    Node4 = rpc:call(Node3, partisan_erpc, call, [
+        Node4, erlang, node, [], 20000
+    ]),
+
+    %% The same call with per-call transport options instead of a bare timeout.
+    Node4 = rpc:call(Node3, partisan_erpc, call, [
+        Node4,
+        erlang,
+        node,
+        [],
+        #{timeout => 20000, channel => ?DEFAULT_CHANNEL}
+    ]),
+
+    %% An exception on the target is translated, not lost.
+    ok = rpc:call(Node3, erlang, apply, [
+        fun() -> erpc_remote_exception_case(Node4) end, []
+    ]),
+
+    %% The asynchronous surface, and a request-id collection whose responses are
+    %% deliberately resolved out of issue order.
+    ok = rpc:call(Node3, erlang, apply, [
+        fun() -> erpc_async_case(Node4) end, []
+    ]),
+
+    %% Per-call channel selection genuinely reaches the transport.
+    ok = rpc:call(Node3, erlang, apply, [
+        fun() -> erpc_channel_case(Node4) end, []
+    ]),
+
+    ok.
+
+%% Runs on the *sending* node.
+erpc_remote_exception_case(Peer) ->
+    try partisan_erpc:call(Peer, erlang, error, [deliberate], 20000) of
+        Unexpected ->
+            {unexpected_success, Unexpected}
+    catch
+        error:{exception, deliberate, _Stack} ->
+            ok
+    end.
+
+%% Runs on the *sending* node. Three requests are issued whose targets sleep for
+%% decreasing durations, so they complete in the reverse of the order they were
+%% issued. Each response must arrive carrying its own label and value — that
+%% pairing is the whole point of the collection API and is what a single shared
+%% reply tag (upstream's approach, which has no Partisan equivalent) could not
+%% express.
+erpc_async_case(Peer) ->
+    ReqId = partisan_erpc:send_request(Peer, erlang, node, []),
+    Peer = partisan_erpc:receive_response(ReqId, 20000),
+
+    C0 = partisan_erpc:reqids_new(),
+    C1 = partisan_erpc:send_request(
+        Peer, ?MODULE, erpc_sleep_and_return, [1500, first], first, C0
+    ),
+    C2 = partisan_erpc:send_request(
+        Peer, ?MODULE, erpc_sleep_and_return, [750, second], second, C1
+    ),
+    C3 = partisan_erpc:send_request(
+        Peer, ?MODULE, erpc_sleep_and_return, [0, third], third, C2
+    ),
+
+    3 = partisan_erpc:reqids_size(C3),
+
+    Collected = erpc_drain_collection(C3, []),
+
+    %% Every request answered, and every value paired with its own label.
+    [{first, first}, {second, second}, {third, third}] = lists:sort(Collected),
+    ok.
+
+erpc_drain_collection(C, Acc) ->
+    case partisan_erpc:reqids_size(C) of
+        0 ->
+            Acc;
+        _ ->
+            {Value, Label, C1} = partisan_erpc:receive_response(C, 20000, true),
+            erpc_drain_collection(C1, [{Value, Label} | Acc])
+    end.
+
+%% Runs on the *sending* node.
+%%
+%% `channel_fallback' is what normally hides a channel mistake: a channel with no
+%% connection quietly borrows the default one. Turned off, a channel that was
+%% never configured has no connection and cannot carry anything — so if the
+%% per-call `channel' really reaches the transport, the same call must succeed on
+%% the default channel and fail on the unconfigured one. If the option were
+%% ignored (or overwritten by the global `forward_options', which is the bug this
+%% guards against), both would succeed.
+erpc_channel_case(Peer) ->
+    Old = partisan_config:get(channel_fallback, true),
+    ok = partisan_config:set(channel_fallback, false),
+
+    try
+        %% Control: the default channel is connected, so this must work.
+        pong = partisan_erpc:call(
+            Peer,
+            ?MODULE,
+            erpc_sleep_and_return,
+            [0, pong],
+            #{timeout => 20000, channel => ?DEFAULT_CHANNEL}
+        ),
+
+        %% Test: no connection exists on this channel, and there is no longer a
+        %% fallback, so the request cannot be delivered.
+        Result =
+            try
+                partisan_erpc:call(
+                    Peer,
+                    ?MODULE,
+                    erpc_sleep_and_return,
+                    [0, pong],
+                    #{timeout => 3000, channel => partisan_erpc_no_such_channel}
+                )
+            catch
+                error:{partisan_erpc, timeout} -> expected_failure;
+                error:{partisan_erpc, noconnection} -> expected_failure
+            end,
+
+        expected_failure = Result,
+        ok
+    after
+        partisan_config:set(channel_fallback, Old)
+    end.
+
+%% Applied on the *target* node.
+erpc_sleep_and_return(0, Value) ->
+    Value;
+erpc_sleep_and_return(Ms, Value) ->
+    timer:sleep(Ms),
+    Value.
 
 on_down_test(Config) ->
     %% Use the default peer service manager.
@@ -2008,7 +2195,7 @@ hyparview_manager_high_active_test(Config) ->
             )
     end,
 
-    %% PDDR-000003: every manager must feed the lock-free membership snapshot,
+    %% ADR-000003: every manager must feed the lock-free membership snapshot,
     %% so a broadcast group under the hyparview manager sees a non-empty
     %% membership (the Phase-2 gap). Assert the snapshot is populated on each node.
     SnapshotFun = fun() ->
@@ -2028,7 +2215,7 @@ hyparview_manager_high_active_test(Config) ->
         {fail, {false, {snapshot_empty_on, EmptyNodes}}} ->
             ct:fail(
                 "Membership snapshot empty on ~p under the hyparview manager "
-                "(PDDR-000003 snapshot-propagation gap)",
+                "(ADR-000003 snapshot-propagation gap)",
                 [EmptyNodes]
             )
     end,
@@ -2242,7 +2429,7 @@ hyparview_manager_high_client_test(Config) ->
             )
     end,
 
-    %% PDDR-000003: every manager must feed the lock-free membership snapshot,
+    %% ADR-000003: every manager must feed the lock-free membership snapshot,
     %% so a broadcast group under the hyparview manager sees a non-empty
     %% membership (the Phase-2 gap). Assert the snapshot is populated on each node.
     SnapshotFun = fun() ->
@@ -2262,7 +2449,7 @@ hyparview_manager_high_client_test(Config) ->
         {fail, {false, {snapshot_empty_on, EmptyNodes}}} ->
             ct:fail(
                 "Membership snapshot empty on ~p under the hyparview manager "
-                "(PDDR-000003 snapshot-propagation gap)",
+                "(ADR-000003 snapshot-propagation gap)",
                 [EmptyNodes]
             )
     end,

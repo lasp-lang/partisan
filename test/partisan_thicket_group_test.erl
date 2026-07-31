@@ -4,7 +4,7 @@
 %% =============================================================================
 %%
 %% @doc Smoke test for the Thicket engine wired behind a broadcast group
-%% (PDDR-000004 seam). A group is started with `engine => partisan_thicket_engine',
+%% (ADR-000004 seam). A group is started with `engine => partisan_thicket_engine',
 %% which the shell drives in RAW dispatch mode: it hands whole wire messages to the
 %% engine and executes the engine's `deliver'/`fetch' actions against the group's
 %% single handler. This guards the wiring end-to-end on one node — config selection

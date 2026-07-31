@@ -121,23 +121,36 @@ executes the actions it returns. Broadcasting and the debug queries are near the
     engine :: module(),
     engine_state :: partisan_broadcast_engine:state(),
 
-    %% Dispatch mode (PDDR-000004). `typed' drives the Plumtree-shaped callbacks
+    %% Dispatch mode (ADR-000004). `typed' drives the Plumtree-shaped callbacks
     %% (the default, unchanged path). `raw' hands whole wire messages to the
     %% engine's handle_message/2 and executes its deliver/fetch actions against
     %% `handler_mod' — the single handler a raw group (e.g. Thicket) hosts.
     engine_mode = typed :: typed | raw,
-    handler_mod :: module() | undefined
+    handler_mod :: module() | undefined,
+
+    %% Channel this group's traffic rides on, when the group declares one.
+    %%
+    %% `undefined' means "ask the handler", i.e. fall back to
+    %% `Mod:broadcast_channel/0' as every group did before. A declared channel
+    %% wins, which is what lets an operator put a *third-party* handler on a
+    %% dedicated channel without editing that handler's source — previously the
+    %% channel was a property of the module and of nothing else.
+    channel :: partisan:channel() | undefined
 }).
 
 -type state() :: #state{}.
 -type nodeset() :: ordsets:ordset(node()).
 
+-export_type([exchange/0]).
+-export_type([exchanges/0]).
 -export_type([info_opt/0]).
 -export_type([nodeset/0]).
+-export_type([selector/0]).
 
 %% API
 -export([broadcast/2]).
 -export([broadcast_channel/1]).
+-export([group_channel/1]).
 -export([group_name/1]).
 -export([broadcast_members/0]).
 -export([broadcast_members/1]).
@@ -159,6 +172,17 @@ executes the actions it returns. Broadcasting and the debug queries are near the
 -export([debug_get_tree/2]).
 -export([debug_get_tree/3]).
 -export([debug_get_tree/4]).
+
+-ifdef(TEST).
+%% `send/3' fans out to a peer list, encoding once for the group. Exported for
+%% test so the per-peer telemetry count can be asserted directly — a single
+%% node has no peers, so it is not otherwise reachable from a unit test.
+-export([send/3]).
+%% Pure resolution of "declared group channel, else the handler's callback".
+%% Exported for test because on a single node no message ever reaches a peer, so
+%% the resolution is not otherwise observable.
+-export([channel/2]).
+-endif.
 
 %% gen_server callbacks
 -export([init/1]).
@@ -263,6 +287,22 @@ broadcast(Broadcast, Mod) ->
                 stacktrace => Stacktrace
             })
     end.
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns the channel group `Name' declared, or `undefined' if it declared
+%% none and therefore defers to each handler's `broadcast_channel/0'.
+%%
+%% `undefined' here means "not declared", **not** "the default channel" — the
+%% default channel's name happens to be the atom `undefined' too, and the two
+%% would otherwise be indistinguishable. A group that declared nothing asks the
+%% handler; a group that declared the default channel overrides the handler with
+%% it.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec group_channel(Name :: atom()) -> partisan:channel() | undefined.
+
+group_channel(Name) ->
+    gen_server:call(Name, group_channel, infinity).
 
 %% -----------------------------------------------------------------------------
 %% @doc Returns the channel to be used when sending broadcasting a message
@@ -415,12 +455,12 @@ init([Name, Opts]) ->
     schedule_exchange_tick(ExchangeTickPeriod),
 
     %% Membership comes from the oracle's lock-free snapshot; we poll its version
-    %% on each lazy tick to refresh it (no gen_event fan-out — PDDR-000001).
+    %% on each lazy tick to refresh it (no gen_event fan-out — ADR-000001).
     Members = partisan_membership:node_names(),
     Version = partisan_membership:version(),
 
-    %% The tree engine owns the topology and outstanding-lazy state (PDDR-000002);
-    %% default engine is Plumtree. A raw-dispatch engine (PDDR-000004, e.g. Thicket)
+    %% The tree engine owns the topology and outstanding-lazy state (ADR-000002);
+    %% default engine is Plumtree. A raw-dispatch engine (ADR-000004, e.g. Thicket)
     %% receives the group Opts so it can read its own parameters; the typed engine's
     %% init input is left exactly as before.
     Engine = maps:get(engine, Opts, partisan_plumtree_engine),
@@ -438,7 +478,8 @@ init([Name, Opts]) ->
         engine = Engine,
         engine_state = EngineState,
         engine_mode = Mode,
-        handler_mod = handler_mod(Mode, Mods)
+        handler_mod = handler_mod(Mode, Mods),
+        channel = maps:get(channel, Opts, undefined)
     },
 
     {ok, State}.
@@ -465,6 +506,8 @@ handle_call(
     broadcast_members, _From, #state{engine = E, engine_state = ES} = State
 ) ->
     {reply, E:all_members(ES), State};
+handle_call(group_channel, _From, #state{channel = Channel} = State) ->
+    {reply, Channel, State};
 handle_call(exchanges, _From, State = #state{exchanges = Exchanges}) ->
     {reply, Exchanges, State};
 handle_call({cancel_exchanges, WhichExchanges}, _From, State) ->
@@ -480,7 +523,7 @@ handle_cast({broadcast, MessageId, Message, Mod}, State) ->
     ),
     {noreply, State1};
 handle_cast({'$partisan_engine', Msg}, State) ->
-    %% A raw-dispatch engine's wire message (PDDR-000004): hand it to the engine
+    %% A raw-dispatch engine's wire message (ADR-000004): hand it to the engine
     %% whole and execute the actions it returns. Only raw groups exchange these.
     ?LOG_DEBUG("received engine message ~p", [Msg]),
     State1 = run_engine(fun(E, ES) -> E:handle_message(Msg, ES) end, State),
@@ -825,8 +868,8 @@ route(Mod, Msg, State, LocalFun) ->
 %% @private
 %% @doc Run an engine callback `Fun(EngineModule, EngineState) -> {ES, Actions}',
 %% execute the actions it returns via the transport, and store the new engine
-%% state (PDDR-000002). Execution is mode-aware: a typed engine returns `{send,
-%% Peer, Msg, Mod}' actions; a raw engine (PDDR-000004) returns Mod-less
+%% state (ADR-000002). Execution is mode-aware: a typed engine returns `{send,
+%% Peer, Msg, Mod}' actions; a raw engine (ADR-000004) returns Mod-less
 %% send/deliver/fetch actions run against the group's single `handler_mod'.
 run_engine(Fun, #state{engine = E, engine_state = ES} = State) ->
     {ES2, Actions} = Fun(E, ES),
@@ -834,7 +877,7 @@ run_engine(Fun, #state{engine = E, engine_state = ES} = State) ->
     State#state{engine_state = ES2}.
 
 %% @private Surfaces a raw engine's interior-load gauge (e.g. Thicket) after
-%% its repair tick — the measurement PDDR-000002/000004 gate enabling such an
+%% its repair tick — the measurement ADR-000002/000004 gate enabling such an
 %% engine on. The engine itself stays pure (no telemetry inside it, so PropEr
 %% simulation stays deterministic); this is a read-only query the shell makes
 %% on the result. A no-op for engines that do not export `interior_load/1'.
@@ -855,36 +898,54 @@ maybe_emit_interior_load(#state{}) ->
     ok.
 
 %% @private
-execute_engine_actions(typed, Actions, _State) ->
-    execute_actions(Actions);
-execute_engine_actions(raw, Actions, #state{handler_mod = Mod}) ->
+execute_engine_actions(typed, Actions, #state{channel = Channel}) ->
+    execute_actions(Actions, Channel);
+execute_engine_actions(raw, Actions, #state{} = State) ->
+    #state{handler_mod = Mod, channel = Channel} = State,
     Self = partisan:node(),
-    lists:foreach(fun(A) -> execute_raw_action(A, Mod, Self) end, Actions).
-
-%% @private
-execute_actions(Actions) ->
     lists:foreach(
-        fun({send, Peer, Msg, Mod}) -> send(Msg, Mod, Peer) end, Actions
+        fun(A) -> execute_raw_action(A, Mod, Self, Channel) end, Actions
     ).
 
-%% @private Execute one raw-dispatch action (PDDR-000004) for handler `Mod':
+%% @private
+%% The engine emits one `{send, Peer, Msg, Mod}' action per peer, so a fan-out
+%% arrives here as several actions sharing a payload. Grouping them lets the
+%% wire encoding be done once for the whole group instead of once per peer.
+execute_actions(Actions, Channel) ->
+    Grouped = lists:foldl(
+        fun({send, Peer, Msg, Mod}, Acc) ->
+            maps:update_with(
+                {Msg, Mod}, fun(Peers) -> [Peer | Peers] end, [Peer], Acc
+            )
+        end,
+        #{},
+        Actions
+    ),
+    maps:foreach(
+        fun({Msg, Mod}, Peers) ->
+            send(Msg, Mod, lists:reverse(Peers), Channel)
+        end,
+        Grouped
+    ).
+
+%% @private Execute one raw-dispatch action (ADR-000004) for handler `Mod':
 %%   * `send'    — wrap the wire message and cast it to the peer's group;
 %%   * `deliver' — hand the received payload to the handler (store + apply), the
 %%                 same primitive the typed path uses for a novel broadcast;
 %%   * `fetch'   — re-supply a specific missing id via the handler's `graft/1',
 %%                 stamping the piggyback load the action carries.
-execute_raw_action({send, Peer, Msg}, Mod, _Self) ->
-    send({'$partisan_engine', Msg}, Mod, Peer);
-execute_raw_action({deliver, MessageId, Payload}, Mod, _Self) ->
+execute_raw_action({send, Peer, Msg}, Mod, _Self, Channel) ->
+    send({'$partisan_engine', Msg}, Mod, Peer, Channel);
+execute_raw_action({deliver, MessageId, Payload}, Mod, _Self, _Channel) ->
     _ = accept_broadcast(Mod, MessageId, Payload),
     ok;
-execute_raw_action({fetch, Peer, MessageId, Root, Load}, Mod, Self) ->
+execute_raw_action({fetch, Peer, MessageId, Root, Load}, Mod, Self, Channel) ->
     case
         partisan_util:safe_apply(Mod, graft, [MessageId], {error, nocallback})
     of
         {ok, Payload} ->
             Data = {data, MessageId, Payload, Root, Load, Self},
-            send({'$partisan_engine', Data}, Mod, Peer);
+            send({'$partisan_engine', Data}, Mod, Peer, Channel);
         _ ->
             ok
     end.
@@ -1055,12 +1116,67 @@ exchange_filter({mod, Mod}) ->
     Peers :: [node()] | node()
 ) -> ok.
 
-send(Msg, Mod, Peers) when is_list(Peers) ->
-    _ = [send(Msg, Mod, P) || P <- Peers],
+send(Msg, Mod, PeerOrPeers) ->
+    send(Msg, Mod, PeerOrPeers, undefined).
+
+%% @private
+%% `Channel' is the group's declared channel, or `undefined' to ask the handler.
+%%
+%% The channel governs **every** message this group sends for `Mod' — the eager
+%% push, the lazy `i_have', a grafted retransmission, and anti-entropy alike.
+%% That is the reason a channel belongs to a *group* rather than to an individual
+%% `broadcast/2' call: repair traffic follows the tree, and a message pushed on
+%% one channel whose graft came back on another would put the full payload on the
+%% channel it was supposed to stay off — at exactly the moment the network is
+%% under stress and repair is happening.
+-spec send(
+    Msg :: partisan:message(),
+    Mod :: module(),
+    Peers :: [node()] | node(),
+    Channel :: partisan:channel() | undefined
+) -> ok.
+
+send(_Msg, _Mod, [], _Channel) ->
     ok;
-send(Msg, Mod, Peer) ->
+send(Msg, Mod, [Peer], Channel) ->
+    send(Msg, Mod, Peer, Channel);
+send(Msg, Mod, Peers, Channel) when is_list(Peers) ->
+    %% Encode once for the whole group. `dispatch_many/4' returns the peers it
+    %% declined to route — the local node, disterl-reachable peers, peers with
+    %% no connection on the channel, or all of them when fast forwarding is
+    %% disabled. Those fall back to the ordinary per-peer path below, so the
+    %% routing decisions live in exactly one place.
+    Deferred = partisan_peer_connections:dispatch_many(
+        Peers,
+        group_name(Mod),
+        partisan_util:maybe_pad_term({'$gen_cast', Msg}),
+        channel(Channel, Mod)
+    ),
+
+    %% Telemetry counts one transmission per peer. Every peer is sent to
+    %% exactly once — batched ones by `dispatch_many/4' above, the rest by
+    %% `do_send/3' below — so instrument the whole list here and keep
+    %% `do_send/3' free of instrumentation.
+    _ = [instrument_transmission(Msg, Mod) || _ <- Peers],
+
+    _ = [do_send(Msg, Mod, P, Channel) || P <- Deferred],
+    ok;
+send(Msg, Mod, Peer, Channel) ->
     instrument_transmission(Msg, Mod),
-    Opts = #{channel => broadcast_channel(Mod)},
+    do_send(Msg, Mod, Peer, Channel).
+
+%% @private
+%% A group's declared channel wins; `undefined' falls back to the handler's
+%% `broadcast_channel/0', which is how every group behaved before groups could
+%% declare one.
+channel(undefined, Mod) ->
+    broadcast_channel(Mod);
+channel(Channel, _Mod) ->
+    Channel.
+
+%% @private
+do_send(Msg, Mod, Peer, Channel) ->
+    Opts = #{channel => channel(Channel, Mod)},
     %% Target the peer's group for `Mod' — the same deterministic name this
     %% group runs under on every node .
     partisan:cast_message(Peer, group_name(Mod), Msg, Opts).

@@ -3,7 +3,7 @@
 %% SPDX-License-Identifier: Apache-2.0
 %% =============================================================================
 %%
-%% @doc Legacy broadcast handler: implements only the pre-PDDR-000001 contract
+%% @doc Legacy broadcast handler: implements only the pre-ADR-000001 contract
 %% (`merge/2', run synchronously on the broadcast process) and deliberately does
 %% NOT export `claim/2'. Used to prove the broadcast server's backward-compatible
 %% fallback path still delivers.

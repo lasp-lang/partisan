@@ -142,7 +142,7 @@ Partisan's `rebar.config`:
 
 It is a **pre-compile** (not post-compile) hook on purpose. When
 Partisan and another Partisan-using dep (e.g. plum_db) are both direct
-deps of a top-level project (e.g. bondy), rebar3 may start the second
+deps of the same top-level project, rebar3 may start the second
 dep's compile before Partisan's post-compile hook can fire — and the
 second dep then fails with `behaviour partisan_gen_supervisor
 undefined`. Generating the sources in a pre-compile hook avoids that

@@ -4,7 +4,7 @@
 %% =============================================================================
 %%
 %% @doc Test handler exercising the non-blocking broadcast contract
-%% (PDDR-000001): implements `claim/2' (on-path, atomic) + `handle_broadcast/2'
+%% (ADR-000001): implements `claim/2' (on-path, atomic) + `handle_broadcast/2'
 %% (off-path apply). The apply can be made artificially slow via {@link
 %% set_delay/1} and reports each applied id to a pid registered via {@link
 %% set_notify/1}, so a test can assert both delivery and non-blocking.

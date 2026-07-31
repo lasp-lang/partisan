@@ -68,7 +68,7 @@ set(Members) when is_list(Members) ->
 
 %% @private
 %% Emits `[partisan, membership, changed]' — the single choke point for every
-%% peer service manager (PDDR-000003) — whenever the member set actually
+%% peer service manager (ADR-000003) — whenever the member set actually
 %% differs from what was previously published. Diffed by node name, since
 %% metadata (e.g. `listen_addrs') can change without the membership itself
 %% changing.

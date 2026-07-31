@@ -30,6 +30,7 @@
 -endif.
 
 -export([apply/4]).
+-export([channel_encode_opts/1]).
 -export([encode/1]).
 -export([encode/2]).
 -export([format_posix_error/1]).
@@ -196,6 +197,30 @@ encode(Term, Opts) ->
             erlang:iolist_to_iovec([131, encode_(Term)]);
         false ->
             erlang:term_to_iovec(Term, Opts)
+    end.
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns the `erlang:term_to_iovec/2' options implied by a channel's
+%% `compression' option.
+%%
+%% This is the single source of truth for the derivation. It is used both by
+%% `partisan_peer_service_client' when it caches the options for a connection,
+%% and by the dispatch path when it encodes a message in the *calling* process
+%% before handing it to that connection. Those two must agree: if the caller
+%% encodes with different options than the connection would have, the bytes on
+%% the wire change depending on which path a message took.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec channel_encode_opts(ChannelOpts :: partisan:channel_opts()) -> list().
+
+channel_encode_opts(ChannelOpts) when is_map(ChannelOpts) ->
+    case maps:get(compression, ChannelOpts, false) of
+        true ->
+            [compressed];
+        N when is_integer(N), N >= 0, N =< 9 ->
+            [{compressed, N}];
+        _ ->
+            []
     end.
 
 %% -----------------------------------------------------------------------------

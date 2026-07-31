@@ -3,7 +3,7 @@
 %% SPDX-License-Identifier: Apache-2.0
 %% =============================================================================
 %%
-%% @doc Guards the per-group broadcast architecture (PDDR-000001, Phase 2c): a
+%% @doc Guards the per-group broadcast architecture (ADR-000001, Phase 2c): a
 %% handler runs in its own supervised group (own process/tree/table), broadcasts
 %% route to it, groups start/stop at runtime, and one group's slow apply does not
 %% block another group (here, the default control-plane group).

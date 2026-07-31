@@ -169,7 +169,7 @@ configured_groups() ->
 %% @private
 normalise(#{mods := [Mod | _] = Mods} = Spec) ->
     Name = maps:get(name, Spec, group_name(Mod)),
-    %% Thread the tree-engine selector and its parameters (PDDR-000002/000004): a
+    %% Thread the tree-engine selector and its parameters (ADR-000002/000004): a
     %% group may pin `engine => plumtree | thicket' plus any engine options
     %% (`max_load'/`fanout'/`trees' for Thicket). Absent ⇒ the shell defaults to
     %% Plumtree.
@@ -182,7 +182,13 @@ normalise(#{mods := [Mod | _] = Mods} = Spec) ->
                 engine,
                 max_load,
                 fanout,
-                trees
+                trees,
+                %% A dedicated channel for this group's traffic. Absent ⇒ the
+                %% handler's own `broadcast_channel/0' decides, as before.
+                %% Declaring it here is the only way to put a handler you do not
+                %% own on a channel of its own: the channel used to be a property
+                %% of the module and of nothing else.
+                channel
             ],
             Spec
         )

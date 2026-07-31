@@ -265,8 +265,16 @@ del_element(A, [B | Es] = Set) ->
                                         simplify(X)
                                      || X <- element_subtract(B, I)
                                     ],
+                                    %% `element_subtract/2' returns a *list* of
+                                    %% the parts of `A' that `B' did not cover,
+                                    %% and each still has to be removed from the
+                                    %% rest of the set. Folding is required:
+                                    %% passing the list itself as the element
+                                    %% raised `{badarg, List}' from
+                                    %% `validate_element/1' whenever the set had
+                                    %% a further interval after `B'.
                                     R = element_subtract(A, I),
-                                    New ++ del_element(R, Es);
+                                    New ++ lists:foldl(fun del_element/2, Es, R);
                                 false ->
                                     error(badarg)
                             end
@@ -613,14 +621,10 @@ element_intersection(N, B) ->
     element_intersection(interval(N), B).
 
 %% private
+%% Only ever reached from `element_intersection/2', which has already normalised
+%% both arguments to intervals.
 unsafe_element_intersection({H1, T1}, {H2, T2}) ->
-    {max(H1, H2), min(T1, T2)};
-unsafe_element_intersection({_, _} = A, N) ->
-    unsafe_element_intersection(A, interval(N));
-unsafe_element_intersection(N, {_, _} = B) ->
-    unsafe_element_intersection(interval(N), B);
-unsafe_element_intersection(N, B) ->
-    unsafe_element_intersection(interval(N), B).
+    {max(H1, H2), min(T1, T2)}.
 
 %% private
 element_subtract(A, B) ->
@@ -643,10 +647,6 @@ do_element_subtract({H1, T1}, {H2, T2}) when H1 < H2, T1 =< T2 ->
 do_element_subtract({H1, T1}, {H2, T2}) when H1 < H2, T1 > T2 ->
     %% A includes B
     [{H1, H2 - 1}, {T2 + 1, T1}];
-do_element_subtract({_, _} = A, N) when is_integer(N) ->
-    do_element_subtract(A, interval(N));
-do_element_subtract(N, {_, _} = B) when is_integer(N) ->
-    do_element_subtract(interval(N), B);
 do_element_subtract(_, _) ->
     error(badarg).
 
@@ -855,7 +855,16 @@ del_element_test_() ->
         {[], {1, 2}, [{1, 2}]},
         {[{3, 4}], {0, 1}, [{3, 4}]},
         {[{2, 4}], {0, 1}, [{0, 4}]},
-        {[{0, 2}, {15, 16}], {3, 14}, [{0, 16}]}
+        {[{0, 2}, {15, 16}], {3, 14}, [{0, 16}]},
+        %% Partial overlap with an interval that is *not* the last in the set.
+        %% The remainder of the removed element has to keep being removed from
+        %% the rest of the set; passing that remainder as a single element
+        %% raised `{badarg, List}'. None of the cases above reach it, because
+        %% each either matches the head exactly or leaves nothing to carry on
+        %% with.
+        {[{0, 4}, {26, 30}], {5, 25}, [{0, 10}, {20, 30}]},
+        {[{0, 4}, {46, 50}], {5, 45}, [{0, 10}, {20, 30}, {40, 50}]},
+        {[{0, 4}], {5, 100}, [{0, 10}, {20, 30}]}
     ],
     lists:append([
         [

@@ -73,6 +73,18 @@ perf:
 	pkill -9 beam.smp; pkill -9 epmd; SIZE=${SIZE} LATENCY=${LATENCY} CONCURRENCY=${CONCURRENCY} ${REBAR} ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=default
 	pkill -9 beam.smp; pkill -9 epmd; SIZE=${SIZE} LATENCY=${LATENCY} CONCURRENCY=${CONCURRENCY} PARALLELISM=${CONCURRENCY} ${REBAR} ct --readable=false -v --suite=partisan_SUITE --case=performance_test --group=with_parallelism
 
+## Benchmarks. NOT part of `make test` or CI: these report machine-dependent
+## numbers, and a number cannot be a pass/fail condition. Run deliberately, on an
+## otherwise idle machine, and read the output. Override the fan-out size with
+## BENCH_NODES (default 5).
+##   make bench
+##   make bench BENCH_NODES=25
+##   make bench BENCH_CASE=rpc_under_a_slow_call
+bench: kill
+	BENCH_NODES=$${BENCH_NODES:-5} ${REBAR} as test ct -v --readable=false \
+		--suite=partisan_bench_SUITE \
+		$${BENCH_CASE:+--case=$${BENCH_CASE}}
+
 kill:
 	pkill -9 beam.smp; pkill -9 epmd; exit 0
 

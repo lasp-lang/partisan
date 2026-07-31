@@ -3,7 +3,7 @@
 %% SPDX-License-Identifier: Apache-2.0
 %% =============================================================================
 %%
-%% @doc PropEr model of the pure Thicket engine (PDDR-000004 §4).
+%% @doc PropEr model of the pure Thicket engine (ADR-000004 §4).
 %%
 %% This is the <b>primary correctness detector</b> for the engine: because the
 %% engine is off by default it is invisible to Common Test, so its protocol

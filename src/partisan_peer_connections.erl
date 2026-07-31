@@ -111,7 +111,9 @@
 -export([connections/1]).
 -export([connections/2]).
 -export([connections/3]).
+-export([cast_encoded/3]).
 -export([dispatch/1]).
+-export([dispatch_many/4]).
 -export([dispatch_pid/1]).
 -export([dispatch_pid/2]).
 -export([dispatch_pid/3]).
@@ -1234,14 +1236,231 @@ do_dispatch(Node, ServerRef, Message, Channel, PartitionKey) when
                     ok
             end,
 
-            gen_server:cast(
-                Pid, {send_message, {forward_message, ServerRef, Message}}
-            );
+            %% Encode here, in the *calling* process, rather than in the
+            %% connection process. Serialisation (and compression, when the
+            %% channel enables it) is CPU work that would otherwise be
+            %% serialised per connection — one encoder per peer at
+            %% `parallelism => 1' — on the critical path of every message to
+            %% that peer. Encoding here also keeps the term out of the
+            %% connection's mailbox, since refc binaries are not copied.
+            Data = encode_for_channel(
+                {forward_message, ServerRef, Message}, Channel
+            ),
+            cast_encoded(Pid, Data, Channel);
         {error, _} = Error ->
             Error
     end;
 do_dispatch(#{name := Node}, ServerRef, Message, Channel, PartitionKey) ->
     do_dispatch(Node, ServerRef, Message, Channel, PartitionKey).
+
+%% -----------------------------------------------------------------------------
+%% @doc Sends the *same* message to several peers, encoding it once.
+%%
+%% A fan-out (plumtree's eager push to its peer set) otherwise encodes an
+%% identical payload once per peer, because each peer's send is an independent
+%% `forward_message/4' call. The wire term is byte-identical for every peer —
+%% the destination is the group's registered name, which is the same atom on
+%% every node — so one encoding serves all of them.
+%%
+%% Returns the peers this function did **not** handle. The caller must send to
+%% those by the ordinary per-peer path. A peer is deferred when it needs
+%% routing this function deliberately does not reimplement:
+%%
+%% <ul>
+%% <li>the local node, which is a direct delivery rather than a send;</li>
+%% <li>a peer reachable over disterl while `connect_disterl' is set, which
+%% `forward_message/4' short-circuits with `erlang:send/3';</li>
+%% <li>a peer with no connection on `Channel', which has its own
+%% not-yet-connected / disconnected handling;</li>
+%% <li>every peer, when `disable_fast_forward' is set — that option exists to
+%% force traffic through the peer service manager.</li>
+%% </ul>
+%%
+%% `Message' must already be in its final wire form, i.e. whatever
+%% `forward_message/4' would have passed to `dispatch/1' (`$gen_cast'-wrapped
+%% and padded as applicable).
+%% @end
+%% -----------------------------------------------------------------------------
+-spec dispatch_many(
+    Peers :: [node()],
+    ServerRef :: partisan:server_ref(),
+    Message :: any(),
+    Channel :: partisan:channel()
+) -> Deferred :: [node()].
+
+dispatch_many(Peers, _ServerRef, _Message, _Channel) when
+    Peers == []
+->
+    [];
+dispatch_many(Peers, ServerRef, Message, Channel) ->
+    case partisan_config:get(disable_fast_forward, false) of
+        true ->
+            Peers;
+        false ->
+            Data = encode_for_channel(
+                {forward_message, ServerRef, Message}, Channel
+            ),
+            %% `forward_message/4' takes the partition key from the merged
+            %% forward options. Callers of this function do not set one, so it
+            %% comes from the global configuration — reading it here keeps
+            %% sticky routing sticky instead of silently falling back to the
+            %% random connection choice.
+            PartitionKey = maps:get(
+                partition_key,
+                opts_as_map(partisan_config:get(forward_options, #{})),
+                ?DEFAULT_PARTITION_KEY
+            ),
+            Self = partisan:node(),
+            Disterl =
+                case partisan_config:get(connect_disterl, false) of
+                    true -> erlang:nodes();
+                    false -> []
+                end,
+            lists:foldl(
+                fun(Peer, Deferred) ->
+                    case
+                        Peer =/= Self andalso
+                            not lists:member(Peer, Disterl)
+                    of
+                        false ->
+                            [Peer | Deferred];
+                        true ->
+                            Res = dispatch_pid(Peer, Channel, PartitionKey),
+                            case Res of
+                                {ok, Pid} ->
+                                    case
+                                        cast_encoded(Pid, Data, Channel)
+                                    of
+                                        ok ->
+                                            Deferred;
+                                        {error, _} ->
+                                            %% Over the high-water mark. Defer
+                                            %% rather than drop: the caller's
+                                            %% per-peer path reports the error
+                                            %% to whoever is broadcasting.
+                                            [Peer | Deferred]
+                                    end;
+                                {error, _} ->
+                                    [Peer | Deferred]
+                            end
+                    end
+                end,
+                [],
+                Peers
+            )
+    end.
+
+%% @private
+%% `forward_options' may be configured as a proplist or a map.
+opts_as_map(L) when is_list(L) -> maps:from_list(L);
+opts_as_map(M) when is_map(M) -> M.
+
+%% @private
+%% Encode `Term' the way a connection on `Channel' would have encoded it.
+%% -----------------------------------------------------------------------------
+%% @doc Hands already-encoded data to a connection process, subject to the
+%% connection's high-water mark.
+%%
+%% **This is the only admission point for outbound data**, and it exists because
+%% Partisan had no backpressure at all: dispatch was a bare `gen_server:cast/2'
+%% into an unbounded mailbox, so a sender faster than its socket grew that
+%% mailbox without limit until the node died of memory exhaustion. A cast cannot
+%% fail, cannot block, and cannot tell the sender anything — which is convenient
+%% right up to the point where it is fatal.
+%%
+%% Past the mark this returns `{error, overloaded}' and the data is **not**
+%% queued. Refusing is the whole point: a bounded queue that silently discards
+%% the newest message is just a lossy channel with extra steps, whereas an error
+%% lets the caller retry, shed load, or fail — decisions only the caller can
+%% make. `partisan:forward_message/2,3,4' already reports `{error, Reason}', so
+%% this needs no further contract change.
+%%
+%% == Monotonic channels are exempt ==
+%%
+%% A `monotonic' channel already has an overload strategy, and a different one:
+%% `partisan_peer_socket:send/2' *drops* a queued message when the connection has
+%% any backlog and the last transmission was recent. That is correct for the
+%% traffic monotonic channels carry — only the freshest value matters, so
+%% discarding a superseded one loses nothing — and it is deliberately not
+%% replaced here. Applying the mark to those channels would convert their silent,
+%% intended drops into errors their senders have never had to handle.
+%%
+%% == On the cost of asking ==
+%%
+%% `process_info/2` for the queue length is not free, and this runs on every
+%% send. It is one BIF against the alternative of an unbounded mailbox, and it is
+%% measurable: `make bench BENCH_CASE=p2p_roundtrip' resolves changes of a few
+%% percent (see `bench/BASELINE.md').
+%% @end
+%% -----------------------------------------------------------------------------
+-spec cast_encoded(
+    Pid :: pid(),
+    Data :: iodata(),
+    Channel :: partisan:channel()
+) -> ok | {error, overloaded}.
+
+cast_encoded(Pid, Data, Channel) ->
+    case admit(Pid, Channel) of
+        ok ->
+            gen_server:cast(Pid, {send_encoded, Data});
+        {error, _} = Error ->
+            Error
+    end.
+
+%% @private
+%% Answers whether `Pid' may be given more data.
+admit(Pid, Channel) ->
+    case high_watermark(Channel) of
+        infinity ->
+            ok;
+        Max ->
+            case erlang:process_info(Pid, message_queue_len) of
+                {message_queue_len, Len} when Len < Max ->
+                    ok;
+                undefined ->
+                    %% The connection process is gone. Casting to a dead pid is
+                    %% harmless, and reporting `overloaded' here would be a lie;
+                    %% the caller's own connection handling deals with this.
+                    ok;
+                {message_queue_len, Len} ->
+                    ?LOG_DEBUG(#{
+                        description =>
+                            "Refusing to queue message, connection over "
+                            "high-water mark",
+                        connection => Pid,
+                        channel => Channel,
+                        message_queue_len => Len,
+                        high_watermark => Max
+                    }),
+                    partisan_telemetry:execute(
+                        [partisan, connection, overload],
+                        #{message_queue_len => Len},
+                        #{channel => Channel, high_watermark => Max}
+                    ),
+                    {error, overloaded}
+            end
+    end.
+
+%% @private
+%% `infinity' for monotonic channels — see the note on `cast_encoded/3'.
+high_watermark(Channel) ->
+    case partisan_config:get(connection_high_watermark, infinity) of
+        infinity ->
+            infinity;
+        Max ->
+            case partisan_config:channel_opts(Channel) of
+                #{monotonic := true} -> infinity;
+                _ -> Max
+            end
+    end.
+
+%% The channel's options are the same map the connection process was started
+%% with (`partisan_peer_service_manager' reads them from
+%% `partisan_config:channels/0'), so both sides derive identical options via
+%% `partisan_util:channel_encode_opts/1'.
+encode_for_channel(Term, Channel) ->
+    ChannelOpts = partisan_config:channel_opts(Channel),
+    partisan_util:encode(Term, partisan_util:channel_encode_opts(ChannelOpts)).
 
 %% =============================================================================
 %% TESTS

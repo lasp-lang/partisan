@@ -46,6 +46,13 @@
 -include("partisan.hrl").
 
 -define(SET_FROM_LIST(L), sets:from_list(L, [{version, 2}])).
+%% Holds the `atomics' reference backing the message-clock counter. In
+%% `persistent_term' so any process can read it without a message, and so the
+%% counter survives a restart of this server (see `init_message_clock/0').
+-define(MSG_CLOCK_KEY, {?MODULE, message_clock}).
+%% `true' while any interposition function is registered. See
+%% `publish_interposition_flag/1'.
+-define(INTERPOSITION_KEY, {?MODULE, has_interposition_funs}).
 -define(IS_ON_EVENT_FUN(X),
     (is_function(X, 0) orelse is_function(X, 1) orelse is_function(X, 2))
 ).
@@ -132,7 +139,6 @@ end).
     name :: node(),
     node_spec :: partisan:node_spec(),
     actor :: partisan:actor(),
-    vclock :: partisan_vclock:vclock(),
     %% A materialised view of the membership_strategy_state as a list
     members :: [partisan:node_spec()],
     %% The nodes we still need to establish connections with
@@ -197,6 +203,15 @@ end).
 -export([forward_message/2]).
 -export([forward_message/3]).
 -export([forward_message/4]).
+
+-ifdef(TEST).
+%% Exported for test. `next_message_clock/1' replaced the vector clock this
+%% server used to hold in state; `fast_forward_acked/6' is the acknowledged
+%% send path that no longer routes through this server. Neither is reachable
+%% from a single-node unit test otherwise.
+-export([next_message_clock/1]).
+-export([fast_forward_acked/6]).
+-endif.
 -export([get_interposition_funs/0]).
 -export([get_local_state/0]).
 -export([get_pre_interposition_funs/0]).
@@ -438,8 +453,13 @@ forward_message({global, _} = ServerRef, Message, _Opts) ->
 forward_message({via, _, _} = ServerRef, Message, _Opts) ->
     partisan_peer_service_manager:deliver(ServerRef, Message);
 forward_message(RemoteRef, Message, Opts0) ->
+    %% A reference is admitted because a process alias (`erlang:alias/1') is
+    %% one, and an encoded alias is used as a one-shot reply address by
+    %% `partisan_erpc'. Delivery for it is handled by the `is_reference' clause
+    %% of `partisan_peer_service_manager:do_deliver/2'.
     partisan_remote_ref:is_pid(RemoteRef) orelse
         partisan_remote_ref:is_name(RemoteRef) orelse
+        partisan_remote_ref:is_reference(RemoteRef) orelse
         error(badarg),
 
     %% `forward_opts()' is `map() | proplist()'. Normalise before use — the
@@ -563,18 +583,53 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
                     %% Conditions:
                     %% - fastforward is not disabled
                     %% - not labeled for causal delivery
-                    %% - message does not need acknowledgement
+                    %%
+                    %% Acknowledgement no longer forces the serialised path.
+                    %% It used to, for two reasons that no longer hold: the
+                    %% message clock came from this server's state (it now
+                    %% comes from a lock-free counter, see
+                    %% `next_message_clock/1'), and recording the outstanding
+                    %% message was a `gen_server:call' into the
+                    %% acknowledgement backend (it is now a direct ETS write).
+                    %% Causal delivery still routes through the causality
+                    %% backend by design.
                     FastForward =
-                        not (DisableFastForward orelse
-                            NeedsAck orelse
-                            CausalDelivery),
+                        not (DisableFastForward orelse CausalDelivery),
+
+                    %% Any interposition function registered? Read lock-free;
+                    %% see `publish_interposition_flag/1'.
+                    IsInterposed = has_interposition_funs(),
 
                     %% Attempt to fast-path, dispatching it directly to the connection
                     %% process
-                    case
-                        FastForward andalso
-                            partisan_peer_connections:dispatch(Cmd)
-                    of
+                    Fast =
+                        case {FastForward, NeedsAck} of
+                            {false, _} ->
+                                false;
+                            {true, false} ->
+                                partisan_peer_connections:dispatch(Cmd);
+                            {true, true} when not IsInterposed ->
+                                fast_forward_acked(
+                                    Node,
+                                    PartitionKey,
+                                    ServerRef,
+                                    PaddedMessage,
+                                    Clock,
+                                    FwdOpts
+                                );
+                            {true, true} ->
+                                %% Acknowledged *and* interposition functions
+                                %% are registered. Take the serialised path so
+                                %% they fire: dropping or rewriting an
+                                %% acknowledged message is precisely what
+                                %% fault injection uses them for, and
+                                %% retransmission is expected to deliver it
+                                %% once the fun is removed
+                                %% (`partisan_SUITE:ack_test').
+                                false
+                        end,
+
+                    case Fast of
                         ok ->
                             ok;
                         _ ->
@@ -794,7 +849,10 @@ init([]) ->
 
     Name = partisan:node(),
     Actor = gen_actor(Name),
-    VClock = partisan_vclock:fresh(),
+
+    %% Message clocks come from a lock-free counter rather than a vector clock
+    %% held in this server's state — see `next_message_clock/1'.
+    ok = init_message_clock(),
 
     %% We init the connections table and we become owners, if we crash the
     %% table will be destroyed.
@@ -813,7 +871,6 @@ init([]) ->
         node_spec = partisan:node_spec(),
         actor = Actor,
         pending = [],
-        vclock = VClock,
         pre_interposition_funs = #{},
         interposition_funs = #{},
         post_interposition_funs = #{},
@@ -853,26 +910,38 @@ handle_call({on_down, Name, Fun, _}, _From, State) ->
     {reply, ok, State#state{down_funs = Funs}};
 handle_call({add_pre_interposition_fun, Name, Fun}, _From, #state{} = State) ->
     Funs = maps:put(Name, Fun, State#state.pre_interposition_funs),
-    {reply, ok, State#state{pre_interposition_funs = Funs}};
+    S = State#state{pre_interposition_funs = Funs},
+    ok = publish_interposition_flag(S),
+    {reply, ok, S};
 handle_call({remove_pre_interposition_fun, Name}, _From, #state{} = State) ->
     Funs = maps:remove(Name, State#state.pre_interposition_funs),
-    {reply, ok, State#state{pre_interposition_funs = Funs}};
+    S = State#state{pre_interposition_funs = Funs},
+    ok = publish_interposition_flag(S),
+    {reply, ok, S};
 handle_call({add_interposition_fun, Name, Fun}, _From, #state{} = State) ->
     Funs = maps:put(Name, Fun, State#state.interposition_funs),
-    {reply, ok, State#state{interposition_funs = Funs}};
+    S = State#state{interposition_funs = Funs},
+    ok = publish_interposition_flag(S),
+    {reply, ok, S};
 handle_call({remove_interposition_fun, Name}, _From, #state{} = State) ->
     Funs = maps:remove(Name, State#state.interposition_funs),
-    {reply, ok, State#state{interposition_funs = Funs}};
+    S = State#state{interposition_funs = Funs},
+    ok = publish_interposition_flag(S),
+    {reply, ok, S};
 handle_call(get_interposition_funs, _From, #state{} = State) ->
     {reply, {ok, State#state.interposition_funs}, State};
 handle_call(get_pre_interposition_funs, _From, #state{} = State) ->
     {reply, {ok, State#state.pre_interposition_funs}, State};
 handle_call({add_post_interposition_fun, Name, Fun}, _From, #state{} = State) ->
     Funs = maps:put(Name, Fun, State#state.post_interposition_funs),
-    {reply, ok, State#state{post_interposition_funs = Funs}};
+    S = State#state{post_interposition_funs = Funs},
+    ok = publish_interposition_flag(S),
+    {reply, ok, S};
 handle_call({remove_post_interposition_fun, Name}, _From, #state{} = State) ->
     Funs = maps:remove(Name, State#state.post_interposition_funs),
-    {reply, ok, State#state{post_interposition_funs = Funs}};
+    S = State#state{post_interposition_funs = Funs},
+    ok = publish_interposition_flag(S),
+    {reply, ok, S};
 handle_call({update_members, _}, _, #state{leaving = true} = State) ->
     %% We are leaving so do nothing
     {reply, ok, State};
@@ -1067,16 +1136,9 @@ handle_cast(
     {forward_message, From, Node, Clock, PartitionKey, ServerRef, Msg0, Opts},
     State
 ) ->
-    #state{
-        vclock = VClock0
-    } = State,
-
     Msg = ?FIRE_INTERPOSITIONS(
         forward_message, Node, Msg0, State#state.interposition_funs
     ),
-
-    %% Increment the clock.
-    VClock = partisan_vclock:increment(State#state.name, VClock0),
 
     %% Are we using causality?
     CausalLabel = maps:get(causal_label, Opts, undefined),
@@ -1089,7 +1151,7 @@ handle_cast(
                 LocalClock =
                     case Clock of
                         undefined ->
-                            {undefined, VClock};
+                            next_message_clock(State#state.name);
                         Clock ->
                             Clock
                     end,
@@ -1174,7 +1236,7 @@ handle_cast(
                     gen_server:reply(From, ok)
             end,
 
-            {noreply, State#state{vclock = VClock}};
+            {noreply, State};
         {'$delay', NewMessage} ->
             ?LOG_DEBUG(
                 "Delaying receive_message due to interposition result: ~p",
@@ -1293,7 +1355,7 @@ handle_cast(
                     gen_server:reply(From, Result)
             end,
 
-            {noreply, State#state{vclock = VClock}}
+            {noreply, State}
     end;
 handle_cast(Event, State) ->
     ?LOG_WARNING(#{description => "Unhandled cast event", event => Event}),
@@ -1873,6 +1935,128 @@ schedule_connections() ->
     erlang:send_after(Time, ?MODULE, connections).
 
 %% @private
+%% Publishes whether any interposition function is registered.
+%%
+%% The functions themselves live in this server's state, so testing for them
+%% would need a call — exactly the round trip the acknowledged fast path exists
+%% to avoid. A boolean in `persistent_term' is free to read from any process.
+%% Registration only happens from test harnesses and the trace orchestrator, so
+%% the write is rare and `persistent_term''s global cost is irrelevant.
+publish_interposition_flag(#state{} = State) ->
+    Any =
+        map_size(State#state.pre_interposition_funs) > 0 orelse
+            map_size(State#state.interposition_funs) > 0 orelse
+            map_size(State#state.post_interposition_funs) > 0,
+    persistent_term:put(?INTERPOSITION_KEY, Any).
+
+%% @private
+has_interposition_funs() ->
+    persistent_term:get(?INTERPOSITION_KEY, false).
+
+%% @private
+%% Sends an acknowledged message without going through this server.
+%%
+%% Returns `ok', or `{error, Reason}' to make the caller fall back to the
+%% serialised path.
+%%
+%% The connection is resolved **first**, before a clock is drawn or anything is
+%% recorded as outstanding. That ordering is the safety property: if there is no
+%% usable connection this function has had no side effects at all, so the
+%% serialised path can handle the message exactly as it does today — including
+%% its relay/broadcast fallbacks — with no risk of the message being both
+%% recorded here and sent again there under a second clock.
+%%
+%% Once a connection is in hand the order matches the serialised path: record
+%% the outstanding message, then put it on the wire. A cast that fails after
+%% the record is left for the retransmission timer, which is what happens on
+%% the serialised path too.
+%%
+%% Note this path does not fire interposition functions — consistent with every
+%% other fast-path send (see the `FastForward' selection in
+%% `forward_message/4'); interposition applies to the serialised path.
+fast_forward_acked(Node, PartitionKey, ServerRef, Message, Clock, Opts) ->
+    Channel = maps:get(channel, Opts, ?DEFAULT_CHANNEL),
+
+    case partisan_peer_connections:dispatch_pid(Node, Channel, PartitionKey) of
+        {ok, Pid} ->
+            Myself = partisan:node(),
+
+            %% A retransmission carries the clock it was first sent with, so
+            %% the peer's acknowledgement still matches the recorded entry.
+            MsgClock =
+                case Clock of
+                    undefined -> next_message_clock(Myself);
+                    _ -> Clock
+                end,
+
+            WrappedMessage =
+                {forward_message, Myself, MsgClock, ServerRef, Message},
+
+            case maps:get(retransmission, Opts, false) of
+                false ->
+                    Rescheduleable = {
+                        forward_message,
+                        undefined,
+                        Node,
+                        MsgClock,
+                        PartitionKey,
+                        ServerRef,
+                        Message,
+                        Opts
+                    },
+                    ok = partisan_acknowledgement_backend:store(
+                        MsgClock, Rescheduleable
+                    );
+                true ->
+                    ok
+            end,
+
+            Data = partisan_util:encode(
+                WrappedMessage,
+                partisan_util:channel_encode_opts(
+                    partisan_config:channel_opts(Channel)
+                )
+            ),
+            partisan_peer_connections:cast_encoded(Pid, Data, Channel);
+        {error, _} = Error ->
+            Error
+    end.
+
+%% @private
+%% Creates the message-clock counter, once per node.
+%%
+%% Message clocks used to come from a vector clock held in this server's state,
+%% incremented in `handle_cast/2'. That is why an acknowledged send had to be
+%% serialised through this process at all: the clock was only obtainable here.
+%% The clock is never compared or merged — it is an opaque identity token, used
+%% as the key of the outstanding-message table and echoed back in `{ack, _}' —
+%% so a single monotonic counter is sufficient, and a lock-free one can be read
+%% from any process.
+%%
+%% The counter deliberately survives a restart of this server (it lives in
+%% `persistent_term', not in state). Resetting it would let a fresh clock
+%% collide with an entry still outstanding in the acknowledgement table, which
+%% is owned by a different process and also survives.
+init_message_clock() ->
+    case persistent_term:get(?MSG_CLOCK_KEY, undefined) of
+        undefined ->
+            Ref = atomics:new(1, [{signed, false}]),
+            ok = persistent_term:put(?MSG_CLOCK_KEY, Ref);
+        _ ->
+            ok
+    end.
+
+%% @private
+%% Returns the next message clock. The shape is unchanged from the vector-clock
+%% implementation — `{undefined, [{Node, Counter}]}' — because peers echo this
+%% term back verbatim in their acknowledgements, so changing it would break
+%% acknowledgement matching against an un-upgraded node.
+next_message_clock(Name) ->
+    Ref = persistent_term:get(?MSG_CLOCK_KEY),
+    Counter = atomics:add_get(Ref, 1, 1),
+    {undefined, [{Name, Counter}]}.
+
+%% @private
 do_send_message(Node, PartitionKey, Message, Options, State) ->
     %% Find a connection for the remote node, if we have one.
     Channel = maps:get(channel, Options, ?DEFAULT_CHANNEL),
@@ -1880,7 +2064,12 @@ do_send_message(Node, PartitionKey, Message, Options, State) ->
 
     case Res of
         {ok, Pid} ->
-            gen_server:cast(Pid, {send_message, Message});
+            %% Encode in this process rather than in the connection process —
+            %% see the `send_encoded' clause in `partisan_peer_service_client'.
+            ChannelOpts = partisan_config:channel_opts(Channel),
+            EncodeOpts = partisan_util:channel_encode_opts(ChannelOpts),
+            Data = partisan_util:encode(Message, EncodeOpts),
+            partisan_peer_connections:cast_encoded(Pid, Data, Channel);
         {error, Reason} ->
             %% We were connected, but we're not anymore, or never connected
             case partisan_config:get(broadcast, false) of

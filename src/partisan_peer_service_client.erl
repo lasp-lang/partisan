@@ -31,8 +31,15 @@
     encoding_opts :: list(),
     from :: pid(),
     peer :: partisan:node_spec(),
-    ping_idle_timeout :: non_neg_integer(),
-    ping_tref :: optional(partisan_remote_ref:r()),
+    %% `undefined' when pings are disabled for this connection — both modules
+    %% have a `#state{ping_idle_timeout = undefined}' clause in
+    %% `maybe_send_ping/1' that relies on it.
+    ping_idle_timeout :: optional(non_neg_integer()),
+    %% A local timer reference from `erlang:start_timer/3' (directly, or via
+    %% `partisan_retry:fire/1' which also returns one). NOT a remote reference:
+    %% it is passed to `erlang:cancel_timer/1', which only accepts a local
+    %% `reference()'.
+    ping_tref :: optional(reference()),
     ping_retry :: optional(partisan_retry:t()),
     ping_id :: optional(partisan:any_reference())
 }).
@@ -118,15 +125,7 @@ init([Peer, ListenAddr, Channel, ChannelOpts, From]) ->
             put({?MODULE, peer}, Peer),
             put({?MODULE, egress_delay}, EgressDelay),
 
-            EncodeOpts =
-                case maps:get(compression, ChannelOpts, false) of
-                    true ->
-                        [compressed];
-                    N when N >= 0, N =< 9 ->
-                        [{compressed, N}];
-                    _ ->
-                        []
-                end,
+            EncodeOpts = partisan_util:channel_encode_opts(ChannelOpts),
 
             State0 = #state{
                 from = From,
@@ -158,12 +157,7 @@ init([Peer, ListenAddr, Channel, ChannelOpts, From]) ->
     {reply, term(), state()}.
 
 handle_call({send_message, Msg}, _From, #state{} = State) ->
-    case get({?MODULE, egress_delay}) of
-        0 ->
-            ok;
-        Other ->
-            timer:sleep(Other)
-    end,
+    maybe_egress_delay(),
 
     Data = partisan_util:encode(Msg, State#state.encoding_opts),
 
@@ -175,6 +169,19 @@ handle_call({send_message, Msg}, _From, #state{} = State) ->
             ?LOG_DEBUG("Message ~p failed to send: ~p", [Msg, Error]),
             {reply, Error, State}
     end;
+handle_call({send_encoded, Data}, _From, #state{} = State) ->
+    %% `Data' was already encoded by the calling process — see
+    %% `partisan_util:channel_encode_opts/1'. This process is a pure socket
+    %% pump for this path.
+    maybe_egress_delay(),
+
+    case send_data(State#state.socket, Data) of
+        ok ->
+            {reply, ok, State};
+        Error ->
+            ?LOG_DEBUG("Encoded message failed to send: ~p", [Error]),
+            {reply, Error, State}
+    end;
 handle_call(Event, _From, State) ->
     ?LOG_WARNING(#{description => "Unhandled call event", event => Event}),
     {reply, ok, State}.
@@ -184,12 +191,7 @@ handle_call(Event, _From, State) ->
 handle_cast({send_message, Msg}, #state{} = State) ->
     ?LOG_TRACE("Received cast: ~p", [Msg]),
 
-    case get({?MODULE, egress_delay}) of
-        0 ->
-            ok;
-        Other ->
-            timer:sleep(Other)
-    end,
+    maybe_egress_delay(),
 
     Data = partisan_util:encode(Msg, State#state.encoding_opts),
 
@@ -201,6 +203,24 @@ handle_cast({send_message, Msg}, #state{} = State) ->
             ?LOG_ERROR(#{
                 description => "Failed to send message",
                 data => Msg,
+                error => Error
+            })
+    end,
+    {noreply, State};
+handle_cast({send_encoded, Data}, #state{} = State) ->
+    %% Pre-encoded by the calling process (see the `send_encoded' clause of
+    %% `handle_call/3'). Encoding in the caller keeps serialisation — and
+    %% compression, when enabled — off this process, so a connection does not
+    %% serialise the CPU cost of every message sent to its peer. It also keeps
+    %% the term out of this mailbox: refc binaries are not copied.
+    maybe_egress_delay(),
+
+    case send_data(State#state.socket, Data) of
+        ok ->
+            ok;
+        Error ->
+            ?LOG_ERROR(#{
+                description => "Failed to send encoded message",
                 error => Error
             })
     end,
@@ -346,6 +366,19 @@ send_data(undefined, _) ->
     {error, no_socket};
 send_data(Socket, Data) ->
     partisan_peer_socket:send(Socket, Data).
+
+%% @private
+%% Test-only knob (`egress_delay') used by the fault-injection harness to slow
+%% a connection down. Kept in the process dictionary and read on every send.
+maybe_egress_delay() ->
+    case get({?MODULE, egress_delay}) of
+        0 ->
+            ok;
+        undefined ->
+            ok;
+        Other ->
+            timer:sleep(Other)
+    end.
 
 %% @private
 close_socket(undefined) ->

@@ -3,7 +3,7 @@
 %% SPDX-License-Identifier: Apache-2.0
 %% =============================================================================
 %%
-%% @doc Guards the lock-free membership snapshot (PDDR-000001, Phase 2a): the
+%% @doc Guards the lock-free membership snapshot (ADR-000001, Phase 2a): the
 %% oracle seeds and maintains `partisan_membership', and `broadcast_members/0'
 %% is answered from it.
 %% @end

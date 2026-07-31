@@ -68,8 +68,24 @@
     | fun((node()) -> ok)
     | fun((node(), partisan:channel()) -> ok).
 
+%% The result of a forward. **`ok' is not the only outcome**: forwarding is
+%% best-effort, and a manager reports failure rather than raising when it cannot
+%% reach the target. The reasons Partisan's own managers produce are
+%% `disconnected' and `not_yet_connected' (no usable connection to the peer on
+%% the requested channel — see `partisan_peer_connections:dispatch_pid/3'),
+%% `notalive' (the connection process is gone), and `partitioned'
+%% (`partisan_hyparview_peer_service_manager' only, when the target is inside an
+%% injected partition). `Reason' is deliberately left open, because a
+%% third-party manager implementing this behaviour may have its own.
+%%
+%% This type is the *correction of a spec that used to read `-> ok'*. The
+%% implementations always returned errors; only the contract claimed otherwise,
+%% which meant a caller who trusted it silently dropped messages.
+-type forward_result() :: ok | {error, Reason :: any()}.
+
 -export_type([connect_opts/0]).
 -export_type([forward_opts/0]).
+-export_type([forward_result/0]).
 -export_type([on_event_fun/0]).
 -export_type([partitions/0]).
 -export_type([server_ref/0]).
@@ -143,20 +159,20 @@
 -callback forward_message(
     ServerRef :: server_ref(),
     Msg :: partisan:message()
-) -> ok.
+) -> forward_result().
 
 -callback forward_message(
     ServerRef :: server_ref(),
     Msg :: partisan:message(),
     Opts :: forward_opts()
-) -> ok.
+) -> forward_result().
 
 -callback forward_message(
     Node :: node(),
     ServerRef :: server_ref(),
     Msg :: partisan:message(),
     Opts :: forward_opts()
-) -> ok.
+) -> forward_result().
 
 -callback receive_message(node(), partisan:channel(), any()) -> ok.
 
@@ -599,6 +615,13 @@ do_deliver(Name, Message) when is_atom(Name) ->
     ),
 
     ok;
+do_deliver(Ref, Message) when is_reference(Ref) ->
+    %% A process alias (`erlang:alias/1'), used as a one-shot reply address.
+    %% Sending to an alias that has been deactivated with `erlang:unalias/1' is
+    %% dropped by the runtime, which is what lets a caller abandon a request
+    %% without its late reply landing in the mailbox.
+    Ref ! Message,
+    ok;
 do_deliver(ServerRef, Message) ->
     ?LOG_DEBUG(
         "node ~p received message ~p for ~p",
@@ -616,6 +639,13 @@ do_deliver(ServerRef, Message) ->
             ok;
         Name when is_atom(Name) ->
             Name ! Message,
+            ok;
+        Ref when is_reference(Ref) ->
+            %% Encoded alias — see the `is_reference' clause above. Without
+            %% this the decoded reference matched no clause, the resulting
+            %% `case_clause' was swallowed by `deliver/2', and the message was
+            %% silently dropped.
+            Ref ! Message,
             ok
     catch
         error:badarg ->

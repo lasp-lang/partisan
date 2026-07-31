@@ -101,6 +101,18 @@ Version = partisan_membership:version().
 is now a compatibility shim over the push feed, running your callback
 asynchronously in its own caller-linked process. Prefer `partisan_membership`.
 
+### Three macros are gone from `partisan.hrl`
+
+`?PLUMTREE_OUTSTANDING`, `?GOSSIP_FANOUT` and `?GOSSIP_GC_MIN_SIZE` have been
+removed from the public header. Nothing in Partisan referenced them — two were
+annotated "not used?" and the third named a registered process that has not
+existed since broadcast moved to per-group naming.
+
+**Action:** only if your code includes `partisan/include/partisan.hrl` *and*
+references one of the three, in which case it will now fail to compile. There is
+no replacement: define your own constant. `?FANOUT` is unaffected — it is the
+default for the `fanout` option and stays.
+
 ## Rolling upgrades
 
 Two subsystems change the inter-node protocol, so a cluster running mixed v5 and
@@ -117,6 +129,17 @@ operation.**
   application handlers to their new per-group process. Application gossip
   old→new is delivered through the shim; new→old is best-effort during the window
   and heals via anti-entropy once the upgrade completes.
+- **RPC.** `partisan_rpc:call/4,5` now sends a correlated request rather than the
+  v5 `{call, ...}` framing. A v6 node still **serves** the v5 framing for the
+  whole of the 6.x series, so **v5 caller → v6 node works unchanged**. The other
+  direction does not: a v5 node has no clause for the correlated request and
+  discards it, so **v6 caller → v5 node times out**. Upgrade every node before
+  relying on RPC between them. The v5 receiver is removed in 7.0.0.
+
+  One behavioural note for the mixed window: inbound RPC concurrency is now
+  bounded (`rpc_max_concurrency`, default 10000), and the bound covers the v5
+  framing too. A v5 caller against a saturated v6 node receives
+  `{badrpc, overloaded}` where v5 would have kept spawning.
 
 Neither the HyParView active-view maintenance nor the security frame cap
 (below) introduces a new wire message, so those are safe across versions.
@@ -135,6 +158,46 @@ memory-exhaustion / decompression-bomb vector.
 
 **Action:** v5 accepted frames up to ~4 GB. If your application legitimately sends
 peer messages larger than 64 MB — for example very large application broadcasts or anti-entropy deltas — raise `max_message_size`. A frame over the cap causes the receiving socket to report `emsgsize` and close, which drops the peer from the active view until it reconnects.
+
+### RPC: replies are correlated, and a slow call no longer blocks others
+
+Two v5 behaviours change here. The first is a correctness fix.
+
+**A timed-out call could return another call's result.** In v5,
+`partisan_rpc:call/4,5` waited on a bare `receive {rpc_response, Response}` with
+no request identifier:
+
+```erlang
+%% v5
+receive
+    {rpc_response, Response} -> Response
+after Timeout ->
+    {badrpc, timeout}
+end
+```
+
+A process that timed out on one call and then made another would have the second
+call consume the first call's late reply, returning a value from the wrong
+request — silently, with no error anywhere. Any unrelated `{rpc_response, _}` in
+the mailbox matched too. Requests now carry a correlation reference, and a reply
+that arrives after its caller has given up is discarded by the runtime instead of
+waiting in the mailbox.
+
+**Action:** if you added retries or de-duplication around `partisan_rpc` to
+compensate, you can drop them. If you have seen unexplained wrong results from
+RPC under load, this is a plausible cause.
+
+**A slow RPC no longer delays unrelated ones.** Every inbound RPC used to be
+applied inline in a single `gen_server`, so one slow, blocking or hung `M:F(A)`
+stalled every other RPC arriving at that node — the node's whole RPC capacity was
+one process deep. Each request now runs in its own process.
+
+`block_call/4,5` is the deliberate exception. It is *defined* as executing on that
+server, serialised with every other `block_call`, and still does; that is what
+distinguishes it from `call`.
+
+**Action:** if you built an RPC pool, a dedicated node, or a queue in front of
+Partisan to isolate slow calls, it may no longer be needed.
 
 ### disterl-hybrid routing (opt-in)
 
@@ -175,18 +238,58 @@ In v6, Partisan **derives** a group from this list automatically: each handler i
 
 - **put several handlers in one group**, so they deliberately share a tree and
   process (the derived form always gives each handler its own group);
-- **name a group** explicitly; or
-- **tune a group's tick periods** (`lazy_tick_period`, `exchange_tick_period`).
+- **name a group** explicitly;
+- **tune a group's tick periods** (`lazy_tick_period`, `exchange_tick_period`); or
+- **give a group its own channel** (`channel`).
 
 ```erlang
 {broadcast_groups, [
     %% Two handlers that deliberately share one tree, under an explicit name.
     #{name => app_gossip, mods => [my_app_backend, my_other_backend]},
 
-    %% A single-handler group with a slower lazy-push cadence.
-    #{mods => [bulk_backend], lazy_tick_period => 10000}
+    %% A single-handler group with a slower lazy-push cadence, on a channel of
+    %% its own so its traffic does not queue behind anything else.
+    #{mods => [bulk_backend], lazy_tick_period => 10000, channel => bulk}
 ]}
 ```
+
+### Groups and channels
+
+These are different axes and it is worth being precise about which one to reach
+for, because the names invite confusion.
+
+A **channel** is a transport concern: a set of TCP connections to each peer
+(`parallelism` of them), with its own compression and monotonic settings. A
+**group** is a dissemination concern: one process, one mailbox, one spanning
+tree, one set of handlers.
+
+They compose freely, and the mapping is many-to-one:
+
+- several groups may share a channel;
+- a group is **never** split across channels — all of its traffic (the eager
+  push, the lazy `i_have`, a grafted retransmission, anti-entropy) rides the same
+  one.
+
+That last point is a design decision, not an omission. Repair traffic follows the
+tree, so if an individual `broadcast/2` call could pick its own channel, a
+grafted retransmission of that message would come back on the group's channel
+instead — putting the full payload on the channel it was meant to stay off, at
+precisely the moment the network is stressed enough to need repair. **A channel is
+therefore a property of a group, not of a call.**
+
+Which means: if one handler needs to send both bulk and latency-sensitive
+traffic, the way to express that is **two groups** — the same handler module
+listed in each, with different channels — rather than one group and a per-message
+choice.
+
+Before v6 the channel came solely from the handler's own `broadcast_channel/0`
+callback, so putting a handler on a dedicated channel meant editing it. The
+group's `channel` key wins over that callback, which is what makes it possible
+for a handler you do not own. Omit it and the callback decides, exactly as
+before.
+
+`partisan_plumtree_broadcast:group_channel/1` reports what a running group
+declared, or `undefined` if it defers to its handlers.
 
 The two keys **compose**: the groups Partisan runs are the union of those derived from `broadcast_mods` and those declared in `broadcast_groups`. When a
 `broadcast_groups` spec resolves to the same name as a derived group, the explicit spec **wins** — so `broadcast_groups` is also how you override the default for a handler that would otherwise get a plain per-handler group.
@@ -231,8 +334,10 @@ is plaintext (`tls = false`) and a `WARNING` when TLS is on but peers are not ve
 | `max_message_size` | `67108864` (64 MB) | Caps inbound peer frame size. Raise for very large broadcasts. |
 | `tls_handshake_timeout` | `5000` (ms) | Bounds the server-side TLS handshake. |
 | `broadcast_mods` | `[partisan_plumtree_backend]` | Unchanged key, changed meaning: in v6 each listed handler is derived into its own isolated broadcast group. |
-| `broadcast_groups` | `[]` | New. Explicit group specs for what a flat `broadcast_mods` list cannot express (shared groups, explicit names, per-group tick tuning). Composes with `broadcast_mods`; wins on name collision. |
+| `broadcast_groups` | `[]` | New. Explicit group specs for what a flat `broadcast_mods` list cannot express (shared groups, explicit names, per-group tick tuning, a dedicated `channel`). Composes with `broadcast_mods`; wins on name collision. |
 | `active_view_maintenance_interval` | `random_promotion_interval` | HyParView active-view re-assertion cadence. Now honoured — in v5 the key was silently ignored. |
+| `rpc_max_concurrency` | `10000` | New. Caps concurrently executing inbound RPCs per node. Over the cap a request is rejected (`{badrpc, {'EXIT', overloaded}}`) rather than queued. `infinity` disables the bound. |
+| `connection_high_watermark` | `infinity` | New, **opt-in**. Caps messages queued to one connection process; past it a send is refused with `{error, overloaded}` and not queued. The default preserves v5 behaviour exactly — dispatch into an unbounded mailbox — because turning that into a refusing queue changes what callers observe. `monotonic` channels are exempt (they already drop superseded messages). |
 
 ## New and changed API
 
@@ -241,6 +346,44 @@ is plaintext (`tls = false`) and a `WARNING` when TLS is on but peers are not ve
   `version/0` — for observing membership.
 - **Added:** the `partisan_broadcast` module — `broadcast/2`, `start_group/1`,
   `stop_group/1`, `groups/0`.
+- **Changed:** `partisan_erpc` now works over the Partisan transport. In v5 it was
+  a vendored `erpc` snapshot that still reached peers over Erlang distribution, so
+  it did not function as a Partisan surface at all. It is now the **primary** RPC
+  API — prefer it for new code — and carries the full `erpc` surface including the
+  OTP 25+ request-id collections (`send_request/6`, `receive_response/3`,
+  `reqids_new/0`, …) that the v5 snapshot was missing.
+- **Changed:** `partisan_rpc` is now a thin shim over `partisan_erpc`, mirroring
+  how OTP implements `rpc` over `erpc`. It is documented as the legacy surface but
+  is **not** deprecated. `cast/4`, `multicall/3,4,5`, `async_call/4` + `yield/1`,
+  `nb_yield/1,2` and `block_call/4,5` now exist — in v5 several of these were
+  reachable through the `rpc` rewrite but not defined, so they failed with `undef`.
+- **Added:** per-call transport options on both RPC surfaces, so RPC can be put on
+  a channel of its own. `call/5` and `multicall/5` accept `forward_opts()` in place
+  of a bare timeout; `partisan_erpc:send_request/5,7`, `cast/5`, `multicast/5`
+  and `partisan_rpc:async_call/5`, `cast/5` are new arities. Note the widened
+  contract on the two overloaded functions: a *list* in the fifth position is now
+  read as a proplist of options, where v5 rejected it as an invalid timeout. **Per-call options now take precedence over the global
+  `forward_options`** — in v5 the precedence was inverted, so a per-call `channel`
+  or `partition_key` was silently discarded whenever the global was set.
+- **Changed (spec correction, review your call sites):**
+  `partisan:forward_message/2,3,4` and the three `forward_message` callbacks of
+  `partisan_peer_service_manager` were specced `-> ok`. They never were: a
+  forward returns `{error, disconnected}`, `{error, not_yet_connected}`,
+  `{error, notalive}` — or `{error, partitioned}` under
+  `partisan_hyparview_peer_service_manager` — when it cannot hand the message to
+  a connection. The contract is now
+  `t:partisan_peer_service_manager:forward_result/0`, and `partisan:send/3`'s
+  spec is widened to match.
+
+  **Action:** the runtime behaviour of `forward_message` is unchanged, so nothing
+  breaks on upgrade — but code written against the old spec drops messages
+  silently. Check the return value where delivery matters.
+- **Changed:** `partisan:send/2` no longer crashes when the destination is
+  unreachable. It was `ok = send(Dest, Msg, [])`, which badmatched on
+  `{error, disconnected}` — a crash in the caller for a function whose Erlang
+  counterpart, `erlang:send/2`, never fails that way. It now follows
+  `erlang:send/2`: best-effort, returns `Msg` regardless. Use `send/3` when you
+  need to know the outcome.
 - **Removed:** `partisan_gen_fsm` (migrate to `partisan_gen_statem`).
 - **Removed:** `partisan_peer_service_events` (migrate to `partisan_membership`).
 - **Deprecated:** `partisan_peer_service:add_sup_callback/1` (a shim over the push
@@ -272,6 +415,16 @@ toolchain changes:
 4. Update `DOWN`-reason clauses that expect `timeout` to accept `noconnection`;
    bind ordering-sensitive monitors to a `parallelism = 1` channel.
 5. If you send peer messages larger than 64 MB, raise `max_message_size`.
-6. Plan a **full** cluster upgrade rather than long-lived mixed v5/v6 operation.
-7. Review your peer-plane security posture against
+6. **Check the return value of `partisan:forward_message/2,3,4` where delivery
+   matters.** Its spec said `-> ok` and the implementations never were; code
+   written against that spec drops messages silently.
+7. Review any workarounds built around `partisan_rpc` — retries or
+   de-duplication for wrong results, pools or separate nodes to isolate slow
+   calls. Both causes are fixed, so the workarounds may now be dead weight.
+8. If you include `partisan/include/partisan.hrl`, confirm you do not use
+   `?PLUMTREE_OUTSTANDING`, `?GOSSIP_FANOUT` or `?GOSSIP_GC_MIN_SIZE`.
+9. Plan a **full** cluster upgrade rather than long-lived mixed v5/v6 operation.
+   RPC makes this sharper: a v6 caller against a v5 node times out, though a v5
+   caller against a v6 node is unaffected.
+10. Review your peer-plane security posture against
    [the security guide](doc_extras/cluster_security.md).

@@ -212,7 +212,7 @@ and the record it builds define the state everything else operates on.
 -export([backup_peers/1]).
 -export([own_load_map/1]).
 -export([announcement_count/1]).
-%% broadcast-engine adapter (PDDR-000004 seam; raw dispatch mode)
+%% broadcast-engine adapter (ADR-000004 seam; raw dispatch mode)
 -export([dispatch_mode/0]).
 -export([init/1]).
 -export([update_members/2]).
@@ -512,7 +512,7 @@ own_load_map(#thicket{active = Active}) ->
     maps:map(fun(_T, Peers) -> max(0, ordsets:size(Peers) - 1) end, Active).
 
 %% =============================================================================
-%% BROADCAST-ENGINE ADAPTER (PDDR-000004 seam)
+%% BROADCAST-ENGINE ADAPTER (ADR-000004 seam)
 %%
 %% Thicket runs behind {@link partisan_plumtree_broadcast} in <b>raw dispatch</b>
 %% mode: the shell hands the engine whole wire messages (`handle_message/2') and
@@ -795,7 +795,7 @@ balance(Tree, SenderLoad, Sender, S) ->
 %% stale announcements, so coverage no longer leans on Balance for spreading —
 %% that job moves to repair (summary-, source-fallback-, and speculative-graft; see
 %% graft_best). The tradeoff is a smaller *validated* coverage envelope (T =< 3 vs
-%% T =< 4); closing the T >= 4 gap needs active link-reassignment (PDDR-000004).
+%% T =< 4); closing the T >= 4 gap needs active link-reassignment (ADR-000004).
 balance_target(Tree, Sender, S) ->
     Rej = maps:get(Tree, S#thicket.rejected, ordsets:new()),
     Cands = [

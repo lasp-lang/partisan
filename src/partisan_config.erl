@@ -77,13 +77,14 @@ A boolean value indicating whether to pad encoded messages whose external binary
 representation consumes less than 65 bytes.
 
 #### broadcast
-TBD
+
+Enables tree-based transitive forwarding. When `true`, a message addressed to a peer this node has no connection to is forwarded over the broadcast tree instead of failing, provided the caller passed `transitive => true` in the forward options. Also starts a periodic tree refresh, whose period is the `tree_refresh` option (default `1000` ms). Defaults to `false`.
 
 #### broadcast_mods
-TBD
 
-#### broadcast_mods
-TBD
+The broadcast handler modules to start, as a list of modules implementing `m:partisan_plumtree_broadcast_handler`. Defaults to `[partisan_plumtree_backend]`, Partisan's own membership handler.
+
+Each module listed here gets its own broadcast group: its own process, mailbox, spanning tree and outstanding-lazy table. Handlers therefore do not share a tree or block one another. Use [`broadcast_groups`](#broadcast_groups) instead when you need several handlers to share one group, an explicit group name, a dedicated channel, or per-group tick periods.
 
 #### channels
 
@@ -105,7 +106,7 @@ Interval of time between peer connection attempts
 
 #### connection_jitter
 
-TBD
+The delay in milliseconds a node waits before opening a connection, so that a cluster forming or healing at once does not produce a simultaneous rush of connections. Defaults to `1000`. With the `jitter` option enabled the delay is randomised between `1` and this value; otherwise it is used as a fixed sleep.
 
 #### connection_ping
 
@@ -117,27 +118,36 @@ A map containing the following keys:
 
 #### disable_fast_forward
 
-TBD
+Forces outbound messages through the peer service manager instead of the direct-to-connection path. Defaults to `false`.
+
+The fast path hands an encoded message straight to a connection process and does not run interposition functions, so fault injection that needs to observe, delay or drop outbound messages sets this to `true`. It costs throughput and exists for testing.
 
 #### disable_fast_receive
 
-TBD
+Forces inbound messages through the peer service manager instead of being delivered concurrently. Defaults to `false` under `m:partisan_pluggable_peer_service_manager` and `true` under `m:partisan_hyparview_peer_service_manager`.
+
+The receive-side counterpart of [`disable_fast_forward`](#disable_fast_forward): serialising delivery lets interposition functions observe every inbound message in order, at the cost of concurrency.
 
 #### distance_enabled
 
-TBD
+Enables periodic distance measurement between peers. Defaults to `false`. The measurement interval is the `distance_interval` option (default `10000` ms).
 
 #### egress_delay
 
-TBD
+Milliseconds a connection process waits before writing a message to its socket. Defaults to `0`.
+
+An artificial latency injector for testing behaviour under a slow network. Leave at `0` in production.
 
 #### exchange_selection
 
-TBD
+How a broadcast group picks the peer for an anti-entropy exchange. One of:
+
+*   `optimized` (the default) — picks from members the tree does not already reach, i.e. excluding the eager and lazy peer sets for that tree. Exchanging with a peer the tree already covers is unlikely to find a difference, so this concentrates anti-entropy where divergence can actually be.
+*   `normal` — picks from all members.
 
 #### exchange_tick_period
 
-TBD
+Milliseconds between anti-entropy exchange attempts in a broadcast group. Defaults to `10000`. A group may override it in its own spec via the [`broadcast_groups`](#broadcast_groups) option.
 
 #### gossip
 
@@ -160,11 +170,13 @@ The configuration for the {@link partisan_hyparview_peer_service_manager}. A lis
 
 #### ingress_delay
 
-TBD
+Milliseconds a connection process waits before handing a received message to the peer service manager. Defaults to `0`. The receive-side counterpart of [`egress_delay`](#egress_delay), and likewise for testing only.
 
 #### lazy_tick_period
 
-TBD
+Milliseconds between flushes of a broadcast group's outstanding lazy pushes, each of which is sent as an `i_have` announcement. Defaults to `1000`. A group may override it in its own spec via the [`broadcast_groups`](#broadcast_groups) option.
+
+Lazy pushes are the repair half of the epidemic broadcast: a peer that receives an `i_have` for a message it does not hold responds with a graft, which retrieves it. A longer period reduces announcement traffic and lengthens the window in which a missed message stays missed.
 
 #### listen_addrs
 
@@ -176,7 +188,7 @@ The IP address to use for the peer connection listener when no {@link partisan:l
 
 #### listen_port
 
-The port number to use for the peer connection listener when no {@link partisan:listen_addr()} have been defined via option [`listen_addrs`](#listen_addrs). If a value is not defined (and [`listen_addrs`](#listen_addrs) was not used), Partisan will use a randomly generated port. However, the random port will only work for clusters deployed within the same host i.e. used for testing. Moreover, the `listen_port' value is also used by some peer discovery strategies that cannot detect in which port the peer is listening e.g. DNS. So for production environments we recommend always setting the same value on all peers, and having at least one {@link partisan:listen_addr()} in each peer [`listen_addrs`](#listen_addrs) option (when used) having the same port value.
+The port number to use for the peer connection listener when no {@link partisan:listen_addr()} have been defined via option [`listen_addrs`](#listen_addrs). If a value is not defined (and [`listen_addrs`](#listen_addrs) was not used), Partisan will use a randomly generated port. However, the random port will only work for clusters deployed within the same host i.e. used for testing. The `listen_port' value is also used by some peer discovery strategies that cannot detect in which port the peer is listening e.g. DNS. So for production environments we recommend always setting the same value on all peers, and having at least one {@link partisan:listen_addr()} in each peer [`listen_addrs`](#listen_addrs) option (when used) having the same port value.
 
 #### membership_binary_compression
 
@@ -188,7 +200,7 @@ The membership strategy to be used with {@link partisan_pluggable_peer_service_m
 
 #### membership_strategy_tracing
 
-TBD
+Enables tracing inside the membership strategy for the trace orchestrator. Defaults to `false`. Used by the fault-injection test suites; it has no purpose in production.
 
 #### metadata
 
@@ -200,7 +212,7 @@ The nodename to be used when one was not provided via the Erlang `vm.args' confi
 
 #### orchestration_strategy
 
-TBD
+The module implementing peer discovery against an external orchestrator, for example `m:partisan_kubernetes_orchestration_strategy`. Defaults to `undefined`, meaning no orchestration — peers are joined explicitly through `m:partisan_peer_service`.
 
 #### parallelism
 
@@ -212,27 +224,31 @@ The peer service manager to be used. An implementation of the {@link partisan_pe
 
 #### periodic_enabled
 
-TBD
+Enables the peer service manager's periodic maintenance tick, which drives connection retries and membership upkeep. Defaults to `true`. The interval is [`periodic_interval`](#periodic_interval).
 
 #### periodic_interval
 
-TBD
+Milliseconds between periodic maintenance ticks when [`periodic_enabled`](#periodic_enabled) is set. Defaults to `10000`.
 
 #### pid_encoding
 
-TBD
+Whether a pid placed in a message is encoded as a `t:partisan_remote_ref:p/0` before it goes on the wire. Defaults to `true`.
+
+Encoding is what makes a pid meaningful on the receiving node: Partisan does not use Erlang distribution, so a raw pid term is not resolvable there. Disable it only when every pid in your messages is already an encoded reference, or when messages carry no pids at all.
 
 #### random_seed
 
-TBD
+The seed for Partisan's randomness, as accepted by `rand:seed/1`. Defaults to a value generated at startup. Set it to make a test run reproducible.
 
 #### ref_encoding
 
-TBD
+Whether a reference placed in a message is encoded as a `t:partisan_remote_ref:r/0` before it goes on the wire. Defaults to `true`. The reference counterpart of [`pid_encoding`](#pid_encoding).
 
 #### register_pid_for_encoding
 
-TBD
+Registers a process under a generated name when its pid is encoded, so the resulting reference resolves by name rather than by pid. Defaults to `false`.
+
+This exists for deployments that restart processes and need a reference to survive the restart. It adds a registration per encoded pid, so it is off by default.
 
 #### remote_ref_format
 
@@ -250,11 +266,13 @@ If `true' and the URI encoding of a remote reference results in a binary smaller
 
 #### replaying
 
-TBD
+Set by the trace orchestrator while it replays a recorded trace. Defaults to `false`. Not intended to be set by hand.
 
 #### reservations
 
-TBD
+Active-view slots reserved for peers carrying a given tag, as a list of tags — for example `[server]`. Defaults to `[]`. Used by `m:partisan_hyparview_peer_service_manager` to guarantee that peers of a particular role keep a place in the active view even as it churns.
+
+The list may not be longer than the HyParView `active_max_size`; the manager refuses to start with `reservation_limit_exceeded` if it is.
 
 #### retransmit_interval
 
@@ -262,7 +280,7 @@ When option `retransmission' is set to `true' in the `partisan:forward_opts()' u
 
 #### shrinking
 
-TBD
+Set by the property-based test harness while it shrinks a counterexample. Defaults to `false`. Not intended to be set by hand.
 
 #### tag
 
@@ -298,7 +316,11 @@ a boolean value. The default is `false'.
 
 #### xbot_interval
 
-TBD == Deprecated Options == The following is the list of options have been deprecated. Some of them have been renamed and/or moved down a level in the configuration tree.
+Milliseconds between rounds of the X-BOT active-view optimisation in `m:partisan_hyparview_peer_service_manager`, which tries to replace an active-view peer with a closer one.
+
+## Deprecated options
+
+The following options are deprecated. Some have been renamed, or moved down a level in the configuration tree.
 
 #### arwl
 
@@ -521,6 +543,28 @@ init() ->
             {remote_ref_uri_padding, false},
             {replaying, false},
             {retransmit_interval, 1000},
+            %% Upper bound on RPC requests executing concurrently on this node.
+            %% Each inbound request runs in its own process, so without a bound
+            %% a peer could spawn without limit. OTP tolerates the unbounded
+            %% form because the distribution buffer backpressures; Partisan has
+            %% no equivalent, so the bound is enforced here. Set high enough to
+            %% be irrelevant to legitimate load; `infinity' disables it.
+            {rpc_max_concurrency, 10000},
+            %% Upper bound on messages queued to a single connection process
+            %% before sends to it are refused with `{error, overloaded}'.
+            %%
+            %% Dispatch is a `gen_server:cast/2' into an unbounded mailbox, so
+            %% without a bound a sender faster than its socket grows that mailbox
+            %% until the node dies. `infinity' — the default — preserves the
+            %% historical behaviour exactly, because turning an unbounded queue
+            %% into a refusing one changes what callers observe and that should
+            %% be an opt-in, not something an upgrade does to a running system.
+            %%
+            %% `monotonic' channels ignore this: they already have their own
+            %% overload strategy (drop the superseded message), which is correct
+            %% for the traffic they carry. See
+            %% `partisan_peer_connections:cast_encoded/3'.
+            {connection_high_watermark, infinity},
             {reservations, []},
             {shrinking, false},
             {tag, DefaultTag},

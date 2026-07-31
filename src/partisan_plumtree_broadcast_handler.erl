@@ -102,7 +102,7 @@ decline.
 
 -doc """
 Atomically decides whether `MessageId` is novel and records it as seen — the fast
-half of the non-blocking delivery path (PDDR-000001).
+half of the non-blocking delivery path (ADR-000001).
 
 Returns `true` if newly claimed, in which case the caller applies the payload via
 `handle_broadcast/2`, or `false` if already seen. Runs ON the broadcast process,

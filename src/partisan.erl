@@ -1137,11 +1137,24 @@ exit(RemoteRef, Reason) ->
 -doc """
 Sends message `Msg` to the destination `Dest` and returns `Msg`.
 Equivalent to `send(Dest, Msg, [])`.
+
+Follows `erlang:send/2`: delivery is best-effort and the message is returned
+whether or not it could be delivered. An unreachable destination is not an
+error here — it is not one for `erlang:send/2` either, where sending to a dead
+process or an unreachable node simply returns.
+
+Use `send/3` when you need to know: it reports `{error, Reason}` rather than
+discarding the outcome.
 """.
 -spec send(Dest :: send_dst(), Msg :: message()) -> message().
 
 send(Dest, Msg) ->
-    ok = send(Dest, Msg, []),
+    %% Deliberately discards the result, mirroring `erlang:send/2'. This used to
+    %% be `ok = send(Dest, Msg, [])', which badmatched whenever `send/3' answered
+    %% `{error, disconnected}' — turning an unreachable peer into a crash in the
+    %% caller, for a function whose Erlang counterpart never fails that way. The
+    %% mismatch was invisible while `forward_message/3' was mis-specced `-> ok'.
+    _ = send(Dest, Msg, []),
     Msg.
 
 -doc """
@@ -1149,10 +1162,14 @@ Sends message `Msg` to the destination `Dest`.
 
 When distributed Erlang is enabled (`connect_disterl` is `true`) the message is
 delivered with `erlang:send/3`. Otherwise it is forwarded over Partisan with
-`forward_message/3`, honouring `Opts` (`t:forward_opts/0`).
+`forward_message/3`, honouring `Opts` (`t:forward_opts/0`) — and then a failure
+to reach the target is reported as `{error, Reason}` rather than raised.
 """.
 -spec send(Dest :: send_dst(), Msg :: message(), Opts :: forward_opts()) ->
-    ok | nosuspend | noconnect.
+    ok
+    | nosuspend
+    | noconnect
+    | {error, Reason :: any()}.
 
 send(Dest, Msg, Opts) ->
     case partisan_config:get(connect_disterl) of
@@ -1450,12 +1467,23 @@ cast_message(Node, ServerRef, Message, Options) ->
 
 -doc """
 Forwards message `Msg` to the process identified by `ServerRef` (a
-`t:server_ref/0`), returning `ok`.
+`t:server_ref/0`).
+
+Forwarding is best-effort. It returns `{error, Reason}` — it does **not** raise —
+when the message could not be handed to a connection, most commonly because there
+is no usable connection to the target node on the requested channel. See
+`t:partisan_peer_service_manager:forward_result/0` for the reasons Partisan's own
+managers report.
+
+> #### Check the return value {: .warning}
+>
+> Before 6.0.0 this function was specced `-> ok`, which was never true of the
+> implementations. Code written against that spec drops messages silently.
 """.
 -spec forward_message(
     ServerRef :: server_ref(),
     Msg :: message()
-) -> ok.
+) -> partisan_peer_service_manager:forward_result().
 
 forward_message(ServerRef, Message) ->
     ?PEER_SERVICE_MANAGER:forward_message(ServerRef, Message).
@@ -1463,12 +1491,14 @@ forward_message(ServerRef, Message) ->
 -doc """
 Forwards message `Msg` to the process identified by `ServerRef`, honouring `Opts`
 (`t:forward_opts/0`).
+
+Best-effort; see `forward_message/2` on the return value.
 """.
 -spec forward_message(
     ServerRef :: server_ref(),
     Msg :: message(),
     Opts :: forward_opts()
-) -> ok.
+) -> partisan_peer_service_manager:forward_result().
 
 forward_message(ServerRef, Message, Opts) ->
     ?PEER_SERVICE_MANAGER:forward_message(ServerRef, Message, Opts).
@@ -1476,13 +1506,15 @@ forward_message(ServerRef, Message, Opts) ->
 -doc """
 Forwards message `Msg` to the process `ServerRef` on `Node`, honouring `Opts`
 (`t:forward_opts/0`).
+
+Best-effort; see `forward_message/2` on the return value.
 """.
 -spec forward_message(
     Node :: node(),
     ServerRef :: server_ref(),
     Msg :: message(),
     Opts :: forward_opts()
-) -> ok.
+) -> partisan_peer_service_manager:forward_result().
 
 forward_message(Node, ServerRef, Message, Opts) ->
     ?PEER_SERVICE_MANAGER:forward_message(Node, ServerRef, Message, Opts).

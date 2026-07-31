@@ -228,6 +228,21 @@ rename_map() ->
     }.
 
 %% Remote call rename map. Includes everything in rename_map/0 plus rpc.
+%%
+%% NOTE on `erpc': deliberately NOT rewritten here. This map is applied only to
+%% modules derived from OTP sources — the generated `partisan_gen_*' behaviours
+%% (`partisan_gen_transform') and the generated OTP test suites
+%% (`partisan_otp_test_gen'). It is *not* applied to user code: the user-facing
+%% parse transform is `partisan_transform', which only rewrites `!' into
+%% `partisan:forward_message/2' and does not rename module calls at all.
+%%
+%% Adding `erpc => partisan_erpc' therefore does not help user code, and it
+%% breaks the generated suites: `gen_server_SUITE' uses `erpc:call/4' as test
+%% scaffolding to drive peer nodes (see `multicall_remote_test'), and those
+%% peers never start the partisan application, so they have no
+%% `partisan_rpc_backend' for a rewritten call to reach. Code that wants
+%% Partisan-transported erpc calls `partisan_erpc' directly, exactly as it
+%% calls `partisan_rpc' directly.
 call_rename_map() ->
     #{
         gen_server => partisan_gen_server,

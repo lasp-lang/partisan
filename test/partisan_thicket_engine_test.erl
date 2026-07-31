@@ -3,7 +3,7 @@
 %% SPDX-License-Identifier: Apache-2.0
 %% =============================================================================
 %%
-%% @doc Deterministic simulation of the pure Thicket engine (PDDR-000004 §4).
+%% @doc Deterministic simulation of the pure Thicket engine (ADR-000004 §4).
 %% Instantiates N engine states over a fully-connected overlay, routes their
 %% `{send, ...}' actions between nodes, advances repair/summary ticks, and asserts
 %% the two load-bearing invariants: full COVERAGE (every node delivers every

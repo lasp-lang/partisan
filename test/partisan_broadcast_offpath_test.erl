@@ -3,7 +3,7 @@
 %% SPDX-License-Identifier: Apache-2.0
 %% =============================================================================
 %%
-%% @doc Guards the off-path handler split (PDDR-000001, Phase 1). Drives the
+%% @doc Guards the off-path handler split (ADR-000001, Phase 1). Drives the
 %% single-node `partisan_plumtree_broadcast' server's receive path directly by
 %% casting the same `{broadcast, ...}' frame a peer would deliver, and asserts:
 %%

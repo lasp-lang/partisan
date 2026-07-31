@@ -127,8 +127,7 @@
 %% PLUMTREE
 %% =============================================================================
 
--define(PLUMTREE_OUTSTANDING, partisan_plumtree_broadcast).
-%% Public, lock-free snapshot of the oracle's membership (PDDR-000001 Phase 2).
+%% Public, lock-free snapshot of the oracle's membership (ADR-000001 Phase 2).
 %% Created/owned by partisan_sup; written by the peer service manager on each
 %% membership change; read by broadcast groups (no gen_event fan-out).
 -define(PARTISAN_MEMBERS, partisan_membership).
@@ -140,6 +139,13 @@
 
 -define(DEFAULT_CHANNEL, undefined).
 -define(MEMBERSHIP_CHANNEL, partisan_membership).
+%% A conventional name only — nothing in Partisan routes on it. RPC goes on
+%% `?DEFAULT_CHANNEL' unless the caller asks otherwise, which every RPC surface
+%% now supports per call (`partisan_erpc:call/5', `send_request/5,7', ...).
+%% Defaulting RPC here would break any cluster that never declared an `rpc'
+%% channel and has `channel_fallback' disabled, so the choice is left to the
+%% caller. Declare it in `channels' and pass `#{channel => ?RPC_CHANNEL}' to
+%% separate RPC from data traffic.
 -define(RPC_CHANNEL, rpc).
 -define(PARALLELISM, 1).
 
@@ -147,13 +153,28 @@
 
 -define(CAUSAL_LABELS, []).
 
-%% Gossip.
+%% =============================================================================
+%% RPC PROTOCOL
+%% =============================================================================
 
-% TODO: FIX ME. % not used?
--define(GOSSIP_FANOUT, 5).
-% not used?
--define(GOSSIP_GC_MIN_SIZE, 10).
-% not used?
+%% Correlated request/response used by `partisan_erpc'. Every request carries a
+%% caller-generated reference which the reply echoes, so a process with several
+%% requests in flight can match each reply to its request. (The legacy
+%% `partisan_rpc' protocol has no such reference: it replies with a bare
+%% `{rpc_response, Result}', so a late reply from a timed-out call can be
+%% consumed by an unrelated later call in the same process.)
+-define(ERPC_REQUEST, '$partisan_erpc_req').
+-define(ERPC_REPLY, '$partisan_erpc_res').
+-define(ERPC_CAST, '$partisan_erpc_cast').
+
+%% `rpc:block_call/4,5'. Unlike the request/response above, the target applies
+%% this INLINE in `partisan_rpc_backend' — serialised with every other
+%% block_call on that node. That is `block_call''s defining semantic, and the
+%% reason OTP still routes it through `rex' rather than through `erpc'.
+-define(RPC_BLOCK_CALL, '$partisan_rpc_block_call').
+-define(RPC_BLOCK_REPLY, '$partisan_rpc_block_reply').
+
+%% Default for the `fanout' configuration option (`partisan_config').
 -define(FANOUT, 5).
 
 %% PEER SERVICE
@@ -287,6 +308,7 @@
 -define(OVERRIDE_PERIODIC_INTERVAL, 10000).
 
 -define(DEFAULT_LAZY_TICK_PERIOD, 1000).
+
 
 %% Max size (bytes) of an inbound peer message frame; larger frames are
 %% rejected before decode (pre-auth DoS guard). 64 MB.

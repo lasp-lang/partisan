@@ -161,6 +161,47 @@ Fired by `partisan_peer_connections:prune/2` for every connection removed from t
 }
 ```
 
+### `[partisan, connection, overload]`
+
+Fired by `partisan_peer_connections:cast_encoded/3` each time a send is **refused** because the target connection process already has `connection_high_watermark` messages queued. The message is not queued and the sender receives `{error, overloaded}`.
+
+Off by default: `connection_high_watermark` defaults to `infinity`, so this never fires until an operator opts in. `monotonic` channels never fire it — they have their own overload strategy (drop the superseded message) and are exempt from the mark.
+
+This is a *refusal* counter, not a queue-depth gauge: it fires once per rejected send, so a sustained rate means a producer is persistently outrunning its socket. `message_queue_len` is the depth observed at the moment of refusal, which is at or above the mark by definition.
+
+##### Measurements
+```erlang
+#{message_queue_len => 10000}
+```
+
+##### Metadata
+```erlang
+#{
+    channel => default,
+    high_watermark => 10000
+}
+```
+
+## RPC events
+
+### `[partisan, rpc, overload]`
+
+Fired by `partisan_rpc_backend` when an inbound RPC is rejected because the node already has `rpc_max_concurrency` requests executing. Each inbound request runs in its own process, so the bound exists to stop a peer spawning without limit; over it the request is refused outright rather than queued, and the caller raises `error({partisan_erpc, overloaded})` (or receives `{badrpc, {'EXIT', overloaded}}` through `partisan_rpc`).
+
+`inflight` is the count at the moment of refusal, which equals `max`. A sustained rate means the node is saturated with concurrent RPC, not that any individual call is slow.
+
+##### Measurements
+```erlang
+#{inflight => 10000}
+```
+
+##### Metadata
+```erlang
+#{
+    max => 10000
+}
+```
+
 ## Channel events
 
 ### `[partisan, channel, configured]`
@@ -239,7 +280,7 @@ Fired by `partisan_membership:set/1` — the single write path every peer servic
 
 ### `[partisan, broadcast, interior_load]`
 
-Fired after every repair tick of a broadcast group running a **raw-dispatch** engine (currently Thicket, `partisan_thicket_engine`) that exports `interior_load/1`. This is the exact measurement PDDR-000002/PDDR-000004 gate *enabling* Thicket for a group on: the number of trees this node is currently an interior (forwarding) node for, against the group's configured `max_load`. A Plumtree group (the default, typed-dispatch engine) never emits this — there is no interior-load concept in Plumtree.
+Fired after every repair tick of a broadcast group running a **raw-dispatch** engine (currently Thicket, `partisan_thicket_engine`) that exports `interior_load/1`. This is the exact measurement ADR-000002/ADR-000004 gate *enabling* Thicket for a group on: the number of trees this node is currently an interior (forwarding) node for, against the group's configured `max_load`. A Plumtree group (the default, typed-dispatch engine) never emits this — there is no interior-load concept in Plumtree.
 
 ##### Measurements
 ```erlang

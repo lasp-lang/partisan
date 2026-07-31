@@ -19,8 +19,15 @@
     peer_node :: node(),
     channel :: partisan:channel(),
     ref :: reference(),
-    ping_idle_timeout :: non_neg_integer(),
-    ping_tref :: optional(partisan_remote_ref:r()),
+    %% `undefined' when pings are disabled for this connection — both modules
+    %% have a `#state{ping_idle_timeout = undefined}' clause in
+    %% `maybe_send_ping/1' that relies on it.
+    ping_idle_timeout :: optional(non_neg_integer()),
+    %% A local timer reference from `erlang:start_timer/3' (directly, or via
+    %% `partisan_retry:fire/1' which also returns one). NOT a remote reference:
+    %% it is passed to `erlang:cancel_timer/1', which only accepts a local
+    %% `reference()'.
+    ping_tref :: optional(reference()),
     ping_retry :: optional(partisan_retry:t()),
     ping_id :: optional(partisan:any_reference())
 }).
