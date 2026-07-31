@@ -309,7 +309,6 @@
 
 -define(DEFAULT_LAZY_TICK_PERIOD, 1000).
 
-
 %% Max size (bytes) of an inbound peer message frame; larger frames are
 %% rejected before decode (pre-auth DoS guard). 64 MB.
 -define(DEFAULT_MAX_MESSAGE_SIZE, 67108864).

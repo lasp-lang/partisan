@@ -59,7 +59,8 @@ stop_partisan() ->
 %% must stay exactly what the vector-clock implementation produced.
 clock_shape_is_wire_compatible() ->
     Node = partisan:node(),
-    ?assertMatch({undefined, [{Node, N}]} when is_integer(N),
+    ?assertMatch(
+        {undefined, [{Node, N}]} when is_integer(N),
         ?MGR:next_message_clock(Node)
     ).
 

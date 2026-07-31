@@ -1328,9 +1328,7 @@ dispatch_many(Peers, ServerRef, Message, Channel) ->
                             Res = dispatch_pid(Peer, Channel, PartitionKey),
                             case Res of
                                 {ok, Pid} ->
-                                    case
-                                        cast_encoded(Pid, Data, Channel)
-                                    of
+                                    case cast_encoded(Pid, Data, Channel) of
                                         ok ->
                                             Deferred;
                                         {error, _} ->

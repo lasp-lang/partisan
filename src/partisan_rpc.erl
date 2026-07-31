@@ -175,7 +175,10 @@ multicall(Module, Function, Arguments) ->
     ).
 
 -spec multicall(
-    [node()] | module(), module() | atom(), atom() | [any()], [any()] | timeout()
+    [node()] | module(),
+    module() | atom(),
+    atom() | [any()],
+    [any()] | timeout()
 ) -> {[any()], [node()]}.
 
 multicall(Nodes, Module, Function, Arguments) when is_list(Nodes) ->
@@ -328,9 +331,10 @@ sbcast(Nodes, Name, Message) ->
     %% Ask each node's backend to deliver to `Name' and report whether the name
     %% was registered there. Partitions the node list into good and bad.
     Reqs = [
-        {Node, partisan_erpc:send_request(Node, ?MODULE, do_sbcast, [
-            Name, Message
-        ])}
+        {Node,
+            partisan_erpc:send_request(Node, ?MODULE, do_sbcast, [
+                Name, Message
+            ])}
      || Node <- Nodes
     ],
     lists:foldl(

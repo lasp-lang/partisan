@@ -110,8 +110,12 @@ refuses_past_the_high_watermark() ->
         ],
 
         %% At the mark, refused — and it stays refused.
-        ?assertEqual({error, overloaded}, ?CONN:cast_encoded(Pid, <<"x">>, Chan)),
-        ?assertEqual({error, overloaded}, ?CONN:cast_encoded(Pid, <<"x">>, Chan))
+        ?assertEqual(
+            {error, overloaded}, ?CONN:cast_encoded(Pid, <<"x">>, Chan)
+        ),
+        ?assertEqual(
+            {error, overloaded}, ?CONN:cast_encoded(Pid, <<"x">>, Chan)
+        )
     after
         exit(Pid, kill)
     end.
@@ -130,7 +134,9 @@ does_not_queue_what_it_refuses() ->
         ?assertEqual(5, queue_len(Pid)),
 
         _ = [
-            ?assertEqual({error, overloaded}, ?CONN:cast_encoded(Pid, <<"x">>, Chan))
+            ?assertEqual(
+                {error, overloaded}, ?CONN:cast_encoded(Pid, <<"x">>, Chan)
+            )
          || _ <- lists:seq(1, 50)
         ],
 
@@ -153,7 +159,9 @@ admits_again_once_the_queue_drains() ->
 
     try
         _ = [?CONN:cast_encoded(Pid, <<"x">>, Chan) || _ <- lists:seq(1, 3)],
-        ?assertEqual({error, overloaded}, ?CONN:cast_encoded(Pid, <<"x">>, Chan)),
+        ?assertEqual(
+            {error, overloaded}, ?CONN:cast_encoded(Pid, <<"x">>, Chan)
+        ),
 
         %% Let it consume everything queued.
         Pid ! {drain, self()},
@@ -202,7 +210,9 @@ monotonic_channels_are_exempt() ->
     try
         %% The ordinary channel is bounded.
         _ = [?CONN:cast_encoded(Pid, <<"x">>, bulk) || _ <- lists:seq(1, 5)],
-        ?assertEqual({error, overloaded}, ?CONN:cast_encoded(Pid, <<"x">>, bulk)),
+        ?assertEqual(
+            {error, overloaded}, ?CONN:cast_encoded(Pid, <<"x">>, bulk)
+        ),
 
         %% The monotonic one is not, on the very same connection.
         _ = [

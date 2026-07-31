@@ -262,7 +262,9 @@ receive_response_from_collection() ->
     ?assertEqual(0, partisan_erpc:reqids_size(C4)),
 
     %% Whatever order they arrive in, value and label must travel together.
-    ?assertEqual([{a, label_a}, {b, label_b}], lists:sort([{R1, L1}, {R2, L2}])).
+    ?assertEqual(
+        [{a, label_a}, {b, label_b}], lists:sort([{R1, L1}, {R2, L2}])
+    ).
 
 %% `wait_response/3' with a zero wait returns `no_response' rather than
 %% blocking when nothing has arrived yet.

@@ -31,7 +31,8 @@
 channel_encode_opts_test_() ->
     [
         ?_assertEqual(
-            [compressed], partisan_util:channel_encode_opts(#{compression => true})
+            [compressed],
+            partisan_util:channel_encode_opts(#{compression => true})
         ),
         ?_assertEqual(
             [{compressed, 0}],

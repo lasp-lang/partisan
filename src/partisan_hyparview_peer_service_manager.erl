@@ -2678,6 +2678,15 @@ get_next_id(Peer, MyEpoch, SentMessageMap) ->
     case maps:find(Peer, SentMessageMap) of
         {ok, {MyEpoch, Cnt}} ->
             {MyEpoch, Cnt + 1};
+        {ok, {_OtherEpoch, _}} ->
+            %% Our epoch has advanced past the one this entry was written under.
+            %% Unreachable today — `init/1' starts `sent_message_map' empty and
+            %% the epoch only changes across a restart — but without this clause
+            %% the mismatch is a `case_clause' that would take the manager down.
+            %% A new epoch starts its counter fresh, exactly as an absent entry
+            %% does; peers order ids by epoch first (`is_valid_disconnect/3'), so
+            %% restarting the count is safe.
+            {MyEpoch, 1};
         error ->
             {MyEpoch, 1}
     end.
@@ -2736,6 +2745,20 @@ promote_peer(Peer, #state{} = State) ->
 
     LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
 
+    %% NOTE: priority is always `high', which departs from Leitao et al.,
+    %% DSN'07, §4.3 — there it is `high' only when the sender's active view is
+    %% empty, and `low' otherwise, so that a full target refuses rather than
+    %% evicting a healthy neighbour.
+    %%
+    %% Deriving the priority from the active view's size was tried and **reverted**:
+    %% it reintroduced a stable active-view asymmetry in
+    %% `partisan_SUITE:hyparview_manager_high_client_test'. With `low', a
+    %% promotion into a cluster whose peers are already full is refused, and this
+    %% implementation has no path that retries elsewhere promptly enough — the
+    %% paper's initiator immediately picks another passive peer, whereas here the
+    %% next attempt waits for `random_promotion_interval'. Correcting the priority
+    %% therefore needs the retry-on-rejection half of §4.3 alongside it, which is
+    %% a larger change than a one-line constant.
     do_send_message(
         Peer,
         {neighbor_request, Myself, high, Tag, LastDisconnectId, Exchange}

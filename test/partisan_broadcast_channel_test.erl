@@ -79,7 +79,9 @@ group_spec_carries_the_channel() ->
     try
         ?assertEqual(
             ?GROUP_CHANNEL,
-            partisan_plumtree_broadcast:group_channel(?BCAST:group_name(?MODULE))
+            partisan_plumtree_broadcast:group_channel(
+                ?BCAST:group_name(?MODULE)
+            )
         )
     after
         ?BCAST:stop_group(?MODULE)
@@ -95,7 +97,9 @@ group_spec_without_a_channel_omits_it() ->
     try
         ?assertEqual(
             undefined,
-            partisan_plumtree_broadcast:group_channel(?BCAST:group_name(?MODULE))
+            partisan_plumtree_broadcast:group_channel(
+                ?BCAST:group_name(?MODULE)
+            )
         )
     after
         ?BCAST:stop_group(?MODULE)

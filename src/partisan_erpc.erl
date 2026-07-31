@@ -59,79 +59,69 @@
 %% -----------------------------------------------------------------------------
 %% -
 -module(partisan_erpc).
+-include("partisan.hrl").
 
-%% Exported API
-
--export([
-    call/2,
-    call/3,
-    call/4,
-    call/5,
-    cast/2,
-    cast/4,
-    send_request/2,
-    send_request/4,
-    receive_response/1,
-    receive_response/2,
-    wait_response/1,
-    wait_response/2,
-    check_response/2,
-    multicall/2,
-    multicall/3,
-    multicall/4,
-    multicall/5,
-    multicast/2,
-    multicast/4,
-    %% OTP 25+ request-identifier collection API. The module was vendored from
-    %% an OTP 23/24-era `erpc' and predates all of these; Partisan's floor is
-    %% OTP 27, so without them idiomatic modern erpc fan-out code fails with
-    %% `undef'.
-    send_request/6,
-    receive_response/3,
-    wait_response/3,
-    check_response/3,
-    reqids_new/0,
-    reqids_size/1,
-    reqids_add/3,
-    reqids_to_list/1,
-    %% Partisan-specific arities. Upstream `erpc' has no notion of channels, so
-    %% every one of its surfaces would otherwise ride the globally configured
-    %% `forward_options' with no way to override it per call. `call/5' takes
-    %% `forward_opts()' in place of a bare timeout (upstream's arity, widened);
-    %% the surfaces below have no free argument to widen, so each gains an arity
-    %% that does not exist upstream. Export parity is unaffected — the module
-    %% only ever needs to be a *superset* of `erpc'.
-    send_request/5,
-    send_request/7,
-    cast/5,
-    multicast/5
-]).
+-export([call/2]).
+-export([call/3]).
+-export([call/4]).
+-export([call/5]).
+-export([cast/2]).
+-export([cast/4]).
+-export([send_request/2]).
+-export([send_request/4]).
+-export([receive_response/1]).
+-export([receive_response/2]).
+-export([wait_response/1]).
+-export([wait_response/2]).
+-export([check_response/2]).
+-export([multicall/2]).
+-export([multicall/3]).
+-export([multicall/4]).
+-export([multicall/5]).
+-export([multicast/2]).
+-export([multicast/4]).
+%% OTP 25+ request-identifier collection API. The module was vendored from
+%% an OTP 23/24-era `erpc' and predates all of these; Partisan's floor is
+%% OTP 27]). so without them idiomatic modern erpc fan-out code fails with
+%% `undef'.
+-export([send_request/6]).
+-export([receive_response/3]).
+-export([wait_response/3]).
+-export([check_response/3]).
+-export([reqids_new/0]).
+-export([reqids_size/1]).
+-export([reqids_add/3]).
+-export([reqids_to_list/1]).
+%% Partisan-specific arities. Upstream `erpc' has no notion of channels, so
+%% every one of its surfaces would otherwise ride the globally configured
+%% `forward_options' with no way to override it per call. `call/5' takes
+%% `forward_opts()' in place of a bare timeout (upstream's arity, widened);
+%% the surfaces below have no free argument to widen, so each gains an arity
+%% that does not exist upstream. Export parity is unaffected — the module
+%% only ever needs to be a *superset* of `erpc'.
+-export([send_request/5]).
+-export([send_request/7]).
+-export([cast/5]).
+-export([multicast/5]).
 
 -export_type([request_id/0]).
 -export_type([request_id_collection/0]).
 
 %% Internal exports (also used by the 'rpc' module)
-
--export([
-    execute_call/4,
-    execute_call/3,
-    execute_cast/3,
-    is_arg_error/4,
-    trim_stack/4,
-    call_result/4,
-    %% Partisan-specific. Upstream `erpc' has no notion of channels, but
-    %% `partisan_rpc:call/5' accepts `forward_opts()' (`channel',
-    %% `partition_key', ...) and must keep honouring them now that it is a shim
-    %% over this module. Mirrors how OTP's `erpc' exports internals for `rpc'.
-    call_with_opts/6
-]).
-
-%%------------------------------------------------------------------------
+-export([execute_call/4]).
+-export([execute_call/3]).
+-export([execute_cast/3]).
+-export([is_arg_error/4]).
+-export([trim_stack/4]).
+-export([call_result/4]).
+%% Partisan-specific. Upstream `erpc' has no notion of channels, but
+%% `partisan_rpc:call/5' accepts `forward_opts()' (`channel',
+%% `partition_key', ...) and must keep honouring them now that it is a shim
+%% over this module. Mirrors how OTP's `erpc' exports internals for `rpc'.
+-export([call_with_opts/6]).
 
 %% Nicer error stack trace...
 -compile({inline, [{result, 4}]}).
-
--include("partisan.hrl").
 
 %% Upstream `erpc' reaches the peer with the auto-imported `spawn_request/5'
 %% BIF and receives the result as the exit reason of a distributed monitor.
@@ -146,9 +136,9 @@
 %% `IS_VALID_TMO' were defined here verbatim; they now come from
 %% `partisan.hrl', which defines them identically.
 
-%%------------------------------------------------------------------------
-%% Exported API
-%%------------------------------------------------------------------------
+%% =============================================================================
+%% API
+%% =============================================================================
 
 -spec call(Node, Fun) -> Result when
     Node :: node(),
@@ -526,7 +516,8 @@ check_response(_, _) ->
 %% loops below build a small reverse index to guard on.
 
 -type request_id_collection() :: #{
-    Res :: partisan:remote_reference() => {ReqId :: monitor_ref(), Label :: term()}
+    Res ::
+        partisan:remote_reference() => {ReqId :: monitor_ref(), Label :: term()}
 }.
 
 -spec reqids_new() -> request_id_collection().

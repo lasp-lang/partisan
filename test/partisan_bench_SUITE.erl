@@ -563,7 +563,9 @@ mailbox_depth(Name) ->
         undefined ->
             undefined;
         Pid ->
-            {message_queue_len, N} = erlang:process_info(Pid, message_queue_len),
+            {message_queue_len, N} = erlang:process_info(
+                Pid, message_queue_len
+            ),
             N
     end.
 

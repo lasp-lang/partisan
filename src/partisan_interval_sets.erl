@@ -274,7 +274,8 @@ del_element(A, [B | Es] = Set) ->
                                     %% `validate_element/1' whenever the set had
                                     %% a further interval after `B'.
                                     R = element_subtract(A, I),
-                                    New ++ lists:foldl(fun del_element/2, Es, R);
+                                    New ++
+                                        lists:foldl(fun del_element/2, Es, R);
                                 false ->
                                     error(badarg)
                             end
