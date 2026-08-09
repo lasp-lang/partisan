@@ -1089,8 +1089,8 @@ erpc_drain_collection(C, Acc) ->
 %% never configured has no connection and cannot carry anything — so if the
 %% per-call `channel' really reaches the transport, the same call must succeed on
 %% the default channel and fail on the unconfigured one. If the option were
-%% ignored (or overwritten by the global `forward_options', which is the bug this
-%% guards against), both would succeed.
+%% ignored (or overwritten by the global `forward_options', which is the failure
+%% mode this guards against), both would succeed.
 erpc_channel_case(Peer) ->
     Old = partisan_config:get(channel_fallback, true),
     ok = partisan_config:set(channel_fallback, false),

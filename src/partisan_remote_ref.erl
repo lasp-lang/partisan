@@ -933,7 +933,6 @@ maybe_register_pid(Pid, Node, Mode) ->
 
 register_local_pid(Pid) ->
     %% This is super dangerous.
-    %% This code was in partisan_util in previous versions
     Unique = erlang:unique_integer([monotonic, positive]),
 
     Name =
@@ -960,7 +959,6 @@ register_local_pid(Pid) ->
 %% -----------------------------------------------------------------------------
 register_remote_pid(Pid, Node) ->
     %% This is even more super dangerous.
-    %% This code was in partisan_util in previous versions
     Unique = erlang:unique_integer([monotonic, positive]),
     NewName = "partisan_registered_name_" ++ integer_to_list(Unique),
 

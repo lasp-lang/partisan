@@ -23,12 +23,12 @@
 %% @doc The counterpart of OTP's `rex' server: the node-wide process that serves
 %% the RPC operations which are *defined* as running on a server.
 %%
-%% It is not legacy machinery awaiting deletion. OTP still keeps `rex' and still
-%% routes `block_call', `sbcast', `abcast' and `eval_everywhere' through it, and
-%% so does Partisan. What changed in 6.0.0 is its scope: `call' no longer comes
-%% here to be applied inline. `partisan_erpc' and `partisan_rpc:call/4,5' now
-%% issue a correlated request that this server dispatches to a worker process,
-%% one per request. `block_call' is the deliberate exception — see the
+%% It is not legacy machinery awaiting deletion. OTP keeps `rex' and routes
+%% `block_call', `sbcast', `abcast' and `eval_everywhere' through it, and so
+%% does Partisan. Its scope stops short of `call': `partisan_erpc' and
+%% `partisan_rpc:call/4,5' issue a correlated request that this server
+%% dispatches to a worker process, one per request, rather than applying it
+%% inline. `block_call' is the deliberate exception — see the
 %% `?RPC_BLOCK_CALL' clause.
 %%
 %% == Wire protocols accepted ==
@@ -331,8 +331,8 @@ execute_call(M, F, A, Caller) ->
 %% the worker here would add a crash report for a routine condition and change
 %% nothing the caller observes, so this logs and returns instead.
 %%
-%% This is the code the old `partisan:forward_message/3' spec hid: it read
-%% `-> ok', so `ok = partisan:forward_message(...)' looked total. It never was.
+%% Note that `partisan:forward_message/3' is not total: it answers
+%% `{error, Reason}', which is why the reply is matched rather than asserted.
 send_reply(To, Message, Opts) ->
     case partisan:forward_message(To, Message, Opts) of
         ok ->

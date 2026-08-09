@@ -52,13 +52,13 @@
 %% The outstanding-message table is a plain key/value store keyed by an
 %% already-unique message clock: there is no state here that needs a process to
 %% arbitrate it. It is therefore `public' with write concurrency, and `store/2'
-%% and `ack/1' run as single ETS operations in the *calling* process.
+%% and `ack/1' run as single ETS operations in the *calling* process. Routing
+%% them through this server instead would put a node-global serialisation
+%% point — and a cross-process round trip — on the path of every acknowledged
+%% message, on top of the one the peer service manager already imposes.
 %%
-%% They used to be synchronous `gen_server:call's. That put a node-global
-%% serialisation point — and a cross-process round trip — on the path of every
-%% acknowledged message, on top of the one the peer service manager already
-%% imposes. This server now exists only to own the table (and to be the
-%% supervised, registered process the rest of the system expects to find).
+%% The server exists to own the table, and to be the supervised, registered
+%% process the rest of the system expects to find.
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
@@ -72,10 +72,10 @@ ack(MessageClock) ->
     ok.
 
 outstanding() ->
-    %% A match specification returning whole objects, in one BIF call. The
-    %% previous implementation folded over the table accumulating with
-    %% `Acc ++ [X]', which is quadratic in the size of the outstanding set —
-    %% and this runs on every retransmission tick.
+    %% A match specification returning whole objects, in one BIF call. This
+    %% runs on every retransmission tick, so a fold accumulating with
+    %% `Acc ++ [X]' — quadratic in the size of the outstanding set — is not an
+    %% option.
     {ok, ets:select(?MODULE, [{'_', [], ['$_']}])}.
 
 %%%===================================================================

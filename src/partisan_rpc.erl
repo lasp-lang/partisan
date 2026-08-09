@@ -378,13 +378,12 @@ eval_everywhere(Nodes, Module, Function, Arguments) ->
 %% over the globally configured `forward_options'.
 %%
 %% **Per-call options win.** The global value only fills in keys the caller did
-%% not specify. This previously read
-%% `partisan_config:get(forward_options, CallerOpts)', which inverts the
-%% precedence — `partisan_config:get/2' returns the *configured* value whenever
-%% one is set, so the caller's `channel' and `partition_key' were silently
-%% discarded as soon as anything set the global.
-%% {@link partisan_pluggable_peer_service_manager:forward_message/4} has always
-%% merged in this order; this brings RPC in line with it.
+%% not specify, which is the order
+%% {@link partisan_pluggable_peer_service_manager:forward_message/4} merges in.
+%% Note that `partisan_config:get(forward_options, CallerOpts)' inverts that:
+%% `partisan_config:get/2' returns the *configured* value whenever one is set,
+%% so the caller's `channel' and `partition_key' would be silently discarded as
+%% soon as anything set the global.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec forward_opts(map()) -> map().

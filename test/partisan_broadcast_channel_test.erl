@@ -122,7 +122,7 @@ handler_callback_is_used_when_the_group_declares_nothing() ->
     ).
 
 %% A handler with no `broadcast_channel/0' and a group with no `channel' lands on
-%% the default channel, exactly as before either mechanism existed.
+%% the default channel.
 default_channel_when_neither_is_declared() ->
     ?assertEqual(
         partisan:default_channel(),

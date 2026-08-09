@@ -474,21 +474,21 @@ supervisor_patches(OtpVsn) ->
         {replace, do_start_child_i, 3, sup_do_start_child_i_source()},
         {replace, handle_call, 3, sup_handle_call_source(OtpVsn)},
         {replace, handle_start_child, 2, sup_handle_start_child_source()},
-        %% NOTE: restarting/1 and do_terminate/2 are NO LONGER patched. They
-        %% were frozen solely because of an `is_pid/1' clause guard, which the
-        %% mechanical rewrite now lifts to a body-level `partisan:is_pid/1'
-        %% check (see partisan_otp_rewrite:lift_is_pid_guards/2). Their bodies
-        %% now come from the installed OTP source, so OTP upgrades are picked
-        %% up automatically instead of silently drifting from a hand-copy.
+        %% NOTE: restarting/1 and do_terminate/2 are NOT patched. Their only
+        %% Partisan-specific need is an `is_pid/1' clause guard, which the
+        %% mechanical rewrite lifts to a body-level `partisan:is_pid/1' check
+        %% (see partisan_otp_rewrite:lift_is_pid_guards/2). Their bodies come
+        %% from the installed OTP source, so OTP upgrades are picked up
+        %% automatically rather than drifting from a frozen copy.
         {replace, terminate_dynamic_children, 1,
             sup_terminate_dynamic_children_source()},
         {replace, find_child, 2, sup_find_child_source()},
         {replace, find_child_and_args, 2, sup_find_child_and_args_source()},
         {replace, unlink_flush, 2, sup_unlink_flush_source()},
-        %% NOTE: shutdown/1 is NO LONGER patched. Its only Partisan-specific
-        %% needs (monitor/2 and exit/2 → partisan:monitor/2, partisan:exit/2)
-        %% are already handled by the auto-import rewrite, so the mechanically
-        %% rewritten source is byte-identical to the previous hand-copy.
+        %% NOTE: shutdown/1 is NOT patched. Its only Partisan-specific needs
+        %% (monitor/2 and exit/2 → partisan:monitor/2, partisan:exit/2) are
+        %% handled by the auto-import rewrite, so a frozen copy would be
+        %% byte-identical to the mechanically rewritten source.
         {replace, count_child, 2, sup_count_child_source()},
         %% Child type validation: accept both `supervisor` and
         %% `partisan_gen_supervisor` since the rewrite renames the atom but

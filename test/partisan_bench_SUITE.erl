@@ -240,8 +240,8 @@ rpc_under_a_slow_call(Config) ->
 %% =============================================================================
 
 %% Sender-side cost of one `broadcast/2', which is what the batching work
-%% targets: the tree engine emits one action per peer, and each used to be
-%% encoded separately.
+%% targets: the tree engine emits one action per peer, and encoding each
+%% separately is what that work is trying to avoid.
 %%
 %% **On node count.** The plan asks for N in {5, 25, 100}. Five is what this runs
 %% by default, because 25 and 100 Erlang nodes on one developer machine measure

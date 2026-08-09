@@ -350,7 +350,8 @@ concurrent_remove_update_test() ->
         to_list(merge(A1, B1))
     ).
 
-%% This fails on previous version of riak_dt_map
+%% `merge/2' has to be associative: the three groupings below have to agree,
+%% including when one side carries a remove of a node the other never added.
 assoc_test() ->
     Nodename = 'node1@127.0.0.1',
     Node = node_spec(Nodename),
@@ -432,10 +433,10 @@ present_but_removed_test() ->
         fun(Set, Acc) ->
             merge(Set, Acc)
         end,
-        %% the order matters, the two replicas that
-        %% have 'Z' need to merge first to provoke
-        %% the bug. You end up with 'Z' with two
-        %% dots, when really it should be removed.
+        %% the order matters: the two replicas that
+        %% have 'Z' must merge first to provoke the
+        %% anomaly, where 'Z' survives with two dots
+        %% instead of being removed.
         A3,
         [C, B2]
     ),
@@ -458,8 +459,7 @@ no_dots_left_test() ->
     B2 = remove(Node2, b, B),
     %% Replicate C to B, now B has A's old 'Z'
     B3 = merge(B2, C),
-    %% Merge everytyhing, without the fix You end up with 'Z' present,
-    %% with no dots
+    %% Merge everything. An incorrect merge leaves 'Z' present with no dots
     Merged = lists:foldl(
         fun(Set, Acc) ->
             merge(Set, Acc)

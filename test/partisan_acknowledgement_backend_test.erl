@@ -5,11 +5,9 @@
 %%
 %% @doc Tests for the outstanding-message (acknowledgement) store.
 %%
-%% `store/2' and `ack/1' used to be synchronous `gen_server:call's wrapping a
-%% protected ETS table. They are now single ETS operations executed in the
-%% calling process against a `public' table with write concurrency, so an
-%% acknowledged message no longer pays a cross-process round trip to record
-%% itself.
+%% `store/2' and `ack/1' are single ETS operations executed in the calling
+%% process against a `public' table with write concurrency, so recording an
+%% acknowledged message costs no cross-process round trip.
 %%
 %% The owning process must still exist and stay registered: it owns the table's
 %% lifetime, and `partisan_otp_smoke_test' asserts it is alive after boot.

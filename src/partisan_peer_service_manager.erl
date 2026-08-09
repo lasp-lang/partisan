@@ -78,9 +78,9 @@
 %% injected partition). `Reason' is deliberately left open, because a
 %% third-party manager implementing this behaviour may have its own.
 %%
-%% This type is the *correction of a spec that used to read `-> ok'*. The
-%% implementations always returned errors; only the contract claimed otherwise,
-%% which meant a caller who trusted it silently dropped messages.
+%% The error half of this type is not decorative: implementations do return
+%% these, and a caller that treats forwarding as infallible silently drops
+%% messages.
 -type forward_result() :: ok | {error, Reason :: any()}.
 
 -export_type([connect_opts/0]).
