@@ -205,7 +205,17 @@ on_up(Node, Function) ->
     ok | {error, not_implemented}.
 
 on_up(Node, Function, Opts) ->
-    ?PEER_SERVICE_MANAGER:on_up(Node, Function, Opts).
+    %% `on_up/3' is an optional callback, so dispatch only if the manager
+    %% exports it — otherwise this raises `undef' instead of returning the
+    %% `{error, not_implemented}' the API promises. `partisan_monitor:init/1'
+    %% calls this on every boot, so an unguarded dispatch takes down the
+    %% application.
+    partisan_util:apply(
+        ?PEER_SERVICE_MANAGER,
+        on_up,
+        [Node, Function, Opts],
+        {error, not_implemented}
+    ).
 
 %% -----------------------------------------------------------------------------
 %% @doc Trigger function on connection close for a given node.
@@ -241,7 +251,13 @@ on_down(Node, Function) ->
     ok | {error, not_implemented}.
 
 on_down(Node, Function, Opts) ->
-    ?PEER_SERVICE_MANAGER:on_down(Node, Function, Opts).
+    %% Optional callback. See `on_up/3'.
+    partisan_util:apply(
+        ?PEER_SERVICE_MANAGER,
+        on_down,
+        [Node, Function, Opts],
+        {error, not_implemented}
+    ).
 
 %% -----------------------------------------------------------------------------
 %% @doc Return a sampling of nodes connected to this node.
@@ -355,11 +371,11 @@ get_local_state() ->
 %%
 %% Deprecated: prefer {@link partisan_membership:subscribe/0} —
 %% receive `{partisan_membership, Members}' in your own process — or poll
-%% {@link partisan_membership:members/0}. This is now a compatibility shim over
+%% {@link partisan_membership:members/0}. This is a compatibility shim over
 %% the membership snapshot's push feed: it spawns a relay process, linked to the
 %% caller, that invokes `Function' with the current member specs on each change.
-%% The callback now runs asynchronously, in its own process — it no longer blocks
-%% the membership path, and a crashing callback no longer affects others.
+%% The callback therefore runs asynchronously, in its own process: it does not
+%% block the membership path, and one that crashes does not affect others.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec add_sup_callback(fun(([partisan:node_spec()]) -> any())) -> ok.

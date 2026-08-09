@@ -153,6 +153,12 @@ end).
     channel_down_funs :: channel_subs(),
     up_funs :: node_subs(),
     channel_up_funs :: channel_subs(),
+    %% Channels we have already announced as up. A connection is stored
+    %% before its handshake completes, so the connection table cannot tell us
+    %% whether a `connected' signal is the first one for a channel — and with
+    %% channel parallelism > 1 several connections carry the same channel.
+    %% This makes the channel events edge-triggered.
+    up_channels = sets:new() :: sets:set({node(), partisan:channel()}),
     pre_interposition_funs :: interposition_map(x_interpos_fun()),
     interposition_funs :: interposition_map(interpos_fun()),
     post_interposition_funs :: interposition_map(x_interpos_fun())
@@ -161,10 +167,10 @@ end).
 -type t() :: #state{}.
 -type from() :: {pid(), atom()}.
 -type on_event_fun() :: partisan_peer_service_manager:on_event_fun().
--type node_subs() :: #{'_' | node() => on_event_fun()}.
+-type node_subs() :: #{'_' | node() => [on_event_fun()]}.
 -type channel_subs() :: #{
-    {'_' | node(), partisan:channel()} =>
-        on_event_fun()
+    {'_' | node(), '_' | partisan:channel()} =>
+        [on_event_fun()]
 }.
 -type interposition_map(T) :: #{any() => T}.
 -type interpos_arg() ::
@@ -205,10 +211,10 @@ end).
 -export([forward_message/4]).
 
 -ifdef(TEST).
-%% Exported for test. `next_message_clock/1' replaced the vector clock this
-%% server used to hold in state; `fast_forward_acked/6' is the acknowledged
-%% send path that no longer routes through this server. Neither is reachable
-%% from a single-node unit test otherwise.
+%% Exported for test. `next_message_clock/1' is the message-clock source and
+%% `fast_forward_acked/6' the acknowledged send path; neither routes through
+%% this server, so neither is reachable from a single-node unit test
+%% otherwise.
 -export([next_message_clock/1]).
 -export([fast_forward_acked/6]).
 -endif.
@@ -436,6 +442,12 @@ forward_message(PidOrName, Message, _Opts) when
 ->
     _ = erlang:send(PidOrName, Message),
     ok;
+forward_message({global, _} = ServerRef, Message, _Opts) ->
+    %% Will do nothing is disterl is not enabled as we currently do not have
+    %% partisan_global
+    partisan_peer_service_manager:deliver(ServerRef, Message);
+forward_message({via, _, _} = ServerRef, Message, _Opts) ->
+    partisan_peer_service_manager:deliver(ServerRef, Message);
 forward_message({Name, Node}, Message, Opts) when
     is_atom(Name), is_atom(Node)
 ->
@@ -446,12 +458,6 @@ forward_message({Name, Node}, Message, Opts) when
         false ->
             forward_message(Node, Name, Message, Opts)
     end;
-forward_message({global, _} = ServerRef, Message, _Opts) ->
-    %% Will do nothing is disterl is not enabled as we currently do not have
-    %% partisan_global
-    partisan_peer_service_manager:deliver(ServerRef, Message);
-forward_message({via, _, _} = ServerRef, Message, _Opts) ->
-    partisan_peer_service_manager:deliver(ServerRef, Message);
 forward_message(RemoteRef, Message, Opts0) ->
     %% A reference is admitted because a process alias (`erlang:alias/1') is
     %% one, and an encoded alias is used as a one-shot reply address by
@@ -584,15 +590,12 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
                     %% - fastforward is not disabled
                     %% - not labeled for causal delivery
                     %%
-                    %% Acknowledgement no longer forces the serialised path.
-                    %% It used to, for two reasons that no longer hold: the
-                    %% message clock came from this server's state (it now
-                    %% comes from a lock-free counter, see
-                    %% `next_message_clock/1'), and recording the outstanding
-                    %% message was a `gen_server:call' into the
-                    %% acknowledgement backend (it is now a direct ETS write).
-                    %% Causal delivery still routes through the causality
-                    %% backend by design.
+                    %% Acknowledgement does not force the serialised path:
+                    %% the message clock comes from a lock-free counter (see
+                    %% `next_message_clock/1') and recording the outstanding
+                    %% message is a direct ETS write, so neither needs this
+                    %% process. Causal delivery does route through the
+                    %% causality backend, by design.
                     FastForward =
                         not (DisableFastForward orelse CausalDelivery),
 
@@ -1517,25 +1520,26 @@ handle_info({'EXIT', Pid, Reason}, State0) ->
             #{name := Node} = NodeSpec,
             Channel = partisan_peer_connections:channel(Connection),
 
-            case partisan_peer_connections:count(Node, Channel) of
-                0 ->
-                    ok = down(NodeSpec, Channel, State0);
-                _ ->
-                    ok
-            end,
+            State1 =
+                case partisan_peer_connections:count(Node, Channel) of
+                    0 ->
+                        channel_down(Node, Channel, State0);
+                    _ ->
+                        State0
+                end,
 
             State =
                 case partisan_peer_connections:count(Info) of
                     0 ->
                         %% This was the last connection so the node is down.
                         %% We notify all subscribers.
-                        ok = down(NodeSpec, State0),
+                        ok = down(NodeSpec, State1),
                         %% If still a member we need to add it to pending,
                         %% so that we can reconnect and then compute the
                         %% on_up signal.
-                        maybe_append_pending(NodeSpec, State0);
+                        maybe_append_pending(NodeSpec, State1);
                     _ ->
-                        State0
+                        State1
                 end,
 
             {noreply, State}
@@ -1545,7 +1549,7 @@ handle_info({'EXIT', Pid, Reason}, State0) ->
             {noreply, State0}
     end;
 handle_info(
-    {connected, NodeSpec, _Channel, _Tag, RemoteState}, State0
+    {connected, NodeSpec, Channel, _Tag, RemoteState}, State0
 ) ->
     #state{
         pending = Pending0,
@@ -1609,8 +1613,14 @@ handle_info(
                 State0
         end,
 
+    %% Notify the channel subscribers. Unlike the node event above this does
+    %% not depend on the peer being pending: an extra channel to a peer we are
+    %% already connected to is still a channel coming up.
+    #{name := Node} = NodeSpec,
+    State2 = channel_up(Node, Channel, State1),
+
     %% Notify for sync join.
-    State = maybe_reply_sync_joins(State1),
+    State = maybe_reply_sync_joins(State2),
 
     {noreply, State};
 handle_info(Msg, State) ->
@@ -2025,13 +2035,11 @@ fast_forward_acked(Node, PartitionKey, ServerRef, Message, Clock, Opts) ->
 %% @private
 %% Creates the message-clock counter, once per node.
 %%
-%% Message clocks used to come from a vector clock held in this server's state,
-%% incremented in `handle_cast/2'. That is why an acknowledged send had to be
-%% serialised through this process at all: the clock was only obtainable here.
 %% The clock is never compared or merged — it is an opaque identity token, used
 %% as the key of the outstanding-message table and echoed back in `{ack, _}' —
-%% so a single monotonic counter is sufficient, and a lock-free one can be read
-%% from any process.
+%% so a single monotonic counter is sufficient. Keeping it lock-free rather than
+%% in this server's state is what lets an acknowledged send skip this process
+%% entirely: the clock is obtainable from any caller.
 %%
 %% The counter deliberately survives a restart of this server (it lives in
 %% `persistent_term', not in state). Resetting it would let a fresh clock
@@ -2114,48 +2122,95 @@ do_send_message(Node, PartitionKey, Message, Options, State) ->
 
 %% @private
 up(NodeOrSpec, State) ->
-    apply_funs(NodeOrSpec, State#state.up_funs).
-
-%% up(NodeOrSpec, Channel, State) ->
-%%     apply_funs(NodeOrSpec, State#state.up_funs).
+    apply_node_funs(NodeOrSpec, State#state.up_funs).
 
 %% @private
 down(NodeOrSpec, State) ->
-    apply_funs(NodeOrSpec, State#state.down_funs).
+    apply_node_funs(NodeOrSpec, State#state.down_funs).
 
 %% @private
-down(NodeSpec, _Channel, State) ->
-    %% TODO use Channel
-    apply_funs(NodeSpec, State#state.channel_down_funs).
+%% @doc Announces `Channel' to `Node' as up, unless we already have. Returns
+%% the updated state.
+channel_up(Node, Channel, #state{up_channels = Up} = State) ->
+    case sets:is_element({Node, Channel}, Up) of
+        true ->
+            State;
+        false ->
+            ok = apply_channel_funs(
+                Node, Channel, State#state.channel_up_funs
+            ),
+            State#state{up_channels = sets:add_element({Node, Channel}, Up)}
+    end.
 
 %% @private
-apply_funs(Node, Mapping) when is_atom(Node) ->
+%% @doc The counterpart of `channel_up/3', called once `Channel' has no
+%% connections left to `Node'.
+channel_down(Node, Channel, #state{up_channels = Up} = State) ->
+    case sets:is_element({Node, Channel}, Up) of
+        false ->
+            State;
+        true ->
+            ok = apply_channel_funs(
+                Node, Channel, State#state.channel_down_funs
+            ),
+            State#state{up_channels = sets:del_element({Node, Channel}, Up)}
+    end.
+
+%% @private
+%% @doc Callbacks registered for `Node' plus those registered for every node.
+apply_node_funs(#{name := Node}, Subs) ->
+    apply_node_funs(Node, Subs);
+apply_node_funs(Node, Subs) when is_atom(Node) ->
     ?LOG_DEBUG(#{
         description => "Node status change notification",
         node => Node,
-        funs => Mapping
+        funs => Subs
     }),
 
     Funs = lists:append(
         %% Notify functions matching the wildcard '_'
-        maps:get('_', Mapping, []),
+        maps:get('_', Subs, []),
         %% Notify functions matching Node
-        maps:get(Node, Mapping, [])
+        maps:get(Node, Subs, [])
     ),
 
+    apply_event_funs(Funs, Node, undefined).
+
+%% @private
+%% @doc Channel subscriptions are keyed by `{Node, Channel}', either half of
+%% which may be the `'_'' wildcard, so all four combinations match. Looking
+%% these up by node name alone finds nothing.
+apply_channel_funs(Node, Channel, Subs) when is_atom(Node) ->
+    ?LOG_DEBUG(#{
+        description => "Channel status change notification",
+        node => Node,
+        channel => Channel,
+        funs => Subs
+    }),
+
+    Funs = lists:append([
+        maps:get({'_', '_'}, Subs, []),
+        maps:get({'_', Channel}, Subs, []),
+        maps:get({Node, '_'}, Subs, []),
+        maps:get({Node, Channel}, Subs, [])
+    ]),
+
+    apply_event_funs(Funs, Node, Channel).
+
+%% @private
+%% @doc A subscriber takes no argument, the node, or the node and channel —
+%% `partisan_monitor' registers the arity-2 form for channel events. A
+%% callback is not allowed to take the manager down with it.
+apply_event_funs(Funs, Node, Channel) ->
     _ = [
-        begin
-            case erlang:fun_info(F, arity) of
-                {arity, 0} -> catch F();
-                {arity, 1} -> catch F(Node)
-            end
+        case erlang:fun_info(F, arity) of
+            {arity, 0} -> catch F();
+            {arity, 1} -> catch F(Node);
+            {arity, 2} -> catch F(Node, Channel)
         end
      || F <- Funs
     ],
-
-    ok;
-apply_funs(#{name := Node}, Mapping) ->
-    apply_funs(Node, Mapping).
+    ok.
 
 %% @private
 pending_leavers(#state{} = State) ->

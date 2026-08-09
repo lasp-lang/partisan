@@ -17,7 +17,7 @@ SPELLFIX      	= $(SPELLCHECK) -i 3 -w
 
 OTPVSN 			= $(shell erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell)
 
-.PHONY: compile-no-deps alt-test core-test test ci-light ci-heavy security-test docs xref dialyzer-run dialyzer-quick dialyzer\
+.PHONY: compile-no-deps alt-test core-test monitor-test test ci-light ci-heavy security-test docs xref dialyzer-run dialyzer-quick dialyzer\
 		cleanplt upload-docs rel deps test plots spellcheck spellfix certs node1 node2 node3 node checkssl
 
 all: compile
@@ -104,13 +104,16 @@ test: eunit core-test otp-compat-test cover
 # suites run on a large Fly.io Machine. `ci-heavy` is what test/fly/run.sh runs.
 ci-light: eunit otp-compat-test security-test
 
-ci-heavy: core-test alt-test proper
+ci-heavy: core-test monitor-test alt-test proper
 
 security-test:
 	${REBAR} as test ct -v --readable=false --suite=partisan_security_SUITE
 
 core-test: setup-tls
 	${REBAR} as test ct -v --readable=false --suite=partisan_SUITE
+
+monitor-test:
+	${REBAR} as test ct -v --readable=false --suite=partisan_monitor_SUITE
 
 alt-test: setup-tls
 	mkdir -p test/partisan_alt_SUITE_data/

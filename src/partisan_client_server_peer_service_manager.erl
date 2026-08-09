@@ -249,12 +249,27 @@ forward_message(Term, Message) ->
 %% @doc Gensym support for forwarding.
 %% @end
 %% -----------------------------------------------------------------------------
-forward_message(Pid, Message, Opts) when is_pid(Pid) ->
-    forward_message(partisan:node(Pid), Pid, Message, Opts);
-forward_message(Name, Message, Opts) when is_atom(Name) ->
-    forward_message(partisan:node(), Name, Message, Opts);
-forward_message({Name, Node}, Message, Opts) ->
-    forward_message(Node, Name, Message, Opts);
+forward_message(PidOrName, Message, _Opts) when
+    is_pid(PidOrName); is_atom(PidOrName)
+->
+    %% A local target is delivered directly: this manager dispatches over
+    %% peer connections and we hold none to ourselves.
+    _ = erlang:send(PidOrName, Message),
+    ok;
+forward_message({global, _} = ServerRef, Message, _Opts) ->
+    partisan_peer_service_manager:deliver(ServerRef, Message);
+forward_message({via, _, _} = ServerRef, Message, _Opts) ->
+    partisan_peer_service_manager:deliver(ServerRef, Message);
+forward_message({Name, Node}, Message, Opts) when
+    is_atom(Name), is_atom(Node)
+->
+    case Node == partisan:node() of
+        true ->
+            _ = erlang:send(Name, Message),
+            ok;
+        false ->
+            forward_message(Node, Name, Message, Opts)
+    end;
 forward_message(RemoteRef, Message, Opts) ->
     partisan_remote_ref:is_pid(RemoteRef) orelse
         partisan_remote_ref:is_name(RemoteRef) orelse
@@ -271,12 +286,17 @@ forward_message(RemoteRef, Message, Opts) ->
 forward_message(Node, ServerRef, Message, Opts) when is_list(Opts) ->
     forward_message(Node, ServerRef, Message, maps:from_list(Opts));
 forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
-    %% We ignore Opts.channel
-    gen_server:call(
-        ?MODULE,
-        {forward_message, Node, ServerRef, Message, Opts},
-        infinity
-    ).
+    case Node =:= partisan:node() of
+        true ->
+            partisan_peer_service_manager:deliver(ServerRef, Message);
+        false ->
+            %% We ignore Opts.channel
+            gen_server:call(
+                ?MODULE,
+                {forward_message, Node, ServerRef, Message, Opts},
+                infinity
+            )
+    end.
 
 %% -----------------------------------------------------------------------------
 %% @doc Receive message from a remote manager.
@@ -390,6 +410,13 @@ init([]) ->
         pending = sets:new([{version, 2}]),
         membership = Membership
     },
+
+    %% Seed the lock-free membership snapshot before any reader starts.
+    %% Readers (broadcast among them) go through `partisan_membership', so a
+    %% manager that only publishes on change leaves them with an empty
+    %% membership that does not even contain this node.
+    ok = partisan_membership:set(sets:to_list(Membership)),
+
     {ok, State}.
 
 -spec handle_call(call(), {pid(), term()}, state()) ->
@@ -455,7 +482,7 @@ handle_call({leave, #{name := Peer}}, _From, #state{} = State0) ->
         _ ->
             %% TODO maybe we need to do the following here (see prev TODO)
             %% _ = net_kernel:disconnect(Peer),
-            ok = partisan_peer_service_manager:disconnect(Peer),
+            ok = partisan_peer_service_manager:disconnect([Peer]),
 
             NewPending = sets:filter(
                 fun(#{name := Node}) -> Node =/= Peer end,
