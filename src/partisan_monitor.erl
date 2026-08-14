@@ -405,45 +405,59 @@ demonitor(MPRef, Opts) ->
             %% the DOWN signal carries. `flush' below matches on that tag: a
             %% monitor created with `{tag, T}' delivers `{T, ...}', which a
             %% pattern fixed to `DOWN' would leave in the caller's mailbox.
-            %% Where the record is already gone there is no signal of ours to
-            %% flush, and the default tag applies.
-            Tag =
+            %% Where the record is gone the tag is gone with it and the flush
+            %% matches the reference alone.
+            %%
+            %% This take also decides the `info' answer, and it — not the
+            %% peer's own `erlang:demonitor/2' — is the authority.
+            %% `take_proc_mon_out/1' is the single arbitration point for
+            %% delivery: every handler that could deliver a DOWN for `MPRef'
+            %% (the relay, nodedown and channeldown fabrication) must claim
+            %% the entry first, and they all run inline in this server. So
+            %% winning the take here means no DOWN can ever be delivered for
+            %% this reference, which is exactly what `info' reporting `true'
+            %% promises — whatever the peer reports about its own half.
+            {Info, Tag} =
                 case take_proc_mon_out(MPRef) of
                     #partisan_proc_mon_out{channel = Channel} = M ->
                         ok = del_proc_mon_out_idx(Node, Channel, MPRef),
-                        M#partisan_proc_mon_out.tag;
+                        {true, M#partisan_proc_mon_out.tag};
                     error ->
-                        'DOWN'
+                        %% The server claimed the entry, so it has delivered
+                        %% the DOWN or is between the claim and the send. A
+                        %% round-trip through its mailbox orders us after that
+                        %% send: `info' returning `false' means the signal is
+                        %% already in our queue, and callers act on it with a
+                        %% zero-timeout receive.
+                        ok = sync(Opts),
+                        {false, undefined}
                 end,
 
             %% We call the remote node to demonitor.
             %% If the remote server is unreachable we assume we lost connection
-            %% and thus it must have cleaned up our references.
-            case call({?MODULE, Node}, {demonitor, MPRef, Opts}, 3000) of
-                {ok, Bool} ->
-                    case lists:member(flush, Opts) of
-                        true ->
-                            receive
-                                {Tag, MPRef, process, _, _} ->
-                                    Bool
-                            after 0 ->
-                                Bool
-                            end;
-                        false ->
-                            Bool
-                    end;
-                {error, noconnection} ->
-                    true;
-                {error, timeout} ->
-                    true;
-                {error, noproc} ->
-                    true;
-                {error, {nodedown, _}} ->
-                    true;
-                {error, Reason} ->
-                    ErrOpts = [{error_info, #{cause => Reason}}],
-                    erlang:error(Reason, [MPRef, Opts], ErrOpts)
-            end
+            %% and thus it must have cleaned up our references. Either way this
+            %% call is remote cleanup only; the answer was settled by the take
+            %% above, so an unreachable peer leaves it untouched.
+            _ =
+                case call({?MODULE, Node}, {demonitor, MPRef, Opts}, 3000) of
+                    {ok, _} ->
+                        ok;
+                    {error, noconnection} ->
+                        ok;
+                    {error, timeout} ->
+                        ok;
+                    {error, noproc} ->
+                        ok;
+                    {error, {nodedown, _}} ->
+                        ok;
+                    {error, Reason} ->
+                        ErrOpts = [{error_info, #{cause => Reason}}],
+                        erlang:error(Reason, [MPRef, Opts], ErrOpts)
+                end,
+
+            _ = lists:member(flush, Opts) andalso flush(MPRef, Tag),
+
+            return_info(Info, Opts)
     end.
 
 %% -----------------------------------------------------------------------------
@@ -688,6 +702,10 @@ handle_call({demonitor, RemoteRef, Opts}, {_Monitor, _}, State) ->
             Reply = do_demonitor(RemoteRef, Opts),
             {reply, Reply, State}
     end;
+handle_call(sync, _From, State) ->
+    %% A no-op round-trip used by demonitor/2 to order itself after any
+    %% DOWN this server had already started delivering. See sync/0.
+    {reply, ok, State};
 handle_call(_Msg, _From, State) ->
     {reply, {error, unsupported_call}, State}.
 
@@ -1094,6 +1112,43 @@ do_demonitor(Term, Opts) ->
             {error, badarg}
     end.
 
+%% @private
+%% `erlang:demonitor/2' returns `true' unless `info' was asked for.
+return_info(Info, Opts) ->
+    case lists:member(info, Opts) of
+        true -> Info;
+        false -> true
+    end.
+
+%% @private
+%% Drop this monitor's DOWN from the caller's mailbox. `Tag' is `undefined'
+%% when the record carrying it has been reclaimed; the reference identifies the
+%% signal on its own.
+flush(MPRef, undefined) ->
+    receive
+        {_, MPRef, process, _, _} -> ok
+    after 0 -> ok
+    end;
+flush(MPRef, Tag) ->
+    receive
+        {Tag, MPRef, process, _, _} -> ok
+    after 0 -> ok
+    end.
+
+%% @private
+%% Round-trip through this node's server so that any handler it had already
+%% begun has run to completion, including the sends that handler makes. Only
+%% `info' and `flush' can observe that ordering, so a plain demonitor is spared
+%% the call.
+sync(Opts) ->
+    case lists:member(info, Opts) orelse lists:member(flush, Opts) of
+        true ->
+            _ = call({?MODULE, partisan:node()}, sync, 3000),
+            ok;
+        false ->
+            ok
+    end.
+
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc
@@ -1437,10 +1492,9 @@ purge_caller(Caller) ->
     %% the caller index — O(this caller's monitors), not a full-table scan.
     %% For each row we (a) drop the {Node, Channel} index entry, (b) delete the
     %% row itself, and (c) ask the monitored node to drop its half of the
-    %% monitor (the proc_mon_in row + the native erlang:monitor it holds). Step
-    %% (c) is the remote cleanup that was previously missing: without it a
-    %% dead caller leaks a proc_mon_in row and a native monitor on every node
-    %% it was monitoring a process on.
+    %% monitor (the proc_mon_in row + the native erlang:monitor it holds).
+    %% Without step (c) a dead caller leaks a proc_mon_in row and a native
+    %% monitor on every node it was monitoring a process on.
     Rows = ets:lookup(?PROC_MON_OUT_CALLER_IDX, Caller),
     _ = [
         begin

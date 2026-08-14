@@ -205,8 +205,7 @@ expect_down(Ref, P) ->
                         partisan:is_local_pid(PP, P)) orelse
                     (is_pid(PP) andalso
                         partisan:is_local_pid(P, PP)) orelse
-                    (is_tuple(P) andalso
-                        P =:= partisan_remote_ref:to_term(PP))) orelse
+                    same_name(P, PP)) orelse
                 ct:fail([{rec, Signal}, {args, [Ref, P]}]),
             Reason;
         Other ->
@@ -222,13 +221,22 @@ expect_down(Ref, P, Reason) ->
                         partisan:is_local_pid(PP, P)) orelse
                     (is_pid(PP) andalso
                         partisan:is_local_pid(P, PP)) orelse
-                    (is_tuple(P) andalso
-                        P =:= partisan_remote_ref:to_term(PP))) orelse
+                    same_name(P, PP)) orelse
                 ct:fail([{rec, Signal}, {args, [Ref, P, Reason]}]),
             ok;
         Other ->
             ct:fail([{rec, Other}, {args, [Ref, P, Reason]}])
     end.
+
+%% `P' may be given as `{Name, Node}' while the signal carries the encoded
+%% remote name reference. `partisan_remote_ref:to_term/1' decodes local terms
+%% only and raises `badarg' on a reference belonging to another node, so the
+%% two halves are compared through the accessors that do work on remote refs.
+same_name({Name, Node}, PP) when is_atom(Name), is_atom(Node) ->
+    partisan_remote_ref:is_name(PP, Name) andalso
+        partisan_remote_ref:node(PP) == Node;
+same_name(_, _) ->
+    false.
 
 expect_no_msg() ->
     receive
@@ -389,6 +397,11 @@ demonitor_flush(Config) when is_list(Config) ->
 
 demonitor_flush_test(Node) ->
     P = partisan:spawn(Node, timer, sleep, [100000]),
+    %% A DOWN for a local target is delivered by the VM and names the raw pid;
+    %% for a remote one `partisan_monitor' fabricates it and names the remote
+    %% reference. Both stand for `P', and this runs against both a remote node
+    %% and the local one, so the receives below accept either form.
+    Raw = raw(P),
     M1 = partisan:monitor(process, P),
     M2 = partisan:monitor(process, P),
     M3 = partisan:monitor(process, P),
@@ -396,7 +409,7 @@ demonitor_flush_test(Node) ->
     true = partisan:demonitor(M1, [flush, flush]),
     partisan:exit(P, bang),
     receive
-        {'DOWN', M2, process, P, bang} -> ok
+        {'DOWN', M2, process, D2, bang} when D2 == P; D2 == Raw -> ok
     end,
     receive
     after 100 -> ok
@@ -404,11 +417,11 @@ demonitor_flush_test(Node) ->
     true = partisan:demonitor(M3, [flush]),
     true = partisan:demonitor(M4, []),
     receive
-        {'DOWN', M4, process, P, bang} -> ok
+        {'DOWN', M4, process, D4, bang} when D4 == P; D4 == Raw -> ok
     end,
     receive
         {'DOWN', M, _, _, _} = DM when
-            M == M1,
+            M == M1;
             M == M3
         ->
             ct:fail({unexpected_down_message, DM})
@@ -688,10 +701,14 @@ large_exit_sub(S) ->
 %%% and      erlang:process_info(self(), monitored_by)
 
 list_cleanup(Config) when is_list(Config) ->
-    P0 = self(),
+    %% Every assertion below is in remote-reference space: that is the one
+    %% vocabulary both monitor bookkeepings share. See `monitors/1'.
+    P0 = partisan:self(),
     M = node(),
     PA = filename:dirname(code:which(?MODULE)),
     true = register(master_bertie, self()),
+    Bertie = pref({master_bertie, M}),
+    JeevesM = pref({jeeves, M}),
 
     %% Normal local case, monitor and demonitor
     P1 = start_jeeves(jeeves),
@@ -706,7 +723,7 @@ list_cleanup(Config) when is_list(Config) ->
     expect_jeeves(P1, monitors, {monitors, {[], []}}),
     %% Remonitor named and try again, now exiting the monitored process
     R1b = partisan:monitor(process, jeeves),
-    {[{process, {jeeves, M}}], []} = monitors(),
+    {[{process, JeevesM}], []} = monitors(),
     expect_jeeves(P1, monitors, {monitors, {[], [P0]}}),
     tell_jeeves(P1, stop),
     expect_down(R1b, {jeeves, node()}, normal),
@@ -719,11 +736,7 @@ list_cleanup(Config) when is_list(Config) ->
     {monitor_process, _R2} =
         ask_jeeves(P2, {monitor_process, master_bertie}),
     {[], [P2]} = monitors(),
-    expect_jeeves(
-        P2,
-        monitors,
-        {monitors, {[{process, {master_bertie, node()}}], []}}
-    ),
+    expect_jeeves(P2, monitors, {monitors, {[{process, Bertie}], []}}),
     tell_jeeves(P2, {exit, frop}),
     timer:sleep(2000),
     {[], []} = monitors(),
@@ -734,6 +747,7 @@ list_cleanup(Config) when is_list(Config) ->
     ]),
     partisan_support:cluster(J),
     timer:sleep(2000),
+    JeevesJ = pref({jeeves, J}),
 
     %% Normal remote case, monitor and demonitor
     P3 = start_jeeves({jeeves, J}),
@@ -748,7 +762,7 @@ list_cleanup(Config) when is_list(Config) ->
     expect_jeeves(P3, monitors, {monitors, {[], []}}),
     %% Remonitor named and try again, now exiting the monitored process
     R3b = partisan:monitor(process, {jeeves, J}),
-    {[{process, {jeeves, J}}], []} = monitors(),
+    {[{process, JeevesJ}], []} = monitors(),
     expect_jeeves(P3, monitors, {monitors, {[], [P0]}}),
     tell_jeeves(P3, stop),
     expect_down(R3b, {jeeves, J}, normal),
@@ -761,11 +775,7 @@ list_cleanup(Config) when is_list(Config) ->
     {monitor_process, _R4} =
         ask_jeeves(P4, {monitor_process, {master_bertie, M}}),
     {[], [P4]} = monitors(),
-    expect_jeeves(
-        P4,
-        monitors,
-        {monitors, {[{process, {master_bertie, M}}], []}}
-    ),
+    expect_jeeves(P4, monitors, {monitors, {[{process, Bertie}], []}}),
     tell_jeeves(P4, {exit, frop}),
     timer:sleep(2000),
     {[], []} = monitors(),
@@ -777,11 +787,7 @@ list_cleanup(Config) when is_list(Config) ->
     {monitor_process, _R5} =
         ask_jeeves(P5, {monitor_process, P0}),
     {[], [P5]} = monitors(),
-    expect_jeeves(
-        P5,
-        monitors,
-        {monitors, {[{process, P0}], []}}
-    ),
+    expect_jeeves(P5, monitors, {monitors, {[{process, P0}], []}}),
     partisan_support_otp:stop_node(J),
     timer:sleep(4000),
     {[], []} = monitors(),
@@ -792,6 +798,9 @@ list_cleanup(Config) when is_list(Config) ->
 %%% Mixed internal and external monitors
 
 mixer(Config) when is_list(Config) ->
+    %% As in `list_cleanup/1', assertions are in remote-reference space so that
+    %% native and Partisan monitors are counted in one vocabulary.
+    Me = partisan:self(),
     PA = filename:dirname(code:which(?MODULE)),
     NN = [j0, j1, j2],
     NL0 = [
@@ -810,12 +819,11 @@ mixer(Config) when is_list(Config) ->
     lists:foreach(
         fun(NL) ->
             Js = [start_jeeves({[], M}) || M <- (NL ++ NL)],
-            [ask_jeeves(P, {monitor_process, self()}) || P <- Js],
-            {monitored_by, MB} = process_info(self(), monitored_by),
+            [ask_jeeves(P, {monitor_process, Me}) || P <- Js],
+            {[], MB} = monitors(),
             MBL = lists:sort(MB),
             JsL = lists:sort(Js),
             MBL = JsL,
-            {monitors, []} = process_info(self(), monitors),
             [tell_jeeves(P, {exit, flaff}) || P <- Js],
             wait_for_m([], [], 200)
         end,
@@ -827,17 +835,16 @@ mixer(Config) when is_list(Config) ->
             Rs = [
                 begin
                     {monitor_process, Ref} = ask_jeeves(
-                        P, {monitor_process, self()}
+                        P, {monitor_process, Me}
                     ),
                     {P, Ref}
                 end
              || P <- Js
             ],
-            {monitored_by, MB} = process_info(self(), monitored_by),
+            {[], MB} = monitors(),
             MBL = lists:sort(MB),
             JsL = lists:sort(Js),
             MBL = JsL,
-            {monitors, []} = process_info(self(), monitors),
             [ask_jeeves(P, {demonitor, Ref}) || {P, Ref} <- Rs],
             wait_for_m([], [], 200),
             [tell_jeeves(P, {exit, flaff}) || P <- Js]
@@ -847,21 +854,18 @@ mixer(Config) when is_list(Config) ->
     lists:foreach(
         fun(NL) ->
             Js = [start_jeeves({[], M}) || M <- (NL ++ NL)],
-            [ask_jeeves(P, {monitor_process, self()}) || P <- Js],
+            [ask_jeeves(P, {monitor_process, Me}) || P <- Js],
             [partisan:monitor(process, P) || P <- Js],
-            {monitored_by, MB} = process_info(self(), monitored_by),
+            {Mons, MB} = monitors(),
             MBL = lists:sort(MB),
             JsL = lists:sort(Js),
             MBL = JsL,
-            {monitors, M} = process_info(self(), monitors),
-            ML = lists:sort([P || {process, P} <- M]),
+            ML = lists:sort([P || {process, P} <- Mons]),
             ML = JsL,
             [
                 begin
                     tell_jeeves(P, {exit, flaff}),
-                    receive
-                        {'DOWN', _, process, P, _} -> ok
-                    end
+                    expect_down_from(P)
                 end
              || P <- Js
             ],
@@ -875,22 +879,21 @@ mixer(Config) when is_list(Config) ->
             Rs = [
                 begin
                     {monitor_process, Ref} = ask_jeeves(
-                        P, {monitor_process, self()}
+                        P, {monitor_process, Me}
                     ),
                     {P, Ref}
                 end
              || P <- Js
             ],
             R2s = [{P, partisan:monitor(process, P)} || P <- Js],
-            {monitored_by, MB} = process_info(self(), monitored_by),
+            {Mons, MB} = monitors(),
             MBL = lists:sort(MB),
             JsL = lists:sort(Js),
             MBL = JsL,
-            {monitors, M} = process_info(self(), monitors),
-            ML = lists:sort([P || {process, P} <- M]),
+            ML = lists:sort([P || {process, P} <- Mons]),
             ML = JsL,
             [ask_jeeves(P, {demonitor, Ref}) || {P, Ref} <- Rs],
-            wait_for_m(lists:sort(M), [], 200),
+            wait_for_m(lists:sort(Mons), [], 200),
             [partisan:demonitor(Ref) || {_P, Ref} <- R2s],
             wait_for_m([], [], 200),
             [tell_jeeves(P, {exit, flaff}) || P <- Js]
@@ -997,7 +1000,10 @@ otp_5827(Config) when is_list(Config) ->
 
 monitor_time_offset(Config) when is_list(Config) ->
     {ok, Node} = start_node(Config, "+C single_time_warp"),
-    Me = self(),
+    %% The workers run on `Node' and are addressed by partisan reference, so
+    %% both directions go through `partisan:send/2'; a raw `!' to a reference
+    %% raises `badarg'.
+    Me = partisan:self(),
     PMs = lists:map(
         fun(_) ->
             Pid = partisan:spawn(
@@ -1012,7 +1018,7 @@ monitor_time_offset(Config) when is_list(Config) ->
     ),
     lists:foreach(
         fun({P, _M}) ->
-            P ! check_no_change_message
+            partisan:send(P, check_no_change_message)
         end,
         PMs
     ),
@@ -1061,7 +1067,7 @@ check_monitor_time_offset(Leader) ->
         {'CHANGE', _, time_offset, clock_service, _} ->
             exit(unexpected_change_message_received)
     after 0 ->
-        Leader ! {no_change_message_received, self()}
+        partisan:send(Leader, {no_change_message_received, partisan:self()})
     end,
     receive
     after 100 -> ok
@@ -1090,7 +1096,7 @@ check_monitor_time_offset(Leader) ->
     after 1000 ->
         ok
     end,
-    Leader ! {change_messages_received, self()}.
+    partisan:send(Leader, {change_messages_received, partisan:self()}).
 
 monitor_tag_storage(Config) when is_list(Config) ->
     process_flag(priority, max),
@@ -1313,6 +1319,19 @@ down_on_alias_gh5310_test(ImmedExitReason, DeMonSched, TermSched) ->
     end.
 
 monitor_3_noproc_gh6185(Config) when is_list(Config) ->
+    %% `erts_test_utils' lives in OTP's erts/emulator/test tree, which
+    %% `fetch_otp_test_sources.sh' does not pull (it fetches lib/stdlib/test
+    %% only), so it is absent from an installed release. Skip rather than
+    %% report a spurious `undef' failure.
+    case code:ensure_loaded(erts_test_utils) of
+        {module, _} ->
+            monitor_3_noproc_gh6185_cases();
+        {error, _} ->
+            {skip,
+                "erts_test_utils is not available; see fetch_otp_test_sources.sh"}
+    end.
+
+monitor_3_noproc_gh6185_cases() ->
     monitor_3_noproc_gh6185_test(false, false),
     monitor_3_noproc_gh6185_test(true, false),
     monitor_3_noproc_gh6185_test(false, true),
@@ -1574,10 +1593,9 @@ monitor_3_noproc_gh6185_exit_test(AliasTest, TagTest) ->
 %%
 %% Monitoring a remote process on a channel must deliver EXACTLY ONE DOWN,
 %% even when the monitored process exits at the same time the node/channel
-%% goes down. Before the fix the process-DOWN could be delivered by the
-%% direct-delivery path *and* fabricated a second time by the
-%% nodedown/channeldown path for the same reference. Post-fix the two paths
-%% both claim the proc_mon_out entry atomically, so at most one wins.
+%% goes down. Two paths can produce that signal for the same reference — the
+%% direct delivery and the nodedown/channeldown fabrication — and both claim
+%% the proc_mon_out entry atomically, so at most one wins.
 exactly_one_down_on_race(Config) when is_list(Config) ->
     {ok, N} = partisan_support_otp:start_node(?FUNCTION_NAME),
     partisan_support:cluster(N),
@@ -1726,10 +1744,12 @@ count_node_type_mon(Caller) ->
     ]).
 
 %% Count proc_mon_out rows owned by Caller.
-%% Row layout: {partisan_proc_mon_out, Ref, Monitored, Monitor, Channel}.
+%% Row layout: {partisan_proc_mon_out, Ref, Monitored, Monitor, Channel, Tag}.
+%% The arity must track the record in `partisan_monitor' — a short pattern
+%% matches nothing and silently reports zero rows for every caller.
 count_proc_mon_out(Caller) ->
     ets:select_count(?PROC_MON_OUT_TAB, [
-        {{partisan_proc_mon_out, '_', '_', Caller, '_'}, [], [true]}
+        {{partisan_proc_mon_out, '_', '_', Caller, '_', '_'}, [], [true]}
     ]).
 
 %% Count proc_mon_in rows on a remote (monitored) node. Used to prove the
@@ -1845,8 +1865,7 @@ wait_until(Fun) ->
 wait_for_m(_, _, 0) ->
     exit(monitor_wait_timeout);
 wait_for_m(Monitors, MonitoredBy, N) ->
-    {monitors, M0} = process_info(self(), monitors),
-    {monitored_by, MB0} = process_info(self(), monitored_by),
+    {M0, MB0} = monitors(),
     case lists:sort(M0) of
         Monitors ->
             case lists:sort(MB0) of
@@ -1894,16 +1913,21 @@ jeeves(Parent, Name, Ref) ->
     jeeves_loop(Parent).
 
 jeeves_loop(Parent) ->
+    %% `Parent' is a partisan remote reference, not a pid, so replies go
+    %% through `partisan:send/2' and identify this process with
+    %% `partisan:self/0' — the form the caller matches on. A raw `!' to a
+    %% reference raises `badarg'.
     receive
         {Parent, monitors} ->
-            Parent ! {self(), {monitors, monitors()}},
+            reply(Parent, {monitors, monitors()}),
             jeeves_loop(Parent);
         {Parent, {monitor_process, P}} ->
-            Parent !
-                {self(), {monitor_process, catch partisan:monitor(process, P)}},
+            reply(
+                Parent, {monitor_process, catch partisan:monitor(process, P)}
+            ),
             jeeves_loop(Parent);
         {Parent, {demonitor, Ref}} ->
-            Parent ! {self(), {demonitor, catch partisan:demonitor(Ref)}},
+            reply(Parent, {demonitor, catch partisan:demonitor(Ref)}),
             jeeves_loop(Parent);
         {Parent, stop} ->
             ok;
@@ -1929,6 +1953,9 @@ start_jeeves({Name, Node}) when
 start_jeeves(Name) when is_atom(Name) ->
     start_jeeves({Name, partisan:node()}).
 
+reply(Parent, Response) ->
+    partisan:send(Parent, {partisan:self(), Response}).
+
 tell_jeeves(Pid, What) ->
     partisan:send(Pid, {partisan:self(), What}).
 
@@ -1950,19 +1977,107 @@ expect_jeeves(Pid, Request, Response) ->
             ct:fail({rec, Other})
     end.
 
+%% Whether monitor bookkeeping is reclaimed cannot be read from
+%% `erlang:process_info(_, monitors | monitored_by)' alone: Partisan registers
+%% a native monitor when the target is local, but a monitor on a *remote*
+%% process lives in `partisan_monitor''s own tables and never appears in
+%% `process_info/2'. So we report the union of both mechanisms in a single
+%% vocabulary — remote references, the form `partisan:spawn/2' and
+%% `partisan:self/0' hand back. A `{[], []}' assertion therefore means
+%% "nothing leaked in either bookkeeping".
 monitors() ->
     monitors(self()).
 
 monitors(Pid) when is_pid(Pid) ->
-    {monitors, Monitors} = process_info(self(), monitors),
-    {monitored_by, MonitoredBy} = process_info(self(), monitored_by),
-    {Monitors, MonitoredBy}.
+    {monitors, Monitors} = process_info(Pid, monitors),
+    {monitored_by, MonitoredBy} = process_info(Pid, monitored_by),
+    Srv = whereis(partisan_monitor),
+    {
+        [normalise_monitor(M) || M <- Monitors] ++ proc_mon_out(Pid),
+        %% `partisan_monitor' natively monitors both the local callers of
+        %% `partisan:monitor/2' (so it can reclaim their rows) and the local
+        %% targets of a remote monitor (so it can forward the DOWN). Neither is
+        %% a monitor the test asked for; the second is reported instead by
+        %% `proc_mon_in/1', naming the remote process that actually holds it.
+        [pref(M) || M <- MonitoredBy, M =/= Srv] ++ proc_mon_in(Pid)
+    }.
+
+%% A DOWN for a local target is delivered by `erlang:monitor/2' and names the
+%% raw pid; one for a remote target is fabricated by `partisan_monitor' and
+%% names the remote reference. Accept whichever form applies to `P'.
+expect_down_from(P) ->
+    Raw = raw(P),
+    receive
+        {'DOWN', _, process, D, _} when D == P; D == Raw ->
+            ok
+    end.
+
+raw(RemoteRef) ->
+    case partisan_remote_ref:is_local(RemoteRef) of
+        true -> partisan_remote_ref:to_term(RemoteRef);
+        false -> RemoteRef
+    end.
+
+normalise_monitor({process, Target}) ->
+    {process, pref(Target)};
+normalise_monitor(Other) ->
+    Other.
+
+%% Canonical remote-reference form of a monitor target, so the two bookkeepings
+%% compare equal: `process_info/2' names local targets as a pid or
+%% `{Name, Node}', `partisan_monitor' holds them already encoded.
+pref(Pid) when is_pid(Pid) ->
+    partisan_remote_ref:from_term(Pid);
+pref({Name, Node}) when is_atom(Name), is_atom(Node) ->
+    partisan_remote_ref:from_term(Name, Node);
+pref(Name) when is_atom(Name) ->
+    partisan_remote_ref:from_term(Name, node());
+pref(RemoteRef) ->
+    RemoteRef.
+
+%% Remote processes `Pid' monitors. Tuple shape is
+%% `#partisan_proc_mon_out{ref, monitored, monitor, channel, tag}' — see
+%% `partisan_monitor'. A field reorder makes these selects return nothing,
+%% which fails the assertions rather than passing them silently.
+proc_mon_out(Pid) ->
+    select(partisan_proc_mon_out, [
+        {
+            {partisan_proc_mon_out, '_', '$1', Pid, '_', '_'},
+            [],
+            [{{process, '$1'}}]
+        }
+    ]).
+
+%% Remote processes monitoring `Pid'. The monitored side is recorded as the pid
+%% or, for a monitor established by name, the registered name.
+proc_mon_in(Pid) ->
+    Keys =
+        case process_info(Pid, registered_name) of
+            {registered_name, Name} when is_atom(Name) -> [Pid, Name];
+            _ -> [Pid]
+        end,
+    select(
+        partisan_proc_mon_in,
+        [
+            {{partisan_proc_mon_in, '_', Key, '$1', '_'}, [], ['$1']}
+         || Key <- Keys
+        ]
+    ).
+
+select(Tab, MatchSpec) ->
+    case ets:whereis(Tab) of
+        undefined -> [];
+        Ref -> ets:select(Ref, MatchSpec)
+    end.
 
 generate(_Fun, 0) ->
     [];
 generate(Fun, N) ->
     [Fun() | generate(Fun, N - 1)].
 
+%% `Args' is a string of extra emulator flags, appended to the `args' string
+%% inside `node_config' — not to the proplist itself, which would make it
+%% improper and drop the flags. Returns `{ok, Node}'.
 start_node(Config, Args) ->
     TestCase = proplists:get_value(testcase, Config),
     PA = filename:dirname(code:which(?MODULE)),
@@ -1977,11 +2092,12 @@ start_node(Config, Args) ->
             "-" ++
             integer_to_list(Unique)
     ),
-    partisan_support_otp:start_node(Name, [
-        {node_config, [{args, "-pa " ++ PA}] ++ Args}
+    {ok, Node} = partisan_support_otp:start_node(Name, [
+        {node_config, [{args, "-pa " ++ PA ++ " " ++ Args}]}
     ]),
-    partisan_support:cluster(Name),
-    timer:sleep(2000).
+    partisan_support:cluster(Node),
+    timer:sleep(2000),
+    {ok, Node}.
 
 stop_node(Node) ->
     partisan_support_otp:stop_node(Node).

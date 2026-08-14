@@ -283,7 +283,7 @@ start_link() ->
 %% @doc Returns membership list.
 %% @end
 %% -----------------------------------------------------------------------------
--spec members() -> [node()].
+-spec members() -> {ok, [node()]}.
 
 members() ->
     gen_server:call(?MODULE, members, infinity).
@@ -292,7 +292,7 @@ members() ->
 %% @doc Return membership list.
 %% @end
 %% -----------------------------------------------------------------------------
--spec members_for_orchestration() -> [partisan:node_spec()].
+-spec members_for_orchestration() -> {ok, [partisan:node_spec()]}.
 
 members_for_orchestration() ->
     gen_server:call(?MODULE, members_for_orchestration, infinity).
@@ -406,16 +406,6 @@ forward_message(PidOrName, Message, _Opts) when
 ->
     _ = erlang:send(PidOrName, Message),
     ok;
-forward_message({Name, Node}, Message, Opts) when
-    is_atom(Name), is_atom(Node)
-->
-    case Node == partisan:node() of
-        true ->
-            _ = erlang:send(Name, Message),
-            ok;
-        false ->
-            forward_message(Node, Name, Message, Opts)
-    end;
 forward_message({global, _} = ServerRef, Message, Opts) ->
     ?LOG_DEBUG(#{
         description => "Message cannot be delivered, global not supported",
@@ -432,6 +422,16 @@ forward_message({via, _, _} = ServerRef, Message, Opts) ->
         options => Opts
     }),
     ok;
+forward_message({Name, Node}, Message, Opts) when
+    is_atom(Name), is_atom(Node)
+->
+    case Node == partisan:node() of
+        true ->
+            _ = erlang:send(Name, Message),
+            ok;
+        false ->
+            forward_message(Node, Name, Message, Opts)
+    end;
 forward_message(RemoteRef, Message, Opts) ->
     partisan_remote_ref:is_pid(RemoteRef) orelse
         partisan_remote_ref:is_name(RemoteRef) orelse
@@ -456,14 +456,22 @@ forward_message(Node, ServerRef, Message, Opts) when is_map(Opts) ->
         message => Message
     }),
 
-    FullMessage = {forward_message, Node, ServerRef, Message, Opts},
+    case Node =:= partisan:node() of
+        true ->
+            %% A local target is delivered directly: dispatch goes over peer
+            %% connections and we hold none to ourselves.
+            partisan_peer_service_manager:deliver(ServerRef, Message);
+        false ->
+            FullMessage = {forward_message, Node, ServerRef, Message, Opts},
 
-    %% Attempt to fast-path, dispatching it directly to the connection process
-    case partisan_peer_connections:dispatch(FullMessage) of
-        ok ->
-            ok;
-        {error, _} ->
-            gen_server:call(?MODULE, FullMessage, infinity)
+            %% Attempt to fast-path, dispatching it directly to the
+            %% connection process
+            case partisan_peer_connections:dispatch(FullMessage) of
+                ok ->
+                    ok;
+                {error, _} ->
+                    gen_server:call(?MODULE, FullMessage, infinity)
+            end
     end.
 
 %% -----------------------------------------------------------------------------
@@ -676,6 +684,13 @@ init([]) ->
 
             %% Schedule periodic active-view symmetry repair.
             schedule_active_view_maintenance(State),
+
+            %% Seed the lock-free membership snapshot before any reader
+            %% starts. Readers (broadcast among them) go through
+            %% `partisan_membership', so a manager that only publishes on
+            %% change leaves them with an empty membership that does not even
+            %% contain this node.
+            ok = partisan_membership:set(members(State)),
 
             {ok, State}
     end.

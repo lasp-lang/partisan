@@ -129,8 +129,8 @@ call_honours_finite_timeout() ->
         partisan_rpc:call(Node, ?MODULE, slow_echo, [v, 3000], 300)
     ).
 
-%% `async_call' + `yield' — previously missing entirely, so transformed code
-%% calling them hit `undef'.
+%% `async_call' + `yield' must both exist: transformed code calls them, and an
+%% absent one is an `undef' at run time rather than a compile error.
 async_call_and_yield() ->
     Key = partisan_rpc:async_call(partisan:node(), ?MODULE, echo, [async]),
     ?assertEqual(async, partisan_rpc:yield(Key)).
@@ -227,10 +227,11 @@ sbcast_partitions_good_and_bad_nodes() ->
 
 %% A per-call `channel' must survive a globally configured `forward_options'.
 %%
-%% The old code read `partisan_config:get(forward_options, CallerOpts)', which
-%% makes the caller's options a mere *fallback*: `get/2' returns the configured
-%% value whenever one is set, so setting the global silently discarded every
-%% per-call channel and partition key.
+%% The trap this guards against is reading
+%% `partisan_config:get(forward_options, CallerOpts)', which makes the caller's
+%% options a mere *fallback*: `get/2' returns the configured value whenever one
+%% is set, so setting the global would silently discard every per-call channel
+%% and partition key.
 per_call_opts_win_over_global_forward_options() ->
     Old = partisan_config:get(forward_options, undefined),
     ok = partisan_config:set(forward_options, #{channel => global_channel}),

@@ -5,12 +5,10 @@
 %%
 %% @doc Tests for the acknowledged send path.
 %%
-%% An acknowledged message used to be forced through
-%% `partisan_pluggable_peer_service_manager' as a `gen_server:call', for two
-%% reasons: the message clock came from that server's state, and recording the
-%% outstanding message was itself a `gen_server:call'. Both are gone — the clock
-%% comes from a lock-free counter and the record is a direct ETS write — so an
-%% acknowledged send now runs in the calling process.
+%% An acknowledged send runs entirely in the calling process: the message clock
+%% comes from a lock-free counter and recording the outstanding message is a
+%% direct ETS write, so neither step needs
+%% `partisan_pluggable_peer_service_manager' to serialise it.
 %%
 %% Two properties are asserted here:
 %%

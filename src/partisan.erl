@@ -1149,11 +1149,10 @@ discarding the outcome.
 -spec send(Dest :: send_dst(), Msg :: message()) -> message().
 
 send(Dest, Msg) ->
-    %% Deliberately discards the result, mirroring `erlang:send/2'. This used to
-    %% be `ok = send(Dest, Msg, [])', which badmatched whenever `send/3' answered
-    %% `{error, disconnected}' — turning an unreachable peer into a crash in the
-    %% caller, for a function whose Erlang counterpart never fails that way. The
-    %% mismatch was invisible while `forward_message/3' was mis-specced `-> ok'.
+    %% Deliberately discards the result, mirroring `erlang:send/2'. Matching on
+    %% it would badmatch whenever `send/3' answers `{error, disconnected}',
+    %% turning an unreachable peer into a crash in the caller — for a function
+    %% whose Erlang counterpart never fails that way.
     _ = send(Dest, Msg, []),
     Msg.
 

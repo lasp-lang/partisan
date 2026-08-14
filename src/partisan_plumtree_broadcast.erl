@@ -131,10 +131,10 @@ executes the actions it returns. Broadcasting and the debug queries are near the
     %% Channel this group's traffic rides on, when the group declares one.
     %%
     %% `undefined' means "ask the handler", i.e. fall back to
-    %% `Mod:broadcast_channel/0' as every group did before. A declared channel
-    %% wins, which is what lets an operator put a *third-party* handler on a
-    %% dedicated channel without editing that handler's source — previously the
-    %% channel was a property of the module and of nothing else.
+    %% `Mod:broadcast_channel/0'. A declared channel wins, which is what lets
+    %% an operator put a *third-party* handler on a dedicated channel without
+    %% editing that handler's source — `broadcast_channel/0' is a property of
+    %% the module and of nothing else.
     channel :: partisan:channel() | undefined
 }).
 
@@ -461,8 +461,8 @@ init([Name, Opts]) ->
 
     %% The tree engine owns the topology and outstanding-lazy state (ADR-000002);
     %% default engine is Plumtree. A raw-dispatch engine (ADR-000004, e.g. Thicket)
-    %% receives the group Opts so it can read its own parameters; the typed engine's
-    %% init input is left exactly as before.
+    %% receives the group Opts so it can read its own parameters; a typed engine
+    %% receives only the member list.
     Engine = maps:get(engine, Opts, partisan_plumtree_engine),
     Mode = engine_mode(Engine),
     EngineState = Engine:init(engine_init_opts(Mode, Opts, Members)),
@@ -979,9 +979,8 @@ engine_get_peers(Root, #state{engine = E, engine_state = ES}) ->
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc Poll the membership snapshot version; if it changed, re-read members and
-%% apply joins/leaves. Replaces the previous gen_event-driven update path
-%% : each broadcast instance pulls membership from the lock-free
-%% snapshot rather than subscribing to `partisan_peer_service_events'.
+%% apply joins/leaves. Each broadcast instance pulls membership from the
+%% lock-free snapshot rather than subscribing to a membership event feed.
 %% @end
 %% -----------------------------------------------------------------------------
 maybe_refresh_members(#state{members_version = Version} = State) ->

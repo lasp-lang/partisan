@@ -15,7 +15,7 @@ jobs:
         # 3.24 was built with OTP 25, which the OTP 29 beam loader rejects;
         # 3.27 is built with OTP 26 and loads on every OTP in the matrix.
         rebar3: ['3.27']
-        test_target: ['compile', 'eunit', 'otp-compat-test']
+        test_target: ['compile', 'eunit', 'otp-compat-test', 'security-test']
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,3 +40,9 @@ jobs:
       - name: OTP Compatibility Tests
         if: matrix.test_target == 'otp-compat-test'
         run: make otp-compat-test
+
+      # Single CT case, no cluster — it fits a GitHub runner, unlike the
+      # multi-node suites offloaded to Fly in fly-test.yml.
+      - name: Security Tests
+        if: matrix.test_target == 'security-test'
+        run: make security-test

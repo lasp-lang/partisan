@@ -69,7 +69,14 @@ start(Case, Config, Options) ->
                 node_list(NumNodes, "node", Config)
         end,
 
-    NodeConfig0 = proplists:get_value(node_config, Options, []),
+    %% `partisan_support_otp:start_node/2' passes `node_config' in `Config',
+    %% every other caller puts it in `Options', so both are consulted.
+    NodeConfig0 =
+        proplists:get_value(
+            node_config,
+            Options,
+            proplists:get_value(node_config, Config, [])
+        ),
 
     %% Start all nodes.
     InitializerFun = fun(Name) ->
@@ -622,6 +629,17 @@ stop(Nodes) ->
 start_ct_node(Name, Opts) ->
     StartupFuns = proplists:get_value(startup_functions, Opts, []),
     BootTimeout = proplists:get_value(boot_timeout, Opts, 30),
+    %% Extra emulator flags for this peer, as a string or a list of strings.
+    %% These reach `peer:start/1' so that a test asking for, say,
+    %% `+C single_time_warp' gets a peer whose time offset is `preliminary'
+    %% rather than `volatile'.
+    ExtraArgs =
+        case proplists:get_value(args, Opts, []) of
+            Str when is_list(Str), Str =/= [], is_integer(hd(Str)) ->
+                string:lexemes(Str, " ");
+            L when is_list(L) ->
+                L
+        end,
     %% Ensure the runner is alive — required for disterl-mode peer:start.
     case erlang:is_alive() of
         true ->
@@ -667,7 +685,7 @@ start_ct_node(Name, Opts) ->
                 "prevent_overlapping_partitions",
                 "false"
                 | PaArgs
-            ]
+            ] ++ ExtraArgs
     },
     ct:pal(
         "Starting peer name=~p host=~s alive=~p cookie=~p args_count=~p",
@@ -695,10 +713,10 @@ start_ct_node(Name, Opts) ->
 
 stop_ct_node(Node) ->
     %% Ask the peer to leave the partisan cluster gracefully so the local
-    %% partisan_monitor sees the disconnect (and fires `noconnection' DOWN
-    %% messages on outstanding monitors). Without this, killing the peer via
-    %% `peer:stop' alone makes the runner wait for partisan's heartbeat to
-    %% time out, which exceeds CT's per-test budget.
+    %% partisan_monitor sees the disconnect immediately (and fires
+    %% `noconnection' DOWN messages on outstanding monitors) rather than
+    %% waiting for partisan's heartbeat to time out, which exceeds CT's
+    %% per-test budget.
     _ = (catch rpc:call(Node, partisan_peer_service, leave, [], 2000)),
     Key = {?MODULE, peer, Node},
     case persistent_term:get(Key, undefined) of

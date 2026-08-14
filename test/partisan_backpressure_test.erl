@@ -5,13 +5,12 @@
 %%
 %% @doc Tests for the connection high-water mark.
 %%
-%% Dispatch used to be a bare `gen_server:cast/2' into an unbounded mailbox, so a
-%% sender faster than its socket grew that mailbox until the node died. A cast
-%% cannot fail, cannot block and cannot tell the sender anything.
-%%
-%% `partisan_peer_connections:cast_encoded/3' is now the single admission point
-%% for outbound data. These cases pin the three things that decide whether it
-%% helps or harms:
+%% `partisan_peer_connections:cast_encoded/3' is the single admission point for
+%% outbound data. It exists because a bare `gen_server:cast/2' into an unbounded
+%% mailbox cannot fail, cannot block and cannot tell the sender anything, so a
+%% sender faster than its socket grows that mailbox until the node dies. These
+%% cases pin the three things that decide whether admission control helps or
+%% harms:
 %%
 %% <ul>
 %% <li>past the mark it refuses, and **does not queue** — a bounded queue that

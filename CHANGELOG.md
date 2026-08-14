@@ -1,4 +1,137 @@
 # CHANGELOG
+# v6.1.0
+
+Fixes a startup failure that made `partisan_static_peer_service_manager`
+unusable, brings that manager up to the same feature level as the others, and
+corrects defects in the shared peer service manager surface that were reachable
+from every topology.
+
+Every change here is a fix and no public function was added. It ships as a
+minor rather than a patch because three of the fixes change observable
+behaviour for users of the **default** manager, who have no reason to be
+reading a static-manager release note: channel-scoped callbacks that were inert
+now fire, `partisan:demonitor/2` returns different values in four cases, and
+the membership snapshot is seeded at init. Upgrading is a decision, not a
+formality.
+
+## Breaking changes
+* `partisan_static_peer_service_manager:members_for_orchestration/0` returns
+  `{ok, [partisan:node_spec()]}`. It returned `{ok, sets:set(node_spec())}`,
+  which no other manager did and which the behaviour never specified. Code that
+  called `sets:to_list/1` on the result must drop that call. This ships in a
+  minor rather than a major because the manager could not start in 6.0.0 or in
+  5.0.3, so no working code can be calling it.
+
+## Fixes
+
+### Peer service managers
+* **`partisan_static_peer_service_manager` could not start**
+  ([#267](https://github.com/lasp-lang/partisan/issues/267)). Configuring
+  `peer_service_manager` to it aborted application startup with
+  `{undef, [{partisan_static_peer_service_manager, on_up, 3}]}`:
+  `partisan_monitor:init/1` calls `partisan_peer_service:on_up/3` on every boot
+  and the manager did not export it. Two independent defects, both fixed:
+    * `partisan_peer_service:on_up/3` and `on_down/3` dispatched to the manager
+      unconditionally. They are *optional* callbacks, so a manager that does
+      not implement one raised `undef` instead of returning the
+      `{error, not_implemented}` the API documents. Dispatch is now guarded
+      (`partisan_util:apply/4`).
+    * The static manager implements `on_up/3` and `on_down/3`, including the
+      `channel` option, and reports `supports_capability(monitoring) -> true`.
+      Process and node monitoring work under it.
+* **`{global, Name}` and `{via, Mod, Name}` were unroutable in every manager.**
+  In `forward_message/3` the `{Name, Node}` clause preceded them and matched
+  first, so both forms were treated as a registered name on a node. Reordered
+  in all four managers. `partisan_hyparview_peer_service_manager`'s deliberate
+  "global not supported" clause was unreachable and now applies.
+* **Channel-scoped subscriptions never fired under
+  `partisan_pluggable_peer_service_manager`.** Subscriptions are keyed by
+  `{Node, Channel}` but were looked up by node name alone, which cannot match a
+  tuple; `channel_up_funs` was never read and no `channel_up`/`channel_down`
+  event was emitted. Every channel-scoped callback was silently inert,
+  including those `partisan_monitor` registers. Channel events are now emitted
+  and delivered, edge-triggered per `{node, channel}` so that a channel with
+  `parallelism > 1` announces once rather than once per socket.
+* **Local-node forwarding.** `partisan_client_server_peer_service_manager` and
+  `partisan_hyparview_peer_service_manager` routed a message addressed to the
+  local node through the connection table, which holds no connection to
+  ourselves. Local targets are now delivered directly.
+* **`partisan_client_server_peer_service_manager:leave/1` crashed the manager**
+  with a `function_clause` (`disconnect(Peer)` where `disconnect/1` takes a
+  list).
+* **Membership snapshot seeded at init in every manager.** Only the pluggable
+  manager published its initial membership, so under the other three a reader
+  going through `partisan_membership` — broadcast among them — saw an empty
+  member set that did not even contain the local node until the first change.
+
+### `partisan_static_peer_service_manager`
+Membership remains what the name says: the peer set is declared by the
+operator and no undeclared node can join. The additions below close contract
+gaps; none of them introduce discovery.
+
+* `forward_message/3` accepts the full documented `server_ref()` surface —
+  pid, registered name, `{Name, Node}`, `{global, Name}`, `{via, Mod, Name}`,
+  encoded remote references and reference aliases. `{Name, Node}` previously
+  raised `badarg`.
+* `leave/0` and `leave/1` remove the peer and drop its connections instead of
+  replying with a bare `error` and changing nothing.
+* `update_members/1` is implemented. `partisan_peer_discovery_agent` calls it
+  as `ok = partisan_peer_service:update_members(Members)` to apply the
+  configured peer list, and crash-looped on `{error, not_implemented}`. It
+  rejects anything that is not a node spec rather than quietly shrinking the
+  peer set.
+* `sync_join/1` is implemented, completing the manager callback surface.
+* Removed the disk persistence of membership. It was never read back, and the
+  operator's configured peer set is the only source of truth — a restart must
+  not resurrect a peer that was removed from the configuration.
+
+### Process monitoring
+* **`partisan:demonitor/2` with `info` could report that a `DOWN` was queued
+  for a monitor that would never fire.** The answer came from the peer's own
+  `erlang:demonitor/2`, but delivery is arbitrated locally: every handler that
+  can deliver a `DOWN` must first claim the `proc_mon_out` entry, and they all
+  run inline in the local `partisan_monitor`. Winning that claim already
+  guarantees no signal will be delivered. A caller following the
+  `erlang:demonitor/2` contract — `false` means "already in your mailbox",
+  checked with a zero-timeout receive — could wait for a message that never
+  came. `info` is now answered from the local claim.
+    * The unreachable-peer branches (`noconnection`, `timeout`, `noproc`,
+      `nodedown`) returned a literal `true`, turning an already-fired monitor
+      into "still live". They return the local answer.
+    * `demonitor(Ref, [])` returned the peer's boolean; `erlang:demonitor/2`
+      returns `true` unless `info` was requested. Code written as
+      `true = partisan:demonitor(Ref, [flush])` could badmatch.
+    * `flush` now removes the signal by reference when the record carrying the
+      monitor's tag has already been reclaimed. A monitor created with
+      `{tag, T}` could otherwise leave its `DOWN` in the caller's mailbox.
+
+### Type specifications
+* `partisan_peer_service_manager` callbacks `members/0` and
+  `members_for_orchestration/0` specified a bare list; every implementation
+  returns `{ok, List}`. Corrected, along with the matching specs in
+  `partisan_peer_service` and `partisan_hyparview_peer_service_manager`.
+
+## Testing
+* Added `partisan_manager_conformance_test`: one checklist run against all four
+  managers — boot and supervision, membership reads, snapshot seeding, optional
+  callbacks answering rather than raising, the full `server_ref()` surface,
+  capability honesty, and channel-event liveness. Per-manager expectations are
+  data, so a capability disappearing is a failing test rather than a silent
+  regression. No test referenced a non-default manager before this.
+* Added `partisan_peer_service_manager_boot_test` covering the static
+  manager's membership operations and the pluggable manager's channel events.
+* `partisan_monitor_SUITE` passes and is wired into `make ci-heavy`. It ran in
+  no make target and 8 of its 28 cases failed on a clean checkout; all eight
+  were defects in the suite's own adaptation to Partisan, except the
+  `demonitor/2` fault above, which it found. One case remains skipped: it needs
+  `erts_test_utils` from OTP's `erts/emulator/test`, which
+  `test/fetch_otp_test_sources.sh` does not fetch.
+* Fixed two `partisan_support` defects that silently affected every suite using
+  it: `start/3` read `node_config` only from its `Options` argument while
+  `partisan_support_otp:start_node/2` passes it in `Config`, so per-test peer
+  settings were dropped; and peer `args` never reached `peer:start/1`, so
+  emulator flags never applied.
+
 # v6.0.0
 
 ## Breaking changes

@@ -184,10 +184,10 @@ normalise(#{mods := [Mod | _] = Mods} = Spec) ->
                 fanout,
                 trees,
                 %% A dedicated channel for this group's traffic. Absent ⇒ the
-                %% handler's own `broadcast_channel/0' decides, as before.
-                %% Declaring it here is the only way to put a handler you do not
-                %% own on a channel of its own: the channel used to be a property
-                %% of the module and of nothing else.
+                %% handler's own `broadcast_channel/0' decides. Declaring it
+                %% here is the only way to put a handler you do not own on a
+                %% channel of its own, since the alternative is a property of
+                %% the handler module and of nothing else.
                 channel
             ],
             Spec

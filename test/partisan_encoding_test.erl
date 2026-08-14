@@ -5,12 +5,12 @@
 %%
 %% @doc Tests for wire encoding.
 %%
-%% Messages used to be encoded inside the connection process. They are now
-%% encoded in the calling process and handed to the connection as `iodata()'
-%% (the `send_encoded' path in `partisan_peer_service_client'). Both paths must
-%% put identical bytes on the wire, because a peer decodes whatever arrives with
-%% a plain `binary_to_term/1' (`partisan_peer_service_server:88') and has no way
-%% to tell which path produced it.
+%% A message is encoded either inside the connection process or in the calling
+%% process and handed to the connection as `iodata()' (the `send_encoded' path
+%% in `partisan_peer_service_client'). Both paths must put identical bytes on
+%% the wire, because a peer decodes whatever arrives with a plain
+%% `binary_to_term/1' (`partisan_peer_service_server:88') and has no way to tell
+%% which path produced it.
 %%
 %% `partisan_util:channel_encode_opts/1' is the single source of truth for that
 %% derivation — the connection caches it at init, the dispatch path computes it

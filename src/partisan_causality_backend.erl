@@ -342,12 +342,11 @@ schedule_delivery(Label) ->
 %% message can legitimately be buffered twice with byte-identical content, and
 %% content-equality would conflate the two (one entry's bump silently
 %% clobbering or masking the other's) — `Ref' keeps every buffered occurrence
-%% independently identified regardless of buffer size. It also improves on the
-%% previous list-based update, though not all the way to O(1): Erlang maps
-%% under ~32 keys are a flat array (`maps:put/3' still copies it, same
-%% asymptotic cost as the list rebuild it replaces), only becoming O(log n)
-%% above that. The win is real exactly where it matters most — a large,
-%% pathologically stuck backlog no longer turns each tick quadratic.
+%% independently identified regardless of buffer size. The map is not O(1)
+%% either: Erlang maps under ~32 keys are a flat array that `maps:put/3' copies
+%% wholesale, the same asymptotic cost as rebuilding a list, and only above that
+%% do they become O(log n). That is exactly where it matters — it keeps a large,
+%% pathologically stuck backlog from turning each tick quadratic.
 internal_receive_message(
     {Ref, Attempts,
         {causal, _Label, _Node, ServerRef, IncomingOrderBuffer, MessageClock,

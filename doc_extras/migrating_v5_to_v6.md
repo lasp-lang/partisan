@@ -1,6 +1,6 @@
 # Migrating from v5 to v6
 
-Partisan v6.0.0's headline change is internal: the frozen OTP module forks under
+Partisan v6's headline change is internal: the frozen OTP module forks under
 `priv/otp/24/` are replaced by a compile-time system that generates Partisan's
 OTP modules from the OTP source installed on the build host. Most of v6 is
 therefore transparent to application code. This guide covers the parts that are
@@ -8,8 +8,9 @@ not — the breaking changes you must act on, the rolling-upgrade caveats, and t
 behavioural and API changes worth reviewing before you deploy.
 
 It assumes you are upgrading from **v5.0.3** (the last v5 release) to
-**v6.0.0**. Read the [CHANGELOG](CHANGELOG.md) for the exhaustive list; this guide
-is the task-ordered path through the changes that affect you.
+**v6.1.0** (the current v6 release). Read the [CHANGELOG](CHANGELOG.md) for the
+exhaustive list; this guide is the task-ordered path through the changes that
+affect you.
 
 ## Before you upgrade
 
@@ -33,7 +34,7 @@ Then update your dependency:
 
 ```erlang
 %% rebar.config
-{deps, [{partisan, "6.0.0"}]}.
+{deps, [{partisan, "6.1.0"}]}.
 ```
 
 ```elixir

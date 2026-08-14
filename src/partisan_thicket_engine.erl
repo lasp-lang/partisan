@@ -792,10 +792,9 @@ balance(Tree, SenderLoad, Sender, S) ->
 %% currently-missing message, recorded before this data, proves `A' is a live
 %% UPSTREAM alternative, which is what avoids grafting a descendant (a cycle).
 %% Enforcing it makes reconfiguration sound but stops it from churning links off
-%% stale announcements, so coverage no longer leans on Balance for spreading —
-%% that job moves to repair (summary-, source-fallback-, and speculative-graft; see
-%% graft_best). The tradeoff is a smaller *validated* coverage envelope (T =< 3 vs
-%% T =< 4); closing the T >= 4 gap needs active link-reassignment (ADR-000004).
+%% stale announcements, so spreading does not rest on Balance. That job belongs
+%% to repair (summary-, source-fallback- and speculative-graft; see graft_best)
+%% and to §4.4 link-reassignment; ADR-000004 carries the coverage analysis.
 balance_target(Tree, Sender, S) ->
     Rej = maps:get(Tree, S#thicket.rejected, ordsets:new()),
     Cands = [
@@ -953,7 +952,7 @@ disarm_repair(Tree, #thicket{repair = R} = S) ->
 %% GAP — an id announced for the tree that we still have not received. If a gap
 %% remains (we attached via a later message but missed an earlier one), keep repair
 %% armed so it fetches the gap; otherwise a per-id resupply never recovers an early
-%% message once a later one has arrived and (previously) silenced repair.
+%% message once a later one has arrived, because that arrival would disarm repair.
 settle_repair(Tree, S) ->
     case missing_ids(Tree, S) of
         [] -> disarm_repair(Tree, S);
