@@ -21,6 +21,19 @@ on:
 jobs:
   fly:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # Serialised deliberately. The step below destroys EVERY machine on the
+      # app before deploying, which is app-global: two matrix legs running at
+      # once would delete each other's running machine mid-suite. One app, one
+      # machine, one leg at a time.
+      max-parallel: 1
+      matrix:
+        # Same majors as build_and_test.yml. The heavy multi-node suites ran
+        # only on the image default before this, so a version-specific fault in
+        # them was invisible.
+        otp: ['27.3', '28.3', '29.0']
+    name: fly ${{ github.event.inputs.target || 'ci-heavy' }} - OTP ${{ matrix.otp }}
     env:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       APP: partisan-ci
@@ -50,7 +63,13 @@ jobs:
 
           # `fly deploy` (not `machine run`) is required — it initialises the
           # app registry and builds with the repo as context (root fly.toml).
-          flyctl deploy --remote-only --ha=false --env "TEST_TARGET=$TARGET"
+          # --build-arg selects the erlang base image; the Dockerfile declares
+          # OTP_VERSION before FROM. The OTP test sources the compat suites read
+          # are fetched per running major by partisan_otp_test_gen, so nothing
+          # needs pre-seeding for a version this app has not built before.
+          flyctl deploy --remote-only --ha=false \
+            --env "TEST_TARGET=$TARGET" \
+            --build-arg "OTP_VERSION=${{ matrix.otp }}"
 
           # deploy returns once the machine STARTS; poll for its exit code so
           # this job gates on the actual test result.

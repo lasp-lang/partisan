@@ -109,9 +109,9 @@
 -callback start_link() -> {ok, pid()} | ignore | {error, term()}.
 
 %% TODO: Deprecate me.
--callback members() -> [node()].
+-callback members() -> {ok, [node()]}.
 
--callback members_for_orchestration() -> [partisan:node_spec()].
+-callback members_for_orchestration() -> {ok, [partisan:node_spec()]}.
 
 -callback update_members([partisan:node_spec()]) ->
     ok | {error, not_implemented}.

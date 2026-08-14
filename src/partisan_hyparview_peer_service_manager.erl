@@ -283,7 +283,7 @@ start_link() ->
 %% @doc Returns membership list.
 %% @end
 %% -----------------------------------------------------------------------------
--spec members() -> [node()].
+-spec members() -> {ok, [node()]}.
 
 members() ->
     gen_server:call(?MODULE, members, infinity).
@@ -292,7 +292,7 @@ members() ->
 %% @doc Return membership list.
 %% @end
 %% -----------------------------------------------------------------------------
--spec members_for_orchestration() -> [partisan:node_spec()].
+-spec members_for_orchestration() -> {ok, [partisan:node_spec()]}.
 
 members_for_orchestration() ->
     gen_server:call(?MODULE, members_for_orchestration, infinity).

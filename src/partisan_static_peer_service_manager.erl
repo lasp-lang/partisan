@@ -466,7 +466,7 @@ handle_call(members, _From, #state{membership = Membership} = State) ->
 handle_call(
     members_for_orchestration, _From, #state{membership = Membership} = State
 ) ->
-    {reply, {ok, Membership}, State};
+    {reply, {ok, members(Membership)}, State};
 handle_call(get_local_state, _From, #state{membership = Membership} = State) ->
     {reply, {ok, Membership}, State};
 handle_call(Event, _From, State) ->

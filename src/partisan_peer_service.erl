@@ -286,7 +286,7 @@ members() ->
 %% @doc Return cluster members
 %% @end
 %% -----------------------------------------------------------------------------
--spec members_for_orchestration() -> [partisan:node_spec()].
+-spec members_for_orchestration() -> {ok, [partisan:node_spec()]}.
 
 members_for_orchestration() ->
     ?PEER_SERVICE_MANAGER:members_for_orchestration().

@@ -2,10 +2,16 @@
 #
 # Run Partisan's heavy test suite on a large ephemeral Fly.io machine.
 #
-#   test/fly/run.sh [TARGET]
+#   test/fly/run.sh [TARGET] [OTP_VERSION]
 #
-# TARGET is a Makefile target and defaults to "ci-heavy" (core-test + alt-test +
-# proper). Others: core-test | alt-test | proper | test | eunit.
+# TARGET is a Makefile target and defaults to "ci-heavy" (core-test +
+# monitor-test + alt-test + proper). Others: ci-light | core-test | alt-test |
+# proper | test | eunit.
+#
+# OTP_VERSION picks the erlang base image tag (e.g. 27.3, 28.3, 29.0). It
+# defaults to the Dockerfile's own default. The OTP test sources the compat
+# suites read are fetched on demand by partisan_otp_test_gen:otp_src_dir/0 for
+# whichever major is running, so no cache needs seeding per version.
 #
 # Uses `fly deploy` with the repo-root fly.toml. NOTE: `fly deploy` is required
 # rather than `fly machine run` — the latter cannot initialise a fresh (pending)
@@ -27,6 +33,7 @@ fi
 APP="${FLY_APP:-partisan-ci}"
 ORG="${FLY_ORG:-personal}"
 TARGET="${1:-${TEST_TARGET:-ci-heavy}}"
+OTP="${2:-${OTP_VERSION:-}}"
 
 command -v fly >/dev/null 2>&1 || { echo "fly CLI not found: https://fly.io/docs/flyctl/install/"; exit 1; }
 fly auth whoami >/dev/null 2>&1 || { echo "Not logged in — run: fly auth login"; exit 1; }
@@ -48,9 +55,16 @@ if [ -n "$STALE" ]; then
   done
 fi
 
-echo "==> fly deploy $APP  (make ${TARGET})"
+echo "==> fly deploy $APP  (make ${TARGET}${OTP:+ on OTP ${OTP}})"
 # --remote-only builds on Fly; --env overrides the suite target from fly.toml.
-fly deploy --remote-only --ha=false --env "TEST_TARGET=${TARGET}"
+# --build-arg overrides the Dockerfile's OTP_VERSION, which is declared before
+# FROM so it selects the erlang base image tag.
+if [ -n "$OTP" ]; then
+  fly deploy --remote-only --ha=false \
+    --env "TEST_TARGET=${TARGET}" --build-arg "OTP_VERSION=${OTP}"
+else
+  fly deploy --remote-only --ha=false --env "TEST_TARGET=${TARGET}"
+fi
 
 # `fly machines list -q' pads the id with spaces and a trailing blank line. The
 # id is taken from the first non-blank line with all whitespace removed, since
@@ -63,7 +77,7 @@ MACHINE="$(fly machines list -a "$APP" -q 2>/dev/null \
 # window, too little to identify a failing case, and the machine's own Common
 # Test logs are destroyed with the machine. Following the stream from the start
 # keeps the only durable copy.
-LOGFILE="fly-${TARGET}-$(date -u +%Y%m%dT%H%M%SZ).log"
+LOGFILE="fly-${TARGET}${OTP:+-otp${OTP}}-$(date -u +%Y%m%dT%H%M%SZ).log"
 echo "==> streaming logs to ${LOGFILE}  (machine ${MACHINE})"
 fly logs -a "$APP" > "$LOGFILE" 2>&1 &
 LOGPID=$!
