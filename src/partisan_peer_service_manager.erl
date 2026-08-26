@@ -620,8 +620,7 @@ do_deliver(Ref, Message) when is_reference(Ref) ->
     %% Sending to an alias that has been deactivated with `erlang:unalias/1' is
     %% dropped by the runtime, which is what lets a caller abandon a request
     %% without its late reply landing in the mailbox.
-    Ref ! Message,
-    ok;
+    send_ref(Ref, Message);
 do_deliver(ServerRef, Message) ->
     ?LOG_DEBUG(
         "node ~p received message ~p for ~p",
@@ -645,8 +644,7 @@ do_deliver(ServerRef, Message) ->
             %% this the decoded reference matched no clause, the resulting
             %% `case_clause' was swallowed by `deliver/2', and the message was
             %% silently dropped.
-            Ref ! Message,
-            ok
+            send_ref(Ref, Message)
     catch
         error:badarg ->
             ?LOG_INFO(#{
@@ -656,3 +654,62 @@ do_deliver(ServerRef, Message) ->
             }),
             ok
     end.
+
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc Delivers to a reference destination, preserving the priority of an OTP
+%% 28 priority alias.
+%%
+%% A priority alias (`erlang:alias/1' with the `priority' option) is the
+%% receiver's opt-in to having a message inserted ahead of the ordinary part of
+%% its message queue. The runtime honours that opt-in only when the sender
+%% supplies both the alias and the `priority' option to `erlang:send/3'.
+%% `Ref ! Message' supplies only the alias, so the opt-in was discarded here --
+%% silently, since nothing reports the difference.
+%%
+%% The option is passed unconditionally because nothing exposes whether a given
+%% reference is a priority alias. That is safe: on OTP 28.5 (erts 16.4)
+%% `erlang:send/3' with `[priority]' returns `ok' for a pid, a plain
+%% `make_ref/0', an ordinary alias and a deactivated alias, and the ordinary
+%% alias is delivered in ordinary queue position. Held by
+%% `partisan_priority_alias_test:ordinary_alias_is_not_promoted/0' and
+%% `deactivated_alias_is_dropped_without_crashing/0'.
+%%
+%% The consequence is worth knowing: the sender no longer chooses per message,
+%% so every message Partisan delivers to a priority alias is a priority
+%% message. Only a receiver that deliberately created a priority alias and
+%% handed it out can be affected.
+%%
+%% That has one edge worth naming. Because the option is unconditional, a peer
+%% sending volume at a long-lived priority alias accumulates a large priority
+%% queue -- the pattern the OTP docs single out: "Receiving processes have not
+%% been optimized for handling large amounts of priority messages. If a process
+%% accumulates a large amount of priority messages, the design of that message
+%% protocol should be redesigned." It does not arise for the one-shot reply
+%% aliases Partisan creates today (see `partisan_erpc'), and no test covers it.
+%% A caller wanting a priority alias as a high-volume sink needs a per-message
+%% option carried on the wire, which this deliberately is not.
+%%
+%% Cost of passing the option: measured at roughly a nanosecond per call on OTP
+%% 28.5 (the option list is the whole of it -- `erlang:send/3' with `[]' is
+%% within noise of `!'). The pid, registered name, `{global, _}' and
+%% `{via, _, _}' clauses are untouched, so no other delivery path pays it.
+%% @end
+%% -----------------------------------------------------------------------------
+-if(?OTP_RELEASE >= 28).
+
+send_ref(Ref, Message) ->
+    _ = erlang:send(Ref, Message, [priority]),
+    ok.
+
+-else.
+
+%% OTP 27 rejects the `priority' option with `badarg' (`cause => badopt'),
+%% verified on 27.3.4 (erts 15.2.7). Priority is therefore an optimisation on
+%% 28 and later, never something the protocol may depend on.
+send_ref(Ref, Message) ->
+    _ = Ref ! Message,
+    ok.
+
+-endif.
