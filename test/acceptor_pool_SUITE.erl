@@ -76,12 +76,16 @@ suite() ->
     [{timetrap, {seconds, 15}}].
 
 init_per_suite(Config) ->
-    {ok, Started} = application:ensure_all_started(acceptor_pool),
-    [{started, Started} | Config].
+    %% Upstream started the `acceptor_pool' application here. Partisan vendors
+    %% `acceptor', `acceptor_pool' and `acceptor_loop' into its own `src/', so
+    %% no such application exists and this suite could never run -- which is why
+    %% it was in no make target. Nothing needs starting: upstream's app.src
+    %% declares no `mod', so it is a library application and
+    %% `ensure_all_started/1' only ever loaded it. The modules read no
+    %% application env (verified: no `application:get_env' in any of the three).
+    Config.
 
-end_per_suite(Config) ->
-    Started = ?config(started, Config),
-    _ = [application:stop(App) || App <- Started],
+end_per_suite(_Config) ->
     ok.
 
 init_per_group(transient, Config) ->
@@ -284,12 +288,18 @@ count_children(Config) ->
 format_status(Config) ->
     Pool = ?config(pool, Config),
 
-    {status, Pool, {module, _}, Items} = sys:get_status(Pool),
+    %% Upstream implemented the deprecated `format_status/2' so the pool
+    %% presented itself to `sys' as a supervisor, carrying a
+    %% `{supervisor, [{"Callback", Mod}]}' entry in `Misc'. Partisan removed
+    %% that deliberately in 1e4010f, so the entry is gone: on OTP 28.5 `Misc'
+    %% is the default gen_server `[header, data, data]' and
+    %% `lists:keyfind(supervisor, 1, Misc)' returns `false' (probed directly).
+    %% Asserting the default shape would test OTP rather than partisan, so this
+    %% holds only the property the removal was required to preserve: `sys'
+    %% tooling can still inspect the pool.
+    {status, Pool, {module, gen_server}, Items} = sys:get_status(Pool),
 
-    [_PDict, running, _Parent, [], Misc] = Items,
-
-    {supervisor, [{"Callback", acceptor_pool_test}]} =
-        lists:keyfind(supervisor, 1, Misc),
+    [_PDict, running, _Parent, [], _Misc] = Items,
 
     ok.
 

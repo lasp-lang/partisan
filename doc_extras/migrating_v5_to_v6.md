@@ -8,7 +8,7 @@ not — the breaking changes you must act on, the rolling-upgrade caveats, and t
 behavioural and API changes worth reviewing before you deploy.
 
 It assumes you are upgrading from **v5.0.3** (the last v5 release) to
-**v6.1.0** (the current v6 release). Read the [CHANGELOG](CHANGELOG.md) for the
+**v6.2.0** (the current v6 release). Read the [CHANGELOG](CHANGELOG.md) for the
 exhaustive list; this guide is the task-ordered path through the changes that
 affect you.
 
@@ -34,7 +34,7 @@ Then update your dependency:
 
 ```erlang
 %% rebar.config
-{deps, [{partisan, "6.1.0"}]}.
+{deps, [{partisan, "6.2.0"}]}.
 ```
 
 ```elixir

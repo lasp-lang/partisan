@@ -821,6 +821,14 @@ kill_connections(Nodes, State) ->
 %% @private
 handle_message({forward_message, ServerRef, Message}, _Channel, State) ->
     partisan_peer_service_manager:deliver(ServerRef, Message),
+    {reply, ok, State};
+handle_message(Msg, _Channel, State) ->
+    %% An envelope this version does not recognise must not take the manager
+    %% down. `handle_message/3' is called straight from `handle_call/3' here,
+    %% so without this clause `function_clause' crashed the manager *and* threw
+    %% into the connection process. Covered by
+    %% `partisan_manager_conformance_test:unknown_envelope_is_survivable/1'.
+    ?LOG_WARNING(#{description => "Unhandled message", message => Msg}),
     {reply, ok, State}.
 
 %% @private

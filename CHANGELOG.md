@@ -1,4 +1,70 @@
 # CHANGELOG
+# v6.2.0
+
+Three fixes: a single TCP connection could permanently disable a node's
+listener, one unrecognised message could permanently kill a peer link, and OTP
+28 message priority was discarded on the last hop of delivery.
+
+No public function was added. It ships as a minor rather than a patch because
+delivery changes observably for the **default** manager on OTP 28 and later,
+and because the connection-wedge fix is a prerequisite for any future release
+that introduces new envelope types — a peer on 6.1.0 or earlier drops the link
+rather than ignoring an envelope it does not recognise.
+
+## Fixes
+
+### Connection acceptance
+* **One connect-then-disconnect could permanently disable a node's listener.**
+  `acceptor.erl` escalated a *per-connection* error onto the *listening* socket
+  with `exit(LSock, Reason)`. Ports are linked to their owner, so this killed
+  `partisan_acceptor_socket` too, and its supervisor restarted it into the same
+  condition until `reached_max_restart_intensity` shut the subtree down.
+
+  The trigger is ordinary: on darwin a peer that closes right after connecting
+  makes the post-accept `inet:setopts/2` return `{error, einval}`, and one that
+  sends RST makes `gen_tcp:accept/2` return it. Any TCP health check, load
+  balancer probe or port scan was sufficient — no TLS and no cluster required.
+  TLS only raised the rate enough to exhaust the restart intensity, which is
+  why it surfaced under `with_tls` first.
+
+  Per-connection errors now terminate only the acceptor that saw them, exiting
+  `normal` and sending `'CANCEL'` when `'ACCEPT'` has not been sent — without
+  the cancel, `acceptor_pool` charges the exit to the pool's restart intensity
+  and the pool dies instead. Escalation for listener-fatal conditions is
+  unchanged. Covered by `partisan_listener_resilience_test`.
+
+  Upstream `acceptor_pool` fixed the same class of defect independently
+  (commit `7346b985`, Dec 2025), but its version still escalates an error from
+  `gen_tcp:accept/2` itself onto the listener — the exact case that failed
+  here — and terminates the post-accept paths without cancelling, so those
+  exits are still charged to the pool's restart intensity.
+
+### Peer service managers
+* **An unrecognised inbound envelope permanently killed the peer link.** The
+  catch-all clause of `handle_message/4` was the only one that did not answer
+  its caller. That caller is the connection process, calling
+  `receive_message/3` synchronously with `infinity`, so it blocked forever and
+  never re-armed its `{active, once}` socket. All four managers now log and
+  answer. Covered by `partisan_inbound_envelope_test` and the manager
+  conformance suite.
+
+### Message delivery
+* **OTP 28 message priority was discarded on the last hop.** A priority alias
+  yields a priority message only if the sender passes **both** the alias and
+  `[priority]` to `erlang:send/3`; `Ref ! Message` supplies only the alias.
+  `do_deliver/2` now sends with `[priority]` on OTP 28 and later. The option
+  has no effect on a pid, a plain reference or a non-priority alias, so only a
+  receiver that deliberately opted in is affected. OTP 27 and earlier are
+  unchanged.
+
+## Testing
+* `acceptor_pool_SUITE` now runs, covering the vendored acceptor pool. It never
+  had: `init_per_suite` started an `acceptor_pool` *application*, which does
+  not exist because Partisan vendors the modules, so all 20 cases auto-skipped.
+  Wired into `make acceptor-test`, `ci-light` and the GitHub matrix.
+
+Verified on OTP 27.3.4, 28.5 and 29.0.5.
+
 # v6.1.0
 
 Fixes a startup failure that made `partisan_static_peer_service_manager`

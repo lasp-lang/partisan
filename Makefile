@@ -17,7 +17,7 @@ SPELLFIX      	= $(SPELLCHECK) -i 3 -w
 
 OTPVSN 			= $(shell erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell)
 
-.PHONY: compile-no-deps alt-test core-test monitor-test test ci-light ci-heavy security-test docs xref dialyzer-run dialyzer-quick dialyzer\
+.PHONY: compile-no-deps alt-test acceptor-test core-test monitor-test test ci-light ci-heavy security-test docs xref dialyzer-run dialyzer-quick dialyzer\
 		cleanplt upload-docs rel deps test plots spellcheck spellfix certs node1 node2 node3 node checkssl
 
 all: compile
@@ -98,16 +98,21 @@ spellfix:
 	$(if $(CODESPELL), $(SPELLFIX), $(error "Aborting, command codespell not found in PATH"))
 
 
-test: eunit core-test otp-compat-test cover
+test: eunit acceptor-test core-test otp-compat-test cover
 
 # CI split (see test/fly/): light suites run on GitHub runners; heavy multi-node
 # suites run on a large Fly.io Machine. `ci-heavy` is what test/fly/run.sh runs.
-ci-light: eunit otp-compat-test security-test
+ci-light: eunit acceptor-test otp-compat-test security-test
 
 ci-heavy: core-test monitor-test alt-test proper
 
 security-test:
 	${REBAR} as test ct -v --readable=false --suite=partisan_security_SUITE
+
+## Covers the vendored acceptor_pool (src/acceptor.erl, acceptor_pool.erl,
+## acceptor_loop.erl). Single node, no TLS, no disterl -- belongs in ci-light.
+acceptor-test:
+	${REBAR} as test ct -v --readable=false --suite=acceptor_pool_SUITE
 
 core-test: setup-tls
 	${REBAR} as test ct -v --readable=false --suite=partisan_SUITE

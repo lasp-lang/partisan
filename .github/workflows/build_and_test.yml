@@ -15,7 +15,7 @@ jobs:
         # 3.24 was built with OTP 25, which the OTP 29 beam loader rejects;
         # 3.27 is built with OTP 26 and loads on every OTP in the matrix.
         rebar3: ['3.27']
-        test_target: ['compile', 'eunit', 'otp-compat-test', 'security-test']
+        test_target: ['compile', 'eunit', 'acceptor-test', 'otp-compat-test', 'security-test']
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,6 +36,12 @@ jobs:
       - name: Eunit
         if: matrix.test_target == 'eunit'
         run: rebar3 as test eunit
+
+      # Covers the vendored acceptor_pool (src/acceptor*.erl). Single node,
+      # no TLS, no disterl; ~10s.
+      - name: Acceptor Pool Tests
+        if: matrix.test_target == 'acceptor-test'
+        run: make acceptor-test
 
       - name: OTP Compatibility Tests
         if: matrix.test_target == 'otp-compat-test'

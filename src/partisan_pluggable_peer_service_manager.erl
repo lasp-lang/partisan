@@ -1898,11 +1898,21 @@ handle_message(
     {noreply, State};
 handle_message(
     Msg,
-    _From,
+    From,
     _Channel,
     State
 ) ->
+    %% Every other clause answers `From'; this one did not. The caller is the
+    %% connection process, which invokes `receive_message/3' synchronously with
+    %% `infinity' (`partisan_peer_service_server:216'), so an unanswered call
+    %% left it blocked forever, never re-arming its `{active, once}' socket --
+    %% one unrecognised envelope permanently killed that peer link, silently.
+    %%
+    %% This is also what constrains protocol evolution: any envelope a peer on
+    %% an older release does not recognise takes this path. Covered by
+    %% `partisan_inbound_envelope_test'.
     ?LOG_WARNING(#{description => "Unhandled message", message => Msg}),
+    maybe_reply(From, ok),
     {noreply, State}.
 
 %% @private

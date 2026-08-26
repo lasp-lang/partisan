@@ -205,7 +205,22 @@ acceptor_continue({ok, Sock}, Parent, #{socket := LSock} = Data) ->
             failure(Reason, Parent, Data)
     end;
 acceptor_continue({error, Reason}, Parent, Data) ->
-    failure(Reason, Parent, Data).
+    case is_connection_error(Reason) of
+        true -> conn_failure(Reason, Parent, Data);
+        false -> failure(Reason, Parent, Data)
+    end.
+
+%% @private
+%% @doc Errors that describe the connection being accepted rather than the
+%% listening socket.
+%%
+%% A peer that sends RST between the SYN and our `accept' surfaces here: on
+%% darwin as `einval', elsewhere conventionally as `econnaborted'. Neither says
+%% anything about the listener's health.
+is_connection_error(einval) -> true;
+is_connection_error(econnaborted) -> true;
+is_connection_error(closed) -> true;
+is_connection_error(_) -> false.
 
 %% @private
 -spec acceptor_terminate(Reason, Parent, Data) -> no_return() when
@@ -258,8 +273,14 @@ success(Sock, Opts, Parent, Data) ->
             _ = Parent ! AcceptMsg,
             continue(Sock, Opts, PeerName, Data);
         {error, Reason} ->
+            %% `Sock' is the accepted socket, so this describes one connection
+            %% and never the listener. `'ACCEPT'' has not been sent yet, so the
+            %% pool still counts this process as accepting: it must be
+            %% cancelled, otherwise `acceptor_pool:acceptor_exit/3' treats the
+            %% exit as a start error and charges it to the pool's restart
+            %% intensity. See `conn_failure/3'.
             gen_tcp:close(Sock),
-            failure(Reason, Data)
+            conn_failure(Reason, Parent, Data)
     end.
 
 accept_message(Sock, PeerName, #{
@@ -282,9 +303,47 @@ continue(Sock, Opts, PeerName, Data) ->
         ok ->
             Mod:acceptor_continue(PeerName, Sock, State);
         {error, Reason} ->
+            %% `Sock' is the accepted socket, so this describes one connection
+            %% and never the listener. This is the exact call that returns
+            %% `{error, einval}' on darwin when the peer closed between accept
+            %% and setup. See `conn_failure/2'.
             gen_tcp:close(Sock),
-            failure(Reason, Data)
+            conn_failure(Reason, Data)
     end.
+
+%% @private
+%% @doc Terminates this acceptor after a per-connection error, leaving the
+%% listening socket alone.
+%%
+%% `failure/2' below deliberately kills `LSock' with `exit(LSock, Reason)' so
+%% the socket's owner restarts it. That is the right response to a broken
+%% listener and the wrong one to a connection that died between `accept' and
+%% setup: a port is linked to its owner, so killing it also killed
+%% `partisan_acceptor_socket', whose supervisor restarted it into the same
+%% condition until it reached its restart intensity and shut the subtree down,
+%% leaving the node unable to accept at all.
+%%
+%% Reaching that state took nothing more exotic than a peer connecting and
+%% immediately disconnecting — which partisan does whenever it drops a
+%% duplicate or rejected connection, and which any TCP health check or port
+%% scan does too. Verified on OTP 28.5/darwin, where the post-accept
+%% `inet:setopts/2' returns `{error, einval}' in that race; covered by
+%% `partisan_listener_resilience_test'.
+-spec conn_failure(timeout | closed | inet:posix(), pid(), data()) ->
+    no_return().
+conn_failure(Reason, Parent, #{ack := AckRef} = Data) ->
+    _ = Parent ! {'CANCEL', self(), AckRef},
+    conn_failure(Reason, Data).
+
+-spec conn_failure(timeout | closed | inet:posix(), data()) -> no_return().
+conn_failure(_Reason, Data) ->
+    %% Normally, not `{shutdown, Reason}': the acceptor pool counts an abnormal
+    %% acceptor exit against its restart intensity, so aborting connections
+    %% would take the pool down and the socket owner with it — the same outcome
+    %% by a longer route. Exiting normally lets the pool simply replace this
+    %% acceptor, which is what `partisan_peer_socket:accept/1' already does for
+    %% a failed TLS handshake.
+    terminate(normal, Data).
 
 -spec failure(timeout | closed | system_limit | inet:posix(), pid(), data()) ->
     no_return().

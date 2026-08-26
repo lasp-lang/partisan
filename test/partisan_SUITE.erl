@@ -259,6 +259,7 @@ groups() ->
             on_down_test,
             rpc_test,
             erpc_test,
+            priority_alias_test,
             pid_test,
             rejoin_test,
             otp_test
@@ -3358,3 +3359,148 @@ ideally_connected_members(Node, Nodes) ->
                     M
             end
     end.
+
+
+%% =============================================================================
+%% PRIORITY ALIAS (OTP 28+)
+%% =============================================================================
+
+
+-if(?OTP_RELEASE >= 28).
+
+%% -----------------------------------------------------------------------------
+%% @doc An OTP 28 priority alias must still be a priority alias after a message
+%% has crossed the Partisan wire to reach it.
+%%
+%% `partisan_priority_alias_test' covers `do_deliver/2' on one node, and
+%% `erpc_test' covers reaching that clause from a peer (every `partisan_erpc'
+%% reply is addressed to an encoded alias). This case is the composition of the
+%% two, which neither of them demonstrates: that the receiver's opt-in survives
+%% the trip.
+%%
+%% Determinism, since ordering assertions across nodes are easy to get wrong:
+%% the three ordinary messages are queued *locally on the receiving node* via a
+%% synchronous `rpc:call', so they are in the queue before the remote send is
+%% issued. Exactly one message crosses the wire. The receiver then polls its own
+%% `message_queue_len' rather than sleeping, and never consumes, so nothing here
+%% depends on per-connection FIFO ordering -- which this suite does not
+%% establish.
+%% @end
+%% -----------------------------------------------------------------------------
+priority_alias_test(Config) ->
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
+    Servers = ?SUPPORT:node_list(1, "server", Config),
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
+
+    Nodes = ?SUPPORT:start(
+        priority_alias_test,
+        Config,
+        [
+            {peer_service_manager, Manager},
+            {servers, Servers},
+            {clients, Clients}
+        ]
+    ),
+
+    ?PUT_NODES(Nodes),
+
+    ?PAUSE_FOR_CLUSTERING,
+
+    [{_, _}, {_, _}, {_, Sender}, {_, Receiver}] = Nodes,
+
+    ct:pal("Priority alias on ~p, sending from ~p", [Receiver, Sender]),
+
+    %% The CT process is reachable from the peers over disterl, which is what
+    %% rpc already relies on, so the receiver can report straight back to us.
+    TestPid = self(),
+    Expected = 4,
+
+    {Pid, Encoded} = rpc:call(Receiver, erlang, apply, [
+        fun() -> arm_priority_receiver(TestPid, Expected) end, []
+    ]),
+
+    %% Queued first, and locally, so their position is not in question.
+    ok = rpc:call(Receiver, erlang, apply, [
+        fun() ->
+            _ = [Pid ! {ordinary, N} || N <- [1, 2, 3]],
+            ok
+        end,
+        []
+    ]),
+
+    %% The only message that crosses the Partisan wire.
+    ok = rpc:call(Sender, erlang, apply, [
+        fun() ->
+            _ = partisan:forward_message(Encoded, {priority_msg, first}),
+            ok
+        end,
+        []
+    ]),
+
+    receive
+        {drained, Pid, Drained} ->
+            ?assertEqual(
+                [
+                    {priority_msg, first},
+                    {ordinary, 1}, {ordinary, 2}, {ordinary, 3}
+                ],
+                Drained
+            )
+    after
+        30000 -> ct:fail(receiver_never_reported)
+    end,
+
+    ok.
+
+
+%% @private
+%% Runs on the receiving node. Spawns the receiver and waits until it has
+%% published its encoded priority alias.
+arm_priority_receiver(TestPid, Expected) ->
+    Armer = self(),
+
+    Pid = spawn(fun() ->
+        Alias = erlang:alias([priority]),
+        Armer ! {ready, self(), partisan_remote_ref:from_term(Alias)},
+        %% Report whatever arrived, even on timeout: an incomplete queue makes
+        %% a far better failure message than a silent hang.
+        _ = priority_await_queue_len(Expected, 600),
+        TestPid ! {drained, self(), priority_drain_mailbox()}
+    end),
+
+    receive
+        {ready, Pid, Encoded} -> {Pid, Encoded}
+    after
+        10000 -> error(receiver_not_armed)
+    end.
+
+
+%% @private
+%% Polls without consuming. `receive after' does not touch the message queue.
+priority_await_queue_len(_Expected, 0) ->
+    timeout;
+
+priority_await_queue_len(Expected, Retries) ->
+    case erlang:process_info(self(), message_queue_len) of
+        {message_queue_len, N} when N >= Expected ->
+            ok;
+        _ ->
+            receive after 50 -> ok end,
+            priority_await_queue_len(Expected, Retries - 1)
+    end.
+
+
+%% @private
+priority_drain_mailbox() ->
+    receive
+        Msg -> [Msg | priority_drain_mailbox()]
+    after
+        0 -> []
+    end.
+
+-else.
+
+priority_alias_test(_Config) ->
+    {skip, "priority messages require OTP 28 or later"}.
+
+-endif.

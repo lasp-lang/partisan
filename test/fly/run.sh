@@ -97,9 +97,35 @@ while [ "$(machine_state)" = "started" ]; do sleep 30; done
 sleep 5            # let the last log lines flush
 cleanup; trap - EXIT INT TERM
 
-# The machine's exit status is the suite's exit status.
-EXIT_INFO="$(fly machine status "$MACHINE" -a "$APP" 2>/dev/null | grep -m1 -o 'exit_code=[0-9]*' || true)"
-RC="${EXIT_INFO#exit_code=}"; RC="${RC:-1}"
+# The suite's exit status, as reported by entrypoint.sh itself.
+#
+# flyd's machine exit_code is NOT usable here. When the VM tears down abruptly
+# it records `exit_code=-1' however the suite finished -- observed on an OTP
+# 29.0 run whose four suites were all green. The previous code matched
+# `exit_code=[0-9]*', which cannot match the `-', so it silently took the empty
+# string and fell through to a default of 1: a fully passing run reported as a
+# failure, with no way to tell that from a real one.
+RC="$(grep -a "$MACHINE" "$LOGFILE" \
+      | grep -aoE '##### SUITE EXIT -?[0-9]+ #####' \
+      | tail -1 | grep -oE -- '-?[0-9]+' || true)"
+
+if [ -z "$RC" ]; then
+  # No sentinel: an image built before it was added, or the machine died before
+  # reaching it. Fall back to flyd, this time matching a negative code, and say
+  # plainly when the status could not be established rather than calling it a
+  # failure.
+  EXIT_INFO="$(fly machine status "$MACHINE" -a "$APP" 2>/dev/null \
+               | grep -m1 -oE 'exit_code=-?[0-9]+' || true)"
+  RC="${EXIT_INFO#exit_code=}"
+  case "$RC" in
+    ""|-*)
+      echo "WARNING: could not establish the suite's exit status" \
+           "(no SUITE EXIT sentinel; flyd reported '${RC:-none}')." \
+           "Read the suite lines below before trusting this result."
+      RC=1
+      ;;
+  esac
+fi
 
 echo ""
 echo "===================== SUITE RESULT (exit ${RC}) ====================="

@@ -58,7 +58,8 @@
     optional_callbacks_decline_cleanly,
     forward_message_accepts_every_server_ref,
     capability_claim_is_honest,
-    channel_subscriptions_actually_fire
+    channel_subscriptions_actually_fire,
+    unknown_envelope_is_survivable
 ]).
 
 %% =============================================================================
@@ -301,6 +302,62 @@ delivers(Ref, Msg) ->
 
 %% The manager learns a peer is up from the `connected' signal its connection
 %% process sends after the handshake; driving it directly avoids a real peer.
+%% An envelope this version does not recognise reaches every manager through
+%% `receive_message/3'. Two things must hold, identically for all of them: the
+%% caller must be answered, and the manager must survive.
+%%
+%% The caller is the connection process, which calls synchronously with
+%% `infinity' (`partisan_peer_service_server:216'). Leaving it unanswered stops
+%% it re-arming its `{active, once}' socket and kills that peer link for good;
+%% taking the manager down instead loses the manager's state.
+%%
+%% This is a compatibility property rather than mere robustness: it is exactly
+%% what a future protocol addition does to a peer running an older release, so
+%% it bounds how the wire format can evolve at all.
+unknown_envelope_is_survivable(Mgr) ->
+    Pid = whereis(Mgr),
+    ?assert(is_pid(Pid)),
+
+    MRef = erlang:monitor(process, Pid),
+    Unknown = {forward_message, make_ref(), hello, #{some_future_option => true}},
+
+    %% Issued from a child because when the defect is a hang rather than a
+    %% crash the call never returns, and it cannot be given a timeout: the
+    %% production caller uses `infinity', which is the thing under test.
+    ?assertEqual(
+        returned,
+        call_in_child(fun() ->
+            Mgr:receive_message(partisan:node(), undefined, Unknown)
+        end)
+    ),
+
+    %% Managers that answer the caller before dispatching crash asynchronously,
+    %% so watch for the exit instead of sampling `whereis/1' once.
+    receive
+        {'DOWN', MRef, process, Pid, Reason} ->
+            erlang:error({manager_died_on_unknown_envelope, Mgr, Reason})
+    after
+        500 ->
+            erlang:demonitor(MRef, [flush]),
+            ok
+    end.
+
+call_in_child(Fun) ->
+    Parent = self(),
+
+    Pid = spawn(fun() ->
+        _ = (catch Fun()),
+        Parent ! {returned, self()}
+    end),
+
+    receive
+        {returned, Pid} -> returned
+    after
+        2000 ->
+            exit(Pid, kill),
+            blocked
+    end.
+
 signal_connected(Mgr, Name, Channel) ->
     Pid = whereis(Mgr),
     Spec = #{name => Name, listen_addrs => [], channels => #{}},
