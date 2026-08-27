@@ -40,11 +40,30 @@ start_disterl() ->
     %% before distribution starts. Partisan itself uses connect_disterl=false
     %% in production, so this only affects the test control plane.
     ok = application:set_env(kernel, prevent_overlapping_partitions, false),
-    case net_kernel:start([list_to_atom("runner@" ++ Hostname), shortnames]) of
+    Node = list_to_atom("runner@" ++ Hostname),
+
+    case net_kernel:start([Node, shortnames]) of
         {ok, _} ->
             ok;
         {error, {already_started, _}} ->
-            ok
+            ok;
+        {error, Reason} ->
+            %% Almost always a stale beam still holding this name in epmd.
+            %% `net_kernel:start/2' reports that as a nested supervisor failure
+            %% wrapping `{'EXIT', nodistribution}' -- verified on OTP 28.5 by
+            %% starting a second node under a name already in use -- which,
+            %% left unmatched, surfaced as a bare `case_clause' here and read
+            %% as a defect in this module rather than as leftover state.
+            %%
+            %% `epmd -kill' and `epmd -stop' will not clear a live
+            %% registration. Find the holder with `lsof -i :<port>' (`pgrep'
+            %% may not match it) and kill that process.
+            ct:pal(
+                "Could not start distribution as ~p. Most likely a stale node "
+                "still holds that name in epmd. Reason: ~p",
+                [Node, Reason]
+            ),
+            ct:fail({could_not_start_distribution, Node, Reason})
     end.
 
 %% @private

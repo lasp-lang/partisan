@@ -2091,6 +2091,15 @@ handle_message(
                 DisconnectName, OldName
             ])
     end,
+    {noreply, State};
+handle_message(Msg, _Channel, State) ->
+    %% An envelope this version does not recognise must not take the manager
+    %% down: without this clause it raised `function_clause' and the supervisor
+    %% restarted the manager, losing its view state. `handle_call/3' has
+    %% already answered the connection process by this point, so only the crash
+    %% needed removing. Covered by
+    %% `partisan_manager_conformance_test:unknown_envelope_is_survivable/1'.
+    ?LOG_WARNING(#{description => "Unhandled message", message => Msg}),
     {noreply, State}.
 
 %% @private

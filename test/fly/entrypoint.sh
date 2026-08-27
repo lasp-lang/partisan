@@ -35,4 +35,11 @@ if [ "$RC" -ne 0 ]; then
   echo "########## END DIAGNOSIS ##########"
 fi
 
+# The suite's own exit status, for run.sh to parse. flyd's machine exit_code is
+# not usable for this: when the VM tears down abruptly it records
+# `exit_code=-1' regardless of how the suite finished, which is indistinguish-
+# able from a real failure. This line is emitted by the process that actually
+# ran `make', so it cannot disagree with the result.
+echo "##### SUITE EXIT ${RC} #####"
+
 exit "$RC"
