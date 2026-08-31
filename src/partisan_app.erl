@@ -56,16 +56,7 @@ ensure_otp_modules() ->
     %% Check the WHOLE generated set, not just one representative: a partial
     %% ebin (interrupted build, selective load) would otherwise pass here and
     %% surface later as an `undef' at first use instead of at app start.
-    %% Keep in sync with the modules `partisan_gen_transform' generates.
-    Generated = [
-        partisan_gen,
-        partisan_proc_lib,
-        partisan_sys,
-        partisan_gen_server,
-        partisan_gen_event,
-        partisan_gen_statem,
-        partisan_gen_supervisor
-    ],
+    Generated = partisan_otp_modules:partisan_modules(),
     AllLoaded = lists:all(
         fun(M) ->
             case code:ensure_loaded(M) of

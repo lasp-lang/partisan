@@ -43,7 +43,9 @@
 generate(OrigModule) ->
     case get_abstract_code(OrigModule) of
         {ok, Forms} ->
-            PartisanModule = partisan_module(OrigModule),
+            PartisanModule = partisan_otp_modules:partisan_module(
+                OrigModule
+            ),
             %% Step 1: Mechanical AST rewrites (module names, calls, atoms).
             RewrittenForms = partisan_otp_rewrite:transform(OrigModule, Forms),
             %% Step 2: Structural patches (adding/modifying functions).
@@ -131,9 +133,9 @@ generate_all(Dir) ->
     end.
 
 %% @doc Returns the ordered list of modules to transform.
-%% Order matters: gen and proc_lib must be generated before gen_server.
+%% The order is the table's own; see `partisan_otp_modules:substitutions/0'.
 modules() ->
-    [gen, proc_lib, sys, gen_server, gen_event, gen_statem, supervisor].
+    partisan_otp_modules:otp_modules().
 
 %% NOTE: the `.erl'-source generation path (`generate_sources/1' /
 %% `generate_source/1') was REMOVED. The build compiles the rewritten forms
@@ -187,19 +189,6 @@ fallback_source(Module) ->
         false ->
             {error, {source_not_found, File}}
     end.
-
-%% =============================================================================
-%% Internal: module rename map
-%% =============================================================================
-
-partisan_module(gen_server) -> partisan_gen_server;
-partisan_module(gen) -> partisan_gen;
-partisan_module(gen_event) -> partisan_gen_event;
-partisan_module(gen_fsm) -> partisan_gen_fsm;
-partisan_module(gen_statem) -> partisan_gen_statem;
-partisan_module(supervisor) -> partisan_gen_supervisor;
-partisan_module(proc_lib) -> partisan_proc_lib;
-partisan_module(sys) -> partisan_sys.
 
 %% =============================================================================
 %% Internal: file helpers

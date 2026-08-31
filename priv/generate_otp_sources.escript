@@ -21,7 +21,7 @@
 %% local function — causing infinite recursion. Compiling forms
 %% directly to .beam preserves the AST exactly and avoids the issue.
 %%
-%% The three support modules (`partisan_otp_rewrite',
+%% The support modules (`partisan_otp_modules', `partisan_otp_rewrite',
 %% `partisan_otp_patches', `partisan_gen_transform') have no inter-
 %% include dependencies, so we compile them in-memory here and load
 %% them before invoking the generator.
@@ -42,6 +42,7 @@ main(_Args) ->
     end,
 
     SupportModules = [
+        "partisan_otp_modules.erl",
         "partisan_otp_rewrite.erl",
         "partisan_otp_patches.erl",
         "partisan_gen_transform.erl"
@@ -59,7 +60,7 @@ main(_Args) ->
                 "Generated ~p partisan OTP module beams into ~s/~n",
                 [length(Modules), EbinDir]
             ),
-            update_app_src(SrcDir, Modules),
+            update_app_src(SrcDir),
             ok;
         {error, Errors} ->
             io:format(standard_error,
@@ -94,22 +95,12 @@ ebin_dir() ->
 %% modules list. rebar3 reads .app.src to produce the .app file in
 %% ebin. Without this step, releases assembled in embedded mode cannot
 %% load the generated modules.
-update_app_src(SrcDir, OtpModules) ->
+update_app_src(SrcDir) ->
     AppSrcFile = filename:join(SrcDir, "partisan.app.src"),
     case file:consult(AppSrcFile) of
         {ok, [{application, partisan, Props}]} ->
             ExistingModules = proplists:get_value(modules, Props, []),
-            RenameMap = #{
-                gen => partisan_gen,
-                proc_lib => partisan_proc_lib,
-                sys => partisan_sys,
-                gen_server => partisan_gen_server,
-                gen_event => partisan_gen_event,
-                gen_statem => partisan_gen_statem,
-                gen_fsm => partisan_gen_fsm,
-                supervisor => partisan_gen_supervisor
-            },
-            GenModules = [maps:get(M, RenameMap) || M <- OtpModules],
+            GenModules = partisan_otp_modules:partisan_modules(),
             AllModules = lists:usort(ExistingModules ++ GenModules),
             case AllModules of
                 ExistingModules ->
