@@ -256,6 +256,7 @@ groups() ->
             basic_test,
             leave_test,
             self_leave_test,
+            discovery_never_evicts_test,
             on_down_test,
             rpc_test,
             erpc_test,
@@ -1348,6 +1349,71 @@ leave_test(Config) ->
             ok;
         _ ->
             ok
+    end.
+
+discovery_never_evicts_test(Config) ->
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
+    Servers = ?SUPPORT:node_list(1, "server", Config),
+    Clients = ?SUPPORT:node_list(1, "client", Config),
+    Nodes = ?SUPPORT:start(
+        discovery_never_evicts_test,
+        Config,
+        [
+            {peer_service_manager, Manager},
+            {servers, Servers},
+            {clients, Clients}
+        ]
+    ),
+    ?PUT_NODES(Nodes),
+
+    [{_, A}, {_, B}] = Nodes,
+    Expected = lists:usort([A, B]),
+    ok = wait_for_members(A, Manager, Expected),
+    ok = wait_for_members(B, Manager, Expected),
+    ManagerA = rpc:call(A, erlang, whereis, [Manager]),
+    ?assert(is_pid(ManagerA)),
+
+    %% The agent reads its options when it starts; a supervisor restart of the
+    %% agent alone puts the new backend in place.
+    Opts = #{
+        enabled => true,
+        type => partisan_peer_discovery_list,
+        config => #{addresses => []},
+        initial_delay => 0,
+        polling_interval => 100
+    },
+    ok = rpc:call(B, partisan_config, set, [peer_discovery, Opts]),
+    Sup = partisan_peer_service_sup,
+    Agent = partisan_peer_discovery_agent,
+    ok = rpc:call(B, supervisor, terminate_child, [Sup, Agent]),
+    {ok, _} = rpc:call(B, supervisor, restart_child, [Sup, Agent]),
+    enabled = rpc:call(B, Agent, status, []),
+
+    %% Dozens of polls; a removal gossips at once, so this is ample time for
+    %% the old behaviour to show.
+    ct:sleep(3000),
+
+    {ok, MembersA} = rpc:call(A, Manager, members, []),
+    {ok, MembersB} = rpc:call(B, Manager, members, []),
+    ?assertEqual(Expected, lists:usort(MembersA)),
+    ?assertEqual(Expected, lists:usort(MembersB)),
+    ?assertEqual(ManagerA, rpc:call(A, erlang, whereis, [Manager])),
+    ok.
+
+%% @private
+wait_for_members(Node, Manager, Expected) ->
+    Fun = fun() ->
+        {ok, Members} = rpc:call(Node, Manager, members, []),
+        lists:usort(Members) == Expected
+    end,
+    case wait_until(Fun, 60 * 2, 100) of
+        ok ->
+            ok;
+        {fail, _} ->
+            {ok, Members} = rpc:call(Node, Manager, members, []),
+            ct:fail("Membership on ~p should be ~p but is ~p", [
+                Node, Expected, lists:usort(Members)
+            ])
     end.
 
 performance_test(Config) ->

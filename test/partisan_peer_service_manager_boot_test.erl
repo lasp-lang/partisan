@@ -84,6 +84,7 @@ static_forward_message_test_() ->
                     ?_test(leaving_a_peer_removes_it()),
                     ?_test(leaving_ourselves_keeps_only_us()),
                     ?_test(update_members_joins_and_drops()),
+                    ?_test(add_members_never_drops()),
                     ?_test(on_up_fires_once_per_node()),
                     ?_test(on_up_can_be_scoped_to_a_channel()),
                     ?_test(monitoring_is_supported())
@@ -278,6 +279,21 @@ update_members_joins_and_drops() ->
     %% `Drop' is gone, `Keep' stays. `New' is only pending until it connects,
     %% which is what membership means here.
     ?assertNot(is_a_member(Drop)),
+    ?assert(is_a_member(Keep)),
+    signal_connected(spec(New), ?DEFAULT_CHANNEL),
+    ?assert(is_a_member(New)).
+
+%% `add_members' is the half of `update_members' a discovery backend may use:
+%% a member the list omits is not a leaver.
+add_members_never_drops() ->
+    Keep = seed_membership('akeep@127.0.0.1'),
+    Omitted = seed_membership('aomit@127.0.0.1'),
+    ?assert(is_a_member(Keep) andalso is_a_member(Omitted)),
+
+    New = 'anew@127.0.0.1',
+    ok = partisan_peer_service:add_members([spec(Keep), spec(New)]),
+
+    ?assert(is_a_member(Omitted)),
     ?assert(is_a_member(Keep)),
     signal_connected(spec(New), ?DEFAULT_CHANNEL),
     ?assert(is_a_member(New)).

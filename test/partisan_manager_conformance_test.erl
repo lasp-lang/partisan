@@ -74,6 +74,7 @@ support(?PLUGGABLE) ->
     #{
         sync_join => true,
         update_members => true,
+        add_members => true,
         on_up_3 => true,
         on_down_3 => true,
         monitoring => true,
@@ -84,6 +85,7 @@ support(?HYPARVIEW) ->
     #{
         sync_join => false,
         update_members => true,
+        add_members => true,
         on_up_3 => false,
         on_down_3 => false,
         monitoring => false,
@@ -95,6 +97,7 @@ support(?CLIENT_SERVER) ->
     #{
         sync_join => false,
         update_members => false,
+        add_members => false,
         on_up_3 => false,
         on_down_3 => false,
         monitoring => false,
@@ -105,6 +108,7 @@ support(?STATIC) ->
     #{
         sync_join => true,
         update_members => true,
+        add_members => true,
         on_up_3 => true,
         on_down_3 => true,
         monitoring => true,
@@ -174,6 +178,9 @@ optional_callbacks_decline_cleanly(Mgr) ->
     end),
     check(Mgr, update_members, Claims, fun() ->
         partisan_peer_service:update_members([partisan:node_spec()])
+    end),
+    check(Mgr, add_members, Claims, fun() ->
+        partisan_peer_service:add_members([partisan:node_spec()])
     end),
     check(Mgr, on_up_3, Claims, fun() ->
         partisan_peer_service:on_up('_', Fun2, #{channel => '_'})

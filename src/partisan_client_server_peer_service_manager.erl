@@ -111,6 +111,7 @@
 -export([supports_capability/1]).
 -export([sync_join/1]).
 -export([update_members/1]).
+-export([add_members/1]).
 
 %% gen_server callbacks
 -export([init/1]).
@@ -155,6 +156,13 @@ members_for_orchestration() ->
 %% @end
 %% -----------------------------------------------------------------------------
 update_members(_Nodes) ->
+    {error, not_implemented}.
+
+%% -----------------------------------------------------------------------------
+%% @doc Not supported: the topology is fixed by configuration.
+%% @end
+%% -----------------------------------------------------------------------------
+add_members(_Nodes) ->
     {error, not_implemented}.
 
 %% -----------------------------------------------------------------------------

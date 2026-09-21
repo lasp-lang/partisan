@@ -76,6 +76,7 @@
 -export([stop/1]).
 -export([sync_join/1]).
 -export([update_members/1]).
+-export([add_members/1]).
 
 %% =============================================================================
 %% API
@@ -299,7 +300,14 @@ connections() ->
     {ok, partisan_peer_connections:connections()}.
 
 %% -----------------------------------------------------------------------------
-%% @doc Update cluster members with a list of node specifications.
+%% @doc Replaces the cluster membership with `Members': a node specification
+%% in the list that is not yet a member is joined, and a member absent from
+%% the list leaves the cluster — the removal is gossiped, and the removed node
+%% shuts its peer service manager down once the gossip reaches it.
+%%
+%% This is for an external membership authority. A discovery backend must use
+%% {@link add_members/1}: its answer omits members that are booting or briefly
+%% unhealthy, and passing it here evicts them.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec update_members(Members :: [partisan:node_spec()]) ->
@@ -307,6 +315,23 @@ connections() ->
 
 update_members(Members) ->
     ?PEER_SERVICE_MANAGER:update_members(Members).
+
+%% -----------------------------------------------------------------------------
+%% @doc Joins every node specification in `Members' that is not yet a member,
+%% leaving the manager to decide how (the pluggable manager joins it, the
+%% HyParView one treats the list as an exchange). Never removes a member: a
+%% member absent from `Members' is unaffected. A member only ever leaves the
+%% cluster through {@link leave/0} or {@link leave/1}.
+%%
+%% Pinned by `partisan_peer_discovery_agent_test' and
+%% `partisan_SUITE:discovery_never_evicts_test/1'.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec add_members(Members :: [partisan:node_spec()]) ->
+    ok | {error, not_implemented}.
+
+add_members(Members) ->
+    ?PEER_SERVICE_MANAGER:add_members(Members).
 
 %% -----------------------------------------------------------------------------
 %% @doc Decode peer_service_manager state from an encoded form

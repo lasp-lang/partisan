@@ -55,6 +55,7 @@
 -export([supports_capability/1]).
 -export([sync_join/1]).
 -export([update_members/1]).
+-export([add_members/1]).
 
 %% gen_server callbacks
 -export([
@@ -179,6 +180,16 @@ update_members(Nodes) when is_list(Nodes) ->
     lists:all(fun(S) -> is_map(S) andalso is_map_key(name, S) end, Nodes) orelse
         error(badarg),
     gen_server:call(?MODULE, {update_members, Nodes}, infinity).
+
+%% -----------------------------------------------------------------------------
+%% @doc Joins the peers in `Nodes' not already known; never drops one. The
+%% join half of `update_members/1', for a discovery backend.
+%% @end
+%% -----------------------------------------------------------------------------
+add_members(Nodes) when is_list(Nodes) ->
+    lists:all(fun(S) -> is_map(S) andalso is_map_key(name, S) end, Nodes) orelse
+        error(badarg),
+    gen_server:call(?MODULE, {add_members, Nodes}, infinity).
 
 %% @doc Send message to a remote manager.
 send_message(Name, Message) ->
@@ -434,17 +445,10 @@ handle_call({update_members, Desired}, _From, #state{} = State0) ->
     State1 = lists:foldl(fun internal_leave/2, State0, Obsolete),
 
     %% Whatever is left over is new and gets joined.
-    Known = known_names(State1),
-    State = lists:foldl(
-        fun(#{name := Name} = Spec, Acc) ->
-            case Name =:= Myself orelse lists:member(Name, Known) of
-                true -> Acc;
-                false -> internal_join(Spec, Acc)
-            end
-        end,
-        State1,
-        Desired
-    ),
+    State = join_unknown(Desired, State1),
+    {reply, ok, State};
+handle_call({add_members, Desired}, _From, #state{} = State0) ->
+    State = join_unknown(Desired, State0),
     {reply, ok, State};
 handle_call({send_message, Name, Message}, _From, #state{} = State) ->
     Result = do_send_message(Name, Message),
@@ -576,6 +580,23 @@ code_change(_OldVsn, State, _Extra) ->
 %% source of truth, so a restart must not resurrect peers that were removed.
 empty_membership() ->
     sets:add_element(partisan:node_spec(), sets:new()).
+
+%% @private
+%% @doc Joins every spec in `Desired' whose name is neither ours nor already
+%% known (a member or pending).
+join_unknown(Desired, #state{} = State0) ->
+    Myself = partisan:node(),
+    Known = known_names(State0),
+    lists:foldl(
+        fun(#{name := Name} = Spec, Acc) ->
+            case Name =:= Myself orelse lists:member(Name, Known) of
+                true -> Acc;
+                false -> internal_join(Spec, Acc)
+            end
+        end,
+        State0,
+        Desired
+    ).
 
 %% @private
 %% @doc Registers `Spec' as a pending peer and starts connecting to it.

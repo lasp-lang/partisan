@@ -17,9 +17,7 @@
 %%
 %% Both are driven by a PropEr-generated seed so every counterexample is
 %% reproducible and shrinkable. Every generated configuration respects Thicket's
-%% feasibility bound (§4.6: overlay degree >= f*T) and must satisfy the two
-%% load-bearing invariants:
-%%
+%% feasibility bound and must satisfy the two invariants:
 %%   * COVERAGE  — every node delivers every broadcast (never drop a message).
 %%   * LOAD BOUND — no node is interior in more than `max_load' trees.
 %% @end

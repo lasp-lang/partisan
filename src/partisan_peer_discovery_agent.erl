@@ -17,10 +17,21 @@
 %% =============================================================================
 
 %% -----------------------------------------------------------------------------
-%% @doc This state machine is responsible for enabled cluster peers
-%% using the defined implementation backend (callback module).
+%% @doc This state machine polls a discovery backend (the callback module) and
+%% joins the peers it reports.
 %%
-%%
+%% A discovery answer is a hint for joining, never a membership authority: the
+%% agent only ever adds peers, through `partisan_peer_service:add_members/1'.
+%% A member the backend stops reporting stays a member; a node leaves the
+%% cluster only through `partisan_peer_service:leave/0,1'. The reason is that
+%% every backend answers from a readiness- or health-gated, eventually
+%% consistent source (DNS, an orchestrator's endpoint list), which omits a
+%% node that is booting or briefly unhealthy. Treating that omission as a
+%% departure removed the node from the membership and gossiped the removal,
+%% and the node then shut its own peer service down on receiving it
+%% ("membership doesn't contain us") — once per poll, for as long as it stayed
+%% out of the answer. Pinned by `partisan_peer_discovery_agent_test' and
+%% `partisan_SUITE:discovery_never_evicts_test/1'.
 %% @end
 %% -----------------------------------------------------------------------------
 -module(partisan_peer_discovery_agent).
@@ -225,12 +236,12 @@ enabled(state_timeout, lookup, State) ->
     %% The polling interval timeout, we need to perform a lookup
     {keep_state, State, [{next_event, internal, lookup}]};
 enabled(internal, lookup, State0) ->
-    %% Add/remove peers from the membership view, this is the right way to do it
-    %% as opposed to invididually join the peers. This is so that the peer
-    %% service can decide which nodes to join based on the topology/strategy.
-    %% update_members/1 will deduplicate members.
+    %% Hand the whole list to the peer service rather than joining the peers
+    %% one by one, so that the manager decides how to join based on the
+    %% topology/strategy. add_members/1 skips the ones already known and
+    %% never removes a member (see the module doc).
     {Members, State} = lookup(State0),
-    ok = partisan_peer_service:update_members(Members),
+    ok = partisan_peer_service:add_members(Members),
 
     %% Schedule next lookup
     Action = {state_timeout, State#state.polling_interval, lookup, []},
@@ -298,8 +309,5 @@ lookup(State0) ->
         response => Peers
     }),
 
-    %% Add/remove peers from the membership view, this is the right way to do it
-    %% as opposed to invididually join the peers. This is so that the peer
-    %% service can decide which nodes to join based on the topology/strategy.
     State = State0#state{callback_state = CBState},
     {[partisan:node_spec() | Peers], State}.

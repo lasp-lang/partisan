@@ -243,6 +243,7 @@ end).
 -export([supports_capability/1]).
 -export([sync_join/1]).
 -export([update_members/1]).
+-export([add_members/1]).
 
 %% gen_server callbacks
 -export([init/1]).
@@ -297,11 +298,20 @@ members_for_orchestration() ->
     gen_server:call(?MODULE, members_for_orchestration, infinity).
 
 %% -----------------------------------------------------------------------------
-%% @doc Update membership.
+%% @doc Replaces the membership with `Members': absent members leave, and the
+%% removal is gossiped. See `partisan_peer_service:update_members/1'.
 %% @end
 %% -----------------------------------------------------------------------------
 update_members(Members) ->
     gen_server:call(?MODULE, {update_members, Members}, infinity).
+
+%% -----------------------------------------------------------------------------
+%% @doc Joins the members of `Members' not yet in the membership; never
+%% removes one. See `partisan_peer_service:add_members/1'.
+%% @end
+%% -----------------------------------------------------------------------------
+add_members(Members) ->
+    gen_server:call(?MODULE, {add_members, Members}, infinity).
 
 %% -----------------------------------------------------------------------------
 %% @doc Return local node's view of cluster membership.
@@ -950,7 +960,6 @@ handle_call({update_members, _}, _, #state{leaving = true} = State) ->
     {reply, ok, State};
 handle_call({update_members, Members}, _From, #state{} = State0) ->
     %% For compatibility with external membership services.
-    %% Also called by partisan_peer_service_agent.
     Mod = State0#state.membership_strategy,
     MState = State0#state.membership_strategy_state,
 
@@ -974,6 +983,33 @@ handle_call({update_members, Members}, _From, #state{} = State0) ->
     %% membership update messages
     LeavingNodes = [Node || #{name := Node} <- Leavers],
     gen_server:cast(?MODULE, {kill_connections, LeavingNodes}),
+
+    {reply, ok, State};
+handle_call({add_members, _}, _, #state{leaving = true} = State) ->
+    %% We are leaving so do nothing
+    {reply, ok, State};
+handle_call({add_members, Members}, _From, #state{} = State0) ->
+    %% The join half of update_members: the leavers `compare/2' reports are
+    %% ignored, so a member absent from `Members' stays. This is what
+    %% partisan_peer_discovery_agent calls.
+    Mod = State0#state.membership_strategy,
+    MState = State0#state.membership_strategy_state,
+
+    {Joiners, _Leavers} = Mod:compare(Members, MState),
+
+    %% As the join clause above: a spec carrying our own name (a discovery
+    %% backend resolving us to an address we do not list) is not joined.
+    Myself = State0#state.name,
+    State = lists:foldl(
+        fun
+            (#{name := Name}, S) when Name == Myself ->
+                S;
+            (NodeSpec, S) ->
+                internal_join(NodeSpec, undefined, S)
+        end,
+        State0,
+        Joiners
+    ),
 
     {reply, ok, State};
 handle_call({leave, #{name := Name} = NodeSpec}, From, State0) ->

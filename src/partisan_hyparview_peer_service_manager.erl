@@ -211,6 +211,7 @@ add-to-passive, promotion, symmetry maintenance) below them.
 -export([supports_capability/1]).
 -export([sync_join/1]).
 -export([update_members/1]).
+-export([add_members/1]).
 
 %% DEBUG API
 -export([active/0]).
@@ -351,6 +352,15 @@ on_up(_Name, _Function, _Opts) ->
 %% -----------------------------------------------------------------------------
 update_members(Members) ->
     gen_server:call(?MODULE, {update_members, Members}, infinity).
+
+%% -----------------------------------------------------------------------------
+%% @doc The same as `update_members/1': here the list is merged into the
+%% passive view as an exchange, which never removes an active member, so the
+%% join-only contract of `partisan_peer_service:add_members/1' already holds.
+%% @end
+%% -----------------------------------------------------------------------------
+add_members(Members) ->
+    update_members(Members).
 
 %% -----------------------------------------------------------------------------
 %% @doc Send message to a remote peer service manager.
