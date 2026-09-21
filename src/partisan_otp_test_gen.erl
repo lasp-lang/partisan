@@ -141,15 +141,7 @@ run_all_suites(Dir, LogDir) ->
     application:set_env(partisan, connect_disterl, true),
     {ok, _} = application:ensure_all_started(partisan),
     partisan_config:set(connect_disterl, true),
-    Behaviours = [
-        partisan_gen,
-        partisan_proc_lib,
-        partisan_sys,
-        partisan_gen_server,
-        partisan_gen_event,
-        partisan_gen_statem,
-        partisan_gen_supervisor
-    ],
+    Behaviours = partisan_otp_modules:partisan_modules(),
     _ = [code:ensure_loaded(M) || M <- Behaviours],
     Results = lists:map(
         fun(Suite) ->

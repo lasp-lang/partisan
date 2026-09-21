@@ -2,16 +2,6 @@
 %% SPDX-FileCopyrightText: 2026 Alejandro Ramallo
 %% SPDX-License-Identifier: Apache-2.0
 %% =============================================================================
-%%
-%% @doc Deterministic simulation of the pure Thicket engine (ADR-000004 §4).
-%% Instantiates N engine states over a fully-connected overlay, routes their
-%% `{send, ...}' actions between nodes, advances repair/summary ticks, and asserts
-%% the two load-bearing invariants: full COVERAGE (every node delivers every
-%% broadcast) and the INTERIOR-LOAD BOUND (no node interior in more than
-%% max_load trees). This is the primary validator; an off-by-default engine is
-%% invisible to Common Test.
-%% @end
-%% =============================================================================
 -module(partisan_thicket_engine_test).
 
 -include_lib("eunit/include/eunit.hrl").

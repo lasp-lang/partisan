@@ -113,7 +113,16 @@
 
 -callback members_for_orchestration() -> {ok, [partisan:node_spec()]}.
 
+%% `update_members/1' treats `Members' as the membership: a member absent
+%% from the list leaves the cluster. It exists for an external membership
+%% authority. `add_members/1' treats the list as peers to join and never
+%% removes a member; it is the callback a discovery backend must use, since a
+%% discovery answer (DNS, an orchestrator's endpoint list) omits nodes that
+%% are booting or briefly unhealthy and is no authority on membership.
 -callback update_members([partisan:node_spec()]) ->
+    ok | {error, not_implemented}.
+
+-callback add_members([partisan:node_spec()]) ->
     ok | {error, not_implemented}.
 
 -callback get_local_state() -> term().

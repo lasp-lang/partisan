@@ -1,4 +1,82 @@
 # CHANGELOG
+# v6.3.0
+
+One fix: the peer discovery agent evicted every member its backend did not
+report, which under cloud discovery meant every node that was slow to boot.
+One consolidation: the OTP-to-Partisan module table now lives in one place.
+
+It adds one public function and one behaviour callback, `add_members/1`, so
+a manager implemented outside this repository must add the callback. It also
+adds the module `partisan_otp_modules`.
+
+## Breaking changes
+
+* `partisan_peer_service_manager` gains the required callback
+  `add_members/1`. The four shipped managers implement it; a manager
+  implemented outside this repository must add it (see below for what it
+  must do).
+
+## Fixes
+
+### Peer discovery
+* **A member absent from a discovery answer was removed from the cluster.**
+  `partisan_peer_discovery_agent` handed every lookup result to
+  `partisan_peer_service:update_members/1`, whose semantics are those of a
+  membership authority: a member absent from the list leaves, and the
+  removal is gossiped. A discovery backend is not an authority. DNS and
+  orchestrator endpoint lists are readiness- and health-gated, so the answer
+  omits a node that is booting or briefly unhealthy. Its peers then removed
+  it, the removal reached it through gossip, and the node shut its peer
+  service manager down with `"Shutting down: membership doesn't contain us"`
+  — its supervisor restarted the manager and the agent, the agent rejoined
+  after its initial delay, and the next poll on any peer evicted it again.
+  On a Kubernetes StatefulSet with a headless Service (which publishes only
+  Ready pods) a node was thrown out of the cluster roughly every 40 s for the
+  whole of its boot, dropping every inter-node connection each time.
+
+  The agent now calls the new `partisan_peer_service:add_members/1`, which
+  joins the specifications not yet in the membership and never removes one.
+  The manager still decides how to join (the HyParView manager treats the
+  list as an exchange, as before). A node leaves the cluster only through
+  `partisan_peer_service:leave/0,1`; `update_members/1` keeps its replacing
+  semantics for an external membership authority and its documentation now
+  says so.
+
+  Pinned by `partisan_peer_discovery_agent_test` (a seeded member survives
+  polls that never mention it; a peer a poll does mention is joined) and by
+  `partisan_SUITE:discovery_never_evicts_test/1` (two real nodes: a lookup on
+  one that omits the other leaves both memberships intact and the omitted
+  node's manager pid unchanged). Both fail on the previous code.
+
+* **Consequence for operators.** A node whose host is gone stays in the
+  membership until `partisan_peer_service:leave/1` removes it; the agent no
+  longer does that as a side effect of the node dropping out of DNS.
+
+## OTP module generation
+
+* **The OTP-to-Partisan module table is stated once.** The correspondence
+  (`gen` → `partisan_gen`, `gen_server` → `partisan_gen_server`, …) was
+  restated in six places: `partisan_gen_transform:partisan_module/1`, the two
+  rename maps in `partisan_otp_rewrite`, `partisan_gen_transform:modules/0`,
+  the module lists in `partisan_app` and `partisan_otp_test_gen`, and a
+  private map in `priv/generate_otp_sources.escript`. All now derive from
+  `partisan_otp_modules:substitutions/0`.
+
+  Each row carries an origin. A `generated` module is derived from the OTP
+  module's abstract code and its name doubles as a behaviour name, so it is
+  renamed in every position — calls, `-behaviour` attributes and bare atoms
+  in data. A `handwritten` one (`rpc` → `partisan_rpc`) is renamed in remote
+  calls only, where renaming the atom as data would corrupt ordinary terms.
+  `call_renames/0` is by construction a superset of `atom_renames/0`; the two
+  maps no longer have to be kept consistent by hand. The rewrite runs on
+  OTP-derived sources only, as before; the rename tables it produces are
+  identical to v6.2.0's apart from the row below.
+
+* **The dead `gen_fsm` row is gone.** `gen_fsm` was deprecated in OTP 20 and
+  `partisan_gen_fsm` was never written, so the mapping could only have
+  rewritten a reference into an `undef`. It is also dropped from the
+  "Deprecated" group of the generated documentation.
+
 # v6.2.0
 
 Three fixes: a single TCP connection could permanently disable a node's

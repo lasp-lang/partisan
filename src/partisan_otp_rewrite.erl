@@ -37,8 +37,8 @@
 
 %% @doc Walk the list of forms top-to-bottom, applying all rewrite rules.
 transform(OrigModule, Forms) ->
-    RenameMap = rename_map(),
-    PartisanModule = maps:get(OrigModule, RenameMap),
+    RenameMap = partisan_otp_modules:atom_renames(),
+    PartisanModule = partisan_otp_modules:partisan_module(OrigModule),
     Rewritten = lists:filtermap(
         fun(Form) ->
             transform_form(Form, OrigModule, PartisanModule, RenameMap)
@@ -210,51 +210,8 @@ body_var_names(_Other, Acc) ->
     Acc.
 
 %% =============================================================================
-%% INTERNAL: Rename maps
+%% INTERNAL: BIF rewrite maps
 %% =============================================================================
-
-%% Module rename map used for atom-in-data renaming, module attribute, and
-%% behaviour attribute rewrites.
-rename_map() ->
-    #{
-        gen_server => partisan_gen_server,
-        gen => partisan_gen,
-        gen_event => partisan_gen_event,
-        gen_fsm => partisan_gen_fsm,
-        gen_statem => partisan_gen_statem,
-        supervisor => partisan_gen_supervisor,
-        proc_lib => partisan_proc_lib,
-        sys => partisan_sys
-    }.
-
-%% Remote call rename map. Includes everything in rename_map/0 plus rpc.
-%%
-%% NOTE on `erpc': deliberately NOT rewritten here. This map is applied only to
-%% modules derived from OTP sources — the generated `partisan_gen_*' behaviours
-%% (`partisan_gen_transform') and the generated OTP test suites
-%% (`partisan_otp_test_gen'). It is *not* applied to user code: the user-facing
-%% parse transform is `partisan_transform', which only rewrites `!' into
-%% `partisan:forward_message/2' and does not rename module calls at all.
-%%
-%% Adding `erpc => partisan_erpc' therefore does not help user code, and it
-%% breaks the generated suites: `gen_server_SUITE' uses `erpc:call/4' as test
-%% scaffolding to drive peer nodes (see `multicall_remote_test'), and those
-%% peers never start the partisan application, so they have no
-%% `partisan_rpc_backend' for a rewritten call to reach. Code that wants
-%% Partisan-transported erpc calls `partisan_erpc' directly, exactly as it
-%% calls `partisan_rpc' directly.
-call_rename_map() ->
-    #{
-        gen_server => partisan_gen_server,
-        gen => partisan_gen,
-        gen_event => partisan_gen_event,
-        gen_fsm => partisan_gen_fsm,
-        gen_statem => partisan_gen_statem,
-        supervisor => partisan_gen_supervisor,
-        proc_lib => partisan_proc_lib,
-        sys => partisan_sys,
-        rpc => partisan_rpc
-    }.
 
 %% erlang:Fun calls that should be rewritten to partisan:Fun.
 erlang_bif_rewrites() ->
@@ -366,7 +323,7 @@ transform_expr(
     Map,
     Ctx
 ) when Ctx =:= body; Ctx =:= guard ->
-    CallMap = call_rename_map(),
+    CallMap = partisan_otp_modules:call_renames(),
     NewMod = maps:get(Mod, CallMap, Mod),
     NewArgs = [transform_expr(A, Map, Ctx) || A <- Args],
     {call, Anno, {remote, Anno2, {atom, Anno3, NewMod}, {atom, Anno4, Fun}},
@@ -419,7 +376,7 @@ transform_expr(
     _Map,
     _Ctx
 ) ->
-    CallMap = call_rename_map(),
+    CallMap = partisan_otp_modules:call_renames(),
     NewMod = maps:get(Mod, CallMap, Mod),
     {'fun', Anno, {function, {atom, Anno2, NewMod}, {atom, Anno3, Fun}, Arity}};
 %% -- Fun reference: local (fun name/arity) ------------------------------------
