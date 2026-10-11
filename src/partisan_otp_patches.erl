@@ -40,7 +40,11 @@
 apply_patches(OrigModule, Forms) ->
     ok = validate_source_shape(OrigModule, Forms),
     Patches = patches(OrigModule),
-    lists:foldl(fun apply_patch/2, Forms, Patches).
+    lists:foldl(
+        fun(Patch, Acc) -> apply_patch(OrigModule, Patch, Acc) end,
+        Forms,
+        Patches
+    ).
 
 %% =============================================================================
 %% INTERNAL: Patch dispatch
@@ -48,6 +52,8 @@ apply_patches(OrigModule, Forms) ->
 
 patches(gen_server) ->
     gen_server_patches();
+patches(gen_statem) ->
+    gen_statem_patches();
 patches(gen) ->
     gen_patches();
 patches(proc_lib) ->
@@ -65,7 +71,7 @@ patches(_) ->
 
 gen_server_patches() ->
     [
-        {replace, do_send, 2, do_send_source()},
+        {replace, do_send, 2, partisan_send_source("do_send")},
         {replace, client_stacktrace, 1, client_stacktrace_source()},
         {append_clause, cast, 2, cast_catch_all_source()},
         {add_function, cast, 3, cast_3_source()},
@@ -73,18 +79,21 @@ gen_server_patches() ->
         {add_export, [{cast, 3}, {send_request, 3}]}
     ].
 
-do_send_source() ->
-    "do_send(Dest, Msg) when is_pid(Dest) orelse is_reference(Dest) ->\n"
+%% The send primitive shared by gen_server's do_send/2 and gen_statem's send/2.
+%% Upstream uses erlang:send/2, which reaches a {Name, Node} target over disterl
+%% and rejects a Partisan remote reference.
+partisan_send_source(F) ->
+    F ++ "(Dest, Msg) when is_pid(Dest) orelse is_reference(Dest) ->\n"
     "    try erlang:send(Dest, Msg)\n"
     "    catch error:_ -> ok\n"
     "    end,\n"
-    "    ok;\n"
-    "do_send({Name, Node}, Msg) ->\n"
+    "    ok;\n" ++
+    F ++ "({Name, Node}, Msg) ->\n"
     "    case Node =:= partisan:node() of\n"
-    "        true -> do_send(Name, Msg);\n"
+    "        true -> " ++ F ++ "(Name, Msg);\n"
     "        false -> partisan:forward_message(Node, Name, Msg, partisan_gen:get_opts())\n"
-    "    end;\n"
-    "do_send(Dest, Msg) ->\n"
+    "    end;\n" ++
+    F ++ "(Dest, Msg) ->\n"
     "    partisan:send(Dest, Msg, partisan_gen:get_opts()).\n".
 
 client_stacktrace_source() ->
@@ -123,6 +132,25 @@ cast_3_source() ->
 send_request_3_source() ->
     "send_request(Name, Request, Opts) ->\n"
     "    partisan_gen:send_request(Name, '$gen_call', Request, Opts).\n".
+
+%% =============================================================================
+%% INTERNAL: gen_statem patches
+%% =============================================================================
+
+%% Upstream cast/2 has no clause for a Partisan remote reference, and its
+%% send/2 is erlang:send/2. The catch-all clause and the send/2 replacement
+%% route both through Partisan; partisan_SUITE:gen_statem_cast_test covers them.
+gen_statem_patches() ->
+    [
+        {replace, send, 2, partisan_send_source("send")},
+        {append_clause, cast, 2, gen_statem_cast_catch_all_source()},
+        {add_function, cast, 3, cast_3_source()},
+        {add_export, [{cast, 3}]}
+    ].
+
+gen_statem_cast_catch_all_source() ->
+    "cast(PartisanDest, Msg) ->\n"
+    "    send(PartisanDest, wrap_cast(Msg)).\n".
 
 %% =============================================================================
 %% INTERNAL: gen patches
@@ -1230,19 +1258,33 @@ sup_do_check_childspec_source() ->
 %% INTERNAL: Patch application
 %% =============================================================================
 
-%% Apply a single patch to the list of forms.
-apply_patch({replace, FunName, Arity, Source}, Forms) ->
+%% Apply a single patch to the list of forms. A patch whose target is absent
+%% from the installed OTP source raises: left as a no-op, it would build a
+%% module that compiles and runs without the behaviour the patch adds.
+apply_patch(OrigModule, {replace, FunName, Arity, Source}, Forms) ->
     NewForm = parse_function(Source),
-    replace_function(FunName, Arity, NewForm, Forms);
-apply_patch({add_function, _FunName, _Arity, Source}, Forms) ->
+    update_function(
+        OrigModule, replace, FunName, Arity, fun(_) -> NewForm end, Forms
+    );
+apply_patch(_OrigModule, {add_function, _FunName, _Arity, Source}, Forms) ->
+    %% An existing target is a duplicate definition, which compile:forms/2
+    %% rejects.
     NewForm = parse_function(Source),
     insert_before_eof(NewForm, Forms);
-apply_patch({add_export, FunArities}, Forms) ->
-    add_exports(FunArities, Forms);
-apply_patch({append_clause, FunName, Arity, Source}, Forms) ->
-    NewForm = parse_function(Source),
-    {function, _, _, _, NewClauses} = NewForm,
-    append_clauses(FunName, Arity, NewClauses, Forms).
+apply_patch(OrigModule, {add_export, FunArities}, Forms) ->
+    add_exports(OrigModule, FunArities, Forms);
+apply_patch(OrigModule, {append_clause, FunName, Arity, Source}, Forms) ->
+    {function, _, _, _, NewClauses} = parse_function(Source),
+    update_function(
+        OrigModule,
+        append_clause,
+        FunName,
+        Arity,
+        fun({function, Anno, Name, Ar, Clauses}) ->
+            {function, Anno, Name, Ar, Clauses ++ NewClauses}
+        end,
+        Forms
+    ).
 
 %% =============================================================================
 %% INTERNAL: Form manipulation helpers
@@ -1254,19 +1296,30 @@ parse_function(Source) ->
     {ok, Form} = erl_parse:parse_form(Tokens),
     Form.
 
-%% Replace a function by name and arity with a new form.
-replace_function(FunName, Arity, NewForm, Forms) ->
-    lists:map(
-        fun
-            ({function, _Anno, Name, Ar, _Clauses}) when
-                Name =:= FunName, Ar =:= Arity
-            ->
-                NewForm;
-            (Other) ->
-                Other
-        end,
-        Forms
-    ).
+%% Apply Fun to the function FunName/Arity. Raises if Forms does not define it.
+update_function(OrigModule, Kind, FunName, Arity, Fun, Forms) ->
+    case
+        lists:mapfoldl(
+            fun
+                ({function, _, Name, Ar, _} = Form, _Found) when
+                    Name =:= FunName, Ar =:= Arity
+                ->
+                    {Fun(Form), true};
+                (Other, Found) ->
+                    {Other, Found}
+            end,
+            false,
+            Forms
+        )
+    of
+        {NewForms, true} ->
+            NewForms;
+        {_, false} ->
+            error(
+                {otp_patch_target_missing, OrigModule,
+                    {Kind, {FunName, Arity}}}
+            )
+    end.
 
 %% Insert a form before the eof tuple, or append if no eof is found.
 insert_before_eof(NewForm, Forms) ->
@@ -1278,33 +1331,25 @@ insert_before_eof(NewForm, Forms) ->
     end.
 
 %% Add function name/arity pairs to the first export attribute found.
-add_exports(FunArities, Forms) ->
-    ExportEntries = [{FN, FA} || {FN, FA} <- FunArities],
-    add_exports_to_first(ExportEntries, Forms, false).
-
-add_exports_to_first(_Entries, [], _Found) ->
-    [];
-add_exports_to_first(
-    Entries, [{attribute, Anno, export, Existing} | Rest], false
-) ->
-    NewExport = Existing ++ Entries,
-    [
-        {attribute, Anno, export, NewExport}
-        | add_exports_to_first(Entries, Rest, true)
-    ];
-add_exports_to_first(Entries, [Form | Rest], Found) ->
-    [Form | add_exports_to_first(Entries, Rest, Found)].
-
-%% Append clauses to an existing function matched by name and arity.
-append_clauses(FunName, Arity, NewClauses, Forms) ->
-    lists:map(
-        fun
-            ({function, Anno, Name, Ar, Clauses}) when
-                Name =:= FunName, Ar =:= Arity
-            ->
-                {function, Anno, Name, Ar, Clauses ++ NewClauses};
-            (Other) ->
-                Other
-        end,
-        Forms
-    ).
+%% Raises if Forms has no export attribute.
+add_exports(OrigModule, FunArities, Forms) ->
+    case
+        lists:mapfoldl(
+            fun
+                ({attribute, Anno, export, Existing}, false) ->
+                    {{attribute, Anno, export, Existing ++ FunArities}, true};
+                (Form, Found) ->
+                    {Form, Found}
+            end,
+            false,
+            Forms
+        )
+    of
+        {NewForms, true} ->
+            NewForms;
+        {_, false} ->
+            error(
+                {otp_patch_target_missing, OrigModule,
+                    {add_export, FunArities}}
+            )
+    end.

@@ -261,6 +261,7 @@ groups() ->
             rpc_test,
             erpc_test,
             priority_alias_test,
+            gen_statem_cast_test,
             pid_test,
             rejoin_test,
             otp_test
@@ -3570,3 +3571,79 @@ priority_alias_test(_Config) ->
     {skip, "priority messages require OTP 28 or later"}.
 
 -endif.
+
+
+%% =============================================================================
+%% GEN_STATEM CAST
+%% =============================================================================
+
+
+%% -----------------------------------------------------------------------------
+%% `partisan_gen_statem:cast' must deliver over Partisan to a `{Name, Node}'
+%% target and to a Partisan remote reference, through both cast/2 and cast/3.
+%%
+%% Disterl between the two peers is closed before any cast, and the test checks
+%% this with a ping that must return `pang'. If a cast fell back to disterl the
+%% message would be dropped without an error, and the test would see the
+%% timeout. Upstream gen_statem uses erlang:send/2 for `{Name, Node}' and has
+%% no clause for a remote reference. The remote-reference case reproduces the
+%% production `function_clause' in `cast/2'.
+%%
+%% Not covered: `{global, _}' and `{via, _, _}' targets, which are unchanged
+%% from upstream.
+%% -----------------------------------------------------------------------------
+gen_statem_cast_test(Config) ->
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
+    Servers = ?SUPPORT:node_list(1, "server", Config),
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
+
+    Nodes = ?SUPPORT:start(
+        gen_statem_cast_test,
+        Config,
+        [
+            {peer_service_manager, Manager},
+            {servers, Servers},
+            {clients, Clients}
+        ]
+    ),
+
+    ?PUT_NODES(Nodes),
+
+    ?PAUSE_FOR_CLUSTERING,
+
+    [{_, _}, {_, _}, {_, Sender}, {_, Receiver}] = Nodes,
+
+    {ok, Pid} = rpc:call(Receiver, partisan_test_statem, start, [self()]),
+
+    %% The sender may still reach the CT runner, which drives it with rpc.
+    ok = rpc:call(Sender, net_kernel, allow, [[node()]]),
+    _ = rpc:call(Sender, erlang, disconnect_node, [Receiver]),
+    ?assertEqual(pang, rpc:call(Sender, net_adm, ping, [Receiver])),
+
+    Ref = rpc:call(Receiver, partisan_remote_ref, from_term, [Pid]),
+
+    ?assertEqual(ok, rpc:call(Sender, partisan_gen_statem, cast, [
+        {partisan_test_statem, Receiver}, by_name
+    ])),
+    ok = await_statem_cast(by_name),
+
+    ?assertEqual(ok, rpc:call(Sender, partisan_gen_statem, cast, [
+        Ref, by_remote_ref
+    ])),
+    ok = await_statem_cast(by_remote_ref),
+
+    ?assertEqual(ok, rpc:call(Sender, partisan_gen_statem, cast, [
+        Ref, with_opts, [{channel, ?DEFAULT_CHANNEL}]
+    ])),
+    ok = await_statem_cast(with_opts),
+
+    ok.
+
+
+%% @private
+await_statem_cast(Tag) ->
+    receive
+        {partisan_test_statem, Tag} -> ok
+    after
+        10000 -> ct:fail({cast_not_delivered, Tag})
+    end.
