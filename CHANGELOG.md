@@ -1,4 +1,41 @@
 # CHANGELOG
+# v6.3.1
+
+Fixes `partisan_gen_statem` and `partisan_gen_event` with targets on other
+Partisan nodes. Adds `partisan_gen_statem:cast/3` and `send_request/3`.
+
+## Fixes
+
+### partisan_gen_statem
+* **`cast/2` crashed on a remote reference** with `function_clause`, and a
+  cast to `{Name, Node}` went over disterl, where it was dropped without a
+  disterl connection. Both now go through Partisan. `cast/3` takes Partisan
+  send options. Covered by `partisan_SUITE:gen_statem_cast_test`.
+* **A `{reply, From, Reply}` action to a caller on another node terminated
+  the state machine** with `bad_action_from_state_function`. Covered by
+  `partisan_SUITE:gen_statem_call_test`, through `call/3` and
+  `send_request/3`.
+
+### partisan_gen_event
+* **`notify/2` raised `badarg` on a remote reference**, and sent to
+  `{Name, Node}` over disterl. Both now go through Partisan; `{global, _}`
+  and `{via, _, _}` are unchanged. Covered by
+  `partisan_SUITE:gen_event_notify_test`.
+* **`add_sup_handler/3` from a caller on another node crashed the event
+  manager**, because `link/1` raised `badarg` on the remote reference. The
+  manager now monitors such a caller instead of linking it. The caller's exit
+  removes its handlers, as a link would. The `gen_event_EXIT` notice now goes
+  through Partisan. A caller that is a pid is still linked. Covered by
+  `partisan_SUITE:gen_event_sup_handler_test`. Not tested: `swap_sup_handler/3`
+  and a caller lost because a node or connection failed. Limitation: if the
+  manager is killed, a caller on another node gets no notice.
+
+## OTP module generation
+
+* **A patch whose target function is missing from the installed OTP source
+  now fails the build** with `{otp_patch_target_missing, Module, Patch}`.
+  Before, the upstream code stayed in place without a warning.
+
 # v6.3.0
 
 One fix: the peer discovery agent evicted every member its backend did not

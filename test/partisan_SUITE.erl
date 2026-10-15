@@ -261,6 +261,10 @@ groups() ->
             rpc_test,
             erpc_test,
             priority_alias_test,
+            gen_statem_cast_test,
+            gen_statem_call_test,
+            gen_event_notify_test,
+            gen_event_sup_handler_test,
             pid_test,
             rejoin_test,
             otp_test
@@ -3570,3 +3574,231 @@ priority_alias_test(_Config) ->
     {skip, "priority messages require OTP 28 or later"}.
 
 -endif.
+
+
+%% =============================================================================
+%% GEN_STATEM AND GEN_EVENT OVER PARTISAN
+%% =============================================================================
+%%
+%% Each case runs between two peers with disterl closed between them; see
+%% start_disterl_isolated_pair/2. Not covered: `{global, _}' and
+%% `{via, _, _}' targets, which are unchanged from upstream.
+
+
+%% -----------------------------------------------------------------------------
+%% `partisan_gen_statem:cast' must deliver over Partisan to a `{Name, Node}'
+%% target and to a Partisan remote reference, through both cast/2 and cast/3,
+%% and must return `ok' when the target node is unreachable.
+%%
+%% Upstream gen_statem uses erlang:send/2 for `{Name, Node}' and has no clause
+%% for a remote reference. The remote-reference case reproduces the production
+%% `function_clause' in `cast/2'.
+%% -----------------------------------------------------------------------------
+gen_statem_cast_test(Config) ->
+    {Sender, Receiver} = start_disterl_isolated_pair(
+        gen_statem_cast_test, Config
+    ),
+    {ok, Pid} = rpc:call(Receiver, partisan_test_statem, start, [self()]),
+    Ref = rpc:call(Receiver, partisan_remote_ref, from_term, [Pid]),
+
+    ?assertEqual(ok, rpc:call(Sender, partisan_gen_statem, cast, [
+        {partisan_test_statem, Receiver}, by_name
+    ])),
+    ok = await_report(partisan_test_statem, by_name),
+
+    ?assertEqual(ok, rpc:call(Sender, partisan_gen_statem, cast, [
+        Ref, by_remote_ref
+    ])),
+    ok = await_report(partisan_test_statem, by_remote_ref),
+
+    ?assertEqual(ok, rpc:call(Sender, partisan_gen_statem, cast, [
+        Ref, with_opts, [{channel, ?DEFAULT_CHANNEL}]
+    ])),
+    ok = await_report(partisan_test_statem, with_opts),
+
+    ?assertEqual(ok, rpc:call(Sender, partisan_gen_statem, cast, [
+        unreachable_ref(), unreachable
+    ])),
+
+    ok.
+
+
+%% -----------------------------------------------------------------------------
+%% A call to a `partisan_gen_statem' on another node must get its reply when the
+%% state function replies with a `{reply, From, Reply}' action. Upstream from/1
+%% accepts only a `From' that holds a pid, so the action terminated the state
+%% machine with `bad_action_from_state_function'.
+%%
+%% call/3 and send_request/3 both go through that path. For send_request/3 the
+%% request and the receive run in one process on the sender, because the
+%% request id is bound to the process that made it.
+%% -----------------------------------------------------------------------------
+gen_statem_call_test(Config) ->
+    {Sender, Receiver} = start_disterl_isolated_pair(
+        gen_statem_call_test, Config
+    ),
+    {ok, Pid} = rpc:call(Receiver, partisan_test_statem, start, [self()]),
+    Ref = rpc:call(Receiver, partisan_remote_ref, from_term, [Pid]),
+
+    ?assertEqual(
+        {pong, by_call},
+        rpc:call(Sender, partisan_gen_statem, call, [Ref, by_call, 10000])
+    ),
+
+    ?assertEqual(
+        {reply, {pong, ping}},
+        rpc:call(Sender, erlang, apply, [
+            fun() ->
+                ReqId = partisan_gen_statem:send_request(
+                    Ref, ping, [{channel, ?DEFAULT_CHANNEL}]
+                ),
+                partisan_gen_statem:receive_response(ReqId, 10000)
+            end,
+            []
+        ])
+    ),
+
+    ok.
+
+
+%% -----------------------------------------------------------------------------
+%% `partisan_gen_event:notify/2' must deliver over Partisan to a
+%% `{Name, Node}' target and to a Partisan remote reference, and must return
+%% `ok' when the target node is unreachable. Upstream gen_event sends with `!',
+%% which takes disterl for `{Name, Node}' and raises `badarg' for a remote
+%% reference.
+%% -----------------------------------------------------------------------------
+gen_event_notify_test(Config) ->
+    {Sender, Receiver} = start_disterl_isolated_pair(
+        gen_event_notify_test, Config
+    ),
+    {ok, Pid} = rpc:call(
+        Receiver, partisan_test_event_handler, start, [self()]
+    ),
+    Ref = rpc:call(Receiver, partisan_remote_ref, from_term, [Pid]),
+
+    ?assertEqual(ok, rpc:call(Sender, partisan_gen_event, notify, [
+        {partisan_test_event_handler, Receiver}, by_name
+    ])),
+    ok = await_report(partisan_test_event_handler, by_name),
+
+    ?assertEqual(ok, rpc:call(Sender, partisan_gen_event, notify, [
+        Ref, by_remote_ref
+    ])),
+    ok = await_report(partisan_test_event_handler, by_remote_ref),
+
+    ?assertEqual(ok, rpc:call(Sender, partisan_gen_event, notify, [
+        unreachable_ref(), unreachable
+    ])),
+
+    ok.
+
+
+%% -----------------------------------------------------------------------------
+%% A handler added with `partisan_gen_event:add_sup_handler/3' by a process on
+%% another Partisan node. Deleting the handler must send
+%% `{gen_event_EXIT, Handler, normal}' to that process, and the process's exit
+%% must delete the handler. Upstream links to the caller, and `link/1' on a
+%% remote reference raises `badarg' and crashes the event manager.
+%%
+%% Not covered: `swap_sup_handler/3', which takes the same path through
+%% `server_add_sup_handler/4'; a caller lost to a node or connection failure;
+%% and the same caller supervising two handlers.
+%% -----------------------------------------------------------------------------
+gen_event_sup_handler_test(Config) ->
+    {Sender, Receiver} = start_disterl_isolated_pair(
+        gen_event_sup_handler_test, Config
+    ),
+    {ok, _} = rpc:call(
+        Receiver, partisan_test_event_handler, start, [self()]
+    ),
+    Manager = {partisan_test_event_handler, Receiver},
+    Runner = self(),
+
+    Notified = {partisan_test_event_handler, notified},
+    _ = rpc:call(Sender, erlang, spawn, [
+        fun() ->
+            Runner ! {sup_caller, partisan_gen_event:add_sup_handler(
+                Manager, Notified, []
+            )},
+            receive
+                Notice -> Runner ! {sup_caller, Notice}
+            end
+        end
+    ]),
+    ok = await_report(sup_caller, ok),
+    ?assertEqual(ok, rpc:call(Receiver, partisan_gen_event, delete_handler, [
+        partisan_test_event_handler, Notified, []
+    ])),
+    ok = await_report(sup_caller, {gen_event_EXIT, Notified, normal}),
+
+    Exiting = {partisan_test_event_handler, exiting},
+    _ = rpc:call(Sender, erlang, spawn, [
+        fun() ->
+            Runner ! {sup_caller, partisan_gen_event:add_sup_handler(
+                Manager, Exiting, []
+            )},
+            exit(caller_exit)
+        end
+    ]),
+    ok = await_report(sup_caller, ok),
+    Handlers = fun() ->
+        rpc:call(Receiver, partisan_gen_event, which_handlers, [
+            partisan_test_event_handler
+        ])
+    end,
+    ?assertEqual(ok, wait_until(
+        fun() -> not lists:member(Exiting, Handlers()) end, 50, 200
+    )),
+    ?assertEqual([partisan_test_event_handler], Handlers()),
+
+    ok.
+
+
+%% @private
+%% Starts the cluster and returns two peers between which disterl is closed.
+%% A ping that must return `pang' checks this. A message that fell back to
+%% disterl is then dropped without an error, so the case sees a timeout. The
+%% sender may still reach the CT runner, which drives it with rpc. The test
+%% processes report to the runner over disterl from the receiver.
+start_disterl_isolated_pair(Case, Config) ->
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
+    Servers = ?SUPPORT:node_list(1, "server", Config),
+    Clients = ?SUPPORT:node_list(?CLIENT_NUMBER, "client", Config),
+
+    Nodes = ?SUPPORT:start(
+        Case,
+        Config,
+        [
+            {peer_service_manager, Manager},
+            {servers, Servers},
+            {clients, Clients}
+        ]
+    ),
+
+    ?PUT_NODES(Nodes),
+
+    ?PAUSE_FOR_CLUSTERING,
+
+    [{_, _}, {_, _}, {_, Sender}, {_, Receiver}] = Nodes,
+
+    ok = rpc:call(Sender, net_kernel, allow, [[node()]]),
+    _ = rpc:call(Sender, erlang, disconnect_node, [Receiver]),
+    ?assertEqual(pang, rpc:call(Sender, net_adm, ping, [Receiver])),
+
+    {Sender, Receiver}.
+
+
+%% @private
+%% A remote reference to a pid on a node that is not in the cluster.
+unreachable_ref() ->
+    ['unreachable@nohost' | <<"#Pid<0.99.0>">>].
+
+
+%% @private
+await_report(From, Tag) ->
+    receive
+        {From, Tag} -> ok
+    after
+        10000 -> ct:fail({not_delivered, From, Tag})
+    end.
