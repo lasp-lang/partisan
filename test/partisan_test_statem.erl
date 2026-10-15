@@ -4,7 +4,9 @@
 %% =============================================================================
 %%
 %% @doc A `partisan_gen_statem' that reports every cast it receives to a
-%% process fixed at start. Used by `partisan_SUITE:gen_statem_cast_test/1'.
+%% process fixed at start, and answers every call with `{pong, Request}'. Used
+%% by `partisan_SUITE:gen_statem_cast_test/1' and
+%% `partisan_SUITE:gen_statem_call_test/1'.
 %%
 %% The report target is passed in at start, over disterl, and not inside the
 %% cast. A pid that travels inside a cast is subject to Partisan's pid encoding,
@@ -32,4 +34,6 @@ callback_mode() ->
 
 handle_event(cast, Tag, _State, ReportTo) ->
     ReportTo ! {?MODULE, Tag},
-    keep_state_and_data.
+    keep_state_and_data;
+handle_event({call, From}, Request, _State, _ReportTo) ->
+    {keep_state_and_data, [{reply, From, {pong, Request}}]}.

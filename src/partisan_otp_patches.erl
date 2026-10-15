@@ -54,6 +54,8 @@ patches(gen_server) ->
     gen_server_patches();
 patches(gen_statem) ->
     gen_statem_patches();
+patches(gen_event) ->
+    gen_event_patches();
 patches(gen) ->
     gen_patches();
 patches(proc_lib) ->
@@ -79,9 +81,11 @@ gen_server_patches() ->
         {add_export, [{cast, 3}, {send_request, 3}]}
     ].
 
-%% The send primitive shared by gen_server's do_send/2 and gen_statem's send/2.
-%% Upstream uses erlang:send/2, which reaches a {Name, Node} target over disterl
-%% and rejects a Partisan remote reference.
+%% The send primitive shared by gen_server, gen_statem and gen_event. Upstream
+%% uses erlang:send/2 or `!', which reaches a {Name, Node} target over disterl
+%% and rejects a Partisan remote reference. It returns ok, as upstream does:
+%% gen_statem's cast/2 returns this result, and partisan:send/3 can return
+%% {error, Reason}.
 partisan_send_source(F) ->
     F ++ "(Dest, Msg) when is_pid(Dest) orelse is_reference(Dest) ->\n"
     "    try erlang:send(Dest, Msg)\n"
@@ -90,11 +94,17 @@ partisan_send_source(F) ->
     "    ok;\n" ++
     F ++ "({Name, Node}, Msg) ->\n"
     "    case Node =:= partisan:node() of\n"
-    "        true -> " ++ F ++ "(Name, Msg);\n"
-    "        false -> partisan:forward_message(Node, Name, Msg, partisan_gen:get_opts())\n"
+    "        true ->\n"
+    "            " ++ F ++ "(Name, Msg);\n"
+    "        false ->\n"
+    "            _ = partisan:forward_message(\n"
+    "                Node, Name, Msg, partisan_gen:get_opts()\n"
+    "            ),\n"
+    "            ok\n"
     "    end;\n" ++
     F ++ "(Dest, Msg) ->\n"
-    "    partisan:send(Dest, Msg, partisan_gen:get_opts()).\n".
+    "    _ = partisan:send(Dest, Msg, partisan_gen:get_opts()),\n"
+    "    ok.\n".
 
 client_stacktrace_source() ->
     "client_stacktrace(undefined) ->\n"
@@ -145,12 +155,144 @@ gen_statem_patches() ->
         {replace, send, 2, partisan_send_source("send")},
         {append_clause, cast, 2, gen_statem_cast_catch_all_source()},
         {add_function, cast, 3, cast_3_source()},
-        {add_export, [{cast, 3}]}
+        {add_function, send_request, 3, send_request_3_source()},
+        {add_export, [{cast, 3}, {send_request, 3}]},
+        {replace, from, 1, gen_statem_from_source()},
+        {replace, event_type, 1, gen_statem_event_type_source()}
     ].
 
 gen_statem_cast_catch_all_source() ->
     "cast(PartisanDest, Msg) ->\n"
     "    send(PartisanDest, wrap_cast(Msg)).\n".
+
+%% Upstream from/1 accepts only {Pid, Tag} with a local or disterl pid, so a
+%% {reply, From, Reply} action to a caller on another Partisan node terminates
+%% the state machine with bad_action_from_state_function.
+%% partisan_SUITE:gen_statem_call_test covers it.
+gen_statem_from_source() ->
+    "from({To, _}) when is_pid(To) ->\n"
+    "    true;\n"
+    "from({To, _}) ->\n"
+    "    partisan:is_pid(To);\n"
+    "from(_) ->\n"
+    "    false.\n".
+
+%% Upstream event_type/1 inlines the from/1 check for {call, From}. This is
+%% upstream's function with that check replaced by a call to from/1.
+gen_statem_event_type_source() ->
+    "event_type(Type) ->\n"
+    "    case Type of\n"
+    "        {call, From} -> from(From);\n"
+    "        cast -> true;\n"
+    "        info -> true;\n"
+    "        internal -> true;\n"
+    "        _ -> timeout_event_type(Type)\n"
+    "    end.\n".
+
+%% =============================================================================
+%% INTERNAL: gen_event patches
+%% =============================================================================
+
+%% Upstream send/2, used by notify/2, sends with `!'. The replacement keeps the
+%% {global, _} and {via, _, _} clauses and routes every other target through
+%% Partisan; partisan_SUITE:gen_event_notify_test covers it.
+%%
+%% A supervised handler (add_sup_handler/3, swap_sup_handler/3) is tied to its
+%% caller by a link, and the gen_event_EXIT notice is sent with `!'. Partisan
+%% has no links, and a caller on another Partisan node arrives as a remote
+%% reference, on which link/1 raises badarg and crashes the event manager. For
+%% such a caller the manager monitors it instead, turns the DOWN into the
+%% 'EXIT' message the link would have delivered, and sends the notice through
+%% Partisan. A pid caller keeps the link. decode_msg/7, report_terminate/5 and
+%% server_add_sup_handler/4 are identical in OTP 27, 28 and 29.
+%% partisan_SUITE:gen_event_sup_handler_test covers it.
+gen_event_patches() ->
+    [
+        {replace, send, 2, gen_event_send_source()},
+        {add_function, partisan_send, 2, partisan_send_source("partisan_send")},
+        {replace, server_add_sup_handler, 4,
+            gen_event_server_add_sup_handler_source()},
+        {add_function, partisan_supervise, 1,
+            gen_event_partisan_supervise_source()},
+        {replace, decode_msg, 7, gen_event_decode_msg_source()},
+        {replace, report_terminate, 5, gen_event_report_terminate_source()}
+    ].
+
+gen_event_send_source() ->
+    "send({global, Name}, Cmd) ->\n"
+    "    catch global:send(Name, Cmd),\n"
+    "    ok;\n"
+    "send({via, Mod, Name}, Cmd) ->\n"
+    "    catch Mod:send(Name, Cmd),\n"
+    "    ok;\n"
+    "send(M, Cmd) ->\n"
+    "    partisan_send(M, Cmd).\n".
+
+gen_event_server_add_sup_handler_source() ->
+    "server_add_sup_handler({Mod, Id}, Args, MSL, Parent) ->\n"
+    "    ok = partisan_supervise(Parent),\n"
+    "    Handler = #handler{module = Mod, id = Id, supervised = Parent},\n"
+    "    server_add_handler(Mod, Handler, Args, MSL);\n"
+    "server_add_sup_handler(Mod, Args, MSL, Parent) ->\n"
+    "    ok = partisan_supervise(Parent),\n"
+    "    Handler = #handler{module = Mod, supervised = Parent},\n"
+    "    server_add_handler(Mod, Handler, Args, MSL).\n".
+
+%% Upstream links once per caller and keeps the link after the handler is
+%% deleted, so a caller's exit reaches the manager once. The process dictionary
+%% entry gives the monitor the same once-per-caller lifetime; decode_msg/7
+%% erases it when the DOWN arrives.
+gen_event_partisan_supervise_source() ->
+    "partisan_supervise(Sup) when is_pid(Sup) ->\n"
+    "    link(Sup),\n"
+    "    ok;\n"
+    "partisan_supervise(Sup) ->\n"
+    "    Key = {partisan_gen_event_supervisor, Sup},\n"
+    "    case get(Key) of\n"
+    "        undefined ->\n"
+    "            Opts = [{tag, partisan_gen_event_supervisor_down}\n"
+    "                    | partisan_gen:get_opts()],\n"
+    "            _ = partisan:monitor(process, Sup, Opts),\n"
+    "            _ = put(Key, true),\n"
+    "            ok;\n"
+    "        true ->\n"
+    "            ok\n"
+    "    end.\n".
+
+%% Upstream decode_msg/7 with one added branch, which turns the DOWN of a
+%% partisan_supervise/1 monitor into the 'EXIT' message of a link.
+gen_event_decode_msg_source() ->
+    "decode_msg(Msg, Parent, ServerName, MSL, HibernateAfterTimeout, Debug, Hib) ->\n"
+    "    case Msg of\n"
+    "        {system, From, Req} ->\n"
+    "            partisan_sys:handle_system_msg(Req, From, Parent,\n"
+    "                partisan_gen_event, Debug,\n"
+    "                [ServerName, MSL, HibernateAfterTimeout, Hib], Hib);\n"
+    "        {partisan_gen_event_supervisor_down, _, process, Sup, Reason} ->\n"
+    "            _ = erase({partisan_gen_event_supervisor, Sup}),\n"
+    "            decode_msg({'EXIT', Sup, Reason}, Parent, ServerName, MSL,\n"
+    "                HibernateAfterTimeout, Debug, Hib);\n"
+    "        {'EXIT', Parent, Reason} ->\n"
+    "            terminate_server(Reason, Parent, MSL, ServerName);\n"
+    "        _Msg when Debug =:= [] ->\n"
+    "            handle_msg(Msg, Parent, ServerName, MSL,\n"
+    "                HibernateAfterTimeout, []);\n"
+    "        _Msg ->\n"
+    "            Debug1 = partisan_sys:handle_debug(Debug, fun print_event/3,\n"
+    "                ServerName, {in, Msg}),\n"
+    "            handle_msg(Msg, Parent, ServerName, MSL,\n"
+    "                HibernateAfterTimeout, Debug1)\n"
+    "    end.\n".
+
+gen_event_report_terminate_source() ->
+    "report_terminate(Handler, Reason, State, LastIn, SName) ->\n"
+    "    report_error(Handler, Reason, State, LastIn, SName),\n"
+    "    case Handler#handler.supervised of\n"
+    "        false ->\n"
+    "            ok;\n"
+    "        Pid ->\n"
+    "            partisan_send(Pid, {gen_event_EXIT, handler(Handler), Reason})\n"
+    "    end.\n".
 
 %% =============================================================================
 %% INTERNAL: gen patches

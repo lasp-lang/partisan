@@ -48,7 +48,8 @@ missing_append_clause_target_raises_test() ->
 missing_export_attribute_raises_test() ->
     Forms = [F || F <- forms(), not is_export(F)],
     ?assertError(
-        {otp_patch_target_missing, gen_statem, {add_export, [{cast, 3}]}},
+        {otp_patch_target_missing, gen_statem,
+            {add_export, [{cast, 3}, {send_request, 3}]}},
         partisan_otp_patches:apply_patches(gen_statem, Forms)
     ).
 
