@@ -750,6 +750,27 @@ stop_ct_node(Node) ->
     end.
 
 %% @private
+%% Halts `Node' without leaving the partisan cluster, as a crashed or killed
+%% instance would, and waits for its disterl connection to go down.
+kill_ct_node(Node) ->
+    true = erlang:monitor_node(Node, true),
+    true = rpc:cast(Node, erlang, halt, []),
+    receive
+        {nodedown, Node} -> ok
+    after 10000 ->
+        ct:fail({node_still_up, Node})
+    end,
+    Key = {?MODULE, peer, Node},
+    case persistent_term:get(Key, undefined) of
+        undefined ->
+            ok;
+        Peer ->
+            persistent_term:erase(Key),
+            _ = (catch peer:stop(Peer)),
+            ok
+    end.
+
+%% @private
 connect(G, N1, N2) ->
     %% Add vertex for neighboring node.
     digraph:add_vertex(G, N1),

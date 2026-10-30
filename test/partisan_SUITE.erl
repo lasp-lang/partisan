@@ -267,6 +267,7 @@ groups() ->
             gen_event_sup_handler_test,
             pid_test,
             rejoin_test,
+            restart_on_new_address_test,
             otp_test
         ]},
 
@@ -274,7 +275,9 @@ groups() ->
             hyparview_manager_partition_test,
             hyparview_manager_high_active_test,
             hyparview_manager_low_active_test,
-            hyparview_manager_high_client_test
+            hyparview_manager_high_client_test,
+            hyparview_unreachable_passive_peer_test,
+            hyparview_restart_on_new_address_test
         ]},
 
         {hyparview_xbot, [], [
@@ -1192,6 +1195,103 @@ on_down_test(Config) ->
 
     ok.
 
+%% A member stops and comes back with the same name on a new listen port (a
+%% Kubernetes StatefulSet pod recreated with a new IP). Every other member
+%% must converge to the new specification only, and must not kill and
+%% re-open its connections to the returning node once the old
+%% specification is pruned. Not covered: an address change while the node
+%% keeps running, or a returning node that is not reachable at all.
+restart_on_new_address_test(Config) ->
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
+    Servers = ?SUPPORT:node_list(1, "server", Config),
+    Clients = ?SUPPORT:node_list(2, "client", Config),
+    Nodes = ?SUPPORT:start(
+        restart_on_new_address_test,
+        Config,
+        [
+            {peer_service_manager, Manager},
+            {servers, Servers},
+            {clients, Clients}
+        ]
+    ),
+    ?PUT_NODES(Nodes),
+    ?PAUSE_FOR_CLUSTERING,
+
+    [{_, Node1} | _] = Nodes,
+    {Name3, Node3} = lists:last(Nodes),
+    Others = [N || {_, N} <- Nodes, N =/= Node3],
+    OldSpec = rpc:call(Node3, partisan, node_spec, []),
+    ok = wait_until_specs_for(Node3, [OldSpec], Others),
+
+    ok = partisan_support:kill_ct_node(Node3),
+    [{Name3, Node3}] = ?SUPPORT:start(
+        restart_on_new_address_test,
+        Config,
+        [
+            {peer_service_manager, Manager},
+            {servers, [Name3]},
+            {clients, []}
+        ]
+    ),
+    NewSpec = rpc:call(Node3, partisan, node_spec, []),
+    ?assertNotEqual(
+        maps:get(listen_addrs, OldSpec), maps:get(listen_addrs, NewSpec)
+    ),
+    Node1Spec = rpc:call(Node1, partisan, node_spec, []),
+    ok = rpc:call(Node3, partisan_peer_service, join, [Node1Spec]),
+
+    ok = wait_until_specs_for(Node3, [NewSpec], Others),
+
+    Self = self(),
+    _ = [
+        ok = rpc:call(N, Manager, on_down, [Node3, down_signal(Self, N)])
+     || N <- Others
+    ],
+    Conns0 = [{N, connection_pids(N, Node3)} || N <- Others],
+    ct:sleep(3 * ?OVERRIDE_PERIODIC_INTERVAL),
+    Conns = [{N, connection_pids(N, Node3)} || N <- Others],
+    ?assertEqual(Conns0, Conns),
+    receive
+        {down, Observer} ->
+            ct:fail({down_signalled_for_live_node, Observer, Node3})
+    after 0 ->
+        ok
+    end,
+    ok = wait_until_specs_for(Node3, [NewSpec], Others ++ [Node3]),
+    ok.
+
+%% @private
+down_signal(Pid, Observer) ->
+    fun() -> Pid ! {down, Observer} end.
+
+%% @private
+wait_until_specs_for(Node, Expected, Observers) ->
+    Specs = fun(Observer) ->
+        Members = rpc:call(Observer, partisan_membership, members, []),
+        lists:sort([S || #{name := N} = S <- Members, N == Node])
+    end,
+    Converged = fun() ->
+        lists:all(fun(O) -> Specs(O) == lists:sort(Expected) end, Observers)
+    end,
+    Manager = partisan_peer_service,
+    case wait_until(Converged, 120, 1000) of
+        ok ->
+            ok;
+        {fail, false} ->
+            View = fun(O) ->
+                Orch = rpc:call(O, Manager, members_for_orchestration, []),
+                {O, Specs(O), Orch}
+            end,
+            Views = lists:map(View, Observers),
+            ct:fail({specs_not_converged, Node, Expected, Views})
+    end.
+
+%% @private
+connection_pids(Observer, Node) ->
+    Pids = rpc:call(Observer, partisan_peer_connections, processes, [Node]),
+    ?assertNotEqual([], Pids),
+    lists:sort(Pids).
+
 rejoin_test(Config) ->
     case os:getenv("TRAVIS") of
         false ->
@@ -2030,6 +2130,117 @@ client_server_manager_test(Config) ->
     ),
 
     ok.
+
+%% A passive-view entry for a live node, carrying a listen address nothing
+%% listens on (a specification left from that node's previous address), is
+%% promoted and must then leave the passive view (Leitão et al., DSN'07,
+%% §4.3: a passive peer that cannot be connected to is considered failed and
+%% removed). The active view holds the node itself, so with two nodes it
+%% stays below `active_min_size' (3) and random promotion runs; the injected
+%% entry is the only passive candidate. Not covered: the retry with another
+%% passive peer that §4.3 also describes.
+hyparview_unreachable_passive_peer_test(Config) ->
+    Manager = partisan_hyparview_peer_service_manager,
+    Nodes = start_hyparview(?FUNCTION_NAME, Config, Manager, 1),
+    ?PUT_NODES(Nodes),
+    ok = wait_until_hyparview_connected(Nodes),
+    [{_, Observer}, {_, Node}] = Nodes,
+    Live = rpc:call(Node, partisan, node_spec, []),
+    Stale = Live#{listen_addrs => [closed_listen_addr()]},
+
+    Inject = fun() ->
+        Msg = {shuffle_reply, [Stale], Live},
+        ok = gen_server:cast(Manager, {receive_message, Node, undefined, Msg}),
+        {ok, Passive} = Manager:passive(),
+        sets:is_element(Stale, Passive)
+    end,
+    ?assert(rpc:call(Observer, erlang, apply, [Inject, []])),
+
+    Removed = fun() ->
+        {ok, Passive} = rpc:call(Observer, Manager, passive, []),
+        not sets:is_element(Stale, Passive)
+    end,
+    ?assertEqual(ok, wait_until(Removed, 60, 1000)),
+    {ok, Active} = rpc:call(Observer, Manager, active, []),
+    ?assert(sets:is_element(Live, Active)),
+    ok.
+
+%% A member is killed without leaving, comes back on a new listen port, and
+%% is killed again. Every other member must drop it from its active view
+%% after the second failure (Leitão et al., DSN'07, §4.3: a failed active
+%% peer is removed). Not covered: a node that comes back while the other
+%% members still hold connections to its previous address.
+hyparview_restart_on_new_address_test(Config) ->
+    Manager = partisan_hyparview_peer_service_manager,
+    Nodes = start_hyparview(?FUNCTION_NAME, Config, Manager, 2),
+    ?PUT_NODES(Nodes),
+    ok = wait_until_hyparview_connected(Nodes),
+    [{_, Node1} | _] = Nodes,
+    {Name3, Node3} = lists:last(Nodes),
+    Others = [N || {_, N} <- Nodes, N =/= Node3],
+
+    ok = partisan_support:kill_ct_node(Node3),
+    ok = wait_until_active_specs_for(Node3, [], Others),
+    [{Name3, Node3}] = ?SUPPORT:start(
+        hyparview_restart_on_new_address_test,
+        Config,
+        [
+            {peer_service_manager, Manager},
+            {servers, [Name3]},
+            {clients, []}
+        ]
+    ),
+    NewSpec = rpc:call(Node3, partisan, node_spec, []),
+    Node1Spec = rpc:call(Node1, partisan, node_spec, []),
+    ok = rpc:call(Node3, partisan_peer_service, join, [Node1Spec]),
+    ok = wait_until_active_specs_for(Node3, [NewSpec], Others),
+
+    ok = partisan_support:kill_ct_node(Node3),
+    ok = wait_until_active_specs_for(Node3, [], Others),
+    ok.
+
+%% @private
+start_hyparview(Case, Config, Manager, NumClients) ->
+    Nodes = ?SUPPORT:start(
+        Case,
+        Config,
+        [
+            {peer_service_manager, Manager},
+            {servers, ?SUPPORT:node_list(1, "server", Config)},
+            {clients, ?SUPPORT:node_list(NumClients, "client", Config)}
+        ]
+    ),
+    Nodes.
+
+%% @private
+wait_until_hyparview_connected(Nodes) ->
+    Connected = fun() -> hyparview_membership_check(Nodes) == {[], []} end,
+    wait_until(Connected, 120, 1000).
+
+%% @private
+closed_listen_addr() ->
+    {ok, Socket} = gen_tcp:listen(0, [{ip, {127, 0, 0, 1}}]),
+    {ok, Port} = inet:port(Socket),
+    ok = gen_tcp:close(Socket),
+    #{ip => {127, 0, 0, 1}, port => Port}.
+
+%% @private
+wait_until_active_specs_for(Node, Expected, Observers) ->
+    Manager = partisan_hyparview_peer_service_manager,
+    Specs = fun(Observer) ->
+        {ok, Active} = rpc:call(Observer, Manager, active, []),
+        lists:sort([S || #{name := N} = S <- sets:to_list(Active), N == Node])
+    end,
+    Converged = fun() ->
+        lists:all(fun(O) -> Specs(O) == lists:sort(Expected) end, Observers)
+    end,
+    case wait_until(Converged, 60, 1000) of
+        ok ->
+            ok;
+        {fail, false} ->
+            Views = [{O, Specs(O)} || O <- Observers],
+            ct:fail({active_specs_not_converged, Node, Expected, Views})
+    end.
 
 hyparview_manager_partition_test(Config) ->
     %% Use hyparview.
