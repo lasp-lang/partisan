@@ -1046,8 +1046,9 @@ handle_info({'EXIT', Pid, Reason}, State0) when is_pid(Pid) ->
     try partisan_peer_connections:prune(Pid, Reason) of
         {Info, _Connections} ->
             Peer = partisan_peer_connections:node_spec(Info),
-            %% If it was in the passive view and our connection attempt failed,
-            %% remove from the passive view altogether.
+            %% An established connection died. A failed connection attempt
+            %% never gets here, as proc_lib flushes the 'EXIT' of a process
+            %% that fails to start; promote_peer/2 handles that case.
             Passive =
                 case is_in_passive_view(Peer, Passive0) of
                     true ->
@@ -1056,8 +1057,8 @@ handle_info({'EXIT', Pid, Reason}, State0) when is_pid(Pid) ->
                         Passive0
                 end,
 
-            %% If it was in the active view and our connection attempt failed,
-            %% remove from the active view altogether.
+            %% Leitao et al., DSN'07, §4.3: a failed active peer is removed and
+            %% a passive peer is promoted in its place.
             {Active, RemovedFromActive} =
                 case is_in_active_view(Peer, Active0) of
                     true ->
@@ -2766,6 +2767,26 @@ is_addable(PeerEpoch, Peer, SentMessageMap) ->
 promote_peer(undefined, State) ->
     State;
 promote_peer(Peer, #state{} = State) ->
+    ok = partisan_peer_service_manager:connect(Peer),
+
+    %% Leitao et al., DSN'07, §4.3: a passive peer that cannot be connected
+    %% to is considered failed and removed from the passive view. Connections
+    %% are keyed by node name, so the check is on Peer's own listen addresses:
+    %% an entry left from a live node's previous address is removed too.
+    case partisan_peer_connections:is_connected(Peer) of
+        true ->
+            send_neighbor_request(Peer, State);
+        false ->
+            ?LOG_DEBUG(#{
+                description => "Removing unreachable peer from passive view",
+                peer => Peer
+            }),
+            Passive = remove_from_passive_view(Peer, State#state.passive),
+            State#state{passive = Passive}
+    end.
+
+%% @private
+send_neighbor_request(Peer, #state{} = State) ->
     Myself = State#state.node_spec,
     Tag = State#state.tag,
     RecvMessageMap0 = State#state.recv_message_map,
@@ -2773,10 +2794,6 @@ promote_peer(Peer, #state{} = State) ->
     ?LOG_DEBUG("Node ~p sends the NEIGHBOR_REQUEST to ~p", [Myself, Peer]),
 
     Exchange = select_peers_for_exchange(State),
-
-    %% Trigger connection.
-    ok = partisan_peer_service_manager:connect(Peer),
-
     LastDisconnectId = get_current_id(Peer, RecvMessageMap0),
 
     %% NOTE: priority is always `high', which departs from Leitao et al.,
