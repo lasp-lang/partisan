@@ -74,6 +74,8 @@
 %% partisan_peer_connection objects.
 %% - For every partisan_peer_connection for Node there is 1 partisan_peer_info
 %% object
+%% - The node_spec of a partisan_peer_info is the spec of the connection that
+%% last took its connection_count from 0 to 1 (reconnect_on_new_address_test).
 -record(partisan_peer_info, {
     node :: maybe_var(node()),
     node_spec :: maybe_var(partisan:node_spec()),
@@ -969,7 +971,9 @@ is_fully_connected(#{channels := Channels}, Count) ->
 %% -----------------------------------------------------------------------------
 %% @private
 %% @doc We conditionally insert a new info record incrementing its connection
-%% count.
+%% count. The connection that takes the count from 0 to 1 sets the info
+%% record's node_spec, so a node that returns on a new listen address is not
+%% reported under its previous specification.
 %% @end
 %% -----------------------------------------------------------------------------
 incr_counter(#{name := Node} = Spec) ->
@@ -979,8 +983,15 @@ incr_counter(#{name := Node} = Spec) ->
         node_spec = Spec,
         timestamp = erlang:system_time(nanosecond)
     },
-    _ = ets:update_counter(?MODULE, Node, Ops, Default),
-    ok.
+    case ets:update_counter(?MODULE, Node, Ops, Default) of
+        [1] ->
+            true = ets:update_element(
+                ?MODULE, Node, {#partisan_peer_info.node_spec, Spec}
+            ),
+            ok;
+        [_] ->
+            ok
+    end.
 
 %% -----------------------------------------------------------------------------
 %% @private
@@ -2080,5 +2091,61 @@ prune_test() ->
         badarg,
         prune(node1)
     ).
+
+%% Node3 drops its last connection (the info record survives with count 0)
+%% and reconnects on a new listen address. Not covered: a reconnection that
+%% arrives while connections on the old address are still up.
+reconnect_on_new_address_test() ->
+    Old = #{
+        name => node3,
+        listen_addrs => [#{ip => {127, 0, 0, 1}, port => 83}],
+        channels => channels()
+    },
+    New = Old#{listen_addrs => [#{ip => {127, 0, 0, 2}, port => 83}]},
+    ok = init(),
+    ok = store(
+        Old,
+        list_to_pid("<0.5011.0>"),
+        undefined,
+        hd(maps:get(listen_addrs, Old))
+    ),
+    _ = prune(list_to_pid("<0.5011.0>")),
+    ?assertEqual(0, count(node3)),
+
+    ok = store(
+        New,
+        list_to_pid("<0.5012.0>"),
+        undefined,
+        hd(maps:get(listen_addrs, New))
+    ),
+    {ok, Info} = info(node3),
+    ?assertEqual(New, node_spec(Info)),
+    ?assert(lists:member(New, node_specs())),
+    ?assertNot(lists:member(Old, node_specs())),
+    _ = erase(node3).
+
+%% A second spec for a node that still has connections leaves the info
+%% record's spec unchanged.
+store_while_connected_keeps_spec_test() ->
+    Spec = #{
+        name => node4,
+        listen_addrs => [#{ip => {127, 0, 0, 1}, port => 84}],
+        channels => channels()
+    },
+    Other = Spec#{listen_addrs => [#{ip => {127, 0, 0, 2}, port => 84}]},
+    ok = init(),
+    ok = store(
+        Spec,
+        list_to_pid("<0.5013.0>"),
+        undefined,
+        hd(maps:get(listen_addrs, Spec))
+    ),
+    ok = store(
+        Other, list_to_pid("<0.5014.0>"), foo, hd(maps:get(listen_addrs, Other))
+    ),
+    {ok, Info} = info(node4),
+    ?assertEqual(Spec, node_spec(Info)),
+    ?assertEqual(2, count(node4)),
+    _ = erase(node4).
 
 -endif.

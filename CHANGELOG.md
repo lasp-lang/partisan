@@ -1,4 +1,64 @@
 # CHANGELOG
+# v6.3.2
+
+Fixes stale node specifications that were never pruned. A node that crashes
+without leaving the cluster and returns with the same name on a new address
+(for example a Kubernetes StatefulSet pod recreated with a new IP) left its
+previous specification in the membership for as long as any node stayed up,
+and every connection tick retried the dead address.
+
+## Fixes
+
+### partisan_peer_service_manager
+* **A stale specification was never reported for pruning.** The stale check
+  counted connections on the stale specification's own dead address, which
+  is always zero, and `maybe_connect/4` discarded the result of the check in
+  any case. A specification is now stale when its node has active connections
+  and none of them uses any of its `listen_addrs`. A live specification with
+  one dead address, and a specification that differs only in `channels` or
+  `parallelism`, are not reported. Covered by `partisan_stale_spec_test` and
+  `partisan_SUITE:restart_on_new_address_test`.
+
+### partisan_pluggable_peer_service_manager
+* **A pruned specification stayed in `partisan_membership:members/0`.** The
+  prune changed the manager's membership but did not publish it. It is now
+  published and notified, as a gossip update is. Covered by
+  `partisan_SUITE:restart_on_new_address_test`.
+* Pruning applies to `partisan_full_membership_strategy` only. The SCAMP
+  strategies keep `prune/2` as a no-op: in SCAMP a node that leaves without
+  unsubscribing is removed by subscription leases (Ganesh et al., HiScamp,
+  §3.2), which Partisan does not implement, so a stale specification stays
+  in their views. The prune is logged once, at `info`, when it changes the
+  membership; the per-tick detection logs at `debug`.
+
+### partisan_peer_connections
+* **The connection info record kept a node's first specification across
+  reconnections.** A node that returned on a new address was still reported
+  under its previous specification, so once that specification was pruned
+  from the membership, every membership update signalled the live node as
+  down to `on_down` subscribers, `partisan_monitor` included. The connection
+  that takes a node from zero connections to one now sets the specification.
+  Covered by `partisan_peer_connections:reconnect_on_new_address_test` and
+  `partisan_SUITE:restart_on_new_address_test`. The same change lets
+  `partisan_hyparview_peer_service_manager` remove such a node from its
+  active view when it fails again (Leitão et al., DSN'07, §4.3); before, its
+  entry stayed in the active view. Covered by
+  `partisan_SUITE:hyparview_restart_on_new_address_test`.
+
+### partisan_hyparview_peer_service_manager
+* **A passive peer that could not be connected to stayed in the passive
+  view.** HyParView (Leitão et al., DSN'07, §4.3) removes such a peer when a
+  promotion fails to connect. A failed connection attempt never reached the
+  manager, so dead entries stayed, and an entry left from a live node's
+  previous address was promoted again and again. A promotion now removes the
+  peer when none of its own listen addresses is connected. The paper's retry
+  with another passive peer is not implemented; the next attempt still waits
+  for `random_promotion_interval`. Covered by
+  `partisan_SUITE:hyparview_unreachable_passive_peer_test`.
+* The stale-specification pruning above is not applied to HyParView: in the
+  paper a node's identifier is its address, so a previous address is a failed
+  node and leaves the views through §4.3.
+
 # v6.3.1
 
 Fixes `partisan_gen_statem` and `partisan_gen_event` with targets on other

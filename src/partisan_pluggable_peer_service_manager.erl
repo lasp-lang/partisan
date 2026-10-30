@@ -1695,7 +1695,7 @@ establish_connections(State) ->
     Pending = State#state.pending,
     Members = State#state.members,
 
-    %% @REVIEW Shouldn't this be a set union? Also what about IP Changes?
+    %% @REVIEW Shouldn't this be a set union?
     %% Compute list of nodes that should be connected.
     NodesSpecs = Members ++ Pending,
 
@@ -1736,6 +1736,19 @@ prune(L, State) ->
     Mod = State#state.membership_strategy,
     MState0 = State#state.membership_strategy_state,
     {ok, Members, MState} = partisan_membership_strategy:prune(Mod, L, MState0),
+
+    case Members == State#state.members of
+        true ->
+            ok;
+        false ->
+            ?LOG_INFO(#{
+                description => "Pruned stale node specifications",
+                node_specs => L
+            }),
+            ok = partisan_membership:set(Members),
+            ok = partisan_membership:notify(Members)
+    end,
+
     State#state{members = Members, membership_strategy_state = MState}.
 
 %% @private
@@ -2260,7 +2273,7 @@ apply_event_funs(Funs, Node, Channel) ->
 
 %% @private
 pending_leavers(#state{} = State) ->
-    %% @REVIEW Shouldn't this be a set union? Also what about IP Changes?
+    %% @REVIEW Shouldn't this be a set union?
 
     Members = ?SET_FROM_LIST(State#state.members),
     Pending0 = ?SET_FROM_LIST(State#state.pending),
