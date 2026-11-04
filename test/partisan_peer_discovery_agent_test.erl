@@ -24,6 +24,8 @@
 %% =============================================================================
 -module(partisan_peer_discovery_agent_test).
 
+-export([init/1, lookup/2]).
+
 -include_lib("eunit/include/eunit.hrl").
 -include("partisan.hrl").
 
@@ -46,7 +48,8 @@ discovery_agent_test_() ->
         {setup, fun start/0, fun cleanup/1, fun(_) ->
             [
                 ?_test(a_member_absent_from_every_lookup_stays_a_member()),
-                ?_test(a_peer_a_lookup_mentions_is_joined())
+                ?_test(a_peer_a_lookup_mentions_is_joined()),
+                ?_test(lookup_errors_do_not_stop_the_agent())
             ]
         end}}.
 
@@ -82,6 +85,34 @@ a_peer_a_lookup_mentions_is_joined() ->
 
     ?assert(is_a_member('present@127.0.0.1')),
     ?assert(is_a_member(Absent)).
+
+%% A backend may report a transient failure using the callback's documented
+%% error result. Manual lookups surface it, while polling keeps the agent alive
+%% and leaves current membership intact.
+lookup_errors_do_not_stop_the_agent() ->
+    Peer = seed_membership('retained@127.0.0.1'),
+    ?assert(is_a_member(Peer)),
+    ok = restart_agent(#{
+        enabled => true,
+        type => ?MODULE,
+        config => #{},
+        initial_delay => 0,
+        polling_interval => ?POLL
+    }),
+    timer:sleep(?POLL + 10),
+    ?assertEqual(
+        {error, temporarily_unavailable},
+        partisan_peer_discovery_agent:lookup()
+    ),
+    ?assert(is_a_member(Peer)),
+    ?assertEqual(enabled, partisan_peer_discovery_agent:status()).
+
+%% Test discovery callback that exercises the documented lookup error variant.
+init(_Config) ->
+    {ok, 0}.
+
+lookup(State, _Timeout) ->
+    {error, temporarily_unavailable, State + 1}.
 
 %% =============================================================================
 %% UTILS

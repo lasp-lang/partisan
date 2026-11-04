@@ -655,7 +655,7 @@ get(Key, Default) ->
 Returns the value for `Key' in `Opts', if found. Otherwise, calls `get/1`.
 """).
 get_with_opts(Key, Opts) when is_map(Opts); is_list(Opts) ->
-    case maps:find(Key, Opts) of
+    case find_option(Key, Opts) of
         {ok, Val} -> Val;
         error -> get(Key)
     end.
@@ -666,9 +666,18 @@ get_with_opts(Key, Opts) when is_map(Opts); is_list(Opts) ->
 %% @end
 %% -----------------------------------------------------------------------------
 get_with_opts(Key, Opts, Default) when is_map(Opts); is_list(Opts) ->
-    case maps:find(Key, Opts) of
+    case find_option(Key, Opts) of
         {ok, Val} -> Val;
         error -> get(Key, Default)
+    end.
+
+%% @private
+find_option(Key, Opts) when is_map(Opts) ->
+    maps:find(Key, Opts);
+find_option(Key, Opts) when is_list(Opts) ->
+    case lists:keyfind(Key, 1, Opts) of
+        {Key, Val} -> {ok, Val};
+        false -> error
     end.
 
 set(listen_addrs, Value0) when is_list(Value0) ->

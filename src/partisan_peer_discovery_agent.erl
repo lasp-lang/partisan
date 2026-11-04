@@ -229,9 +229,14 @@ enabled({call, From}, disable, State) ->
     ok = gen_statem:reply(From, ok),
     {next_state, disabled, State};
 enabled({call, From}, lookup, State0) ->
-    {Members, State} = lookup(State0),
-    ok = gen_statem:reply(From, {ok, Members}),
-    {keep_state, State};
+    case lookup(State0) of
+        {ok, Members, State} ->
+            ok = gen_statem:reply(From, {ok, Members}),
+            {keep_state, State};
+        {error, Reason, State} ->
+            ok = gen_statem:reply(From, {error, Reason}),
+            {keep_state, State}
+    end;
 enabled(state_timeout, lookup, State) ->
     %% The polling interval timeout, we need to perform a lookup
     {keep_state, State, [{next_event, internal, lookup}]};
@@ -240,8 +245,19 @@ enabled(internal, lookup, State0) ->
     %% one by one, so that the manager decides how to join based on the
     %% topology/strategy. add_members/1 skips the ones already known and
     %% never removes a member (see the module doc).
-    {Members, State} = lookup(State0),
-    ok = partisan_peer_service:add_members(Members),
+    State =
+        case lookup(State0) of
+            {ok, Members, State1} ->
+                ok = partisan_peer_service:add_members(Members),
+                State1;
+            {error, Reason, State1} ->
+                ?LOG_WARNING(#{
+                    description => "Peer discovery lookup failed",
+                    callback_mod => State1#state.callback_mod,
+                    reason => Reason
+                }),
+                State1
+        end,
 
     %% Schedule next lookup
     Action = {state_timeout, State#state.polling_interval, lookup, []},
@@ -294,20 +310,23 @@ handle_common_event(EventType, EventContent, _StateName, State) ->
     keep_state_and_data.
 
 %% @private
--spec lookup(state()) -> {[partisan:node_spec()], state()}.
+-spec lookup(state()) ->
+    {ok, [partisan:node_spec()], state()} | {error, any(), state()}.
 
 lookup(State0) ->
     CBMod = State0#state.callback_mod,
     CBState0 = State0#state.callback_state,
     Timeout = State0#state.timeout,
 
-    {ok, Peers, CBState} = CBMod:lookup(CBState0, Timeout),
-
-    ?LOG_DEBUG(#{
-        description => "Got peer discovery lookup response",
-        callback_mod => CBMod,
-        response => Peers
-    }),
-
-    State = State0#state{callback_state = CBState},
-    {[partisan:node_spec() | Peers], State}.
+    case CBMod:lookup(CBState0, Timeout) of
+        {ok, Peers, CBState} ->
+            ?LOG_DEBUG(#{
+                description => "Got peer discovery lookup response",
+                callback_mod => CBMod,
+                response => Peers
+            }),
+            State = State0#state{callback_state = CBState},
+            {ok, [partisan:node_spec() | Peers], State};
+        {error, Reason, CBState} ->
+            {error, Reason, State0#state{callback_state = CBState}}
+    end.

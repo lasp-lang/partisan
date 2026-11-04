@@ -29,6 +29,10 @@
 -include("partisan.hrl").
 -include("partisan_logger.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -record(scamp_v1, {
     actor :: partisan:actor(),
     membership :: sets:set(partisan:node_spec()),
@@ -245,7 +249,7 @@ handle_message({remove_subscription, Node}, #scamp_v1{} = State0) ->
     case sets:is_element(Node, Membership0) of
         true ->
             %% Remove.
-            Membership = sets:del_element(Membership0, Node),
+            Membership = sets:del_element(Node, Membership0),
             State = State0#scamp_v1{membership = Membership},
             Members = members(State),
 
@@ -332,3 +336,32 @@ random_0_or_1() ->
         false ->
             0
     end.
+
+-ifdef(TEST).
+remove_subscription_test() ->
+    Local = 'local@localhost',
+    Remote = 'remote@localhost',
+    OldName = partisan_config:get(name, undefined),
+    try
+        ok = partisan_config:set(name, Local),
+        Membership = sets:from_list([Local, Remote], [{version, 2}]),
+        State0 = #scamp_v1{
+            actor = Local,
+            membership = Membership,
+            last_message_time = undefined
+        },
+
+        {ok, Members, OutgoingMessages, State} = handle_message(
+            {remove_subscription, Remote}, State0
+        ),
+
+        ?assertEqual([Local], Members),
+        ?assertEqual([Local], members(State)),
+        ?assertEqual(
+            [{Local, {membership_strategy, {remove_subscription, Remote}}}],
+            OutgoingMessages
+        )
+    after
+        ok = partisan_config:set(name, OldName)
+    end.
+-endif.
