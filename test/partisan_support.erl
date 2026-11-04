@@ -398,6 +398,19 @@ start(Case, Config, Options) ->
         debug("Setting egress_delay to: ~p", [EgressDelay]),
         ok = rpc:call(Node, partisan_config, set, [egress_delay, EgressDelay]),
 
+        %% Left at the default unless the case sets it.
+        _ =
+            case ?config(connection_ping, Config) of
+                undefined ->
+                    ok;
+                ConnectionPing ->
+                    debug("Setting connection_ping to: ~p", [ConnectionPing]),
+                    ok = rpc:call(
+                        Node, partisan_config, set,
+                        [connection_ping, ConnectionPing]
+                    )
+            end,
+
         Channels =
             case ?config(channels, Config) of
                 undefined ->

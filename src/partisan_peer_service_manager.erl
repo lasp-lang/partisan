@@ -61,7 +61,8 @@
         | {atom(), any()}
     ].
 
--type connect_opts() :: #{prune => boolean()}.
+-type connect_opts() :: #{prune => boolean(), async => boolean()}.
+-type attempt() :: {pid(), partisan:channel(), partisan:listen_addr()}.
 -type partitions() :: [{reference(), partisan:node_spec()}].
 -type on_event_fun() ::
     fun(() -> ok)
@@ -83,6 +84,7 @@
 %% messages.
 -type forward_result() :: ok | {error, Reason :: any()}.
 
+-export_type([attempt/0]).
 -export_type([connect_opts/0]).
 -export_type([forward_opts/0]).
 -export_type([forward_result/0]).
@@ -95,6 +97,7 @@
 -export([connect/1]).
 -export([connect/2]).
 -export([disconnect/1]).
+-export([is_stale/1]).
 -export([disconnect/2]).
 -export([mynode/0]).
 -export([myself/0]).
@@ -244,6 +247,17 @@ connect(NodeSpec) ->
 %% partisan:node_spec()]}' where list L is the list of nodes specifications for
 %% all stale nodes. Otherwise returns `ok'.
 %%
+%% If option `async' is `true' the connection attempts do not block the
+%% caller, and the call returns `{ok, Attempts}', one `{Pid, Channel,
+%% ListenAddr}' per client started. The caller must be linked to and trap
+%% exits from those clients, and owns the outcome of each attempt:
+%% `{client_connected, Pid}' means the caller should store the connection with
+%% {@link partisan_peer_connections:store/4}; `{'EXIT', Pid, _}' before that
+%% means the attempt failed, and {@link is_stale/1} tells whether the
+%% specification should be pruned. See
+%% {@link partisan_peer_service_client:start_link/6}. `async' takes precedence
+%% over `prune'.
+%%
 %% A specification is stale if we have one or more active connections to its
 %% node and none of them uses any of its `listen_addrs'. A stale
 %% specification will exist when a node has crashed (without leaving the
@@ -259,27 +273,45 @@ connect(NodeSpec) ->
 %% @end
 %% -----------------------------------------------------------------------------
 -spec connect
+    (NodeSpec :: partisan:node_spec(), #{async := true}) ->
+        {ok, Attempts :: [attempt()]};
     (NodeSpec :: partisan:node_spec(), #{prune := true}) ->
         {ok, StaleSpecs :: [partisan:node_spec()]};
     (NodeSpec :: partisan:node_spec(), #{prune := false}) ->
         ok.
 
-connect(#{listen_addrs := ListenAddrs} = NodeSpec, #{prune := true}) ->
-    ToPrune = lists:foldl(
-        fun(ListenAddr, Acc) ->
-            maybe_connect(NodeSpec, ListenAddr, Acc)
+connect(#{listen_addrs := ListenAddrs} = NodeSpec, Opts) ->
+    {Mode, Acc0} =
+        case Opts of
+            #{async := true} -> {async, []};
+            #{prune := true} -> {sync, []};
+            #{} -> {sync, ok}
         end,
-        [],
+    Acc = lists:foldl(
+        fun(ListenAddr, Acc1) ->
+            maybe_connect(NodeSpec, ListenAddr, Mode, Acc1)
+        end,
+        Acc0,
         ListenAddrs
     ),
-    {ok, ToPrune};
-connect(#{listen_addrs := ListenAddrs} = NodeSpec, #{prune := false}) ->
-    ok = lists:foreach(
-        fun(ListenAddr) ->
-            maybe_connect(NodeSpec, ListenAddr, ok)
-        end,
-        ListenAddrs
-    ).
+    case Acc of
+        ok -> ok;
+        L -> {ok, L}
+    end.
+
+%% -----------------------------------------------------------------------------
+%% @doc Returns `true' if `NodeSpec' is stale: its node has connections and
+%% none of them uses any of `NodeSpec''s listen addresses. See {@link
+%% connect/2}.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec is_stale(partisan:node_spec()) -> boolean().
+
+is_stale(#{name := Node} = NodeSpec) ->
+    %% The info record's node_spec is not consulted: the connection records
+    %% carry the address actually in use.
+    partisan_peer_connections:count(Node) > 0 andalso
+        not partisan_peer_connections:is_connected(NodeSpec).
 
 %% -----------------------------------------------------------------------------
 %% @doc Kill all connections with node in `Nodes' and for each call function
@@ -370,7 +402,7 @@ mynode() ->
 %% @end
 %% -----------------------------------------------------------------------------
 
-maybe_connect(#{name := Node} = NodeSpec, ListenAddr, Acc) ->
+maybe_connect(#{name := Node} = NodeSpec, ListenAddr, Mode, Acc) ->
     Channels =
         case maps:find(channels, NodeSpec) of
             {ok, Value} -> Value;
@@ -383,68 +415,33 @@ maybe_connect(#{name := Node} = NodeSpec, ListenAddr, Acc) ->
     %% See the section Stale Specifications in partisan_membership_set.
     case partisan_peer_connections:count(Node) of
         0 ->
-            %% Found disconnected or not found
-            %% We are going to try with a first connection using the default
-            %% channel
+            %% Found disconnected or not found. We try a first connection
+            %% using the default channel.
             ?LOG_DEBUG(#{
                 description =>
                     "We have no connections with peer. Trying to connect",
                 peer => NodeSpec
             }),
-
-            %% We start with default channel
             Channel = ?DEFAULT_CHANNEL,
             ChannelOpts = maps:get(Channel, Channels),
-
-            %% We start a client which will connect with
-            %% partisan_peer_service_server on the peer node
-            Result = partisan_peer_service_client:start_link(
-                NodeSpec, ListenAddr, Channel, ChannelOpts, self()
-            ),
-
-            case Result of
-                {ok, Pid} ->
-                    ?LOG_DEBUG("Node ~p connected, pid: ~p", [NodeSpec, Pid]),
-                    ok = partisan_peer_connections:store(
-                        NodeSpec, Pid, Channel, ListenAddr
-                    ),
-                    Acc;
-                ignore ->
-                    ?LOG_DEBUG(#{
-                        description => "Node failed connection.",
-                        node_spec => NodeSpec,
-                        reason => ignore
-                    }),
-                    Acc;
-                {error, normal} ->
-                    ?LOG_DEBUG(#{
-                        description => "Node isn't online just yet.",
-                        node_spec => NodeSpec
-                    }),
-                    Acc;
-                {error, Reason} ->
-                    ?LOG_DEBUG(#{
-                        description => "Node failed connection.",
-                        node_spec => NodeSpec,
-                        reason => Reason
-                    }),
-                    Acc
-            end;
+            start_client(
+                NodeSpec, ListenAddr, Channel, ChannelOpts, 0, Mode, Acc
+            );
         _ ->
             %% Found node with some channels already connected, we will try to
             %% complete the parallelism per channel across all channels
             ChannelsList = maps:to_list(Channels),
-            maybe_connect(ChannelsList, NodeSpec, ListenAddr, Acc)
+            maybe_connect(ChannelsList, NodeSpec, ListenAddr, Mode, Acc)
     end.
 
 %% -----------------------------------------------------------------------------
 %% @private
-%% @doc This function is called by maybe_connect/3 only when the Node in
+%% @doc This function is called by maybe_connect/4 only when the Node in
 %% NodeSpec has at least one active connection.
 %% @end
 %% -----------------------------------------------------------------------------
 
-maybe_connect([{Channel, ChannelOpts} | T], NodeSpec, ListenAddr, Acc) ->
+maybe_connect([{Channel, ChannelOpts} | T], NodeSpec, ListenAddr, Mode, Acc) ->
     %% There is at least one connection for Node.
     Parallelism = get_opt(parallelism, ChannelOpts),
 
@@ -455,43 +452,9 @@ maybe_connect([{Channel, ChannelOpts} | T], NodeSpec, ListenAddr, Acc) ->
                     "~p of ~p connected for channel ~p) Connecting node ~p.",
                     [Count, Parallelism, Channel, NodeSpec]
                 ),
-
-                %% Count might be == 0, but we try to connect anyway and we deal
-                %% with that case below.
-                Result = partisan_peer_service_client:start_link(
-                    NodeSpec, ListenAddr, Channel, ChannelOpts, self()
-                ),
-
-                case Result of
-                    {ok, Pid} ->
-                        ?LOG_DEBUG(
-                            "Node ~p connected, pid: ~p", [NodeSpec, Pid]
-                        ),
-                        ok = partisan_peer_connections:store(
-                            NodeSpec, Pid, Channel, ListenAddr
-                        ),
-                        Acc;
-                    {error, Reason} when Count == 0 ->
-                        %% Node is connected, but not on this channel through
-                        %% NodeSpec. NodeSpec might be a previous instance of
-                        %% Node with (i) different listen addresses, or (ii)
-                        %% the same listen addresses and different channels or
-                        %% parallelism. maybe_stale/6 flags case (i) only.
-                        maybe_stale(
-                            NodeSpec, Channel, ListenAddr, Acc, Count, Reason
-                        );
-                    Error ->
-                        %% We have some connections to this ListenAddr already
-                        ?LOG_ERROR(#{
-                            description => "Node failed to connect",
-                            error => Error,
-                            node_spec => NodeSpec,
-                            listen_address => ListenAddr,
-                            channel => Channel,
-                            channel_opts => ChannelOpts
-                        }),
-                        Acc
-                end;
+                start_client(
+                    NodeSpec, ListenAddr, Channel, ChannelOpts, Count, Mode, Acc
+                );
             Count when Count == Parallelism ->
                 Acc
         end,
@@ -501,23 +464,66 @@ maybe_connect([{Channel, ChannelOpts} | T], NodeSpec, ListenAddr, Acc) ->
     %% current channel. We will try on the next tick.
     %% It is fairer this way, so that we can get connections one channel at a
     %% time.
-    maybe_connect(T, NodeSpec, ListenAddr, NewAcc);
-maybe_connect([], _, _, Acc) ->
+    maybe_connect(T, NodeSpec, ListenAddr, Mode, NewAcc);
+maybe_connect([], _, _, _, Acc) ->
     Acc.
+
+%% -----------------------------------------------------------------------------
+%% @private
+%% @doc Starts a client for one connection. `Count' is the number of
+%% connections `NodeSpec' already has on `Channel'.
+%%
+%% `async': returns at once and adds the attempt to `Acc'; the caller owns the
+%% outcome (see connect/2). `sync': blocks for up to the client's connect
+%% timeout, stores the connection on success and, when pruning, adds a stale
+%% `NodeSpec' to `Acc' on failure.
+%% @end
+%% -----------------------------------------------------------------------------
+start_client(NodeSpec, ListenAddr, Channel, ChannelOpts, _, async, Acc) ->
+    %% An async client's init/1 cannot fail: it only builds its state.
+    {ok, Pid} = partisan_peer_service_client:start_link(
+        NodeSpec, ListenAddr, Channel, ChannelOpts, self(), #{async => true}
+    ),
+    [{Pid, Channel, ListenAddr} | Acc];
+start_client(NodeSpec, ListenAddr, Channel, ChannelOpts, Count, sync, Acc) ->
+    %% We start a client which will connect with
+    %% partisan_peer_service_server on the peer node
+    Result = partisan_peer_service_client:start_link(
+        NodeSpec, ListenAddr, Channel, ChannelOpts, self()
+    ),
+
+    case Result of
+        {ok, Pid} ->
+            ?LOG_DEBUG("Node ~p connected, pid: ~p", [NodeSpec, Pid]),
+            ok = partisan_peer_connections:store(
+                NodeSpec, Pid, Channel, ListenAddr
+            ),
+            Acc;
+        {error, Reason} when Count == 0 ->
+            %% Not connected on this channel through NodeSpec. NodeSpec might
+            %% be a previous instance of Node with (i) different listen
+            %% addresses, or (ii) the same listen addresses and different
+            %% channels or parallelism. maybe_stale/6 flags case (i) only.
+            maybe_stale(NodeSpec, Channel, ListenAddr, Acc, Count, Reason);
+        Error ->
+            %% We have some connections to this ListenAddr already
+            ?LOG_ERROR(#{
+                description => "Node failed to connect",
+                error => Error,
+                node_spec => NodeSpec,
+                listen_address => ListenAddr,
+                channel => Channel,
+                channel_opts => ChannelOpts
+            }),
+            Acc
+    end.
 
 %% @private
 maybe_stale(_, _, _, ok = Acc, 0, _) ->
     %% Options.prune == false
     Acc;
-maybe_stale(#{name := Node} = NodeSpec, Channel, ListenAddr, Acc, 0, Reason) ->
-    %% NodeSpec is stale when Node is connected but no connection uses any of
-    %% NodeSpec's listen addresses. The info record's node_spec is not
-    %% consulted: the connection records carry the address actually in use.
-    Stale =
-        partisan_peer_connections:count(Node) > 0 andalso
-            not partisan_peer_connections:is_connected(NodeSpec),
-
-    case Stale of
+maybe_stale(NodeSpec, Channel, ListenAddr, Acc, 0, Reason) ->
+    case is_stale(NodeSpec) of
         true ->
             ?LOG_DEBUG(#{
                 description => "Flagging node specification to be pruned",

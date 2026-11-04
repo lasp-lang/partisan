@@ -28,7 +28,8 @@
     listen_addr :: partisan:listen_addr(),
     channel :: partisan:channel(),
     channel_opts :: partisan:channel_opts(),
-    encoding_opts :: list(),
+    %% `undefined' until the socket is connected (see `connect_socket/1').
+    encoding_opts :: optional(list()),
     from :: pid(),
     peer :: partisan:node_spec(),
     %% `undefined' when pings are disabled for this connection — both modules
@@ -51,11 +52,13 @@
 
 %% API
 -export([start_link/5]).
+-export([start_link/6]).
 
 %% gen_server callbacks
 -export([init/1]).
 -export([handle_call/3]).
 -export([handle_cast/2]).
+-export([handle_continue/2]).
 -export([handle_info/2]).
 -export([terminate/2]).
 -export([code_change/3]).
@@ -80,77 +83,76 @@
     {ok, pid()} | ignore | {error, Reason :: any()}.
 
 start_link(Peer, ListenAddr, Channel, ChannelOpts, From) ->
+    start_link(Peer, ListenAddr, Channel, ChannelOpts, From, #{}).
+
+%% -----------------------------------------------------------------------------
+%% @doc Same as {@link start_link/5} but with options.
+%%
+%% With `#{async => true}' the call returns `{ok, pid()}' before the socket is
+%% connected, so the caller is not blocked for up to the connect timeout. The
+%% client then connects and, on success, sends `{client_connected, pid()}' to
+%% `From'. On failure it exits with reason `normal', which a linked `From'
+%% that traps exits receives as `{'EXIT', pid(), normal}'.
+%%
+%% The caller must not store the pid in {@link partisan_peer_connections}
+%% before `{client_connected, pid()}' arrives: until then the process has no
+%% socket. The message is sent before the client reads from the socket, so it
+%% always precedes the `connected' message of the handshake.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec start_link(
+    Peer :: partisan:node_spec(),
+    ListenAddr :: partisan:listen_addr(),
+    Channel :: partisan:channel(),
+    ChannelOpts :: partisan:channel_opts(),
+    From :: pid(),
+    Opts :: #{async => boolean()}
+) ->
+    {ok, pid()} | ignore | {error, Reason :: any()}.
+
+start_link(Peer, ListenAddr, Channel, ChannelOpts, From, Opts) ->
     gen_server:start_link(
-        ?MODULE, [Peer, ListenAddr, Channel, ChannelOpts, From], []
+        ?MODULE, [Peer, ListenAddr, Channel, ChannelOpts, From, Opts], []
     ).
 
 %% =============================================================================
 %% GEN_SERVER CALLBACKS
 %% =============================================================================
 
--spec init(Args :: list()) -> {ok, state()} | {stop, Reason :: any()}.
+-spec init(Args :: list()) ->
+    {ok, state()} | {ok, state(), {continue, connect}} | {stop, normal}.
 
-init([Peer, ListenAddr, Channel, ChannelOpts, From]) ->
-    T0 = erlang:monotonic_time(millisecond),
-    Result = connect(ListenAddr, Channel, ChannelOpts),
-    Latency = erlang:monotonic_time(millisecond) - T0,
+init([Peer, ListenAddr, Channel, ChannelOpts, From, Opts]) ->
+    State = #state{
+        from = From,
+        listen_addr = ListenAddr,
+        channel = Channel,
+        channel_opts = ChannelOpts,
+        peer = Peer
+    },
 
-    partisan_telemetry:execute(
-        [partisan, connection, client, connect],
-        #{latency => Latency},
-        #{
-            peer_node => maps:get(name, Peer),
-            channel => Channel,
-            listen_addr => ListenAddr,
-            result => element(1, Result)
-        }
-    ),
+    case maps:get(async, Opts, false) of
+        true ->
+            {ok, State, {continue, connect}};
+        false ->
+            case connect_socket(State) of
+                {ok, Connected} ->
+                    {ok, Connected};
+                {error, _} ->
+                    {stop, normal}
+            end
+    end.
 
-    case Result of
-        {ok, Socket} ->
-            ?LOG_INFO(#{
-                description => "Connection established",
-                peer => Peer,
-                listen_addr => ListenAddr,
-                channel => Channel
-            }),
+-spec handle_continue(connect, state()) ->
+    {noreply, state()} | {stop, normal, state()}.
 
-            %% For debugging, store information in the process dictionary.
-            EgressDelay = partisan_config:get(egress_delay, 0),
-
-            put({?MODULE, from}, From),
-            put({?MODULE, listen_addr}, ListenAddr),
-            put({?MODULE, channel}, Channel),
-            put({?MODULE, channel_opts}, ChannelOpts),
-            put({?MODULE, peer}, Peer),
-            put({?MODULE, egress_delay}, EgressDelay),
-
-            EncodeOpts = partisan_util:channel_encode_opts(ChannelOpts),
-
-            State0 = #state{
-                from = From,
-                listen_addr = ListenAddr,
-                channel = Channel,
-                channel_opts = ChannelOpts,
-                encoding_opts = EncodeOpts,
-                socket = Socket,
-                peer = Peer
-            },
-
-            State = maybe_enable_ping(
-                State0, partisan_config:get(connection_ping, #{})
-            ),
-            {ok, State};
-        {error, Reason} ->
-            ?LOG_TRACE(#{
-                description => "Unable to establish connection with peer",
-                peer => Peer,
-                listen_addr => ListenAddr,
-                channel => Channel,
-                reason => Reason
-            }),
-            %% We use shutdown to avoid a crash report
-            {stop, normal}
+handle_continue(connect, #state{from = From} = State0) ->
+    case connect_socket(State0) of
+        {ok, State} ->
+            From ! {client_connected, self()},
+            {noreply, State};
+        {error, _} ->
+            {stop, normal, State0}
     end.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
@@ -267,6 +269,9 @@ handle_info(Event, State) ->
 
 -spec terminate(term(), state()) -> term().
 
+terminate(_, #state{socket = undefined}) ->
+    %% An async client whose connection attempt failed: nothing was opened.
+    ok;
 terminate(Reason, #state{} = State) when
     Reason == normal orelse
         Reason == shutdown orelse
@@ -297,6 +302,70 @@ code_change(_OldVsn, State, _Extra) ->
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================
+
+%% @private
+%% Connects the socket for a client built by `init/1' and completes its state.
+%% Shared by the synchronous path (`init/1') and the async one
+%% (`handle_continue/2').
+connect_socket(#state{} = State0) ->
+    #state{
+        peer = Peer,
+        listen_addr = ListenAddr,
+        channel = Channel,
+        channel_opts = ChannelOpts
+    } = State0,
+
+    T0 = erlang:monotonic_time(millisecond),
+    Result = connect(ListenAddr, Channel, ChannelOpts),
+    Latency = erlang:monotonic_time(millisecond) - T0,
+
+    partisan_telemetry:execute(
+        [partisan, connection, client, connect],
+        #{latency => Latency},
+        #{
+            peer_node => maps:get(name, Peer),
+            channel => Channel,
+            listen_addr => ListenAddr,
+            result => element(1, Result)
+        }
+    ),
+
+    case Result of
+        {ok, Socket} ->
+            ?LOG_INFO(#{
+                description => "Connection established",
+                peer => Peer,
+                listen_addr => ListenAddr,
+                channel => Channel
+            }),
+
+            %% For debugging, store information in the process dictionary.
+            put({?MODULE, from}, State0#state.from),
+            put({?MODULE, listen_addr}, ListenAddr),
+            put({?MODULE, channel}, Channel),
+            put({?MODULE, channel_opts}, ChannelOpts),
+            put({?MODULE, peer}, Peer),
+            put({?MODULE, egress_delay}, partisan_config:get(egress_delay, 0)),
+
+            State1 = State0#state{
+                encoding_opts = partisan_util:channel_encode_opts(ChannelOpts),
+                socket = Socket
+            },
+
+            State = maybe_enable_ping(
+                State1, partisan_config:get(connection_ping, #{})
+            ),
+            {ok, State};
+        {error, Reason} = Error ->
+            ?LOG_TRACE(#{
+                description => "Unable to establish connection with peer",
+                peer => Peer,
+                listen_addr => ListenAddr,
+                channel => Channel,
+                reason => Reason
+            }),
+            Error
+    end.
 
 %% @doc Test harness specific.
 %%
@@ -499,7 +568,7 @@ maybe_enable_ping(State, #{enabled := true} = PingOpts) ->
         ping_idle_timeout = IdleTimeout,
         ping_retry = Retry
     };
-maybe_enable_ping(#{enabled := false}, State) ->
+maybe_enable_ping(State, #{enabled := false}) ->
     State.
 
 %% @private
