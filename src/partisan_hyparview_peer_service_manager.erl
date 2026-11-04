@@ -443,14 +443,40 @@ forward_message({Name, Node}, Message, Opts) when
             forward_message(Node, Name, Message, Opts)
     end;
 forward_message(RemoteRef, Message, Opts) ->
-    partisan_remote_ref:is_pid(RemoteRef) orelse
-        partisan_remote_ref:is_name(RemoteRef) orelse
-        error(badarg),
+    case partisan_remote_ref:is_pid(RemoteRef) orelse
+        %% An RPC reply is addressed to a one-shot alias (`new_res/0`).
+        partisan_remote_ref:is_reference(RemoteRef) orelse
+        partisan_remote_ref:is_name(RemoteRef)
+    of
+        true ->
+            case decode_destination(RemoteRef) of
+                {ok, Node, Target} ->
+                    forward_message(Node, Target, Message, Opts);
+                error ->
+                    invalid_destination(RemoteRef)
+            end;
+        false ->
+            invalid_destination(RemoteRef)
+    end.
 
-    Node = partisan_remote_ref:node(RemoteRef),
-    Target = partisan_remote_ref:target(RemoteRef),
+%% @private
+%% Recognition is not decoding: a recognised shape can still fail in node/1.
+decode_destination(RemoteRef) ->
+    try
+        {ok,
+            partisan_remote_ref:node(RemoteRef),
+            partisan_remote_ref:target(RemoteRef)}
+    catch
+        error:badarg -> error
+    end.
 
-    forward_message(Node, Target, Message, Opts).
+%% @private
+invalid_destination(RemoteRef) ->
+    ?LOG_DEBUG(#{
+        description => "Message cannot be addressed",
+        destination => RemoteRef
+    }),
+    {error, {invalid_destination, RemoteRef}}.
 
 %% -----------------------------------------------------------------------------
 %% @doc Forward message to registered process on the remote side.
