@@ -278,18 +278,19 @@ maybe_enable_ping(State, #{enabled := true} = PingOpts) ->
         ping_id = partisan:make_ref(),
         ping_retry = Retry
     };
-maybe_enable_ping(#{enabled := false}, State) ->
+maybe_enable_ping(State, #{enabled := false}) ->
     State.
 
 %% @private
+reset_ping(#state{ping_retry = undefined} = State) ->
+    %% Pings are disabled.
+    State;
 reset_ping(State) ->
     %% The client ping idle_timeout is the same as ours,
     %% so we offset the server timeout to avoid synchronization.
     reset_ping(State, trunc(State#state.ping_idle_timeout * 0.25)).
 
 %% @private
-reset_ping(#state{ping_retry = undefined} = State, _Offset) ->
-    State;
 reset_ping(#state{ping_tref = undefined} = State, Offset) ->
     Time = State#state.ping_idle_timeout + Offset,
     Ref = erlang:start_timer(Time, self(), ping_idle_timeout),

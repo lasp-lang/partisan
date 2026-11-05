@@ -143,6 +143,13 @@ end).
     members :: [partisan:node_spec()],
     %% The nodes we still need to establish connections with
     pending :: [partisan:node_spec()],
+    %% Connection attempts in flight: clients started by
+    %% `establish_connections/1' that have not yet reported
+    %% `{client_connected, Pid}' or exited. A spec with an attempt in flight
+    %% is skipped by later ticks, so attempts never overlap.
+    connecting = #{} ::
+        #{pid() => {partisan:node_spec(), partisan:channel(),
+            partisan:listen_addr()}},
     membership_strategy :: atom(),
     membership_strategy_state :: term(),
     leaving = false :: boolean(),
@@ -217,6 +224,9 @@ end).
 %% otherwise.
 -export([next_message_clock/1]).
 -export([fast_forward_acked/6]).
+%% `pending/1' reads the pending list out of a `sys:get_state/1' result, so a
+%% suite can check it on a remote node without knowing the record layout.
+-export([pending/1]).
 -endif.
 -export([get_interposition_funs/0]).
 -export([get_local_state/0]).
@@ -1417,7 +1427,9 @@ handle_info(distance, State0) ->
     %% Record time.
     Time = erlang:timestamp(),
 
-    %% Send distance requests.
+    %% Send distance requests to the members we can reach now. Connection
+    %% attempts are asynchronous, so a member connected by the call above is
+    %% not reachable yet; the next round measures it.
     ok = lists:foreach(
         fun(Peer) ->
             schedule_self_message_delivery(
@@ -1428,7 +1440,7 @@ handle_info(distance, State0) ->
                 #{channel => ?MEMBERSHIP_CHANNEL}
             )
         end,
-        State#state.members
+        lists:filter(fun is_reachable/1, State#state.members)
     ),
 
     schedule_distance(),
@@ -1532,9 +1544,8 @@ handle_info(retransmit, State) ->
 
     {noreply, State};
 handle_info(connections, State0) ->
-    %% TODO #244 move connection establishing to a helper process as these tasks
-    %% interleave with message forwarding. Also consider having a process per
-    %% channel or channel connection.
+    %% Connection attempts run in their own client processes (#244), so this
+    %% tick does not block on the network.
     State1 = establish_connections(State0),
 
     %% Advance sync_join's if we have enough open connections to remote host.
@@ -1542,6 +1553,37 @@ handle_info(connections, State0) ->
 
     schedule_connections(),
 
+    {noreply, State};
+handle_info({client_connected, Pid}, #state{} = State) ->
+    {{NodeSpec, Channel, ListenAddr}, Connecting} =
+        maps:take(Pid, State#state.connecting),
+    Wanted =
+        lists:member(NodeSpec, State#state.members) orelse
+            lists:member(NodeSpec, State#state.pending),
+    ok =
+        case Wanted of
+            true ->
+                partisan_peer_connections:store(
+                    NodeSpec, Pid, Channel, ListenAddr
+                );
+            false ->
+                %% The node left while the attempt was in flight. Its
+                %% 'EXIT' finds no connection to prune.
+                exit(Pid, shutdown),
+                ok
+        end,
+    {noreply, State#state{connecting = Connecting}};
+handle_info({'EXIT', Pid, _}, #state{connecting = Connecting0} = State0) when
+    is_map_key(Pid, Connecting0)
+->
+    %% A connection attempt failed.
+    {{NodeSpec, _, _}, Connecting} = maps:take(Pid, Connecting0),
+    State1 = State0#state{connecting = Connecting},
+    State =
+        case partisan_peer_service_manager:is_stale(NodeSpec) of
+            true -> prune([NodeSpec], State1);
+            false -> State1
+        end,
     {noreply, State};
 handle_info({'EXIT', Pid, Reason}, State0) ->
     ?LOG_DEBUG(#{
@@ -1686,53 +1728,74 @@ gen_actor(Name) ->
 
 %% -----------------------------------------------------------------------------
 %% @private
-%% @doc Establish any new connections and prunes no longer valid nodes.
+%% @doc Starts a connection attempt for every member and pending node that
+%% needs one. A stale specification is pruned later, when its attempt fails.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec establish_connections(t()) -> t().
 
 establish_connections(State) ->
-    Pending = State#state.pending,
-    Members = State#state.members,
+    #state{
+        name = Myself,
+        members = Members,
+        pending = Pending,
+        connecting = Connecting0
+    } = State,
 
-    %% @REVIEW Shouldn't this be a set union?
-    %% Compute list of nodes that should be connected.
-    NodesSpecs = Members ++ Pending,
-
-    %% Reconnect disconnected members and members waiting to join.
-    LoL = lists:foldl(
+    %% Attempts are asynchronous, so this process is never blocked on the
+    %% network. Their outcomes arrive as `{client_connected, Pid}' and
+    %% `{'EXIT', Pid, _}' (see partisan_peer_service_manager:connect/2). A
+    %% stale spec is pruned when its attempt fails. A spec appears once even
+    %% when both a member and pending, and a spec with an attempt in flight is
+    %% skipped, so no connection is attempted twice.
+    InFlight = sets:from_list(
+        [Spec || {Spec, _, _} <- maps:values(Connecting0)], [{version, 2}]
+    ),
+    Connecting = lists:foldl(
         fun
-            (#{name := Name}, Acc) when Name == State#state.name ->
-                %% We exclude ourselves
+            (#{name := Name}, Acc) when Name == Myself ->
                 Acc;
-            (#{name := _} = Node, Acc) ->
-                %% This function call returns the a list of stale
-                %% NodeSpecs (nodes that have an invalid IP address because we
-                %% already have a connection to NodeSpec.node on another IP
-                %% address).
-                %% We then remove those NodeSpecs from the membership set and
-                %% update ourselves without the need for sending any leave/join
-                %% gossip.
-                {ok, StaleSpecs} = partisan_peer_service_manager:connect(
-                    Node, #{prune => true}
-                ),
-                %% We will call lists:append at the end
-                [StaleSpecs | Acc]
+            (NodeSpec, Acc) ->
+                case sets:is_element(NodeSpec, InFlight) of
+                    true ->
+                        Acc;
+                    false ->
+                        {ok, Attempts} = partisan_peer_service_manager:connect(
+                            NodeSpec, #{async => true}
+                        ),
+                        lists:foldl(
+                            fun({Pid, Channel, ListenAddr}, Acc1) ->
+                                Acc1#{Pid => {NodeSpec, Channel, ListenAddr}}
+                            end,
+                            Acc,
+                            Attempts
+                        )
+                end
         end,
-        [],
-        NodesSpecs
+        Connecting0,
+        lists:usort(Members ++ Pending)
     ),
 
-    prune(lists:append(LoL), State).
+    State#state{connecting = Connecting}.
 
 %% -----------------------------------------------------------------------------
 %% @private
-%% @doc
+%% @doc Removes the stale specifications in `L' from the membership and from
+%% the pending list.
+%%
+%% A stale specification enters the pending list when its node loses its last
+%% connection while the specification is still a member (the `'EXIT'' handler
+%% calls `maybe_append_pending/2'). Only a `connected' signal for that exact
+%% specification takes it out again, and its listen address is dead, so
+%% `establish_connections/1' would retry it on every tick. Held by
+%% `prune_removes_stale_spec_from_pending_test/0'.
 %% @end
 %% -----------------------------------------------------------------------------
 prune([], State) ->
     State;
-prune(L, State) ->
+prune(L, State0) ->
+    Pending = [S || S <- State0#state.pending, not lists:member(S, L)],
+    State = State0#state{pending = Pending},
     Mod = State#state.membership_strategy,
     MState0 = State#state.membership_strategy_state,
     {ok, Members, MState} = partisan_membership_strategy:prune(Mod, L, MState0),
@@ -1765,15 +1828,18 @@ handle_message(
     %% Establish any new connections.
     State = establish_connections(State0),
 
-    %% Send ping response.
-    schedule_self_message_delivery(
-        SrcNode,
-        {pong, SrcNode, DestNode, SrcTime},
-        ?DEFAULT_PARTITION_KEY,
-        State,
-        %% we coerce channel, regardless of _Channel
-        #{channel => ?MEMBERSHIP_CHANNEL}
-    ),
+    %% Send ping response, if we can reach the sender now (see the
+    %% `distance' handler). Otherwise the sender's next round measures us.
+    _ =
+        is_reachable(SrcNode) andalso
+            schedule_self_message_delivery(
+                SrcNode,
+                {pong, SrcNode, DestNode, SrcTime},
+                ?DEFAULT_PARTITION_KEY,
+                State,
+                %% we coerce channel, regardless of _Channel
+                #{channel => ?MEMBERSHIP_CHANNEL}
+            ),
 
     maybe_reply(From, ok),
 
@@ -2317,8 +2383,6 @@ internal_leave(#{name := Name} = Node, State0) ->
     },
 
     %% Establish any new connections.
-    %% This will also prune no longer valid node_specs, setting the new
-    %% membership in State
     State = establish_connections(State1),
 
     %% Transmit outgoing messages.
@@ -2509,6 +2573,18 @@ schedule_tree_refresh() ->
     end.
 
 %% @private
+%% `true' if a message to `NodeSpec' on the membership channel can be
+%% dispatched now: the local node, or a node `partisan_peer_connections'
+%% has a connection to for that channel (or for the default channel it falls
+%% back to). The same lookup the dispatch itself makes.
+is_reachable(#{name := Node}) ->
+    Node =:= partisan:node() orelse
+        case partisan_peer_connections:dispatch_pid(Node, ?MEMBERSHIP_CHANNEL) of
+            {ok, _} -> true;
+            {error, _} -> false
+        end.
+
+%% @private
 schedule_self_message_delivery(Node, Message, PartitionKey, State) ->
     schedule_self_message_delivery(Node, Message, PartitionKey, State, #{}).
 
@@ -2584,3 +2660,50 @@ maybe_append_pending(NodeSpec, #state{} = State) ->
                 Pending0
         end,
     State#state{pending = Pending}.
+
+
+%% =============================================================================
+%% EUNIT TESTS
+%% =============================================================================
+
+-ifdef(TEST).
+
+-include_lib("eunit/include/eunit.hrl").
+
+pending(#state{pending = Pending}) ->
+    Pending.
+
+%% The steady state the stale spec reaches in production: an earlier tick has
+%% already removed it from the membership, so members do not change, but the
+%% spec is still pending (twice, as the 'EXIT' handler can append it more than
+%% once). A pending join target that is not stale must be kept. Members are
+%% unchanged, so partisan_membership is not touched and no table is needed.
+%%
+%% Not covered: the full path ('EXIT' -> maybe_append_pending/2 -> next tick),
+%% which needs a live peer. partisan_SUITE covers a restart on a new address.
+prune_removes_stale_spec_from_pending_test() ->
+    Actor = <<"actor">>,
+    Addr = fun(Last) -> #{ip => {10, 1, 3, Last}, port => 18086} end,
+    Me = #{name => 'me@host', listen_addrs => [Addr(1)]},
+    Live = #{name => 'peer@host', listen_addrs => [Addr(192)]},
+    Stale = Live#{listen_addrs => [Addr(172)]},
+    Joining = #{name => 'joining@host', listen_addrs => [Addr(200)]},
+
+    M0 = partisan_membership_set:new(),
+    M1 = partisan_membership_set:add(Me, Actor, M0),
+    M = partisan_membership_set:add(Live, Actor, M1),
+    Members = partisan_membership_set:to_list(M),
+
+    State0 = #state{
+        members = Members,
+        pending = [Stale, Joining, Stale],
+        membership_strategy = partisan_full_membership_strategy,
+        membership_strategy_state = {full_v1, Actor, M}
+    },
+
+    State = prune([Stale], State0),
+
+    ?assertEqual([Joining], State#state.pending),
+    ?assertEqual(Members, State#state.members).
+
+-endif.

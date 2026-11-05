@@ -268,6 +268,8 @@ groups() ->
             pid_test,
             rejoin_test,
             restart_on_new_address_test,
+            connect_does_not_block_manager_test,
+            ping_disabled_test,
             otp_test
         ]},
 
@@ -1258,7 +1260,115 @@ restart_on_new_address_test(Config) ->
         ok
     end,
     ok = wait_until_specs_for(Node3, [NewSpec], Others ++ [Node3]),
+    %% Killing Node3 put OldSpec in each observer's pending list (the 'EXIT'
+    %% handler appends a member whose last connection closed). Membership
+    %% converging does not show that it left it: a spec left pending is
+    %% retried on every tick even though no membership view lists it.
+    ok = wait_until_not_pending(Manager, OldSpec, Others),
     ok.
+
+%% A member whose address drops SYNs (as a dead pod IP on Kubernetes does)
+%% must not stall the manager: each tick's connection attempt times out after
+%% partisan_peer_service_client's 1 s connect timeout, and a synchronous
+%% attempt blocks every call to the manager for that long. Measures the
+%% slowest of the calls made over several ticks.
+%%
+%% 192.0.2.1 is TEST-NET-1 (RFC 5737), which nothing answers. Where it is
+%% unroutable instead (an immediate enetunreach), the attempt costs nothing
+%% and the case is skipped rather than passed.
+connect_does_not_block_manager_test(Config) ->
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
+    Servers = ?SUPPORT:node_list(1, "server", Config),
+    [{_, Node}] = Nodes = ?SUPPORT:start(
+        connect_does_not_block_manager_test,
+        Config,
+        [
+            {peer_service_manager, Manager},
+            {servers, Servers},
+            {clients, []}
+        ]
+    ),
+    ?PUT_NODES(Nodes),
+
+    IP = {192, 0, 2, 1},
+    Port = 18086,
+    case rpc:call(Node, gen_tcp, connect, [IP, Port, [], 1000]) of
+        {error, timeout} ->
+            Ghost = #{
+                name => 'ghost@192.0.2.1',
+                listen_addrs => [#{ip => IP, port => Port}],
+                channels => rpc:call(Node, partisan_config, channels, [])
+            },
+            ok = rpc:call(Node, partisan_peer_service, join, [Ghost]),
+
+            Latencies = [
+                begin
+                    {Micros, {ok, _}} = timer:tc(
+                        rpc, call, [Node, Manager, members_for_orchestration, []]
+                    ),
+                    ct:sleep(50),
+                    Micros div 1000
+                end
+             || _ <- lists:seq(1, 60)
+            ],
+            %% 60 calls 50 ms apart span ~3 s, so several ticks.
+            ?assert(lists:max(Latencies) < 500, {latencies_ms, Latencies});
+        Other ->
+            {skip, {no_blackhole, IP, Other}}
+    end.
+
+%% `connection_ping => #{enabled => false}' is a documented setting. Both
+%% connection ends must start without pings: before, the client and the
+%% server crashed with `function_clause' in `maybe_enable_ping/2' on every
+%% connection, so no node could connect to another. Checks that both nodes
+%% hold connections to each other, i.e. both the client side and the server
+%% side of the connections started.
+ping_disabled_test(Config0) ->
+    Config = [{connection_ping, #{enabled => false}} | Config0],
+    Manager = ?DEFAULT_PEER_SERVICE_MANAGER,
+    Servers = ?SUPPORT:node_list(1, "server", Config),
+    Clients = ?SUPPORT:node_list(1, "client", Config),
+    Nodes = ?SUPPORT:start(
+        ping_disabled_test,
+        Config,
+        [
+            {peer_service_manager, Manager},
+            {servers, Servers},
+            {clients, Clients}
+        ]
+    ),
+    ?PUT_NODES(Nodes),
+    [{_, A}, {_, B}] = Nodes,
+    ?assertEqual(
+        #{enabled => false},
+        rpc:call(A, partisan_config, get, [connection_ping])
+    ),
+    Connected = fun() ->
+        rpc:call(A, partisan_peer_connections, is_connected, [B]) andalso
+            rpc:call(B, partisan_peer_connections, is_connected, [A])
+    end,
+    case wait_until(Connected, 30, 1000) of
+        ok ->
+            ok;
+        {fail, false} ->
+            ct:fail({not_connected, A, B})
+    end.
+
+%% @private
+wait_until_not_pending(Manager, Spec, Observers) ->
+    Pending = fun(O) ->
+        Manager:pending(rpc:call(O, sys, get_state, [Manager]))
+    end,
+    Cleared = fun() ->
+        lists:all(fun(O) -> not lists:member(Spec, Pending(O)) end, Observers)
+    end,
+    case wait_until(Cleared, 10, 1000) of
+        ok ->
+            ok;
+        {fail, false} ->
+            ct:fail({stale_spec_still_pending, Spec,
+                [{O, Pending(O)} || O <- Observers]})
+    end.
 
 %% @private
 down_signal(Pid, Observer) ->

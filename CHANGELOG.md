@@ -1,4 +1,58 @@
 # CHANGELOG
+# v6.3.3
+
+Completes the v6.3.2 stale-specification fix, and stops connection attempts
+from blocking the peer service manager.
+
+## Fixes
+
+### partisan_pluggable_peer_service_manager
+* **A pruned specification kept being retried.** A node that loses its last
+  connection while its specification is a member puts the specification in
+  the pending list, and the prune removed it from the membership only. Its
+  address is dead, so it never connected and never left the pending list,
+  and every connection tick retried it, while every membership view, such as
+  `members_for_orchestration/0`, showed a converged cluster. The prune now
+  also removes it from the pending list. Covered by
+  `prune_removes_stale_spec_from_pending_test` and
+  `partisan_SUITE:restart_on_new_address_test`.
+* **A connection attempt blocked the manager.** Connection attempts ran in
+  the manager process, and each one blocked it for up to the 1 s connect
+  timeout when the address did not answer, as a dead pod IP on Kubernetes
+  does not. A stale specification cost that once per channel on every tick,
+  and every call that goes through the manager waited: membership queries,
+  `forward_message` to a disconnected node, and the inbound handling of
+  acknowledged messages and gossip. Attempts now run in their own client
+  processes and report their outcome to the manager. Covered by
+  `partisan_SUITE:connect_does_not_block_manager_test`, which is skipped
+  where its unroutable test address fails at once instead of timing out.
+  The other managers still connect synchronously: HyParView sends to a peer
+  right after connecting to it.
+* With `distance_enabled`, distance `ping` and `pong` messages are now sent
+  only to peers that have a connection for them, since a peer whose
+  connection attempt has only just started cannot receive them yet. A peer
+  left out is measured on a later round. The selection is covered by
+  `partisan_reachable_test`; no suite runs with `distance_enabled`.
+
+### partisan_peer_service_client, partisan_peer_service_server
+* **Disabling connection pings broke every connection.** With
+  `connection_ping => #{enabled => false}`, the documented way to turn pings
+  off, `maybe_enable_ping/2` had its arguments in the wrong order in both
+  modules and crashed with `function_clause`. Once that was fixed, the server
+  crashed with `badarith` in `reset_ping/1`, which computed its timer offset
+  before checking that pings were enabled. No node could connect to another.
+  Covered by `partisan_SUITE:ping_disabled_test`.
+
+## Changes
+
+### partisan_peer_service_client
+* Adds `start_link/6`. With `#{async => true}` it returns before the socket
+  is connected and reports success with `{client_connected, Pid}`.
+
+### partisan_peer_service_manager
+* `connect/2` accepts `#{async => true}` and returns the attempts it started.
+  Adds `is_stale/1`.
+
 # v6.3.2
 
 Fixes stale node specifications that were never pruned. A node that crashes
