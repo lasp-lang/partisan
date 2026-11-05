@@ -1,5 +1,5 @@
 # CHANGELOG
-# Unreleased
+# v6.3.3
 
 Completes the v6.3.2 stale-specification fix, and stops connection attempts
 from blocking the peer service manager.
