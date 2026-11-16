@@ -152,9 +152,9 @@ downstream dep starts compiling.
 
 The escript at `priv/generate_otp_sources.escript`:
 
-1. Compiles the three support modules (`partisan_otp_rewrite`,
-   `partisan_otp_patches`, `partisan_gen_transform`) in-memory directly
-   from `src/*.erl`.
+1. Compiles the four support modules (`partisan_otp_modules`,
+   `partisan_otp_rewrite`, `partisan_otp_patches`,
+   `partisan_gen_transform`) in-memory directly from `src/*.erl`.
 2. For each target OTP module, finds its installed beam via
    `code:which/1` and extracts the abstract syntax tree with
    `beam_lib:chunks/2`.
@@ -162,11 +162,15 @@ The escript at `priv/generate_otp_sources.escript`:
    attribute rewrites, atom-in-data rewrites — see
    `partisan_otp_rewrite:rename_map/0`) plus any version-specific patches
    under `priv/otp/<otp-version>/`.
-4. Pretty-prints the rewritten forms with `erl_pp:form/1` and writes
+4. Pretty-prints the rewritten forms with `erl_prettypr` and writes
    them as `partisan_gen_server.erl`, `partisan_gen_supervisor.erl`,
-   etc. into Partisan's `src/` directory.
+   etc. into Partisan's `src/` directory. `erl_prettypr` writes every
+   remote call with its module, so the generated `partisan_proc_lib`,
+   which defines its own `spawn_opt/2,3,4,5`, keeps calling
+   `erlang:spawn_opt` where OTP's `proc_lib` does.
 5. Returns. rebar3 then compiles those `.erl` files alongside the rest
-   of Partisan's source.
+   of Partisan's source, into whichever `ebin` it builds Partisan into,
+   including the one Mix gives `rebar3 bare compile`.
 
 The generated `.erl` files are listed in `.gitignore` so they never
 end up in version control. The generator is **stateless and

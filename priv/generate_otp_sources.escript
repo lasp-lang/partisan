@@ -2,7 +2,7 @@
 %% -*- erlang -*-
 
 %% -----------------------------------------------------------------------------
-%% Pre-compile generation of partisan OTP module BEAM files.
+%% Pre-compile generation of partisan OTP module SOURCES.
 %%
 %% Why a pre-compile (and not a post-compile) hook?
 %% ------------------------------------------------
@@ -12,14 +12,17 @@
 %% had a chance to fire. plum_db then fails because
 %% `partisan_gen_supervisor' does not yet exist.
 %%
-%% Why .beam (and not .erl source)?
-%% --------------------------------
-%% `erl_pp:form/1' silently strips the `erlang:' prefix from auto-
-%% imported BIF calls (e.g. `erlang:spawn_opt' becomes `spawn_opt'). In
-%% the rewritten `partisan_proc_lib' there are LOCAL functions named
-%% `spawn_opt/2,3,4,5', so a bare `spawn_opt(...)' call resolves to the
-%% local function — causing infinite recursion. Compiling forms
-%% directly to .beam preserves the AST exactly and avoids the issue.
+%% Why .erl sources in `src/'?
+%% ---------------------------
+%% This script writes `partisan_gen_server.erl',
+%% `partisan_gen_supervisor.erl', etc. as real source files into `src/'.
+%% The build tool then compiles them with the rest of partisan, into the
+%% `ebin' it builds partisan into: rebar3's own output directory, or the
+%% one Mix gives `rebar3 bare compile'. So the `partisan_gen_*' beams
+%% exist wherever partisan is built, before any downstream dep starts
+%% compiling against them. `partisan_gen_transform:generate_sources/1'
+%% prints the forms with `erl_prettypr', which keeps calls such as
+%% `erlang:spawn_opt' qualified.
 %%
 %% The support modules (`partisan_otp_modules', `partisan_otp_rewrite',
 %% `partisan_otp_patches', `partisan_gen_transform') have no inter-
@@ -29,7 +32,6 @@
 
 main(_Args) ->
     SrcDir = "src",
-    EbinDir = ebin_dir(),
 
     case filelib:is_dir(SrcDir) of
         true -> ok;
@@ -51,43 +53,20 @@ main(_Args) ->
     lists:foreach(fun(File) -> compile_and_load(File, SrcDir) end,
                   SupportModules),
 
-    ok = filelib:ensure_dir(filename:join(EbinDir, "dummy")),
-
-    case partisan_gen_transform:generate_all(EbinDir) of
+    case partisan_gen_transform:generate_sources(SrcDir) of
         ok ->
             Modules = partisan_gen_transform:modules(),
             io:format(
-                "Generated ~p partisan OTP module beams into ~s/~n",
-                [length(Modules), EbinDir]
+                "Generated ~p partisan OTP module sources into ~s/~n",
+                [length(Modules), SrcDir]
             ),
             update_app_src(SrcDir),
             ok;
         {error, Errors} ->
             io:format(standard_error,
-                "Failed to generate partisan OTP module beams:~n~p~n",
+                "Failed to generate partisan OTP module sources:~n~p~n",
                 [Errors]),
             halt(1)
-    end.
-
-
-%% Locate the ebin directory for partisan. Honours rebar3's
-%% `REBAR_BUILD_DIR' env var when running as a dep, falling back to a
-%% sensible local path when running from partisan's own repo.
-ebin_dir() ->
-    case os:getenv("REBAR_BUILD_DIR") of
-        false ->
-            filename:absname("ebin");
-        BuildDir ->
-            CheckoutsDir = filename:join(
-                [BuildDir, "checkouts", "partisan", "ebin"]
-            ),
-            LibDir = filename:join(
-                [BuildDir, "lib", "partisan", "ebin"]
-            ),
-            case filelib:is_dir(CheckoutsDir) of
-                true -> CheckoutsDir;
-                false -> LibDir
-            end
     end.
 
 
