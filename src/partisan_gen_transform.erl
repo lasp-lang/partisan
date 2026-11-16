@@ -32,7 +32,7 @@
 -module(partisan_gen_transform).
 
 -export([generate/1, generate_and_load/1, generate_all/0, generate_all/1]).
--export([generate_sources/1]).
+-export([generate_sources/1, check_source/2]).
 -export([modules/0, otp_major_version/0]).
 
 %% =============================================================================
@@ -148,14 +148,25 @@ generate_sources(SrcDir) ->
                     File = filename:join(
                         SrcDir, atom_to_list(PartisanModule) ++ ".erl"
                     ),
+                    %% OTP's `-file' attributes are dropped: they name OTP's
+                    %% files and lines, but the layout below is the
+                    %% printer's, so keeping them makes the compiler record
+                    %% line numbers that match neither file.
                     Source = unicode:characters_to_binary([
                         Header,
-                        erl_prettypr:format(erl_syntax:form_list(Forms)),
+                        erl_prettypr:format(
+                            erl_syntax:form_list(without_file_attributes(Forms))
+                        ),
                         "\n"
                     ]),
                     case file:write_file(File, Source) of
                         ok ->
-                            Acc;
+                            case check_source_forms(File, Forms) of
+                                ok ->
+                                    Acc;
+                                {error, Reason} ->
+                                    [{Module, Reason} | Acc]
+                            end;
                         {error, Reason} ->
                             [{Module, {write_failed, Reason}} | Acc]
                     end;
@@ -169,6 +180,21 @@ generate_sources(SrcDir) ->
     case Results of
         [] -> ok;
         Errors -> {error, lists:reverse(Errors)}
+    end.
+
+%% @doc Check that the source in `File' parses to the forms this module
+%% generates for `OrigModule'.
+%%
+%% `generate_sources/1' runs this check on every file it writes, so a printer
+%% that renders a form differently on the installed OTP fails the build instead
+%% of changing the module. Source positions are not compared.
+-spec check_source(file:filename_all(), module()) -> ok | {error, term()}.
+check_source(File, OrigModule) ->
+    case patched_forms(OrigModule) of
+        {ok, _PartisanModule, Forms} ->
+            check_source_forms(File, Forms);
+        {error, _} = Error ->
+            Error
     end.
 
 %% @doc Returns the ordered list of modules to transform.
@@ -198,10 +224,80 @@ patched_forms(OrigModule) ->
             PatchedForms = partisan_otp_patches:apply_patches(
                 OrigModule, RewrittenForms
             ),
-            {ok, PartisanModule, PatchedForms};
+            {ok, PartisanModule, quiet(PatchedForms)};
         {error, _} = Error ->
             Error
     end.
+
+%% Adds a `-compile' attribute after the `-module' attribute that turns off
+%% the warnings OTP's own code raises once it is compiled as part of partisan:
+%% functions and types the rewrite leaves unused, and OTP 29's `catch'
+%% deprecation. They are not actionable by whoever builds partisan.
+quiet([{attribute, Anno, module, _} = Module | Forms]) ->
+    Options = [
+        nowarn_unused_function, nowarn_unused_type, nowarn_deprecated_catch
+    ],
+    [Module, {attribute, Anno, compile, Options} | Forms];
+quiet([Form | Forms]) ->
+    [Form | quiet(Forms)].
+
+without_file_attributes(Forms) ->
+    [
+        Form
+     || Form <- Forms,
+        not (element(1, Form) =:= attribute andalso element(3, Form) =:= file)
+    ].
+
+%% Parses `File' the way the compiler will (`epp') and compares the result
+%% with `Forms', form by form.
+check_source_forms(File, Forms) ->
+    case epp:parse_file(File, []) of
+        {ok, Parsed} ->
+            case first_difference(code_forms(Forms), code_forms(Parsed)) of
+                none ->
+                    ok;
+                Difference ->
+                    {error, {source_mismatch, File, Difference}}
+            end;
+        {error, Reason} ->
+            {error, {source_unreadable, File, Reason}}
+    end.
+
+%% The forms without `-file' attributes and `eof', each with every node's
+%% annotation blanked, so only the code is compared.
+code_forms(Forms) ->
+    [unlocate(Form) || Form <- without_file_attributes(Forms), not is_eof(Form)].
+
+is_eof(Form) ->
+    element(1, Form) =:= eof.
+
+%% Every abstract-format node is a tuple tagged with an atom whose second
+%% element is its annotation. A raw term inside an attribute that has the same
+%% shape is blanked too, on both sides of the comparison.
+unlocate(T) when is_tuple(T), tuple_size(T) >= 2, is_atom(element(1, T)) ->
+    [Tag, _Anno | Rest] = tuple_to_list(T),
+    list_to_tuple([Tag, 0 | [unlocate(E) || E <- Rest]]);
+unlocate(T) when is_tuple(T) ->
+    list_to_tuple([unlocate(E) || E <- tuple_to_list(T)]);
+unlocate(L) when is_list(L) ->
+    [unlocate(E) || E <- L];
+unlocate(X) ->
+    X.
+
+first_difference([Form | Expected], [Form | Parsed]) ->
+    first_difference(Expected, Parsed);
+first_difference([], []) ->
+    none;
+first_difference([Form | _], [_ | _]) ->
+    {differs, form_id(Form)};
+first_difference([Form | _], []) ->
+    {missing, form_id(Form)};
+first_difference([], [Form | _]) ->
+    {unexpected, form_id(Form)}.
+
+form_id({function, _, Name, Arity, _}) -> {function, Name, Arity};
+form_id({attribute, _, Name, _}) -> {attribute, Name};
+form_id(Form) -> element(1, Form).
 
 %% Try the beam file first, fall back to source if abstract code is missing.
 get_abstract_code(Module) ->

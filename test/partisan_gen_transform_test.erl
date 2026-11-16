@@ -38,6 +38,63 @@ generated_sources_parse_to_generated_forms_test_() ->
         end}.
 
 
+%% `generate_sources/1' checks every file it writes with `check_source/2'.
+%% These cases aim to break that check. The first rewrites one
+%% `erlang:spawn_opt(' call in `partisan_proc_lib' to the local call `erl_pp'
+%% would print, a file that still compiles. The second removes the last
+%% function. Neither covers a difference that is only in source positions,
+%% which the check ignores by design.
+check_source_rejects_a_different_module_test_() ->
+    {setup,
+        fun() ->
+            Dir = filename:join(
+                filename:dirname(code:which(?MODULE)), "checked_sources"
+            ),
+            ok = partisan_gen_transform:generate_sources(Dir),
+            filename:join(Dir, "partisan_proc_lib.erl")
+        end,
+        fun(File) ->
+            {ok, Source} = file:read_file(File),
+            [
+                {"the generated source passes",
+                    ?_assertEqual(
+                        ok, partisan_gen_transform:check_source(File, proc_lib)
+                    )},
+                {"a remote BIF call printed as a local call", fun() ->
+                    {Start, Length} = binary:match(
+                        Source, <<"erlang:spawn_opt(">>
+                    ),
+                    ok = file:write_file(File, [
+                        binary:part(Source, 0, Start),
+                        <<"spawn_opt(">>,
+                        binary:part(
+                            Source,
+                            Start + Length,
+                            byte_size(Source) - Start - Length
+                        )
+                    ]),
+                    ?assertMatch(
+                        {error, {source_mismatch, File, {differs, _}}},
+                        partisan_gen_transform:check_source(File, proc_lib)
+                    )
+                end},
+                {"a missing function", fun() ->
+                    Forms = binary:split(
+                        string:trim(Source, trailing), <<"\n\n">>, [global]
+                    ),
+                    ok = file:write_file(
+                        File,
+                        lists:join(<<"\n\n">>, lists:droplast(Forms))
+                    ),
+                    ?assertMatch(
+                        {error, {source_mismatch, File, {missing, _}}},
+                        partisan_gen_transform:check_source(File, proc_lib)
+                    )
+                end}
+            ]
+        end}.
+
+
 %% =============================================================================
 %% PRIVATE
 %% =============================================================================

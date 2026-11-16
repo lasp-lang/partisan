@@ -6,10 +6,10 @@
 %%
 %% Why a pre-compile (and not a post-compile) hook?
 %% ------------------------------------------------
-%% When partisan and another partisan-using dep (e.g. plum_db) are both
-%% direct dependencies of a top-level project (e.g. bondy), rebar3 may
-%% start compiling plum_db before partisan's `post_hooks compile' has
-%% had a chance to fire. plum_db then fails because
+%% When partisan and another partisan-using dep are both
+%% direct dependencies of a top-level project, rebar3 may
+%% start compiling that dep before partisan's `post_hooks compile' has
+%% had a chance to fire. The dep then fails because
 %% `partisan_gen_supervisor' does not yet exist.
 %%
 %% Why .erl sources in `src/'?
