@@ -70,14 +70,19 @@ main(_Args) ->
     end.
 
 
-%% Locate the ebin directory for partisan. Honours rebar3's
-%% `REBAR_BUILD_DIR' env var when running as a dep, falling back to a
-%% sensible local path when running from partisan's own repo.
+%% Locate the ebin directory for partisan, the one rebar3 compiles the rest of
+%% partisan into. `rebar3 bare compile' writes the app under
+%% `REBAR_BARE_COMPILER_OUTPUT_DIR' when that is set, which is how Mix
+%% compiles a rebar3 dependency into its own build directory
+%% (rebar_prv_bare_compile). Otherwise honours rebar3's `REBAR_BUILD_DIR'
+%% env var when running as a dep, falling back to a sensible local path when
+%% running from partisan's own repo.
 ebin_dir() ->
-    case os:getenv("REBAR_BUILD_DIR") of
-        false ->
+    BareOutDir = os:getenv("REBAR_BARE_COMPILER_OUTPUT_DIR"),
+    case {BareOutDir, os:getenv("REBAR_BUILD_DIR")} of
+        {false, false} ->
             filename:absname("ebin");
-        BuildDir ->
+        {false, BuildDir} ->
             CheckoutsDir = filename:join(
                 [BuildDir, "checkouts", "partisan", "ebin"]
             ),
@@ -87,7 +92,9 @@ ebin_dir() ->
             case filelib:is_dir(CheckoutsDir) of
                 true -> CheckoutsDir;
                 false -> LibDir
-            end
+            end;
+        {OutDir, _} ->
+            filename:join(OutDir, "ebin")
     end.
 
 
