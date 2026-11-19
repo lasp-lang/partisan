@@ -295,7 +295,9 @@ deliver(
     MergeFun = fun(_Key, Value1, Value2) ->
         partisan_vclock:merge([Value1, Value2])
     end,
-    orddict:merge(MergeFun, IncomingOrderBuffer, OrderBuffer),
+    MergedOrderBuffer = orddict:merge(
+        MergeFun, IncomingOrderBuffer, OrderBuffer
+    ),
 
     %% Merge clocks.
     MergedLocalClock = partisan_vclock:merge([LocalClock, MessageClock]),
@@ -322,7 +324,10 @@ deliver(
     end,
 
     %% Write and return updated state.
-    State = State0#state{local_clock = IncrementedLocalClock},
+    State = State0#state{
+        local_clock = IncrementedLocalClock,
+        order_buffer = MergedOrderBuffer
+    },
     write_state(State),
     State.
 
