@@ -82,50 +82,57 @@ ensure_otp_modules() ->
 
 %% @private
 %% Emit a one-time startup message describing the peer-plane security posture:
-%% a WARNING when TLS is on but peers are not verified (encrypted yet MITM-able),
-%% and a NOTICE when the peer plane is plaintext and unauthenticated.
+%% a WARNING when the node does not authenticate its peers, with or without
+%% TLS, and a NOTICE when it does but the peer plane is plaintext.
 maybe_warn_peer_plane_security() ->
     %% Best-effort: never allowed to crash application start (e.g. on a fresh
     %% peer node where the logger/config may not be fully ready).
     try
-        case partisan_config:get(tls, false) of
-            false ->
+        %% `partisan_peer_auth' holds the definition of each condition.
+        TLS = partisan_config:get(tls, false) =:= true,
+        Authenticated = partisan_peer_auth:authenticates_peers(),
+        Methods = partisan_peer_auth:methods(),
+
+        case {TLS, Authenticated} of
+            {true, true} ->
+                ok;
+            {false, true} ->
                 ?LOG_NOTICE(#{
                     description =>
+                        "Partisan peer plane is plaintext (tls = false). Peers "
+                        "authenticate when they connect, but traffic is not "
+                        "encrypted or signed. Keep the peer port on a trusted "
+                        "network, or enable cluster TLS.",
+                    peer_auth_methods => Methods
+                });
+            {false, false} ->
+                ?LOG_WARNING(#{
+                    description =>
                         "Partisan peer plane is plaintext and unauthenticated "
-                        "(tls = false). Keep the peer port on a trusted network; "
-                        "enable cluster mTLS (verify_peer + a CA) on untrusted ones."
-                }),
-                ok;
-            true ->
-                ServerOK = verifies_peer(
-                    partisan_config:get(tls_server_options, [])
-                ),
-                ClientOK = verifies_peer(
-                    partisan_config:get(tls_client_options, [])
-                ),
-                case ServerOK andalso ClientOK of
-                    true ->
-                        ok;
-                    false ->
-                        ?LOG_WARNING(#{
-                            description =>
-                                "Partisan cluster TLS is enabled but peers are not "
-                                "verified (verify_peer missing on one or both sides): "
-                                "connections are encrypted but NOT authenticated and "
-                                "are MITM-able. Set {verify, verify_peer} with a CA in "
-                                "tls_server_options and tls_client_options."
-                        }),
-                        ok
-                end
+                        "(tls = false, and peer_auth_methods is empty or admits "
+                        "anonymous). Any host that reaches the peer port can "
+                        "join the cluster, stop this node or run code on it. "
+                        "Keep the peer port on a trusted network; set "
+                        "peer_auth_methods or enable cluster mTLS (verify_peer "
+                        "+ a CA) on untrusted ones.",
+                    peer_auth_methods => Methods
+                });
+            {true, false} ->
+                ?LOG_WARNING(#{
+                    description =>
+                        "Partisan cluster TLS is enabled but peers are not "
+                        "authenticated: connections are encrypted but any host "
+                        "can connect, and they are MITM-able. Set "
+                        "peer_auth_methods, or set {verify, verify_peer} with a "
+                        "CA in tls_server_options and tls_client_options, "
+                        "without {fail_if_no_peer_cert, false} in "
+                        "tls_server_options.",
+                    peer_auth_methods => Methods
+                })
         end
     catch
         _:_ -> ok
     end.
-
-%% @private
-verifies_peer(Opts) when is_list(Opts) ->
-    proplists:get_value(verify, Opts) =:= verify_peer.
 
 %% -----------------------------------------------------------------------------
 %% @doc Stop the application.

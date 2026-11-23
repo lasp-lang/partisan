@@ -218,6 +218,34 @@ The module implementing peer discovery against an external orchestrator, for exa
 
 The default number of connections to use per channel, when a channel hasn't been given a specific `parallelism' value via the `channels' option. The default is `1'. For more information see option `channels'.
 
+#### peer_auth_allowed_nodes
+
+The nodes this node may connect to and accept: `all`, the default, or a list of node names. It is the gate of `net_kernel:allow/1`, and `partisan_peer_auth:allow/1` adds to it while the node runs. The node refuses a peer that presents another name, and does not dial one. Only the `cryptosign` method proves that a peer may use the name it presents. See `m:partisan_peer_auth`.
+
+#### peer_auth_cryptosign
+
+The trust material of the `cryptosign` peer authentication method: a map with this node's Ed25519 private key and the public keys of the peers it trusts. The default is `undefined`. A key is 32 raw bytes, or 64 hexadecimal characters as a binary or a string. A peer name is an atom or a binary. See `m:partisan_peer_auth_cryptosign`. ==== Example ==== ``` {peer_auth_cryptosign, #{ private_key => <<"9d61b19d...">>, trusted_peers => #{ 'node2@host2' => <<"3d4017c3...">>, 'node3@host3' => <<"fc51cd8e...">> } }} '''
+
+#### peer_auth_keyring
+
+The trust material of the `gossip_keyring` peer authentication method: an ordered list of shared keys, each a binary of at least 16 bytes. The node signs with the first key and accepts a proof made with any key in the list. The default is `[]`. See `m:partisan_peer_auth_hmac`.
+
+#### peer_auth_max_pending
+
+The most accepted connections that have not authenticated that the node holds at one time. The node closes a new connection over the limit at once. It bounds the sockets and processes that hosts without the cluster's keys can hold. It applies when `peer_auth_methods` is not empty. The default is `1024`.
+
+#### peer_auth_methods
+
+The ordered list of peer authentication methods this node accepts, strongest first. The methods are `cryptosign`, `gossip_keyring`, `hmac_secret` and `anonymous`, where `anonymous` is no authentication. The default is `[]`, which turns the authentication phase off: the node accepts every peer, as a list of `[anonymous]` does, and its connections start with `hello`. A list without `anonymous` makes the node refuse every peer that does not authenticate. The node reads this option for each connection. See `m:partisan_peer_auth` and the cluster security guide.
+
+#### peer_auth_secret
+
+The trust material of the `hmac_secret` peer authentication method: one shared key, a binary of at least 16 bytes. The default is `undefined`. See `m:partisan_peer_auth_hmac`.
+
+#### peer_auth_timeout
+
+Time in milliseconds a node waits for the peer authentication phase of a connection to complete before it closes the connection. The default is `5000`.
+
 #### peer_service_manager
 
 The peer service manager to be used. An implementation of the {@link partisan_peer_service_manager} behaviour which defines the overlay network topology and the membership view maintenance strategy. Default is {@link partisan_pluggable_peer_service_manager}.
@@ -523,6 +551,13 @@ init() ->
             {metadata, #{}},
             {orchestration_strategy, ?DEFAULT_ORCHESTRATION_STRATEGY},
             {parallelism, ?PARALLELISM},
+            {peer_auth_allowed_nodes, all},
+            {peer_auth_cryptosign, undefined},
+            {peer_auth_keyring, []},
+            {peer_auth_max_pending, ?DEFAULT_PEER_AUTH_MAX_PENDING},
+            {peer_auth_methods, []},
+            {peer_auth_secret, undefined},
+            {peer_auth_timeout, ?DEFAULT_PEER_AUTH_TIMEOUT},
             {peer_discovery, #{enabled => false}},
             {peer_service_manager, PeerService},
             % deprecated, use listen_ip
@@ -593,7 +628,12 @@ init() ->
             set(listen_addrs, [DefaultAddr]);
         L when is_list(L) ->
             ok
-    end.
+    end,
+
+    %% A method without its trust material fails every connection, so the
+    %% node does not start.
+    ok = partisan_peer_auth:validate_config(),
+    ok = partisan_peer_auth:init().
 
 %% -----------------------------------------------------------------------------
 %% @doc Seed the process.
@@ -772,6 +812,32 @@ set(tls_client_options, Opts0) when is_list(Opts0) ->
         false ->
             do_set(tls_client_options, Opts0)
     end;
+set(peer_auth_allowed_nodes, all) ->
+    do_set(peer_auth_allowed_nodes, all);
+set(peer_auth_allowed_nodes, Nodes) when is_list(Nodes) ->
+    lists:all(fun erlang:is_atom/1, Nodes) orelse
+        error({badarg, peer_auth_allowed_nodes}),
+    do_set(peer_auth_allowed_nodes, lists:usort(Nodes));
+set(peer_auth_allowed_nodes, _) ->
+    error({badarg, peer_auth_allowed_nodes});
+set(peer_auth_max_pending, Value) when is_integer(Value), Value > 0 ->
+    do_set(peer_auth_max_pending, Value);
+set(peer_auth_max_pending, _) ->
+    error({badarg, peer_auth_max_pending});
+set(peer_auth_cryptosign, Value) ->
+    do_set(
+        peer_auth_cryptosign, partisan_peer_auth_cryptosign:validate(Value)
+    );
+set(peer_auth_keyring, Value) ->
+    do_set(peer_auth_keyring, partisan_peer_auth_hmac:validate_keyring(Value));
+set(peer_auth_methods, Value) ->
+    do_set(peer_auth_methods, partisan_peer_auth:validate_methods(Value));
+set(peer_auth_secret, Value) ->
+    do_set(peer_auth_secret, partisan_peer_auth_hmac:validate_secret(Value));
+set(peer_auth_timeout, Value) when is_integer(Value), Value > 0 ->
+    do_set(peer_auth_timeout, Value);
+set(peer_auth_timeout, _) ->
+    error({badarg, peer_auth_timeout});
 set(Key, Value) ->
     do_set(maybe_rename(Key), Value).
 

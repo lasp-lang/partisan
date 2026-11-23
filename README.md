@@ -1,10 +1,24 @@
 <img alt="Partisan" width="600" src="https://github.com/lasp-lang/partisan/blob/e4ec25b547c4d50000250b904690b26594b3e72e/assets/partisan_logo_black.png?raw=true">
 
-![Version](https://img.shields.io/badge/version-6.3.0-blue?style=for-the-badge)  
+![Version](https://img.shields.io/badge/version-6.4.0-blue?style=for-the-badge)  
 ![Build and Test](https://img.shields.io/github/actions/workflow/status/lasp-lang/partisan/build_and_test.yml?&branch=master&label=build-and-test&style=for-the-badge)
 ![Heavy Test Suite](https://img.shields.io/github/actions/workflow/status/lasp-lang/partisan/fly-test.yml?&branch=master&label=heavy-test-suite&style=for-the-badge)
 
 # Partisan
+
+> [!WARNING]
+> **The peer port is not authenticated by default.** With the default
+> configuration, any host that can reach a node's peer port can stop the node,
+> join the cluster, and run code on the node (CVE-2026-118898). Before you
+> expose the peer port to any network you do not fully trust, enable mutual
+> TLS, or set
+> `peer_auth_methods` and run the peer plane over TLS 1.3. Peer authentication
+> over plain TCP stops a host that only connects, but not one that can alter
+> traffic between two nodes. See
+> [Securing the cluster peer plane](https://hexdocs.pm/partisan/cluster_security.html).
+> The default stays off in this release so that existing clusters keep
+> working when they upgrade. The next major release requires authentication
+> by default.
 
 Partisan is a scalable and flexible, TCP-based membership system and distribution layer for the BEAM. It bypasses the use of Distributed Erlang for manual connection management via TCP, and has several pluggable backends for different deployment scenarios.
 
@@ -28,7 +42,7 @@ In short, for an Erlang project add the dep:
 
 ```erlang
 %% rebar.config
-{deps, [{partisan, "6.3.0"}]}.
+{deps, [{partisan, "6.4.0"}]}.
 ```
 
 For an Elixir project:
