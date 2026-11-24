@@ -1,4 +1,117 @@
 # CHANGELOG
+# v6.4.0
+
+> **Security: the peer port is not authenticated by default, and this release
+> does not change the default.** With the default configuration, any host that
+> can reach a node's peer port can stop the node, join the cluster, and run
+> code on the node (CVE-2026-118898, GHSA-38p4-3gp9-mfx9). This release adds
+> peer authentication. **You are protected only after you turn it on**, or if you
+> already run mutual TLS with a cluster CA. Over plain TCP, peer
+> authentication stops a host that only connects, but not one that can alter
+> traffic between two nodes: use it over TLS 1.3 on a network you do not
+> trust. The default stays off so that existing clusters keep working when
+> they upgrade. The next major release requires authentication by default.
+
+## Security
+
+* **Peer authentication (ADR-000005, CVE-2026-118898).** A node with a non-empty
+  `peer_auth_methods` runs a mutual challenge and response on every new
+  connection, before `hello`. Until a peer authenticates, the node accepts
+  only authentication frames of at most 4096 bytes, reads them without the
+  term decoder, delivers nothing to the peer service manager, and sends the
+  peer no message. The methods are `cryptosign` (an Ed25519 key per node),
+  `gossip_keyring` (shared keys that rotate) and `hmac_secret` (one shared
+  key). See `m:partisan_peer_auth` and the cluster security guide.
+* **How to turn it on.** A node that requires authentication refuses a node
+  that does not authenticate, and a node on an earlier release cannot connect
+  to a node with a non-empty `peer_auth_methods`. Upgrade every node first.
+  Then set the trust material and a list that ends in `anonymous` on every
+  node. Then remove `anonymous` on every node. The guide has the steps.
+* **Channel binding.** On a TLS 1.3 connection every proof covers the TLS
+  exporter value of the session (RFC 9266), so a party that terminates TLS
+  between two nodes cannot relay the exchange.
+* **The gate of `net_kernel:allow/1`.** `peer_auth_allowed_nodes` lists the
+  nodes a node may connect to and accept, and `partisan_peer_auth:allow/1`
+  adds to it while the node runs. The default allows every node.
+* **A limit on connections that have not authenticated.** A node holds at
+  most `peer_auth_max_pending` of them (default 1024) and closes one more at
+  once.
+* **The limit of an authentication frame does not depend on the socket.** On
+  OTP 27 `ssl` does not apply `packet_size`, so `max_message_size` does not
+  bound a frame on a TLS connection there. During the phase a node reads the
+  socket raw and refuses a frame on its length.
+* **`hello` comes first.** A node that runs the phase closes a connection
+  whose peer sends another frame before `hello`. A connecting node holds the
+  messages its manager gives it until it has sent `hello`, and then sends
+  them in order.
+* **What it does not cover.**
+  * It does not encrypt or sign traffic after the connection opens. Against
+    a party on the path, use TLS 1.3, where the proofs cover the session, or
+    mutual TLS with a cluster CA.
+  * The shared-key methods do not identify a node: every holder of the key
+    can use any node name. Only `cryptosign` binds a name to a key. A node
+    accepts whichever listed method a peer picks, so the weakest method in
+    `peer_auth_methods` is what the list guarantees.
+  * A peer that has authenticated is trusted, as a node with the cookie is in
+    Distributed Erlang: it can send to any process and call any function on
+    any node, as before.
+  * With an `orchestration_strategy` set, a node still decodes the node
+    specifications it reads from the orchestration store. Whoever can write
+    to that store is trusted.
+* **One definition of an authenticated peer plane.**
+  `partisan_peer_auth:authenticates_peers/0` returns `true` when the node
+  admits only peers that have authenticated: either it requires peer
+  authentication (`is_required/0`) or it uses TLS and admits only peers with
+  a certificate it verifies (`requires_tls_certificates/0`). An application
+  that refuses to run on an open peer plane calls it instead of reading the
+  options. It reads this node's configuration only, and does not check which
+  certificate authority the node trusts.
+* The startup message uses that definition. A node that does not
+  authenticate its peers logs a warning, with or without TLS, and the
+  warning for a plaintext peer plane names code execution. A TLS server
+  with `{fail_if_no_peer_cert, false}` counts as not authenticating: it
+  accepts a client that presents no certificate. A node that authenticates
+  its peers over a plaintext peer plane logs a notice.
+
+## Fixes
+
+### partisan_peer_socket
+* The first frame on a monotonic channel crashed the connection process when
+  its mailbox was not empty: the time of the last transmission was not set
+  yet. The frames of the handshake are no longer subject to the monotonic
+  drop.
+
+### partisan_peer_service_client
+* A client now closes its connection when the socket reports an error. A TLS
+  socket that received a frame over `max_message_size` reported the error
+  and stayed open, and the client never read from it again.
+
+
+### Build
+* **A Mix release failed at boot with `partisan_otp_modules_missing`**
+  (#271, #273). The pre-compile hook compiled the generated
+  `partisan_gen_*` modules into a directory it worked out from
+  `REBAR_BUILD_DIR`. Mix builds a rebar3 dependency into its own build
+  directory, so the modules went elsewhere and the application Mix built
+  did not have them. The hook now writes the modules as sources into
+  `src/`, and the build tool compiles them with the rest of Partisan into
+  whichever directory it uses. Checked with a Mix project on OTP 29 and
+  Mix 1.20: all seven modules are in Mix's build directory and Partisan
+  starts.
+* The sources are printed with `erl_prettypr`. `erl_pp` prints a remote call
+  to an auto-imported BIF as a local call, which made `partisan_proc_lib`
+  call its own `spawn_opt/4` instead of `erlang:spawn_opt/4`. The hook parses
+  each file back and stops the build if it differs from the forms it was
+  printed from. Covered by `partisan_gen_transform_test`.
+
+## Changes
+
+* A stack trace or crash report that names a generated module now gives the
+  file and line of the generated source, for example
+  `src/partisan_gen_server.erl`, instead of a line in OTP's `gen_server.erl`.
+* The generated sources are listed in `.gitignore` and are left out of the
+  Hex package.
+
 # v6.3.3
 
 Completes the v6.3.2 stale-specification fix, and stops connection attempts

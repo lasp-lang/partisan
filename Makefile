@@ -17,7 +17,7 @@ SPELLFIX      	= $(SPELLCHECK) -i 3 -w
 
 OTPVSN 			= $(shell erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell)
 
-.PHONY: compile-no-deps alt-test acceptor-test core-test monitor-test test ci-light ci-heavy security-test docs xref dialyzer-run dialyzer-quick dialyzer\
+.PHONY: compile-no-deps alt-test acceptor-test core-test monitor-test test ci-light ci-heavy security-test peer-auth-mixed-test docs xref dialyzer-run dialyzer-quick dialyzer\
 		cleanplt upload-docs rel deps test plots spellcheck spellfix certs node1 node2 node3 node checkssl
 
 all: compile
@@ -107,7 +107,20 @@ ci-light: eunit acceptor-test otp-compat-test security-test
 ci-heavy: core-test monitor-test alt-test proper
 
 security-test:
-	${REBAR} as test ct -v --readable=false --suite=partisan_security_SUITE
+	${REBAR} as test ct -v --readable=false --suite=partisan_security_SUITE,partisan_peer_auth_SUITE,partisan_peer_auth_cluster_SUITE
+
+## Runs the peer authentication cases that need a node of a release without
+## the authentication phase. Builds that release from PARTISAN_OLD_TAG.
+PARTISAN_OLD_TAG ?= v6.3.3
+PARTISAN_OLD_DIR = $(CURDIR)/_build/old/$(PARTISAN_OLD_TAG)
+
+peer-auth-mixed-test:
+	rm -rf $(PARTISAN_OLD_DIR)
+	mkdir -p $(PARTISAN_OLD_DIR)
+	git archive $(PARTISAN_OLD_TAG) | tar -x -C $(PARTISAN_OLD_DIR)
+	cd $(PARTISAN_OLD_DIR) && ${REBAR} compile
+	PARTISAN_OLD_EBIN=$(PARTISAN_OLD_DIR)/_build/default/lib/partisan/ebin \
+		${REBAR} as test ct -v --readable=false --suite=partisan_peer_auth_cluster_SUITE --group=mixed_version
 
 ## Covers the vendored acceptor_pool (src/acceptor.erl, acceptor_pool.erl,
 ## acceptor_loop.erl). Single node, no TLS, no disterl -- belongs in ci-light.

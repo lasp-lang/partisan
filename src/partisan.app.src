@@ -1,6 +1,6 @@
 {application,partisan,
              [{description,"Partisan is a scalable and flexible, TCP-based membership system and distribution layer for the BEAM."},
-              {vsn,"6.3.3"},
+              {vsn,"6.4.0"},
               {registered,[]},
               {applications,[kernel,stdlib,crypto,ssl,types,uuid,telemetry,
                              backoff]},
@@ -12,4 +12,11 @@
               {env,[]},
               {licenses,["Apache-2.0"]},
               {links,[{"Github","https://github.com/lasp-lang/partisan"},
-                      {"Docs","https://hex.pm/packages/partisan"}]}]}.
+                      {"Docs","https://hex.pm/packages/partisan"}]},
+              {exclude_paths,["src/partisan_gen.erl",
+                              "src/partisan_gen_event.erl",
+                              "src/partisan_gen_server.erl",
+                              "src/partisan_gen_statem.erl",
+                              "src/partisan_gen_supervisor.erl",
+                              "src/partisan_proc_lib.erl",
+                              "src/partisan_sys.erl"]}]}.

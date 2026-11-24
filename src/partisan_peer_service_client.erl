@@ -25,6 +25,33 @@
 
 -record(state, {
     socket :: optional(partisan_peer_socket:t()),
+    %% The authentication phase of the connection (ADR-000005):
+    %% - `undefined': the socket is not connected.
+    %% - `{pending, Negotiator}': the phase has not completed.
+    %%   `handle_info/2' gives every frame to `partisan_peer_auth'.
+    %% - a map: the phase completed.
+    auth ::
+        undefined
+        | {pending, partisan_peer_auth:client()}
+        | partisan_peer_auth:authn(),
+    %% The messages the manager gave this process before the handshake
+    %% completed, newest first. The handshake is complete when this process
+    %% has sent its `hello'. Until then the peer gets no message: it has not
+    %% authenticated, and the accepting node takes `hello' first.
+    %%
+    %% `undefined' when the process holds nothing back: after the handshake,
+    %% and always when `peer_auth_methods' is empty, where a message goes out
+    %% at once as before the phase existed.
+    outbox :: optional([{cast, iodata()} | {call, gen_server:from(), iodata()}]),
+    %% Whether the socket is raw: during the phase of a node with a non-empty
+    %% `peer_auth_methods', which takes the frames out of the bytes itself.
+    raw = false :: boolean(),
+    %% The bytes of a frame of the phase that is not whole yet.
+    buffer = <<>> :: binary(),
+    %% Stops a handshake that does not complete. `undefined' when
+    %% `peer_auth_methods' is empty: such a node waits for `hello' without a
+    %% limit, as before.
+    handshake_tref :: optional(reference()),
     listen_addr :: partisan:listen_addr(),
     channel :: partisan:channel(),
     channel_opts :: partisan:channel_opts(),
@@ -158,6 +185,14 @@ handle_continue(connect, #state{from = From} = State0) ->
 -spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()}.
 
+handle_call({Tag, Arg}, From, #state{outbox = Outbox} = State) when
+    (Tag == send_message orelse Tag == send_encoded), is_list(Outbox)
+->
+    %% The handshake has not completed: the message waits in the outbox. A
+    %% manager can hold this process as a connection from the moment the
+    %% socket connects. The caller gets its reply when the message goes out.
+    Entry = {call, From, outbox_data(Tag, Arg, State)},
+    {noreply, State#state{outbox = [Entry | Outbox]}};
 handle_call({send_message, Msg}, _From, #state{} = State) ->
     maybe_egress_delay(),
 
@@ -190,6 +225,12 @@ handle_call(Event, _From, State) ->
 
 -spec handle_cast(term(), state()) -> {noreply, state()}.
 
+handle_cast({Tag, Arg}, #state{outbox = Outbox} = State) when
+    (Tag == send_message orelse Tag == send_encoded), is_list(Outbox)
+->
+    %% See the same clause of `handle_call/3'.
+    Entry = {cast, outbox_data(Tag, Arg, State)},
+    {noreply, State#state{outbox = [Entry | Outbox]}};
 handle_cast({send_message, Msg}, #state{} = State) ->
     ?LOG_TRACE("Received cast: ~p", [Msg]),
 
@@ -234,6 +275,45 @@ handle_cast(Event, State) ->
 -spec handle_info(term(), state()) ->
     {noreply, state()} | {stop, normal, state()}.
 
+handle_info(
+    {Tag, _Socket, Data}, #state{auth = {pending, _}, raw = true} = State
+) when
+    ?DATA_MSG(Tag), is_binary(Data)
+->
+    %% The phase has not completed and the socket is raw: this process takes
+    %% the frame out of the bytes, which bounds its size.
+    Bytes = <<(State#state.buffer)/binary, Data/binary>>,
+
+    case partisan_peer_auth:deframe(Bytes) of
+        more ->
+            ok = reset_socket_opts(State),
+            {noreply, State#state{buffer = Bytes}};
+        {ok, Frame, <<>>} ->
+            handle_auth_frame(Frame, State#state{buffer = <<>>});
+        {ok, _Frame, _Rest} ->
+            %% Bytes after the frame. An honest server sends its next frame
+            %% only after it has read this node's answer.
+            auth_failed(trailing_bytes, State);
+        {error, Reason} ->
+            auth_failed(Reason, State)
+    end;
+handle_info(
+    {Tag, _Socket, Data}, #state{auth = {pending, _}} = State
+) when
+    ?DATA_MSG(Tag), is_binary(Data)
+->
+    %% A node with an empty `peer_auth_methods': the socket frames as the
+    %% existing protocol does, and `Data' is a whole frame.
+    handle_auth_frame(Data, State);
+handle_info(
+    {timeout, TRef, auth_timeout}, #state{handshake_tref = TRef} = State
+) ->
+    %% The phase did not complete, or the server did not send `hello' after
+    %% it.
+    ?LOG_WARNING(
+        ?REPORT(#{description => "Peer handshake timed out, closing"})
+    ),
+    {stop, {shutdown, {auth_failed, timeout}}, State};
 handle_info({Tag, _Socket, Data}, State) when
     ?DATA_MSG(Tag), is_binary(Data)
 ->
@@ -241,6 +321,16 @@ handle_info({Tag, _Socket, Data}, State) when
     ?LOG_TRACE("Received tcp data at ~p: ~p", [self(), Msg]),
     ok = reset_socket_opts(State),
     handle_inbound(Msg, State);
+handle_info({Tag, _Socket, Reason}, #state{} = State) when ?ERROR_MSG(Tag) ->
+    %% For example a frame over the socket's limit. A TLS socket reports the
+    %% error and stays open, so the process closes it. The reason of a TLS
+    %% `invalid_packet' carries the frame, which stays out of the exit reason.
+    Error =
+        case Reason of
+            {Name, _} when is_atom(Name) -> Name;
+            _ -> Reason
+        end,
+    {stop, {shutdown, {socket_error, Error}}, State};
 handle_info({Tag, _Socket}, #state{} = State) when ?CLOSED_MSG(Tag) ->
     ?LOG_TRACE(
         "Connection to ~p has been closed for pid ~p",
@@ -277,6 +367,7 @@ terminate(Reason, #state{} = State) when
         Reason == shutdown orelse
         (is_tuple(Reason) andalso element(1, Reason) == shutdown)
 ->
+    ok = fail_outbox(State),
     ?LOG_INFO(
         ?REPORT(#{
             description => "Connection closed",
@@ -285,6 +376,7 @@ terminate(Reason, #state{} = State) when
     ),
     ok = close_socket(State#state.socket);
 terminate(Reason, #state{} = State) ->
+    ok = fail_outbox(State),
     ?LOG_ERROR(
         ?REPORT(#{
             description => "Connection closed",
@@ -315,8 +407,17 @@ connect_socket(#state{} = State0) ->
         channel_opts = ChannelOpts
     } = State0,
 
+    %% One read of the method list decides everything about this connection.
+    Methods = partisan_peer_auth:methods(),
+
     T0 = erlang:monotonic_time(millisecond),
-    Result = connect(ListenAddr, Channel, ChannelOpts),
+    Result =
+        maybe
+            ok ?= allowed(maps:get(name, Peer)),
+            {ok, Socket0} ?= connect(ListenAddr, Channel, ChannelOpts, Methods),
+            {ok, Binding0} ?= channel_binding(Methods, Socket0),
+            {ok, Socket0, Binding0}
+        end,
     Latency = erlang:monotonic_time(millisecond) - T0,
 
     partisan_telemetry:execute(
@@ -331,7 +432,7 @@ connect_socket(#state{} = State0) ->
     ),
 
     case Result of
-        {ok, Socket} ->
+        {ok, Socket, Binding} ->
             ?LOG_INFO(#{
                 description => "Connection established",
                 peer => Peer,
@@ -347,7 +448,25 @@ connect_socket(#state{} = State0) ->
             put({?MODULE, peer}, Peer),
             put({?MODULE, egress_delay}, partisan_config:get(egress_delay, 0)),
 
+            Neg = partisan_peer_auth:client_init(
+                Methods, partisan:node(), maps:get(name, Peer), Binding
+            ),
+            {TRef, Outbox} =
+                case Methods of
+                    [] ->
+                        {undefined, undefined};
+                    _ ->
+                        Timer = erlang:start_timer(
+                            partisan_peer_auth:timeout(), self(), auth_timeout
+                        ),
+                        {Timer, []}
+                end,
+
             State1 = State0#state{
+                auth = {pending, Neg},
+                raw = Methods =/= [],
+                handshake_tref = TRef,
+                outbox = Outbox,
                 encoding_opts = partisan_util:channel_encode_opts(ChannelOpts),
                 socket = Socket
             },
@@ -373,7 +492,7 @@ connect_socket(#state{} = State0) ->
 %% every bind operation, but a different port instead of the standard
 %% port.
 %%
-connect(Node, Channel, ChannelOpts) when
+connect(Node, Channel, ChannelOpts, Methods) when
     is_atom(Node), is_atom(Channel), is_map(ChannelOpts)
 ->
     %% Used for testing when connect_disterl is enabled
@@ -387,17 +506,19 @@ connect(Node, Channel, ChannelOpts) when
             {error, no_listen_addr};
         [ListenAddr | _] ->
             %% Use first address
-            connect(ListenAddr, Channel, ChannelOpts)
+            connect(ListenAddr, Channel, ChannelOpts, Methods)
     end;
-connect(#{ip := Address, port := Port}, Channel, ChannelOpts) when
+connect(#{ip := Address, port := Port}, Channel, ChannelOpts, Methods) when
     is_atom(Channel), is_map(ChannelOpts)
 ->
     SocketOpts = [
         binary,
         {active, once},
-        {packet, 4},
-        {packet_size, partisan_config:get(max_message_size)},
         {keepalive, true}
+        %% Raw when the phase is on, where this process takes the frames
+        %% itself. `authenticated/2' sets the framing of the existing
+        %% protocol.
+        | partisan_peer_auth:initial_socket_opts(Methods)
     ],
 
     Opts = [{monotonic, maps:get(monotonic, ChannelOpts, false)}],
@@ -425,6 +546,137 @@ connect(#{ip := Address, port := Port}, Channel, ChannelOpts) when
             }),
             {error, Reason}
     end.
+
+%% @private
+%% The channel binding for the authentication phase. A node with an empty
+%% method list makes no proof and needs none. A socket that cannot give its
+%% binding is closed: the phase does not continue without it.
+channel_binding([], _Socket) ->
+    {ok, none};
+channel_binding(_Methods, Socket) ->
+    case partisan_peer_socket:channel_binding(Socket, client) of
+        {ok, _} = OK ->
+            OK;
+        {error, _} = Error ->
+            _ = partisan_peer_socket:close(Socket),
+            Error
+    end.
+
+%% @private
+%% Gives a frame to the negotiator while the phase has not completed.
+handle_auth_frame(Frame, #state{auth = {pending, Neg}} = State) ->
+    case partisan_peer_auth:client_handle(Frame, Neg) of
+        {reply, Reply, Neg1} ->
+            maybe
+                ok ?= send_auth_frame(Reply, State),
+                ok ?= reset_socket_opts(State),
+                {noreply, State#state{auth = {pending, Neg1}}}
+            else
+                {error, Reason} ->
+                    {stop, {shutdown, Reason}, State}
+            end;
+        {ok, Authn} ->
+            %% The server authenticated and sends no `hello': its challenge
+            %% carried its name, which the negotiator checked. This node
+            %% sends its `hello' now.
+            send_hello(authenticated(Authn, State));
+        {ok, Authn, Msg} ->
+            %% The server runs no phase: `Msg' is its `hello'.
+            handle_inbound(Msg, authenticated(Authn, State));
+        {error, Reason} ->
+            auth_failed(Reason, State)
+    end.
+
+%% @private
+auth_failed(Reason, State) ->
+    ?LOG_WARNING(
+        ?REPORT(#{
+            description => "Peer authentication failed, closing",
+            reason => Reason
+        })
+    ),
+    {stop, {shutdown, {auth_failed, Reason}}, State}.
+
+%% @private
+%% A raw socket does not add the length of a frame.
+send_auth_frame(Frame, #state{raw = true, socket = Socket}) ->
+    send_control(Socket, partisan_peer_auth:enframe(Frame));
+send_auth_frame(Frame, #state{raw = false, socket = Socket}) ->
+    send_control(Socket, Frame).
+
+%% @private
+%% Sends this node's `hello', which completes the handshake.
+send_hello(#state{socket = Socket, peer = #{name := Node}} = State) ->
+    Msg = {hello, partisan:node(), State#state.channel},
+
+    case send_control(Socket, erlang:term_to_iovec(Msg)) of
+        ok ->
+            {noreply, reset_ping(handshake_complete(State))};
+        {error, Reason} = Error ->
+            ?LOG_INFO(#{
+                description => "Failed to send hello message to node",
+                node => Node,
+                reason => Reason
+            }),
+            {stop, Error, State}
+    end.
+
+%% @private
+%% The gate of `net_kernel:allow/1': this node does not dial a node that is
+%% not in `peer_auth_allowed_nodes'.
+allowed(Node) ->
+    case partisan_peer_auth:is_allowed(Node) of
+        true -> ok;
+        false -> {error, not_allowed}
+    end.
+
+%% @private
+%% The bytes of a message that waits in the outbox. `send_message' is encoded
+%% here, as it is when it goes out at once.
+outbox_data(send_message, Msg, State) ->
+    partisan_util:encode(Msg, State#state.encoding_opts);
+outbox_data(send_encoded, Data, _State) ->
+    Data.
+
+%% @private
+%% The handshake is complete: this process has sent its `hello'. The messages
+%% that waited go out in the order they came, after `hello' on the wire.
+handshake_complete(#state{outbox = Outbox, socket = Socket} = State) ->
+    _ =
+        is_reference(State#state.handshake_tref) andalso
+            erlang:cancel_timer(State#state.handshake_tref),
+    lists:foreach(
+        fun
+            ({cast, Data}) ->
+                _ = send_data(Socket, Data);
+            ({call, From, Data}) ->
+                gen_server:reply(From, send_data(Socket, Data))
+        end,
+        case Outbox of
+            undefined -> [];
+            _ -> lists:reverse(Outbox)
+        end
+    ),
+    State#state{outbox = undefined, handshake_tref = undefined}.
+
+%% @private
+%% The connection ends before the handshake completed: each caller that waits
+%% for a reply gets an error, and does not wait for its own timeout.
+fail_outbox(#state{outbox = Outbox}) when is_list(Outbox) ->
+    lists:foreach(
+        fun
+            ({call, From, _}) -> gen_server:reply(From, {error, closed});
+            ({cast, _}) -> ok
+        end,
+        Outbox
+    );
+fail_outbox(_) ->
+    ok.
+
+%% @private
+%% Sends a frame of the handshake. It goes out on a monotonic channel too.
+send_control(Socket, Data) ->
+    partisan_peer_socket:send_control(Socket, Data).
 
 %% @private
 send_message(Socket, Message) ->
@@ -475,20 +727,8 @@ handle_inbound({state, Tag, LocalState}, #state{} = State) ->
 
     {noreply, reset_ping(State)};
 handle_inbound({hello, Node}, #state{peer = #{name := Node}} = State) ->
-    Socket = State#state.socket,
-    Msg = {hello, partisan:node(), State#state.channel},
-
-    case send_message(Socket, Msg) of
-        ok ->
-            {noreply, reset_ping(State)};
-        {error, Reason} = Error ->
-            ?LOG_INFO(#{
-                description => "Failed to send hello message to node",
-                node => Node,
-                reason => Reason
-            }),
-            {stop, Error, State}
-    end;
+    %% The `hello' of a server that runs no phase.
+    send_hello(State);
 handle_inbound({hello, A}, #state{peer = #{name := B}} = State) when
     A =/= B
 ->
@@ -538,6 +778,14 @@ handle_inbound(Msg, State) ->
         message => Msg
     }),
     {stop, normal, State}.
+
+%% @private
+%% Completes the authentication phase: the socket takes the framing of the
+%% existing protocol and delivers again.
+authenticated(Authn, #state{auth = {pending, _}} = State) ->
+    Opts = [{active, once} | partisan_peer_auth:established_socket_opts()],
+    _ = partisan_peer_socket:setopts(State#state.socket, Opts),
+    State#state{auth = Authn, raw = false}.
 
 %% @private
 reset_socket_opts(State) ->

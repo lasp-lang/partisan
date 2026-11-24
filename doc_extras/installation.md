@@ -21,7 +21,7 @@ From [hex.pm](https://hex.pm/packages/partisan):
 ```erlang
 %% rebar.config
 {deps, [
-    {partisan, "6.3.0"}
+    {partisan, "6.4.0"}
 ]}.
 ```
 
@@ -31,7 +31,7 @@ From a git tag (useful for tracking unreleased fixes):
 %% rebar.config
 {deps, [
     {partisan,
-        {git, "https://github.com/lasp-lang/partisan.git", {tag, "6.3.0"}}
+        {git, "https://github.com/lasp-lang/partisan.git", {tag, "v6.4.0"}}
     }
 ]}.
 ```
@@ -72,7 +72,7 @@ defp deps do
   [
     {:partisan,
       git: "https://github.com/lasp-lang/partisan.git",
-      tag: "6.3.0"}
+      tag: "v6.4.0"}
   ]
 end
 ```
@@ -141,7 +141,7 @@ Partisan's `rebar.config`:
 ```
 
 It is a **pre-compile** (not post-compile) hook on purpose. When
-Partisan and another Partisan-using dep (e.g. plum_db) are both direct
+Partisan and another Partisan-using dep are both direct
 deps of the same top-level project, rebar3 may start the second
 dep's compile before Partisan's post-compile hook can fire — and the
 second dep then fails with `behaviour partisan_gen_supervisor
@@ -152,9 +152,9 @@ downstream dep starts compiling.
 
 The escript at `priv/generate_otp_sources.escript`:
 
-1. Compiles the three support modules (`partisan_otp_rewrite`,
-   `partisan_otp_patches`, `partisan_gen_transform`) in-memory directly
-   from `src/*.erl`.
+1. Compiles the four support modules (`partisan_otp_modules`,
+   `partisan_otp_rewrite`, `partisan_otp_patches`,
+   `partisan_gen_transform`) in-memory directly from `src/*.erl`.
 2. For each target OTP module, finds its installed beam via
    `code:which/1` and extracts the abstract syntax tree with
    `beam_lib:chunks/2`.
@@ -162,14 +162,27 @@ The escript at `priv/generate_otp_sources.escript`:
    attribute rewrites, atom-in-data rewrites — see
    `partisan_otp_rewrite:rename_map/0`) plus any version-specific patches
    under `priv/otp/<otp-version>/`.
-4. Pretty-prints the rewritten forms with `erl_pp:form/1` and writes
+4. Pretty-prints the rewritten forms with `erl_prettypr` and writes
    them as `partisan_gen_server.erl`, `partisan_gen_supervisor.erl`,
-   etc. into Partisan's `src/` directory.
-5. Returns. rebar3 then compiles those `.erl` files alongside the rest
-   of Partisan's source.
+   etc. into Partisan's `src/` directory. `erl_prettypr` writes every
+   remote call with its module, so the generated `partisan_proc_lib`,
+   which defines its own `spawn_opt/2,3,4,5`, keeps calling
+   `erlang:spawn_opt` where OTP's `proc_lib` does. Two things differ
+   from OTP's forms: OTP's `-file` attributes are left out, so the
+   compiler records each line as it is in the generated file, and a
+   `-compile` attribute turns off the unused-function, unused-type and
+   `catch` deprecation warnings that OTP's code raises here.
+5. Parses each written file back with `epp` and compares the result
+   with the forms it was printed from, ignoring source positions. A
+   difference stops the build (see below).
+6. Returns. rebar3 then compiles those `.erl` files alongside the rest
+   of Partisan's source, into whichever `ebin` it builds Partisan into,
+   including the one Mix gives `rebar3 bare compile`.
 
 The generated `.erl` files are listed in `.gitignore` so they never
-end up in version control. The generator is **stateless and
+end up in version control, and in `exclude_paths` in
+`src/partisan.app.src` so they are not part of the Hex package. The
+generator is **stateless and
 deterministic** — the inputs are the OTP source on the build host and
 the rename maps in `partisan_otp_rewrite`; the output is fully
 determined by them.
@@ -182,6 +195,16 @@ In day-to-day use, never. The cases where it does:
   against the new OTP source. If the new OTP release added a BIF or atom
   that needs rewriting (e.g. an auto-imported `monitor/2` in OTP 26+),
   add it to `partisan_otp_rewrite` first.
+- **A stack trace or crash report names a generated module.** The file
+  and line are those of the generated source, for example
+  `src/partisan_gen_server.erl` in Partisan's source directory (under
+  `deps/partisan` when Partisan is a dependency), not OTP's
+  `gen_server.erl`.
+- **The build stops with `Failed to generate partisan OTP module
+  sources` and a `source_mismatch` entry.** The printed source of that
+  module does not parse back to the forms it was printed from on the
+  installed OTP. The entry names the file and the first form that
+  differs. Please report it with the OTP version.
 - **You see “module gen\_server is not loaded” at runtime in a release.**
   Confirm `_build/<profile>/lib/partisan/ebin/partisan.app` lists the
   generated modules. A partial build can leave the app file stale; a

@@ -316,6 +316,12 @@
 %% Timeout (ms) for the server-side TLS handshake on an inbound peer
 %% connection; bounds a stalled handshake so it cannot pin an acceptor.
 -define(DEFAULT_TLS_HANDSHAKE_TIMEOUT, 5000).
+
+%% Timeout (ms) for the peer authentication phase of a connection.
+-define(DEFAULT_PEER_AUTH_TIMEOUT, 5000).
+
+%% Most accepted connections that have not authenticated, at one time.
+-define(DEFAULT_PEER_AUTH_MAX_PENDING, 1024).
 -define(DEFAULT_EXCHANGE_TICK_PERIOD, 10000).
 
 -if(?OTP_RELEASE >= 25).
