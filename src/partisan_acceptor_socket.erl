@@ -52,11 +52,15 @@ init([PeerIP, PeerPort]) ->
     % Trapping exit so can close socket in terminate/2
     _ = process_flag(trap_exit, true),
     Opts = [
-        {active, once},
+        %% An accepted socket inherits these options. It is passive, so it
+        %% reads nothing until `partisan_peer_service_server' has set the
+        %% framing of the connection.
+        {active, false},
         {mode, binary},
         {ip, PeerIP},
-        {packet, 4},
-        {packet_size, partisan_config:get(max_message_size)},
+        %% `partisan_peer_service_server' sets the framing of each connection
+        %% when it accepts it.
+        {packet, raw},
         {reuseaddr, true},
         {nodelay, true},
         {keepalive, true}

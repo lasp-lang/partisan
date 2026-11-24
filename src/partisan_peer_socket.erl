@@ -41,6 +41,7 @@
 -export_type([t/0]).
 
 -export([accept/1]).
+-export([channel_binding/2]).
 -export([close/1]).
 -export([connect/3]).
 -export([connect/4]).
@@ -51,6 +52,7 @@
 -export([recv/2]).
 -export([recv/3]).
 -export([send/2]).
+-export([send_control/2]).
 -export([setopts/2]).
 -export([socket/1]).
 
@@ -134,10 +136,25 @@ accept(TCPSocket) ->
 -spec send(t(), iodata()) -> ok | {error, reason()}.
 
 send(#partisan_peer_socket{monotonic = false} = Conn, Data) ->
+    send_control(Conn, Data);
+send(#partisan_peer_socket{monotonic = true} = Conn, Data) ->
+    send_monotonic(Conn, Data).
+
+%% -----------------------------------------------------------------------------
+%% @doc Sends a frame of the handshake. Unlike {@link send/2}, it sends the
+%% frame on a monotonic channel too: a monotonic channel drops a frame when a
+%% newer one waits, and a connection cannot lose a frame of its handshake.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec send_control(t(), iodata()) -> ok | {error, reason()}.
+
+send_control(#partisan_peer_socket{} = Conn, Data) ->
     Socket = Conn#partisan_peer_socket.socket,
     Transport = Conn#partisan_peer_socket.transport,
-    send(Transport, Socket, Data);
-send(#partisan_peer_socket{monotonic = true} = Conn, Data) ->
+    send(Transport, Socket, Data).
+
+%% @private
+send_monotonic(#partisan_peer_socket{} = Conn, Data) ->
     Socket = Conn#partisan_peer_socket.socket,
     Transport = Conn#partisan_peer_socket.transport,
 
@@ -330,6 +347,70 @@ connect(Address, Port, Options0, Timeout, PartisanOptions) when
     end.
 
 %% -----------------------------------------------------------------------------
+%% @doc Returns the channel binding of the connection, for the peer
+%% authentication phase (ADR-000005).
+%%
+%% On a TLS 1.3 connection it is `{tls_exporter, Value}', where `Value' is the
+%% 32-byte exporter value of RFC 9266 (`tls-exporter'). Both ends of one TLS
+%% session get the same value and no other session has it. The call does not
+%% consume the exporter secret, so it returns the same value each time.
+%%
+%% On a TCP connection it is `none'. On an earlier TLS version it is `capable'
+%% when the TLS options of `Role' allow TLS 1.3, and `none' when they do not.
+%% RFC 9266 allows `tls-exporter' on TLS 1.2 only with the extended master
+%% secret, which this module cannot check.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec channel_binding(t(), client | server) ->
+    {ok, partisan_peer_auth:binding()} | {error, term()}.
+
+channel_binding(#partisan_peer_socket{transport = gen_tcp}, _Role) ->
+    {ok, none};
+channel_binding(
+    #partisan_peer_socket{socket = Socket, transport = ssl}, Role
+) ->
+    case ssl:connection_information(Socket, [protocol]) of
+        {ok, [{protocol, 'tlsv1.3'}]} ->
+            Result = ssl:export_key_materials(
+                Socket,
+                [<<"EXPORTER-Channel-Binding">>],
+                [no_context],
+                [32],
+                false
+            ),
+            case Result of
+                {ok, [Value]} when byte_size(Value) =:= 32 ->
+                    {ok, {tls_exporter, Value}};
+                {error, _} = Error ->
+                    Error
+            end;
+        {ok, [{protocol, _}]} ->
+            case allows_tls13(Role) of
+                true -> {ok, capable};
+                false -> {ok, none}
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+%% @private
+%% Whether the TLS options of `Role' allow TLS 1.3. Without a `versions'
+%% option `ssl' uses its supported versions.
+allows_tls13(Role) ->
+    Key =
+        case Role of
+            client -> tls_client_options;
+            server -> tls_server_options
+        end,
+    Opts = partisan_config:get(Key, []),
+    Versions =
+        case lists:keyfind(versions, 1, Opts) of
+            {versions, List} -> List;
+            false -> proplists:get_value(supported, ssl:versions(), [])
+        end,
+    lists:member('tlsv1.3', Versions).
+
+%% -----------------------------------------------------------------------------
 %% @doc Returns the wrapped socket from within the connection.
 %% @end
 %% -----------------------------------------------------------------------------
@@ -386,6 +467,9 @@ send(Transport, Socket, Data) ->
 %% after a given period with no transmissions.
 %%
 %% @private
+monotonic_should_send(_MessageQueueLen, undefined) ->
+    %% Nothing was sent yet, so there is no window to wait for.
+    true;
 monotonic_should_send(MessageQueueLen, LastTransmissionTime) ->
     case MessageQueueLen > 0 of
         true ->
