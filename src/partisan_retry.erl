@@ -103,8 +103,10 @@ backoff depending on options.
 
 Set `deadline` to 0 to disable deadline tracking and rely solely on `max_retries`.
 """).
--spec init(Id :: any(), Opts :: opts()) -> t().
+-spec init(Id :: any(), Opts :: opts() | [{atom(), term()}]) -> t().
 
+init(Id, Opts) when is_list(Opts) ->
+    init(Id, proplists:to_map(Opts));
 init(Id, Opts) ->
     State0 = #partisan_retry{
         id = Id,
