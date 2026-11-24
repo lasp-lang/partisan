@@ -86,6 +86,37 @@
   socket that received a frame over `max_message_size` reported the error
   and stayed open, and the client never read from it again.
 
+# v6.3.4
+
+Fixes Partisan as a dependency of a Mix project.
+
+## Fixes
+
+### Build
+* **A Mix release failed at boot with `partisan_otp_modules_missing`**
+  (#271, #273). The pre-compile hook compiled the generated
+  `partisan_gen_*` modules into a directory it worked out from
+  `REBAR_BUILD_DIR`. Mix builds a rebar3 dependency into its own build
+  directory, so the modules went elsewhere and the application Mix built
+  did not have them. The hook now writes the modules as sources into
+  `src/`, and the build tool compiles them with the rest of Partisan into
+  whichever directory it uses. Checked with a Mix project on OTP 29 and
+  Mix 1.20: all seven modules are in Mix's build directory and Partisan
+  starts.
+* The sources are printed with `erl_prettypr`. `erl_pp` prints a remote call
+  to an auto-imported BIF as a local call, which made `partisan_proc_lib`
+  call its own `spawn_opt/4` instead of `erlang:spawn_opt/4`. The hook parses
+  each file back and stops the build if it differs from the forms it was
+  printed from. Covered by `partisan_gen_transform_test`.
+
+## Changes
+
+* A stack trace or crash report that names a generated module now gives the
+  file and line of the generated source, for example
+  `src/partisan_gen_server.erl`, instead of a line in OTP's `gen_server.erl`.
+* The generated sources are listed in `.gitignore` and are left out of the
+  Hex package.
+
 # v6.3.3
 
 Completes the v6.3.2 stale-specification fix, and stops connection attempts
