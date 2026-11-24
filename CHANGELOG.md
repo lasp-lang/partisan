@@ -86,11 +86,6 @@
   socket that received a frame over `max_message_size` reported the error
   and stayed open, and the client never read from it again.
 
-# v6.3.4
-
-Fixes Partisan as a dependency of a Mix project.
-
-## Fixes
 
 ### Build
 * **A Mix release failed at boot with `partisan_otp_modules_missing`**
